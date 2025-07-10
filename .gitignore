@@ -1,0 +1,48 @@
+dual_translate_builder/
+.vscode/
+docker-compose/postgres/
+docker-compose/nginx/nginx.conf:Zone.Identifier
+laravel/vendor/
+laravel/.devcontainer
+laravel/docker
+laravel/node_modules/
+laravel/npm-debug.log
+laravel/yarn-error.log
+
+# Laravel 4 specific
+laravel/bootstrap/compiled.php
+laravel/app/storage/
+
+# Laravel 5 & Lumen specific
+laravel/public/storage
+laravel/public/hot
+
+# Laravel 5 & Lumen specific with changed public path
+laravel/public_html/storage
+laravel/public_html/hot
+
+laravel/storage/*.key
+laravel/.env
+laravel/Homestead.yaml
+laravel/Homestead.json
+laravel/.vagrant
+laravel/.phpunit.result.cache
+
+laravel/public/build
+laravel/storage/pail
+laravel/.env.backup
+laravel/.env.production
+laravel/.phpactor.json
+laravel/auth.json
+laravel/public/old_eng
+laravel/public/textes/*
+
+# wiktionary jsonl file 2.5gb
+laravel/public/kaikki_english*
+
+# Phpstorm
+.idea
+_ide_helper.php
+_ide_helper_models.php
+.phpstorm.meta.php
+.DS_Store

@@ -1,0 +1,62 @@
+services:
+
+  app:
+    build:
+      args:
+        user: alex
+        uid: 1000
+      context: .
+      dockerfile: LaravelDockerfile
+    image: eng_ext_laravel
+    container_name: ext_app_laravel
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+        PHP_IDE_CONFIG: "serverName=Docker"
+    restart: unless-stopped
+    working_dir: /var/www/
+    volumes:
+      - type: bind
+        source: ./laravel
+        target: /var/www
+        consistency: cached
+      # - ./:/var/www
+    networks:
+      - ext_net
+
+
+
+  db:
+    image: postgres
+    container_name: ext_pgdb
+    restart: unless-stopped
+    ports:
+      - "54321:5432"
+    environment:
+      SERVICE_TAGS: dev
+      SERVICE_NAME: postgres
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DATABASE: ${DB_DATABASE}
+      POSTGRES_ROOT_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./docker-compose/postgres:/var/lib/postgresql/data
+    networks:
+      - ext_net
+
+
+  nginx:
+    image: nginx:alpine
+    container_name: ext_nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./laravel:/var/www
+      - ./nginx/conf:/etc/nginx/conf.d
+    networks:
+      - ext_net
+
+networks:
+  ext_net:
+    driver: bridge
