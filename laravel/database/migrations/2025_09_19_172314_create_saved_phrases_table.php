@@ -11,14 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('forms', function (Blueprint $table) {
+        Schema::create('saved_phrases', function (Blueprint $table) {
             $table->id();
-            $table->string('pos')->default('noun');
-            $table->string('word');
-            $table->string('lword')->nullable(true);
-            $table->integer('word_id')->nullable(true);
-            $table->string('form');
-            $table->string('lform')->nullable(true);
+            $table->text('phrase')->nullable(false);
+            $table->timestamps();
         });
     }
 
@@ -27,6 +23,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('forms');
+        Schema::dropIfExists('saved_phrases');
     }
 };

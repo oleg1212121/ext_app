@@ -15,7 +15,10 @@ return new class extends Migration
             $table->id();
             $table->text('pos')->default('noun');
             $table->text('word');
+            $table->text('lword')->nullable(true);
+            $table->integer('word_id')->nullable(true);
             $table->text('definition');
+            $table->boolean('is_obsolete')->default(false);
         });
     }
 
