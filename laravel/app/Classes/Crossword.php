@@ -1,45 +1,63 @@
-<?php 
+<?php
 
 namespace App\Classes;
 
 
 class Crossword
 {
-    public $height = 100;
-    public $width = 100;
-    public $minX = 100;
-    public $maxX = 0;
-    public $minY = 100;
-    public $maxY = 0;
-    public $grid = [];
+    protected $height = 100;
+    protected $width = 100;
+    protected $minX = 100;
+    protected $maxX = 0;
+    protected $minY = 100;
+    protected $maxY = 0;
+    protected $grid = [];
     public $used = [];
     public $newGrid = [];
     public $words = [];
     public $dictionary = [];
+    public $removed = [];
+
     public function __construct($words)
     {
         foreach($words as $word){
             if(strlen($word->word) < 2) continue;
             $this->words[] = $word->word;
-            $this->dictionary[$word->word] = [];
-            $arr = [];
-            foreach($word->definitions as $definition){ 
-                $this->dictionary[$word->word][] = "(". $definition->pos .") " . $definition->definition;
+            $this->dictionary[$word->word] = ['definitions' => [], 'translations' => []];
+            foreach($word->modernDefinitions as $definition){
+                $def = str_ireplace($word->word, '****', $definition->definition);
+                if($definition->is_obsolete){
+                    $this->dictionary[$word->word]['obsolete'][] = "(". $definition->pos .") " . $def;
+                } else {
+                    $this->dictionary[$word->word]['definitions'][] = "(". $definition->pos .") " . $def;
+                }
             }
             foreach($word->translations as $translation){
-                $this->dictionary[$word->word][] = "(". $translation->pos .") " . $translation->translation;              
+                $this->dictionary[$word->word]['translations'][] = "(". $translation->pos .") " . $translation->translation;
             }
-            if(count($this->dictionary[$word->word]) == 0){
-                array_pop($this->words);
-                unset($this->dictionary[$word->word]);
+
+            foreach($word->forms as $form){
+                $this->dictionary[$word->word]['forms'][] = $form->form;
             }
+            // if(
+            //     count($this->dictionary[$word->word]['definitions']) == 0 &&
+            //     count($this->dictionary[$word->word]['translations']) == 0
+            // ){
+            //     array_pop($this->words);
+            //     unset($this->dictionary[$word->word]);
+            // } else {
+            //     shuffle($this->dictionary[$word->word]['definitions']);
+            //     shuffle($this->dictionary[$word->word]['translations']);
+            // }
+            // shuffle($this->dictionary[$word->word]['definitions']);
+            // shuffle($this->dictionary[$word->word]['translations']);
         }
-        
+
     }
 
 
     public function crossword() {
-        
+
 
         usort($this->words, function ($a, $b) {
             return strlen($a) - strlen($b);
@@ -65,7 +83,7 @@ class Crossword
         $this->used = [[true, $y, $x, $firstWord, 0]];
 
         $this->placeTheWord(true, $y, $x, $firstWord);
-        
+
         while(count($this->words) > 0 ){
             $word = array_pop($this->words);
             $this->tryToPlace($word);
@@ -83,27 +101,28 @@ class Crossword
                         }
                         $arr[$i][] = $cell;
                     }
-            
+
                 }
                 $i++;
             }
         }
         $this->grid = $arr;
         $words = [];
-        
+
         $this->maxY++;
         $this->maxX++;
         for($y=$this->minY;$y<$this->maxY;$y++){
-            $this->newGrid[] = [];       
+            $this->newGrid[] = [];
             for($x=$this->minX;$x<$this->maxX;$x++){
                 $this->newGrid[$y-$this->minY][] = [
-                    'vector' => false, 
-                    'y' => $y-$this->minY, 
+                    'vector' => false,
+                    'y' => $y-$this->minY,
                     'x' => $x-$this->minX,
                     'value' => '',
+                    'answer' => '',
                     'type' => 1,
                     'words' => [],
-                    
+                    'changeable' => true,
                     'class' => 'white'
                 ];
             }
@@ -112,8 +131,8 @@ class Crossword
             [$vector, $y, $x, $word, $times] = $current;
             $words[] = [
                 'id' => $key + 1,
-                'vector' => !$vector, 
-                'y' => $y-$this->minY, 
+                'vector' => $vector,
+                'y' => $y-$this->minY,
                 'x' => $x-$this->minX,
                 'value' => $word,
                 'type' => 1,
@@ -123,30 +142,33 @@ class Crossword
         $this->words = $words;
 
         foreach($this->words as $current){
-            if(!$current['vector']){
+            if($current['vector']){
                 $this->newGrid[$current['y']][$current['x']-1]['type'] = 2;
                 $this->newGrid[$current['y']][$current['x']-1]['value'] = $current['value'];
                 $this->newGrid[$current['y']][$current['x']-1]['vector'] = true;
                 for($i=0;$i<strlen($current['value']);$i++){
                     $this->newGrid[$current['y']][$current['x']+$i]['value'] = $current['value'][$i];
-                    
+
                     $this->newGrid[$current['y']][$current['x']+$i]['words'][] = $current;
                     $this->newGrid[$current['y']][$current['x']+$i]['type'] = 4;
                     $this->newGrid[$current['y']][$current['x']+$i]['vector'] = true;
                 }
             } else {
                 $this->newGrid[$current['y']-1][$current['x']]['type'] = 3;
-                
+
                 $this->newGrid[$current['y']-1][$current['x']]['value'] = $current['value'];
                 $this->newGrid[$current['y']-1][$current['x']]['vector'] = false;
                 for($i=0;$i<strlen($current['value']);$i++){
                     $this->newGrid[$current['y']+$i][$current['x']]['value'] = $current['value'][$i];
                     $this->newGrid[$current['y']+$i][$current['x']]['type'] = 4;
-                    
+
                     $this->newGrid[$current['y']+$i][$current['x']]['words'][] = $current;
                     $this->newGrid[$current['y']+$i][$current['x']]['vector'] = false;
                 }
             }
+        }
+        foreach($this->removed as $w){
+            unset($this->dictionary[$w]);
         }
         // return $this;
         // return view('crossword', ['grid' => $arr, 'words' => $words]);
@@ -162,18 +184,18 @@ class Crossword
     }
 
     private function tryToPlace($word) {
-        
+
         $length = strlen($word) - 1;
-        
+        $possible = false;
         foreach ($this->used as $targetIndex => $target) {
             $left = intdiv($length, 2);
             $right = $left + 1;
             $index = $left;
             $direction = true;
             [$vector, $y, $x, $examiningWord, $usedTimes] = $target;
-            if($usedTimes > 2) continue;
+            if($usedTimes >= 4) continue;
             for ($i = 0; $i < $length; $i++) {
-                if($direction){    
+                if($direction){
                     $letter = $word[$left];
                     $index = $left;
                     $left--;
@@ -187,7 +209,7 @@ class Crossword
                     if ($symbol === $letter) {
                         if ($vector) {
                             $yy = $y - $index;
-                            $xx = $x + $j;                            
+                            $xx = $x + $j;
                         } else {
                             $yy = $y + $j;
                             $xx = $x - $index;
@@ -197,19 +219,22 @@ class Crossword
                         if($possible){
 
                             $this->placeTheWord(!$vector, $yy, $xx, $word);
-                            
+
                             $this->used[] = [!$vector, $yy, $xx, $word, 1];
                             $this->used[$targetIndex][4]++;
 
 
                             break(3);
-                        } 
-                      
+                        }
+
                     }
                 }
                 $direction = !$direction;
             }
 
+        }
+        if(!$possible){
+            $this->removed[] = $word;
         }
     }
 
@@ -226,25 +251,25 @@ class Crossword
                     $cur = $word[$i];
                     $sym = $this->grid[$y][$x+$i];
                     if ($sym === "." || $cur === $sym) {
-                        
+
                     } else {
                         $possible = false;
                         break;
                     }
                 }
                 if(
-                    ($this->grid[$y][$x+$length] != "." && $this->grid[$y][$x+$length] != "*") || 
-                    ($this->grid[$y][$x-1] != "." ) 
+                    ($this->grid[$y][$x+$length] != "." && $this->grid[$y][$x+$length] != "*") ||
+                    ($this->grid[$y][$x-1] != "." )
                 ){
                     $possible = false;
-                    
+
                 }
             } else {
                 for ($i = 0; $i < $length; $i++) {
                     $cur = $word[$i];
                     $sym = $this->grid[$y+$i][$x];
                     if ($sym === "." || $cur === $sym) {
-                        
+
                     } else {
                         $possible = false;
                         break;
@@ -252,17 +277,17 @@ class Crossword
                 }
                 if(
                     ($this->grid[$y+$length][$x] != "." && $this->grid[$y+$length][$x] != "*") ||
-                    ($this->grid[$y-1][$x] != "." ) 
+                    ($this->grid[$y-1][$x] != "." )
                 ){
                     $possible = false;
-                    
+
                 }
-            } 
+            }
         }
-       
+
         return $possible;
     }
-    
+
     private function placeTheWord($vector, $y, $x, $word) {
         $word = "*" . $word . "*";
         $crosses = [];
@@ -287,41 +312,41 @@ class Crossword
                 $this->grid[$y][$x] = $word[$i];
                 $y++;
             }
-            $this->maxY = max($this->maxY, $y-1);                           
+            $this->maxY = max($this->maxY, $y-1);
         }
-        foreach($crosses as [$y, $x]){  
+        foreach($crosses as [$y, $x]){
             if(
-                $this->grid[$y][$x-1] != "." && 
-                $this->grid[$y][$x-1] != "*" && 
-                $this->grid[$y-1][$x] != "." && 
+                $this->grid[$y][$x-1] != "." &&
+                $this->grid[$y][$x-1] != "*" &&
+                $this->grid[$y-1][$x] != "." &&
                 $this->grid[$y-1][$x] != "*" &&
                 $this->grid[$y-1][$x-1] === "."
             ){
                 $this->grid[$y-1][$x-1] = "*";
             }
             if(
-                $this->grid[$y][$x+1] != "." && 
-                $this->grid[$y][$x+1] != "*" && 
-                $this->grid[$y-1][$x] != "." && 
+                $this->grid[$y][$x+1] != "." &&
+                $this->grid[$y][$x+1] != "*" &&
+                $this->grid[$y-1][$x] != "." &&
                 $this->grid[$y-1][$x] != "*" &&
                 $this->grid[$y-1][$x+1] === "."
             ){
                 $this->grid[$y-1][$x+1] = "*";
             }
-            
+
             if(
-                $this->grid[$y][$x+1] != "." && 
-                $this->grid[$y][$x+1] != "*" && 
-                $this->grid[$y+1][$x] != "." && 
+                $this->grid[$y][$x+1] != "." &&
+                $this->grid[$y][$x+1] != "*" &&
+                $this->grid[$y+1][$x] != "." &&
                 $this->grid[$y+1][$x] != "*" &&
                 $this->grid[$y+1][$x+1] === "."
             ){
                 $this->grid[$y+1][$x+1] = "*";
             }
             if(
-                $this->grid[$y][$x-1] != "." && 
-                $this->grid[$y][$x-1] != "*" && 
-                $this->grid[$y+1][$x] != "." && 
+                $this->grid[$y][$x-1] != "." &&
+                $this->grid[$y][$x-1] != "*" &&
+                $this->grid[$y+1][$x] != "." &&
                 $this->grid[$y+1][$x] != "*" &&
                 $this->grid[$y+1][$x-1] === "."
             ){
