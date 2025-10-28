@@ -52,6 +52,10 @@ class WordsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('less_1000000')->sortable(),
             ])
             ->filters([
+                Filter::make('Not seen')
+                ->query(function (Builder $query) {
+                    return $query->where('is_known', false)->where('knowledge','<=', 0);
+                }),
                 Filter::make('Unknown')
                 ->query(function (Builder $query) {
                     return $query->where('is_known', false);

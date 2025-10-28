@@ -60,3 +60,4 @@ laravel/public/kai_aa.jsonl
 laravel/public/raw-wiktextract-data.jsonl.gz:Zone.Identifier
 laravel/public/words_alpha.txt
 laravel/public/words_alpha.txt:Zone.Identifier
+laravel/resources/views/components/crossword/SELECT * FROM users;.pgsql

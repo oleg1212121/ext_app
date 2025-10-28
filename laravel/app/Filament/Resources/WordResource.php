@@ -63,6 +63,10 @@ class WordResource extends Resource
                 ->query(function (Builder $query) {
                     return $query->where('for_crossword', false);
                 }),
+                Filter::make('Unknown')
+                ->query(function (Builder $query) {
+                    return $query->where('knowledge', '<=', 0)->where('is_known', false);
+                }),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
