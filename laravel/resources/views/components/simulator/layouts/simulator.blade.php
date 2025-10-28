@@ -32,6 +32,7 @@
 </head>
 <body class="h-full w-full overflow-hidden">
 
+    <x-navigation></x-navigation>
     {{ $slot }}
 
 </body>

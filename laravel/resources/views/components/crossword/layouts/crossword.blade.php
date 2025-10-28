@@ -1530,6 +1530,7 @@
 </head>
 <body class="h-full">
 
+    <x-navigation></x-navigation>
     {{ $slot }}
 
 </body>

@@ -23,8 +23,7 @@
     @stack('scripts')
     </head>
     <body>
-
         <x-navigation></x-navigation>
-        {{ $slot }}
+        @yield('content')
     </body>
 </html>
