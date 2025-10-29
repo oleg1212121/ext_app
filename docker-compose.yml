@@ -30,17 +30,18 @@ services:
     image: postgres
     container_name: ext_pgdb
     restart: unless-stopped
+    env_file:
+      - ./laravel/.env
     ports:
       - "54321:5432"
     environment:
       SERVICE_TAGS: dev
       SERVICE_NAME: postgres
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DATABASE: ${DB_DATABASE}
-      POSTGRES_ROOT_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USERNAME:-test}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-test}
+      POSTGRES_DB: ${DB_DATABASE:-ext_app}
     volumes:
-      - ./docker-compose/postgres:/var/lib/postgresql/data
+      - ./docker-compose/postgres:/var/lib/postgresql
     networks:
       - ext_net
 

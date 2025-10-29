@@ -4,33 +4,48 @@ FROM php:8.4-fpm
 ARG user
 ARG uid
 
-# xdebug
-RUN pecl install xdebug
-COPY ./docker-php-ext-xdebug.ini "${PHP_INI_DIR}/conf.d"
-
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     libpq-dev \
     libpng-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
     libonig-dev \
     libxml2-dev \
+    libzip-dev \
+    libicu-dev \
     zip \
     unzip \
-    # Add these for Node.js and npm
     gnupg \
-    ca-certificates
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Add Node.js repository and install Node.js and npm
 RUN curl -sL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs
 
 # Clear cache
-RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+# RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Configure GD extension first (this often causes issues)
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg
+
 
 # Install PHP extensions
-RUN docker-php-ext-install pdo pdo_pgsql mbstring exif pcntl bcmath gd intl
+RUN docker-php-ext-install pdo pdo_pgsql pgsql mbstring exif pcntl bcmath gd zip
+
+# Install intl extension separately with proper configuration
+RUN docker-php-ext-configure intl \
+    && docker-php-ext-install intl
+
+# xdebug
+RUN pecl install xdebug \
+    && docker-php-ext-enable xdebug
+
+COPY ./docker-php-ext-xdebug.ini "${PHP_INI_DIR}/conf.d"
 
 # Get latest Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
