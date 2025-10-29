@@ -47,6 +47,7 @@ class BilingualsController extends Controller
                 if ($file->isFile()) {
                     $str = '/var/www/public/textes/simulator/';
                     $name = $file->getPathname();
+                    if(str_contains($name, ':Zone.Identifier')) continue;
                     $name = str_replace($str, '', $name);
                     $result['names'][] = $name;
                 }
