@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Classes\Gemini;
+use App\Classes\HuggingFace;
+use App\Classes\OpenRouter;
 use App\Classes\Parser;
 use App\Http\Requests\AiQuestionRequest;
 use App\Http\Requests\DictionaryInteractionsSaveRequest;
@@ -141,6 +143,8 @@ class BilingualsController extends Controller
         $model = $request->get('model', null);
 
         $ai = new Gemini();
+        $ai = new OpenRouter();
+        $ai = new HuggingFace();
         $answer = $ai->askForContext($instruction, $prompt, $model);
         $data = [
             'answer' => $answer,
