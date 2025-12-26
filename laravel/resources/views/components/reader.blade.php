@@ -1,69 +1,107 @@
 @extends('components.layouts.crossword')
 
 @section('content')
-<div id="readerRoot" class="min-h-screen bg-[#FDFDFC] dark:bg-[#0a0a0a] text-[#1b1b18] dark:text-[#EDEDEC]">
-    {{-- <x-navigation></x-navigation> --}}
-
-    <header class="sticky top-0 z-20 bg-white dark:bg-[#0a0a0a] border-b border-[#e3e3e0] dark:border-[#3E3E3A]">
-        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3 flex flex-col gap-3">
-            <div class="flex items-center justify-between gap-4">
-                <div class="flex items-baseline gap-3">
-                    <h1 class="text-lg font-semibold">Reader</h1>
-                    <p class="text-sm text-[#706f6c] dark:text-[#A1A09A] hidden sm:block">Click a line to reveal its translation</p>
-                </div>
-                <div class="flex items-center gap-3">
-                    <label class="inline-flex items-center gap-2 text-sm">
-                        <input id="toggleAll" type="checkbox" class="h-3.5 w-3.5 rounded-sm border-[#e3e3e0] dark:border-[#3E3E3A]">
-                        <span>Show all translations</span>
-                    </label>
-                    <div class="hidden sm:flex items-center gap-2 text-sm">
-                        <span class="text-[#706f6c] dark:text-[#A1A09A]">Size</span>
-                        <input id="fontSize" type="range" min="16" max="38" value="20" class="w-28 accent-[#1b1b18] dark:accent-white">
+<div id="readerRoot" class="min-h-screen bg-gradient-to-br from-stone-50 via-white to-stone-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 text-gray-900 dark:text-gray-100">
+    <header class="sticky top-0 z-30 backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 border-b border-gray-200/60 dark:border-gray-800/60 shadow-sm">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4">
+            <!-- Main Controls Row -->
+            <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+                <div class="flex items-center gap-4">
+                    <div>
+                        <h1 class="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 dark:from-gray-100 dark:to-gray-300 bg-clip-text text-transparent">Book Reader</h1>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Click any line to reveal translation</p>
                     </div>
-                                        <button id="layoutToggle" type="button" class="px-3 py-1.5 rounded-sm border border-[#e3e3e0] dark:border-[#3E3E3A] hover:border-black dark:hover:border-white transition">
-                        Side by side
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <!-- Show All Toggle -->
+                    <label class="inline-flex items-center gap-2 cursor-pointer group">
+                        <div class="relative">
+                            <input id="toggleAll" type="checkbox" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 dark:peer-focus:ring-blue-400 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 dark:peer-checked:bg-blue-500"></div>
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition">Show All</span>
+                        </div>
+                    </label>
+
+                    <!-- Font Size -->
+                    <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                        <svg class="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                        </svg>
+                        <button id="fontSizeDecrease" type="button" class="w-7 h-7 rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-bold text-sm transition-all active:scale-90" title="Decrease">−</button>
+                        <span class="text-xs text-gray-600 dark:text-gray-400 font-mono w-8 text-center" id="fontSizeValue">20</span>
+                        <button id="fontSizeIncrease" type="button" class="w-7 h-7 rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-bold text-sm transition-all active:scale-90" title="Increase">+</button>
+                    </div>
+
+                    <!-- Layout Toggle -->
+                    <button id="layoutToggle" type="button" class="px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300 transition-all duration-200 hover:shadow-sm active:scale-95">
+                        <span class="hidden sm:inline">Side by Side</span>
+                        <span class="sm:hidden">Layout</span>
                     </button>
                 </div>
             </div>
 
-            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <!-- Audio & Scroll Controls -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-gray-200/60 dark:border-gray-800/60">
                 <!-- Audio Controls -->
-                <div class="flex items-center gap-2">
-                    <input id="audioPicker" type="file" accept="audio/*" class="hidden">
-                    <button id="pickAudioBtn" type="button" class="px-3 py-1.5 rounded-sm border border-[#e3e3e0] dark:border-[#3E3E3A] hover:border-black dark:hover:border-white transition">Pick audio</button>
-                    <button id="audioPlay" type="button" class="px-3 py-1.5 rounded-sm border border-[#e3e3e0] dark:border-[#3E3E3A] hover:border-black dark:hover:border-white transition disabled:opacity-50" disabled>Play</button>
-                    <button id="audioPause" type="button" class="px-3 py-1.5 rounded-sm border border-[#e3e3e0] dark:border-[#3E3E3A] hover:border-black dark:hover:border-white transition disabled:opacity-50" disabled>Pause</button>
-                    <button id="audioStop" type="button" class="px-3 py-1.5 rounded-sm border border-[#e3e3e0] dark:border-[#3E3E3A] hover:border-black dark:hover:border-white transition disabled:opacity-50" disabled>Stop</button>
-                    <span id="audioStatus" class="text-sm text-[#706f6c] dark:text-[#A1A09A] ml-1"></span>
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50">
+                        <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M6 10a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1H7a1 1 0 01-1-1v-4z"></path>
+                        </svg>
+                        <input id="audioPicker" type="file" accept="audio/*" class="hidden">
+                        <button id="pickAudioBtn" type="button" class="text-sm font-medium text-blue-700 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition">Pick Audio</button>
+                    </div>
+                    <button id="audioPlay" type="button" class="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow active:scale-95" disabled>
+                        <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"></path></svg>
+                        Play
+                    </button>
+                    <button id="audioPause" type="button" class="px-3 py-1.5 rounded-lg bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow active:scale-95" disabled>
+                        <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75A.75.75 0 007.25 3h-1.5zM12.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-1.5z"></path></svg>
+                        Pause
+                    </button>
+                    <button id="audioStop" type="button" class="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow active:scale-95" disabled>
+                        <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M5.25 3A2.25 2.25 0 003 5.25v9.5A2.25 2.25 0 005.25 17h9.5A2.25 2.25 0 0017 14.75v-9.5A2.25 2.25 0 0014.75 3h-9.5z"></path></svg>
+                        Stop
+                    </button>
+                    <span id="audioStatus" class="text-xs text-gray-500 dark:text-gray-400 font-medium"></span>
                 </div>
 
                 <!-- Auto-scroll Controls -->
-                <div class="flex items-center gap-2">
-                    <button id="scrollToggle" type="button" class="px-3 py-1.5 rounded-sm border border-[#e3e3e0] dark:border-[#3E3E3A] hover:border-black dark:hover:border-white transition">Scroll Play</button>
-                    <button id="scrollSlower" type="button" class="px-3 py-1.5 rounded-sm border border-[#e3e3e0] dark:border-[#3E3E3A] hover:border-black dark:hover:border-white transition" title="Slower">-</button>
-                    <div class="flex items-center gap-2 text-sm">
-                        <input id="scrollSpeed" type="range" min="10" max="300" step="5" value="80" class="w-40 accent-[#1b1b18] dark:accent-white">
-                        <span class="text-[#706f6c] dark:text-[#A1A09A]"> <span id="scrollSpeedVal">80</span> px/s</span>
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50">
+                        <svg class="w-4 h-4 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+                        </svg>
+                        <button id="scrollToggle" type="button" class="text-sm font-medium text-purple-700 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 transition">Auto Scroll</button>
                     </div>
-                    <button id="scrollFaster" type="button" class="px-3 py-1.5 rounded-sm border border-[#e3e3e0] dark:border-[#3E3E3A] hover:border-black dark:hover:border-white transition" title="Faster">+</button>
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                        <button id="scrollSlower" type="button" class="w-7 h-7 rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-bold text-sm transition-all active:scale-90" title="Slower">−</button>
+                        <span class="text-xs text-gray-600 dark:text-gray-400 font-mono w-12 text-center"><span id="scrollSpeedVal">80</span> px/s</span>
+                        <button id="scrollFaster" type="button" class="w-7 h-7 rounded-md bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-bold text-sm transition-all active:scale-90" title="Faster">+</button>
+                    </div>
                 </div>
             </div>
         </div>
     </header>
 
-    <main class="mx-auto  px-1 sm:px-1 lg:px-1 py-6">
-        @foreach($rows as $key => [$en, $ru])
-            <section class="reader-row group rounded-sm border border-transparent hover:border-[#19140035] dark:hover:border-[#3E3E3A] transition p-4 mb-4 @if($loop->index % 10 == 0) before:absolute before:left-[0.4rem] before:top-0 before:bottom-0 before:border-l before:border-[#e3e3e0] dark:before:border-[#3E3E3A] relative @endif">
-                <button type="button" class="en w-full text-left leading-relaxed" style="line-height: 1.6; font-size: var(--fs, 20px);"
-                        data-index="{{$key}}">
-                    {!! nl2br(e($en)) !!}
-                </button>
-                <div class="ru mt-2 text-green-700 dark:text-green-300 leading-relaxed hidden"
-                     style="line-height: 1.7; font-size: calc(var(--fs, 20px) * 0.9);">
-                    {!! nl2br(e($ru)) !!}
-                </div>
-                            </section>
-        @endforeach
+    <main class="mx-auto max-w-full px-4 sm:px-6 lg:px-12 py-12">
+        <div class="bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm rounded-2xl shadow-xl border border-gray-200/50 dark:border-gray-800/50 p-8 md:p-12">
+            @foreach($rows as $key => [$en, $ru])
+                <article class="reader-row group relative mb-6 pb-6 last:mb-0 last:pb-0 border-b border-gray-200/30 dark:border-gray-800/30 last:border-0 transition-all duration-300 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 rounded-lg px-4 py-3 -mx-4">
+                    <button type="button" class="en w-full text-left cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200" 
+                            style="line-height: 1.8; font-size: var(--fs, 20px); font-family: 'Georgia', 'Times New Roman', serif;"
+                            data-index="{{$key}}">
+                        <span class="text-gray-800 dark:text-gray-200">{!! nl2br(e($en)) !!}</span>
+                    </button>
+                    <div class="ru mt-4 text-emerald-700 dark:text-emerald-400 leading-relaxed hidden transition-all duration-300 ease-in-out transform"
+                         style="line-height: 1.75; font-size: calc(var(--fs, 20px) * 0.95); font-family: 'Georgia', 'Times New Roman', serif; opacity: 0.9;">
+                        <div class="pl-4 border-l-4 border-emerald-300 dark:border-emerald-600">
+                            {!! nl2br(e($ru)) !!}
+                        </div>
+                    </div>
+                </article>
+            @endforeach
+        </div>
     </main>
 
     <audio id="readerAudio" class="hidden"></audio>
@@ -78,7 +116,9 @@
     // Existing controls
     const toggleAll = document.getElementById('toggleAll');
     const layoutToggle = document.getElementById('layoutToggle');
-    const size = document.getElementById('fontSize');
+    const fontSizeDecrease = document.getElementById('fontSizeDecrease');
+    const fontSizeIncrease = document.getElementById('fontSizeIncrease');
+    const fontSizeValue = document.getElementById('fontSizeValue');
 
     // Audio controls
     const pickAudioBtn = document.getElementById('pickAudioBtn');
@@ -93,7 +133,6 @@
     const scrollToggle = document.getElementById('scrollToggle');
     const scrollSlower = document.getElementById('scrollSlower');
     const scrollFaster = document.getElementById('scrollFaster');
-    const scrollSpeedRange = document.getElementById('scrollSpeed');
     const scrollSpeedVal = document.getElementById('scrollSpeedVal');
 
     // Initial state
@@ -102,29 +141,54 @@
     function applyLayout() {
       document.querySelectorAll('.reader-row').forEach(row => {
         if (sideBySide) {
-          row.classList.add('md:grid','md:grid-cols-2','md:gap-6','items-start');
+          row.classList.add('md:grid', 'md:grid-cols-2', 'md:gap-8', 'items-start');
         } else {
-          row.classList.remove('md:grid','md:grid-cols-2','md:gap-6','items-start');
+          row.classList.remove('md:grid', 'md:grid-cols-2', 'md:gap-8', 'items-start');
         }
       });
-      layoutToggle.textContent = sideBySide ? 'Stacked' : 'Side by side';
+      if (layoutToggle) {
+        const btnText = layoutToggle.querySelector('span');
+        if (btnText) {
+          btnText.textContent = sideBySide ? 'Stacked' : 'Side by Side';
+        } else {
+          layoutToggle.textContent = sideBySide ? 'Stacked' : 'Side by Side';
+        }
+      }
     }
 
     function setAllTranslations(visible) {
       document.querySelectorAll('.reader-row .ru').forEach(el => {
-        el.classList.toggle('hidden', !visible);
+        if (visible) {
+          el.classList.remove('hidden');
+          el.style.opacity = '1';
+        } else {
+          el.classList.add('hidden');
+        }
       });
-          }
+    }
 
-    // Per-row toggle
+    // Per-row toggle with smooth animation
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('.en');
       if (!btn) return;
       // If "Show all" is on, ignore per-row toggles
-      if (toggleAll.checked) return;
+      if (toggleAll && toggleAll.checked) return;
       const row = btn.closest('.reader-row');
       const ru = row.querySelector('.ru');
-      ru.classList.toggle('hidden');
+      if (ru) {
+        const isHidden = ru.classList.contains('hidden');
+        if (isHidden) {
+          ru.classList.remove('hidden');
+          // Trigger reflow for animation
+          ru.offsetHeight;
+          ru.style.opacity = '1';
+        } else {
+          ru.style.opacity = '0';
+          setTimeout(() => {
+            ru.classList.add('hidden');
+          }, 200);
+        }
+      }
     });
 
     // Controls
@@ -137,20 +201,35 @@
       applyLayout();
     });
 
-    size?.addEventListener('input', (e) => {
-      const v = Number(e.target.value) || 20;
-      root.style.setProperty('--fs', v + 'px');
+    // Font size control
+    let fontSize = 20;
+    const minFontSize = 16;
+    const maxFontSize = 38;
+
+    function setFontSize(v) {
+      fontSize = Math.max(minFontSize, Math.min(maxFontSize, Number(v) || 20));
+      root.style.setProperty('--fs', fontSize + 'px');
+      if (fontSizeValue) {
+        fontSizeValue.textContent = fontSize;
+      }
+    }
+
+    fontSizeDecrease?.addEventListener('click', () => {
+      setFontSize(fontSize - 2);
     });
 
+    fontSizeIncrease?.addEventListener('click', () => {
+      setFontSize(fontSize + 2);
+    });
 
     // Defaults for typography
-    root.style.setProperty('--fs', (size ? size.value : 20) + 'px');
-        applyLayout();
+    setFontSize(fontSize);
+    applyLayout();
 
     // Audio logic
     function setAudioControlsEnabled(enabled) {
       [audioPlay, audioPause, audioStop].forEach(btn => {
-        btn.disabled = !enabled;
+        if (btn) btn.disabled = !enabled;
       });
     }
 
@@ -169,14 +248,15 @@
       audio.src = URL.createObjectURL(file);
       audio.load();
       setAudioControlsEnabled(true);
-      updateStatus('Ready: ' + (file.name || 'audio'));
+      const fileName = file.name.length > 20 ? file.name.substring(0, 20) + '...' : file.name;
+      updateStatus('Ready: ' + fileName);
     });
 
     audioPlay?.addEventListener('click', async () => {
       if (!audio.src) return;
       try {
         await audio.play();
-        updateStatus('Playing');
+        updateStatus('Playing ▶');
       } catch (err) {
         updateStatus('Cannot play: ' + (err?.message || 'unknown error'));
       }
@@ -185,14 +265,14 @@
     audioPause?.addEventListener('click', () => {
       if (!audio.src) return;
       audio.pause();
-      updateStatus('Paused');
+      updateStatus('Paused ⏸');
     });
 
     audioStop?.addEventListener('click', () => {
       if (!audio.src) return;
       audio.pause();
       try { audio.currentTime = 0; } catch (_) {}
-      updateStatus('Stopped');
+      updateStatus('Stopped ⏹');
     });
 
     audio?.addEventListener('ended', () => updateStatus('Ended'));
@@ -201,11 +281,10 @@
     let scrollActive = false;
     let scrollRAF = null;
     let lastTs = null;
-    let speed = Number(scrollSpeedRange?.value || 80); // px per second
+    let speed = 80; // px per second
 
     function setSpeed(v) {
-      speed = Math.max(0, Math.min(1000, Number(v) || 0));
-      if (scrollSpeedRange) scrollSpeedRange.value = String(speed);
+      speed = Math.max(10, Math.min(300, Number(v) || 80));
       if (scrollSpeedVal) scrollSpeedVal.textContent = String(speed);
     }
 
@@ -233,11 +312,11 @@
       if (shouldStart && !scrollActive) {
         scrollActive = true;
         lastTs = null;
-        scrollToggle.textContent = 'Scroll Pause';
+        if (scrollToggle) scrollToggle.textContent = 'Pause Scroll';
         scrollRAF = requestAnimationFrame(step);
       } else if (!shouldStart && scrollActive) {
         scrollActive = false;
-        scrollToggle.textContent = 'Scroll Play';
+        if (scrollToggle) scrollToggle.textContent = 'Auto Scroll';
         if (scrollRAF) cancelAnimationFrame(scrollRAF);
         scrollRAF = null;
         lastTs = null;
@@ -252,10 +331,6 @@
 
     scrollFaster?.addEventListener('click', () => {
       setSpeed(speed + 10);
-    });
-
-    scrollSpeedRange?.addEventListener('input', (e) => {
-      setSpeed(e.target.value);
     });
 
     setSpeed(speed);

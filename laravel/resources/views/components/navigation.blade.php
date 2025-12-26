@@ -1,52 +1,74 @@
-<link rel="stylesheet" href="{{ asset('css/navigation.css') }}">
+<nav class="border-b">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center h-16">
+            <div class="flex items-center">
+                <!-- Logo -->
+                <div class="shrink-0">
+                    <a href="{{ Auth::check() ? route('dashboard') : url('/') }}">
+                        <x-application-logo class="block h-8 w-auto fill-current text-gray-900" />
+                    </a>
+                </div>
 
-@php
-    $links = [
-        ['href' => url('/crossword'), 'label' => 'Crossword', 'pattern' => 'crossword'],
-        ['href' => url('/reader'), 'label' => 'Reader', 'pattern' => 'reader'],
-        ['href' => url('/bilinguals/en/ru/simulator'), 'label' => 'Simulator', 'pattern' => 'bilinguals/en/ru/simulator'],
-    ];
-    $navId = 'nav-' . uniqid();
-@endphp
-
-<div class="nav-component">
-    <button type="button" class="nav-toggle-btn" onclick="document.getElementById('{{ $navId }}').classList.toggle('nav-menu-open')">
-        <span class="nav-hamburger">
-            <span></span>
-            <span></span>
-            <span></span>
-        </span>
-        Menu
-    </button>
-    
-    <nav id="{{ $navId }}" class="nav-menu">
-        <div class="nav-links-container">
-            @foreach ($links as $link)
-                @php($active = request()->is($link['pattern']))
-                <a href="{{ $link['href'] }}"
-                   @if($active) aria-current="page" @endif
-                   class="nav-link {{ $active ? 'nav-link-active' : 'nav-link-inactive' }}">
-                    {{ $link['label'] }}
-                </a>
-            @endforeach
-        </div>
-
-        @if (trim($slot ?? '') !== '')
-            <div class="nav-slot-container">
-                {{ $slot }}
+                <!-- Navigation Links -->
+                @auth
+                    <div class="flex space-x-6 ml-8">
+                        <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
+                            {{ __('Dashboard') }}
+                        </x-nav-link>
+                        <x-nav-link :href="route('crossword')" :active="request()->routeIs('crossword')">
+                            {{ __('Crossword') }}
+                        </x-nav-link>
+                        <x-nav-link :href="route('reader')" :active="request()->routeIs('reader')">
+                            {{ __('Reader') }}
+                        </x-nav-link>
+                        <x-nav-link :href="route('bilinguals.simulator')" :active="request()->routeIs('bilinguals.simulator')">
+                            {{ __('Bilinguals') }}
+                        </x-nav-link>
+                    </div>
+                @endauth
             </div>
-        @endif
-    </nav>
-</div>
 
-<script>
-    // Close menu when clicking outside
-    document.addEventListener('click', function(event) {
-        const navComponent = event.target.closest('.nav-component');
-        if (!navComponent) {
-            document.querySelectorAll('.nav-menu').forEach(menu => {
-                menu.classList.remove('nav-menu-open');
-            });
-        }
-    });
-</script>
+            <!-- Settings Dropdown -->
+            <div class="flex items-center">
+                @auth
+                    <x-dropdown align="right" width="48">
+                        <x-slot name="trigger">
+                            <button class="flex items-center text-sm text-gray-600 hover:text-gray-900">
+                                <span>{{ Auth::user()->name }}</span>
+                                <svg class="ml-1 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                </svg>
+                            </button>
+                        </x-slot>
+
+                        <x-slot name="content">
+                            <x-dropdown-link :href="route('profile.edit')">
+                                {{ __('Profile') }}
+                            </x-dropdown-link>
+
+                            <form method="POST" action="{{ route('logout') }}">
+                                @csrf
+                                <x-dropdown-link :href="route('logout')"
+                                        onclick="event.preventDefault();
+                                                    this.closest('form').submit();">
+                                    {{ __('Log Out') }}
+                                </x-dropdown-link>
+                            </form>
+                        </x-slot>
+                    </x-dropdown>
+                @else
+                    <div class="flex items-center space-x-4">
+                        <a href="{{ route('login') }}" class="text-sm text-gray-600 hover:text-gray-900">
+                            {{ __('Log in') }}
+                        </a>
+                        @if (Route::has('register'))
+                            <a href="{{ route('register') }}" class="text-sm text-gray-600 hover:text-gray-900">
+                                {{ __('Register') }}
+                            </a>
+                        @endif
+                    </div>
+                @endauth
+            </div>
+        </div>
+    </div>
+</nav>

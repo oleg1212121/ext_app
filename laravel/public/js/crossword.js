@@ -83,15 +83,15 @@
                 {id: 7, name: 'Native'}
             ],
             currentLevel: 7,
-            textes: [],
+            texts: [],
             currentText: '',
             currentWord: '',
             solvedWords: [],
             async init() {
-                this.getTextes()
+                this.getTexts()
             },
-            async getTextes(){
-                await fetch("/get-textes", {
+            async getTexts(){
+                await fetch("/get-texts", {
                     method: "GET",
                     headers: {
                         "Content-type": "application/json;",
@@ -100,9 +100,9 @@
                 .then((response) => response.json())
                 .then((response) => {
 
-                    this.textes = response.data.textes;
-                    // console.log(response.data.textes)
-                    this.currentText = this.textes[0]['id']
+                    this.texts = response.data.texts;
+                    // console.log(response.data.texts)
+                    this.currentText = this.texts[0]['id']
                 })
                 .catch((error) => {
                     console.error("Error:", error);
@@ -407,7 +407,7 @@
                 })
                 .then((response) => response)
                 .then((response) => {
-                    // this.textes = response.data.textes;
+                    // this.texts = response.data.texts;
 
                 })
                 .catch((error) => {
@@ -430,7 +430,7 @@
                 })
                 .then((response) => response)
                 .then((response) => {
-                    // this.textes = response.data.textes;
+                    // this.texts = response.data.texts;
 
                 })
                 .catch((error) => {

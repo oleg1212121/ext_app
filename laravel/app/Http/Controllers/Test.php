@@ -28,7 +28,7 @@ class Test extends Controller
 
     public function reader()
     {
-        $folder = public_path("textes");
+        $folder = public_path("texts");
         $title = "the_book_thief_4";
         $filename1 = "/{$title}_en.txt";
         $filename2 = "/{$title}_ru.txt";
@@ -69,7 +69,7 @@ class Test extends Controller
 
     public function buildBilingualText(){
 
-        $folder = public_path("textes");
+        $folder = public_path("texts");
         $title = "the_book_thief_4";
         $filename1 = "/{$title}_en.txt";
         $filename2 = "/{$title}_ru.txt";
@@ -173,16 +173,16 @@ class Test extends Controller
         );
     }
 
-    public function getTextes()
+    public function getTexts()
     {
-        $textes = Book::select('id', 'name')
+        $texts = Book::select('id', 'name')
         ->limit(100)
         ->get();
 
         return response()->json(
             [
                 'data' => [
-                    'textes' => $textes
+                    'texts' => $texts
                 ]
             ],
             200,

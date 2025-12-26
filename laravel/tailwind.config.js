@@ -1,22 +1,12 @@
-import defaultTheme from 'tailwindcss/defaultTheme';
-import forms from '@tailwindcss/forms';
+// Tailwind CSS v4 uses CSS-based configuration via @theme directive
+// Content paths are specified using @source in app.css
+// Plugins are added using @plugin in app.css
+// This file can be removed or kept minimal for compatibility
 
 /** @type {import('tailwindcss').Config} */
 export default {
-    content: [
-        './vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php',
-        './storage/framework/views/*.php',
-        './resources/views/**/*.blade.php',
-        './resources/**/*.js',
-    ],
-
-    theme: {
-        extend: {
-            fontFamily: {
-                sans: ['Figtree', ...defaultTheme.fontFamily.sans],
-            },
-        },
-    },
-
-    plugins: [forms],
+    // All configuration is now in resources/css/app.css
+    // - Content paths: @source directives
+    // - Theme customization: @theme directive
+    // - Plugins: @plugin directive
 };

@@ -9,7 +9,7 @@
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.bunny.net">
-    <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
+    <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet"/>
 
     {{-- @livewireStyles --}}
     <!-- Styles / Scripts -->
@@ -17,10 +17,10 @@
         @vite([
             'resources/css/app.css',
             'resources/js/app.js',
-            // 'resources/css/crossword.css',
+//            'resources/css/crossword.css',
         ])
     @else
-        {{-- <style>
+        <style>
             /*! tailwindcss v4.0.7 | MIT License | https://tailwindcss.com */
             @layer theme {
 
@@ -293,21 +293,21 @@
                     --container-6xl: 72rem;
                     --container-7xl: 80rem;
                     --text-xs: .75rem;
-                    --text-xs--line-height: calc(1/.75);
+                    --text-xs--line-height: calc(1 / .75);
                     --text-sm: .875rem;
-                    --text-sm--line-height: calc(1.25/.875);
+                    --text-sm--line-height: calc(1.25 / .875);
                     --text-base: 1rem;
                     --text-base--line-height: 1.5;
                     --text-lg: 1.125rem;
-                    --text-lg--line-height: calc(1.75/1.125);
+                    --text-lg--line-height: calc(1.75 / 1.125);
                     --text-xl: 1.25rem;
-                    --text-xl--line-height: calc(1.75/1.25);
+                    --text-xl--line-height: calc(1.75 / 1.25);
                     --text-2xl: 1.5rem;
-                    --text-2xl--line-height: calc(2/1.5);
+                    --text-2xl--line-height: calc(2 / 1.5);
                     --text-3xl: 1.875rem;
                     --text-3xl--line-height: 1.2;
                     --text-4xl: 2.25rem;
-                    --text-4xl--line-height: calc(2.5/2.25);
+                    --text-4xl--line-height: calc(2.5 / 2.25);
                     --text-5xl: 3rem;
                     --text-5xl--line-height: 1;
                     --text-6xl: 3.75rem;
@@ -366,8 +366,8 @@
                     --ease-out: cubic-bezier(0, 0, .2, 1);
                     --ease-in-out: cubic-bezier(.4, 0, .2, 1);
                     --animate-spin: spin 1s linear infinite;
-                    --animate-ping: ping 1s cubic-bezier(0, 0, .2, 1)infinite;
-                    --animate-pulse: pulse 2s cubic-bezier(.4, 0, .6, 1)infinite;
+                    --animate-ping: ping 1s cubic-bezier(0, 0, .2, 1) infinite;
+                    --animate-pulse: pulse 2s cubic-bezier(.4, 0, .6, 1) infinite;
                     --animate-bounce: bounce 1s infinite;
                     --blur-xs: 4px;
                     --blur-sm: 8px;
@@ -678,7 +678,7 @@
                 }
 
                 .inset-0 {
-                    inset: calc(var(--spacing)*0)
+                    inset: calc(var(--spacing) * 0)
                 }
 
                 .-mt-\[4\.9rem\] {
@@ -690,23 +690,23 @@
                 }
 
                 .mb-1 {
-                    margin-bottom: calc(var(--spacing)*1)
+                    margin-bottom: calc(var(--spacing) * 1)
                 }
 
                 .mb-2 {
-                    margin-bottom: calc(var(--spacing)*2)
+                    margin-bottom: calc(var(--spacing) * 2)
                 }
 
                 .mb-4 {
-                    margin-bottom: calc(var(--spacing)*4)
+                    margin-bottom: calc(var(--spacing) * 4)
                 }
 
                 .mb-6 {
-                    margin-bottom: calc(var(--spacing)*6)
+                    margin-bottom: calc(var(--spacing) * 6)
                 }
 
                 .-ml-8 {
-                    margin-left: calc(var(--spacing)*-8)
+                    margin-left: calc(var(--spacing) * -8)
                 }
 
                 .flex {
@@ -734,35 +734,35 @@
                 }
 
                 .h-1 {
-                    height: calc(var(--spacing)*1)
+                    height: calc(var(--spacing) * 1)
                 }
 
                 .h-1\.5 {
-                    height: calc(var(--spacing)*1.5)
+                    height: calc(var(--spacing) * 1.5)
                 }
 
                 .h-2 {
-                    height: calc(var(--spacing)*2)
+                    height: calc(var(--spacing) * 2)
                 }
 
                 .h-2\.5 {
-                    height: calc(var(--spacing)*2.5)
+                    height: calc(var(--spacing) * 2.5)
                 }
 
                 .h-3 {
-                    height: calc(var(--spacing)*3)
+                    height: calc(var(--spacing) * 3)
                 }
 
                 .h-3\.5 {
-                    height: calc(var(--spacing)*3.5)
+                    height: calc(var(--spacing) * 3.5)
                 }
 
                 .h-14 {
-                    height: calc(var(--spacing)*14)
+                    height: calc(var(--spacing) * 14)
                 }
 
                 .h-14\.5 {
-                    height: calc(var(--spacing)*14.5)
+                    height: calc(var(--spacing) * 14.5)
                 }
 
                 .min-h-screen {
@@ -770,27 +770,27 @@
                 }
 
                 .w-1 {
-                    width: calc(var(--spacing)*1)
+                    width: calc(var(--spacing) * 1)
                 }
 
                 .w-1\.5 {
-                    width: calc(var(--spacing)*1.5)
+                    width: calc(var(--spacing) * 1.5)
                 }
 
                 .w-2 {
-                    width: calc(var(--spacing)*2)
+                    width: calc(var(--spacing) * 2)
                 }
 
                 .w-2\.5 {
-                    width: calc(var(--spacing)*2.5)
+                    width: calc(var(--spacing) * 2.5)
                 }
 
                 .w-3 {
-                    width: calc(var(--spacing)*3)
+                    width: calc(var(--spacing) * 3)
                 }
 
                 .w-3\.5 {
-                    width: calc(var(--spacing)*3.5)
+                    width: calc(var(--spacing) * 3.5)
                 }
 
                 .w-\[448px\] {
@@ -818,12 +818,12 @@
                 }
 
                 .translate-y-0 {
-                    --tw-translate-y: calc(var(--spacing)*0);
-                    translate: var(--tw-translate-x)var(--tw-translate-y)
+                    --tw-translate-y: calc(var(--spacing) * 0);
+                    translate: var(--tw-translate-x) var(--tw-translate-y)
                 }
 
                 .transform {
-                    transform: var(--tw-rotate-x)var(--tw-rotate-y)var(--tw-rotate-z)var(--tw-skew-x)var(--tw-skew-y)
+                    transform: var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)
                 }
 
                 .flex-col {
@@ -847,17 +847,17 @@
                 }
 
                 .gap-3 {
-                    gap: calc(var(--spacing)*3)
+                    gap: calc(var(--spacing) * 3)
                 }
 
                 .gap-4 {
-                    gap: calc(var(--spacing)*4)
+                    gap: calc(var(--spacing) * 4)
                 }
 
                 :where(.space-x-1>:not(:last-child)) {
                     --tw-space-x-reverse: 0;
-                    margin-inline-start: calc(calc(var(--spacing)*1)*var(--tw-space-x-reverse));
-                    margin-inline-end: calc(calc(var(--spacing)*1)*calc(1 - var(--tw-space-x-reverse)))
+                    margin-inline-start: calc(calc(var(--spacing) * 1) * var(--tw-space-x-reverse));
+                    margin-inline-end: calc(calc(var(--spacing) * 1) * calc(1 - var(--tw-space-x-reverse)))
                 }
 
                 .overflow-hidden {
@@ -927,27 +927,27 @@
                 }
 
                 .p-6 {
-                    padding: calc(var(--spacing)*6)
+                    padding: calc(var(--spacing) * 6)
                 }
 
                 .px-5 {
-                    padding-inline: calc(var(--spacing)*5)
+                    padding-inline: calc(var(--spacing) * 5)
                 }
 
                 .py-1 {
-                    padding-block: calc(var(--spacing)*1)
+                    padding-block: calc(var(--spacing) * 1)
                 }
 
                 .py-1\.5 {
-                    padding-block: calc(var(--spacing)*1.5)
+                    padding-block: calc(var(--spacing) * 1.5)
                 }
 
                 .py-2 {
-                    padding-block: calc(var(--spacing)*2)
+                    padding-block: calc(var(--spacing) * 2)
                 }
 
                 .pb-12 {
-                    padding-bottom: calc(var(--spacing)*12)
+                    padding-bottom: calc(var(--spacing) * 12)
                 }
 
                 .text-sm {
@@ -1014,11 +1014,11 @@
                 }
 
                 .\!filter {
-                    filter: var(--tw-blur, )var(--tw-brightness, )var(--tw-contrast, )var(--tw-grayscale, )var(--tw-hue-rotate, )var(--tw-invert, )var(--tw-saturate, )var(--tw-sepia, )var(--tw-drop-shadow, ) !important
+                    filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,) !important
                 }
 
                 .filter {
-                    filter: var(--tw-blur, )var(--tw-brightness, )var(--tw-contrast, )var(--tw-grayscale, )var(--tw-hue-rotate, )var(--tw-invert, )var(--tw-saturate, )var(--tw-sepia, )var(--tw-drop-shadow, )
+                    filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)
                 }
 
                 .transition-all {
@@ -1053,7 +1053,7 @@
 
                 .before\:top-0:before {
                     content: var(--tw-content);
-                    top: calc(var(--spacing)*0)
+                    top: calc(var(--spacing) * 0)
                 }
 
                 .before\:top-1\/2:before {
@@ -1063,7 +1063,7 @@
 
                 .before\:bottom-0:before {
                     content: var(--tw-content);
-                    bottom: calc(var(--spacing)*0)
+                    bottom: calc(var(--spacing) * 0)
                 }
 
                 .before\:bottom-1\/2:before {
@@ -1087,7 +1087,7 @@
                     border-color: #e3e3e0
                 }
 
-                @media (hover:hover) {
+                @media (hover: hover) {
                     .hover\:border-\[\#1915014a\]:hover {
                         border-color: #1915014a
                     }
@@ -1105,17 +1105,17 @@
                     }
                 }
 
-                @media (width>=64rem) {
+                @media (width >= 64rem) {
                     .lg\:-mt-\[6\.6rem\] {
                         margin-top: -6.6rem
                     }
 
                     .lg\:mb-0 {
-                        margin-bottom: calc(var(--spacing)*0)
+                        margin-bottom: calc(var(--spacing) * 0)
                     }
 
                     .lg\:mb-6 {
-                        margin-bottom: calc(var(--spacing)*6)
+                        margin-bottom: calc(var(--spacing) * 6)
                     }
 
                     .lg\:-ml-px {
@@ -1123,7 +1123,7 @@
                     }
 
                     .lg\:ml-0 {
-                        margin-left: calc(var(--spacing)*0)
+                        margin-left: calc(var(--spacing) * 0)
                     }
 
                     .lg\:block {
@@ -1173,15 +1173,15 @@
                     }
 
                     .lg\:p-8 {
-                        padding: calc(var(--spacing)*8)
+                        padding: calc(var(--spacing) * 8)
                     }
 
                     .lg\:p-20 {
-                        padding: calc(var(--spacing)*20)
+                        padding: calc(var(--spacing) * 20)
                     }
                 }
 
-                @media (prefers-color-scheme:dark) {
+                @media (prefers-color-scheme: dark) {
                     .dark\:block {
                         display: block
                     }
@@ -1248,7 +1248,7 @@
                         border-color: #3e3e3a
                     }
 
-                    @media (hover:hover) {
+                    @media (hover: hover) {
                         .dark\:hover\:border-\[\#3E3E3A\]:hover {
                             border-color: #3e3e3a
                         }
@@ -1269,15 +1269,15 @@
 
                 @starting-style {
                     .starting\:translate-y-4 {
-                        --tw-translate-y: calc(var(--spacing)*4);
-                        translate: var(--tw-translate-x)var(--tw-translate-y)
+                        --tw-translate-y: calc(var(--spacing) * 4);
+                        translate: var(--tw-translate-x) var(--tw-translate-y)
                     }
                 }
 
                 @starting-style {
                     .starting\:translate-y-6 {
-                        --tw-translate-y: calc(var(--spacing)*6);
-                        translate: var(--tw-translate-x)var(--tw-translate-y)
+                        --tw-translate-y: calc(var(--spacing) * 6);
+                        translate: var(--tw-translate-x) var(--tw-translate-y)
                     }
                 }
 
@@ -1520,18 +1520,18 @@
                 inherits: false;
                 initial-value: ""
             }
-        </style> --}}
+        </style>
+        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     @endif
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link href="{{ asset('css/crossword.css') }}" rel="stylesheet" type="text/css">
     @stack('styles')
-    {{-- <script src="/livewire/livewire.js"></script> --}}
     <script src="{{ asset('js/crossword.js') }}"></script>
+    {{-- <script src="/livewire/livewire.js"></script> --}}
 </head>
-<body class="h-full">
+<body class="font-sans antialiased h-full">
 
-    <x-navigation></x-navigation>
-    {{ $slot }}
+@include('layouts.navigation')
+{{ $slot }}
 
 </body>
 

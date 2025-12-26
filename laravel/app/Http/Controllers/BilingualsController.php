@@ -5,13 +5,17 @@ namespace App\Http\Controllers;
 use App\Classes\Gemini;
 use App\Classes\HuggingFace;
 use App\Classes\OpenRouter;
+use App\Classes\Groq;
+use App\Classes\Cohere;
+use App\Classes\Perplexity;
 use App\Classes\Parser;
 use App\Http\Requests\AiQuestionRequest;
 use App\Http\Requests\DictionaryInteractionsSaveRequest;
 use App\Http\Requests\DictionarySelectionSaveRequest;
-use App\Http\Requests\GetTextesRequest;
+use App\Http\Requests\GetTextsRequest;
 use App\Http\Requests\TextRequest;
 use App\Models\SavedPhrase;
+use App\Models\User;
 use App\Models\Word;
 use Exception;
 use Illuminate\Http\Request;
@@ -26,15 +30,14 @@ class BilingualsController extends Controller
         return view('simulator');
     }
 
-    public function getTextes(GetTextesRequest $request)
+    public function getTexts(GetTextsRequest $request)
     {
         $result = [
             'names' => []
         ];
         $status = 200;
-
         try {
-            $directory = public_path() . '/textes/simulator';
+            $directory = public_path() . '/texts/simulator';
 
             if (!is_dir($directory)) {
                 throw new Exception('Directory not found');
@@ -47,7 +50,7 @@ class BilingualsController extends Controller
 
             foreach ($iterator as $file) {
                 if ($file->isFile()) {
-                    $str = '/var/www/public/textes/simulator/';
+                    $str = '/var/www/public/texts/simulator/';
                     $name = $file->getPathname();
                     if(str_contains($name, ':Zone.Identifier')) continue;
                     $name = str_replace($str, '', $name);
@@ -84,7 +87,7 @@ class BilingualsController extends Controller
         $isRus = false;
 
         $filename = $request->get('filename', null);
-        $filename = public_path('textes/simulator/' . $filename);
+        $filename = public_path('texts/simulator/' . $filename);
 
         if (file_exists($filename)) {
             $fd = fopen($filename, 'r');
@@ -142,10 +145,15 @@ class BilingualsController extends Controller
         $instruction = $request->get('question', null);
         $model = $request->get('model', null);
 
+        $ai = new Cohere();
+        $ai = new Perplexity();
+        $ai = new Groq();
         $ai = new Gemini();
         $ai = new OpenRouter();
         $ai = new HuggingFace();
+
         $answer = $ai->askForContext($instruction, $prompt, $model);
+        // $answer = $ai->askForContext($instruction, $prompt, $model);
         $data = [
             'answer' => $answer,
             'code' => $status

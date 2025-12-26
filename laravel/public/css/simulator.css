@@ -45,7 +45,7 @@ button.mnemonic_button {
 .page_container {
     display: flex;
     flex-direction: row;
-    height: 96vh;
+    height: 88vh;
     overflow: hidden;
     font-size: 0;
     /* flex-flow: row wrap; */
@@ -148,11 +148,9 @@ textarea {
     font-size: 0.8rem;
 }
 #workplace_textarea {
-    font-size: 1rem;
     max-height: 45vh;
 }
 #question_textarea {
-    font-size: 0.8rem;
     max-height: 20vh;
 }
  select {
@@ -193,7 +191,6 @@ input:focus {
     overflow: scroll;
     height: 96%;
     padding: 5px 2px 0 2px;
-    font-size: 1rem;
 }
 #mnemonic_span {
     width: 100%;
@@ -342,8 +339,8 @@ tr.row {
     user-select: none;
 }
 input[type='checkbox'] {
-    width: 0.9rem;
-    height: 0.9rem;
+    width: 30px;
+    height: 30px;
 }
 .hide {
     display: none;

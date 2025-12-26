@@ -60,7 +60,7 @@
             "Qwen/Qwen3-235B-A22B:novita",
             "Qwen/Qwen3-Next-80B-A3B-Thinking:novita",
             "meta-llama/Meta-Llama-3-70B-Instruct:novita",
-            "Sao10K/L3-8B-Stheno-v3.2:novita",        
+            "Sao10K/L3-8B-Stheno-v3.2:novita",
             "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:novita",
             "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B:novita",
             "MiniMaxAI/MiniMax-M1-80k:novita",
@@ -77,7 +77,7 @@
             "Qwen/Qwen2.5-72B-Instruct:novita",
             "deepseek-ai/DeepSeek-Prover-V2-671B:novita",
             "baidu/ERNIE-4.5-300B-A47B-Base-PT:novita",
-            "baidu/ERNIE-4.5-0.3B-PT:novita" 
+            "baidu/ERNIE-4.5-0.3B-PT:novita"
           ],
           rows: [
             ["english part", "russian part"],
@@ -90,7 +90,8 @@
         //   object: { field: {} },
           pep: false,
           init() {
-            fetch("/get-textes", {
+            this.updateResizeableFontSizes();
+            fetch("/get-texts", {
               method: "POST",
               body: JSON.stringify({}),
               headers: {
@@ -154,14 +155,14 @@
             tArea.focus();
           },
           changingWidth(direct, varName) {
-            if (direct == "+") {
-              if (varName == "middleColumnWidth") {
+            if (direct === "+") {
+              if (varName === "middleColumnWidth") {
                 this.middleColumnWidth += 4;
               } else {
                 this.rightColumnWidth += 4;
               }
             } else {
-              if (varName == "middleColumnWidth") {
+              if (varName === "middleColumnWidth") {
                 this.middleColumnWidth -= 4;
               } else {
                 this.rightColumnWidth -= 4;
@@ -169,10 +170,22 @@
             }
           },
           changeFontSize(direct) {
-            if (direct == "+") {
+            if (direct === "+") {
               this.fontSize += 2;
             } else {
               this.fontSize -= 2;
+            }
+            this.updateResizeableFontSizes();
+          },
+          updateResizeableFontSizes() {
+            const styleElement = document.getElementById('resizeable-font-styles');
+            if (styleElement) {
+              const baseSize = this.fontSize;
+              styleElement.textContent = `
+                .resizeable_element {
+                    font-size: ${baseSize}px;
+                }
+              `;
             }
           },
           ask(item) {

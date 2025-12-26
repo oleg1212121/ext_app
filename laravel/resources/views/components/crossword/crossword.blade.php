@@ -26,11 +26,11 @@
             </div>
         </div>
         <div class='menu flex flex-row'>
-            <div class='textes_select'>
+            <div class='texts_select'>
                 <select name="" id="" class="select_text" x-model="currentText"
 
                 >
-                    <template x-for="text in textes">
+                    <template x-for="text in texts">
                         <option x-text="text.name" :value="text.id"></option>
                     </template>
                 </select>

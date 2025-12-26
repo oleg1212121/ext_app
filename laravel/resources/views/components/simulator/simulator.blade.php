@@ -79,13 +79,13 @@
                 <table class="table">
                     <thead>
                         <tr class="header">
-                            <th class="left item">
+                            <th class="left item resizeable_element">
                                 English <input type="checkbox" class="all_en" id="all_en" />
                             </th>
-                            <th class="mid item">En</th>
-                            <th class="mid item">N</th>
-                            <th class="mid item">Ru</th>
-                            <th class="right item">
+                            <th class="mid item  resizeable_element">En</th>
+                            <th class="mid item  resizeable_element">N</th>
+                            <th class="mid item  resizeable_element">Ru</th>
+                            <th class="right item  resizeable_element">
                                 Russian <input type="checkbox" class="all_ru" id="all_ru" />
                             </th>
                         </tr>
@@ -96,22 +96,22 @@
                                 <td class="left item hide_en">
                                     <div class="cell_container">
                                         <div class="text_container">
-                                            <span class="eng content" x-text="item[0]"></span>
+                                            <span class="eng content  resizeable_element" x-text="item[0]"></span>
                                         </div>
                                         <div class="buttons_container"></div>
                                     </div>
                                 </td>
-                                <td class="mid item">
-                                    <input @click="memorizeSentence(index)" type="checkbox" class="check_en" />
+                                <td class="mid item ">
+                                    <input @click="memorizeSentence(index)" type="checkbox" class="check_en  hover:cursor-pointer" />
                                 </td>
-                                <td class="mid item" x-text="index"></td>
-                                <td class="mid item">
-                                    <input type="checkbox" class="check_ru" />
+                                <td class="mid item  resizeable_element" x-text="index"></td>
+                                <td class="mid item ">
+                                    <input type="checkbox" class="check_ru  hover:cursor-pointer" />
                                 </td>
-                                <td class="right item hide_ru">
+                                <td class="right item hide_ru ">
                                     <div class="cell_container">
                                         <div class="text_container">
-                                            <span class="rus content" x-text="item[1]"></span>
+                                            <span class="rus content  resizeable_element" x-text="item[1]"></span>
                                         </div>
                                         <div class="flex flex-row justify-start">
                                             <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white rounded p-1 text-center items-center hover:opacity-100 opacity-20"
@@ -169,66 +169,66 @@
                 <br />
                 <br />
             </div>
-            <div class="context_modal" x-show="contextModal">
-                <div class="mright_content" x-transition>
-                    <div class="input_class">
-                        <div>
-                            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded pushed"
-                                @click.prevent="createAnki()">
-                                +
-                            </div>
-                            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded pushed"
-                                @click.prevent="mnemonicSearch()">
-                                ?
-                            </div>
-                            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                                @click.prevent="contextModal = !contextModal">
-                                X
-                            </div>
-                        </div>
-                    </div>
-                    <div class="">
-                        <div class="input_class">
-                            <div id="search_button" type="button"
-                                class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                                @click.prevent="searching()">
-                                Search...
-                            </div>
+{{--            <div class="context_modal" x-show="contextModal">--}}
+{{--                <div class="mright_content" x-transition>--}}
+{{--                    <div class="input_class">--}}
+{{--                        <div>--}}
+{{--                            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded pushed"--}}
+{{--                                @click.prevent="createAnki()">--}}
+{{--                                +--}}
+{{--                            </div>--}}
+{{--                            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded pushed"--}}
+{{--                                @click.prevent="mnemonicSearch()">--}}
+{{--                                ?--}}
+{{--                            </div>--}}
+{{--                            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"--}}
+{{--                                @click.prevent="contextModal = !contextModal">--}}
+{{--                                X--}}
+{{--                            </div>--}}
+{{--                        </div>--}}
+{{--                    </div>--}}
+{{--                    <div class="">--}}
+{{--                        <div class="input_class">--}}
+{{--                            <div id="search_button" type="button"--}}
+{{--                                class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"--}}
+{{--                                @click.prevent="searching()">--}}
+{{--                                Search...--}}
+{{--                            </div>--}}
 
-                            <input type="text" class="" required x-model="word" />
-                        </div>
-                        <div class="input_class">
-                            <input type="text" class="" placeholder="Phonetics..."
-                                x-bind:value="phonetics" />
-                        </div>
-                    </div>
-                    <div class="">
-                        <div class="input_class">
-                            <hr />
-                            <span x-html="mnemonic" id="mnemonic_span"></span>
-                            <hr />
-                        </div>
-                    </div>
-                    <div class="">
-                        <div class="input_class">
-                            <textarea name="" id="" rows="15" class="" placeholder="Definitions..."
-                                x-text="definitions"></textarea>
-                        </div>
-                    </div>
-                    <div class="">
-                        <div class="input_class">
-                            <textarea name="" rows="12" class="" placeholder="Translations..." x-text="translations"></textarea>
-                        </div>
-                    </div>
-                </div>
-            </div>
+{{--                            <input type="text" class="" required x-model="word" />--}}
+{{--                        </div>--}}
+{{--                        <div class="input_class">--}}
+{{--                            <input type="text" class="" placeholder="Phonetics..."--}}
+{{--                                x-bind:value="phonetics" />--}}
+{{--                        </div>--}}
+{{--                    </div>--}}
+{{--                    <div class="">--}}
+{{--                        <div class="input_class">--}}
+{{--                            <hr />--}}
+{{--                            <span x-html="mnemonic" id="mnemonic_span"></span>--}}
+{{--                            <hr />--}}
+{{--                        </div>--}}
+{{--                    </div>--}}
+{{--                    <div class="">--}}
+{{--                        <div class="input_class">--}}
+{{--                            <textarea name="" id="" rows="15" class="" placeholder="Definitions..."--}}
+{{--                                x-text="definitions"></textarea>--}}
+{{--                        </div>--}}
+{{--                    </div>--}}
+{{--                    <div class="">--}}
+{{--                        <div class="input_class">--}}
+{{--                            <textarea name="" rows="12" class="" placeholder="Translations..." x-text="translations"></textarea>--}}
+{{--                        </div>--}}
+{{--                    </div>--}}
+{{--                </div>--}}
+{{--            </div>--}}
             <div class="control_bar" x-show="leftColumn">
                 <div x-show="showWorkplace" x-transition>
                     <textarea autocapitalize="on" rows="11" name="" id="workplace_textarea" x-ref="workplace"
-                        x-model="text" placeholder="Workplace..."></textarea>
+                        x-model="text" placeholder="Workplace..." class="resizeable_element">dddddddddddddddddddd</textarea>
                 </div>
                 <div x-show="showQuestion" x-transition>
-                    <textarea rows="4" name="" id="question_textarea" x-model="question" placeholder="Question..."></textarea>
+                    <textarea rows="4" name="" id="question_textarea" x-model="question" placeholder="Question..." class="resizeable_element"></textarea>
                 </div>
             </div>
         </div>
@@ -246,7 +246,7 @@
                         <span class="text-xs">></span>
                     </div>
                 </div>
-                <div x-html="aiAnswer" id="ai_answer_div"></div>
+                <div x-html="aiAnswer" id="ai_answer_div" class="resizeable_element"></div>
             </div>
         </div>
 
