@@ -35,7 +35,7 @@ laravel/.env.production
 laravel/.phpactor.json
 laravel/auth.json
 laravel/public/old_eng
-laravel/public/textes/*
+laravel/public/texts/*
 
 # wiktionary jsonl file 2.5gb
 laravel/public/kaikki_english*
@@ -61,3 +61,9 @@ laravel/public/raw-wiktextract-data.jsonl.gz:Zone.Identifier
 laravel/public/words_alpha.txt
 laravel/public/words_alpha.txt:Zone.Identifier
 laravel/resources/views/components/crossword/SELECT * FROM users;.pgsql
+backup11.sql
+CLAUDE.md
+laravel/CLAUDE.md
+.cursor
+laravel/.mcp.json
+laravel/boost-mcp-wrapper.sh
