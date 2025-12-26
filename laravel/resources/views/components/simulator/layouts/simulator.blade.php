@@ -1539,7 +1539,7 @@
     {{-- <script src="/livewire/livewire.js"></script> --}}
     {{-- <script src="{{ asset('js/simulator.js') }}"></script> --}}
 </head>
-<body class="font-sans antialiased h-full w-full overflow-hidden">
+<body class="font-sans antialiased h-full w-full overflow-hidden flex flex-col">
 
 @include('layouts.navigation')
 {{ $slot }}

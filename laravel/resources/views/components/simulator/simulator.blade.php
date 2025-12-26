@@ -1,127 +1,156 @@
-<div class="body w-full h-full  overflow-hidden"
+<div class="body w-full flex-1 flex flex-col overflow-hidden bg-orange-50"
 @mouseup.ctrl.alt="showSelectionModal()"
 @dblclick="memorizeHighlight()"
 @keydown.window="memorizeHighlight()"
 >
-    <div id="selection-modal" class="absolute bg-slate-300 z-50 p-1" x-show="pep">
-        <span @click="saveSelection()" class="px-1 cursor-pointer text-green-500 hover:bg-green-100">+</span>
-        <span class="cursor-pointer text-red-500 hover:bg-red-100" @click="pep = !pep">X</span>
+    <!-- Selection Modal -->
+    <div id="selection-modal" class="absolute bg-white shadow-lg rounded-md z-50 p-2 border border-gray-400" x-show="pep">
+        <span @click="saveSelection()" class="px-2 py-1 cursor-pointer text-emerald-600 hover:bg-emerald-50 rounded transition">+</span>
+        <span class="cursor-pointer px-2 py-1 text-gray-500 hover:bg-gray-100 rounded transition" @click="pep = !pep">×</span>
     </div>
-    <div class="flex flex-row justify-center">
-        <div class="flex flex-row justify-center">
-            <select class="bg-gray-50 border border-gray-300 text-gray-900 text-sm block w-full  pl-1 pr-5 py-1 "
-                x-model="selectedChat">
-                <template x-for="(item, index) in chats" :key="index">
-                    <option :value="item" x-text="item" :selected="item == selectedChat"></option>
-                </template>
-            </select>
-        </div>
-        <div class="flex flex-row justify-center">
-            <select class="bg-gray-50 border border-gray-300 text-gray-900 text-sm block w-full  pl-1 pr-5 py-1"
-                x-model="filename">
-                <template x-for="(item, index) in textsList" :key="index">
-                    <option :value="item" x-text="item" :selected="item == filename"></option>
-                </template>
-            </select>
-            <div id="search_button" type="button"
-                class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white  p-1 rounded"
-                @click.prevent="searchFile()">
-                S..
-            </div>
-        </div>
-        <div class="flex flex-row">
-            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                @click.prevent="changeFontSize('+')">
-                +
-            </div>
-            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                @click.prevent="changeFontSize('-')">
-                -
-            </div>
-        </div>
-        <div class="flex flex-row">
-            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                @click.prevent="showWorkplace = !showWorkplace" :class="{ pushed: showWorkplace }">
-                W..
-            </div>
-            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                @click.prevent="showQuestion = !showQuestion" :class="{ pushed: showQuestion }">
-                Q..
-            </div>
-            <div @click.prevent="leftColumn = ! leftColumn"
-                class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                :class="{ pushed: leftColumn }">
-                L..
-            </div>
-            <div @click.prevent="middleColumn = ! middleColumn"
-                class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                :class="{ pushed: middleColumn }">
-                M..
+
+    <!-- Top Toolbar - Fixed -->
+    <div class="flex-none bg-white border-b-2 border-gray-400 shadow-md">
+        <div class="flex items-center gap-3 px-4 py-3">
+            <!-- Chat Selection -->
+            <div class="flex items-center gap-2">
+                <select class="bg-gray-50 border border-gray-300 text-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-transparent transition"
+                    x-model="selectedChat">
+                    <template x-for="(item, index) in chats" :key="index">
+                        <option :value="item" x-text="item" :selected="item == selectedChat"></option>
+                    </template>
+                </select>
             </div>
 
+            <!-- Text Selection -->
+            <div class="flex items-center gap-2">
+                <select class="bg-gray-50 border border-gray-300 text-gray-700 text-sm rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-transparent transition"
+                    x-model="filename">
+                    <template x-for="(item, index) in textsList" :key="index">
+                        <option :value="item" x-text="item" :selected="item == filename"></option>
+                    </template>
+                </select>
+                <button type="button"
+                    class="px-3 py-1.5 bg-gray-700 hover:bg-gray-800 text-white text-sm rounded-md transition shadow-sm"
+                    @click.prevent="searchFile()">
+                    Load
+                </button>
+            </div>
+
+            <div class="h-6 w-px bg-gray-400"></div>
+
+            <!-- Font Size Controls -->
+            <div class="flex items-center gap-1">
+                <button class="w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition"
+                    @click.prevent="changeFontSize('+')">
+                    <span class="text-lg font-semibold">+</span>
+                </button>
+                <button class="w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition"
+                    @click.prevent="changeFontSize('-')">
+                    <span class="text-lg font-semibold">−</span>
+                </button>
+            </div>
+
+            <div class="h-6 w-px bg-gray-400"></div>
+
+            <!-- View Toggles -->
+            <div class="flex items-center gap-1">
+                <button class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition"
+                    @click.prevent="showWorkplace = !showWorkplace"
+                    :class="{ 'bg-gray-200 text-gray-800 ring-1 ring-gray-400': showWorkplace }">
+                    Workplace
+                </button>
+                <button class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition"
+                    @click.prevent="showQuestion = !showQuestion"
+                    :class="{ 'bg-gray-200 text-gray-800 ring-1 ring-gray-400': showQuestion }">
+                    Question
+                </button>
+                <button @click.prevent="leftColumn = !leftColumn"
+                    class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition"
+                    :class="{ 'bg-gray-200 text-gray-800 ring-1 ring-gray-400': leftColumn }">
+                    Text
+                </button>
+                <button @click.prevent="middleColumn = !middleColumn"
+                    class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition"
+                    :class="{ 'bg-gray-200 text-gray-800 ring-1 ring-gray-400': middleColumn }">
+                    AI
+                </button>
+            </div>
         </div>
     </div>
-    <div class="information_bar">
-        <div class="spinner" x-show="spinner" x-transition>
-            Process... Process... Process... Process... Process... Process...
-            Process... Process... Process... Process... Process... Process...
+    <!-- Information Bar - Fixed -->
+    <div class="flex-none z-40">
+        <div x-show="spinner" x-transition class="bg-gray-200 border-b-2 border-gray-400 px-4 py-2.5 text-sm text-gray-800 flex items-center gap-2 font-medium">
+            <svg class="animate-spin h-4 w-4 text-gray-800" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span>Processing...</span>
         </div>
-        <div x-show="isError" class="error" x-transition>
-            Error... Error... Error... Error... Error... Error... Error... Error...
-            Error... Error... Error... Error... Error... Error... Error... Error...
+        <div x-show="isError" x-transition class="bg-red-100 border-b-2 border-red-300 px-4 py-2.5 text-sm text-red-800 flex items-center gap-2 font-medium">
+            <svg class="h-4 w-4 text-red-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>An error occurred. Please try again.</span>
         </div>
     </div>
-    <div class="page_container"
+
+    <!-- Main Content Area - Scrollable Columns -->
+    <div class="flex-1 flex gap-0 overflow-hidden bg-orange-100"
     {{-- @mouseup.ctrl.slash.debounce.100="contextModalShow()" --}}
     >
-        <div class="left_column">
-            <div class="left_content" x-show="leftColumn">
-                <table class="table">
-                    <thead>
-                        <tr class="header">
-                            <th class="left item resizeable_element">
-                                English <input type="checkbox" class="all_en" id="all_en" />
+        <!-- Left Column: Bilingual Text -->
+        <div x-show="leftColumn" x-transition class="flex-1 flex flex-col bg-orange-50 border-r-2 border-gray-400 overflow-hidden shadow-sm">
+            <div class="flex-1 overflow-y-auto bg-white pb-5">
+                <table class="table w-full">
+                    <thead class="sticky top-0 bg-gray-100 border-b-2 border-gray-400 z-10 shadow-sm">
+                        <tr class="text-sm font-semibold text-gray-800">
+                            <th class="px-4 py-3 text-left">
+                                <div class="flex items-center gap-2">
+                                    <span>English</span>
+                                    <input type="checkbox" class="all_en w-4 h-4 text-gray-700 rounded border-gray-300 focus:ring-gray-600" id="all_en" />
+                                </div>
                             </th>
-                            <th class="mid item  resizeable_element">En</th>
-                            <th class="mid item  resizeable_element">N</th>
-                            <th class="mid item  resizeable_element">Ru</th>
-                            <th class="right item  resizeable_element">
-                                Russian <input type="checkbox" class="all_ru" id="all_ru" />
+                            <th class="px-2 py-3 text-center w-12">EN</th>
+                            <th class="px-2 py-3 text-center w-12">#</th>
+                            <th class="px-2 py-3 text-center w-12">RU</th>
+                            <th class="px-4 py-3 text-left">
+                                <div class="flex items-center gap-2">
+                                    <span>Russian</span>
+                                    <input type="checkbox" class="all_ru w-4 h-4 text-gray-700 rounded border-gray-300 focus:ring-gray-600" id="all_ru" />
+                                </div>
                             </th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody class="divide-y divide-gray-200">
                         <template x-for="(item, index) in rows" :key="index">
-                            <tr class="row hover:bg-orange-50 cursor-pointer">
-                                <td class="left item hide_en">
-                                    <div class="cell_container">
-                                        <div class="text_container">
-                                            <span class="eng content  resizeable_element" x-text="item[0]"></span>
-                                        </div>
-                                        <div class="buttons_container"></div>
+                            <tr class="row hover:bg-gray-50 transition group">
+                                <td class="px-4 py-3 hide_en">
+                                    <div class="flex flex-col gap-1">
+                                        <span class="eng content resizeable_element text-gray-800" x-text="item[0]"></span>
                                     </div>
                                 </td>
-                                <td class="mid item ">
-                                    <input @click="memorizeSentence(index)" type="checkbox" class="check_en  hover:cursor-pointer" />
+                                <td class="px-2 py-3 text-center">
+                                    <input @click="memorizeSentence(index)" type="checkbox"
+                                        class="check_en w-4 h-4 text-gray-700 rounded border-gray-300 focus:ring-gray-600 cursor-pointer" />
                                 </td>
-                                <td class="mid item  resizeable_element" x-text="index"></td>
-                                <td class="mid item ">
-                                    <input type="checkbox" class="check_ru  hover:cursor-pointer" />
+                                <td class="px-2 py-3 text-center text-sm text-gray-500 resizeable_element" x-text="index"></td>
+                                <td class="px-2 py-3 text-center">
+                                    <input type="checkbox"
+                                        class="check_ru w-4 h-4 text-gray-700 rounded border-gray-300 focus:ring-gray-600 cursor-pointer" />
                                 </td>
-                                <td class="right item hide_ru ">
-                                    <div class="cell_container">
-                                        <div class="text_container">
-                                            <span class="rus content  resizeable_element" x-text="item[1]"></span>
-                                        </div>
-                                        <div class="flex flex-row justify-start">
-                                            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white rounded p-1 text-center items-center hover:opacity-100 opacity-20"
+                                <td class="px-4 py-3 hide_ru">
+                                    <div class="flex flex-col gap-2">
+                                        <span class="rus content resizeable_element text-gray-800" x-text="item[1]"></span>
+                                        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                            <button class="px-2 py-1 bg-gray-700 hover:bg-gray-800 text-white text-xs rounded transition"
                                                 @click.prevent="openWorkplace()">
-                                                <span>Open</span>
-                                            </div>
-                                            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded text-center items-center  hover:opacity-100 opacity-20"
+                                                Open
+                                            </button>
+                                            <button class="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded transition"
                                                 @click.prevent="ask(item)">
-                                                <span>Ask</span>
-                                            </div>
+                                                Ask
+                                            </button>
                                         </div>
                                     </div>
                                 </td>
@@ -129,189 +158,115 @@
                         </template>
                     </tbody>
                 </table>
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
-                <br />
             </div>
-{{--            <div class="context_modal" x-show="contextModal">--}}
-{{--                <div class="mright_content" x-transition>--}}
-{{--                    <div class="input_class">--}}
-{{--                        <div>--}}
-{{--                            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded pushed"--}}
-{{--                                @click.prevent="createAnki()">--}}
-{{--                                +--}}
-{{--                            </div>--}}
-{{--                            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded pushed"--}}
-{{--                                @click.prevent="mnemonicSearch()">--}}
-{{--                                ?--}}
-{{--                            </div>--}}
-{{--                            <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"--}}
-{{--                                @click.prevent="contextModal = !contextModal">--}}
-{{--                                X--}}
-{{--                            </div>--}}
-{{--                        </div>--}}
-{{--                    </div>--}}
-{{--                    <div class="">--}}
-{{--                        <div class="input_class">--}}
-{{--                            <div id="search_button" type="button"--}}
-{{--                                class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"--}}
-{{--                                @click.prevent="searching()">--}}
-{{--                                Search...--}}
-{{--                            </div>--}}
 
-{{--                            <input type="text" class="" required x-model="word" />--}}
-{{--                        </div>--}}
-{{--                        <div class="input_class">--}}
-{{--                            <input type="text" class="" placeholder="Phonetics..."--}}
-{{--                                x-bind:value="phonetics" />--}}
-{{--                        </div>--}}
-{{--                    </div>--}}
-{{--                    <div class="">--}}
-{{--                        <div class="input_class">--}}
-{{--                            <hr />--}}
-{{--                            <span x-html="mnemonic" id="mnemonic_span"></span>--}}
-{{--                            <hr />--}}
-{{--                        </div>--}}
-{{--                    </div>--}}
-{{--                    <div class="">--}}
-{{--                        <div class="input_class">--}}
-{{--                            <textarea name="" id="" rows="15" class="" placeholder="Definitions..."--}}
-{{--                                x-text="definitions"></textarea>--}}
-{{--                        </div>--}}
-{{--                    </div>--}}
-{{--                    <div class="">--}}
-{{--                        <div class="input_class">--}}
-{{--                            <textarea name="" rows="12" class="" placeholder="Translations..." x-text="translations"></textarea>--}}
-{{--                        </div>--}}
-{{--                    </div>--}}
-{{--                </div>--}}
-{{--            </div>--}}
-            <div class="control_bar" x-show="leftColumn">
-                <div x-show="showWorkplace" x-transition>
-                    <textarea autocapitalize="on" rows="11" name="" id="workplace_textarea" x-ref="workplace"
-                        x-model="text" placeholder="Workplace..." class="resizeable_element">dddddddddddddddddddd</textarea>
+            <!-- Bottom Control Bar - Fixed at bottom of viewport -->
+            <div class="flex-none border-t-2 border-gray-400 bg-orange-50 shadow-lg max-h-[40vh] overflow-y-auto pb-5">
+                <div x-show="showWorkplace" x-transition class="p-3 border-b border-gray-300">
+                    <label class="block text-xs font-semibold text-gray-700 mb-1.5">Workplace</label>
+                    <textarea autocapitalize="on" rows="5" name="" id="workplace_textarea" x-ref="workplace"
+                        x-model="text" placeholder="Type here..."
+                        class="resizeable_element w-full px-3 py-2 border-2 border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-gray-600 resize-none bg-white shadow-sm"></textarea>
                 </div>
-                <div x-show="showQuestion" x-transition>
-                    <textarea rows="4" name="" id="question_textarea" x-model="question" placeholder="Question..." class="resizeable_element"></textarea>
+                <div x-show="showQuestion" x-transition class="p-3">
+                    <label class="block text-xs font-semibold text-gray-700 mb-1.5">Question</label>
+                    <textarea rows="2" name="" id="question_textarea" x-model="question" placeholder="Ask a question..."
+                        class="resizeable_element w-full px-3 py-2 border-2 border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-gray-600 resize-none bg-white shadow-sm"></textarea>
                 </div>
             </div>
         </div>
-        <div class="middle_column">
-            <div class="middle_content flex flex-col " x-show="middleColumn" x-transition
-                :style="`width: ${middleColumnWidth}px`">
-                <div class="flex flex-row justify-end">
-                    <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                        @click.prevent="changingWidth('+','middleColumnWidth')">
-                        <span class="text-xs">
-                            < </span>
-                    </div>
-                    <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white font-bold p-1 rounded"
-                        @click.prevent="changingWidth('-','middleColumnWidth')">
-                        <span class="text-xs">></span>
-                    </div>
-                </div>
-                <div x-html="aiAnswer" id="ai_answer_div" class="resizeable_element"></div>
+        <!-- Middle Column: AI Response -->
+        <div x-show="middleColumn" x-transition
+            class="flex flex-col bg-orange-50 border-r-2 border-gray-400 overflow-hidden shadow-sm"
+            :style="`width: ${middleColumnWidth}px`">
+            <!-- Width Controls -->
+            <div class="flex-none flex items-center justify-end gap-1 p-2 border-b-2 border-gray-400 bg-orange-50">
+                <span class="text-xs font-semibold text-gray-600 mr-auto ml-2">AI Response</span>
+                <button class="w-7 h-7 flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-800 rounded transition text-sm font-bold"
+                    @click.prevent="changingWidth('+','middleColumnWidth')">
+                    ←
+                </button>
+                <button class="w-7 h-7 flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-800 rounded transition text-sm font-bold"
+                    @click.prevent="changingWidth('-','middleColumnWidth')">
+                    →
+                </button>
+            </div>
+            <!-- AI Answer Content -->
+            <div class="flex-1 overflow-y-auto p-4 bg-white pb-5">
+                <div x-html="aiAnswer" id="ai_answer_div" class="resizeable_element prose prose-sm max-w-none"></div>
             </div>
         </div>
 
-        <div class="right_column">
-            <div x-show="rightColumn" class="right_content" x-transition :style="`width: ${rightColumnWidth}px`">
-                <div class="">
-                    <div>
-                        <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                            @click.prevent="createAnki()">
-                            +
-                        </div>
+        <!-- Right Column: Dictionary -->
+        <div x-show="rightColumn" x-transition
+            class="flex flex-col bg-orange-50 overflow-hidden shadow-sm"
+            :style="`width: ${rightColumnWidth}px`">
+            <!-- Controls -->
+            <div class="flex-none flex items-center justify-between gap-2 p-2 border-b-2 border-gray-400 bg-orange-50">
+                <div class="flex gap-1">
+                    <button class="w-8 h-8 flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white rounded transition shadow-sm"
+                        @click.prevent="createAnki()" title="Create Anki Card">
+                        +
+                    </button>
+                    <button class="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-gray-800 text-white rounded transition shadow-sm"
+                        @click.prevent="mnemonicSearch()" title="Search Mnemonics">
+                        ?
+                    </button>
+                </div>
+                <div class="flex gap-1">
+                    <button class="w-7 h-7 flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-800 rounded transition text-sm font-bold"
+                        @click.prevent="changingWidth('+','rightColumnWidth')">
+                        ←
+                    </button>
+                    <button class="w-7 h-7 flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-800 rounded transition text-sm font-bold"
+                        @click.prevent="changingWidth('-','rightColumnWidth')">
+                        →
+                    </button>
+                </div>
+            </div>
 
-                        <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                            @click.prevent="mnemonicSearch()">
-                            ?
-                        </div>
+            <!-- Dictionary Content -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-white pb-5">
+                <!-- Word Search -->
+                <div class="space-y-2">
+                    <div class="flex gap-2">
+                        <input type="text" required x-model="word"
+                            class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-transparent text-sm"
+                            placeholder="Enter word..." />
+                        <button type="button"
+                            class="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm rounded-md transition shadow-sm"
+                            @click.prevent="searching()">
+                            Search
+                        </button>
                     </div>
-                    <div>
-                        <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                            @click.prevent="changingWidth('+','rightColumnWidth')">
-                            < </div>
-                                <div class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                                    @click.prevent="changingWidth('-','rightColumnWidth')">
-                                    >
-                                </div>
-                        </div>
-                    </div>
-                    <div class="">
-                        <div class="input_class">
-                            <div id="search_button" type="button"
-                                class="bg-green-600 hover:bg-green-700 border border-solid border-white  cursor-pointer text-white p-1 rounded"
-                                @click.prevent="searching()">
-                                Search...
-                            </div>
+                    <input type="text" placeholder="Phonetics..." x-bind:value="phonetics"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-transparent text-sm bg-gray-50" />
+                </div>
 
-                            <input type="text" class="" required x-model="word" />
-                        </div>
-                        <div class="input_class">
-                            <input type="text" class="" placeholder="Phonetics..."
-                                x-bind:value="phonetics" />
-                        </div>
-                    </div>
-                    <div class="">
-                        <div class="input_class">
-                            <hr />
-                            <span x-html="mnemonic" id="mnemonic_span"></span>
-                            <hr />
-                        </div>
-                    </div>
-                    <div class="">
-                        <div class="input_class">
-                            <textarea name="" id="" rows="10" class="" placeholder="Definitions..."
-                                x-text="definitions"></textarea>
-                        </div>
-                    </div>
-                    <div class="">
-                        <div class="input_class">
-                            <textarea name="" rows="4" class="" placeholder="Translations..." x-text="translations"></textarea>
-                        </div>
-                    </div>
-                    <div class="">
-                        <div class="input_class">
-                            <textarea name="" rows="5" class="" placeholder="Examples..." x-text="examples"></textarea>
-                        </div>
-                    </div>
+                <!-- Mnemonic -->
+                <div class="border-t border-b border-gray-200 py-3">
+                    <span x-html="mnemonic" id="mnemonic_span" class="text-sm text-gray-700"></span>
+                </div>
+
+                <!-- Definitions -->
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Definitions</label>
+                    <textarea name="" rows="8" placeholder="Definitions..." x-text="definitions"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-transparent resize-none text-sm"></textarea>
+                </div>
+
+                <!-- Translations -->
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Translations</label>
+                    <textarea name="" rows="3" placeholder="Translations..." x-text="translations"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-transparent resize-none text-sm"></textarea>
+                </div>
+
+                <!-- Examples -->
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Examples</label>
+                    <textarea name="" rows="4" placeholder="Examples..." x-text="examples"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-transparent resize-none text-sm"></textarea>
                 </div>
             </div>
         </div>
