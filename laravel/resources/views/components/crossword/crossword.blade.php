@@ -1,59 +1,66 @@
-<div>
-    <div x-data="main" class="main flex flex-col">
+<div id="crosswordRoot" class="min-h-screen flex flex-col bg-orange-50">
+    <div x-data="main" class="flex flex-col h-screen">
         <!-- Unsolved Words Modal -->
         <div x-show="showUnsolvedModal" class="fixed inset-0 z-50 flex items-center justify-center">
             <div class="absolute inset-0 bg-black bg-opacity-50" @click="showUnsolvedModal = false"></div>
-            <div class="relative bg-white rounded-lg shadow-lg w-11/12 md:w-5/6 lg:w-3/4 max-h-[90vh] overflow-y-auto p-4">
-                <div class="flex justify-between items-center mb-2">
-                    <p class="text-4xl font-bold">Unsolved words</p>
-                    <button class="text-gray-600 hover:text-gray-800" @click="showUnsolvedModal = false">✕</button>
+            <div class="relative bg-white rounded-md shadow-sm border-2 border-gray-400 w-11/12 md:w-5/6 lg:w-3/4 max-h-[90vh] overflow-y-auto p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-semibold text-gray-800">Unsolved Words</h2>
+                    <button class="text-gray-600 hover:text-gray-800 text-2xl" @click="showUnsolvedModal = false">✕</button>
                 </div>
-                <ul class="list-decimal pl-5 space-y-2">
+                <ul class="list-decimal pl-5 space-y-3">
                     <template x-if="!crossword || !crossword.dictionary">
                         <li class="text-gray-500">No crossword loaded</li>
                     </template>
                     <template x-for="(item, index) in unsolvedList()" :key="item.word">
                         <li>
-                            {{-- <span class="text-2xl font-semibold" x-text="(index + 1) + '. ' + item.word"></span> --}}
-                            <span class="text-2xl font-semibold" x-text="item.word"></span>
+                            <span class="text-xl font-semibold text-gray-800" x-text="item.word"></span>
                             <template x-for="(definition, index2) in item.definitions" :key="index2">
-                                <span class="text-xl block m-0" x-text="definition"></span>
+                                <span class="text-base text-gray-700 block mt-1" x-text="definition"></span>
                             </template>
-                            {{-- <div class="text-sm text-gray-700" x-text="item.definitions && item.definitions.length ? item.definitions.join('<br>; ') : 'No definitions'"></div> --}}
                         </li>
                     </template>
                 </ul>
             </div>
         </div>
-        <div class='menu flex flex-row'>
-            <div class='texts_select'>
-                <select name="" id="" class="select_text" x-model="currentText"
 
-                >
+        <!-- Header / Menu -->
+        <header class="flex-none bg-white border-b-2 border-gray-400 shadow-md">
+            <div class="flex flex-wrap items-center justify-center gap-3 px-4 py-3">
+                <!-- Title -->
+                <div class="flex items-center gap-2">
+                    <h1 class="text-lg font-semibold text-gray-800">Crossword Puzzle</h1>
+                </div>
+
+                <div class="h-6 w-px bg-gray-400"></div>
+
+                <!-- Text Select -->
+                <select class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded border border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-600 transition" x-model="currentText">
                     <template x-for="text in texts">
                         <option x-text="text.name" :value="text.id"></option>
                     </template>
                 </select>
-            </div>
-            <div class='levels_select'>
-                <select name="" id="" class="" x-model="currentLevel"
 
-                >
+                <!-- Level Select -->
+                <select class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded border border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-600 transition" x-model="currentLevel">
                     <template x-for="level in wordLevels">
                         <option x-text="level.name" :value="level.id"></option>
                     </template>
                 </select>
-            </div>
-            <div class="border border-white text-white bg-green-600 hover:bg-green-500 px-3 py-2 shadow-md cursor-pointer">
-                <div class="" x-on:click.debounce="getCrossword()">Build</div>
-            </div>
 
-        </div>
+                <!-- Build Button -->
+                <button type="button" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-800 text-white text-sm rounded transition" x-on:click.debounce="getCrossword()">
+                    Build Crossword
+                </button>
+            </div>
+        </header>
 
-        <div class="workspace flex flex-row">
-            <div class="left" x-on:keydown.alt.debounce.500="setAltBlock()" x-on:keyup.alt.debounce.500="unsetAltBlock()">
+        <!-- Main Workspace -->
+        <main class="flex-1 flex flex-row overflow-hidden bg-orange-100">
+            <!-- Left Panel: Crossword Grid -->
+            <div class="left overflow-auto p-4" x-on:keydown.alt.debounce.500="setAltBlock()" x-on:keyup.alt.debounce.500="unsetAltBlock()">
                 <template x-if="crossword">
-                    <div>
+                    <div class="bg-white rounded-md shadow-sm border-2 border-gray-400 p-4 inline-block">
                         <template x-for="row in crossword.newGrid">
                             <div class="row">
                                 <template x-for="cell in row" :key="cell.y + cell.x">
@@ -63,11 +70,9 @@
                                         </template>
                                         <template x-if="cell.type === 2">
                                             <x-crossword.arrow_horizontal_cell />
-
                                         </template>
                                         <template x-if="cell.type === 3">
                                             <x-crossword.arrow_vertical_cell />
-
                                         </template>
                                         <template x-if="cell.type === 4">
                                             <x-crossword.symbol_cell />
@@ -79,146 +84,123 @@
                     </div>
                 </template>
             </div>
-            <div class="right p-1 flex flex-col">
-                <div class="flex flex-row justify-stretch">
-                    <div @click="currentTab = 0"
-                    class="flex-2 border text-center text-white bg-green-600 hover:bg-green-500 font-bold py-3 px-6 my-1 rounded-lg shadow-md cursor-pointer">
-                        DEF
-                    </div>
-                    <div @click="currentTab = 1"
-                    class="flex-1 border text-center text-white bg-green-600 hover:bg-green-500 font-bold py-3 px-6 my-1 rounded-lg shadow-md cursor-pointer">
-                        OBS
-                    </div>
-                    <div @click="currentTab = 2"
-                    class="flex-1 border text-center text-white bg-green-600 hover:bg-green-500 font-bold py-3 px-6 my-1 rounded-lg shadow-md cursor-pointer">
-                        RU
-                    </div>
-                    <div @click="currentTab = 3"
-                    class="flex-1 border text-center text-white bg-green-600 hover:bg-green-500 font-bold py-3 px-6 my-1 rounded-lg shadow-md cursor-pointer">
-                        FORMS
-                    </div>
-                    <div @click="_checkImage()"
-                    class="flex-1 border text-center text-white bg-green-600 hover:bg-green-500 font-bold py-3 px-6 my-1 rounded-lg shadow-md cursor-pointer">
-                        I
-                    </div>
-                    <div class="flex-2">
-                        <div @click.debounce="_askAI()"
-                        class=" border text-center text-white bg-blue-600 hover:bg-blue-500 font-bold py-3 px-6 my-1 rounded-lg shadow-md cursor-pointer">
 
-                            Search
-                        </div>
-                    </div>
-                    <div class="flex-1">
-                        <div
-                            class="border text-center text-white bg-blue-600 hover:bg-blue-500 font-bold py-3 px-6 my-1 rounded-lg shadow-md cursor-pointer flex items-center ml-2"
-                            title="Approve"
-                            type="button"
-                            @click.debounce="_acknowledge()"
-                        >
-                            <!-- Approve icon SVG (checkmark) -->
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M5 13l4 4L19 7" />
-                            </svg>
-                            Up
-                        </div>
-                    </div>
-                    <div class="flex-1">
-                        <div
-                            class="border text-center text-white bg-red-600 hover:bg-red-500 font-bold py-3 px-6 my-1 rounded-lg shadow-md cursor-pointer flex items-center ml-2"
-                            title="Delete"
-                            type="button"
-                            @click.debounce="_dismiss()"
-                        >
-                            <!-- Delete icon SVG -->
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                            Del
-                        </div>
-                    </div>
-                    <div class="flex-1">
-                        <div
-                            class="border text-center text-white bg-yellow-600 hover:bg-yellow-500 font-bold py-3 px-6 my-1 rounded-lg shadow-md cursor-pointer flex items-center ml-2"
-                            title="Open"
-                            type="button"
-                            @click.debounce="showUnsolvedModal = true"
-                        >
-                            <!-- Open icon SVG (plus sign) -->
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                            </svg>
-                            Look
-                        </div>
-                    </div>
+            <!-- Right Panel: Definitions & Controls -->
+            <div class="right overflow-auto p-4 flex flex-col bg-white border-l-2 border-gray-400">
+                <!-- Tab Navigation & Action Buttons -->
+                <div class="flex flex-wrap gap-2 mb-4 pb-4 border-b-2 border-gray-200">
+                    <!-- Tab Buttons -->
+                    <button @click="currentTab = 0"
+                        class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition font-medium"
+                        :class="{'bg-gray-700 text-white hover:bg-gray-800': currentTab === 0}">
+                        Definitions
+                    </button>
+                    <button @click="currentTab = 1"
+                        class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition font-medium"
+                        :class="{'bg-gray-700 text-white hover:bg-gray-800': currentTab === 1}">
+                        Obsolete
+                    </button>
+                    <button @click="currentTab = 2"
+                        class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition font-medium"
+                        :class="{'bg-gray-700 text-white hover:bg-gray-800': currentTab === 2}">
+                        Russian
+                    </button>
+                    <button @click="currentTab = 3"
+                        class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition font-medium"
+                        :class="{'bg-gray-700 text-white hover:bg-gray-800': currentTab === 3}">
+                        Forms
+                    </button>
+                    <button @click="_checkImage()"
+                        class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition font-medium">
+                        Image
+                    </button>
 
+                    <div class="h-6 w-px bg-gray-300"></div>
+
+                    <!-- Action Buttons -->
+                    <button @click.debounce="_askAI()"
+                        class="px-3 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm rounded transition flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        Search
+                    </button>
+                    <button @click.debounce="_acknowledge()"
+                        title="Approve"
+                        class="px-3 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm rounded transition flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Approve
+                    </button>
+                    <button @click.debounce="_dismiss()"
+                        title="Delete"
+                        class="px-3 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm rounded transition flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        Delete
+                    </button>
+                    <button @click.debounce="showUnsolvedModal = true"
+                        title="Show unsolved words"
+                        class="px-3 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm rounded transition flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                        Unsolved
+                    </button>
                 </div>
-                <div class="flex flex-row">
+                <!-- Tab Content -->
+                <div class="flex-1 overflow-auto">
+                    <!-- Definitions Tab -->
                     <div x-show="currentTab == 0" class="w-full">
-                        <ol class='definitions'>
+                        <div class="space-y-2">
                             <template x-for="(definition, index) in definitions" :key="index">
-                                <li
-                                :class="{blue : (index % 2) == 0, antique : (index % 2) == 1}"
-                                class="px-1"
-                                >
-                                    <span class="" x-text="(index+1) + '.'"></span>
-                                    <span
-                                    x-text="definition"
-                                    ></span>
-                                </li>
+                                <div class="flex gap-2 text-2xl text-gray-800 leading-relaxed p-2 rounded hover:bg-orange-100 transition-colors duration-150">
+                                    <span class="font-semibold min-w-[3rem]" x-text="(index + 1) + '.'"></span>
+                                    <span x-text="definition"></span>
+                                </div>
                             </template>
-                        </ol>
+                        </div>
                     </div>
+
+                    <!-- Obsolete Tab -->
                     <div x-show="currentTab == 1" class="w-full">
-                        <ol class='obsolete'>
+                        <div class="space-y-2">
                             <template x-for="(def, index) in obsolete" :key="index">
-                                <li
-                                :class="{blue : (index % 2) == 0, antique : (index % 2) == 1}"
-                                class="px-1"
-                                >
-                                    <span class="" x-text="(index+1) + '.'"></span>
-                                    <span
-                                    x-text="def"
-                                    ></span>
-                                </li>
+                                <div class="flex gap-2 text-2xl text-gray-800 leading-relaxed p-2 rounded hover:bg-orange-100 transition-colors duration-150">
+                                    <span class="font-semibold min-w-[3rem]" x-text="(index + 1) + '.'"></span>
+                                    <span x-text="def"></span>
+                                </div>
                             </template>
-                        </ol>
+                        </div>
                     </div>
-                    <div x-show="currentTab == 2"  class="w-full">
-                        <ol class='translations'>
 
+                    <!-- Translations Tab -->
+                    <div x-show="currentTab == 2" class="w-full">
+                        <div class="space-y-2">
                             <template x-for="(translation, index) in translations" :key="index">
-                                <li
-                                    :class="{blue : (index % 2) == 0, antique : (index % 2) == 1}"
-                                    class="px-1"
-                                >
-                                    <span class="" x-text="(index+1) + '.'"></span>
-                                    <span
-                                    x-text="translation"
-                                    ></span>
-                                </li>
+                                <div class="flex gap-2 text-2xl text-emerald-700 leading-relaxed p-2 rounded hover:bg-orange-100 transition-colors duration-150">
+                                    <span class="font-semibold min-w-[3rem]" x-text="(index + 1) + '.'"></span>
+                                    <span x-text="translation"></span>
+                                </div>
                             </template>
-                        </ol>
+                        </div>
                     </div>
-                    <div x-show="currentTab == 3"  class="w-full">
-                        <ol class='forms'>
 
+                    <!-- Forms Tab -->
+                    <div x-show="currentTab == 3" class="w-full">
+                        <div class="space-y-2">
                             <template x-for="(form, index) in forms" :key="index">
-                                <li
-                                    :class="{blue : (index % 2) == 0, antique : (index % 2) == 1}"
-                                    class="px-1"
-                                >
-                                    <span class="" x-text="(index+1) + '.'"></span>
-                                    <span
-                                    x-text="form"
-                                    ></span>
-                                </li>
+                                <div class="flex gap-2 text-2xl text-gray-800 leading-relaxed p-2 rounded hover:bg-orange-100 transition-colors duration-150">
+                                    <span class="font-semibold min-w-[3rem]" x-text="(index + 1) + '.'"></span>
+                                    <span x-text="form"></span>
+                                </div>
                             </template>
-                        </ol>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </main>
     </div>
 </div>

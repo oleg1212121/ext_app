@@ -1,7 +1,4 @@
-#body {
-    font-size: 30px;
-    font-style: bold;
-}
+/* Crossword Grid Styling */
 .row {
     display: flex;
 }
@@ -11,33 +8,34 @@
     height: 40px;
     display: flex;
     align-items: center;
-    border: 1px solid grey;
+    border: 1px solid #9ca3af; /* gray-400 */
 }
 
 .symbol {
     background-color: white;
 }
 
-
-
 .empty {
-    background-color: gray;
+    background-color: steelblue;
 }
 
 .horizontal {
-    background-color: yellow;
+    background-color: #fef3c7; /* amber-100 - subtle yellow */
 }
 
 .vertical {
-    background-color: orange;
+    background-color: #fed7aa; /* orange-200 - subtle orange */
 }
+
 .input_symbol {
     width: 100%;
     height: 100%;
     font-size: 1.4em;
     font-weight: 600;
-
     text-align: center;
+    border: none;
+    outline: none;
+    background: transparent;
 }
 
 .cell_text {
@@ -46,65 +44,31 @@
     text-align: center;
 }
 
-.workspace {
-    /* display: flex; */
-    width: 100%;
-}
+/* Cell State Colors */
 .green {
-    background-color: lightgreen;
+    background-color: #86efac; /* green-300 - softer green for solved words */
 }
+
 .blue {
-    background-color: lightblue;
+    background-color: #bfdbfe; /* blue-200 - softer blue for highlighted words */
 }
+
 .grey {
-    background-color: grey;
+    background-color: #e5e7eb; /* gray-200 */
 }
-.antique {
-    background-color: antiquewhite;
+
+/* Workspace Layout */
+.workspace {
+    width: 100%;
+    height: 100%;
 }
+
 .left {
     width: 50%;
-    overflow: scroll;
-    height: 95vh;
+    height: 100%;
 }
+
 .right {
     width: 50%;
-    overflow: scroll;
-    height: 95vh;
-    background-color: grey;
-}
-.definitions {
-    font-size: 30px;
-    width: 100%;
-}
-.translations {
-    font-size: 30px;
-    width: 100%;
-}
-.forms {
- font-size: 30px;
-    width: 100%;
-}
-#definitions {
-    position: sticky;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 200px;
-    overflow: scroll;
-    background-color: antiquewhite;
-}
-.menu {
-    width: 100%;
-    /* display: flex;
-    flex-direction: column;
-    justify-content: center; */
-}
-.select_text {
-    width: 100%;
-}
-
-.main {
-    width: 100%;
-
+    height: 100%;
 }
