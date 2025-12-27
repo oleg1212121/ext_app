@@ -16,6 +16,7 @@ b {
     color: #dc2626; /* red-600 */
     font-weight: 600;
 }
+
 /* Checkbox visibility logic for bilingual content */
 .hide_en {
     opacity: 0;
@@ -68,3 +69,13 @@ b {
 #voicein_container #voicein_voicebox_container {
     display: block !important;
 }
+
+
+/* AI Response sentence hover effect */
+#ai_answer_div p:hover, em:hover, b:hover, h1:hover, h2:hover, h3:hover {
+    background-color: #f4d297;
+    cursor: pointer;
+}
+
+/* Dark theme support */
+

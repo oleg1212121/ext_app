@@ -1,82 +1,82 @@
 @extends('components.layouts.crossword')
 
 @section('content')
-<div id="readerRoot" class="min-h-screen flex flex-col bg-orange-50">
+<div id="readerRoot" class="min-h-screen flex flex-col bg-orange-50 dark:bg-gray-900">
     <!-- Top Toolbar - Fixed -->
-    <header class="flex-none bg-white border-b-2 border-gray-400 shadow-md">
+    <header class="flex-none bg-white dark:bg-gray-800 border-b-2 border-gray-400 dark:border-gray-600 shadow-md">
         <div class="flex flex-wrap items-center justify-center gap-3 px-4 py-3">
             <!-- Title -->
             <div class="flex items-center gap-2">
-                <h1 class="text-lg font-semibold text-gray-800">Book Reader</h1>
+                <h1 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Book Reader</h1>
             </div>
 
-            <div class="h-6 w-px bg-gray-400"></div>
+            <div class="h-6 w-px bg-gray-400 dark:bg-gray-600"></div>
 
             <!-- Font Size Controls -->
             <div class="flex items-center gap-1">
-                <button id="fontSizeDecrease" type="button" class="w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition">
+                <button id="fontSizeDecrease" type="button" class="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 hover:cursor-pointer text-gray-700 dark:text-gray-200 rounded transition">
                     <span class="text-lg font-semibold">−</span>
                 </button>
-                <span class="text-xs text-gray-600 font-mono w-8 text-center" id="fontSizeValue">20</span>
-                <button id="fontSizeIncrease" type="button" class="w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition">
+                <span class="text-xs text-gray-600 dark:text-gray-400 font-mono w-8 text-center" id="fontSizeValue">20</span>
+                <button id="fontSizeIncrease" type="button" class="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 hover:cursor-pointer text-gray-700 dark:text-gray-200 rounded transition">
                     <span class="text-lg font-semibold">+</span>
                 </button>
             </div>
 
-            <div class="h-6 w-px bg-gray-400"></div>
+            <div class="h-6 w-px bg-gray-400 dark:bg-gray-600"></div>
 
             <!-- Show All Toggle -->
             <label class="inline-flex items-center gap-2 cursor-pointer">
-                <input id="toggleAll" type="checkbox" class="w-4 h-4 text-gray-700 rounded border-gray-300 focus:ring-gray-600">
-                <span class="text-sm font-medium text-gray-700">Show All</span>
+                <input id="toggleAll" type="checkbox" class="w-4 h-4 text-gray-700 dark:text-gray-300 rounded border-gray-300 dark:border-gray-600 focus:ring-gray-600 dark:bg-gray-700">
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Show All</span>
             </label>
 
             <!-- Layout Toggle -->
-            <button id="layoutToggle" type="button" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition">
+            <button id="layoutToggle" type="button" class="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 hover:cursor-pointer text-gray-700 dark:text-gray-200 text-sm rounded transition">
                 Side by Side
             </button>
 
             <!-- Width Toggle -->
-            <button id="widthToggle" type="button" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition">
+            <button id="widthToggle" type="button" class="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 hover:cursor-pointer text-gray-700 dark:text-gray-200 text-sm rounded transition">
                 Wide Mode
             </button>
 
-            <div class="h-6 w-px bg-gray-400"></div>
+            <div class="h-6 w-px bg-gray-400 dark:bg-gray-600"></div>
 
             <!-- Audio Controls -->
             <div class="flex items-center gap-2">
                 <input id="audioPicker" type="file" accept="audio/*" class="hidden">
-                <button id="pickAudioBtn" type="button" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded transition">
+                <button id="pickAudioBtn" type="button" class="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 hover:cursor-pointer text-gray-700 dark:text-gray-200 text-sm rounded transition">
                     Pick Audio
                 </button>
-                <button id="audioPlay" type="button" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-800 text-white text-sm rounded transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <button id="audioPlay" type="button" class="px-3 py-1.5 bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500 hover:cursor-pointer text-white text-sm rounded transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                     Play
                 </button>
-                <button id="audioPause" type="button" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-800 text-white text-sm rounded transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <button id="audioPause" type="button" class="px-3 py-1.5 bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500 hover:cursor-pointer text-white text-sm rounded transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                     Pause
                 </button>
-                <button id="audioStop" type="button" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-800 text-white text-sm rounded transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <button id="audioStop" type="button" class="px-3 py-1.5 bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500 hover:cursor-pointer text-white text-sm rounded transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                     Stop
                 </button>
-                <span id="audioStatus" class="text-xs text-gray-600"></span>
+                <span id="audioStatus" class="text-xs text-gray-600 dark:text-gray-400"></span>
             </div>
         </div>
     </header>
 
     <!-- Main Content Area -->
-    <main class="flex-1 overflow-y-auto bg-orange-100 pb-5">
+    <main class="flex-1 overflow-y-auto bg-orange-100 dark:bg-gray-800 pb-5">
         <div id="contentContainer" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div class="bg-white rounded-md shadow-sm border-2 border-gray-400 p-6">
+            <div class="bg-white dark:bg-gray-700 rounded-md shadow-sm border-2 border-gray-400 dark:border-gray-600 p-6">
                 @foreach($rows as $key => [$en, $ru])
-                    <article class="reader-row mb-4 pb-4 last:mb-0 last:pb-0 border-b border-gray-200 last:border-0">
-                        <button type="button" class="en w-full text-left cursor-pointer text-gray-800 hover:text-gray-600 transition-colors duration-150"
+                    <article class="reader-row mb-4 pb-4 last:mb-0 last:pb-0 border-b border-gray-200 dark:border-gray-600 last:border-0">
+                        <button type="button" class="en w-full text-left cursor-pointer text-gray-800 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-400 transition-colors duration-150"
                                 style="line-height: 1.8; font-size: var(--fs, 20px); font-family: 'Georgia', 'Times New Roman', serif;"
                                 data-index="{{$key}}">
                             {!! nl2br(e($en)) !!}
                         </button>
-                        <div class="ru mt-3 text-emerald-700 leading-relaxed hidden transition-opacity duration-150"
+                        <div class="ru mt-3 text-emerald-700 dark:text-emerald-400 leading-relaxed hidden transition-opacity duration-150"
                              style="line-height: 1.75; font-size: calc(var(--fs, 20px) * 0.95); font-family: 'Georgia', 'Times New Roman', serif; opacity: 0;">
-                            <div class="pl-4 border-l-2 border-emerald-400">
+                            <div class="pl-4 border-l-2 border-emerald-400 dark:border-emerald-500">
                                 {!! nl2br(e($ru)) !!}
                             </div>
                         </div>

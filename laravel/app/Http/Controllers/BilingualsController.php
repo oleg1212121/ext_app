@@ -2,12 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Classes\Gemini;
-use App\Classes\HuggingFace;
 use App\Classes\OpenRouter;
-use App\Classes\Groq;
-use App\Classes\Cohere;
-use App\Classes\Perplexity;
 use App\Classes\Parser;
 use App\Http\Requests\AiQuestionRequest;
 use App\Http\Requests\DictionaryInteractionsSaveRequest;
@@ -15,10 +10,7 @@ use App\Http\Requests\DictionarySelectionSaveRequest;
 use App\Http\Requests\GetTextsRequest;
 use App\Http\Requests\TextRequest;
 use App\Models\SavedPhrase;
-use App\Models\User;
-use App\Models\Word;
 use Exception;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -33,13 +25,13 @@ class BilingualsController extends Controller
     public function getTexts(GetTextsRequest $request)
     {
         $result = [
-            'names' => []
+            'names' => [],
         ];
         $status = 200;
         try {
-            $directory = public_path() . '/texts/simulator';
+            $directory = public_path().'/texts/simulator';
 
-            if (!is_dir($directory)) {
+            if (! is_dir($directory)) {
                 throw new Exception('Directory not found');
             }
 
@@ -52,24 +44,26 @@ class BilingualsController extends Controller
                 if ($file->isFile()) {
                     $str = '/var/www/public/texts/simulator/';
                     $name = $file->getPathname();
-                    if(str_contains($name, ':Zone.Identifier')) continue;
+                    if (str_contains($name, ':Zone.Identifier')) {
+                        continue;
+                    }
                     $name = str_replace($str, '', $name);
                     $result['names'][] = $name;
                 }
             }
         } catch (Exception $e) {
             $status = 500;
-            error_log('Files not found: ' . $e->getMessage());
+            error_log('Files not found: '.$e->getMessage());
         }
 
         $data = [
             'data' => $result,
-            'code' => $status
+            'code' => $status,
         ];
 
         return response()->json(
             [
-                'data' => $data
+                'data' => $data,
             ],
             $status,
             // [
@@ -78,16 +72,16 @@ class BilingualsController extends Controller
         );
     }
 
-    function text(TextRequest $request)
+    public function text(TextRequest $request)
     {
         $status = 200;
         $result = [
-            'rows' => []
+            'rows' => [],
         ];
         $isRus = false;
 
         $filename = $request->get('filename', null);
-        $filename = public_path('texts/simulator/' . $filename);
+        $filename = public_path('texts/simulator/'.$filename);
 
         if (file_exists($filename)) {
             $fd = fopen($filename, 'r');
@@ -102,7 +96,7 @@ class BilingualsController extends Controller
                             $result['rows'][] = $cur;
                             $cur = ['', ''];
                         }
-                        $isRus = !$isRus;
+                        $isRus = ! $isRus;
                     } else {
                         if ($isRus) {
                             $cur[1] = $line;
@@ -124,12 +118,12 @@ class BilingualsController extends Controller
 
         $data = [
             'data' => $result,
-            'code' => $status
+            'code' => $status,
         ];
 
         return response()->json(
             [
-                'data' => $data
+                'data' => $data,
             ],
             $status,
             // [
@@ -145,22 +139,23 @@ class BilingualsController extends Controller
         $instruction = $request->get('question', null);
         $model = $request->get('model', null);
 
-        $ai = new Cohere();
-        $ai = new Perplexity();
-        $ai = new Groq();
-        $ai = new Gemini();
-        $ai = new OpenRouter();
-        $ai = new HuggingFace();
+        //        $ai = new Cohere();
+        //        $ai = new Perplexity();
+        //        $ai = new Groq();
+        //        $ai = new Gemini();
+        $ai = new OpenRouter;
+        //        $ai = new HuggingFace();
 
         $answer = $ai->askForContext($instruction, $prompt, $model);
         // $answer = $ai->askForContext($instruction, $prompt, $model);
         $data = [
             'answer' => $answer,
-            'code' => $status
+            'code' => $status,
         ];
+
         return response()->json(
             [
-                'data' => $data
+                'data' => $data,
             ],
             $status
         );
@@ -173,13 +168,13 @@ class BilingualsController extends Controller
         $selection = $request->get('selection', null);
         // dd($selection);
         $phrase = new SavedPhrase([
-            'phrase' => $selection
+            'phrase' => $selection,
         ]);
         $phrase->save();
 
         return response()->json(
             [
-                'data' => []
+                'data' => [],
             ],
             $status
         );
@@ -199,7 +194,7 @@ class BilingualsController extends Controller
                 $key = Parser::parseWord($key);
                 $key = pg_escape_string($key);
                 $keys[] = $key;
-                $caseStatements[] = "WHEN '" . $key . "' THEN " . (int)$value;
+                $caseStatements[] = "WHEN '".$key."' THEN ".(int) $value;
             }
             $caseSql = implode(' ', $caseStatements);
             $keys = implode("','", $keys);
@@ -217,14 +212,14 @@ class BilingualsController extends Controller
                         '{$keys}'
                     )
                 ) AS ff
-                WHERE words.word = ff.word;"
-            ;
+                WHERE words.word = ff.word;";
         }
         DB::insert($query);
+
         // dd($query);
         return response()->json(
             [
-                'data' => []
+                'data' => [],
             ],
             $status
         );

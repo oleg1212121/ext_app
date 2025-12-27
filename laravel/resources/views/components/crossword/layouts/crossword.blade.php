@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full bg-gray-100">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full bg-gray-100 dark:bg-gray-900">
 
 <head>
     <meta charset="utf-8">
@@ -1528,7 +1528,7 @@
     <script src="{{ asset('js/crossword.js') }}"></script>
     {{-- <script src="/livewire/livewire.js"></script> --}}
 </head>
-<body class="font-sans antialiased h-full">
+<body class="font-sans antialiased h-full dark:bg-gray-900 dark:text-gray-100">
 
 @include('layouts.navigation')
 {{ $slot }}
