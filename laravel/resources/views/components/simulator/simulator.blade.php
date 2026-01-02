@@ -17,13 +17,17 @@
     <!-- Top Toolbar - Fixed -->
     <div class="flex-none bg-white dark:bg-gray-800 border-b-2 border-gray-400 dark:border-gray-600 shadow-md">
         <div class="flex items-center gap-3 px-4 py-3">
-            <!-- Chat Selection -->
+            <!-- AI Model Selection -->
             <div class="flex items-center gap-2">
                 <select
                     class="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-600 dark:focus:ring-gray-500 focus:border-transparent transition"
                     x-model="selectedChat">
-                    <template x-for="(item, index) in chats" :key="index">
-                        <option :value="item" x-text="item" :selected="item == selectedChat"></option>
+                    <template x-for="(models, providerName) in aiModels" :key="providerName">
+                        <optgroup :label="providerName">
+                            <template x-for="(displayName, modelKey) in models" :key="modelKey">
+                                <option :value="modelKey" x-text="displayName" :selected="modelKey === selectedChat"></option>
+                            </template>
+                        </optgroup>
                     </template>
                 </select>
             </div>

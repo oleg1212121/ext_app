@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Classes\AIModelResolver;
 use Illuminate\Foundation\Http\FormRequest;
 
 class AiQuestionRequest extends FormRequest
@@ -24,7 +25,12 @@ class AiQuestionRequest extends FormRequest
         return [
             'data' => ['nullable', 'string'],
             'question' => ['nullable', 'string', 'max:2000'],
-            'model' => ['nullable', 'string', 'max:100'],
+            'model' => ['required', 'string', 'max:200', function ($attribute, $value, $fail) {
+                $resolver = app(AIModelResolver::class);
+                if (! $resolver->isValidModel($value)) {
+                    $fail('The selected AI model is invalid.');
+                }
+            }],
         ];
     }
 }

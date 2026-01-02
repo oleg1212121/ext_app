@@ -1,399 +1,363 @@
 ;
-      document.addEventListener("alpine:init", () => {
-        Alpine.data("main", () => ({
-          // question: "I will give you two texts: the original in Russian and my version of the translation. Your tasks are: 1. Assess how accurately I convey the overall meaning. 2. Point out my grammatical errors and ways for improvement. 3. The response should be in English.",
-          question:
+document.addEventListener("alpine:init", () => {
+    Alpine.data("main", () => ({
+        // question: "I will give you two texts: the original in Russian and my version of the translation. Your tasks are: 1. Assess how accurately I convey the overall meaning. 2. Point out my grammatical errors and ways for improvement. 3. The response should be in English.",
+        question:
             "Compare Russian original vs. my translation. Tasks: 1. Assess meaning accuracy. 2. Fix grammar/improve. 3. Give  a couple of improved versions.",
-          text: "",
-          filename: "",
-          searchPhrase: "",
-          showFilename: false,
-          showWorkplace: true,
-          showQuestion: false,
-          spinner: false,
-          leftColumn: true,
-          contextModal: false,
-          rightColumn: false,
-          middleColumn: true,
-          isError: false,
-          phonetics: "",
-          translations: "",
-          examples: "",
-          meansLike: "",
-          etymology: "",
-          definitions: "",
-          origin: "",
-          word: "",
-          isJustDictionary: "",
-          mnemonic: "",
-          aiAnswer: "",
-          fontSize: 30,
-          middleColumnWidth: 620,
-          rightColumnWidth: 400,
-          selectedChat: "deepseek-ai/DeepSeek-V3.1-Terminus:novita",
-          chats: [
-            "deepseek-ai/DeepSeek-R1:novita",
-            "deepseek-ai/DeepSeek-V3.1-Terminus:novita",
-            "Qwen/Qwen3-235B-A22B-Instruct-2507:novita",
-            "MiniMaxAI/MiniMax-M2:novita",
-            "openai/gpt-oss-safeguard-20b:groq",
-            "zai-org/GLM-4.6:novita",
-            "openai/gpt-oss-20b:novita",
-            "meta-llama/Llama-3.1-8B-Instruct:novita",
-            "openai/gpt-oss-120b:novita",
-            "deepseek-ai/DeepSeek-V3.2-Exp:novita",
-            "moonshotai/Kimi-K2-Instruct-0905:novita",
-            "meta-llama/Meta-Llama-3-8B-Instruct:novita",
-            "Qwen/Qwen3-Next-80B-A3B-Instruct:novita",
-            // "meta-llama/Llama-3.2-1B-Instruct:novita",
-            // "moonshotai/Kimi-K2-Instruct:novita",
-            "Qwen/Qwen3-Coder-480B-A35B-Instruct:novita",
-            "meta-llama/Llama-3.2-3B-Instruct:novita",
-            "meta-llama/Llama-3.3-70B-Instruct:novita",
-            "deepseek-ai/DeepSeek-V3:novita",
-            "zai-org/GLM-4.5:novita",
-            // "zai-org/GLM-4.5-Air:novita",
-            "Qwen/Qwen3-30B-A3B:novita",
-            "deepseek-ai/DeepSeek-R1-0528:novita",
-            "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B:novita",
-            "Qwen/Qwen3-32B:novita",
-            "Qwen/Qwen3-235B-A22B:novita",
-            "Qwen/Qwen3-Next-80B-A3B-Thinking:novita",
-            "meta-llama/Meta-Llama-3-70B-Instruct:novita",
-            "Sao10K/L3-8B-Stheno-v3.2:novita",
-            "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B:novita",
-            "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B:novita",
-            "MiniMaxAI/MiniMax-M1-80k:novita",
-            "deepseek-ai/DeepSeek-V3.1:novita",
-            "Sao10K/L3-70B-Euryale-v2.1:novita",
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B:novita",
-            "deepseek-ai/DeepSeek-V3-0324:novita",
-            "zai-org/GLM-4-32B-0414:novita",
-            "baidu/ERNIE-4.5-21B-A3B-PT:novita",
-            "baichuan-inc/Baichuan-M2-32B:novita",
-            "alpindale/WizardLM-2-8x22B:novita",
-            "NousResearch/Hermes-2-Pro-Llama-3-8B:novita",
-            "Sao10K/L3-8B-Lunaris-v1:novita",
-            "Qwen/Qwen2.5-72B-Instruct:novita",
-            "deepseek-ai/DeepSeek-Prover-V2-671B:novita",
-            "baidu/ERNIE-4.5-300B-A47B-Base-PT:novita",
-            "baidu/ERNIE-4.5-0.3B-PT:novita"
-          ],
-          rows: [
+        text: "",
+        filename: "",
+        searchPhrase: "",
+        showFilename: false,
+        showWorkplace: true,
+        showQuestion: false,
+        spinner: false,
+        leftColumn: true,
+        contextModal: false,
+        rightColumn: false,
+        middleColumn: true,
+        isError: false,
+        phonetics: "",
+        translations: "",
+        examples: "",
+        meansLike: "",
+        etymology: "",
+        definitions: "",
+        origin: "",
+        word: "",
+        isJustDictionary: "",
+        mnemonic: "",
+        aiAnswer: "",
+        fontSize: 30,
+        middleColumnWidth: 620,
+        rightColumnWidth: 400,
+        selectedChat: "openrouter:google/gemini-2.5-flash-lite",
+        aiModels: window.aiModels || {},
+        rows: [
             ["english part", "russian part"],
             ["english part", "russian part"],
             ["english part", "russian part"],
-          ],
-          textsList: [" "],
-          interractedWords: {},
-          interractedSentences: [],
+        ],
+        textsList: [" "],
+        interractedWords: {},
+        interractedSentences: [],
         //   object: { field: {} },
-          pep: false,
-          init() {
+        pep: false,
+        init() {
+            this.setDefaultModel();
             this.updateResizeableFontSizes();
             fetch("/get-texts", {
-              method: "POST",
-              body: JSON.stringify({}),
-              headers: {
-                'X-CSRF-TOKEN': document.querySelector("meta[name='csrf-token']").content,
-                "Content-type": "application/json;",
-              },
+                method: "POST",
+                body: JSON.stringify({}),
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector("meta[name='csrf-token']").content,
+                    "Content-type": "application/json;",
+                },
             })
-              .then((response) => response.json())
-              .then((response) => {
-                if (response.data.code == 200) {
-                  console.log("success");
-                  this.textsList = response.data.data.names;
-                  this.filename = this.textsList[0]
-                } else {
-                  this.isError = true;
-                  console.log("error");
-                }
+                .then((response) => response.json())
+                .then((response) => {
+                    if (response.data.code == 200) {
+                        console.log("success");
+                        this.textsList = response.data.data.names;
+                        this.filename = this.textsList[0]
+                    } else {
+                        this.isError = true;
+                        console.log("error");
+                    }
 
-                this.spinner = false;
-              })
-              .catch((error) => {
-                console.error("Error:", error);
-                this.isError = true;
-                this.spinner = false;
-              });
-          },
-          copyInfo(item) {
+                    this.spinner = false;
+                })
+                .catch((error) => {
+                    console.error("Error:", error);
+                    this.isError = true;
+                    this.spinner = false;
+                });
+        },
+        setDefaultModel() {
+            // Set default model to first available
+            // for (const [providerName, models] of Object.entries(this.aiModels)) {
+            //     const firstModelKey = Object.keys(models)[0];
+            //     if (firstModelKey) {
+            //         this.selectedChat = firstModelKey;
+            //         return;
+            //     }
+            // }
+        },
+        copyInfo(item) {
             let result = item[1] + "\n" + this.text;
             navigator.clipboard.writeText(result);
-          },
-          contextModalShow() {
+        },
+        contextModalShow() {
             let selection = window.getSelection().toString().trim();
             if (!this.contextModal) {
-              if (selection || this.word) {
-                this.contextModal = true;
-              }
+                if (selection || this.word) {
+                    this.contextModal = true;
+                }
             } else {
-              if (selection && selection != this.word) {
-                this.contextModal = true;
-              } else {
-                this.contextModal = false;
-              }
+                if (selection && selection != this.word) {
+                    this.contextModal = true;
+                } else {
+                    this.contextModal = false;
+                }
             }
             // if(selection || this.word){
             //   this.contextModal = !this.contextModal
             // }
             if (selection && this.word != selection) {
-              this.word = selection;
-              this.searching();
+                this.word = selection;
+                this.searching();
             }
-          },
-          formatting(item) {
+        },
+        formatting(item) {
             return "<span style='background-color: red;'>" + item + "</span>";
-          },
-          openWorkplace() {
+        },
+        openWorkplace() {
             this.text = "";
             this.showWorkplace = true;
             let tArea = document.getElementById("workplace_textarea");
             tArea.value = "";
             console.log("hello there");
             tArea.focus();
-          },
-          changingWidth(direct, varName) {
+        },
+        changingWidth(direct, varName) {
             if (direct === "+") {
-              if (varName === "middleColumnWidth") {
-                this.middleColumnWidth += 4;
-              } else {
-                this.rightColumnWidth += 4;
-              }
+                if (varName === "middleColumnWidth") {
+                    this.middleColumnWidth += 4;
+                } else {
+                    this.rightColumnWidth += 4;
+                }
             } else {
-              if (varName === "middleColumnWidth") {
-                this.middleColumnWidth -= 4;
-              } else {
-                this.rightColumnWidth -= 4;
-              }
+                if (varName === "middleColumnWidth") {
+                    this.middleColumnWidth -= 4;
+                } else {
+                    this.rightColumnWidth -= 4;
+                }
             }
-          },
-          changeFontSize(direct) {
+        },
+        changeFontSize(direct) {
             if (direct === "+") {
-              this.fontSize += 2;
+                this.fontSize += 2;
             } else {
-              this.fontSize -= 2;
+                this.fontSize -= 2;
             }
             this.updateResizeableFontSizes();
-          },
-          updateResizeableFontSizes() {
+        },
+        updateResizeableFontSizes() {
             const styleElement = document.getElementById('resizeable-font-styles');
             if (styleElement) {
-              const baseSize = this.fontSize;
-              styleElement.textContent = `
+                const baseSize = this.fontSize;
+                styleElement.textContent = `
                 .resizeable_element {
                     font-size: ${baseSize}px;
                 }
               `;
             }
-          },
-          ask(item) {
+        },
+        ask(item) {
             let rus = item[1].trim().toString().replace("*", "");
             let eng = this.text.trim().toString().replace("*", "");
             console.log(rus, eng);
             if (rus && eng) {
-              console.log("asking");
-              let result = item[1] + "\n" + this.text;
-              this.spinner = true;
-              data = {
-                data: result,
-                question: this.question,
-                model: this.selectedChat,
-              };
-              fetch("/ai/question", {
+                console.log("asking");
+                let result = item[1] + "\n" + this.text;
+                this.spinner = true;
+                data = {
+                    data: result,
+                    question: this.question,
+                    model: this.selectedChat,
+                };
+                fetch("/ai/question", {
+                    method: "POST",
+                    body: JSON.stringify(data),
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector("meta[name='csrf-token']").content,
+                        "Content-type": "application/json;",
+                    },
+                })
+                    .then((response) => response.json())
+                    .then((response) => {
+                        if (response.data.code == 200) {
+                            console.log("success");
+                            this.aiAnswer = response.data.answer;
+
+                            this.isError = false;
+                        } else {
+                            this.isError = true;
+                            console.log("error---");
+                        }
+
+                        this.spinner = false;
+                    })
+                    .catch((error) => {
+                        console.error("Error:", error);
+                        this.isError = true;
+                        this.spinner = false;
+                    });
+            }
+        },
+        searchFile() {
+            this.spinner = true;
+            this.rows = [];
+            data = {
+                filename: this.filename,
+            };
+            // console.log(data)
+            fetch("/text", {
                 method: "POST",
                 body: JSON.stringify(data),
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector("meta[name='csrf-token']").content,
                     "Content-type": "application/json;",
                 },
-              })
+            })
                 .then((response) => response.json())
                 .then((response) => {
-                  if (response.data.code == 200) {
-                    console.log("success");
-                    this.aiAnswer = response.data.answer;
+                    console.log(response)
+                    if (response.data.code == 200) {
+                        console.log("success");
+                        this.rows = response.data.data.rows;
+                        let arr = this.filename.split("\\");
+                        document.getElementById("title").innerHTML = arr[arr.length - 1];
+                        this.isError = false;
+                    } else {
+                        this.isError = true;
+                        console.log("error---");
+                    }
 
-                    this.isError = false;
-                  } else {
-                    this.isError = true;
-                    console.log("error---");
-                  }
-
-                  this.spinner = false;
+                    this.spinner = false;
                 })
                 .catch((error) => {
-                  console.error("Error:", error);
-                  this.isError = true;
-                  this.spinner = false;
+                    console.error("Error:", error);
+                    this.isError = true;
+                    this.spinner = false;
                 });
-            }
-          },
-          searchFile() {
-            this.spinner = true;
-            this.rows = [];
-            data = {
-              filename: this.filename,
-            };
-            // console.log(data)
-            fetch("/text", {
-              method: "POST",
-              body: JSON.stringify(data),
-              headers: {
-                'X-CSRF-TOKEN': document.querySelector("meta[name='csrf-token']").content,
-                "Content-type": "application/json;",
-              },
-            })
-              .then((response) => response.json())
-              .then((response) => {
-                console.log(response)
-                if (response.data.code == 200) {
-                  console.log("success");
-                  this.rows = response.data.data.rows;
-                  let arr = this.filename.split("\\");
-                  document.getElementById("title").innerHTML = arr[arr.length - 1];
-                  this.isError = false;
-                } else {
-                  this.isError = true;
-                  console.log("error---");
-                }
-
-                this.spinner = false;
-              })
-              .catch((error) => {
-                console.error("Error:", error);
-                this.isError = true;
-                this.spinner = false;
-              });
-          },
-          mnemonicSearch() {
+        },
+        mnemonicSearch() {
             this.spinner = true;
             this.isError = false;
             data = {
-              word: this.word,
+                word: this.word,
             };
             fetch("/word/mnemonic", {
-              method: "POST",
-              body: JSON.stringify(data),
-              headers: {
-                "Content-type": "application/json;",
-              },
+                method: "POST",
+                body: JSON.stringify(data),
+                headers: {
+                    "Content-type": "application/json;",
+                },
             })
-              .then((response) => response.json())
-              .then((response) => {
-                if (response.code == 200) {
-                  this.mnemonic = response.data.mnemonic;
-                  this.isError = false;
-                  // this.aiAnswer = response.data.mnemonic;
-                } else {
-                  this.isError = true;
-                  console.log("error");
-                }
+                .then((response) => response.json())
+                .then((response) => {
+                    if (response.code == 200) {
+                        this.mnemonic = response.data.mnemonic;
+                        this.isError = false;
+                        // this.aiAnswer = response.data.mnemonic;
+                    } else {
+                        this.isError = true;
+                        console.log("error");
+                    }
 
-                this.spinner = false;
-              })
-              .catch((error) => {
-                console.error("Error:", error);
-                this.isError = true;
-                this.spinner = false;
-              });
-          },
-          searching() {
+                    this.spinner = false;
+                })
+                .catch((error) => {
+                    console.error("Error:", error);
+                    this.isError = true;
+                    this.spinner = false;
+                });
+        },
+        searching() {
             this.spinner = true;
             this.isError = false;
             this.refreshData();
             data = {
-              word: this.word,
+                word: this.word,
             };
             fetch("/word/search", {
-              method: "POST",
-              body: JSON.stringify(data),
-              headers: {
-                "Content-type": "application/json;",
-              },
-            })
-              .then((response) => response.json())
-              .then((response) => {
-                if (response.code == 200) {
-                  // console.log(response);
-                  this.phonetics = response.data.phonetics;
-                  this.examples = response.data.examples;
-                  this.translations = response.data.translations;
-                  this.definitions = response.data.definitions;
-                  this.isError = false;
-                } else {
-                  this.isError = true;
-                  console.log("error");
-                }
-
-                this.spinner = false;
-              })
-              .catch((error) => {
-                console.error("Error:", error);
-                this.isError = true;
-                this.spinner = false;
-              });
-          },
-          createAnki() {
-            if (!this.mnemonic) {
-              this.isError = true;
-            } else {
-              this.spinner = true;
-              this.isError = false;
-              let data = {
-                word: this.word,
-                translations: this.translations,
-                phonetics: this.phonetics,
-                examples: this.examples,
-                mnemonic: this.mnemonic,
-                definitions: this.definitions,
-              };
-              fetch("/anki/create", {
                 method: "POST",
                 body: JSON.stringify(data),
                 headers: {
-                  "Content-type": "application/json;",
+                    "Content-type": "application/json;",
                 },
-              })
+            })
                 .then((response) => response.json())
                 .then((response) => {
-                  this.spinner = false;
-                  if (response.code == 200) {
-                    this.isError = false;
-                    this.refreshData();
-                    this.word = "";
-                  } else {
-                    this.isError = true;
-                  }
+                    if (response.code == 200) {
+                        // console.log(response);
+                        this.phonetics = response.data.phonetics;
+                        this.examples = response.data.examples;
+                        this.translations = response.data.translations;
+                        this.definitions = response.data.definitions;
+                        this.isError = false;
+                    } else {
+                        this.isError = true;
+                        console.log("error");
+                    }
+
+                    this.spinner = false;
                 })
                 .catch((error) => {
-                  console.error("Error:", error);
-                  this.isError = true;
-                  this.spinner = false;
+                    console.error("Error:", error);
+                    this.isError = true;
+                    this.spinner = false;
                 });
+        },
+        createAnki() {
+            if (!this.mnemonic) {
+                this.isError = true;
+            } else {
+                this.spinner = true;
+                this.isError = false;
+                let data = {
+                    word: this.word,
+                    translations: this.translations,
+                    phonetics: this.phonetics,
+                    examples: this.examples,
+                    mnemonic: this.mnemonic,
+                    definitions: this.definitions,
+                };
+                fetch("/anki/create", {
+                    method: "POST",
+                    body: JSON.stringify(data),
+                    headers: {
+                        "Content-type": "application/json;",
+                    },
+                })
+                    .then((response) => response.json())
+                    .then((response) => {
+                        this.spinner = false;
+                        if (response.code == 200) {
+                            this.isError = false;
+                            this.refreshData();
+                            this.word = "";
+                        } else {
+                            this.isError = true;
+                        }
+                    })
+                    .catch((error) => {
+                        console.error("Error:", error);
+                        this.isError = true;
+                        this.spinner = false;
+                    });
             }
-          },
-          refreshData() {
+        },
+        refreshData() {
             this.phonetics = "";
             this.translations = "";
             this.examples = "";
             this.definitions = "";
             this.mnemonic = "";
-          },
-          triggerAskQuestion() {
+        },
+        triggerAskQuestion() {
             let ell = document.querySelectorAll(".check_ru:checked");
             if (ell.length > 0) {
-              console.log("shortcut");
-              let parent = ell[ell.length - 1].closest('.row');
-              let text = parent.querySelector(".rus.content").textContent;
-              // button.click();
-              // this.text
-              this.ask(["", text]);
+                console.log("shortcut");
+                let parent = ell[ell.length - 1].closest('.row');
+                let text = parent.querySelector(".rus.content").textContent;
+                // button.click();
+                // this.text
+                this.ask(["", text]);
             }
             console.log("aaaaaaasdasdasd");
-          },
-          showSelectionModal(){
+        },
+        showSelectionModal() {
 
             const selection = window.getSelection();
             if (selection.rangeCount === 0) {
@@ -406,15 +370,15 @@
             modal.style.left = (rect.left - 0) + 'px'
             modal.style.top = (rect.top - 70) + 'px'
             this.word = selection.toString()
-        //     console.log({
-        //         x: rect.left + window.scrollX,
-        //         y: rect.top + window.scrollY,
-        //         width: rect.width,
-        //         height: rect.height,
-        //         text: selection.toString()
-        //   });
-          },
-          saveSelection(){
+            //     console.log({
+            //         x: rect.left + window.scrollX,
+            //         y: rect.top + window.scrollY,
+            //         width: rect.width,
+            //         height: rect.height,
+            //         text: selection.toString()
+            //   });
+        },
+        saveSelection() {
             this.pep = false
             if (!this.word) {
                 return null;
@@ -422,28 +386,28 @@
             // this.spinner = true;
             // this.rows = [];
             data = {
-              selection: this.word,
+                selection: this.word,
             };
             // console.log(data)
             fetch("/dictionary/selection/save", {
-              method: "POST",
-              body: JSON.stringify(data),
-              headers: {
-                'X-CSRF-TOKEN': document.querySelector("meta[name='csrf-token']").content,
-                "Content-type": "application/json;",
-              },
+                method: "POST",
+                body: JSON.stringify(data),
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector("meta[name='csrf-token']").content,
+                    "Content-type": "application/json;",
+                },
             })
-              .then((response) => response.json())
-              .then((response) => {
+                .then((response) => response.json())
+                .then((response) => {
 
-              })
-              .catch((error) => {
-                console.error("Error:", error);
+                })
+                .catch((error) => {
+                    console.error("Error:", error);
 
-              });
+                });
 
-          },
-          memorizeHighlight(){
+        },
+        memorizeHighlight() {
             const selection = window.getSelection();
             if (selection.rangeCount === 0) {
                 return null;
@@ -452,9 +416,9 @@
             // console.log(this.interractedWords);
 
             this.storeMemorizedWords()
-          },
-          memorizeSentence(index){
-            if(index in this.interractedSentences){
+        },
+        memorizeSentence(index) {
+            if (index in this.interractedSentences) {
                 return null
             }
             this.interractedSentences.push(index)
@@ -462,8 +426,8 @@
             // console.log(sentence)
             this.__splitAndMemorize(sentence, 1)
             this.storeMemorizedWords()
-          },
-          storeMemorizedWords(){
+        },
+        storeMemorizedWords() {
 
             // console.log(this.interractedWords)
             if (Object.keys(this.interractedWords).length < 20) {
@@ -472,35 +436,35 @@
             // console.log('omg')
             // console.log(this.interractedWords)
             let data = {
-              words: this.interractedWords,
+                words: this.interractedWords,
             };
             let body = JSON.stringify(data)
             this.interractedWords = {}
             // console.log(body)
             fetch("/dictionary/interactions/save", {
-              method: "POST",
-              body: body,
-              headers: {
-                'X-CSRF-TOKEN': document.querySelector("meta[name='csrf-token']").content,
-                "Content-type": "application/json;",
-              },
+                method: "POST",
+                body: body,
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector("meta[name='csrf-token']").content,
+                    "Content-type": "application/json;",
+                },
             })
-              .then((response) => response.json())
-              .then((response) => {
+                .then((response) => response.json())
+                .then((response) => {
 
-              })
-              .catch((error) => {
-                console.error("Error:", error);
+                })
+                .catch((error) => {
+                    console.error("Error:", error);
 
-              });
-          },
-          __splitAndMemorize(str, offset){
+                });
+        },
+        __splitAndMemorize(str, offset) {
             let arr = str.split(" ");
             arr.forEach(element => {
-                if(element){
+                if (element) {
                     this.interractedWords[element] = (this.interractedWords[element] ? this.interractedWords[element] : 0) + offset
                 }
             });
-          }
-        }));
-      });
+        }
+    }));
+});

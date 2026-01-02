@@ -2,19 +2,37 @@
 
 namespace App\Classes;
 
-
-
 class Cohere extends AiProvider
 {
+    protected array $models = [
+        'command-a-03-2025' => 'command-a-03-2025',
+        'command-r-plus-08-2024' => 'command-r-plus-08-2024',
+        'command-r-08-2024' => 'command-r-08-2024',
+        'command-r7b-12-2024' => 'command-r7b-12-2024',
+        'command' => 'command',
+        'command-light' => 'command-light',
+        'command-nightly' => 'command-nightly',
+        'command-light-nightly' => 'command-light-nightly',
+    ];
 
     public function __construct()
     {
-        $this->aiApiLink = env('COHERE_API_URL', 'https://api.cohere.ai/v1/chat');
-        $this->model = env('COHERE_MODEL', 'command-a-03-2025');
-        $this->apiKey = env('COHERE_API_KEY');
+        $this->aiApiLink = config('services.cohere.url', 'https://api.cohere.ai/v1/chat');
+        $this->model = config('services.cohere.model', 'command-a-03-2025');
+        $this->apiKey = config('services.cohere.key');
     }
 
-    public function askForContext($instruction = 'You are a helpful English language assistant.', $question = '', $model = "")
+    public static function getProviderKey(): string
+    {
+        return 'cohere';
+    }
+
+    public static function getProviderName(): string
+    {
+        return 'Cohere';
+    }
+
+    public function askForContext($instruction = 'You are a helpful English language assistant.', $question = '', $model = ''): ?string
     {
         $model = $this->resolveModel($model);
 
@@ -23,15 +41,14 @@ class Cohere extends AiProvider
             'messages' => [
                 [
                     'role' => 'system',
-                    'content' => $instruction
+                    'content' => $instruction,
                 ],
                 [
                     'role' => 'user',
-                    'content' => $question
-                ]
+                    'content' => $question,
+                ],
             ],
             'temperature' => 0.2,
-            // 'max_tokens' => 512,
         ];
 
         $ch = curl_init();
@@ -41,10 +58,10 @@ class Cohere extends AiProvider
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($data),
             CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $this->apiKey,
-                'Content-Type: application/json'
+                'Authorization: Bearer '.$this->apiKey,
+                'Content-Type: application/json',
             ],
-            CURLOPT_TIMEOUT => 60
+            CURLOPT_TIMEOUT => 60,
         ]);
 
         $response = curl_exec($ch);
@@ -57,12 +74,10 @@ class Cohere extends AiProvider
 
         $result = json_decode($response, true);
 
-        if (!isset($result['message']['content'])) {
-            return "Error in response: " . print_r($result, true);
+        if (! isset($result['message']['content'])) {
+            return 'Error in response: '.print_r($result, true);
         }
 
-        $result = $this->markdownToHtml($result['message']['content']);
-        return $result;
+        return $this->markdownToHtml($result['message']['content']);
     }
-
 }

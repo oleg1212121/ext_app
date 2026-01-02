@@ -2,24 +2,33 @@
 
 namespace App\Classes;
 
-class AiProvider
+use App\Contracts\AiProviderInterface;
+
+abstract class AiProvider implements AiProviderInterface
 {
+    protected array $models = [];
 
-    protected $models = [
-        "command-a-03-2025" => "command-a-03-2025",
-        "command-r-plus-08-2024" => "command-r-plus-08-2024",
-        "command-r-08-2024" => "command-r-08-2024",
-        "command-r7b-12-2024" => "command-r7b-12-2024",
-        "command" => "command",
-        "command-light" => "command-light",
-        "command-nightly" => "command-nightly",
-        "command-light-nightly" => "command-light-nightly",
-    ];
-    protected $apiKey;
-    protected $aiApiLink;
-    protected $model;
+    protected ?string $apiKey = null;
 
-    function markdownToHtml($text)
+    protected string $aiApiLink = '';
+
+    protected string $model = '';
+
+    abstract public static function getProviderKey(): string;
+
+    abstract public static function getProviderName(): string;
+
+    public function getModels(): array
+    {
+        return $this->models;
+    }
+
+    public function isConfigured(): bool
+    {
+        return ! empty($this->apiKey);
+    }
+
+    public function markdownToHtml($text)
     {
         if (empty($text)) {
             return '';
@@ -28,15 +37,17 @@ class AiProvider
         // First, handle code blocks (before escaping, as they contain code)
         // Match code blocks with language identifier
         $text = preg_replace_callback('/```(\w+)?\n(.*?)```/s', function ($matches) {
-            $lang = !empty($matches[1]) ? ' class="language-' . htmlspecialchars($matches[1], ENT_QUOTES, 'UTF-8') . '"' : '';
+            $lang = ! empty($matches[1]) ? ' class="language-'.htmlspecialchars($matches[1], ENT_QUOTES, 'UTF-8').'"' : '';
             $code = htmlspecialchars($matches[2], ENT_QUOTES, 'UTF-8');
-            return '<pre><code' . $lang . '>' . $code . '</code></pre>';
+
+            return '<pre><code'.$lang.'>'.$code.'</code></pre>';
         }, $text);
 
         // Match code blocks without language identifier
         $text = preg_replace_callback('/```\n(.*?)```/s', function ($matches) {
             $code = htmlspecialchars($matches[1], ENT_QUOTES, 'UTF-8');
-            return '<pre><code>' . $code . '</code></pre>';
+
+            return '<pre><code>'.$code.'</code></pre>';
         }, $text);
 
         // Now escape HTML for the rest of the content
@@ -66,14 +77,16 @@ class AiProvider
             $listContent = $matches[0];
             // Remove the list markers and wrap in <li>
             $listContent = preg_replace('/^[\*\-\+] (.+)$/m', '<li>$1</li>', $listContent);
-            return '<ul>' . $listContent . '</ul>';
+
+            return '<ul>'.$listContent.'</ul>';
         }, $html);
 
         // Convert ordered lists (1. item)
         $html = preg_replace_callback('/(?:^\d+\. .*(?:\n|$))+/m', function ($matches) {
             $listContent = $matches[0];
             $listContent = preg_replace('/^\d+\. (.+)$/m', '<li>$1</li>', $listContent);
-            return '<ol>' . $listContent . '</ol>';
+
+            return '<ol>'.$listContent.'</ol>';
         }, $html);
 
         // Convert line breaks (double newline = paragraph, single = <br>)
@@ -87,11 +100,11 @@ class AiProvider
             }
             // Skip if already wrapped in a block element
             if (preg_match('/^<(h[1-6]|ul|ol|pre|p)/', $paragraph)) {
-                $html .= $paragraph . "\n";
+                $html .= $paragraph."\n";
             } else {
                 // Convert single newlines to <br> within paragraphs
                 $paragraph = preg_replace('/\n/', '<br>', $paragraph);
-                $html .= '<p>' . $paragraph . '</p>' . "\n";
+                $html .= '<p>'.$paragraph.'</p>'."\n";
             }
         }
 
@@ -106,6 +119,7 @@ class AiProvider
         if ($model && isset($this->models[$model])) {
             return $this->models[$model];
         }
+
         return $this->model;
     }
 }

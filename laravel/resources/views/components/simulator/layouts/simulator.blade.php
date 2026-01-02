@@ -1534,6 +1534,9 @@
         }
     </style>
 
+    <script>
+        window.aiModels = @json($aiModels ?? []);
+    </script>
     <script src="{{ asset('js/simulator.js') }}"></script>
     @stack('styles')
     {{-- <script src="/livewire/livewire.js"></script> --}}

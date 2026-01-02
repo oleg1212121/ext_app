@@ -2,29 +2,34 @@
 
 namespace App\Classes;
 
-
-
 class Perplexity extends AiProvider
 {
-    protected $model;
-    protected $models = [
-        "sonar" => "sonar",
-        "sonar-pro" => "sonar-pro",
-        "sonar-deep-research" => "sonar-deep-research",
-        "sonar-reasoning" => "sonar-reasoning",
-        "sonar-reasoning-pro" => "sonar-reasoning-pro",
+    protected array $models = [
+        'sonar' => 'sonar',
+        'sonar-pro' => 'sonar-pro',
+        'sonar-deep-research' => 'sonar-deep-research',
+        'sonar-reasoning' => 'sonar-reasoning',
+        'sonar-reasoning-pro' => 'sonar-reasoning-pro',
     ];
-    protected $apiKey;
-    protected $aiApiLink;
 
     public function __construct()
     {
-        $this->aiApiLink = env('PERPLEXITY_API_URL', 'https://api.perplexity.ai/chat/completions');
-        $this->model = env('PERPLEXITY_MODEL', 'sonar');
-        $this->apiKey = env('PERPLEXITY_API_KEY');
+        $this->aiApiLink = config('services.perplexity.url', 'https://api.perplexity.ai/chat/completions');
+        $this->model = config('services.perplexity.model', 'sonar');
+        $this->apiKey = config('services.perplexity.key');
     }
 
-    public function askForContext($instruction = 'You are a helpful English language assistant.', $question = '', $model = "")
+    public static function getProviderKey(): string
+    {
+        return 'perplexity';
+    }
+
+    public static function getProviderName(): string
+    {
+        return 'Perplexity';
+    }
+
+    public function askForContext($instruction = 'You are a helpful English language assistant.', $question = '', $model = ''): ?string
     {
         $model = $this->resolveModel($model);
 
@@ -33,16 +38,15 @@ class Perplexity extends AiProvider
             'messages' => [
                 [
                     'role' => 'system',
-                    'content' => $instruction
+                    'content' => $instruction,
                 ],
                 [
                     'role' => 'user',
-                    'content' => $question
-                ]
+                    'content' => $question,
+                ],
             ],
             'temperature' => 0.2,
-            // 'max_tokens' => 512,
-            'stream' => false
+            'stream' => false,
         ];
 
         $ch = curl_init();
@@ -52,10 +56,10 @@ class Perplexity extends AiProvider
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($data),
             CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $this->apiKey,
-                'Content-Type: application/json'
+                'Authorization: Bearer '.$this->apiKey,
+                'Content-Type: application/json',
             ],
-            CURLOPT_TIMEOUT => 60
+            CURLOPT_TIMEOUT => 60,
         ]);
 
         $response = curl_exec($ch);
@@ -68,11 +72,10 @@ class Perplexity extends AiProvider
 
         $result = json_decode($response, true);
 
-        if (!isset($result['choices'][0]['message']['content'])) {
-            return "Error in response: " . print_r($result, true);
+        if (! isset($result['choices'][0]['message']['content'])) {
+            return 'Error in response: '.print_r($result, true);
         }
 
-        $result = $this->markdownToHtml($result['choices'][0]['message']['content']);
-        return $result;
+        return $this->markdownToHtml($result['choices'][0]['message']['content']);
     }
 }

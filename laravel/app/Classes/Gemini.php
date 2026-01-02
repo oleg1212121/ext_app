@@ -2,38 +2,49 @@
 
 namespace App\Classes;
 
-
-
 class Gemini extends AiProvider
 {
-    protected $models = [
-        "gemini-2.5-flash-lite" => "gemini-2.5-flash-lite",
-        "gemini-2.5-flash" => "gemini-2.5-flash",
-        "gemini-2.5-flash-preview-09-2025" => "gemini-2.5-flash-preview-09-2025",
-        "gemini-2.5-flash-lite-preview-09-2025" => "gemini-2.5-flash-lite-preview-09-2025",
+    protected array $models = [
+        'gemini-2.5-flash-lite' => 'gemini-2.5-flash-lite',
+        'gemini-2.5-flash' => 'gemini-2.5-flash',
+        'gemini-2.5-flash-preview-09-2025' => 'gemini-2.5-flash-preview-09-2025',
+        'gemini-2.5-flash-lite-preview-09-2025' => 'gemini-2.5-flash-lite-preview-09-2025',
     ];
+
     protected $proxyLogin;
+
     protected $proxyPassword;
+
     protected $proxyIP;
+
     protected $proxyPort;
-    protected $apiKey;
-    protected $aiApiLink;
-    protected $modelGoal = ":generateContent";
+
+    protected $modelGoal = ':generateContent';
 
     public function __construct()
     {
-        $this->apiKey = env('GEMINI_API_KEY');
-        $this->aiApiLink = env('GEMINI_API_URL', 'https://generativelanguage.googleapis.com/v1beta/models/');
-        $this->model = env('GEMINI_MODEL', 'gemini-2.5-flash-lite');
-        $this->proxyLogin = env('PROXY_LOGIN');
-        $this->proxyPassword = env('PROXY_PASSWORD');
-        $this->proxyIP = env('PROXY_IP');
-        $this->proxyPort = env('PROXY_PORT');
+        $this->apiKey = config('services.gemini.key');
+        $this->aiApiLink = config('services.gemini.url', 'https://generativelanguage.googleapis.com/v1beta/models/');
+        $this->model = config('services.gemini.model', 'gemini-2.5-flash-lite');
+        $this->proxyLogin = config('services.proxy.login');
+        $this->proxyPassword = config('services.proxy.password');
+        $this->proxyIP = config('services.proxy.ip');
+        $this->proxyPort = config('services.proxy.port');
     }
 
-    public function ask($word = '', $model = "")
+    public static function getProviderKey(): string
     {
-        if (!$word) {
+        return 'gemini';
+    }
+
+    public static function getProviderName(): string
+    {
+        return 'Gemini';
+    }
+
+    public function ask($word = '', $model = '')
+    {
+        if (! $word) {
             return null;
         }
 
@@ -43,14 +54,14 @@ class Gemini extends AiProvider
         $data = [
             'contents' => [
                 'parts' => [
-                    ['text' => $question]
-                ]
+                    ['text' => $question],
+                ],
             ],
-            "generationConfig" => [
-                "thinkingConfig" => [
-                    "thinkingBudget" => 0
-                ]
-            ]
+            'generationConfig' => [
+                'thinkingConfig' => [
+                    'thinkingBudget' => 0,
+                ],
+            ],
         ];
 
         $url = $this->buildAiUrl($model);
@@ -62,36 +73,36 @@ class Gemini extends AiProvider
         if (isset($answer['candidates'][0]['content']['parts'][0]['text'])) {
             return $answer['candidates'][0]['content']['parts'][0]['text'];
         } else {
-            return "Error in response: " . print_r($answer, true);
+            return 'Error in response: '.print_r($answer, true);
         }
     }
 
-    public function askForContext($instruction = 'You are a helpful English language assistant.', $question = '', $model = "")
+    public function askForContext($instruction = 'You are a helpful English language assistant.', $question = '', $model = ''): ?string
     {
-        if (!$question || !$instruction) {
+        if (! $question || ! $instruction) {
             return null;
         }
 
         $model = $this->resolveModel($model);
 
         $data = [
-            "system_instruction" => [
-                "parts" => [
+            'system_instruction' => [
+                'parts' => [
                     [
-                        "text" => $instruction
-                    ]
-                ]
+                        'text' => $instruction,
+                    ],
+                ],
             ],
             'contents' => [
                 'parts' => [
-                    ['text' => $question]
-                ]
+                    ['text' => $question],
+                ],
             ],
-            "generationConfig" => [
-                "thinkingConfig" => [
-                    "thinkingBudget" => 0
-                ]
-            ]
+            'generationConfig' => [
+                'thinkingConfig' => [
+                    'thinkingBudget' => 0,
+                ],
+            ],
         ];
 
         $url = $this->buildAiUrl($model);
@@ -104,7 +115,7 @@ class Gemini extends AiProvider
             $res = $answer['candidates'][0]['content']['parts'][0]['text'];
             $res = $this->markdownToHtml($res);
         } else {
-            $res = "Error in response: " . print_r($answer, true);
+            $res = 'Error in response: '.print_r($answer, true);
         }
 
         return $res;
@@ -113,7 +124,8 @@ class Gemini extends AiProvider
     private function buildAiUrl($model = null)
     {
         $modelToUse = $model ?? $this->model;
-        return $this->aiApiLink . $modelToUse . $this->modelGoal;
+
+        return $this->aiApiLink.$modelToUse.$this->modelGoal;
     }
 
     private function buildProxyUrl()
@@ -124,8 +136,8 @@ class Gemini extends AiProvider
     private function buildAiHeaders()
     {
         return [
-            "Content-Type: application/json",
-            "x-goog-api-key: {$this->apiKey}"
+            'Content-Type: application/json',
+            "x-goog-api-key: {$this->apiKey}",
         ];
     }
 
@@ -145,7 +157,7 @@ class Gemini extends AiProvider
         curl_close($ch);
 
         if ($httpCode !== 200) {
-            return ["error" => "HTTP $httpCode - $response"];
+            return ['error' => "HTTP $httpCode - $response"];
         }
 
         return json_decode($response, true);

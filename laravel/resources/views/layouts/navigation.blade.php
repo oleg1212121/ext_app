@@ -35,7 +35,7 @@
             <div class="flex items-center gap-4">
                 <!-- Theme Toggle -->
                 <button @click="darkMode = !darkMode"
-                        class="p-2 rounded-lg bg-orange-300  hover:bg-orange-200 dark:bg-gray-700 dark:hover:bg-gray-600 transition hover:cursor-pointer"
+                        class="p-2 rounded-lg bg-orange-200  border-2 border-dashed dark:bg-gray-700 dark:hover:bg-gray-600 transition hover:cursor-pointer"
                         title="Toggle dark mode">
                     <!-- Sun Icon (shown in dark mode) -->
                     <svg x-show="darkMode" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-yellow-400"

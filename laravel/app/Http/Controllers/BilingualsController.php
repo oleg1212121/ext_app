@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Classes\OpenRouter;
+use App\Classes\AIModelResolver;
 use App\Classes\Parser;
 use App\Http\Requests\AiQuestionRequest;
 use App\Http\Requests\DictionaryInteractionsSaveRequest;
@@ -12,14 +12,25 @@ use App\Http\Requests\TextRequest;
 use App\Models\SavedPhrase;
 use Exception;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 
 class BilingualsController extends Controller
 {
+    public function __construct(
+        protected AIModelResolver $modelResolver
+    )
+    {
+    }
+
     public function simulator()
     {
-        return view('simulator');
+        $aiModels = $this->modelResolver->getGroupedModels();
+
+        return view('simulator', [
+            'aiModels' => $aiModels,
+        ]);
     }
 
     public function getTexts(GetTextsRequest $request)
@@ -29,9 +40,9 @@ class BilingualsController extends Controller
         ];
         $status = 200;
         try {
-            $directory = public_path().'/texts/simulator';
+            $directory = public_path() . '/texts/simulator';
 
-            if (! is_dir($directory)) {
+            if (!is_dir($directory)) {
                 throw new Exception('Directory not found');
             }
 
@@ -53,7 +64,7 @@ class BilingualsController extends Controller
             }
         } catch (Exception $e) {
             $status = 500;
-            error_log('Files not found: '.$e->getMessage());
+            error_log('Files not found: ' . $e->getMessage());
         }
 
         $data = [
@@ -66,9 +77,6 @@ class BilingualsController extends Controller
                 'data' => $data,
             ],
             $status,
-            // [
-            //     'Content-Type: application/json;'
-            // ]
         );
     }
 
@@ -81,7 +89,7 @@ class BilingualsController extends Controller
         $isRus = false;
 
         $filename = $request->get('filename', null);
-        $filename = public_path('texts/simulator/'.$filename);
+        $filename = public_path('texts/simulator/' . $filename);
 
         if (file_exists($filename)) {
             $fd = fopen($filename, 'r');
@@ -96,7 +104,7 @@ class BilingualsController extends Controller
                             $result['rows'][] = $cur;
                             $cur = ['', ''];
                         }
-                        $isRus = ! $isRus;
+                        $isRus = !$isRus;
                     } else {
                         if ($isRus) {
                             $cur[1] = $line;
@@ -126,28 +134,28 @@ class BilingualsController extends Controller
                 'data' => $data,
             ],
             $status,
-            // [
-            //     'Content-Type: application/json;'
-            // ]
         );
     }
 
     public function askAi(AiQuestionRequest $request)
     {
         $status = 200;
-        $prompt = $request->get('data', null);
-        $instruction = $request->get('question', null);
-        $model = $request->get('model', null);
+        $prompt = $request->validated('data');
 
-        //        $ai = new Cohere();
-        //        $ai = new Perplexity();
-        //        $ai = new Groq();
-        //        $ai = new Gemini();
-        $ai = new OpenRouter;
-        //        $ai = new HuggingFace();
+        $instruction = $request->validated('question');
+        $modelString = $request->validated('model');
+        
+        try {
+            $answer = $this->modelResolver->ask($modelString, $instruction, $prompt);
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'data' => [
+                    'answer' => 'Error: Invalid model selection',
+                    'code' => 400,
+                ],
+            ], 400);
+        }
 
-        $answer = $ai->askForContext($instruction, $prompt, $model);
-        // $answer = $ai->askForContext($instruction, $prompt, $model);
         $data = [
             'answer' => $answer,
             'code' => $status,
@@ -166,7 +174,6 @@ class BilingualsController extends Controller
 
         $status = 200;
         $selection = $request->get('selection', null);
-        // dd($selection);
         $phrase = new SavedPhrase([
             'phrase' => $selection,
         ]);
@@ -194,7 +201,7 @@ class BilingualsController extends Controller
                 $key = Parser::parseWord($key);
                 $key = pg_escape_string($key);
                 $keys[] = $key;
-                $caseStatements[] = "WHEN '".$key."' THEN ".(int) $value;
+                $caseStatements[] = "WHEN '" . $key . "' THEN " . (int)$value;
             }
             $caseSql = implode(' ', $caseStatements);
             $keys = implode("','", $keys);
@@ -216,7 +223,6 @@ class BilingualsController extends Controller
         }
         DB::insert($query);
 
-        // dd($query);
         return response()->json(
             [
                 'data' => [],
