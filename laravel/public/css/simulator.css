@@ -1,4 +1,11 @@
 /* Simulator Page Styles */
+#workplace_textarea {
+    line-height: 1.5;
+}
+
+#question_textarea {
+    line-height: 1.5;
+}
 
 /* Text Highlighting */
 em {
@@ -12,7 +19,7 @@ em {
 }
 
 /* Bold text styling for content */
-b {
+b, strong {
     color: #dc2626; /* red-600 */
     font-weight: 600;
 }
@@ -70,10 +77,9 @@ b {
     display: block !important;
 }
 
-
 /* AI Response sentence hover effect */
-#ai_answer_div p:hover, em:hover, b:hover, h1:hover, h2:hover, h3:hover {
-    background-color: #f4d297;
+#ai_answer_div p:hover, em:hover, b:hover, h1:hover, h2:hover, h3:hover, li:hover {
+    background-color: #fff2d7;
     cursor: pointer;
 }
 
