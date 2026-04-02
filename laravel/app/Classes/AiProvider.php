@@ -117,7 +117,7 @@ abstract class AiProvider implements AiProviderInterface
     protected function resolveModel($model = '')
     {
         if ($model && isset($this->models[$model])) {
-            return $this->models[$model];
+            return $model;
         }
 
         return $this->model;

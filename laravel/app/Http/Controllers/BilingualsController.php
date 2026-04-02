@@ -20,16 +20,16 @@ class BilingualsController extends Controller
 {
     public function __construct(
         protected AIModelResolver $modelResolver
-    )
-    {
-    }
+    ) {}
 
     public function simulator()
     {
         $aiModels = $this->modelResolver->getGroupedModels();
+        $textList = $this->getTextsArray();
 
         return view('simulator', [
             'aiModels' => $aiModels,
+            'textList' => $textList,
         ]);
     }
 
@@ -40,9 +40,9 @@ class BilingualsController extends Controller
         ];
         $status = 200;
         try {
-            $directory = public_path() . '/texts/simulator';
+            $directory = public_path().'/texts/simulator';
 
-            if (!is_dir($directory)) {
+            if (! is_dir($directory)) {
                 throw new Exception('Directory not found');
             }
 
@@ -53,18 +53,18 @@ class BilingualsController extends Controller
 
             foreach ($iterator as $file) {
                 if ($file->isFile()) {
-                    $str = '/var/www/public/texts/simulator/';
                     $name = $file->getPathname();
                     if (str_contains($name, ':Zone.Identifier')) {
                         continue;
                     }
-                    $name = str_replace($str, '', $name);
+                    $prefix = $directory.'/';
+                    $name = str_replace($prefix, '', $name);
                     $result['names'][] = $name;
                 }
             }
         } catch (Exception $e) {
             $status = 500;
-            error_log('Files not found: ' . $e->getMessage());
+            error_log('Files not found: '.$e->getMessage());
         }
 
         $data = [
@@ -80,6 +80,33 @@ class BilingualsController extends Controller
         );
     }
 
+    private function getTextsArray(): array
+    {
+        $result = [];
+        try {
+            $directory = public_path('texts/simulator');
+
+            if (! is_dir($directory)) {
+                throw new Exception('Directory not found: '.$directory);
+                // return [];
+            }
+
+            $files = glob($directory.'/*.txt');
+
+            foreach ($files as $file) {
+                $name = basename($file);
+                if (str_contains($name, ':Zone.Identifier')) {
+                    continue;
+                }
+                $result[$name] = $name;
+            }
+        } catch (Exception $e) {
+            error_log('Files not found: '.$e->getMessage());
+        }
+
+        return $result;
+    }
+
     public function text(TextRequest $request)
     {
         $status = 200;
@@ -89,7 +116,7 @@ class BilingualsController extends Controller
         $isRus = false;
 
         $filename = $request->get('filename', null);
-        $filename = public_path('texts/simulator/' . $filename);
+        $filename = public_path('texts/simulator/'.$filename);
 
         if (file_exists($filename)) {
             $fd = fopen($filename, 'r');
@@ -104,7 +131,7 @@ class BilingualsController extends Controller
                             $result['rows'][] = $cur;
                             $cur = ['', ''];
                         }
-                        $isRus = !$isRus;
+                        $isRus = ! $isRus;
                     } else {
                         if ($isRus) {
                             $cur[1] = $line;
@@ -144,7 +171,7 @@ class BilingualsController extends Controller
 
         $instruction = $request->validated('question');
         $modelString = $request->validated('model');
-        
+
         try {
             $answer = $this->modelResolver->ask($modelString, $instruction, $prompt);
         } catch (InvalidArgumentException $e) {
@@ -201,7 +228,7 @@ class BilingualsController extends Controller
                 $key = Parser::parseWord($key);
                 $key = pg_escape_string($key);
                 $keys[] = $key;
-                $caseStatements[] = "WHEN '" . $key . "' THEN " . (int)$value;
+                $caseStatements[] = "WHEN '".$key."' THEN ".(int) $value;
             }
             $caseSql = implode(' ', $caseStatements);
             $keys = implode("','", $keys);

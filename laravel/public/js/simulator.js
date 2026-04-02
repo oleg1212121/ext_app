@@ -3,7 +3,7 @@ document.addEventListener("alpine:init", () => {
     Alpine.data("main", () => ({
         // question: "I will give you two texts: the original in Russian and my version of the translation. Your tasks are: 1. Assess how accurately I convey the overall meaning. 2. Point out my grammatical errors and ways for improvement. 3. The response should be in English.",
         question:
-            "Compare Russian original vs. my translation. Tasks: 1. Assess meaning accuracy. 2. Fix grammar/improve. 3. Give  a couple of improved versions.",
+            "Compare Russian original vs. my translation. Tasks: 1. Assess meaning accuracy (with percentile). 2. Asses grammar (with percentile). 3. Fix grammar/improve. 4. Give  a couple of improved versions.",
         text: "",
         filename: "",
         searchPhrase: "",
@@ -37,7 +37,7 @@ document.addEventListener("alpine:init", () => {
             ["english part", "russian part"],
             ["english part", "russian part"],
         ],
-        textsList: [" "],
+        textsList: window.textList || {},
         interractedWords: {},
         interractedSentences: [],
         //   object: { field: {} },
@@ -57,8 +57,13 @@ document.addEventListener("alpine:init", () => {
                 .then((response) => {
                     if (response.data.code == 200) {
                         console.log("success");
-                        this.textsList = response.data.data.names;
-                        this.filename = this.textsList[0]
+                        // Convert to associative array for select component
+                        let names = response.data.data.names;
+                        this.textsList = names.reduce((obj, name) => {
+                            obj[name] = name;
+                            return obj;
+                        }, {});
+                        this.filename = names[0] || '';
                     } else {
                         this.isError = true;
                         console.log("error");

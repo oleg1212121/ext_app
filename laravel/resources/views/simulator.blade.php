@@ -1,3 +1,3 @@
-<x-simulator.layouts.simulator :aiModels="$aiModels">
-    <x-simulator.simulator/>
+<x-simulator.layouts.simulator :aiModels="$aiModels" :textList="$textList">
+    <x-simulator.simulator :aiModels="$aiModels" :textList="$textList"/>
 </x-simulator.layouts.simulator>

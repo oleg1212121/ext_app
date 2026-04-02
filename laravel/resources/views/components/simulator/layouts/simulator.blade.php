@@ -1536,6 +1536,7 @@
 
     <script>
         window.aiModels = @json($aiModels ?? []);
+        window.textList = @json($textList ?? []);
     </script>
     <script src="{{ asset('js/simulator.js') }}"></script>
     @stack('styles')

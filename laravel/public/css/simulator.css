@@ -10,7 +10,8 @@
 /* Text Highlighting */
 em {
     text-decoration: underline;
-    color: #3b82f6; /* blue-600 */
+    color: #dc2626;
+    font-weight: 400;
 }
 
 /* Custom styles for dynamic font resizing */
@@ -78,9 +79,23 @@ b, strong {
 }
 
 /* AI Response sentence hover effect */
+#ai_answer_div em, b, li {
+    padding: 5px;
+}
+
 #ai_answer_div p:hover, em:hover, b:hover, h1:hover, h2:hover, h3:hover, li:hover {
     background-color: #fff2d7;
     cursor: pointer;
+}
+
+#ai_answer_div h1, h2, h3, h4 {
+    /*text-decoration: underline;*/
+    color: #3b82f6;
+    margin: 20px 5px;
+}
+
+#ai_answer_div p {
+    margin: 20px 5px;
 }
 
 /* Dark theme support */
