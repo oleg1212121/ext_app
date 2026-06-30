@@ -3,26 +3,22 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\DefinitionResource\Pages;
-use App\Filament\Resources\DefinitionResource\RelationManagers;
 use App\Models\Definition;
-use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Actions;
 use Filament\Resources\Resource;
-use Filament\Tables;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class DefinitionResource extends Resource
 {
     protected static ?string $model = Definition::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-rectangle-stack';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form
+        return $schema
             ->schema([
                 //
             ]);
@@ -32,19 +28,19 @@ class DefinitionResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('pos'),                
-                TextColumn::make('word'),                
-                TextColumn::make('definitio'),                
+                TextColumn::make('pos'),
+                TextColumn::make('word'),
+                TextColumn::make('definitio'),
             ])
             ->filters([
                 //
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
+            ->recordActions([
+                Actions\EditAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+            ->toolbarActions([
+                Actions\BulkActionGroup::make([
+                    Actions\DeleteBulkAction::make(),
                 ]),
             ]);
     }

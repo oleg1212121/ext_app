@@ -16,7 +16,7 @@
     @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
         @vite([
             'resources/css/app.css',
-            'resources/js/app.js',
+            'resources/js/app.jsx',
 //            'build/assets/app-kGY04szw.js',
 //            'resources/css/simulator.css',
         ])

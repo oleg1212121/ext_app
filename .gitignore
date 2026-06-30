@@ -1,7 +1,8 @@
 dual_translate_builder/
 .vscode/
 docker-compose/postgres/
-docker-compose/embedding/
+
+docker-compose/embedding/models/
 docker-compose/nginx/nginx.conf:Zone.Identifier
 laravel/vendor/
 laravel/.devcontainer
@@ -68,3 +69,6 @@ laravel/CLAUDE.md
 .cursor
 laravel/.mcp.json
 laravel/boost-mcp-wrapper.sh
+lalala
+laravel/debug_test2.php
+laravel/sample.jsonl

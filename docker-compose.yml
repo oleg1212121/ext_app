@@ -58,6 +58,19 @@ services:
     networks:
       - ext_net
 
+  embedding:
+    build:
+      context: ./docker-compose/embedding
+      dockerfile: Dockerfile
+    container_name: ext_embedding
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./docker-compose/embedding/models:/root/.cache/huggingface
+    networks:
+      - ext_net
+
 networks:
   ext_net:
     driver: bridge

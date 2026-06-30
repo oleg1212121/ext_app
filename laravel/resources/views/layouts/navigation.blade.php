@@ -23,6 +23,9 @@
                         <x-nav-link :href="route('reader')" :active="request()->routeIs('reader')">
                             {{ __('Reader') }}
                         </x-nav-link>
+                        <x-nav-link :href="route('alignments.index')" :active="request()->routeIs('alignments.*')">
+                            {{ __('Alignments') }}
+                        </x-nav-link>
                         <x-nav-link :href="route('bilinguals.simulator')"
                                     :active="request()->routeIs('bilinguals.simulator')">
                             {{ __('Bilinguals') }}

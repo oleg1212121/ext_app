@@ -58,7 +58,7 @@
         <!-- Main Workspace -->
         <main class="flex-1 flex flex-row overflow-hidden bg-orange-100 dark:bg-gray-800">
             <!-- Left Panel: Crossword Grid -->
-            <div class="left overflow-auto p-4" x-on:keydown.alt.debounce.500="setAltBlock()" x-on:keyup.alt.debounce.500="unsetAltBlock()">
+            <div class="left flex-1 overflow-auto p-4" x-on:keydown.alt.debounce.500="setAltBlock()" x-on:keyup.alt.debounce.500="unsetAltBlock()">
                 <template x-if="crossword">
                     <div class="bg-white dark:bg-gray-700 rounded-md shadow-sm border-2 border-gray-400 dark:border-gray-600 p-4 inline-block">
                         <template x-for="row in crossword.newGrid">
@@ -85,8 +85,16 @@
                 </template>
             </div>
 
+            <!-- Right Panel Resize Handle -->
+            <div class="drag-handle-vertical"
+                role="separator"
+                aria-orientation="vertical"
+                title="Resize definitions panel"
+                @mousedown.prevent="startDragRightPanel($event)"></div>
+
             <!-- Right Panel: Definitions & Controls -->
-            <div class="right overflow-auto p-4 flex flex-col bg-white dark:bg-gray-700 border-l-2 border-gray-400 dark:border-gray-600">
+            <div class="right overflow-auto p-4 flex flex-col bg-white dark:bg-gray-700 border-l-2 border-gray-400 dark:border-gray-600"
+                :style="`width: ${rightPanelWidth}px`">
                 <!-- Tab Navigation & Action Buttons -->
                 <div class="flex flex-wrap gap-2 mb-4 pb-4 border-b-2 border-gray-200 dark:border-gray-600">
                     <!-- Tab Buttons -->

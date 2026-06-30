@@ -3,40 +3,35 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\BookTextFileResource\Pages;
-use App\Filament\Resources\BookTextFileResource\RelationManagers;
 use App\Models\Book;
 use App\Models\BookTextFile;
-use Filament\Forms;
+use Filament\Actions;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
-use Filament\Tables;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
-
 
 class BookTextFileResource extends Resource
 {
     protected static ?string $model = BookTextFile::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-rectangle-stack';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form
+        return $schema
             ->schema([
                 TextInput::make('name'),
                 // TextInput::make('path'),
                 TextInput::make('lang'),
                 Select::make('book_id')
-                ->options(
-                    Book::pluck('name', 'id')
-                ),
-                FileUpload::make('attachment')
+                    ->options(
+                        Book::pluck('name', 'id')
+                    ),
+                FileUpload::make('attachment'),
             ]);
     }
 
@@ -52,12 +47,12 @@ class BookTextFileResource extends Resource
             ->filters([
                 //
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
+            ->recordActions([
+                Actions\EditAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+            ->toolbarActions([
+                Actions\BulkActionGroup::make([
+                    Actions\DeleteBulkAction::make(),
                 ]),
             ]);
     }

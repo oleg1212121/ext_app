@@ -3,7 +3,7 @@ document.addEventListener("alpine:init", () => {
     Alpine.data("main", () => ({
         // question: "I will give you two texts: the original in Russian and my version of the translation. Your tasks are: 1. Assess how accurately I convey the overall meaning. 2. Point out my grammatical errors and ways for improvement. 3. The response should be in English.",
         question:
-            "Compare Russian original vs. my translation. Tasks: 1. Assess meaning accuracy (with percentile). 2. Asses grammar (with percentile). 3. Fix grammar/improve. 4. Give  a couple of improved versions.",
+            "Compare Russian original vs. my translation. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Asses grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve. 4. Give  a couple of improved versions.",
         text: "",
         filename: "",
         searchPhrase: "",
@@ -30,7 +30,8 @@ document.addEventListener("alpine:init", () => {
         fontSize: 30,
         middleColumnWidth: 620,
         rightColumnWidth: 400,
-        selectedChat: "openrouter:google/gemini-2.5-flash-lite",
+        workplaceHeight: 200,
+        selectedChat: "openrouter:google/gemini-3-flash-preview",
         aiModels: window.aiModels || {},
         rows: [
             ["english part", "russian part"],
@@ -55,7 +56,7 @@ document.addEventListener("alpine:init", () => {
             })
                 .then((response) => response.json())
                 .then((response) => {
-                    if (response.data.code == 200) {
+                    if (response.data.code === 200) {
                         console.log("success");
                         // Convert to associative array for select component
                         let names = response.data.data.names;
@@ -98,7 +99,7 @@ document.addEventListener("alpine:init", () => {
                     this.contextModal = true;
                 }
             } else {
-                if (selection && selection != this.word) {
+                if (selection && selection !== this.word) {
                     this.contextModal = true;
                 } else {
                     this.contextModal = false;
@@ -107,7 +108,7 @@ document.addEventListener("alpine:init", () => {
             // if(selection || this.word){
             //   this.contextModal = !this.contextModal
             // }
-            if (selection && this.word != selection) {
+            if (selection && this.word !== selection) {
                 this.word = selection;
                 this.searching();
             }
@@ -138,6 +139,50 @@ document.addEventListener("alpine:init", () => {
                 }
             }
         },
+        startDragMiddleColumn(event) {
+            const startX = event.clientX;
+            const startWidth = this.middleColumnWidth;
+            const self = this;
+
+            const onMove = (e) => {
+                const delta = e.clientX - startX;
+                self.middleColumnWidth = Math.max(200, startWidth - delta);
+            };
+
+            const onUp = () => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+                document.body.style.userSelect = '';
+                document.body.style.cursor = '';
+            };
+
+            document.body.style.userSelect = 'none';
+            document.body.style.cursor = 'col-resize';
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+        },
+        startDragWorkplace(event) {
+            const startY = event.clientY;
+            const startHeight = this.workplaceHeight;
+            const self = this;
+
+            const onMove = (e) => {
+                const delta = e.clientY - startY;
+                self.workplaceHeight = Math.max(80, Math.min(Math.round(window.innerHeight * 0.6), startHeight - delta));
+            };
+
+            const onUp = () => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+                document.body.style.userSelect = '';
+                document.body.style.cursor = '';
+            };
+
+            document.body.style.userSelect = 'none';
+            document.body.style.cursor = 'row-resize';
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+        },
         changeFontSize(direct) {
             if (direct === "+") {
                 this.fontSize += 2;
@@ -158,6 +203,7 @@ document.addEventListener("alpine:init", () => {
             }
         },
         ask(item) {
+            if (this.spinner) return;
             let rus = item[1].trim().toString().replace("*", "");
             let eng = this.text.trim().toString().replace("*", "");
             console.log(rus, eng);
@@ -180,7 +226,7 @@ document.addEventListener("alpine:init", () => {
                 })
                     .then((response) => response.json())
                     .then((response) => {
-                        if (response.data.code == 200) {
+                        if (response.data.code === 200) {
                             console.log("success");
                             this.aiAnswer = response.data.answer;
 
@@ -217,7 +263,7 @@ document.addEventListener("alpine:init", () => {
                 .then((response) => response.json())
                 .then((response) => {
                     console.log(response)
-                    if (response.data.code == 200) {
+                    if (response.data.code === 200) {
                         console.log("success");
                         this.rows = response.data.data.rows;
                         let arr = this.filename.split("\\");
@@ -251,7 +297,7 @@ document.addEventListener("alpine:init", () => {
             })
                 .then((response) => response.json())
                 .then((response) => {
-                    if (response.code == 200) {
+                    if (response.code === 200) {
                         this.mnemonic = response.data.mnemonic;
                         this.isError = false;
                         // this.aiAnswer = response.data.mnemonic;
@@ -284,7 +330,7 @@ document.addEventListener("alpine:init", () => {
             })
                 .then((response) => response.json())
                 .then((response) => {
-                    if (response.code == 200) {
+                    if (response.code === 200) {
                         // console.log(response);
                         this.phonetics = response.data.phonetics;
                         this.examples = response.data.examples;
@@ -328,7 +374,7 @@ document.addEventListener("alpine:init", () => {
                     .then((response) => response.json())
                     .then((response) => {
                         this.spinner = false;
-                        if (response.code == 200) {
+                        if (response.code === 200) {
                             this.isError = false;
                             this.refreshData();
                             this.word = "";
@@ -423,7 +469,7 @@ document.addEventListener("alpine:init", () => {
             this.storeMemorizedWords()
         },
         memorizeSentence(index) {
-            if (index in this.interractedSentences) {
+            if (this.interractedSentences.includes(index)) {
                 return null
             }
             this.interractedSentences.push(index)

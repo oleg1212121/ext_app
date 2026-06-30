@@ -3,31 +3,31 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\WordResource\Pages;
-use App\Filament\Resources\WordResource\RelationManagers;
 use App\Models\Word;
-use Filament\Forms;
+use Filament\Actions;
 use Filament\Forms\Components\Checkbox;
-use Filament\Forms\Form;
-use Filament\Resources\Resource;
 use Filament\Forms\Components\TextInput;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables;
+use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\CheckboxColumn;
-use Filament\Tables\Columns\CheckboxInput;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class WordResource extends Resource
 {
     protected static ?string $model = Word::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-rectangle-stack';
 
-    public static function form(Form $form): Form
+    protected static string | \UnitEnum | null $navigationGroup = 'Words';
+
+    protected static ?string $navigationLabel = 'Legacy Words';
+
+    public static function form(Schema $schema): Schema
     {
-        return $form
+        return $schema
             ->schema([
                 TextInput::make('word'),
                 TextInput::make('knowledge')->numeric(),
@@ -60,20 +60,20 @@ class WordResource extends Resource
             ])
             ->filters([
                 Filter::make('Not for crossword')
-                ->query(function (Builder $query) {
-                    return $query->where('for_crossword', false);
-                }),
+                    ->query(function (Builder $query) {
+                        return $query->where('for_crossword', false);
+                    }),
                 Filter::make('Unknown')
-                ->query(function (Builder $query) {
-                    return $query->where('knowledge', '<=', 0)->where('is_known', false);
-                }),
+                    ->query(function (Builder $query) {
+                        return $query->where('knowledge', '<=', 0)->where('is_known', false);
+                    }),
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
+            ->recordActions([
+                Actions\EditAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+            ->toolbarActions([
+                Actions\BulkActionGroup::make([
+                    Actions\DeleteBulkAction::make(),
                 ]),
             ]);
     }

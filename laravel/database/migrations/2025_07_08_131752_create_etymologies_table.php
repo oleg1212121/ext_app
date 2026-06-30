@@ -13,9 +13,10 @@ return new class extends Migration
     {
         Schema::create('etymologies', function (Blueprint $table) {
             $table->id();
-            $table->text('pos')->default('noun');
-            $table->text('word');
-            $table->text('etymology');
+            $table->text('pos')->default('noun')->comment('Part of speech');
+            $table->text('word')->comment('Word');
+            $table->text('etymology')->comment('Etymology information');
+            $table->comment('Word etymologies');
         });
     }
 

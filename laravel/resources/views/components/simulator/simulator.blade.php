@@ -4,9 +4,9 @@
 ])
 
 <div class="body w-full flex-1 flex flex-col overflow-hidden bg-orange-100 dark:bg-gray-900"
-     @mouseup.ctrl.alt="showSelectionModal()"
-     @dblclick="memorizeHighlight()"
-     @keydown.window="memorizeHighlight()"
+    {{--     @mouseup.ctrl.alt="showSelectionModal()"--}}
+    {{--     @dblclick="memorizeHighlight()"--}}
+    {{--     @keydown.window="memorizeHighlight()"--}}
 >
     <!-- Selection Modal -->
     <div id="selection-modal"
@@ -190,9 +190,13 @@
                 </table>
             </div>
 
-            <!-- Bottom Control Bar - Fixed at bottom of viewport -->
+            <!-- Workplace Drag Handle -->
+            <div x-show="showWorkplace" class="drag-handle-horizontal"
+                 @mousedown.prevent="startDragWorkplace($event)"></div>
+            <!-- Bottom Control Bar -->
             <div
-                class="flex-none border-t-2 border-gray-400 dark:border-gray-600 bg-orange-100 dark:bg-gray-800 shadow-lg max-h-[40vh] overflow-y-auto pb-5">
+                class="flex-none border-t-2 border-gray-400 dark:border-gray-600 bg-orange-100 dark:bg-gray-800 shadow-lg overflow-y-auto pb-5"
+                :style="showWorkplace ? `height: ${workplaceHeight}px` : ''">
                 <div x-show="showWorkplace" x-transition class="p-3 border-b border-gray-300 dark:border-gray-600">
                     <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Workplace</label>
                     <textarea autocapitalize="on" rows="5" name="" id="workplace_textarea" x-ref="workplace"
@@ -208,27 +212,21 @@
         </div>
         <!-- Middle Column: AI Response -->
         <div x-show="middleColumn" x-transition
-             class="flex flex-col bg-orange-100 dark:bg-gray-800 border-r-2 border-gray-400 dark:border-gray-600 overflow-hidden shadow-sm"
+             class="flex bg-orange-100 dark:bg-gray-800 overflow-hidden shadow-sm"
              :style="`width: ${middleColumnWidth}px`">
-            <!-- Width Controls -->
-            <div
-                class="flex-none flex items-center justify-end gap-1 p-2 border-b-2 border-gray-400 dark:border-gray-600 bg-orange-100 dark:bg-gray-800">
-                <span class="text-xs font-semibold text-gray-600 dark:text-gray-400 mr-auto ml-2">AI Response</span>
-                <button
-                    class="w-7 h-7 flex items-center justify-center bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 hover:cursor-pointer text-gray-800 dark:text-gray-200 rounded transition text-sm font-bold"
-                    @click.prevent="changingWidth('+','middleColumnWidth')">
-                    ←
-                </button>
-                <button
-                    class="w-7 h-7 flex items-center justify-center bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 hover:cursor-pointer text-gray-800 dark:text-gray-200 rounded transition text-sm font-bold"
-                    @click.prevent="changingWidth('-','middleColumnWidth')">
-                    →
-                </button>
-            </div>
-            <!-- AI Answer Content -->
-            <div class="flex-1 overflow-y-auto p-4 bg-white dark:bg-gray-700 pb-5 mb-5">
-                <div x-html="aiAnswer" id="ai_answer_div"
-                     class="resizeable_element prose prose-sm dark:prose-invert max-w-none"></div>
+            <!-- Left Edge Drag Handle -->
+            <div class="drag-handle-vertical"
+                 @mousedown.prevent="startDragMiddleColumn($event)"></div>
+            <!-- Column Content -->
+            <div class="flex-1 flex flex-col overflow-hidden border-r-2 border-gray-400 dark:border-gray-600">
+                <div class="flex-none flex items-center px-4 py-3 border-b-2 border-gray-400 dark:border-gray-600 bg-orange-100 dark:bg-gray-800">
+                    <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">AI Response</span>
+                </div>
+                <!-- AI Answer Content -->
+                <div class="flex-1 overflow-y-auto p-4 bg-white dark:bg-gray-700 pb-5 mb-5">
+                    <div x-html="aiAnswer" id="ai_answer_div"
+                         class="resizeable_element prose prose-sm dark:prose-invert max-w-none"></div>
+                </div>
             </div>
         </div>
 

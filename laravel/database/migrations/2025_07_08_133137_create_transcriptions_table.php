@@ -13,9 +13,10 @@ return new class extends Migration
     {
         Schema::create('transcriptions', function (Blueprint $table) {
             $table->id();
-            $table->text('pos')->default('noun');
-            $table->text('word');
-            $table->text('transcription');
+            $table->text('pos')->default('noun')->comment('Part of speech');
+            $table->text('word')->comment('Word');
+            $table->text('transcription')->comment('Phonetic transcription');
+            $table->comment('Word transcriptions');
         });
     }
 

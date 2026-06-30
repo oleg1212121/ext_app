@@ -13,9 +13,10 @@ return new class extends Migration
     {
         Schema::create('books', function (Blueprint $table) {
             $table->id();
-            $table->text('name', 512)->unique();
-            $table->text('description', 2048)->nullable();
+            $table->string('name', 512)->unique()->comment('Book name');
+            $table->string('description', 2048)->nullable()->comment('Book description');
             $table->timestamps();
+            $table->comment('Books for reading practice');
         });
     }
 

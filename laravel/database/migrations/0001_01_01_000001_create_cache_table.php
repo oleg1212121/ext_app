@@ -12,15 +12,17 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('cache', function (Blueprint $table) {
-            $table->string('key')->primary();
-            $table->mediumText('value');
-            $table->integer('expiration');
+            $table->string('key')->primary()->comment('Cache key');
+            $table->mediumText('value')->comment('Cached value');
+            $table->integer('expiration')->comment('Expiration timestamp');
+            $table->comment('Application cache');
         });
 
         Schema::create('cache_locks', function (Blueprint $table) {
-            $table->string('key')->primary();
-            $table->string('owner');
-            $table->integer('expiration');
+            $table->string('key')->primary()->comment('Lock key');
+            $table->string('owner')->comment('Lock owner identifier');
+            $table->integer('expiration')->comment('Lock expiration timestamp');
+            $table->comment('Cache locks for concurrent access control');
         });
     }
 

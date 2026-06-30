@@ -1,0 +1,40 @@
+table.bilingual-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+}
+
+table.bilingual-table col.bilingual-lang-col {
+    width: calc((100% - 9rem) / 2);
+}
+
+table.bilingual-table col.bilingual-control-col {
+    width: 3rem;
+}
+
+table.bilingual-table tbody tr.simulator-row {
+    width: 100%;
+}
+
+table.bilingual-table tbody tr.simulator-row > td {
+    vertical-align: top;
+}
+
+table.bilingual-table tbody tr.simulator-row > td.bilingual-control-cell {
+    vertical-align: middle;
+    text-align: center;
+}
+
+table.bilingual-table .bilingual-control-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+table.bilingual-table .eng,
+table.bilingual-table .rus {
+    display: block;
+    width: 100%;
+    overflow-wrap: anywhere;
+}

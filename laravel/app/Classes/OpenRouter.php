@@ -97,7 +97,7 @@ class OpenRouter extends AiProvider
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($data),
             CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $this->apiKey,
+                'Authorization: Bearer '.$this->apiKey,
                 'Content-Type: application/json',
             ],
             CURLOPT_TIMEOUT => 60,
@@ -113,8 +113,8 @@ class OpenRouter extends AiProvider
 
         $result = json_decode($response, true);
 
-        if (!isset($result['choices'][0]['message']['content'])) {
-            return 'Error in response: ' . print_r($result, true);
+        if (! isset($result['choices'][0]['message']['content'])) {
+            return 'Error in response: '.print_r($result, true);
         }
 
         return $this->markdownToHtml($result['choices'][0]['message']['content']);
@@ -123,7 +123,7 @@ class OpenRouter extends AiProvider
     public function markdownToHtml($text): string
     {
         $parsedown = new \Parsedown;
-        $text = preg_replace('/$\\rightarrow$/', '>>>', $text);
+        $text = $this->normalizeArrowNotation($text);
         $text = $parsedown->text($text);
 
         return $text;

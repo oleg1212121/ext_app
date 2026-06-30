@@ -2,22 +2,22 @@
 
 namespace App\Filament\Resources\BookResource\RelationManagers;
 
+use Filament\Actions;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class WordsRelationManager extends RelationManager
 {
     protected static string $relationship = 'words';
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
-        return $form
+        return $schema
             ->schema([
                 Forms\Components\TextInput::make('word')
                     ->required()
@@ -27,7 +27,7 @@ class WordsRelationManager extends RelationManager
                     ->required()
                     ->integer()
                     ->minValue(1)
-                    ->maxValue(1000)
+                    ->maxValue(1000),
             ]);
     }
 
@@ -53,54 +53,54 @@ class WordsRelationManager extends RelationManager
             ])
             ->filters([
                 Filter::make('Not seen')
-                ->query(function (Builder $query) {
-                    return $query->where('is_known', false)->where('knowledge','<=', 0);
-                }),
+                    ->query(function (Builder $query) {
+                        return $query->where('is_known', false)->where('knowledge', '<=', 0);
+                    }),
                 Filter::make('Unknown')
-                ->query(function (Builder $query) {
-                    return $query->where('is_known', false);
-                }),
+                    ->query(function (Builder $query) {
+                        return $query->where('is_known', false);
+                    }),
                 Filter::make('Weak knowledge')
-                ->query(function (Builder $query) {
-                    return $query->where('knowledge', '<', 60);
-                }),
+                    ->query(function (Builder $query) {
+                        return $query->where('knowledge', '<', 60);
+                    }),
 
                 Filter::make('For studying')
-                ->query(function (Builder $query) {
-                    return $query->where('is_known', false)
-                    ->where('book_word.is_solved', false)
-                    ->where('knowledge', '<', 60);
-                }),
+                    ->query(function (Builder $query) {
+                        return $query->where('is_known', false)
+                            ->where('book_word.is_solved', false)
+                            ->where('knowledge', '<', 60);
+                    }),
                 Filter::make('3000 most common')
-                ->query(function (Builder $query) {
-                    return $query->where('less_3000', '>', 0);
-                }),
+                    ->query(function (Builder $query) {
+                        return $query->where('less_3000', '>', 0);
+                    }),
                 Filter::make('5000 most common')
-                ->query(function (Builder $query) {
-                    return $query->where('less_5000', '>', 0);
-                }),
+                    ->query(function (Builder $query) {
+                        return $query->where('less_5000', '>', 0);
+                    }),
                 Filter::make('10000 most common')
-                ->query(function (Builder $query) {
-                    return $query->where('less_10000', '>', 0);
-                }),
+                    ->query(function (Builder $query) {
+                        return $query->where('less_10000', '>', 0);
+                    }),
             ])
             ->headerActions([
-                // Tables\Actions\CreateAction::make(),
-                Tables\Actions\AttachAction::make()
-                ->form(fn (Tables\Actions\AttachAction $action): array => [
-                    $action->getRecordSelect(),
-                    Forms\Components\TextInput::make('count')->required(),
-                ])
-                ->recordSelectOptionsQuery(fn (Builder $query, $search) => $query->where('word', 'like', "{$search}%")),
+                // Actions\CreateAction::make(),
+                Actions\AttachAction::make()
+                    ->form(fn (Actions\AttachAction $action): array => [
+                        $action->getRecordSelect(),
+                        Forms\Components\TextInput::make('count')->required(),
+                    ])
+                    ->recordSelectOptionsQuery(fn (Builder $query, $search) => $query->where('word', 'like', "{$search}%")),
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-                // Tables\Actions\DeleteAction::make(),
-                Tables\Actions\DetachAction::make(),
+            ->recordActions([
+                Actions\EditAction::make(),
+                // Actions\DeleteAction::make(),
+                Actions\DetachAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DetachBulkAction::make(),
+            ->toolbarActions([
+                Actions\BulkActionGroup::make([
+                    Actions\DetachBulkAction::make(),
                 ]),
             ]);
     }

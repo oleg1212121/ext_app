@@ -2,8 +2,6 @@
 
 namespace App\Classes;
 
-
-
 class Parser
 {
     protected const ALLOWED = [
@@ -59,8 +57,8 @@ class Parser
         'X' => true,
         'Y' => true,
         'Z' => true,
-        "-" => true,
-        "'" => true
+        '-' => true,
+        "'" => true,
     ];
 
     public static function parse($text)
@@ -69,31 +67,32 @@ class Parser
         $dictionary = [];
         foreach ($arr as $row) {
             $row = strtolower(trim($row));
-            $chunks = explode(" ", $row);
-            foreach($chunks as $chunk){
-                $word = "";
-                for($i=0;$i<strlen($chunk);$i++){
-                    if(isset(static::ALLOWED[$chunk[$i]])){
+            $chunks = explode(' ', $row);
+            foreach ($chunks as $chunk) {
+                $word = '';
+                for ($i = 0; $i < strlen($chunk); $i++) {
+                    if (isset(static::ALLOWED[$chunk[$i]])) {
                         $word .= $chunk[$i];
                     }
                 }
-                $word = trim($word, "-");
+                $word = trim($word, '-');
                 $dictionary[$word] = ($dictionary[$word] ?? 0) + 1;
             }
         }
+
         return $dictionary;
     }
 
     public static function parseWord($str)
     {
         $str = strtolower(trim($str));
-        $word = "";
-        for($i=0;$i<strlen($str);$i++){
-            if(isset(static::ALLOWED[$str[$i]])){
+        $word = '';
+        for ($i = 0; $i < strlen($str); $i++) {
+            if (isset(static::ALLOWED[$str[$i]])) {
                 $word .= $str[$i];
             }
         }
-        $word = trim($word, "-");
+        $word = trim($word, '-');
 
         return $word;
     }

@@ -87,8 +87,31 @@
             currentText: '',
             currentWord: '',
             solvedWords: [],
+            rightPanelWidth: Math.round(window.innerWidth * 0.5),
             async init() {
                 this.getTexts()
+            },
+            startDragRightPanel(event) {
+                const startX = event.clientX
+                const startWidth = this.rightPanelWidth
+                const maxWidth = Math.round(window.innerWidth * 0.8)
+
+                const onMove = (e) => {
+                    const delta = e.clientX - startX
+                    this.rightPanelWidth = Math.max(280, Math.min(maxWidth, startWidth - delta))
+                }
+
+                const onUp = () => {
+                    window.removeEventListener('mousemove', onMove)
+                    window.removeEventListener('mouseup', onUp)
+                    document.body.style.userSelect = ''
+                    document.body.style.cursor = ''
+                }
+
+                document.body.style.userSelect = 'none'
+                document.body.style.cursor = 'col-resize'
+                window.addEventListener('mousemove', onMove)
+                window.addEventListener('mouseup', onUp)
             },
             async getTexts(){
                 await fetch("/get-texts", {

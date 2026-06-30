@@ -1,10 +1,13 @@
 <?php
 
-uses(Tests\TestCase::class);
+use App\Classes\OpenRouter;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 describe('OpenRouter Provider', function () {
     it('has models with prices in the display names', function () {
-        $openRouter = new \App\Classes\OpenRouter;
+        $openRouter = new OpenRouter;
         $reflection = new ReflectionClass($openRouter);
         $property = $reflection->getProperty('models');
         $property->setAccessible(true);
@@ -20,7 +23,7 @@ describe('OpenRouter Provider', function () {
     });
 
     it('contains specific model identifiers with correct pricing', function () {
-        $openRouter = new \App\Classes\OpenRouter;
+        $openRouter = new OpenRouter;
         $reflection = new ReflectionClass($openRouter);
         $property = $reflection->getProperty('models');
         $property->setAccessible(true);
@@ -33,7 +36,7 @@ describe('OpenRouter Provider', function () {
     });
 
     it('includes all models from the identifiers list', function () {
-        $openRouter = new \App\Classes\OpenRouter;
+        $openRouter = new OpenRouter;
         $reflection = new ReflectionClass($openRouter);
         $property = $reflection->getProperty('models');
         $property->setAccessible(true);

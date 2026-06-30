@@ -8,10 +8,10 @@ use App\Http\Requests\AiQuestionRequest;
 use App\Http\Requests\DictionaryInteractionsSaveRequest;
 use App\Http\Requests\DictionarySelectionSaveRequest;
 use App\Http\Requests\GetTextsRequest;
-use App\Http\Requests\TextRequest;
 use App\Models\SavedPhrase;
 use Exception;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 use InvalidArgumentException;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -27,10 +27,41 @@ class BilingualsController extends Controller
         $aiModels = $this->modelResolver->getGroupedModels();
         $textList = $this->getTextsArray();
 
-        return view('simulator', [
+        return Inertia::render('Bilinguals/Bilinguals', [
             'aiModels' => $aiModels,
             'textList' => $textList,
+            'showWorkplace' => true,
+            'showQuestion' => true,
+            'showText' => true,
+            'showAI' => true,
+            'currentModel' => 'openrouter:google/gemini-3-flash-preview',
+            'currentQuestion' => 'Compare Russian original vs. my translation. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Asses grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve. 4. Give  a couple of improved versions.',
+            'currentText' => 'result.txt',
         ]);
+    }
+
+    private function getTextsArray(): array
+    {
+        $result = [];
+        try {
+            $directory = public_path('texts/simulator');
+
+            if (! is_dir($directory)) {
+                throw new Exception('Directory not found: '.$directory);
+                // return [];
+            }
+
+            $files = glob($directory.'/*.txt');
+
+            foreach ($files as $file) {
+                $name = basename($file);
+                $result[$name] = $name;
+            }
+        } catch (Exception $e) {
+            error_log('Files not found: '.$e->getMessage());
+        }
+
+        return $result;
     }
 
     public function getTexts(GetTextsRequest $request)
@@ -54,9 +85,7 @@ class BilingualsController extends Controller
             foreach ($iterator as $file) {
                 if ($file->isFile()) {
                     $name = $file->getPathname();
-                    if (str_contains($name, ':Zone.Identifier')) {
-                        continue;
-                    }
+
                     $prefix = $directory.'/';
                     $name = str_replace($prefix, '', $name);
                     $result['names'][] = $name;
@@ -80,98 +109,14 @@ class BilingualsController extends Controller
         );
     }
 
-    private function getTextsArray(): array
-    {
-        $result = [];
-        try {
-            $directory = public_path('texts/simulator');
-
-            if (! is_dir($directory)) {
-                throw new Exception('Directory not found: '.$directory);
-                // return [];
-            }
-
-            $files = glob($directory.'/*.txt');
-
-            foreach ($files as $file) {
-                $name = basename($file);
-                if (str_contains($name, ':Zone.Identifier')) {
-                    continue;
-                }
-                $result[$name] = $name;
-            }
-        } catch (Exception $e) {
-            error_log('Files not found: '.$e->getMessage());
-        }
-
-        return $result;
-    }
-
-    public function text(TextRequest $request)
-    {
-        $status = 200;
-        $result = [
-            'rows' => [],
-        ];
-        $isRus = false;
-
-        $filename = $request->get('filename', null);
-        $filename = public_path('texts/simulator/'.$filename);
-
-        if (file_exists($filename)) {
-            $fd = fopen($filename, 'r');
-            if ($fd) {
-                $cur = ['', ''];
-
-                while (($line = fgets($fd)) !== false) {
-                    $line = trim($line);
-
-                    if ($line === '') {
-                        if ($isRus) {
-                            $result['rows'][] = $cur;
-                            $cur = ['', ''];
-                        }
-                        $isRus = ! $isRus;
-                    } else {
-                        if ($isRus) {
-                            $cur[1] = $line;
-                        } else {
-                            $cur[0] = $line;
-                        }
-                    }
-                }
-
-                fclose($fd);
-            } else {
-                $status = 500;
-                $result['error'] = 'Could not open file';
-            }
-        } else {
-            $status = 404;
-            $result['error'] = 'File not found';
-        }
-
-        $data = [
-            'data' => $result,
-            'code' => $status,
-        ];
-
-        return response()->json(
-            [
-                'data' => $data,
-            ],
-            $status,
-        );
-    }
-
     public function askAi(AiQuestionRequest $request)
     {
         $status = 200;
-        $prompt = $request->validated('data');
+        $prompt = $request->validated('data') ?? '';
 
-        $instruction = $request->validated('question');
+        $instruction = $request->validated('question') ?? '';
         $modelString = $request->validated('model');
-
+dd($instruction, $prompt, $modelString);
         try {
             $answer = $this->modelResolver->ask($modelString, $instruction, $prompt);
         } catch (InvalidArgumentException $e) {
@@ -200,7 +145,7 @@ class BilingualsController extends Controller
     {
 
         $status = 200;
-        $selection = $request->get('selection', null);
+        $selection = $request->input('selection');
         $phrase = new SavedPhrase([
             'phrase' => $selection,
         ]);
@@ -218,7 +163,7 @@ class BilingualsController extends Controller
     {
 
         $status = 200;
-        $words = $request->get('words', []);
+        $words = $request->input('words', []);
 
         if (count($words) > 0) {
 
@@ -247,8 +192,8 @@ class BilingualsController extends Controller
                     )
                 ) AS ff
                 WHERE words.word = ff.word;";
+            DB::insert($query);
         }
-        DB::insert($query);
 
         return response()->json(
             [

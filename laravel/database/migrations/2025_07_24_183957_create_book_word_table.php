@@ -15,10 +15,11 @@ return new class extends Migration
     {
         Schema::create('book_word', function (Blueprint $table) {
             $table->id();
-            $table->foreignIdFor(Book::class, 'book_id')->onDelete('cascade')->onUpdate('cascade');
-            $table->foreignIdFor(Word::class, 'word_id')->onDelete('cascade')->onUpdate('cascade');
-            $table->boolean('is_solved')->default(false);
-            $table->integer('count')->default(1);
+            $table->foreignIdFor(Book::class, 'book_id')->comment('Book ID. Foreign key.')->onDelete('cascade')->onUpdate('cascade');
+            $table->foreignIdFor(Word::class, 'word_id')->comment('Word ID. Foreign key.')->onDelete('cascade')->onUpdate('cascade');
+            $table->boolean('is_solved')->default(false)->comment('Whether word is solved in crossword');
+            $table->integer('count')->default(1)->comment('Word occurrence count');
+            $table->comment('Book-word relationships with occurrence counts');
         });
     }
 

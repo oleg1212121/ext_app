@@ -34,6 +34,8 @@ abstract class AiProvider implements AiProviderInterface
             return '';
         }
 
+        $text = $this->normalizeArrowNotation($text);
+
         // First, handle code blocks (before escaping, as they contain code)
         // Match code blocks with language identifier
         $text = preg_replace_callback('/```(\w+)?\n(.*?)```/s', function ($matches) {
@@ -67,9 +69,6 @@ abstract class AiProvider implements AiProviderInterface
 
         // Convert inline code (`code`)
         $html = preg_replace('/`([^`]+)`/', '<code>$1</code>', $html);
-
-        // Convert $\rightarrow$ (`code`)
-        $html = preg_replace('/\$\\rightarrow\$/', '=>', $html);
 
         // Convert unordered lists (* item or - item)
         // First, wrap consecutive list items
@@ -112,6 +111,15 @@ abstract class AiProvider implements AiProviderInterface
         $html = trim($html);
 
         return $html;
+    }
+
+    protected function normalizeArrowNotation(string $text): string
+    {
+        return str_replace(
+            ['$\rightarrow$', '\rightarrow', '→', '$\to$', '$\Rightarrow$'],
+            '=>',
+            $text,
+        );
     }
 
     protected function resolveModel($model = '')

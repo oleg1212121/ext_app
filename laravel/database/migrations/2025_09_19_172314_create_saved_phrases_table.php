@@ -13,8 +13,9 @@ return new class extends Migration
     {
         Schema::create('saved_phrases', function (Blueprint $table) {
             $table->id();
-            $table->text('phrase')->nullable(false);
+            $table->text('phrase')->nullable(false)->comment('Saved phrase text');
             $table->timestamps();
+            $table->comment('User saved phrases');
         });
     }
 

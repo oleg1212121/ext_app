@@ -2,19 +2,15 @@
 
 namespace App\Classes;
 
-use App\Classes\Crossword;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use App\Models\Word;
-
+use Illuminate\Support\Facades\DB;
 
 class KaikkiParser
 {
-
     public static function getSpecificWords()
     {
 
-        $words = DB::table("words2")->pluck('id', 'word')->toArray();
+        $words = DB::table('words2')->pluck('id', 'word')->toArray();
 
         $arrr = [];
         $count = 0;
@@ -22,35 +18,34 @@ class KaikkiParser
             $words[strtolower($key)] = 1;
         }
         $path = getcwd();
-        $file = $path . "/kaikki_english.jsonl";
-        $file2 = $path . "/test.txt";
+        $file = $path.'/kaikki_english.jsonl';
+        $file2 = $path.'/test.txt';
 
         $file = fopen($file, 'r');
-        if (!$file) {
+        if (! $file) {
             echo 'NO FILE';
+
             return;
         }
-        while (!feof($file)) {
+        while (! feof($file)) {
 
             $cur = fgets($file);
             $line = json_decode($cur);
-
 
             if ($line->word ?? null) {
                 $key = strtolower($line->word);
                 if (isset($words[$key])) {
 
                     $word = [
-                        'word' => null,
+                        'word' => $line->word ?? null,
                         'forms' => [],
                         'translations' => [],
                         'senses' => [],
                         'sounds' => [],
-                        'lang' => $line->lang ?? "*",
-                        'pos' => $line->pos ?? "*",
+                        'lang' => $line->lang ?? '*',
+                        'pos' => $line->pos ?? '*',
                         'etymologies' => [],
                     ];
-                    $word['word'] = $line->word ?? null;
                     if ($line->etymology_text ?? null) {
                         $word['etymologies'][] = $line->etymology_text;
                     }
@@ -66,13 +61,11 @@ class KaikkiParser
                         }
                     }
 
-
                     foreach (($line->synonyms ?? []) as $synonym) {
                         if ($synonym->word ?? null) {
                             $word['forms'][] = $synonym->word;
                         }
                     }
-
 
                     foreach (($line->senses ?? []) as $sense) {
 
@@ -99,7 +92,7 @@ class KaikkiParser
                     $arrr[] = $word;
                     $count++;
                     if ($count > 10000) {
-                        $file3 = fopen($file2, "a");
+                        $file3 = fopen($file2, 'a');
                         foreach ($arrr as $key => $word) {
                             fwrite($file3, json_encode($word, true));
                             fwrite($file3, PHP_EOL);
@@ -128,21 +121,22 @@ class KaikkiParser
         // $words = [];
 
         $path = getcwd();
-        $file = $path . "/kai_ab.jsonl";
+        $file = $path.'/kai_ab.jsonl';
 
         $file = fopen($file, 'r');
 
         $linecount = 0;
-        if (!$file) {
+        if (! $file) {
             echo 'NO FILE';
-            return;
+
+            return false;
         }
         $forms = [];
         $etymologies = [];
         $sounds = [];
         $translations = [];
         $senses = [];
-        while (!feof($file)) {
+        while (! feof($file)) {
             $line = fgets($file);
 
             $line = json_decode($line);
@@ -150,9 +144,9 @@ class KaikkiParser
                 $line &&
                 $line->word
                 // && isset($arr[strtolower($line->word)])
-                ) {
+            ) {
                 $word = [
-                    'pos' => $line->pos ?? "*",
+                    'pos' => $line->pos ?? '*',
                     'forms' => [],
                     'etymology_text' => '',
                     'word' => null,
@@ -181,10 +175,10 @@ class KaikkiParser
 
                 foreach (($line->senses ?? []) as $sense) {
                     $rawGloss = $sense->raw_glosses ?? [];
-                    if($rawGloss && count($rawGloss) > 0){
-                        $gloss = implode(" ", $rawGloss);
+                    if ($rawGloss && count($rawGloss) > 0) {
+                        $gloss = implode(' ', $rawGloss);
                     } else {
-                        $gloss = implode(" ", $sense->glosses ?? []);
+                        $gloss = implode(' ', $sense->glosses ?? []);
                     }
                     if ($gloss != '') {
                         $word['senses'][] = $gloss;
@@ -211,19 +205,19 @@ class KaikkiParser
                 $word['senses'] = array_unique($word['senses']);
                 $words[] = $word['word'];
                 if ($word['etymology_text'] != '') {
-                    $etymologies[] = "('" . $word['pos'] . "', '" . $word['word'] . "', '" . $word['etymology_text'] . "')";
+                    $etymologies[] = "('".$word['pos']."', '".$word['word']."', '".$word['etymology_text']."')";
                 }
                 foreach ($word['forms'] as $form) {
-                    $forms[] = "('" . $word['pos'] . "', '" . $word['word'] . "', '" . pg_escape_string($form) . "')";
+                    $forms[] = "('".$word['pos']."', '".$word['word']."', '".pg_escape_string($form)."')";
                 }
                 foreach ($word['sounds'] as $sound) {
-                    $sounds[] = "('" . $word['pos'] . "', '" . $word['word'] . "', '" . pg_escape_string($sound) . "')";
+                    $sounds[] = "('".$word['pos']."', '".$word['word']."', '".pg_escape_string($sound)."')";
                 }
                 foreach ($word['translations'] as $translation) {
-                    $translations[] = "('" . $word['pos'] . "', '" . $word['word'] . "', '" . pg_escape_string($translation) . "')";
+                    $translations[] = "('".$word['pos']."', '".$word['word']."', '".pg_escape_string($translation)."')";
                 }
                 foreach ($word['senses'] as $sense) {
-                    $senses[] = "('" . $word['pos'] . "', '" . $word['word'] . "', '" . pg_escape_string($sense) . "')";
+                    $senses[] = "('".$word['pos']."', '".$word['word']."', '".pg_escape_string($sense)."')";
                 }
             }
             $linecount++;
@@ -231,14 +225,14 @@ class KaikkiParser
             if ($linecount > 5000) {
 
                 $words = array_values(array_unique($words));
-                $str = "('" . implode("'), ('", $words) . "')";
+                $str = "('".implode("'), ('", $words)."')";
                 $query = "INSERT INTO words (word) VALUES {$str} ON CONFLICT DO NOTHING;";
                 // $query = pg_escape_string($query);
                 DB::insert($query);
                 $words = [];
 
                 if ($etymologies) {
-                    $str = implode(", ", $etymologies);
+                    $str = implode(', ', $etymologies);
                     $query = "INSERT INTO etymologies (pos, word, etymology) VALUES {$str} ON CONFLICT DO NOTHING;";
                     // $query = pg_escape_string($query);
                     DB::insert($query);
@@ -246,21 +240,21 @@ class KaikkiParser
                 }
 
                 if ($forms) {
-                    $str = implode(", ", $forms);
+                    $str = implode(', ', $forms);
                     $query = "INSERT INTO forms (pos, word, form) VALUES {$str} ON CONFLICT DO NOTHING;";
                     // $query = pg_escape_string($query);
                     DB::insert($query);
                     $forms = [];
                 }
                 if ($sounds) {
-                    $str = implode(", ", $sounds);
+                    $str = implode(', ', $sounds);
                     $query = "INSERT INTO transcriptions (pos, word, transcription) VALUES {$str} ON CONFLICT DO NOTHING;";
                     // $query = pg_escape_string($query);
                     DB::insert($query);
                     $sounds = [];
                 }
                 if ($translations) {
-                    $str = implode(", ", $translations);
+                    $str = implode(', ', $translations);
                     $query = "INSERT INTO translations (pos, word, translation) VALUES {$str} ON CONFLICT DO NOTHING;";
                     // $query = pg_escape_string($query);
                     DB::insert($query);
@@ -268,15 +262,15 @@ class KaikkiParser
                 }
                 if ($senses) {
 
-                    $str = implode(", ", $senses);
+                    $str = implode(', ', $senses);
                     $query = "INSERT INTO definitions (pos, word, definition) VALUES {$str} ON CONFLICT DO NOTHING;";
                     // $query = pg_escape_string($query);
                     DB::insert($query);
                     $senses = [];
                 }
 
-                $str = "";
-                $query = "";
+                $str = '';
+                $query = '';
                 $linecount = 0;
                 // break;
 
@@ -286,14 +280,14 @@ class KaikkiParser
         fclose($file);
 
         $words = array_values(array_unique($words));
-        $str = "('" . implode("'), ('", $words) . "')";
+        $str = "('".implode("'), ('", $words)."')";
         $query = "INSERT INTO words (word) VALUES {$str} ON CONFLICT DO NOTHING;";
         // $query = pg_escape_string($query);
         DB::insert($query);
         $words = [];
 
         if ($etymologies) {
-            $str = implode(", ", $etymologies);
+            $str = implode(', ', $etymologies);
             $query = "INSERT INTO etymologies (pos, word, etymology) VALUES {$str} ON CONFLICT DO NOTHING;";
             // $query = pg_escape_string($query);
             DB::insert($query);
@@ -301,21 +295,21 @@ class KaikkiParser
         }
 
         if ($forms) {
-            $str = implode(", ", $forms);
+            $str = implode(', ', $forms);
             $query = "INSERT INTO forms (pos, word, form) VALUES {$str} ON CONFLICT DO NOTHING;";
             // $query = pg_escape_string($query);
             DB::insert($query);
             $forms = [];
         }
         if ($sounds) {
-            $str = implode(", ", $sounds);
+            $str = implode(', ', $sounds);
             $query = "INSERT INTO transcriptions (pos, word, transcription) VALUES {$str} ON CONFLICT DO NOTHING;";
             // $query = pg_escape_string($query);
             DB::insert($query);
             $sounds = [];
         }
         if ($translations) {
-            $str = implode(", ", $translations);
+            $str = implode(', ', $translations);
             $query = "INSERT INTO translations (pos, word, translation) VALUES {$str} ON CONFLICT DO NOTHING;";
             // $query = pg_escape_string($query);
             DB::insert($query);
@@ -323,43 +317,42 @@ class KaikkiParser
         }
         if ($senses) {
 
-            $str = implode(", ", $senses);
+            $str = implode(', ', $senses);
             $query = "INSERT INTO definitions (pos, word, definition) VALUES {$str} ON CONFLICT DO NOTHING;";
             // $query = pg_escape_string($query);
             DB::insert($query);
             $senses = [];
         }
+
         return 2;
     }
-
-
 
     public static function insertWordsInfo()
     {
 
-
         $path = $path = getcwd();
-        $file2 = $path . "/test.txt";
+        $file2 = $path.'/test.txt';
 
         $file = fopen($file2, 'r');
-        if (!$file) {
+        if (! $file) {
             echo 'NO FILE';
+
             return;
         }
 
         $arr = [];
         $count = 0;
-        while (!feof($file)) {
+        while (! feof($file)) {
 
             $cur = trim(fgets($file));
             $line = json_decode($cur);
-            if (!$line) {
+            if (! $line) {
                 break;
             }
-            $arr[] = "('" . $line->word . "', '" . json_encode($line, JSON_HEX_APOS) . "')";
+            $arr[] = "('".$line->word."', '".json_encode($line, JSON_HEX_APOS)."')";
             if ($count > 10000) {
                 // break;
-                $str =  implode(",", $arr);
+                $str = implode(',', $arr);
                 $query = "INSERT INTO infos (word, info) VALUES {$str} ON CONFLICT DO NOTHING;";
 
                 DB::insert($query);
@@ -372,7 +365,7 @@ class KaikkiParser
         }
 
         fclose($file);
-        $str =  implode(",", $arr);
+        $str = implode(',', $arr);
         dd($count, $line, $str);
     }
 
@@ -380,19 +373,19 @@ class KaikkiParser
     {
         // dd(4);
         $path = getcwd();
-        $file = $path . "/kai_ab.jsonl";
+        $file = $path.'/kai_ab.jsonl';
 
         $file = fopen($file, 'r');
 
-
         $linecount = 0;
         $words = [];
-        if (!$file) {
+        if (! $file) {
             echo 'NO FILE';
+
             return;
         }
         $target = 1122;
-        while (!feof($file)) {
+        while (! feof($file)) {
 
             $cur = fgets($file);
 
@@ -424,21 +417,22 @@ class KaikkiParser
         fclose($file);
     }
 
-    public static function lookForObsolete(){
+    public static function lookForObsolete()
+    {
         $path = getcwd();
-        $file = $path . "/kaikki_english.jsonl";
+        $file = $path.'/kaikki_english.jsonl';
 
         $file = fopen($file, 'r');
 
-
         $linecount = 0;
         $words = [];
-        if (!$file) {
+        if (! $file) {
             echo 'NO FILE';
+
             return;
         }
         $target = 11;
-        while (!feof($file)) {
+        while (! feof($file)) {
 
             $cur = fgets($file);
 
@@ -446,15 +440,14 @@ class KaikkiParser
             if ($line && $line->word) {
                 $word = $line->word ?? '';
 
-
                 // $glosses = [];
                 foreach (($line->senses ?? []) as $sense) {
-                    foreach($sense->raw_glosses ?? [] as $gloss){
-                        if(
+                    foreach ($sense->raw_glosses ?? [] as $gloss) {
+                        if (
                             str_contains($gloss, 'archaic') ||
-                            str_contains($gloss, 'obsolete')||
+                            str_contains($gloss, 'obsolete') ||
                             str_contains($gloss, 'dated')
-                        ){
+                        ) {
                             $word = pg_escape_string($line->word ?? '');
                             $gloss = pg_escape_string($gloss);
                             $words[] = "{$word} ----- {$gloss}";
@@ -464,11 +457,11 @@ class KaikkiParser
                 }
 
             }
-            if($linecount > 10000){
+            if ($linecount > 10000) {
                 $path = getcwd();
-                $file2 = $path . "/test22.txt";
+                $file2 = $path.'/test22.txt';
 
-                $file3 = fopen($file2, "a");
+                $file3 = fopen($file2, 'a');
                 foreach ($words as $key => $word) {
                     fwrite($file3, $word);
                     fwrite($file3, PHP_EOL);
@@ -483,67 +476,65 @@ class KaikkiParser
         dd($words);
     }
 
-    public static function insertObsolete(){
+    public static function insertObsolete()
+    {
         $path = getcwd();
-        $file = $path . "/test22.txt";
+        $file = $path.'/test22.txt';
 
         $file = fopen($file, 'r');
 
-
         $count = 0;
         $words = [];
-        if (!$file) {
+        if (! $file) {
             echo 'NO FILE';
+
             return;
         }
         $target = 11;
-        while (!feof($file)) {
+        while (! feof($file)) {
 
             $cur = trim(fgets($file));
-            if($cur && $count >= 50000){
-                [$word, $definition] = explode(" ----- ", $cur);
-                $definition = preg_replace("/^\([^)]+\)\s/", "", $definition);
+            if ($cur && $count >= 50000) {
+                [$word, $definition] = explode(' ----- ', $cur);
+                $definition = preg_replace("/^\([^)]+\)\s/", '', $definition);
                 $definition = pg_escape_string($definition);
                 echo "'".$definition."',";
                 echo '<br>';
             }
             $count++;
-            if($count > 60000){
+            if ($count > 60000) {
                 break;
             }
         }
         fclose($file);
     }
 
-
-
-
-
     public static function words_466k()
     {
         $path = $path = getcwd();
-        $file2 = $path . "/words_alpha.txt";
+        $file2 = $path.'/words_alpha.txt';
 
         $file = fopen($file2, 'r');
-        if (!$file) {
+        if (! $file) {
             echo 'NO FILE';
+
             return;
         }
 
         $arr = [];
         $count = 0;
-        while (!feof($file)) {
+        while (! feof($file)) {
 
             $cur = trim(fgets($file));
-            if (!$cur) {
+            if (! $cur) {
                 break;
             }
-// echo $cur;
-// break;
+            // echo $cur;
+            // break;
 
-            $arr[] = "('" . pg_escape_string($cur) . "')";
+            $arr[] = "('".pg_escape_string($cur)."')";
             if ($count > 20000) {
-                $str =  implode(",", $arr);
+                $str = implode(',', $arr);
                 $query = "INSERT INTO words_466k (word) VALUES {$str} ON CONFLICT DO NOTHING;";
 
                 DB::insert($query);

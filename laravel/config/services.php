@@ -78,4 +78,13 @@ return [
         'port' => env('PROXY_PORT'),
     ],
 
+    'embedding' => [
+        'url' => env('EMBEDDING_API_URL', 'http://ext_embedding:8000'),
+        'timeout' => env('EMBEDDING_TIMEOUT', 30),
+        'alignment_batch_size' => (int) env('EMBEDDING_ALIGNMENT_BATCH_SIZE', 25),
+        'alignment_sentence_max_chars' => (int) env('EMBEDDING_ALIGNMENT_SENTENCE_MAX_CHARS', 4000),
+        'has_similar_batch_size' => (int) env('EMBEDDING_HAS_SIMILAR_BATCH', 200),
+        'max_passthrough_content_bytes' => (int) env('ENTITY_FILE_PASSTHROUGH_MAX_BYTES', 5 * 1024 * 1024),
+    ],
+
 ];

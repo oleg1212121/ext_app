@@ -13,12 +13,13 @@ return new class extends Migration
     {
         Schema::create('definitions', function (Blueprint $table) {
             $table->id();
-            $table->text('pos')->default('noun');
-            $table->text('word');
-            $table->text('lword')->nullable(true);
-            $table->integer('word_id')->nullable(true);
-            $table->text('definition');
-            $table->boolean('is_obsolete')->default(false);
+            $table->text('pos')->default('noun')->comment('Part of speech');
+            $table->text('word')->comment('Word');
+            $table->text('lword')->nullable(true)->comment('Lowercase word');
+            $table->integer('word_id')->nullable(true)->comment('Word ID reference');
+            $table->text('definition')->comment('Definition text');
+            $table->boolean('is_obsolete')->default(false)->comment('Whether definition is obsolete');
+            $table->comment('Word definitions');
         });
     }
 

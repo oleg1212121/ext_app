@@ -9,19 +9,16 @@ class WordsSearch extends Component
 {
     public $search = '';
 
-   
-
-   
-
     public function render()
     {
-        if($this->search){
+        if ($this->search) {
             $words = DB::select("SELECT * FROM words WHERE word LIKE '%{$this->search}%';");
         } else {
-            $words = DB::select("SELECT * FROM words;");
+            $words = DB::select('SELECT * FROM words;');
         }
+
         return view('livewire.words-search', [
-            'words' => $words
+            'words' => $words,
         ]);
     }
 }

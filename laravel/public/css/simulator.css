@@ -26,37 +26,37 @@ b, strong {
 }
 
 /* Checkbox visibility logic for bilingual content */
-.hide_en {
-    opacity: 0;
-    user-select: none;
-    pointer-events: none;
-}
-
+.hide_en,
 .hide_ru {
     opacity: 0;
     user-select: none;
     pointer-events: none;
 }
 
-.table:has(#all_ru:checked) .hide_ru {
+table:not(.bilingual-table) .hide_en,
+table:not(.bilingual-table) .hide_ru {
+    width: 45%;
+}
+
+table.table:has(#all_ru:checked) .hide_ru {
     opacity: 1;
     pointer-events: initial;
     user-select: initial;
 }
 
-.table:has(#all_en:checked) .hide_en {
+table.table:has(#all_en:checked) .hide_en {
     opacity: 1;
     pointer-events: initial;
     user-select: initial;
 }
 
-.row:has(.check_en:checked) > .hide_en {
+.simulator-row:has(.check_en:checked) > .hide_en {
     opacity: 1;
     pointer-events: initial;
     user-select: initial;
 }
 
-.row:has(.check_ru:checked) > .hide_ru {
+.simulator-row:has(.check_ru:checked) > .hide_ru {
     opacity: 1;
     pointer-events: initial;
     user-select: initial;
@@ -99,4 +99,75 @@ b, strong {
 }
 
 /* Dark theme support */
+
+/* Drag Handles */
+.drag-handle-vertical {
+    width: 8px;
+    flex: none;
+    cursor: col-resize;
+    background-color: #d1d5db;
+    transition: background-color 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.drag-handle-vertical:hover {
+    background-color: #9ca3af;
+}
+
+.drag-handle-vertical::after {
+    content: '';
+    width: 2px;
+    height: 24px;
+    border-radius: 1px;
+    background-color: #6b7280;
+}
+
+.drag-handle-horizontal {
+    height: 8px;
+    flex: none;
+    cursor: row-resize;
+    background-color: #d1d5db;
+    transition: background-color 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.drag-handle-horizontal:hover {
+    background-color: #9ca3af;
+}
+
+.drag-handle-horizontal::after {
+    content: '';
+    height: 2px;
+    width: 24px;
+    border-radius: 1px;
+    background-color: #6b7280;
+}
+
+.dark .drag-handle-vertical {
+    background-color: #374151;
+}
+
+.dark .drag-handle-vertical:hover {
+    background-color: #4b5563;
+}
+
+.dark .drag-handle-vertical::after {
+    background-color: #9ca3af;
+}
+
+.dark .drag-handle-horizontal {
+    background-color: #374151;
+}
+
+.dark .drag-handle-horizontal:hover {
+    background-color: #4b5563;
+}
+
+.dark .drag-handle-horizontal::after {
+    background-color: #9ca3af;
+}
 

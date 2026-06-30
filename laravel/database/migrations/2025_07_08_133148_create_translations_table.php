@@ -13,9 +13,10 @@ return new class extends Migration
     {
         Schema::create('translations', function (Blueprint $table) {
             $table->id();
-            $table->text('pos')->default('noun');
-            $table->text('word');
-            $table->text('translation');
+            $table->text('pos')->default('noun')->comment('Part of speech');
+            $table->text('word')->comment('Source word');
+            $table->text('translation')->comment('Translation text');
+            $table->comment('Word translations');
         });
     }
 

@@ -2,24 +2,25 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-
 class Word extends Model
 {
+    use HasFactory;
+
     public $table = 'words';
 
     public $fillable = [
-        'word', 'knowledge', 'for_crossword'
+        'word', 'knowledge', 'for_crossword',
     ];
 
     public function definitions(): HasMany
     {
         return $this->HasMany(Definition::class, 'word', 'word');
     }
-
 
     public function forms(): HasMany
     {
@@ -41,7 +42,7 @@ class Word extends Model
         return $this->HasMany(Translation::class, 'word', 'word');
     }
 
-    public function books() : BelongsToMany
+    public function books(): BelongsToMany
     {
         return $this->belongsToMany(Book::class);
     }

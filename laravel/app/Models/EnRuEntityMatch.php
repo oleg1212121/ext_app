@@ -1,0 +1,56 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class EnRuEntityMatch extends Model
+{
+    protected $fillable = [
+        'en_entity_id',
+        'ru_entity_id',
+        'status',
+        'entity_similarity',
+        'en_total_sentences',
+        'ru_total_sentences',
+        'linked_count',
+        'chunk_size',
+        'max_n',
+        'dp_path',
+        'error_message',
+        'started_at',
+        'completed_at',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'entity_similarity' => 'decimal:4',
+            'en_total_sentences' => 'integer',
+            'ru_total_sentences' => 'integer',
+            'linked_count' => 'integer',
+            'chunk_size' => 'integer',
+            'max_n' => 'integer',
+            'dp_path' => 'array',
+            'started_at' => 'datetime',
+            'completed_at' => 'datetime',
+        ];
+    }
+
+    public function enEntity(): BelongsTo
+    {
+        return $this->belongsTo(EnEntity::class, 'en_entity_id');
+    }
+
+    public function ruEntity(): BelongsTo
+    {
+        return $this->belongsTo(RuEntity::class, 'ru_entity_id');
+    }
+
+    public function meaningMatches(): HasMany
+    {
+        return $this->hasMany(EnRuMeaningMatch::class, 'en_ru_entity_match_id');
+    }
+}

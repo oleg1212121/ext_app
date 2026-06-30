@@ -13,12 +13,13 @@ return new class extends Migration
     {
         Schema::create('forms', function (Blueprint $table) {
             $table->id();
-            $table->string('pos')->default('noun');
-            $table->string('word');
-            $table->string('lword')->nullable(true);
-            $table->integer('word_id')->nullable(true);
-            $table->string('form');
-            $table->string('lform')->nullable(true);
+            $table->string('pos')->default('noun')->comment('Part of speech');
+            $table->string('word')->comment('Base word');
+            $table->string('lword')->nullable(true)->comment('Lowercase word');
+            $table->integer('word_id')->nullable(true)->comment('Word ID reference');
+            $table->string('form')->comment('Word form');
+            $table->string('lform')->nullable(true)->comment('Lowercase form');
+            $table->comment('Word forms (conjugations, declensions)');
         });
     }
 
