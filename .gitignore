@@ -1,6 +1,7 @@
 dual_translate_builder/
 .vscode/
 docker-compose/postgres/
+docker-compose/embedding/
 docker-compose/nginx/nginx.conf:Zone.Identifier
 laravel/vendor/
 laravel/.devcontainer
