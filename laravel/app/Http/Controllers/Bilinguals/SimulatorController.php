@@ -36,8 +36,8 @@ class SimulatorController extends Controller
             'showQuestion' => false,
             'showText' => true,
             'showAI' => true,
-            'currentModel' => 'openrouter:google/gemini-3-flash-preview',
-            'currentQuestion' => 'Compare Russian original vs. my translation. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Asses grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve. 4. Give  a couple of improved versions.',
+            'currentModel' => 'openrouter:google/gemini-3.1-flash-lite-preview',
+            'currentQuestion' => 'Compare Russian original vs. my translation. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Asses grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version (highlight the changes). 4. Give  a couple of improved versions.',
             'currentText' => $firstId !== null ? (string) $firstId : '',
         ]);
     }

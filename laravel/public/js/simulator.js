@@ -31,7 +31,7 @@ document.addEventListener("alpine:init", () => {
         middleColumnWidth: 620,
         rightColumnWidth: 400,
         workplaceHeight: 200,
-        selectedChat: "openrouter:google/gemini-3-flash-preview",
+        selectedChat: "openrouter:google/gemini-3.1-flash-lite-preview",
         aiModels: window.aiModels || {},
         rows: [
             ["english part", "russian part"],

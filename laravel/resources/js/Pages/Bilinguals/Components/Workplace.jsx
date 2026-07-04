@@ -40,7 +40,7 @@ export default function Workplace(props) {
                     <Textarea ref={props.workplaceRef} label="Workplace" value="" placeholder="Workplace" className="resizeable_element"/>
                 </div>
                 {props.showQuestion === true && <div className="p-3">
-                    <Textarea ref={props.questionRef} label="Question" value={props.currentQuestion} placeholder="Question" className="resizeable_element"/>
+                    <Textarea onChange={props.changeQuestion} ref={props.questionRef} label="Question" value={props.currentQuestion} placeholder="Question" className="resizeable_element"/>
                 </div>}
             </div>
         </div>

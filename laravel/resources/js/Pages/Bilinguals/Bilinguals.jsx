@@ -179,7 +179,9 @@ const Bilinguals = (props) => {
             setShowWorkplace(true);
         }
     };
-
+    const changeQuestion = (event) => {
+        setCurrentQuestion(event.target.value)
+    }
     React.useEffect(() => {
         if (!showWorkplace || !pendingWorkplaceFocusRef.current) {
             return;
@@ -364,7 +366,7 @@ const Bilinguals = (props) => {
                             </>
                         }
                         {showWorkplace === true &&
-                            <Workplace workplaceRef={workplaceRef} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion}/>
+                            <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion}/>
                         }
                     </div>
                     {showAI === true &&

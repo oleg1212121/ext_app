@@ -27,7 +27,9 @@ class AlignmentEditorPersister
 
             $sentenceTypeId = SentenceType::query()->where('name', 'sentence')->value('id');
 
+            
             $enIdMap = $this->syncSentences(
+
                 entityId: $entityMatch->en_entity_id,
                 lang: 'en',
                 meaningRows: $draft['meaning_rows'],
@@ -351,7 +353,6 @@ class AlignmentEditorPersister
             if (($sentence['_deleted'] ?? false) === true) {
                 continue;
             }
-
             $key = $this->sentenceKey($sentence);
 
             if (isset($idMap[$key])) {
@@ -374,3 +375,4 @@ class AlignmentEditorPersister
         return (string) ($sentence['key'] ?? $sentence['temp_id'] ?? '');
     }
 }
+
