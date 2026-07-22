@@ -1,27 +1,38 @@
 # AGENTS.md - Agent Coding Guidelines
 
-This document provides guidelines for agents operating in this Laravel 12 bilingual language learning application.
+This document provides guidelines for agents operating in this Laravel bilingual language learning application.
 
 ## Docker Environment
 
-This project runs in Docker. All Laravel/PHP/Composer/NPM commands must be executed inside the `ext_app_laravel` container.
+All Laravel/PHP/Composer/NPM commands must run inside the `ext_app_laravel` container.
 
-### Running Commands in Docker
 ```bash
-# Execute any command in the Laravel container
 docker exec ext_app_laravel [command]
-
-# Examples:
-docker exec ext_app_laravel php artisan migrate
-docker exec ext_app_laravel composer install
-docker exec ext_app_laravel npm run build
 ```
+
+**Never run PHP/Composer/NPM commands on the host.**
+
+## Actual Package Versions (verified from composer.lock)
+
+| Package | Version |
+|---------|---------|
+| PHP | ^8.3 (8.4 runtime) |
+| Laravel | 13.x |
+| Livewire | 4.x |
+| Filament | 5.x |
+| Pest | 4.x |
+| PHPUnit | 12.x |
+| Tailwind CSS | 4.x |
+| Alpine.js | 3.x |
+| Inertia.js + React | 3.x / 19.x |
+
+The CLAUDE.md Boost guidelines reference older versions (Laravel 12, Livewire 3, Filament 3, Pest 3). Trust composer.json/composer.lock over prose.
 
 ## Commands
 
 ### Development
 ```bash
-# Start all services (server, queue, logs, vite) - run in container
+# Start all services (server, queue, logs, vite)
 docker exec ext_app_laravel composer run dev
 
 # Build frontend assets
@@ -38,10 +49,8 @@ docker exec ext_app_laravel vendor/bin/pint --dirty
 
 ### Testing
 ```bash
-# Run all tests
+# Run all tests (clears config cache first)
 docker exec ext_app_laravel composer run test
-# OR
-docker exec ext_app_laravel php artisan test
 
 # Run specific test file
 docker exec ext_app_laravel php artisan test tests/Feature/ExampleTest.php
@@ -56,122 +65,70 @@ docker exec ext_app_laravel php artisan test --testsuite=Unit
 docker exec ext_app_laravel php artisan test --testsuite=Feature
 ```
 
+Test database: `ext_app_test` (configured in phpunit.xml, not the default).
+
 ### Database
 ```bash
-# Run migrations
 docker exec ext_app_laravel php artisan migrate
-
-# Fresh migration with seeding
 docker exec ext_app_laravel php artisan migrate:fresh --seed
 ```
 
-### Laravel Artisan
+PostgreSQL is exposed on host port `54321`.
+
+## Architecture
+
+### Frontend: Hybrid Inertia/React + Livewire
+
+The app uses **two frontend approaches simultaneously**:
+
+- **Inertia/React (JSX)** — Primary UI. Pages in `resources/js/Pages/`. Uses `@inertiajs/react`, `flowbite-react`, React 19.
+- **Livewire** — Used for `Crossword` and `WordsSearch` components in `app/Livewire/`. Blade views in `resources/views/livewire/`.
+- **Alpine.js** — Loaded globally in `resources/js/app.jsx` for lightweight interactivity.
+
+When adding new pages, prefer Inertia/React (JSX). Livewire is legacy for crossword/simulator.
+
+### Tailwind CSS 4
+
+Tailwind 4 uses CSS-based config via `@theme`/`@source`/`@plugin` directives in `resources/css/app.css`. The `tailwind.config.js` is intentionally minimal. Do not add JS-based Tailwind config.
+
+### Key Directories
+
+- `app/Classes/AiProvider.php` — Base class for AI providers (Gemini, Groq, OpenRouter, Cohere, Perplexity, HuggingFace)
+- `app/Filament/Resources/` — Filament admin CRUD resources
+- `app/Http/Controllers/Bilinguals/` — Bilinguals simulator controllers
+- `resources/js/Pages/` — Inertia React pages
+- `public/texts/simulator/` — Reading materials organized by language/level
+- `docker-compose/embedding/` — FastAPI embedding service (separate container `ext_embedding`)
+
+### Services (Docker)
+
+| Service | Container | Port |
+|---------|-----------|------|
+| Laravel app | ext_app_laravel | — |
+| PostgreSQL | ext_pgdb | 54321 |
+| Nginx | ext_nginx | 8000 |
+| Vite dev | (in ext_app_laravel) | 8002 |
+| Embedding API | ext_embedding | 8001 |
+
+### Python Environment
+
+Pre-configured venv at `docker-compose/python/ai/ai_env/` with torch, sentence-transformers, transformers, numpy, scipy, pysbd pre-installed. Do NOT reinstall these packages.
+
 ```bash
-# List all available commands
-docker exec ext_app_laravel php artisan list
-
-# Get help on specific command
-docker exec ext_app_laravel php artisan command-name --help
+docker-compose/python/ai/ai_env/bin/python <script>
+docker-compose/python/ai/ai_env/bin/pip install <package>  # only when needed
 ```
 
----
+## Conventions
 
-## Code Style Guidelines
+- **Laravel 12+ structure**: No `app/Http/Middleware/` directory — register in `bootstrap/app.php`. Commands auto-register from `app/Console/Commands/`.
+- **Validation**: Use Form Request classes in `app/Http/Requests/`, never inline validation.
+- **Config**: Use `config()`, never `env()` outside config files.
+- **Testing**: Pest syntax. Use `assertForbidden`/`assertNotFound` instead of `assertStatus(4xx)`.
+- **Livewire events**: Use `$this->dispatch()`, not `emit`.
+- **Models**: Use `casts()` method, not `$casts` property.
+- **Eloquent**: Prefer `Model::query()` over `DB::`. Use eager loading.
 
-### General
-- Follow existing code conventions - check sibling files before writing new code
-- Use descriptive names for variables and methods (e.g., `isRegisteredForDiscounts`, not `discount()`)
-- Use PHP 8.4 with constructor property promotion
-- Always use curly braces for control structures, even single-line ones
+## MCP (Laravel Boost)
 
-### Type Declarations
-- Always use explicit return type declarations for methods and functions
-- Use appropriate PHP type hints for method parameters
-- Prefer nullable types with `?Type` syntax
-
-```php
-// Good
-protected function isAccessible(User $user, ?string $path = null): bool
-{
-    return true;
-}
-```
-
-### Imports
-- Use explicit imports for classes used more than once
-- Group imports: core Laravel, third-party, local Application
-- Use `use function` for helper functions
-
-### Naming Conventions
-- Classes: PascalCase (e.g., `BilingualsController`)
-- Methods: camelCase
-- Variables: camelCase
-- Database columns: snake_case
-- Enum keys: TitleCase (e.g., `FavoritePerson`)
-
-### Controllers & Validation
-- Always create Form Request classes in `app/Http/Requests/` for validation
-- Include both validation rules and custom error messages
-- Use named routes with `route()` helper
-
-### Models & Database
-- Use Eloquent relationships with return type hints
-- Prefer `Model::query()` over raw `DB::` queries
-- Use eager loading to prevent N+1 queries
-- Casts should be in a `casts()` method on models
-
-### Laravel 12 Specific
-- No middleware directory - register in `bootstrap/app.php`
-- No Console Kernel - commands auto-register in `app/Console/Commands/`
-- Configuration via `config()` - never use `env()` directly outside config files
-
-### Testing (Pest)
-- All tests use Pest framework in `tests/Feature` and `tests/Unit`
-- Use specific assertion methods (`assertForbidden`, `assertNotFound`) instead of `assertStatus(403)`
-- Use datasets for tests with duplicated data
-- Mock with `Pest\Laravel\mock` using `use function Pest\Laravel\mock;`
-
-### Livewire
-- Components use `App\Livewire` namespace
-- Use `$this->dispatch()` for events (not `emit`)
-- Single root element required
-- Use `wire:loading` and `wire:dirty` for loading states
-
-### Filament
-- Resources in `app/Filament/Resources/`
-- Pages auto-generated in resource's `Pages/` directory
-- Use `relationship()` for select options
-
-### Frontend
-- Tailwind CSS 4 for styling
-- Alpine.js 3 for interactivity
-- Use `wire:model.live` for real-time updates
-- Use gap utilities for spacing, not margins
-
----
-
-## Architecture Notes
-
-### AI Provider System
-Located in `app/Classes/`: `Gemini`, `HuggingFace`, `OpenRouter`, `Groq`, `Cohere`, `Perplexity`
-- Each extends `AiProvider` base class
-- API keys via `.env` configuration
-
-### Key Features
-- Bilinguals Simulator: `/bilinguals/{lang1}/{lang2}/simulator`
-- Crossword Generator: `/crossword`
-- Reader: `/reader`
-
-### Text Files
-Reading materials stored in `public/texts/simulator/` organized by language/level.
-
----
-
-## Important Notes
-
-- Run `docker exec ext_app_laravel vendor/bin/pint --dirty` before committing
-- Every change must be tested - write or update tests
-- All Laravel/PHP/Composer/NPM commands must run inside Docker container `ext_app_laravel`
-- Use `search-docs` tool for Laravel ecosystem documentation
-- Use `tinker` tool for debugging PHP code
-- Use `database-query` tool for reading database directly
+Laravel Boost MCP is configured via `laravel/.mcp.json`. Available tools: `search-docs`, `tinker`, `database-query`, `browser-logs`, `list-artisan-commands`, `get-absolute-url`.
