@@ -1,10 +1,10 @@
 dual_translate_builder/
 .vscode/
 docker-compose/postgres/
-docker-compose/python/ai/bge_m3_local/
-docker-compose/python/ai/ai_env/
-docker-compose/python/ai/venv/
-docker-compose/python/ai/__pycache__/
+# docker-compose/python/ai/bge_m3_local/
+# docker-compose/python/ai/ai_env/
+# docker-compose/python/ai/venv/
+# docker-compose/python/ai/__pycache__/
 
 docker-compose/embedding/models/
 docker-compose/nginx/nginx.conf:Zone.Identifier
