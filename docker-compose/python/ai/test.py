@@ -1,5 +1,5 @@
 from splitter import SentenceSplitter
-
+from my import BilingualAligner
 
 splitter = SentenceSplitter()
 
@@ -18,3 +18,7 @@ with open(file_path, "rt", encoding="utf-8") as f:
         if not line:  # Проверка на конец файла
             break
         print(line)
+
+aligner = BilingualAligner("./bge_m3_local")
+aligner.process("outputen.txt", "outputru.txt", "matches_output.txt")
+print("Results written to matches_output.txt")
