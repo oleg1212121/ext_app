@@ -8,8 +8,6 @@ SUPPORTED_LANGUAGES: list[str] = sorted(LANGUAGE_CODES.keys())
 
 
 class SentenceSplitter:
-    SUPPORTED_LANGUAGES = SUPPORTED_LANGUAGES
-
     def __init__(self, language: str = "en", chunk_size: int = 1048576) -> None:
         self.chunk_size = chunk_size
         self.language: str = ""
@@ -26,43 +24,47 @@ class SentenceSplitter:
         self.language = language
         self.segmenter = pysbd.Segmenter(language=language, clean=False)
 
-    def normalize_whitespace(self, text: str) -> str:
+    @staticmethod
+    def normalize_whitespace(text: str) -> str:
         return re.sub(r"\s+", " ", text).strip()
 
     def split_text(self, text: str) -> list[str]:
         text = self.normalize_whitespace(text)
-        raw_sentences = self.segmenter.segment(text)
-        return [self.normalize_whitespace(s) for s in raw_sentences if self.normalize_whitespace(s)]
+        sentences: list[str] = []
+        for raw in self.segmenter.segment(text):
+            sentence = self.normalize_whitespace(raw)
+            if sentence:
+                sentences.append(sentence)
+        return sentences
 
-    def split_file(self, input_path: str, output_path: str, language: str = "en") -> int:
-        self._set_language(language)
+    def split_file(self, input_path: str, output_path: str, language: str | None = None) -> int:
+        # language=None keeps the language the splitter was constructed with
+        if language is not None:
+            self._set_language(language)
         sentence_count = 0
         remainder = ""
 
-        try:
-            with open(input_path, "r", encoding="utf-8") as infile, \
-                 open(output_path, "w", encoding="utf-8") as outfile:
-                while True:
-                    chunk = infile.read(self.chunk_size)
-                    if not chunk and not remainder:
-                        break
+        with open(input_path, "r", encoding="utf-8") as infile, \
+             open(output_path, "w", encoding="utf-8") as outfile:
+            while True:
+                chunk = infile.read(self.chunk_size)
+                if not chunk and not remainder:
+                    break
 
-                    text = remainder + chunk
-                    sentences = self.split_text(text)
+                text = remainder + chunk
+                sentences = self.split_text(text)
 
-                    if chunk:
-                        remainder = sentences.pop() if sentences else ""
-                    else:
-                        remainder = ""
+                if chunk:
+                    remainder = sentences.pop() if sentences else ""
+                else:
+                    remainder = ""
 
-                    for sentence in sentences:
-                        outfile.write(sentence + "\n")
-                        sentence_count += 1
-
-                if remainder and self.normalize_whitespace(remainder):
-                    outfile.write(self.normalize_whitespace(remainder) + "\n")
+                for sentence in sentences:
+                    outfile.write(sentence + "\n")
                     sentence_count += 1
-        finally:
-            pass
+
+            if remainder and self.normalize_whitespace(remainder):
+                outfile.write(self.normalize_whitespace(remainder) + "\n")
+                sentence_count += 1
 
         return sentence_count

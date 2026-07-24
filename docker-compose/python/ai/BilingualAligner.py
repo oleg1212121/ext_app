@@ -1,11 +1,19 @@
+from pathlib import Path
+
 import numpy as np
-import torch
 from sentence_transformers import SentenceTransformer, util
 
 
 class BilingualAligner:
-    def __init__(self, model_name, chunk_size=100, max_window=3, similarity_threshold=0.4):
-        self.model = SentenceTransformer(model_name)
+    def __init__(self, model=None, chunk_size=100, max_window=3, similarity_threshold=0.4):
+        # model accepts a ready SentenceTransformer (to share one loaded model
+        # between classes), a model path, or None to load the default local model.
+        if model is None:
+            model = Path(__file__).parent / "bge_m3_local"
+        if isinstance(model, SentenceTransformer):
+            self.model = model
+        else:
+            self.model = SentenceTransformer(str(model))
         self.chunk_size = chunk_size
         self.max_window = max_window
         self.similarity_threshold = similarity_threshold
@@ -22,7 +30,7 @@ class BilingualAligner:
         all_matches = []
         chunk_num = 0
 
-        while en_offset < len(en_all):
+        while en_offset < len(en_all) and ru_offset < len(ru_all):
             chunk_num += 1
             en_chunk = en_all[en_offset : en_offset + self.chunk_size]
             ru_chunk = ru_all[ru_offset : ru_offset + self.chunk_size]
@@ -32,28 +40,41 @@ class BilingualAligner:
                 f"RU[{ru_offset}:{ru_offset + len(ru_chunk)}]"
             )
 
-            if len(en_chunk) == 0:
+            matches = self._align_chunk(en_chunk, ru_chunk)
+
+            if not matches:
+                print("No alignment produced in chunk, breaking to avoid infinite loop")
                 break
 
-            if len(ru_chunk) == 0:
-                break
+            is_last_chunk = (
+                en_offset + len(en_chunk) >= len(en_all)
+                and ru_offset + len(ru_chunk) >= len(ru_all)
+            )
+            committed = matches if is_last_chunk else self._trim_to_last_anchor(matches)
 
-            matches, en_advanced, ru_advanced = self._align_chunk(en_chunk, ru_chunk)
+            if not committed:
+                # No confident anchor in this chunk: commit everything anyway
+                # to guarantee forward progress.
+                committed = matches
 
-            for m in matches:
-                m["en_start"] += en_offset
-                m["en_end"] += en_offset
-                m["ru_start"] += ru_offset
-                m["ru_end"] += ru_offset
+            last = committed[-1]
+            new_en_offset = en_offset + last["en_end"]
+            new_ru_offset = ru_offset + last["ru_end"]
 
-            all_matches.extend(matches)
+            for match in committed:
+                match["en_start"] += en_offset
+                match["en_end"] += en_offset
+                match["ru_start"] += ru_offset
+                match["ru_end"] += ru_offset
 
-            if en_advanced == 0:
+            all_matches.extend(committed)
+
+            if new_en_offset == en_offset and new_ru_offset == ru_offset:
                 print("No progress in chunk, breaking to avoid infinite loop")
                 break
 
-            en_offset += en_advanced
-            ru_offset += ru_advanced
+            en_offset = new_en_offset
+            ru_offset = new_ru_offset
 
         unmatched_ru = []
         if ru_offset < len(ru_all):
@@ -64,6 +85,17 @@ class BilingualAligner:
             unmatched_en = [(i, en_all[i]) for i in range(en_offset, len(en_all))]
 
         self._write_results(all_matches, unmatched_ru, unmatched_en, output_path)
+
+    def _trim_to_last_anchor(self, matches):
+        # The DP forces full coverage of both chunks, so matches near the chunk
+        # boundary may be force-aligned even though their true counterpart lives
+        # in the next chunk. Commit only up to and including the last confident
+        # (high-score) anchor; the uncertain tail is re-aligned with fresh
+        # context in the next iteration.
+        for idx in range(len(matches) - 1, -1, -1):
+            if matches[idx]["score"] >= self.similarity_threshold:
+                return matches[: idx + 1]
+        return []
 
     def _read_sentences(self, filepath):
         sentences = []
@@ -76,27 +108,30 @@ class BilingualAligner:
 
     def _generate_window_embeddings(self, sentences):
         window_texts = []
-        window_mapping = {}
+        window_keys = []
         for start in range(len(sentences)):
             for step in range(1, self.max_window + 1):
                 if start + step <= len(sentences):
-                    combined_text = " ".join(sentences[start : start + step])
-                    window_texts.append(combined_text)
-                    window_mapping[(start, step)] = len(window_texts) - 1
+                    window_texts.append(" ".join(sentences[start : start + step]))
+                    window_keys.append((start, step))
         embs = self.model.encode(
             window_texts, batch_size=64, show_progress_bar=False, convert_to_tensor=True
         )
-        return {key: embs[idx] for key, idx in window_mapping.items()}
+        index = {key: pos for pos, key in enumerate(window_keys)}
+        return index, embs
 
     def _align_chunk(self, en_sentences, ru_sentences):
         n = len(en_sentences)
         m = len(ru_sentences)
 
         if n == 0 or m == 0:
-            return [], n, m
+            return []
 
-        en_windows = self._generate_window_embeddings(en_sentences)
-        ru_windows = self._generate_window_embeddings(ru_sentences)
+        en_index, en_embs = self._generate_window_embeddings(en_sentences)
+        ru_index, ru_embs = self._generate_window_embeddings(ru_sentences)
+
+        # One big similarity matrix instead of per-pair cos_sim calls in the DP loop
+        sim = util.cos_sim(en_embs, ru_embs).cpu().numpy()
 
         dp = np.full((n + 1, m + 1), -float("inf"))
         dp[0][0] = 0.0
@@ -112,10 +147,7 @@ class BilingualAligner:
                         next_i, next_j = i + en_step, j + ru_step
 
                         if next_i <= n and next_j <= m:
-                            emb_en = en_windows[(i, en_step)]
-                            emb_ru = ru_windows[(j, ru_step)]
-
-                            score = util.cos_sim(emb_en, emb_ru).item()
+                            score = float(sim[en_index[(i, en_step)], ru_index[(j, ru_step)]])
 
                             if score < self.similarity_threshold:
                                 current_gain = -2.0
@@ -138,22 +170,15 @@ class BilingualAligner:
             else:
                 prev_i, prev_j, en_step, ru_step = parent[curr_i][curr_j]
 
-            en_matched = en_sentences[prev_i:curr_i]
-            ru_matched = ru_sentences[prev_j:curr_j]
-
-            emb_en = en_windows[(prev_i, en_step)]
-            emb_ru = ru_windows[(prev_j, ru_step)]
-            link_score = util.cos_sim(emb_en, emb_ru).item()
-
             alignment.append(
                 {
                     "en_start": prev_i,
                     "en_end": curr_i,
                     "ru_start": prev_j,
                     "ru_end": curr_j,
-                    "en_text": " ".join(en_matched),
-                    "ru_text": " ".join(ru_matched),
-                    "score": link_score,
+                    "en_text": " ".join(en_sentences[prev_i:curr_i]),
+                    "ru_text": " ".join(ru_sentences[prev_j:curr_j]),
+                    "score": float(sim[en_index[(prev_i, en_step)], ru_index[(prev_j, ru_step)]]),
                     "en_step": en_step,
                     "ru_step": ru_step,
                 }
@@ -162,14 +187,7 @@ class BilingualAligner:
 
         alignment.reverse()
 
-        en_advanced = n
-        ru_advanced = m
-        if alignment:
-            last = alignment[-1]
-            en_advanced = last["en_end"]
-            ru_advanced = last["ru_end"]
-
-        return alignment, en_advanced, ru_advanced
+        return alignment
 
     def _write_results(self, matches, unmatched_ru, unmatched_en, output_path):
         with open(output_path, "w", encoding="utf-8") as f:
@@ -205,5 +223,3 @@ class BilingualAligner:
                 for idx, sent in unmatched_en:
                     f.write(f"EN [{idx + 1}]: \"{sent}\"\n")
                 f.write("\n")
-
-
