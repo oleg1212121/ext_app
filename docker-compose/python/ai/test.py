@@ -1,6 +1,6 @@
-from splitter import SentenceSplitter
-from my import BilingualAligner
-from Signature import TextSignature
+from SentenceSplitter import SentenceSplitter
+from BilingualAligner import BilingualAligner
+from TextSignature import TextSignature
 
 signatureMaker = TextSignature()
 splitter = SentenceSplitter()
