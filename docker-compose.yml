@@ -20,6 +20,11 @@ services:
         source: ./laravel
         target: /var/www
         consistency: cached
+      # Repo root (wiki/, AGENTS.md, docker-compose/) for wiki:sync / wiki:validate
+      - type: bind
+        source: ./
+        target: /var/repo
+        consistency: cached
       # - ./:/var/www
     networks:
       - ext_net

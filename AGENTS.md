@@ -2,6 +2,18 @@
 
 This document provides guidelines for agents operating in this Laravel bilingual language learning application.
 
+## Knowledge base (wiki/)
+
+`wiki/` is an [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) knowledge bundle — markdown concepts with YAML frontmatter, cross-linked into a graph. It holds the detailed context this file intentionally omits: architecture, feature domains, database schema, playbooks, and auto-generated references.
+
+**Before non-trivial work:** open `wiki/index.md`, then read only the concepts relevant to your task and follow their links (progressive disclosure). Trust signals are in each concept's frontmatter — prefer `verified: human:*` content and heed `stale_after`.
+
+**Maintenance rules (required):**
+- When you change a feature, flow, or schema, update the matching concept in `wiki/`, bump its `generated.at`, and add an entry to `wiki/log.md`.
+- When you add/change routes, models, or artisan commands, regenerate the machine-owned references: `docker exec ext_app_laravel php artisan wiki:sync` (never hand-edit `wiki/reference/`).
+- `docker exec ext_app_laravel php artisan wiki:validate` must pass (it also runs as part of the test suite via `tests/Feature/WikiTest.php`).
+- After reviewing a concept for accuracy, record it: add `verified: { by: human:<you>, at: <datetime> }` to its frontmatter.
+
 ## Docker Environment
 
 All Laravel/PHP/Composer/NPM commands must run inside the `ext_app_laravel` container.
@@ -93,6 +105,7 @@ Tailwind 4 uses CSS-based config via `@theme`/`@source`/`@plugin` directives in 
 
 ### Key Directories
 
+- `wiki/` — OKF knowledge bundle (agent context: architecture, domains, schema, playbooks)
 - `app/Classes/AiProvider.php` — Base class for AI providers (Gemini, Groq, OpenRouter, Cohere, Perplexity, HuggingFace)
 - `app/Filament/Resources/` — Filament admin CRUD resources
 - `app/Http/Controllers/Bilinguals/` — Bilinguals simulator controllers
