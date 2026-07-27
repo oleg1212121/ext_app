@@ -1,5 +1,13 @@
 # Directory Update Log
 
+## 2026-07-27
+
+* **Test safety**: Hardened the test environment against wiping the real
+  `ext_app` database: `TestCase::createApplication()` guard aborts the suite
+  if the resolved DB is not `ext_app_test`, `phpunit.xml` env entries gained
+  `force="true"`, and a committed `.env.testing` pins the test DB. Updated
+  the Running Tests playbook.
+
 ## 2026-07-26
 
 * **Initialization**: Created the OKF v0.2 bundle: architecture, feature
