@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from SentenceSplitter import SentenceSplitter
+from ai.splitting.sentence_splitter import SentenceSplitter
 
 
 class TextSignature:
@@ -11,7 +11,7 @@ class TextSignature:
         # Accepts a ready SentenceTransformer (to share one loaded model between
         # classes), a model path, or None to load the default local model.
         if model is None:
-            model = Path(__file__).parent / "bge_m3_local"
+            model = Path(__file__).parent.parent / "bge_m3_local"
         if isinstance(model, SentenceTransformer):
             self.model = model
         else:
@@ -35,6 +35,41 @@ class TextSignature:
             vector = embeddings[0]
 
         return vector.tolist()
+
+    def generate_batch(self, texts: list[str], language: str = "en") -> list[list[float]]:
+        # One encode() call over all chunks of all texts, then per-text
+        # length-weighted mean. Far cheaper than looping generate().
+        chunked_texts = [self._chunk_text(text, language) for text in texts]
+        flat_chunks = [chunk for chunks in chunked_texts for chunk in chunks]
+        dim = self.model.get_embedding_dimension()
+
+        if not flat_chunks:
+            return [[0.0] * dim for _ in texts]
+
+        embeddings = self.model.encode(flat_chunks, normalize_embeddings=True)
+
+        vectors: list[list[float]] = []
+        offset = 0
+        for chunks in chunked_texts:
+            chunk_count = len(chunks)
+            if chunk_count == 0:
+                vectors.append([0.0] * dim)
+                continue
+
+            group = embeddings[offset : offset + chunk_count]
+            offset += chunk_count
+
+            if chunk_count > 1:
+                weights = np.array([max(len(chunk), 1) for chunk in chunks], dtype=np.float64)
+                vector = np.average(group, axis=0, weights=weights)
+                norm = np.linalg.norm(vector)
+                if norm > 1e-15:
+                    vector = vector / norm
+                vectors.append(vector.tolist())
+            else:
+                vectors.append(group[0].tolist())
+
+        return vectors
 
     def generate_from_file(self, file_path: str | Path, language: str = "en") -> list[float]:
         path = Path(file_path)

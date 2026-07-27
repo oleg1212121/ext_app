@@ -19,36 +19,20 @@ class SentenceAlignmentService
 {
     private const VERIFY_THRESHOLD = 0.70;
 
-    private const GAP_PENALTY = 0.08;
-
-    private const MATCH_PENALTY = 0.35;
-
-    private const EXTRA_SENTENCE_PENALTY = 0.02;
-
-    private const IMBALANCE_PENALTY = 0.45;
-
-    private const LOW_CONFIDENCE_THRESHOLD = 0.55;
-
-    private const LOW_CONFIDENCE_PENALTY = 1.2;
-
     private const RETRY_DELAYS_MS = [500, 1_500, 3_000];
-
-    private const DEFAULT_ALIGNMENT_BATCH_SIZE = 25;
-
-    private const DEFAULT_ALIGNMENT_SENTENCE_SAMPLE_CHARS = 4_000;
-
-    private const ALIGNMENT_SAMPLE_SEPARATOR = "\n\n...\n\n";
 
     public function __construct(
         private readonly string $apiUrl,
         private readonly int $timeout,
+        private readonly ?int $alignTimeout = null,
     ) {}
 
     public static function create(): self
     {
         return new self(
-            apiUrl: config('services.embedding.url', 'http://ext_embedding:8000'),
-            timeout: config('services.embedding.timeout', 30),
+            apiUrl: config('services.python.url', 'http://ext_python:8000'),
+            timeout: (int) config('services.python.timeout', 30),
+            alignTimeout: (int) config('services.python.align_timeout', 300),
         );
     }
 
@@ -77,497 +61,155 @@ class SentenceAlignmentService
     }
 
     /**
-     * Batch embed sentences using the embedding service.
-     *
-     * @return array<int, array> sentenceId => vector
-     */
-    public function batchEmbed(Collection $sentences): array
-    {
-        $embeddings = [];
-        $batchSize = max(1, min(
-            100,
-            (int) config('services.embedding.alignment_batch_size', self::DEFAULT_ALIGNMENT_BATCH_SIZE),
-        ));
-        $batches = $sentences->chunk($batchSize);
-
-        foreach ($batches as $batch) {
-            $texts = $batch
-                ->pluck('content')
-                ->map(fn ($content) => $this->textSampleForAlignmentEmbedding((string) $content))
-                ->toArray();
-
-            $response = Http::timeout($this->timeout)
-                ->retry(
-                    self::RETRY_DELAYS_MS,
-                    0,
-                    fn (Throwable $exception, PendingRequest $request): bool => $exception instanceof ConnectionException,
-                    false,
-                )
-                ->post("{$this->apiUrl}/embed/batch", [
-                    'texts' => $texts,
-                ]);
-
-            if (! $response->successful()) {
-                throw new \RuntimeException(
-                    "Embedding service error: {$response->status()} - {$response->body()}"
-                );
-            }
-
-            $vectors = $response->json('vectors', []);
-
-            foreach ($batch->values() as $index => $sentence) {
-                $embeddings[$sentence->id] = $vectors[$index] ?? null;
-            }
-        }
-
-        return array_filter($embeddings, fn ($v) => $v !== null);
-    }
-
-    /**
-     * Build individual and contiguous-span similarity matrices for alignment.
-     *
-     * @return array{individual: array<int, array<int, float>>, groups: array<string, float>}
-     */
-    public function buildAlignmentSimilarityMatrices(Collection $enSentences, Collection $ruSentences, int $maxN): array
-    {
-        $maxSpan = max(1, $maxN);
-        $enIds = $enSentences->pluck('id')->values()->all();
-        $ruIds = $ruSentences->pluck('id')->values()->all();
-        $enEmbeddings = $this->batchEmbed($enSentences);
-        $ruEmbeddings = $this->batchEmbed($ruSentences);
-        $enSpans = $this->buildContiguousSpanVectors($enIds, $enEmbeddings, $maxSpan);
-        $ruSpans = $this->buildContiguousSpanVectors($ruIds, $ruEmbeddings, $maxSpan);
-
-        $individual = [];
-        $groups = [];
-
-        foreach ($enSpans as $enSpan) {
-            $enVector = $enSpan['vector'];
-            if (! $enVector) {
-                continue;
-            }
-
-            foreach ($ruSpans as $ruSpan) {
-                $ruVector = $ruSpan['vector'];
-                if (! $ruVector) {
-                    continue;
-                }
-
-                $similarity = $this->dotProduct($enVector, $ruVector);
-                $groups[$this->groupSimilarityKey(
-                    $enSpan['start'],
-                    $ruSpan['start'],
-                    $enSpan['length'],
-                    $ruSpan['length'],
-                )] = $similarity;
-
-                if ($enSpan['length'] === 1 && $ruSpan['length'] === 1) {
-                    $individual[$enSpan['start']][$ruSpan['start']] = $similarity;
-                }
-            }
-        }
-
-        return [
-            'individual' => $individual,
-            'groups' => $groups,
-        ];
-    }
-
-    /**
-     * @param  list<int>  $sentenceIds
-     * @param  array<int, array>  $embeddings
-     * @return list<array{start: int, length: int, vector: array}>
-     */
-    private function buildContiguousSpanVectors(array $sentenceIds, array $embeddings, int $maxSpan): array
-    {
-        $spans = [];
-        $count = count($sentenceIds);
-
-        for ($start = 0; $start < $count; $start++) {
-            $vectors = [];
-            $remaining = min($maxSpan, $count - $start);
-
-            for ($length = 1; $length <= $remaining; $length++) {
-                $sentenceId = $sentenceIds[$start + $length - 1];
-                $vector = $embeddings[$sentenceId] ?? null;
-
-                if (! $vector) {
-                    break;
-                }
-
-                $vectors[] = $vector;
-                $spans[] = [
-                    'start' => $start,
-                    'length' => $length,
-                    'vector' => $this->averageNormalizedVectors($vectors),
-                ];
-            }
-        }
-
-        return $spans;
-    }
-
-    /**
-     * @param  list<array>  $vectors
-     * @return array
-     */
-    private function averageNormalizedVectors(array $vectors): array
-    {
-        $sum = [];
-
-        foreach ($vectors as $vector) {
-            foreach ($vector as $index => $value) {
-                $sum[$index] = ($sum[$index] ?? 0.0) + (float) $value;
-            }
-        }
-
-        $count = max(count($vectors), 1);
-
-        foreach ($sum as $index => $value) {
-            $sum[$index] = $value / $count;
-        }
-
-        return $this->normalizeVector($sum);
-    }
-
-    /**
-     * @return array
-     */
-    private function normalizeVector(array $vector): array
-    {
-        $norm = 0.0;
-
-        foreach ($vector as $value) {
-            $norm += ((float) $value) ** 2;
-        }
-
-        $norm = sqrt($norm);
-
-        if ($norm < 1e-15) {
-            return $vector;
-        }
-
-        return array_map(fn ($value): float => (float) $value / $norm, $vector);
-    }
-
-    private function textSampleForAlignmentEmbedding(string $text): string
-    {
-        $encoding = 'UTF-8';
-        $maxChars = max(
-            1,
-            (int) config('services.embedding.alignment_sentence_max_chars', self::DEFAULT_ALIGNMENT_SENTENCE_SAMPLE_CHARS),
-        );
-        $length = mb_strlen($text, $encoding);
-
-        if ($length <= $maxChars) {
-            return $text;
-        }
-
-        $headChars = intdiv($maxChars, 2);
-        $tailChars = $maxChars - $headChars;
-        $head = mb_substr($text, 0, $headChars, $encoding);
-        $tail = mb_substr($text, -$tailChars, null, $encoding);
-
-        return $head.self::ALIGNMENT_SAMPLE_SEPARATOR.$tail;
-    }
-
-    /**
-     * Build a similarity matrix from two sets of embeddings.
-     * Since vectors are L2-normalized, cosine similarity = dot product.
-     *
-     * @return array<int, array<int, float>>
-     */
-    public function buildSimilarityMatrix(array $enEmbeddings, array $ruEmbeddings, array $enIds, array $ruIds): array
-    {
-        $matrix = [];
-
-        foreach ($enIds as $i => $enId) {
-            $enVec = $enEmbeddings[$enId] ?? null;
-            if (! $enVec) {
-                continue;
-            }
-
-            foreach ($ruIds as $j => $ruId) {
-                $ruVec = $ruEmbeddings[$ruId] ?? null;
-                if (! $ruVec) {
-                    continue;
-                }
-
-                $matrix[$i][$j] = $this->dotProduct($enVec, $ruVec);
-            }
-        }
-
-        return $matrix;
-    }
-
-    /**
-     * Run DP alignment on a chunk of sentences.
+     * Align a chunk of sentences via the python service and adapt the result
+     * into links + dpPath steps for storeAlignmentSegment().
      *
      * @return array{links: array, dpPath: array}
      */
-    public function alignChunk(
-        Collection $enSentences,
-        Collection $ruSentences,
-        array $similarityMatrix,
-        int $maxN = 3,
-        array $groupSimilarityMatrix = [],
-    ): array {
-        $n = $enSentences->count();
-        $m = $ruSentences->count();
+    public function alignChunkRemote(Collection $enSentences, Collection $ruSentences, int $maxN = 3): array
+    {
+        $enIds = $enSentences->pluck('id')->values()->all();
+        $ruIds = $ruSentences->pluck('id')->values()->all();
 
-        $enIds = $enSentences->pluck('id')->toArray();
-        $ruIds = $ruSentences->pluck('id')->toArray();
-        $enOrders = $enSentences->pluck('order', 'id')->toArray();
-        $ruOrders = $ruSentences->pluck('order', 'id')->toArray();
-
-        if ($n === 0) {
+        if (count($enIds) === 0) {
             return [
                 'links' => [],
                 'dpPath' => $this->buildSkipOnlyPath('skip_ru', $ruIds),
             ];
         }
 
-        if ($m === 0) {
+        if (count($ruIds) === 0) {
             return [
                 'links' => [],
                 'dpPath' => $this->buildSkipOnlyPath('skip_en', $enIds),
             ];
         }
 
-        $maxSpan = max(1, $maxN);
-        $dp = array_fill(0, $n + 1, array_fill(0, $m + 1, -INF));
-        $trace = array_fill(0, $n + 1, array_fill(0, $m + 1, null));
-        $dp[0][0] = 0.0;
+        $response = Http::timeout($this->alignTimeout ?? $this->timeout)
+            ->retry(
+                self::RETRY_DELAYS_MS,
+                0,
+                fn (Throwable $exception, PendingRequest $request): bool => $exception instanceof ConnectionException,
+                false,
+            )
+            ->post("{$this->apiUrl}/align", [
+                'en_sentences' => $enSentences->pluck('content')->map(fn ($c) => (string) $c)->values()->all(),
+                'ru_sentences' => $ruSentences->pluck('content')->map(fn ($c) => (string) $c)->values()->all(),
+                'max_window' => max(1, $maxN),
+            ]);
 
-        for ($i = 0; $i <= $n; $i++) {
-            for ($j = 0; $j <= $m; $j++) {
-                if ($dp[$i][$j] === -INF) {
-                    continue;
-                }
+        if (! $response->successful()) {
+            throw new \RuntimeException(
+                "Python alignment service error: {$response->status()} - {$response->body()}"
+            );
+        }
 
-                if ($i < $n) {
-                    $targetI = $i + 1;
-                    $score = $dp[$i][$j] - self::GAP_PENALTY;
-                    $candidateTrace = ['type' => 'skip_en', 'pi' => $i, 'pj' => $j, 'span_i' => 1, 'span_j' => 0];
+        $matches = $response->json('matches', []);
 
-                    if ($this->shouldReplaceTrace($score, $dp[$targetI][$j], $candidateTrace, $trace[$targetI][$j])) {
-                        $dp[$targetI][$j] = $score;
-                        $trace[$targetI][$j] = $candidateTrace;
-                    }
-                }
+        return $this->adaptMatches($matches, $enSentences, $ruSentences);
+    }
 
-                if ($j < $m) {
-                    $targetJ = $j + 1;
-                    $score = $dp[$i][$j] - self::GAP_PENALTY;
-                    $candidateTrace = ['type' => 'skip_ru', 'pi' => $i, 'pj' => $j, 'span_i' => 0, 'span_j' => 1];
+    /**
+     * Convert python alignment matches (index spans) into links + dpPath steps.
+     * Unmatched sentences (gaps between/around matches) become skip steps.
+     *
+     * @param  list<array{en_start: int, en_end: int, ru_start: int, ru_end: int, score: float}>  $matches
+     * @return array{links: array, dpPath: array}
+     */
+    private function adaptMatches(array $matches, Collection $enSentences, Collection $ruSentences): array
+    {
+        $enIds = $enSentences->pluck('id')->values()->all();
+        $ruIds = $ruSentences->pluck('id')->values()->all();
+        $enOrders = $enSentences->pluck('order', 'id')->toArray();
+        $ruOrders = $ruSentences->pluck('order', 'id')->toArray();
 
-                    if ($this->shouldReplaceTrace($score, $dp[$i][$targetJ], $candidateTrace, $trace[$i][$targetJ])) {
-                        $dp[$i][$targetJ] = $score;
-                        $trace[$i][$targetJ] = $candidateTrace;
-                    }
-                }
+        $steps = [];
+        $i = 0;
+        $j = 0;
 
-                $maxEnSpan = min($maxSpan, $n - $i);
-                $maxRuSpan = min($maxSpan, $m - $j);
+        foreach ($matches as $match) {
+            $enStart = (int) $match['en_start'];
+            $enEnd = (int) $match['en_end'];
+            $ruStart = (int) $match['ru_start'];
+            $ruEnd = (int) $match['ru_end'];
 
-                for ($spanI = 1; $spanI <= $maxEnSpan; $spanI++) {
-                    for ($spanJ = 1; $spanJ <= $maxRuSpan; $spanJ++) {
-                        $similarity = $this->spanSimilarity(
-                            $similarityMatrix,
-                            $groupSimilarityMatrix,
-                            $i,
-                            $j,
-                            $spanI,
-                            $spanJ,
-                        );
-                        $score = $dp[$i][$j] + $this->alignmentStepScore($similarity, $spanI, $spanJ);
-                        $targetI = $i + $spanI;
-                        $targetJ = $j + $spanJ;
-                        $candidateTrace = ['type' => 'match', 'pi' => $i, 'pj' => $j, 'span_i' => $spanI, 'span_j' => $spanJ];
-
-                        if ($this->shouldReplaceTrace($score, $dp[$targetI][$targetJ], $candidateTrace, $trace[$targetI][$targetJ])) {
-                            $dp[$targetI][$targetJ] = $score;
-                            $trace[$targetI][$targetJ] = $candidateTrace;
-                        }
-                    }
-                }
+            while ($i < $enStart) {
+                $steps[] = ['type' => 'skip_en', 'index' => $i];
+                $i++;
             }
-        }
+            while ($j < $ruStart) {
+                $steps[] = ['type' => 'skip_ru', 'index' => $j];
+                $j++;
+            }
 
-        $path = [];
-        $i = $n;
-        $j = $m;
-
-        while (($i > 0 || $j > 0) && $trace[$i][$j] !== null) {
-            $t = $trace[$i][$j];
-            $path[] = [
-                'type' => $t['type'],
-                'i' => $t['pi'],
-                'j' => $t['pj'],
-                'span_i' => $t['span_i'],
-                'span_j' => $t['span_j'],
+            $steps[] = [
+                'type' => 'match',
+                'en_start' => $enStart,
+                'en_end' => $enEnd,
+                'ru_start' => $ruStart,
+                'ru_end' => $ruEnd,
+                'score' => (float) ($match['score'] ?? 0.0),
             ];
-            $i = $t['pi'];
-            $j = $t['pj'];
+
+            $i = $enEnd;
+            $j = $ruEnd;
         }
 
-        // Handle remaining sentences if path ended early
-        while ($i > 0) {
-            $i--;
-            $path[] = ['type' => 'skip_en', 'i' => $i, 'j' => -1, 'span_i' => 1, 'span_j' => 0];
+        while ($i < count($enIds)) {
+            $steps[] = ['type' => 'skip_en', 'index' => $i];
+            $i++;
         }
-        while ($j > 0) {
-            $j--;
-            $path[] = ['type' => 'skip_ru', 'i' => -1, 'j' => $j, 'span_i' => 0, 'span_j' => 1];
+        while ($j < count($ruIds)) {
+            $steps[] = ['type' => 'skip_ru', 'index' => $j];
+            $j++;
         }
 
-        $path = array_reverse($path);
-
-        // Convert path to links and ordered step entries
         $links = [];
-        $dpPathEntries = [];
-        $alignmentOrder = 0;
+        $dpPath = [];
         $linkGroup = 0;
 
-        foreach ($path as $step) {
+        foreach ($steps as $alignmentOrder => $step) {
             if ($step['type'] === 'match') {
                 $linkGroup++;
-                $si = $step['i'];
-                $sj = $step['j'];
-                $spanI = $step['span_i'];
-                $spanJ = $step['span_j'];
 
-                // Create one link per (EN, RU) pair in this alignment group
-                for ($di = 0; $di < $spanI; $di++) {
-                    for ($dj = 0; $dj < $spanJ; $dj++) {
-                        $ei = $si + $di;
-                        $rj = $sj + $dj;
-
-                        if ($ei < 0 || $rj < 0 || ! isset($enIds[$ei]) || ! isset($ruIds[$rj])) {
+                for ($ei = $step['en_start']; $ei < $step['en_end']; $ei++) {
+                    for ($rj = $step['ru_start']; $rj < $step['ru_end']; $rj++) {
+                        if (! isset($enIds[$ei]) || ! isset($ruIds[$rj])) {
                             continue;
                         }
 
-                        $sim = $similarityMatrix[$ei][$rj] ?? 0.0;
                         $links[] = [
                             'en_entity_sentence_id' => $enIds[$ei],
                             'ru_entity_sentence_id' => $ruIds[$rj],
                             'en_order' => $enOrders[$enIds[$ei]],
                             'ru_order' => $ruOrders[$ruIds[$rj]],
                             'link_group' => $linkGroup,
-                            'similarity' => round($sim, 4),
+                            'similarity' => round($step['score'], 4),
                             'alignment_order' => $alignmentOrder,
                         ];
                     }
                 }
 
-                $dpPathEntries[] = ['type' => 'match', 'alignment_order' => $alignmentOrder];
+                $dpPath[] = ['type' => 'match', 'alignment_order' => $alignmentOrder];
             } elseif ($step['type'] === 'skip_en') {
-                $dpPathEntries[] = [
+                $dpPath[] = [
                     'type' => 'skip_en',
-                    'en_sentence_id' => $enIds[$step['i']] ?? null,
+                    'en_sentence_id' => $enIds[$step['index']] ?? null,
                     'alignment_order' => $alignmentOrder,
                 ];
-            } elseif ($step['type'] === 'skip_ru') {
-                $dpPathEntries[] = [
+            } else {
+                $dpPath[] = [
                     'type' => 'skip_ru',
-                    'ru_sentence_id' => $ruIds[$step['j']] ?? null,
+                    'ru_sentence_id' => $ruIds[$step['index']] ?? null,
                     'alignment_order' => $alignmentOrder,
                 ];
             }
-
-            $alignmentOrder++;
         }
 
         return [
             'links' => $links,
-            'dpPath' => $dpPathEntries,
+            'dpPath' => $dpPath,
         ];
-    }
-
-    private function spanSimilarity(
-        array $similarityMatrix,
-        array $groupSimilarityMatrix,
-        int $startI,
-        int $startJ,
-        int $spanI,
-        int $spanJ,
-    ): float {
-        $groupSimilarity = $groupSimilarityMatrix[$this->groupSimilarityKey($startI, $startJ, $spanI, $spanJ)] ?? null;
-
-        if ($groupSimilarity !== null) {
-            return $groupSimilarity;
-        }
-
-        $sum = 0.0;
-        $count = 0;
-
-        for ($di = 0; $di < $spanI; $di++) {
-            for ($dj = 0; $dj < $spanJ; $dj++) {
-                $sum += $similarityMatrix[$startI + $di][$startJ + $dj] ?? 0.0;
-                $count++;
-            }
-        }
-
-        return $count === 0 ? 0.0 : $sum / $count;
-    }
-
-    private function alignmentStepScore(float $similarity, int $spanI, int $spanJ): float
-    {
-        $extraSentencePenalty = max(0, $spanI + $spanJ - 2) * self::EXTRA_SENTENCE_PENALTY;
-        $imbalancePenalty = abs(log($spanI / $spanJ)) * self::IMBALANCE_PENALTY;
-        $lowConfidencePenalty = $similarity < self::LOW_CONFIDENCE_THRESHOLD
-            ? (self::LOW_CONFIDENCE_THRESHOLD - $similarity) * self::LOW_CONFIDENCE_PENALTY
-            : 0.0;
-
-        return $similarity
-            - self::MATCH_PENALTY
-            - $extraSentencePenalty
-            - $imbalancePenalty
-            - $lowConfidencePenalty;
-    }
-
-    private function shouldReplaceTrace(float $candidateScore, float $currentScore, array $candidateTrace, ?array $currentTrace): bool
-    {
-        if ($candidateScore > $currentScore + 0.000001) {
-            return true;
-        }
-
-        if (abs($candidateScore - $currentScore) > 0.000001) {
-            return false;
-        }
-
-        if ($currentTrace === null) {
-            return true;
-        }
-
-        if ($candidateTrace['type'] === 'match' && $currentTrace['type'] !== 'match') {
-            return true;
-        }
-
-        if ($candidateTrace['type'] !== $currentTrace['type']) {
-            return false;
-        }
-
-        if ($candidateTrace['type'] === 'match') {
-            $candidateImbalance = abs($candidateTrace['span_i'] - $candidateTrace['span_j']);
-            $currentImbalance = abs($currentTrace['span_i'] - $currentTrace['span_j']);
-
-            if ($candidateImbalance !== $currentImbalance) {
-                return $candidateImbalance < $currentImbalance;
-            }
-        }
-
-        return $this->traceSpanSize($candidateTrace) < $this->traceSpanSize($currentTrace);
-    }
-
-    private function traceSpanSize(array $trace): int
-    {
-        return $trace['span_i'] + $trace['span_j'];
-    }
-
-    private function groupSimilarityKey(int $startI, int $startJ, int $spanI, int $spanJ): string
-    {
-        return "{$startI}:{$startJ}:{$spanI}:{$spanJ}";
     }
 
     /**

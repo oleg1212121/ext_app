@@ -4,7 +4,7 @@ title: Adding an AI Provider
 description: Steps to register a new AI provider so it appears in the simulator's model picker.
 tags: [ai, providers, howto]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-07-26T12:00:00Z }
+generated: { by: agent/kimi-k3, at: 2026-07-27T17:30:00Z }
 sources:
   - id: resolver
     resource: laravel/app/Classes/AIModelResolver.php

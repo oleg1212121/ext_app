@@ -5,23 +5,29 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/kimi-k3, at: 2026-07-26T12:00:00Z }
+generated: { by: agent/kimi-k3, at: 2026-07-27T17:30:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
-    title: Core alignment math + embedding client
+    title: /align HTTP client + meaning-match storage
   - id: signature-service
     resource: laravel/app/Classes/TextSignatureService.php
-    title: Text signatures / duplicate detection
+    title: Text signatures / duplicate detection (/embed + /cosine/batch client)
   - id: splitter
     resource: laravel/app/Classes/SentenceSplitter.php
-    title: Sentence splitting
+    title: Sentence splitting (/split streaming client)
   - id: sparse
     resource: laravel/app/Classes/SparseOrderService.php
     title: Sparse ordering
-  - id: embedding-api
-    resource: docker-compose/embedding/main.py
-    title: FastAPI embedding service
+  - id: python-api
+    resource: docker-compose/python/ai/main.py
+    title: FastAPI python service (BGE-M3)
+  - id: aligner
+    resource: docker-compose/python/ai/alignment/bilingual_aligner.py
+    title: DP alignment algorithm (python)
+  - id: py-splitter
+    resource: docker-compose/python/ai/splitting/typed_splitter.py
+    title: Typed sentence splitting (python)
 ---
 
 # Purpose
@@ -35,19 +41,24 @@ sentence(s). The output powers the
 
 # Stages
 
-1. **Split** — `SentenceSplitter` breaks entity files into
-   `EnEntitySentence` / `RuEntitySentence` rows (`SplitEntityFileSentences`
-   job; `ProcessEntityFile` orchestrates file ingestion).
+1. **Split** — `SentenceSplitter` streams entity files in
+   ~`services.python.sentence_split_chunk_bytes` chunks to the python `/split`
+   endpoint (UTF-8-safe cut + raw-remainder stitching, so chunk seams are
+   seamless) and writes `EnEntitySentence` / `RuEntitySentence` rows
+   (`SplitEntityFileSentences` job; `ProcessEntityFile` orchestrates file
+   ingestion). Splitting itself (pysbd + title heuristics ported from the old
+   PHP splitter) lives in python `ai/splitting/`.
 2. **Sign** — `TextSignatureService` builds an embedding-based signature per
-   entity (`GenerateEntitySignature` job). `verifyEntityPair()` rejects pairs
-   whose cosine similarity < **0.70** before alignment is attempted.
+   entity (`GenerateEntitySignature` job) via `/embed` (BGE-M3, 1024-dim).
+   `verifyEntityPair()` rejects pairs whose cosine similarity < **0.70** before
+   alignment is attempted.
 3. **Align** — `AlignEntitySentences` dispatches `AlignEntitySentenceChunk`
-   jobs. Each chunk calls the embedding API in batches
-   (`services.embedding.alignment_batch_size`, default 25;
-   `alignment_sentence_max_chars`, default 4000), builds a similarity matrix,
-   and scores groupings with penalties: gap 0.08, match 0.35, extra sentence
-   0.02, imbalance 0.45; low-confidence (< 0.55) matches get an extra 1.2
-   penalty. Results land in `EnRuMeaningMatch`,
+   jobs (job timeout 600s). Each chunk POSTs its EN/RU sentence lists to
+   `/align` via `SentenceAlignmentService::alignChunkRemote()`
+   (`services.python.align_timeout`, default 600); python runs DP over window
+   groupings up to `max_window` (gain = score² when cosine ≥ **0.4**, else −2.0
+   penalty; the DP force-covers every sentence — no in-window skips), and PHP
+   `adaptMatches()` writes the result to `EnRuMeaningMatch`,
    `EnSentenceMeaningMatch` / `RuSentenceMeaningMatch`.
 4. **Order** — sentences and matches carry sparse order values managed by
    `SparseOrderService`; `entity-orders:rebalance` runs **daily** (see
@@ -59,17 +70,24 @@ sentence(s). The output powers the
    simulator UI. Read-only web views: `/alignments`, `/alignments/{id}`
    (`AlignmentController`).
 
-# Embedding microservice
+# Python microservice
 
-* Container `ext_embedding` (host port 8001), FastAPI, model
-  **`intfloat/multilingual-e5-small`** via sentence-transformers.
-* Endpoints for single/batch embedding and batch cosine similarity (see
-  `docker-compose/embedding/main.py`).
-* Laravel talks to it via `SentenceAlignmentService::create()` using
-  `services.embedding.url` (default `http://ext_embedding:8000`) with retries
-  at 500/1500/3000 ms.
+* Container `ext_python` (host port 8001), FastAPI, model **BGE-M3**
+  (1024-dim, bind-mounted read-only from `docker-compose/python/ai/bge_m3_local`;
+  `HF_HUB_OFFLINE=1` so it never downloads at runtime).
+* Endpoints: `/health`, `/embed`, `/embed/batch`, `/cosine/batch`, `/split`,
+  `/align` (see `docker-compose/python/ai/main.py` + `ai/api/`). Heavy
+  endpoints are sync (`def`) so a long `/align` does not starve `/health`.
+* Python writes **nothing** to Postgres — Laravel owns all DB writes.
+* Laravel talks to it via `services.python.url` (default
+  `http://ext_python:8000`) with retries at 500/1500/3000 ms; keys:
+  `timeout`, `align_timeout`, `has_similar_batch_size`,
+  `sentence_split_chunk_bytes`.
 * `TextSignatureService` also exposes `hasSimilar()` / `findCrossLanguage()`
-  for duplicate detection (`services.embedding.has_similar_batch_size`, 200).
+  for duplicate detection (`services.python.has_similar_batch_size`, 200).
+* Signatures from the old e5-small service are 384-dim and incompatible —
+  regenerate: `UPDATE en_entities SET signature = NULL;` (and `ru_entities`),
+  then `php artisan entity:generate-signatures`.
 
 # Operator workflow
 

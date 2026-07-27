@@ -5,7 +5,7 @@ description: Bilingual texts, their sentences, and the machine/human alignment b
 tags: [database, schema, alignment, entities]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/kimi-k3, at: 2026-07-26T12:00:00Z }
+generated: { by: agent/kimi-k3, at: 2026-07-27T17:30:00Z }
 sources:
   - id: migrations
     resource: laravel/database/migrations
@@ -19,7 +19,7 @@ sources:
 
 | Table | Model | Role |
 |-------|-------|------|
-| `en_entities` / `ru_entities` | `EnEntity` / `RuEntity` | A text (book/story/file) in one language; carries an embedding `signature` |
+| `en_entities` / `ru_entities` | `EnEntity` / `RuEntity` | A text (book/story/file) in one language; carries a BGE-M3 embedding `signature` (1024-dim) |
 | `sentence_types` | `SentenceType` | Classification for sentences |
 | `en_entity_sentences` / `ru_entity_sentences` | `EnEntitySentence` / `RuEntitySentence` | Split sentences with **sparse order** values |
 | `en_ru_entity_matches` | `EnRuEntityMatch` | Pairing of one EN entity with one RU entity ("same text, two languages") |

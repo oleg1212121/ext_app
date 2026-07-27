@@ -2,6 +2,18 @@
 
 ## 2026-07-27
 
+* **Python service**: Replaced the `ext_embedding` container with `ext_python`
+  (same host port 8001): a restructured FastAPI package under
+  `docker-compose/python/ai/` (`api/`, `splitting/`, `signatures/`,
+  `similarity/`, `alignment/`) serving BGE-M3 (1024-dim, bind-mounted from
+  `ai/bge_m3_local`, `HF_HUB_OFFLINE=1`). Sentence splitting and DP alignment
+  moved from PHP into python (`/split`, `/align`); Laravel orchestrates chunks
+  and owns all DB writes. Config renamed `services.embedding.*` →
+  `services.python.*` (new `align_timeout`, dropped dead batch keys); old
+  384-dim e5-small signatures must be regenerated. Updated
+  `architecture/docker-services.md`, `architecture/overview.md`,
+  `domains/sentence-alignment.md`, `playbooks/run-alignment.md`,
+  `database/entities-alignment.md`, `AGENTS.md`.
 * **Test safety**: Hardened the test environment against wiping the real
   `ext_app` database: `TestCase::createApplication()` guard aborts the suite
   if the resolved DB is not `ext_app_test`, `phpunit.xml` env entries gained

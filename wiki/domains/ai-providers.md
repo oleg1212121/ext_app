@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-07-26T12:00:00Z }
+generated: { by: agent/kimi-k3, at: 2026-07-27T17:30:00Z }
 sources:
   - id: base
     resource: laravel/app/Classes/AiProvider.php

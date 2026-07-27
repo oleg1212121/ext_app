@@ -3,6 +3,12 @@
 use App\Classes\SentenceAlignmentService;
 use App\Models\EnEntitySentence;
 use App\Models\RuEntitySentence;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 function makeEnAlignmentSentence(int $id, int $order): EnEntitySentence
 {
@@ -39,202 +45,202 @@ function alignmentGroupShapes(array $links): array
 }
 
 it('aligns a direct one sentence translation as one group', function () {
-    $service = new SentenceAlignmentService('http://ext_embedding:8000', 30);
+    Http::fake([
+        '*' => Http::response([
+            'matches' => [
+                ['en_start' => 0, 'en_end' => 1, 'ru_start' => 0, 'ru_end' => 1, 'score' => 0.92],
+            ],
+            'unmatched_en' => [],
+            'unmatched_ru' => [],
+        ]),
+    ]);
+
+    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
     $enSentences = collect([makeEnAlignmentSentence(101, 1)]);
     $ruSentences = collect([makeRuAlignmentSentence(201, 1)]);
 
-    $result = $service->alignChunk(
-        $enSentences,
-        $ruSentences,
-        [0 => [0 => 0.92]],
-        6,
-        ['0:0:1:1' => 0.92],
-    );
+    $result = $service->alignChunkRemote($enSentences, $ruSentences, 6);
 
     expect(alignmentGroupShapes($result['links']))->toEqual([[1, 1]])
+        ->and($result['links'][0]['similarity'])->toBe(0.92)
         ->and($result['dpPath'])->toEqual([
             ['type' => 'match', 'alignment_order' => 0],
         ]);
 });
 
-it('aligns one english sentence to two russian sentences when the smallest meaning spans both russian sentences', function () {
-    $service = new SentenceAlignmentService('http://ext_embedding:8000', 30);
+it('aligns one english sentence to two russian sentences as one group', function () {
+    Http::fake([
+        '*' => Http::response([
+            'matches' => [
+                ['en_start' => 0, 'en_end' => 1, 'ru_start' => 0, 'ru_end' => 2, 'score' => 0.94],
+            ],
+            'unmatched_en' => [],
+            'unmatched_ru' => [],
+        ]),
+    ]);
+
+    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
     $enSentences = collect([makeEnAlignmentSentence(101, 1)]);
     $ruSentences = collect([
         makeRuAlignmentSentence(201, 1),
         makeRuAlignmentSentence(202, 2),
     ]);
 
-    $result = $service->alignChunk(
-        $enSentences,
-        $ruSentences,
-        [0 => [0 => 0.40, 1 => 0.40]],
-        6,
-        ['0:0:1:2' => 0.94],
-    );
+    $result = $service->alignChunkRemote($enSentences, $ruSentences, 6);
 
-    expect(alignmentGroupShapes($result['links']))->toEqual([[1, 2]]);
+    expect(alignmentGroupShapes($result['links']))->toEqual([[1, 2]])
+        ->and($result['links'])->toHaveCount(2);
 });
 
-it('aligns two english sentences to one russian sentence when russian compresses the meaning', function () {
-    $service = new SentenceAlignmentService('http://ext_embedding:8000', 30);
+it('aligns two english sentences to one russian sentence as one group', function () {
+    Http::fake([
+        '*' => Http::response([
+            'matches' => [
+                ['en_start' => 0, 'en_end' => 2, 'ru_start' => 0, 'ru_end' => 1, 'score' => 0.94],
+            ],
+            'unmatched_en' => [],
+            'unmatched_ru' => [],
+        ]),
+    ]);
+
+    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
     $enSentences = collect([
         makeEnAlignmentSentence(101, 1),
         makeEnAlignmentSentence(102, 2),
     ]);
     $ruSentences = collect([makeRuAlignmentSentence(201, 1)]);
 
-    $result = $service->alignChunk(
-        $enSentences,
-        $ruSentences,
-        [
-            0 => [0 => 0.40],
-            1 => [0 => 0.40],
-        ],
-        6,
-        ['0:0:2:1' => 0.94],
-    );
+    $result = $service->alignChunkRemote($enSentences, $ruSentences, 6);
 
-    expect(alignmentGroupShapes($result['links']))->toEqual([[2, 1]]);
+    expect(alignmentGroupShapes($result['links']))->toEqual([[2, 1]])
+        ->and($result['links'])->toHaveCount(2);
 });
 
-it('aligns two english sentences to four russian sentences as the smallest complete meaning group', function () {
-    $service = new SentenceAlignmentService('http://ext_embedding:8000', 30);
+it('produces skip steps for sentences outside matched spans', function () {
+    Http::fake([
+        '*' => Http::response([
+            'matches' => [
+                ['en_start' => 1, 'en_end' => 2, 'ru_start' => 1, 'ru_end' => 2, 'score' => 0.8],
+            ],
+            'unmatched_en' => [0, 2],
+            'unmatched_ru' => [0, 2],
+        ]),
+    ]);
+
+    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
     $enSentences = collect([
         makeEnAlignmentSentence(101, 1),
         makeEnAlignmentSentence(102, 2),
+        makeEnAlignmentSentence(103, 3),
     ]);
     $ruSentences = collect([
         makeRuAlignmentSentence(201, 1),
         makeRuAlignmentSentence(202, 2),
         makeRuAlignmentSentence(203, 3),
-        makeRuAlignmentSentence(204, 4),
     ]);
 
-    $result = $service->alignChunk(
-        $enSentences,
-        $ruSentences,
-        [
-            0 => [0 => 0.25, 1 => 0.25, 2 => 0.25, 3 => 0.25],
-            1 => [0 => 0.25, 1 => 0.25, 2 => 0.25, 3 => 0.25],
-        ],
-        6,
-        ['0:0:2:4' => 0.94],
-    );
+    $result = $service->alignChunkRemote($enSentences, $ruSentences, 6);
 
-    expect(alignmentGroupShapes($result['links']))->toEqual([[2, 4]]);
+    expect($result['dpPath'])->toEqual([
+        ['type' => 'skip_en', 'en_sentence_id' => 101, 'alignment_order' => 0],
+        ['type' => 'skip_ru', 'ru_sentence_id' => 201, 'alignment_order' => 1],
+        ['type' => 'match', 'alignment_order' => 2],
+        ['type' => 'skip_en', 'en_sentence_id' => 103, 'alignment_order' => 3],
+        ['type' => 'skip_ru', 'ru_sentence_id' => 203, 'alignment_order' => 4],
+    ])
+        ->and($result['links'])->toHaveCount(1)
+        ->and($result['links'][0]['en_entity_sentence_id'])->toBe(102)
+        ->and($result['links'][0]['ru_entity_sentence_id'])->toBe(202)
+        ->and($result['links'][0]['alignment_order'])->toBe(2);
 });
 
-it('prefers one balanced six sentence meaning group over two lopsided groups', function () {
-    $service = new SentenceAlignmentService('http://ext_embedding:8000', 30);
-    $enSentences = collect(range(1, 6))->map(fn (int $order): EnEntitySentence => makeEnAlignmentSentence(100 + $order, $order));
-    $ruSentences = collect(range(1, 6))->map(fn (int $order): RuEntitySentence => makeRuAlignmentSentence(200 + $order, $order));
-    $similarityMatrix = [];
+it('returns a skip-only path without calling the service when a side is empty', function () {
+    Http::fake();
 
-    foreach (range(0, 5) as $i) {
-        foreach (range(0, 5) as $j) {
-            $similarityMatrix[$i][$j] = 0.20;
+    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+
+    $noEn = $service->alignChunkRemote(collect(), collect([
+        makeRuAlignmentSentence(201, 1),
+        makeRuAlignmentSentence(202, 2),
+    ]), 6);
+
+    expect($noEn['links'])->toEqual([])
+        ->and($noEn['dpPath'])->toEqual([
+            ['type' => 'skip_ru', 'ru_sentence_id' => 201, 'alignment_order' => 0],
+            ['type' => 'skip_ru', 'ru_sentence_id' => 202, 'alignment_order' => 1],
+        ]);
+
+    $noRu = $service->alignChunkRemote(collect([makeEnAlignmentSentence(101, 1)]), collect(), 6);
+
+    expect($noRu['links'])->toEqual([])
+        ->and($noRu['dpPath'])->toEqual([
+            ['type' => 'skip_en', 'en_sentence_id' => 101, 'alignment_order' => 0],
+        ]);
+
+    Http::assertNothingSent();
+});
+
+it('sends sentence contents and max window to the alignment endpoint', function () {
+    Http::fake([
+        '*' => Http::response(['matches' => [], 'unmatched_en' => [], 'unmatched_ru' => []]),
+    ]);
+
+    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+    $enSentences = collect([
+        makeEnAlignmentSentence(101, 1),
+        makeEnAlignmentSentence(102, 2),
+    ]);
+    $ruSentences = collect([makeRuAlignmentSentence(201, 1)]);
+
+    $service->alignChunkRemote($enSentences, $ruSentences, 5);
+
+    Http::assertSent(function (Request $request): bool {
+        return str_ends_with($request->url(), '/align')
+            && $request->data()['en_sentences'] === ['English sentence 1.', 'English sentence 2.']
+            && $request->data()['ru_sentences'] === ['Russian sentence 1.']
+            && $request->data()['max_window'] === 5;
+    });
+});
+
+it('throws when the alignment service responds with an error', function () {
+    Http::fake(fn () => Http::response('service unavailable', 503));
+
+    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+
+    $service->alignChunkRemote(
+        collect([makeEnAlignmentSentence(101, 1)]),
+        collect([makeRuAlignmentSentence(201, 1)]),
+        6,
+    );
+})->throws(RuntimeException::class, 'Python alignment service error');
+
+it('retries transient alignment connection failures before succeeding', function () {
+    $attempts = 0;
+
+    Http::fake(function () use (&$attempts) {
+        $attempts++;
+
+        if ($attempts < 3) {
+            throw new ConnectionException('Python service timed out');
         }
-    }
 
-    $result = $service->alignChunk(
-        $enSentences,
-        $ruSentences,
-        $similarityMatrix,
+        return Http::response([
+            'matches' => [
+                ['en_start' => 0, 'en_end' => 1, 'ru_start' => 0, 'ru_end' => 1, 'score' => 0.9],
+            ],
+            'unmatched_en' => [],
+            'unmatched_ru' => [],
+        ]);
+    });
+
+    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+
+    $result = $service->alignChunkRemote(
+        collect([makeEnAlignmentSentence(101, 1)]),
+        collect([makeRuAlignmentSentence(201, 1)]),
         6,
-        [
-            '0:0:1:5' => 0.95,
-            '1:5:5:1' => 0.95,
-            '0:0:6:6' => 0.90,
-        ],
     );
 
-    expect(alignmentGroupShapes($result['links']))->toEqual([[6, 6]]);
-});
-
-it('skips nearby context instead of attaching it to a mediocre lopsided group', function () {
-    $service = new SentenceAlignmentService('http://ext_embedding:8000', 30);
-    $enSentences = collect([makeEnAlignmentSentence(101, 1)]);
-    $ruSentences = collect([
-        makeRuAlignmentSentence(201, 1),
-        makeRuAlignmentSentence(202, 2),
-        makeRuAlignmentSentence(203, 3),
-        makeRuAlignmentSentence(204, 4),
-    ]);
-
-    $result = $service->alignChunk(
-        $enSentences,
-        $ruSentences,
-        [0 => [0 => 0.20, 1 => 0.84, 2 => 0.20, 3 => 0.20]],
-        6,
-        [
-            '0:0:1:4' => 0.84,
-            '0:1:1:1' => 0.84,
-        ],
-    );
-
-    expect(alignmentGroupShapes($result['links']))->toEqual([[1, 1]])
-        ->and($result['links'][0]['ru_entity_sentence_id'])->toBe(202);
-});
-
-it('aligns one english sentence to five russian sentences', function () {
-    $service = new SentenceAlignmentService('http://ext_embedding:8000', 30);
-    $enSentences = collect([makeEnAlignmentSentence(101, 1)]);
-    $ruSentences = collect([
-        makeRuAlignmentSentence(201, 1),
-        makeRuAlignmentSentence(202, 2),
-        makeRuAlignmentSentence(203, 3),
-        makeRuAlignmentSentence(204, 4),
-        makeRuAlignmentSentence(205, 5),
-    ]);
-
-    $result = $service->alignChunk(
-        $enSentences,
-        $ruSentences,
-        [0 => [0 => 0.25, 1 => 0.25, 2 => 0.25, 3 => 0.25, 4 => 0.25]],
-        5,
-        ['0:0:1:5' => 0.95],
-    );
-
-    expect($result['dpPath'])->toEqual([
-        ['type' => 'match', 'alignment_order' => 0],
-    ])
-        ->and($result['links'])->toHaveCount(5)
-        ->and(collect($result['links'])->pluck('en_entity_sentence_id')->unique()->values()->all())->toEqual([101])
-        ->and(collect($result['links'])->pluck('ru_entity_sentence_id')->values()->all())->toEqual([201, 202, 203, 204, 205])
-        ->and(collect($result['links'])->pluck('link_group')->unique()->values()->all())->toEqual([1]);
-});
-
-it('aligns several english sentences to several russian sentences as one meaning group', function () {
-    $service = new SentenceAlignmentService('http://ext_embedding:8000', 30);
-    $enSentences = collect([
-        makeEnAlignmentSentence(101, 1),
-        makeEnAlignmentSentence(102, 2),
-    ]);
-    $ruSentences = collect([
-        makeRuAlignmentSentence(201, 1),
-        makeRuAlignmentSentence(202, 2),
-        makeRuAlignmentSentence(203, 3),
-        makeRuAlignmentSentence(204, 4),
-        makeRuAlignmentSentence(205, 5),
-    ]);
-
-    $result = $service->alignChunk(
-        $enSentences,
-        $ruSentences,
-        [
-            0 => [0 => 0.15, 1 => 0.15, 2 => 0.15, 3 => 0.15, 4 => 0.15],
-            1 => [0 => 0.15, 1 => 0.15, 2 => 0.15, 3 => 0.15, 4 => 0.15],
-        ],
-        5,
-        ['0:0:2:5' => 0.95],
-    );
-
-    expect($result['dpPath'])->toEqual([
-        ['type' => 'match', 'alignment_order' => 0],
-    ])
-        ->and($result['links'])->toHaveCount(10)
-        ->and(collect($result['links'])->pluck('en_entity_sentence_id')->unique()->values()->all())->toEqual([101, 102])
-        ->and(collect($result['links'])->pluck('ru_entity_sentence_id')->unique()->values()->all())->toEqual([201, 202, 203, 204, 205])
-        ->and(collect($result['links'])->pluck('link_group')->unique()->values()->all())->toEqual([1]);
+    expect($result['links'])->toHaveCount(1)
+        ->and($attempts)->toBe(3);
 });

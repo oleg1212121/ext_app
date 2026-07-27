@@ -70,7 +70,11 @@ it('dispatches alignment chunks instead of embedding all sentences in the coordi
 it('persists one alignment chunk as meaning matches and junction rows', function () {
     Http::fake(function (Request $request) {
         return Http::response([
-            'vectors' => array_fill(0, count($request->data()['texts'] ?? []), [1.0, 0.0]),
+            'matches' => [
+                ['en_start' => 0, 'en_end' => 1, 'ru_start' => 0, 'ru_end' => 1, 'score' => 0.9],
+            ],
+            'unmatched_en' => [],
+            'unmatched_ru' => [],
         ]);
     });
 
@@ -130,24 +134,13 @@ it('skips stale alignment chunk jobs when the entity match has been deleted', fu
 
 it('persists one english sentence linked to five russian sentences', function () {
     Http::fake(function (Request $request) {
-        $vectors = collect($request->data()['texts'] ?? [])
-            ->map(function (string $text): array {
-                if ($text === 'English meaning.') {
-                    return [1.0, 0.0, 0.0, 0.0, 0.0];
-                }
-
-                return match ($text) {
-                    'Russian part 1.' => [0.2, 1.0, 0.0, 0.0, 0.0],
-                    'Russian part 2.' => [0.2, 0.0, 1.0, 0.0, 0.0],
-                    'Russian part 3.' => [0.2, 0.0, 0.0, 1.0, 0.0],
-                    'Russian part 4.' => [0.2, 0.0, 0.0, 0.0, 1.0],
-                    'Russian part 5.' => [0.2, -1.0, -1.0, -1.0, -1.0],
-                    default => [0.0, 1.0, 0.0, 0.0, 0.0],
-                };
-            })
-            ->all();
-
-        return Http::response(['vectors' => $vectors]);
+        return Http::response([
+            'matches' => [
+                ['en_start' => 0, 'en_end' => 1, 'ru_start' => 0, 'ru_end' => 5, 'score' => 0.95],
+            ],
+            'unmatched_en' => [],
+            'unmatched_ru' => [],
+        ]);
     });
 
     $sentenceType = SentenceType::create(['name' => 'Narration']);
@@ -243,15 +236,12 @@ it('dispatches drift-aware russian search windows for english chunks', function 
     ]);
 });
 
-it('limits alignment embedding request size for oversized sentences', function () {
-    config([
-        'services.embedding.alignment_batch_size' => 2,
-        'services.embedding.alignment_sentence_max_chars' => 10,
-    ]);
-
+it('sends full sentence contents to the alignment endpoint without php-side sampling', function () {
     Http::fake(function (Request $request) {
         return Http::response([
-            'vectors' => array_fill(0, count($request->data()['texts'] ?? []), [1.0, 0.0]),
+            'matches' => [],
+            'unmatched_en' => [0, 1],
+            'unmatched_ru' => [0],
         ]);
     });
 
@@ -295,10 +285,13 @@ it('limits alignment embedding request size for oversized sentences', function (
     (new AlignEntitySentenceChunk($entityMatch->id, 0, 0, 0, 75, true))->handle();
 
     Http::assertSent(function (Request $request): bool {
-        $texts = $request->data()['texts'] ?? [];
+        $enTexts = $request->data()['en_sentences'] ?? [];
+        $ruTexts = $request->data()['ru_sentences'] ?? [];
 
-        return $texts !== []
-            && collect($texts)->every(fn (string $text): bool => strlen($text) <= 17);
+        return str_ends_with($request->url(), '/align')
+            && $enTexts === [str_repeat('a', 100), str_repeat('b', 100)]
+            && $ruTexts === [str_repeat('c', 100)]
+            && $request->data()['max_window'] === 1;
     });
 });
 
@@ -309,7 +302,7 @@ it('configures alignment jobs to retry with backoff', function () {
     expect($coordinator->timeout)->toBe(180)
         ->and($coordinator->tries)->toBe(5)
         ->and($coordinator->backoff())->toEqual([30, 60, 120, 300])
-        ->and($chunk->timeout)->toBe(180)
+        ->and($chunk->timeout)->toBe(600)
         ->and($chunk->tries)->toBe(5)
         ->and($chunk->backoff())->toEqual([30, 60, 120, 300]);
 });

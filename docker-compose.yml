@@ -63,16 +63,16 @@ services:
     networks:
       - ext_net
 
-  embedding:
+  python:
     build:
-      context: ./docker-compose/embedding
+      context: ./docker-compose/python
       dockerfile: Dockerfile
-    container_name: ext_embedding
+    container_name: ext_python
     restart: unless-stopped
     ports:
       - "8001:8000"
     volumes:
-      - ./docker-compose/embedding/models:/root/.cache/huggingface
+      - ./docker-compose/python/ai/bge_m3_local:/app/model:ro
     networks:
       - ext_net
 

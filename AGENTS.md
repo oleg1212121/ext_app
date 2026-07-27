@@ -111,7 +111,7 @@ Tailwind 4 uses CSS-based config via `@theme`/`@source`/`@plugin` directives in 
 - `app/Http/Controllers/Bilinguals/` — Bilinguals simulator controllers
 - `resources/js/Pages/` — Inertia React pages
 - `public/texts/simulator/` — Reading materials organized by language/level
-- `docker-compose/embedding/` — FastAPI embedding service (separate container `ext_embedding`)
+- `docker-compose/python/` — FastAPI python service (container `ext_python`): sentence splitting, BGE-M3 embeddings, DP alignment
 
 ### Services (Docker)
 
@@ -121,7 +121,7 @@ Tailwind 4 uses CSS-based config via `@theme`/`@source`/`@plugin` directives in 
 | PostgreSQL | ext_pgdb | 54321 |
 | Nginx | ext_nginx | 8000 |
 | Vite dev | (in ext_app_laravel) | 8002 |
-| Embedding API | ext_embedding | 8001 |
+| Python API | ext_python | 8001 |
 
 ### Python Environment
 

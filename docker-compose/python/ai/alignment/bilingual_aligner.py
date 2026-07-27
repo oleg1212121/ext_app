@@ -1,7 +1,10 @@
+import logging
 from pathlib import Path
 
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
+
+logger = logging.getLogger(__name__)
 
 
 class BilingualAligner:
@@ -9,7 +12,7 @@ class BilingualAligner:
         # model accepts a ready SentenceTransformer (to share one loaded model
         # between classes), a model path, or None to load the default local model.
         if model is None:
-            model = Path(__file__).parent / "bge_m3_local"
+            model = Path(__file__).parent.parent / "bge_m3_local"
         if isinstance(model, SentenceTransformer):
             self.model = model
         else:
@@ -18,12 +21,42 @@ class BilingualAligner:
         self.max_window = max_window
         self.similarity_threshold = similarity_threshold
 
+    def align_lists(self, en_sentences: list[str], ru_sentences: list[str]) -> dict:
+        """Align two in-memory sentence lists and return structured matches.
+
+        Returns matches as index spans into the submitted lists plus the
+        indices not covered by any match (only possible when one side is
+        empty, since the DP forces full coverage of both lists).
+        """
+        matches = self._align_chunk(en_sentences, ru_sentences)
+
+        matched_en: set[int] = set()
+        matched_ru: set[int] = set()
+        for match in matches:
+            matched_en.update(range(match["en_start"], match["en_end"]))
+            matched_ru.update(range(match["ru_start"], match["ru_end"]))
+
+        return {
+            "matches": [
+                {
+                    "en_start": m["en_start"],
+                    "en_end": m["en_end"],
+                    "ru_start": m["ru_start"],
+                    "ru_end": m["ru_end"],
+                    "score": m["score"],
+                }
+                for m in matches
+            ],
+            "unmatched_en": [i for i in range(len(en_sentences)) if i not in matched_en],
+            "unmatched_ru": [i for i in range(len(ru_sentences)) if i not in matched_ru],
+        }
+
     def process(self, en_path, ru_path, output_path):
         en_all = self._read_sentences(en_path)
         ru_all = self._read_sentences(ru_path)
 
-        print(f"EN sentences: {len(en_all)}")
-        print(f"RU sentences: {len(ru_all)}")
+        logger.info("EN sentences: %d", len(en_all))
+        logger.info("RU sentences: %d", len(ru_all))
 
         en_offset = 0
         ru_offset = 0
@@ -35,15 +68,19 @@ class BilingualAligner:
             en_chunk = en_all[en_offset : en_offset + self.chunk_size]
             ru_chunk = ru_all[ru_offset : ru_offset + self.chunk_size]
 
-            print(
-                f"Chunk {chunk_num}: EN[{en_offset}:{en_offset + len(en_chunk)}] "
-                f"RU[{ru_offset}:{ru_offset + len(ru_chunk)}]"
+            logger.info(
+                "Chunk %d: EN[%d:%d] RU[%d:%d]",
+                chunk_num,
+                en_offset,
+                en_offset + len(en_chunk),
+                ru_offset,
+                ru_offset + len(ru_chunk),
             )
 
             matches = self._align_chunk(en_chunk, ru_chunk)
 
             if not matches:
-                print("No alignment produced in chunk, breaking to avoid infinite loop")
+                logger.warning("No alignment produced in chunk, breaking to avoid infinite loop")
                 break
 
             is_last_chunk = (
@@ -70,7 +107,7 @@ class BilingualAligner:
             all_matches.extend(committed)
 
             if new_en_offset == en_offset and new_ru_offset == ru_offset:
-                print("No progress in chunk, breaking to avoid infinite loop")
+                logger.warning("No progress in chunk, breaking to avoid infinite loop")
                 break
 
             en_offset = new_en_offset

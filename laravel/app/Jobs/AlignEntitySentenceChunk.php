@@ -16,7 +16,7 @@ class AlignEntitySentenceChunk implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $timeout = 180;
+    public int $timeout = 600;
 
     public int $tries = 5;
 
@@ -64,18 +64,10 @@ class AlignEntitySentenceChunk implements ShouldQueue
             ->limit($this->ruWindowSize ?? $this->chunkSize)
             ->get();
 
-        $similarities = $service->buildAlignmentSimilarityMatrices(
+        $result = $service->alignChunkRemote(
             $enSentences,
             $ruSentences,
             $entityMatch->max_n,
-        );
-
-        $result = $service->alignChunk(
-            $enSentences,
-            $ruSentences,
-            $similarities['individual'],
-            $entityMatch->max_n,
-            $similarities['groups'],
         );
 
         $service->storeAlignmentSegment(

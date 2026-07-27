@@ -30,7 +30,7 @@ it('retries transient embedding connection failures before succeeding', function
         ]);
     });
 
-    $service = new TextSignatureService('http://ext_embedding:8000', 30);
+    $service = new TextSignatureService('http://ext_python:8000', 30);
 
     expect($service->generateSignature('A short sample text'))
         ->toEqual([0.1, 0.2, 0.3]);
@@ -54,12 +54,12 @@ it('configures entity embedding jobs to retry with backoff', function () {
         ->and($splitJob->backoff())->toEqual([30, 60, 120, 300]);
 });
 
-it('sends only a head and tail sample for long texts to the embedding endpoint', function () {
+it('sends only a head and tail sample for long texts to the python service', function () {
     Http::fake([
         '*' => Http::response(['vector' => array_fill(0, 384, 0.01)], 200),
     ]);
 
-    $service = new TextSignatureService('http://ext_embedding:8000', 30);
+    $service = new TextSignatureService('http://ext_python:8000', 30);
 
     $long = str_repeat('x', 21_000);
     expect(strlen($long))->toBeGreaterThan(20_000);
@@ -77,12 +77,12 @@ it('sends only a head and tail sample for long texts to the embedding endpoint',
         ->and(str_ends_with($sent, str_repeat('x', 10_000)));
 });
 
-it('sends short text unchanged to the embedding endpoint', function () {
+it('sends short text unchanged to the python service', function () {
     Http::fake([
         '*' => Http::response(['vector' => [0.1, 0.2, 0.3]], 200),
     ]);
 
-    $service = new TextSignatureService('http://ext_embedding:8000', 30);
+    $service = new TextSignatureService('http://ext_python:8000', 30);
 
     expect($service->generateSignature('hello'))->toEqual([0.1, 0.2, 0.3]);
 
@@ -106,7 +106,7 @@ it('detects similar entity via cosine batch endpoint', function () {
         return Http::response(['error' => 'not expected in this test'], 500);
     });
 
-    $service = new TextSignatureService('http://ext_embedding:8000', 30);
+    $service = new TextSignatureService('http://ext_python:8000', 30);
     $other->refresh();
 
     expect($service->hasSimilar($other, 'en'))->toBeTrue();
@@ -121,14 +121,14 @@ it('falls back to PHP cosine when the batch endpoint fails', function () {
 
     Http::fake(fn () => Http::response('bad gateway', 502));
 
-    $service = new TextSignatureService('http://ext_embedding:8000', 30);
+    $service = new TextSignatureService('http://ext_python:8000', 30);
     $other->refresh();
 
     expect($service->hasSimilar($other, 'en'))->toBeTrue();
 });
 
 it('dispatches sentence splitting when the file is not a duplicate', function () {
-    config(['services.embedding.url' => 'http://ext_embedding:8000']);
+    config(['services.python.url' => 'http://ext_python:8000']);
 
     Bus::fake();
     $dir = 'entities/'.uniqid('e_', true).'.txt';

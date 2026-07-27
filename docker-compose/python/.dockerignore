@@ -1,0 +1,7 @@
+# Paths are relative to the build context root (docker-compose/python/)
+ai/ai_env/
+ai/bge_m3_local/
+**/__pycache__/
+*.pyc
+*.txt
+!requirements.txt

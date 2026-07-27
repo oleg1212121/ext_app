@@ -2,9 +2,9 @@ from pathlib import Path
 
 from sentence_transformers import SentenceTransformer
 
-from BilingualAligner import BilingualAligner
-from SentenceSplitter import SentenceSplitter
-from TextSignature import TextSignature
+from ai.alignment.bilingual_aligner import BilingualAligner
+from ai.signatures.text_signature import TextSignature
+from ai.splitting.sentence_splitter import SentenceSplitter
 
 BASE_DIR = Path(__file__).parent
 

@@ -17,7 +17,7 @@ class TextSignatureService
 
     private const RETRY_DELAYS_MS = [500, 1_500, 3_000];
 
-    /** UTF-8 character counts sent to the embedding service (head + tail when over the combined limit). */
+    /** UTF-8 character counts sent to the python service (head + tail when over the combined limit). */
     private const SIGNATURE_HEAD_CHARS = 10_000;
 
     private const SIGNATURE_TAIL_CHARS = 10_000;
@@ -37,8 +37,8 @@ class TextSignatureService
     public static function create(): self
     {
         return new self(
-            apiUrl: config('services.embedding.url', 'http://ext_embedding:8000'),
-            timeout: (int) config('services.embedding.timeout', 30),
+            apiUrl: config('services.python.url', 'http://ext_python:8000'),
+            timeout: (int) config('services.python.timeout', 30),
         );
     }
 
@@ -106,7 +106,7 @@ class TextSignatureService
 
     /**
      * Whether another entity in the same language already has a similar-enough signature.
-     * Buffers rows and uses the embedding service for batched cosine similarity, with a PHP fallback.
+     * Buffers rows and uses the python service for batched cosine similarity, with a PHP fallback.
      */
     public function hasSimilar(mixed $entity, ?string $lang = null): bool
     {
@@ -122,7 +122,7 @@ class TextSignatureService
 
         $lang ??= $entity instanceof EnEntity ? 'en' : 'ru';
         $modelClass = self::LANG_MODELS[$lang];
-        $batchSize = max(1, (int) config('services.embedding.has_similar_batch_size', 200));
+        $batchSize = max(1, (int) config('services.python.has_similar_batch_size', 200));
         $buffer = [];
 
         foreach ($modelClass::query()

@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database.
 tags: [testing, pest]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-07-27T00:00:00Z }
+generated: { by: agent/kimi-k3, at: 2026-07-27T17:30:00Z }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml

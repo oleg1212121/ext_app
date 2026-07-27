@@ -4,7 +4,7 @@ title: Application Overview
 description: What ext_app is, its main components, and how a request flows through the system.
 tags: [architecture, overview]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-07-26T12:00:00Z }
+generated: { by: agent/kimi-k3, at: 2026-07-27T17:30:00Z }
 sources:
   - id: composer
     resource: laravel/composer.json
@@ -30,8 +30,7 @@ The repo root is a **Docker workspace**; the Laravel application lives in
 |------|---------|
 | `laravel/` | The Laravel 13 application (mounted to `/var/www` in the app container) |
 | `wiki/` | This OKF knowledge bundle (mounted to `/var/wiki`) |
-| `docker-compose/embedding/` | FastAPI sentence-embedding microservice |
-| `docker-compose/python/ai/` | Experimental Python scripts + prebuilt `ai_env` venv |
+| `docker-compose/python/` | FastAPI python microservice (`ai/` package: splitting, embeddings, alignment) + prebuilt `ai_env` venv |
 | `docker-compose/postgres/` | PostgreSQL data directory |
 | `nginx/` | Nginx config |
 | `public/texts/simulator/` | (inside `laravel/public`) reading texts by language/level |
@@ -45,9 +44,10 @@ The repo root is a **Docker workspace**; the Laravel application lives in
 * **Queue workers** — the [alignment pipeline](/domains/sentence-alignment.md)
   runs as queued jobs (`AlignEntitySentences`, `AlignEntitySentenceChunk`,
   `GenerateEntitySignature`, `ProcessEntityFile`, `SplitEntityFileSentences`).
-* **Embedding microservice** (`ext_embedding`) — sentence-transformers
-  (`intfloat/multilingual-e5-small`) over HTTP; used by alignment and text
-  signatures. Config: `config/services.php` → `embedding`.
+* **Python microservice** (`ext_python`) — BGE-M3 sentence-transformer
+  (1024-dim) over HTTP: `/embed`, `/embed/batch`, `/cosine/batch`, `/split`,
+  `/align`. Sentence splitting and DP alignment run there; Laravel stores the
+  results. Config: `config/services.php` → `python`.
 * **External AI APIs** — six providers behind one abstraction; see
   [AI Providers](/domains/ai-providers.md).
 

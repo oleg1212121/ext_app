@@ -6,6 +6,8 @@ use App\Models\EnEntity;
 use App\Models\RuEntity;
 use App\Models\SentenceType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -19,10 +21,43 @@ beforeEach(function () {
     ]);
 });
 
-it('streams file sentences with the same output as in-memory splitting', function () {
-    config(['services.embedding.sentence_split_chunk_bytes' => 17]);
+/**
+ * Emulates the python /split endpoint: naive punctuation boundaries with
+ * python-like holdback semantics (raw tail of the text is the remainder
+ * unless the request is final).
+ */
+function fakePythonSplitter(): void
+{
+    Http::fake(function (Request $request) {
+        $text = (string) ($request->data()['text'] ?? '');
+        $finalize = (bool) ($request->data()['finalize'] ?? false);
 
-    $text = 'Dr. Smith arrived. "Hello there!" THIS IS A TITLE. Final sentence?';
+        $parts = trim($text) === ''
+            ? []
+            : (preg_split('/(?<=[.!?])\s+/', trim($text), -1, PREG_SPLIT_NO_EMPTY) ?: []);
+
+        $sentences = array_map(
+            fn (string $part): array => ['content' => $part, 'type' => 'sentence'],
+            $parts,
+        );
+
+        $remainder = '';
+        if (! $finalize && $sentences !== []) {
+            $last = array_pop($sentences)['content'];
+            $pos = strrpos($text, $last);
+            $remainder = $pos === false ? $last : substr($text, $pos);
+        }
+
+        return Http::response(['sentences' => $sentences, 'remainder' => $remainder]);
+    });
+}
+
+it('streams file sentences with the same output as in-memory splitting', function () {
+    config(['services.python.sentence_split_chunk_bytes' => 17]);
+
+    fakePythonSplitter();
+
+    $text = 'First sentence here. Second one follows. Third one ends.';
     $filePath = 'entities/'.uniqid('stream_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
@@ -42,7 +77,9 @@ it('streams file sentences with the same output as in-memory splitting', functio
 });
 
 it('keeps a sentence crossing chunk boundaries intact', function () {
-    config(['services.embedding.sentence_split_chunk_bytes' => 10]);
+    config(['services.python.sentence_split_chunk_bytes' => 10]);
+
+    fakePythonSplitter();
 
     $text = 'This sentence crosses several chunks before ending. Short one.';
     $filePath = 'entities/'.uniqid('boundary_', true).'.txt';
@@ -61,50 +98,46 @@ it('keeps a sentence crossing chunk boundaries intact', function () {
         ->and($stats['max_buffer_bytes'])->toBeGreaterThan(10);
 });
 
-it('does not split abbreviations near chunk boundaries', function () {
-    config(['services.embedding.sentence_split_chunk_bytes' => 4]);
+it('requests finalization only for the trailing remainder', function () {
+    config(['services.python.sentence_split_chunk_bytes' => 10]);
 
-    $text = 'Dr. Smith arrived. He stayed.';
-    $filePath = 'entities/'.uniqid('abbr_', true).'.txt';
+    fakePythonSplitter();
+
+    $text = 'Sentence one here. Sentence two here.';
+    $filePath = 'entities/'.uniqid('finalize_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = EnEntity::query()->create(['name' => 'Abbreviation', 'file_path' => $filePath]);
+    $entity = EnEntity::query()->create(['name' => 'Finalize', 'file_path' => $filePath]);
 
     (new SentenceSplitter)->process($entity->id, $filePath, 'en');
 
-    expect($entity->sentences()->orderBy('order')->pluck('content')->all())
-        ->toEqual([
-            'Dr. Smith arrived.',
-            'He stayed.',
-        ]);
+    Http::assertSent(function (Request $request): bool {
+        return ($request->data()['finalize'] ?? null) === false;
+    });
+
+    $finalizeRequests = collect(Http::recorded())
+        ->filter(fn (array $pair): bool => ($pair[0]->data()['finalize'] ?? null) === true);
+
+    expect($finalizeRequests)->toHaveCount(1);
 });
 
-it('splits after sentence punctuation inside closing quotes and apostrophes', function () {
-    $text = '\'Hello.\' Then he left. “Wait!” She shouted. «Привет!» Потом ушел.';
-    $filePath = 'entities/'.uniqid('quotes_', true).'.txt';
+it('maps python sentence types to sentence type ids', function () {
+    Http::fake([
+        '*' => Http::response([
+            'sentences' => [
+                ['content' => 'CHAPTER ONE', 'type' => 'title'],
+                ['content' => 'A regular one.', 'type' => 'sentence'],
+                ['content' => '"Wait!"', 'type' => 'quote'],
+            ],
+            'remainder' => '',
+        ]),
+    ]);
+
+    $text = "CHAPTER ONE\nA regular one. \"Wait!\"";
+    $filePath = 'entities/'.uniqid('types_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = EnEntity::query()->create(['name' => 'Quotes', 'file_path' => $filePath]);
-
-    (new SentenceSplitter)->process($entity->id, $filePath, 'en', $text);
-
-    expect($entity->sentences()->orderBy('order')->pluck('content')->all())
-        ->toEqual([
-            '\'Hello.\'',
-            'Then he left.',
-            '“Wait!”',
-            'She shouted.',
-            '«Привет!»',
-            'Потом ушел.',
-        ]);
-});
-
-it('recognizes short punctuation-free lines as titles', function () {
-    $text = "CHAPTER ONE\nThe Beginning\nThis is the first sentence. Another follows.";
-    $filePath = 'entities/'.uniqid('titles_', true).'.txt';
-    Storage::disk('local')->put($filePath, $text);
-
-    $entity = EnEntity::query()->create(['name' => 'Titles', 'file_path' => $filePath]);
+    $entity = EnEntity::query()->create(['name' => 'Types', 'file_path' => $filePath]);
 
     (new SentenceSplitter)->process($entity->id, $filePath, 'en', $text);
 
@@ -117,55 +150,42 @@ it('recognizes short punctuation-free lines as titles', function () {
 
     expect($sentences)->toEqual([
         ['CHAPTER ONE', 'title'],
-        ['The Beginning', 'title'],
-        ['This is the first sentence.', 'sentence'],
-        ['Another follows.', 'sentence'],
+        ['A regular one.', 'sentence'],
+        ['"Wait!"', 'quote'],
     ]);
 });
 
-it('keeps quoted sentence boundaries intact across chunks', function () {
-    config(['services.embedding.sentence_split_chunk_bytes' => 7]);
+it('stores russian sentences on the russian entity', function () {
+    Http::fake([
+        '*' => Http::response([
+            'sentences' => [
+                ['content' => 'Первое предложение.', 'type' => 'sentence'],
+                ['content' => 'Второе предложение.', 'type' => 'sentence'],
+            ],
+            'remainder' => '',
+        ]),
+    ]);
 
-    $text = '\'Hello.\' Then he left.';
-    $filePath = 'entities/'.uniqid('quote_boundary_', true).'.txt';
+    $text = 'Первое предложение. Второе предложение.';
+    $filePath = 'entities/'.uniqid('ru_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = EnEntity::query()->create(['name' => 'Quote Boundary', 'file_path' => $filePath]);
-
-    (new SentenceSplitter)->process($entity->id, $filePath, 'en');
-
-    expect($entity->sentences()->orderBy('order')->pluck('content')->all())
-        ->toEqual([
-            '\'Hello.\'',
-            'Then he left.',
-        ]);
-});
-
-it('recognizes Russian title lines before quoted sentences', function () {
-    $text = "Глава 1\n«Привет!» Потом он ушел.";
-    $filePath = 'entities/'.uniqid('ru_titles_', true).'.txt';
-    Storage::disk('local')->put($filePath, $text);
-
-    $entity = RuEntity::query()->create(['name' => 'Russian Titles', 'file_path' => $filePath]);
+    $entity = RuEntity::query()->create(['name' => 'Russian', 'file_path' => $filePath]);
 
     (new SentenceSplitter)->process($entity->id, $filePath, 'ru', $text);
 
-    $sentences = $entity->sentences()
-        ->with('sentenceType')
-        ->orderBy('order')
-        ->get()
-        ->map(fn ($sentence): array => [$sentence->content, $sentence->sentenceType->name])
-        ->all();
+    expect($entity->sentences()->orderBy('order')->pluck('content')->all())
+        ->toEqual(['Первое предложение.', 'Второе предложение.']);
 
-    expect($sentences)->toEqual([
-        ['Глава 1', 'title'],
-        ['«Привет!»', 'quote'],
-        ['Потом он ушел.', 'sentence'],
-    ]);
+    Http::assertSent(function (Request $request): bool {
+        return ($request->data()['language'] ?? null) === 'ru';
+    });
 });
 
 it('inserts large streamed files in order while keeping the split job payload small', function () {
-    config(['services.embedding.sentence_split_chunk_bytes' => 64]);
+    config(['services.python.sentence_split_chunk_bytes' => 64]);
+
+    fakePythonSplitter();
 
     $sentences = array_map(
         fn (int $number): string => "Sentence {$number} ends here.",
@@ -188,3 +208,15 @@ it('inserts large streamed files in order while keeping the split job payload sm
         ->and(strlen($payload))->toBeLessThan(2048)
         ->and($payload)->not->toContain('Sentence 750 ends here.');
 });
+
+it('throws when the python split service responds with an error', function () {
+    Http::fake(fn () => Http::response('service unavailable', 503));
+
+    $text = 'Some text to split.';
+    $filePath = 'entities/'.uniqid('error_', true).'.txt';
+    Storage::disk('local')->put($filePath, $text);
+
+    $entity = EnEntity::query()->create(['name' => 'Error', 'file_path' => $filePath]);
+
+    (new SentenceSplitter)->process($entity->id, $filePath, 'en', $text);
+})->throws(RuntimeException::class, 'Python split service error');
