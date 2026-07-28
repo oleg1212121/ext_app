@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Classes\TextSignatureService;
 use App\Filament\Resources\EnEntityResource\Pages;
+use App\Filament\Resources\EnEntityResource\RelationManagers;
 use App\Jobs\AlignEntitySentences;
 use App\Jobs\GenerateEntitySignature;
 use App\Models\EnEntity;
@@ -24,9 +25,9 @@ class EnEntityResource extends Resource
 {
     protected static ?string $model = EnEntity::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-document-text';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-document-text';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Entities';
+    protected static string|\UnitEnum|null $navigationGroup = 'Entities';
 
     protected static ?string $label = 'English Entity';
 
@@ -72,6 +73,10 @@ class EnEntityResource extends Resource
             ->recordActions([
                 Actions\EditAction::make(),
                 Actions\DeleteAction::make(),
+                Actions\Action::make('manageSentences')
+                    ->label('Sentences')
+                    ->icon('heroicon-o-document-text')
+                    ->url(fn (EnEntity $record): string => static::getUrl('edit', ['record' => $record])),
                 Actions\Action::make('generateSignature')
                     ->label('Signature')
                     ->icon('heroicon-o-cpu-chip')
@@ -173,7 +178,7 @@ class EnEntityResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            RelationManagers\SentencesRelationManager::class,
         ];
     }
 

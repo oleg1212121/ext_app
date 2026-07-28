@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Classes\TextSignatureService;
 use App\Filament\Resources\RuEntityResource\Pages;
+use App\Filament\Resources\RuEntityResource\RelationManagers;
 use App\Jobs\AlignEntitySentences;
 use App\Jobs\GenerateEntitySignature;
 use App\Models\EnRuEntityMatch;
@@ -24,9 +25,9 @@ class RuEntityResource extends Resource
 {
     protected static ?string $model = RuEntity::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-document-text';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-document-text';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Entities';
+    protected static string|\UnitEnum|null $navigationGroup = 'Entities';
 
     protected static ?string $label = 'Russian Entity';
 
@@ -72,6 +73,10 @@ class RuEntityResource extends Resource
             ->recordActions([
                 Actions\EditAction::make(),
                 Actions\DeleteAction::make(),
+                Actions\Action::make('manageSentences')
+                    ->label('Sentences')
+                    ->icon('heroicon-o-document-text')
+                    ->url(fn (RuEntity $record): string => static::getUrl('edit', ['record' => $record])),
                 Actions\Action::make('generateSignature')
                     ->label('Signature')
                     ->icon('heroicon-o-cpu-chip')
@@ -173,7 +178,7 @@ class RuEntityResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            RelationManagers\SentencesRelationManager::class,
         ];
     }
 

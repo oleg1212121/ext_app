@@ -17,6 +17,8 @@ class EnEntitySentence extends Model
         'order' => 'integer',
     ];
 
+    private ?array $meaningMatchIdsBeforeDelete = null;
+
     public function entity(): BelongsTo
     {
         return $this->belongsTo(EnEntity::class, 'en_entity_id');
@@ -30,5 +32,34 @@ class EnEntitySentence extends Model
     public function enMeaningMatches(): HasMany
     {
         return $this->hasMany(EnSentenceMeaningMatch::class, 'en_entity_sentence_id');
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (EnEntitySentence $sentence): void {
+            $sentence->meaningMatchIdsBeforeDelete = $sentence->enMeaningMatches()
+                ->pluck('en_ru_meaning_match_id')
+                ->unique()
+                ->all();
+        });
+
+        static::deleted(function (EnEntitySentence $sentence): void {
+            foreach ($sentence->meaningMatchIdsBeforeDelete ?? [] as $meaningMatchId) {
+                $meaningMatch = EnRuMeaningMatch::find($meaningMatchId);
+
+                if (! $meaningMatch) {
+                    continue;
+                }
+
+                if ($meaningMatch->enSentenceMatches()->count() === 0 || $meaningMatch->ruSentenceMatches()->count() === 0) {
+                    $entityMatch = $meaningMatch->entityMatch;
+                    $meaningMatch->delete();
+
+                    if ($entityMatch) {
+                        $entityMatch->update(['linked_count' => $entityMatch->meaningMatches()->count()]);
+                    }
+                }
+            }
+        });
     }
 }

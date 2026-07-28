@@ -1,5 +1,17 @@
 # Directory Update Log
 
+## 2026-07-28
+
+* **Entity sentence editing**: Added *Sentences* Filament relation managers to
+  `EnEntityResource` and `RuEntityResource`, reachable from each entity list
+  via a new Sentences row action. Sentences can be created, edited, deleted,
+  and reordered with sparse order gaps maintained by `SparseOrderService`.
+  `SentenceType` defaults to `sentence`. Deleting a sentence removes its per-side
+  meaning matches and cleans up empty `EnRuMeaningMatch` rows, updating the
+  parent match's `linked_count`. Added `EntitySentencesRelationManagerTest`.
+  Updated `database/entities-alignment.md`, `domains/sentence-alignment.md`,
+  `reference/models.md` (via `wiki:sync`).
+
 ## 2026-07-27
 
 * **Python service**: Replaced the `ext_embedding` container with `ext_python`

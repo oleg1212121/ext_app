@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/kimi-k3, at: 2026-07-27T17:30:00Z }
+generated: { by: agent/kimi-k3, at: 2026-07-28T15:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -69,6 +69,11 @@ sentence(s). The output powers the
    `AlignmentEditorPresenter`; `MeaningMatchPresenter` shapes matches for the
    simulator UI. Read-only web views: `/alignments`, `/alignments/{id}`
    (`AlignmentController`).
+6. **Sentence editing** — individual entity sentences can be created, edited,
+   deleted, and reordered from the *Sentences* tab on each `EnEntity` /
+   `RuEntity` edit page. The relation manager uses `SparseOrderService` to keep
+   insertions efficient; deleting a sentence cleans up any now-empty meaning
+   matches.
 
 # Python microservice
 

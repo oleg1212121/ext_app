@@ -12,11 +12,8 @@ export default defineConfig({
             input: [
                 'resources/css/app.css',
                 'resources/js/app.jsx',
-                // 'resources/js/pages/alignments.jsx',
-                // 'resources/js/pages/alignments-show.jsx',
-                // 'resources/css/crossword.css',
-                // 'resources/css/simulator.css',
-                // Add any other custom CSS files hereq
+                'resources/js/Pages/alignments.jsx',
+                'resources/js/Pages/alignments-show.jsx',
             ],
             refresh: true,
         }),

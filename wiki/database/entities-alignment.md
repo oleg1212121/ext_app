@@ -5,7 +5,7 @@ description: Bilingual texts, their sentences, and the machine/human alignment b
 tags: [database, schema, alignment, entities]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/kimi-k3, at: 2026-07-27T17:30:00Z }
+generated: { by: agent/kimi-k3, at: 2026-07-28T15:00:00Z }
 sources:
   - id: migrations
     resource: laravel/database/migrations
@@ -33,8 +33,11 @@ sources:
   maintained by `SparseOrderService`; columns were widened in the
   2026_06 `widen_sparse_order_columns` migration. Rebalance daily via
   `entity-orders:rebalance`.
-* Alignment rows are written by the
-  [alignment pipeline](/domains/sentence-alignment.md) and edited by humans via
-  the Filament `EditEntityAlignment` page (draft → persist flow).
+* **Admin editing**: both `EnEntityResource` and `RuEntityResource` expose a
+  *Sentences* relation manager on the entity edit page. It supports creating,
+  editing, deleting, and reordering sentences while preserving sparse order.
+* **Deletion cleanup**: deleting a sentence cascades to its per-side meaning
+  matches; if a meaning match is left without sentences on either side, the
+  match is deleted and the parent `EnRuEntityMatch.linked_count` is updated.
 * `EnRuEntityMatch` is what the simulator's text dropdown lists — joining
   `enEntity` / `ruEntity` for display names.
