@@ -1,5 +1,33 @@
 # Directory Update Log
 
+## 2026-08-03
+
+* **Python service: two-model split + no-rebuild iteration**. Split the single
+  BGE-M3 model into two: BGE-M3 (1024-dim) stays for signatures (`/embed`,
+  `/embed/batch`, `/cosine/batch`); a new smaller
+  `paraphrase-multilingual-MiniLM-L12-v2` (384-dim) powers `/align` for ~2.5–3×
+  faster CPU alignment. Coral score distribution differs from BGE-M3 — the
+  `ALIGN_DEFAULT_THRESHOLD` likely needs ~0.55 (tunable live). Refactored
+  `ext_python` so the image only carries Python+pip packages; source code
+  (`ai/`, bind-mounted) and model weights (named Docker volume `ai_models`
+  at `/app/models`) are external — rebuilding is only needed for new
+  `requirements.txt` packages. Models load lazily (empty FastAPI lifespan +
+  `ai/models_cache.py`) so `uvicorn --reload` restarts in ~1–2s after a `.py`
+  edit; the first request lazy-loads the model it needs. `docker-compose/python/
+  env/.env` is bind-mounted at `/app/env/.env` (directory mount, not single-file)
+  and live per-request accessors in `ai/config.py` re-read it on each call, so
+  threshold/window/model-path edits apply without container recreate or restart.
+  Added `docker-compose/python/scripts/download_model.py` for adding/swapping
+  models into the volume. Removed `docker-compose/python/ai/bge_m3_local/` from
+  the source tree (now in the named volume). Updated `docker-compose.yml`
+  (python service: `command:` `--reload`, `env_file:`, new volumes, top-level
+  `ai_models` volume), `Dockerfile` (no `COPY ai/`, no hardcoded `MODEL_PATH`),
+  `ai/main.py` (empty lifespan), `ai/config.py` (live accessors), new
+  `ai/models_cache.py`, and all `ai/api/*.py` handlers. Updated
+  `domains/sentence-alignment.md`.
+  * Also updated `architecture/docker-services.md` (python service description,
+    new mounts, `ai_models` volume).
+
 ## 2026-07-28
 
 * **Entity sentence editing**: Added *Sentences* Filament relation managers to

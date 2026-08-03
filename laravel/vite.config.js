@@ -12,8 +12,8 @@ export default defineConfig({
             input: [
                 'resources/css/app.css',
                 'resources/js/app.jsx',
-                'resources/js/Pages/alignments.jsx',
-                'resources/js/Pages/alignments-show.jsx',
+                'resources/js/pages/alignments.jsx',
+                'resources/js/pages/alignments-show.jsx',
             ],
             refresh: true,
         }),

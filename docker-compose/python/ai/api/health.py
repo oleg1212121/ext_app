@@ -1,12 +1,17 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
+
+from ai.models_cache import ModelCache
 
 router = APIRouter()
 
 
 @router.get("/health")
 async def health(request: Request):
-    model = getattr(request.app.state, "model", None)
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-
-    return {"status": "ok", "dim": model.get_embedding_dimension()}
+    # Lazy-load the signature model on first health check; cached after.
+    # `dim` is the signature model's dimension (BGE-M3 = 1024).
+    cache = ModelCache(request.app.state)
+    try:
+        m = cache.signature_model()
+        return {"status": "ok", "dim": m.get_embedding_dimension()}
+    except Exception as exc:
+        return {"status": "loading", "detail": str(exc)}

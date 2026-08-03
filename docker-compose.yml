@@ -71,11 +71,36 @@ services:
     restart: unless-stopped
     ports:
       - "8001:8000"
+    env_file:
+      - ./docker-compose/python/env/.env
+    # Dev: live code reload. Save a .py file under docker-compose/python/ai/ ->
+    # uvicorn reloads in ~1-2s (models stay cached across reloads because the
+    # lifespan is empty; the first request after a save lazy-loads the model).
+    command: >-
+      uvicorn ai.main:app --host 0.0.0.0 --port 8000
+      --reload --reload-dir /app/ai
     volumes:
-      - ./docker-compose/python/ai/bge_m3_local:/app/model:ro
+      # Live source code (mirror the Laravel bind-mount pattern).
+      - type: bind
+        source: ./docker-compose/python/ai
+        target: /app/ai
+        consistency: cached
+      # Model weights: named Docker volume. Survives recreates; not in git.
+      # Download models via /app/scripts/download_model.py.
+      - ai_models:/app/models
+      # Live .env: bind-mount the directory (not the single file — single-file
+      # mounts break on sed -i / editor inodes). config.py re-reads /app/env/.env
+      # per request, so edits to threshold/window/model paths apply instantly
+      # with no recreate or restart.
+      - ./docker-compose/python/env:/app/env:ro
+      # Helper scripts (download_model.py, etc.); read-only.
+      - ./docker-compose/python/scripts:/app/scripts:ro
     networks:
       - ext_net
 
 networks:
   ext_net:
     driver: bridge
+
+volumes:
+  ai_models:

@@ -8,7 +8,12 @@ router = APIRouter()
 
 @router.post("/split", response_model=SplitResponse)
 def split(req: SplitRequest, request: Request):
-    splitters: dict[str, TypedSentenceSplitter] = request.app.state.splitters
+    # Splitters are pure-python (no model); lazily init the cache dict so the
+    # lifespan stays empty (let uvicorn --reload restart cheaply).
+    splitters = getattr(request.app.state, "splitters", None)
+    if splitters is None:
+        splitters = {}
+        request.app.state.splitters = splitters
 
     if req.language not in splitters:
         try:

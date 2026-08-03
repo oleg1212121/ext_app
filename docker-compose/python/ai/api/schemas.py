@@ -49,8 +49,9 @@ class SplitResponse(BaseModel):
 class AlignRequest(BaseModel):
     en_sentences: list[str] = Field(..., max_length=config.ALIGN_MAX_SENTENCES)
     ru_sentences: list[str] = Field(..., max_length=config.ALIGN_MAX_SENTENCES)
-    max_window: int = Field(config.ALIGN_DEFAULT_WINDOW, ge=1, le=config.ALIGN_MAX_WINDOW)
-    similarity_threshold: float = Field(config.ALIGN_DEFAULT_THRESHOLD, ge=0.0, le=1.0)
+    # default_factory is evaluated per request, so edits to .env apply without restart.
+    max_window: int = Field(default_factory=config.align_default_window, ge=1, le=config.ALIGN_MAX_WINDOW)
+    similarity_threshold: float = Field(default_factory=config.align_default_threshold, ge=0.0, le=1.0)
 
 
 class AlignMatch(BaseModel):

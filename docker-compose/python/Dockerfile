@@ -8,11 +8,11 @@ RUN pip install --no-cache-dir torch==2.13.0 --index-url https://download.pytorc
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY ai/ /app/ai/
-
-ENV MODEL_PATH=/app/model \
-    HF_HUB_OFFLINE=1 \
-    PYTHONUNBUFFERED=1
+# Source code (ai/) and model weights (models volume) are bind-mounted at runtime,
+# so the image only needs the interpreter + pip packages. Rebuilding is only
+# required when requirements.txt changes.
+ENV PYTHONUNBUFFERED=1 \
+    HF_HUB_OFFLINE=1
 
 EXPOSE 8000
 

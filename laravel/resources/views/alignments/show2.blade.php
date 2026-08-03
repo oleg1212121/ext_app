@@ -31,7 +31,7 @@
                 {{--viewUrl: '{{ route('alignments.show', '__ID__') }}',--}}
             };
         </script>
-        @vite(['resources/js/Pages/alignments-show.jsx'])
+        @vite(['resources/js/pages/alignments-show.jsx'])
     @endpush
 
 </x-app-layout>
