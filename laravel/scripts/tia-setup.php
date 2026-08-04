@@ -24,6 +24,12 @@
 $projectRoot = realpath(__DIR__.'/..');
 $repoRoot = '/var/repo';
 
+if (! is_dir($repoRoot)) {
+    fwrite(STDERR, "[tia-setup] Refusing to run: not inside the container (\$repoRoot={$repoRoot} missing).\n");
+    fwrite(STDERR, "[tia-setup] Run via `docker exec ext_app_laravel composer run test:tia` instead.\n");
+    exit(1);
+}
+
 if (! is_dir($projectRoot.'/.git')) {
     echo "[tia-setup] Initializing container-local git repo at {$projectRoot}\n";
 
