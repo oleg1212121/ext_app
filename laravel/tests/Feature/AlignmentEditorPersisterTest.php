@@ -1,8 +1,8 @@
 <?php
 
-use App\Classes\SparseOrderService;
 use App\Classes\AlignmentEditorPersister;
 use App\Classes\AlignmentEditorPresenter;
+use App\Classes\SparseOrderService;
 use App\Models\EnEntity;
 use App\Models\EnEntitySentence;
 use App\Models\EnRuEntityMatch;

@@ -1,5 +1,20 @@
 # Directory Update Log
 
+## 2026-08-04
+
+* **Pest TIA Engine**: Bumped Pest 4 → 5 and PHPUnit 12 → 13
+  (`composer.json` `pestphp/pest: ^5.0`, `pestphp/pest-plugin-laravel: ^5.0`,
+  `phpunit/phpunit: ^13.0`) to enable the [Pest Tia Engine](https://pestphp.com/docs/tia)
+  (Test Impact Analysis — re-run only tests affected by your changes). Added
+  `composer run test:tia` (uses `XDEBUG_MODE=coverage` env var so parallel
+  workers inherit Xdebug coverage for the baseline run) and
+  `laravel/scripts/tia-setup.php` (initialises a container-local git repo at
+  `/var/www` with a baseline commit, since the Laravel project is bind-mounted
+  separately from the git repo root at `/var/repo`). Configured
+  `pest()->tia()->filtered()->baselined()` in `tests/Pest.php`. Added
+  `.github/workflows/tia-baseline.yml` for CI baseline sharing and installed
+  `gh` CLI in `LaravelDockerfile`. Updated `playbooks/running-tests.md`.
+
 ## 2026-08-03
 
 * **Python service: two-model split + no-rebuild iteration**. Split the single

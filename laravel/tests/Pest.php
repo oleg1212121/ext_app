@@ -18,6 +18,10 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
 
+pest()->tia()
+    ->filtered()
+    ->baselined();
+
 /*
 |--------------------------------------------------------------------------
 | Expectations

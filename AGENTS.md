@@ -32,8 +32,8 @@ docker exec ext_app_laravel [command]
 | Laravel | 13.x |
 | Livewire | 4.x |
 | Filament | 5.x |
-| Pest | 4.x |
-| PHPUnit | 12.x |
+| Pest | 5.x |
+| PHPUnit | 13.x |
 | Tailwind CSS | 4.x |
 | Alpine.js | 3.x |
 | Inertia.js + React | 3.x / 19.x |
@@ -75,6 +75,14 @@ docker exec ext_app_laravel php artisan test --testsuite=Unit
 
 # Run feature tests only
 docker exec ext_app_laravel php artisan test --testsuite=Feature
+
+# Run only tests affected by your changes (Pest TIA — uses Xdebug coverage for the baseline)
+# First run records the baseline (~50s); subsequent runs replay cached results and re-run
+# only tests touched by changed files. Comment-only edits trigger zero tests.
+docker exec ext_app_laravel composer run test:tia
+
+# Force re-record the TIA graph after large refactors (slower run under Xdebug)
+docker exec -e XDEBUG_MODE=coverage ext_app_laravel sh -c 'cd /var/www && php scripts/tia-setup.php && php vendor/bin/pest --parallel --tia --fresh'
 ```
 
 Test database: `ext_app_test` (configured in phpunit.xml, not the default).
