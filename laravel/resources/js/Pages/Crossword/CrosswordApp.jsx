@@ -8,7 +8,7 @@ export default function CrosswordApp({lang = 'en', texts = []}) {
     const crosswordState = useCrossword({lang, texts});
 
     return (
-        <div id="crosswordRoot" className="flex flex-col flex-1 min-h-0 bg-orange-50 dark:bg-gray-900">
+        <div id="crosswordRoot" className="flex flex-col flex-1 min-h-0 bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
             <UnsolvedModal
                 show={crosswordState.showUnsolvedModal}
                 onClose={() => crosswordState.setShowUnsolvedModal(false)}
@@ -26,7 +26,7 @@ export default function CrosswordApp({lang = 'en', texts = []}) {
                 onBuild={crosswordState.getCrossword}
             />
 
-            <main className="flex-1 flex flex-row overflow-hidden bg-orange-100 dark:bg-gray-800 min-h-0">
+            <main className="flex-1 flex flex-row overflow-hidden bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] min-h-0">
                 <CrosswordGrid
                     crossword={crosswordState.crossword}
                     cellValues={crosswordState.cellValues}

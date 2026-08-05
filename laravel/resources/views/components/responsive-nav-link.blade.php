@@ -2,10 +2,11 @@
 
 @php
 $classes = ($active ?? false)
-            ? 'block w-full ps-3 pe-4 py-2 border-l-4 border-indigo-400 text-start text-base font-medium text-indigo-700 bg-indigo-50 focus:outline-none focus:text-indigo-800 focus:bg-indigo-100 focus:border-indigo-700 transition duration-150 ease-in-out'
-            : 'block w-full ps-3 pe-4 py-2 border-l-4 border-transparent text-start text-base font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-50 hover:border-gray-300 focus:outline-none focus:text-gray-800 focus:bg-gray-50 focus:border-gray-300 transition duration-150 ease-in-out';
+            ? 'group relative block w-full ps-3 pe-4 py-2.5 text-start text-base font-serif tracking-tight text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)] focus:outline-none focus:text-[var(--color-vermilion)] dark:focus:text-[var(--color-vermilion-night)] transition-colors duration-200'
+            : 'group relative block w-full ps-3 pe-4 py-2.5 text-start text-base font-serif tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]/80 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] focus:outline-none focus:text-[var(--color-vermilion)] dark:focus:text-[var(--color-vermilion-night)] transition-colors duration-200';
 @endphp
 
 <a {{ $attributes->merge(['class' => $classes]) }}>
+    <span aria-hidden="true" class="absolute left-0 top-1/2 -translate-y-1/2 self-stretch w-[3px] bg-[var(--color-vermilion)] dark:bg-[var(--color-vermilion-night)] transition-all duration-200 {{ ($active ?? false) ? 'opacity-100 h-8' : 'opacity-0 h-5 group-hover:opacity-60 group-hover:translate-x-0' }}"></span>
     {{ $slot }}
 </a>

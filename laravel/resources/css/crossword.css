@@ -1,4 +1,4 @@
-/* Crossword Grid Styling */
+/* Crossword Grid Styling — vellum / ink / vermilion system */
 .row {
     display: flex;
 }
@@ -8,23 +8,73 @@
     height: 40px;
     display: flex;
     align-items: center;
-    border: 1px solid #9ca3af; /* gray-400 */
+    border: 1px solid var(--color-hairline);
+    box-sizing: border-box;
+    transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.dark .cell {
+    border-color: var(--color-hairline-night);
 }
 
 .symbol {
-    background-color: white;
+    background-color: var(--color-vellum);
+}
+
+.dark .symbol {
+    background-color: var(--color-ink-night);
 }
 
 .empty {
-    background-color: steelblue;
+    background-color: var(--color-ink-soft);
+}
+
+.dark .empty {
+    background-color: var(--color-ink);
 }
 
 .horizontal {
-    background-color: #fef3c7; /* amber-100 - subtle yellow */
+    background-color: var(--color-vellum-deep);
+    position: relative;
+}
+
+.horizontal::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background-color: var(--color-vermilion);
+    opacity: 0.65;
+}
+
+.dark .horizontal {
+    background-color: var(--color-hairline-night);
+}
+
+.dark .horizontal::before {
+    background-color: var(--color-vermilion-night);
 }
 
 .vertical {
-    background-color: #fed7aa; /* orange-200 - subtle orange */
+    background-color: var(--color-vellum-deep);
+    position: relative;
+}
+
+.vertical::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background-color: var(--color-verdigris);
+    opacity: 0.75;
+}
+
+.dark .vertical {
+    background-color: var(--color-hairline-night);
+}
+
+.dark .vertical::before {
+    background-color: var(--color-verdigris-night);
 }
 
 .input_symbol {
@@ -36,25 +86,57 @@
     border: none;
     outline: none;
     background: transparent;
+    font-family: 'Fraunces', 'Figtree', Georgia, serif;
+    color: var(--color-ink);
+}
+
+.dark .input_symbol {
+    color: var(--color-vellum-night);
 }
 
 .cell_text {
     width: 100%;
-    font-size: 1.2em;
+    font-size: 1em;
     text-align: center;
+    font-family: 'Fraunces', 'Figtree', Georgia, serif;
+    color: var(--color-ink-soft);
 }
 
-/* Cell State Colors */
+.dark .cell_text {
+    color: var(--color-vellum-night);
+}
+
+/* Cell State Colors — mapped to verdigris/vermilion */
 .green {
-    background-color: #86efac; /* green-300 - softer green for solved words */
+    background-color: var(--color-verdigris);
+}
+
+.dark .green {
+    background-color: #3a5a55;
+}
+
+.green .input_symbol {
+    color: var(--color-vellum);
+}
+
+.dark .green .input_symbol {
+    color: var(--color-vellum-night);
 }
 
 .blue {
-    background-color: #bfdbfe; /* blue-200 - softer blue for highlighted words */
+    background-color: color-mix(in srgb, var(--color-vermilion) 18%, var(--color-vellum));
+}
+
+.dark .blue {
+    background-color: color-mix(in srgb, var(--color-vermilion-night) 22%, var(--color-ink-night));
 }
 
 .grey {
-    background-color: #e5e7eb; /* gray-200 */
+    background-color: var(--color-hairline);
+}
+
+.dark .grey {
+    background-color: var(--color-hairline-night);
 }
 
 /* Workspace Layout */
@@ -78,7 +160,7 @@
     width: 8px;
     flex: none;
     cursor: col-resize;
-    background-color: #d1d5db;
+    background-color: var(--color-hairline);
     transition: background-color 0.15s ease;
     display: flex;
     align-items: center;
@@ -86,7 +168,7 @@
 }
 
 .drag-handle-vertical:hover {
-    background-color: #9ca3af;
+    background-color: var(--color-vermilion);
 }
 
 .drag-handle-vertical::after {
@@ -94,17 +176,58 @@
     width: 2px;
     height: 24px;
     border-radius: 1px;
-    background-color: #6b7280;
+    background-color: var(--color-ink-soft);
 }
 
 .dark .drag-handle-vertical {
-    background-color: #374151;
+    background-color: var(--color-hairline-night);
 }
 
 .dark .drag-handle-vertical:hover {
-    background-color: #4b5563;
+    background-color: var(--color-vermilion-night);
 }
 
 .dark .drag-handle-vertical::after {
-    background-color: #9ca3af;
+    background-color: var(--color-vellum-night);
+}
+
+.drag-handle-horizontal {
+    height: 8px;
+    width: 100%;
+    cursor: row-resize;
+    background-color: var(--color-hairline);
+    transition: background-color 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.drag-handle-horizontal:hover {
+    background-color: var(--color-vermilion);
+}
+
+.drag-handle-horizontal::after {
+    content: '';
+    width: 24px;
+    height: 2px;
+    border-radius: 1px;
+    background-color: var(--color-ink-soft);
+}
+
+.dark .drag-handle-horizontal {
+    background-color: var(--color-hairline-night);
+}
+
+.dark .drag-handle-horizontal:hover {
+    background-color: var(--color-vermilion-night);
+}
+
+.dark .drag-handle-horizontal::after {
+    background-color: var(--color-vellum-night);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cell {
+        transition: none;
+    }
 }

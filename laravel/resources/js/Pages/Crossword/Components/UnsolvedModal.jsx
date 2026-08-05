@@ -4,37 +4,55 @@ export default function UnsolvedModal({show, onClose, items, hasCrossword}) {
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black bg-opacity-50" onClick={onClose}/>
-            <div className="relative bg-white dark:bg-gray-800 rounded-md shadow-sm border-2 border-gray-400 dark:border-gray-600 w-11/12 md:w-5/6 lg:w-3/4 max-h-[90vh] overflow-y-auto p-6">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-100">Unsolved Words</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+                className="absolute inset-0 bg-[var(--color-ink)]/60"
+                onClick={onClose}
+                aria-hidden="true"
+            />
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Unsolved words"
+                className="relative bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm w-full md:w-5/6 lg:w-3/4 max-h-[90vh] overflow-y-auto p-6 sm:p-8"
+            >
+                <div className="flex justify-between items-start mb-6 pb-4 border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]">
+                    <div className="flex flex-col gap-1">
+                        <span className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-[10px] tracking-[0.22em] uppercase">Crossword</span>
+                        <h2 className="font-serif text-2xl sm:text-3xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">Unsolved words</h2>
+                    </div>
                     <button
                         type="button"
-                        className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:cursor-pointer text-2xl"
+                        className="text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] transition-colors text-2xl leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm"
                         onClick={onClose}
+                        aria-label="Close"
                     >
                         ✕
                     </button>
                 </div>
-                <ul className="list-decimal pl-5 space-y-3">
+
+                <ol className="space-y-5 list-none">
                     {!hasCrossword && (
-                        <li className="text-gray-500 dark:text-gray-400">No crossword loaded</li>
+                        <li className="font-serif italic text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">No crossword loaded.</li>
                     )}
                     {items.map((item) => (
-                        <li key={item.word}>
-                            <span className="text-xl font-semibold text-gray-800 dark:text-gray-100">{item.word}</span>
+                        <li key={item.word} className="group relative pl-5">
+                            <span aria-hidden="true" className="ribbon-mark absolute left-0 top-1/2 -translate-y-1/2 self-stretch h-8"/>
+                            <span className="font-serif text-xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">{item.word}</span>
                             {item.definitions.map((definition, index) => (
                                 <span
                                     key={index}
-                                    className="text-base text-gray-700 dark:text-gray-300 block mt-1"
+                                    className="block mt-1 font-serif italic text-base text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70"
                                 >
                                     {definition}
                                 </span>
                             ))}
                         </li>
                     ))}
-                </ul>
+                    {hasCrossword && items.length === 0 && (
+                        <li className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">All solved.</li>
+                    )}
+                </ol>
             </div>
         </div>
     );

@@ -1,15 +1,18 @@
 <section>
-    <header>
-        <h2 class="text-lg font-medium text-gray-900">
-            {{ __('Update Password') }}
+    <header class="flex flex-col gap-1">
+        <span class="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-[10px] tracking-[0.22em] uppercase">
+            {{ __('Section') }}
+        </span>
+        <h2 class="font-serif text-xl sm:text-2xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+            {{ __('Password') }}
         </h2>
 
-        <p class="mt-1 text-sm text-gray-600">
+        <p class="mt-2 max-w-md font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
             {{ __('Ensure your account is using a long, random password to stay secure.') }}
         </p>
     </header>
 
-    <form method="post" action="{{ route('password.update') }}" class="mt-6 space-y-6">
+    <form method="post" action="{{ route('password.update') }}" class="mt-8 space-y-6">
         @csrf
         @method('put')
 
@@ -32,7 +35,7 @@
         </div>
 
         <div class="flex items-center gap-4">
-            <x-primary-button>{{ __('Save') }}</x-primary-button>
+            <x-primary-button>{{ __('Save changes') }}</x-primary-button>
 
             @if (session('status') === 'password-updated')
                 <p
@@ -40,7 +43,7 @@
                     x-show="show"
                     x-transition
                     x-init="setTimeout(() => show = false, 2000)"
-                    class="text-sm text-gray-600"
+                    class="font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
                 >{{ __('Saved.') }}</p>
             @endif
         </div>

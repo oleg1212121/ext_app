@@ -33,10 +33,10 @@ export default function Workplace(props) {
         <div className="mt-auto shrink-0 flex flex-col">
             <div className="drag-handle-horizontal flex-none" onMouseDown={startDrag}></div>
             <div id="workplace_area"
-                 className="shrink-0 border-t-2 border-gray-400 dark:border-gray-600 bg-orange-100 dark:bg-gray-800 shadow-lg overflow-y-auto pb-5"
+                 className="shrink-0 border-t border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum-deep)] dark:bg-[var(--color-ink-night)] overflow-y-auto pb-5"
                  style={{height: `${workplaceHeight}px`}}>
 
-                <div className="p-3 border-b border-gray-300 dark:border-gray-600">
+                <div className="p-3 border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]/60">
                     <Textarea ref={props.workplaceRef} label="Workplace" value="" placeholder="Workplace" className="resizeable_element"/>
                 </div>
                 {props.showQuestion === true && <div className="p-3">

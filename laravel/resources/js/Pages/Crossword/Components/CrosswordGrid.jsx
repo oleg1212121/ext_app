@@ -24,7 +24,7 @@ export default function CrosswordGrid({
             onKeyDown={(e) => e.altKey && onAltKeyDown()}
             onKeyUp={(e) => !e.altKey && onAltKeyUp()}
         >
-            <div className="bg-white dark:bg-gray-700 rounded-md shadow-sm border-2 border-gray-400 dark:border-gray-600 p-4 inline-block">
+            <div className="bg-[var(--color-vellum-deep)] dark:bg-[var(--color-ink-night)] rounded-sm border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] p-4 inline-block">
                 {crossword.newGrid.map((row, rowIndex) => (
                     <div className="row" key={rowIndex}>
                         {row.map((cell) => {

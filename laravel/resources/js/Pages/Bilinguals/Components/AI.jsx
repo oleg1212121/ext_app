@@ -29,24 +29,22 @@ export default function AI(props) {
     };
 
     return (
-        <>
-            <div
-                className="flex shrink-0 bg-orange-100 dark:bg-gray-800 overflow-hidden shadow-sm"
-                style={{width: `${panelWidth}px`}}
-            >
-                <div className="drag-handle-vertical" onMouseDown={startDrag}></div>
-                <div className="min-w-0 flex-1 flex flex-col overflow-hidden border-r-2 border-gray-400 dark:border-gray-600">
-                    <div
-                        className="flex-none flex items-center px-4 py-3 border-b-2 border-gray-400 dark:border-gray-600 bg-orange-100 dark:bg-gray-800">
-                        <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">AI Response</span>
-                    </div>
-                    <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 bg-white dark:bg-gray-700 pb-5 mb-5">
-                        <div id="ai_answer_div"
-                             className="resizeable_element prose prose-sm dark:prose-invert max-w-none break-words"
-                             dangerouslySetInnerHTML={{__html: props.aiAnswer ?? ''}}></div>
-                    </div>
+        <div
+            className="flex shrink-0 overflow-hidden bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)]"
+            style={{width: `${panelWidth}px`}}
+        >
+            <div className="drag-handle-vertical" onMouseDown={startDrag}></div>
+            <div className="min-w-0 flex-1 flex flex-col overflow-hidden border-l border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]">
+                <div className="flex-none flex flex-col gap-0.5 px-4 py-3 border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum-deep)] dark:bg-[var(--color-ink-night)]">
+                    <span className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-[10px] tracking-[0.22em] uppercase">Reader's gloss</span>
+                    <span className="font-serif text-sm tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">AI Response</span>
+                </div>
+                <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] pb-5 mb-5">
+                    <div id="ai_answer_div"
+                         className="resizeable_element prose prose-stone prose-sm dark:prose-invert max-w-none break-words"
+                         dangerouslySetInnerHTML={{__html: props.aiAnswer ?? ''}}></div>
                 </div>
             </div>
-        </>
+        </div>
     )
 }

@@ -20,8 +20,41 @@ const MIN_FONT_SIZE = 10;
 const MAX_FONT_SIZE = 72;
 
 function panelToggleIconClass(active) {
-    return `h-6 w-6 shrink-0 ${active ? 'text-white' : 'text-gray-700 dark:text-gray-300'}`;
+    return `h-5 w-5 shrink-0 transition-colors ${active ? 'text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]' : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60'}`;
 }
+
+const tabClass = (isActive) => [
+    'relative inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium tracking-wide transition-colors duration-200 rounded-sm',
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
+    isActive
+        ? 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]'
+        : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
+].join(' ');
+
+const Underline = ({isActive}) => (
+    <span
+        aria-hidden="true"
+        className={[
+            'absolute left-1 right-1 -bottom-px h-px bg-[var(--color-vermilion)] dark:bg-[var(--color-vermilion-night)]',
+            'transition-transform duration-300 origin-left',
+            isActive ? 'scale-x-100' : 'scale-x-0',
+        ].join(' ')}
+        style={{transformOrigin: 'left center'}}
+    />
+);
+
+const HAIRLINE = 'h-6 w-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]';
+
+const FontButton = ({onClick, label, children}) => (
+    <button
+        type="button"
+        aria-label={label}
+        onClick={onClick}
+        className="h-8 w-8 flex items-center justify-center border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum-deep)] dark:bg-[var(--color-hairline-night)]/30 text-[var(--color-ink)] dark:text-[var(--color-vellum-night)] hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] hover:border-[var(--color-vermilion)] dark:hover:border-[var(--color-vermilion-night)] rounded-sm transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
+    >
+        <span className="font-serif text-lg leading-none">{children}</span>
+    </button>
+);
 
 function updateResizeableFontStyles(fontSize) {
     let styleElement = document.getElementById('resizeable-font-styles');
@@ -232,150 +265,136 @@ const Bilinguals = (props) => {
         }
     };
     return (
-        <>
-            <div className="body w-full flex-1 min-h-0 flex flex-col overflow-hidden bg-orange-100 dark:bg-gray-900">
-                <div
-                    className="flex-none bg-white dark:bg-gray-800 border-b-2 border-gray-400 dark:border-gray-600 shadow-md">
-                    <div className="flex items-center gap-3 px-4 py-3">
-                        <div className="flex items-center gap-2">
-                            <SelectGroup value={currentModel} onChange={(e) => setCurrentModel(e.target.value)}
-                                         groups={aiModels}/>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Select value={currentText} onChange={(e) => setCurrentText(e.target.value)}
-                                    items={textList}/>
-                            <Button color="green" onClick={() => handleLoadText()} type='button'>Load</Button>
-                        </div>
-                        <div className="h-6 w-px bg-gray-400 dark:bg-gray-600"></div>
-                        <div className="flex items-center gap-1">
-                            <button
-                                type="button"
-                                aria-label="Increase font size"
-                                className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer text-gray-700 dark:text-gray-200 rounded transition"
-                                onClick={() => changeFontSize('+')}
-                            >
-                                <span className="text-lg font-semibold">+</span>
-                            </button>
-                            <button
-                                type="button"
-                                aria-label="Decrease font size"
-                                className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer text-gray-700 dark:text-gray-200 rounded transition"
-                                onClick={() => changeFontSize('-')}
-                            >
-                                <span className="text-lg font-semibold">−</span>
-                            </button>
-                        </div>
-                        <div className="h-6 w-px bg-gray-400 dark:bg-gray-600"></div>
-                        <div className="flex items-center gap-1">
-                            <Button
-                                color="dark"
-                                type="button"
-                                outline={!showText}
-                                aria-label="Text"
-                                aria-pressed={showText}
-                                title="Text"
-                                className="!p-2"
-                                onClick={() => setShowText(!showText)}
-                            >
-                                <svg className={panelToggleIconClass(showText)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.03v13m0-13c-2.819-.831-4.715-1.076-8.029-1.023A.99.99 0 0 0 3 6v11c0 .563.466 1.014 1.03 1.007 3.122-.043 5.018.212 7.97 1.023m0-13c2.819-.831 4.715-1.076 8.029-1.023A.99.99 0 0 1 21 6v11c0 .563-.466 1.014-1.03 1.007-3.122-.043-5.018.212-7.97 1.023"/>
-                                </svg>
-                            </Button>
-                            <Button
-                                color="dark"
-                                type="button"
-                                outline={!showWorkplace}
-                                aria-label="Workplace"
-                                aria-pressed={showWorkplace}
-                                title="Workplace"
-                                className="!p-2"
-                                onClick={() => setShowWorkplace(!showWorkplace)}
-                            >
-                                <svg className={panelToggleIconClass(showWorkplace)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m14.304 4.844 2.852 2.852M7 7H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-4.5m2.409-9.91a2.017 2.017 0 0 1 0 2.853l-6.844 6.844L8 14l.713-3.565 6.844-6.844a2.015 2.015 0 0 1 2.852 0Z"/>
-                                </svg>
-                            </Button>
-                            <Button
-                                color="dark"
-                                type="button"
-                                outline={!showQuestion}
-                                aria-label="Question"
-                                aria-pressed={showQuestion}
-                                title="Question"
-                                className="!p-2"
-                                onClick={() => setShowQuestion(!showQuestion)}
-                            >
-                                <svg className={panelToggleIconClass(showQuestion)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.529 9.988a2.502 2.502 0 1 1 5 .191A2.441 2.441 0 0 1 12 12.582V14m-.01 3.008H12M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
-                                </svg>
-                            </Button>
-                            <Button
-                                color="dark"
-                                type="button"
-                                outline={!showAI}
-                                aria-label="AI"
-                                aria-pressed={showAI}
-                                title="AI"
-                                className="!p-2"
-                                onClick={() => setShowAI(!showAI)}
-                            >
-                                <svg className={panelToggleIconClass(showAI)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m8 8-4 4 4 4m8 0 4-4-4-4m-2-3-4 14"/>
-                                </svg>
-                            </Button>
-                        </div>
+        <div className="body w-full flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+            <div className="flex-none border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum-deep)] dark:bg-[var(--color-ink-night)]">
+                <div className="flex flex-wrap items-center gap-3 px-4 sm:px-6 py-3">
+                    <div className="flex items-center gap-3">
+                        <span className="hidden sm:flex flex-col leading-none">
+                            <span className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-[10px] tracking-[0.22em] uppercase">Antiphonal</span>
+                            <span className="font-serif text-base tracking-tight">Bilinguals</span>
+                        </span>
+                        <span className={`sm:hidden ${HAIRLINE}`} aria-hidden="true"/>
+                        <SelectGroup value={currentModel} onChange={(e) => setCurrentModel(e.target.value)}
+                                     groups={aiModels}/>
                     </div>
-                </div>
-                <Spinner errors={errors} pending={pending}/>
-                <div className="flex-1 min-h-0 flex gap-0 overflow-hidden bg-orange-100 dark:bg-gray-800">
-                    <div
-                        className="flex-1 min-h-0 flex flex-col bg-orange-100 dark:bg-gray-800 border-r-2 border-gray-400 dark:border-gray-600 overflow-hidden shadow-sm">
-                        {showText === true &&
-                            <>
-                                {textMeta && textMeta.last_page > 1 && (
-                                    <div
-                                        className="flex-none flex items-center justify-between gap-2 px-4 py-2 bg-white dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-300">
-                                        <span>Page {textMeta.current_page} of {textMeta.last_page} ({textMeta.total} rows)</span>
-                                        <div className="flex items-center gap-2">
-                                            <Button color="dark" size="xs" outline type="button"
-                                                    disabled={textMeta.current_page <= 1 || pending}
-                                                    onClick={() => fetchPage(textMeta.current_page - 1)}>Previous</Button>
-                                            <input
-                                                type="number"
-                                                min={1}
-                                                max={textMeta.last_page}
-                                                value={textPage}
-                                                onChange={(e) => setTextPage(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        e.preventDefault();
-                                                        goToPage();
-                                                    }
-                                                }}
-                                                disabled={pending}
-                                                aria-label="Page number"
-                                                className="w-16 rounded border border-gray-300 bg-white px-2 py-1 text-center text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 disabled:opacity-50"
-                                            />
-                                            <Button color="dark" size="xs" outline type="button"
-                                                    disabled={textMeta.current_page >= textMeta.last_page || pending}
-                                                    onClick={() => fetchPage(textMeta.current_page + 1)}>Next</Button>
-                                        </div>
-                                    </div>
-                                )}
-                                <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset}/>
-                            </>
-                        }
-                        {showWorkplace === true &&
-                            <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion}/>
-                        }
+                    <span className={HAIRLINE} aria-hidden="true"/>
+                    <div className="flex items-center gap-2">
+                        <Select value={currentText} onChange={(e) => setCurrentText(e.target.value)}
+                                items={textList}/>
+                        <Button color="green" onClick={() => handleLoadText()} type='button'>Load</Button>
                     </div>
-                    {showAI === true &&
-                        <AI aiAnswer={aiAnswer}/>
-                    }
+                    <span className={HAIRLINE} aria-hidden="true"/>
+                    <div className="flex items-center gap-1">
+                        <FontButton aria-label="Increase font size" onClick={() => changeFontSize('+')}>+</FontButton>
+                        <FontButton aria-label="Decrease font size" onClick={() => changeFontSize('-')}>−</FontButton>
+                    </div>
+                    <span className={HAIRLINE} aria-hidden="true"/>
+                    <div className="flex items-end gap-1 border-b border-transparent">
+                        <button
+                            type="button"
+                            className={tabClass(showText)}
+                            aria-label="Text"
+                            aria-pressed={showText}
+                            title="Text"
+                            onClick={() => setShowText(!showText)}
+                        >
+                            <svg className={panelToggleIconClass(showText)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.03v13m0-13c-2.819-.831-4.715-1.076-8.029-1.023A.99.99 0 0 0 3 6v11c0 .563.466 1.014 1.03 1.007 3.122-.043 5.018.212 7.97 1.023m0-13c2.819-.831 4.715-1.076 8.029-1.023A.99.99 0 0 1 21 6v11c0 .563-.466 1.014-1.03 1.007-3.122-.043-5.018.212-7.97 1.023"/>
+                            </svg>
+                            <Underline isActive={showText}/>
+                        </button>
+                        <button
+                            type="button"
+                            className={tabClass(showWorkplace)}
+                            aria-label="Workplace"
+                            aria-pressed={showWorkplace}
+                            title="Workplace"
+                            onClick={() => setShowWorkplace(!showWorkplace)}
+                        >
+                            <svg className={panelToggleIconClass(showWorkplace)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m14.304 4.844 2.852 2.852M7 7H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-4.5m2.409-9.91a2.017 2.017 0 0 1 0 2.853l-6.844 6.844L8 14l.713-3.565 6.844-6.844a2.015 2.015 0 0 1 2.852 0Z"/>
+                            </svg>
+                            <Underline isActive={showWorkplace}/>
+                        </button>
+                        <button
+                            type="button"
+                            className={tabClass(showQuestion)}
+                            aria-label="Question"
+                            aria-pressed={showQuestion}
+                            title="Question"
+                            onClick={() => setShowQuestion(!showQuestion)}
+                        >
+                            <svg className={panelToggleIconClass(showQuestion)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.529 9.988a2.502 2.502 0 1 1 5 .191A2.441 2.441 0 0 1 12 12.582V14m-.01 3.008H12M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+                            </svg>
+                            <Underline isActive={showQuestion}/>
+                        </button>
+                        <button
+                            type="button"
+                            className={tabClass(showAI)}
+                            aria-label="AI"
+                            aria-pressed={showAI}
+                            title="AI"
+                            onClick={() => setShowAI(!showAI)}
+                        >
+                            <svg className={panelToggleIconClass(showAI)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m8 8-4 4 4 4m8 0 4-4-4-4m-2-3-4 14"/>
+                            </svg>
+                            <Underline isActive={showAI}/>
+                        </button>
+                    </div>
                 </div>
             </div>
-
-        </>
+            <Spinner errors={errors} pending={pending}/>
+            <div className="flex-1 min-h-0 flex gap-0 overflow-hidden">
+                <div className="flex-1 min-h-0 flex flex-col bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border-r border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] overflow-hidden">
+                    {showText === true &&
+                        <>
+                            {textMeta && textMeta.last_page > 1 && (
+                                <div
+                                    className="flex-none flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6 py-2.5 bg-[var(--color-vellum-deep)] dark:bg-[var(--color-hairline-night)]/30 border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
+                                    <span className="font-serif italic">
+                                        Page <span className="not-italic font-medium text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">{textMeta.current_page}</span> of <span className="not-italic font-medium text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">{textMeta.last_page}</span>
+                                        <span className="ml-2 font-sans text-xs opacity-60">· {textMeta.total} rows</span>
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <Button color="dark" size="xs" outline type="button"
+                                                disabled={textMeta.current_page <= 1 || pending}
+                                                onClick={() => fetchPage(textMeta.current_page - 1)}>Previous</Button>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={textMeta.last_page}
+                                            value={textPage}
+                                            onChange={(e) => setTextPage(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    goToPage();
+                                                }
+                                            }}
+                                            disabled={pending}
+                                            aria-label="Page number"
+                                            className="w-16 rounded-sm border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] px-2 py-1 text-center text-sm font-serif text-[var(--color-ink)] dark:text-[var(--color-vellum-night)] disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
+                                        />
+                                        <Button color="dark" size="xs" outline type="button"
+                                                disabled={textMeta.current_page >= textMeta.last_page || pending}
+                                                onClick={() => fetchPage(textMeta.current_page + 1)}>Next</Button>
+                                    </div>
+                                </div>
+                            )}
+                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset}/>
+                        </>
+                    }
+                    {showWorkplace === true &&
+                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion}/>
+                    }
+                </div>
+                {showAI === true &&
+                    <AI aiAnswer={aiAnswer}/>
+                }
+            </div>
+        </div>
     )
 }
 

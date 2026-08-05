@@ -1,4 +1,5 @@
 import TabContent from './TabContent';
+import React from "react";
 
 const TABS = [
     {id: 0, label: 'Definitions'},
@@ -7,13 +8,39 @@ const TABS = [
     {id: 3, label: 'Forms'},
 ];
 
-function tabButtonClass(isActive) {
-    const base = 'px-3 py-2 bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 hover:cursor-pointer text-gray-700 dark:text-gray-200 text-sm rounded transition font-medium';
-    if (isActive) {
-        return `${base} bg-gray-700 dark:bg-gray-500 text-white hover:bg-gray-800 dark:hover:bg-gray-400`;
-    }
-    return base;
-}
+const tabClass = (isActive) => [
+    'relative px-2.5 py-1.5 text-sm font-medium tracking-wide transition-colors duration-200 rounded-sm',
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
+    isActive
+        ? 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]'
+        : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
+].join(' ');
+
+const Underline = ({isActive}) => (
+    <span
+        aria-hidden="true"
+        className={[
+            'absolute left-1 right-1 -bottom-px h-px bg-[var(--color-vermilion)] dark:bg-[var(--color-vermilion-night)]',
+            'transition-transform duration-300 origin-left',
+            isActive ? 'scale-x-100' : 'scale-x-0',
+        ].join(' ')}
+        style={{transformOrigin: 'left center'}}
+    />
+);
+
+const HAIRLINE = 'h-6 w-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]';
+
+const GhostButton = ({onClick, title, children}) => (
+    <button
+        type="button"
+        title={title}
+        aria-label={title}
+        onClick={onClick}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-sm cursor-pointer transition-colors duration-200 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-transparent text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] hover:border-[var(--color-vermilion)] dark:hover:border-[var(--color-vermilion-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
+    >
+        {children}
+    </button>
+);
 
 export default function RightPanel({
     width,
@@ -44,73 +71,47 @@ export default function RightPanel({
             />
 
             <div
-                className="right overflow-auto p-4 flex flex-col bg-white dark:bg-gray-700 border-l-2 border-gray-400 dark:border-gray-600"
+                className="right overflow-auto p-4 flex flex-col bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border-l border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]"
                 style={{width: `${width}px`}}
             >
-                <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b-2 border-gray-200 dark:border-gray-600">
+                <div className="flex flex-wrap items-end gap-1 mb-4 pb-4 border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]">
                     {TABS.map((tab) => (
                         <button
                             key={tab.id}
                             type="button"
-                            className={tabButtonClass(currentTab === tab.id)}
+                            className={tabClass(currentTab === tab.id)}
                             onClick={() => setCurrentTab(tab.id)}
+                            aria-pressed={currentTab === tab.id}
                         >
                             {tab.label}
+                            <Underline isActive={currentTab === tab.id}/>
                         </button>
                     ))}
-                    <button
-                        type="button"
-                        className={tabButtonClass(false)}
-                        onClick={onCheckImage}
-                    >
-                        Image
-                    </button>
 
-                    <div className="h-6 w-px bg-gray-300 dark:bg-gray-500"/>
+                    <span className={HAIRLINE} aria-hidden="true"/>
 
-                    <button
-                        type="button"
-                        className="px-3 py-2 bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500 hover:cursor-pointer text-white text-sm rounded transition flex items-center gap-1"
-                        onClick={onAskAi}
-                    >
+                    <GhostButton onClick={onCheckImage} title="Image">Image</GhostButton>
+                    <GhostButton onClick={onAskAi} title="Search">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                         </svg>
                         Search
-                    </button>
-                    <button
-                        type="button"
-                        title="Approve"
-                        className="px-3 py-2 bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500 hover:cursor-pointer text-white text-sm rounded transition flex items-center gap-1"
-                        onClick={onAcknowledge}
-                    >
+                    </GhostButton>
+                    <GhostButton onClick={onAcknowledge} title="Approve">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/>
                         </svg>
-                        Approve
-                    </button>
-                    <button
-                        type="button"
-                        title="Delete"
-                        className="px-3 py-2 bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500 hover:cursor-pointer text-white text-sm rounded transition flex items-center gap-1"
-                        onClick={onDismiss}
-                    >
+                    </GhostButton>
+                    <GhostButton onClick={onDismiss} title="Delete">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/>
                         </svg>
-                        Delete
-                    </button>
-                    <button
-                        type="button"
-                        title="Show unsolved words"
-                        className="px-3 py-2 bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500 hover:cursor-pointer text-white text-sm rounded transition flex items-center gap-1"
-                        onClick={onShowUnsolved}
-                    >
+                    </GhostButton>
+                    <GhostButton onClick={onShowUnsolved} title="Show unsolved words">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"/>
                         </svg>
-                        Unsolved
-                    </button>
+                    </GhostButton>
                 </div>
 
                 <TabContent

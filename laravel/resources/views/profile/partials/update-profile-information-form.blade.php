@@ -1,10 +1,13 @@
 <section>
-    <header>
-        <h2 class="text-lg font-medium text-gray-900">
+    <header class="flex flex-col gap-1">
+        <span class="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-[10px] tracking-[0.22em] uppercase">
+            {{ __('Section') }}
+        </span>
+        <h2 class="font-serif text-xl sm:text-2xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
             {{ __('Profile Information') }}
         </h2>
 
-        <p class="mt-1 text-sm text-gray-600">
+        <p class="mt-2 max-w-md font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
             {{ __("Update your account's profile information and email address.") }}
         </p>
     </header>
@@ -13,7 +16,7 @@
         @csrf
     </form>
 
-    <form method="post" action="{{ route('profile.update') }}" class="mt-6 space-y-6">
+    <form method="post" action="{{ route('profile.update') }}" class="mt-8 space-y-6">
         @csrf
         @method('patch')
 
@@ -30,16 +33,16 @@
 
             @if ($user instanceof \Illuminate\Contracts\Auth\MustVerifyEmail && ! $user->hasVerifiedEmail())
                 <div>
-                    <p class="text-sm mt-2 text-gray-800">
+                    <p class="text-sm mt-2 font-serif italic text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
                         {{ __('Your email address is unverified.') }}
 
-                        <button form="send-verification" class="underline text-sm text-gray-600 hover:text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        <button form="send-verification" class="underline decoration-[var(--color-vermilion)] dark:decoration-[var(--color-vermilion-night)] underline-offset-4 text-sm text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)] dark:hover:text-[var(--color-vellum-night)] hover:text-[var(--color-ink)] rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]">
                             {{ __('Click here to re-send the verification email.') }}
                         </button>
                     </p>
 
                     @if (session('status') === 'verification-link-sent')
-                        <p class="mt-2 font-medium text-sm text-green-600">
+                        <p class="mt-2 font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
                             {{ __('A new verification link has been sent to your email address.') }}
                         </p>
                     @endif
@@ -48,7 +51,7 @@
         </div>
 
         <div class="flex items-center gap-4">
-            <x-primary-button>{{ __('Save') }}</x-primary-button>
+            <x-primary-button>{{ __('Save changes') }}</x-primary-button>
 
             @if (session('status') === 'profile-updated')
                 <p
@@ -56,7 +59,7 @@
                     x-show="show"
                     x-transition
                     x-init="setTimeout(() => show = false, 2000)"
-                    class="text-sm text-gray-600"
+                    class="font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
                 >{{ __('Saved.') }}</p>
             @endif
         </div>
