@@ -4,6 +4,53 @@ import ReaderRow from './ReaderRow.jsx';
 const MIN_FONT_SIZE = 16;
 const MAX_FONT_SIZE = 38;
 const DEFAULT_FONT_SIZE = 20;
+const FONT_STEP = 2;
+
+const LANG_GLYPH = {
+    en: 'EN',
+    ru: 'RU',
+};
+
+const IconButton = ({onClick, disabled, label, children}) => (
+    <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        title={label}
+        className={[
+            'h-8 min-w-8 px-2 inline-flex items-center justify-center font-serif text-lg leading-none',
+            'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70',
+            'hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)]',
+            'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[var(--color-ink-soft)]',
+            'transition-colors duration-150',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm',
+        ].join(' ')}
+    >
+        {children}
+    </button>
+);
+
+const ToggleButton = ({onClick, active, children}) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className={[
+            'px-2.5 h-8 inline-flex items-center font-sans text-xs tracking-wide rounded-sm',
+            'border transition-colors duration-150',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
+            active
+                ? 'border-[var(--color-vermilion)] text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] dark:text-[var(--color-vermilion-night)]'
+                : 'border-[var(--color-hairline)] text-[var(--color-ink-soft)] dark:border-[var(--color-hairline-night)] dark:text-[var(--color-vellum-night)]/70 hover:border-[var(--color-ink)] dark:hover:border-[var(--color-vellum-night)] hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
+        ].join(' ')}
+    >
+        {children}
+    </button>
+);
+
+const Divider = () => (
+    <span aria-hidden="true" className="hidden sm:inline-block w-px h-5 bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]"/>
+);
 
 export default function ReaderApp({lang = 'en', entity, rows = []}) {
     const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
@@ -13,6 +60,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
     const [expandedRows, setExpandedRows] = useState(() => new Set());
     const [audioStatus, setAudioStatus] = useState('');
     const [audioReady, setAudioReady] = useState(false);
+    const [audioPlaying, setAudioPlaying] = useState(false);
 
     const rootRef = useRef(null);
     const audioRef = useRef(null);
@@ -80,8 +128,9 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
         }
 
         setAudioReady(true);
-        const fileName = file.name.length > 20 ? `${file.name.substring(0, 20)}...` : file.name;
-        setAudioStatus(`Ready: ${fileName}`);
+        setAudioPlaying(false);
+        const fileName = file.name.length > 20 ? `${file.name.substring(0, 20)}…` : file.name;
+        setAudioStatus(`Loaded · ${fileName}`);
     }, []);
 
     const handleAudioPlay = useCallback(async () => {
@@ -91,7 +140,8 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
 
         try {
             await audioRef.current.play();
-            setAudioStatus('Playing ▶');
+            setAudioPlaying(true);
+            setAudioStatus('Playing');
         } catch (err) {
             setAudioStatus(`Cannot play: ${err?.message || 'unknown error'}`);
         }
@@ -103,7 +153,8 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
         }
 
         audioRef.current.pause();
-        setAudioStatus('Paused ⏸');
+        setAudioPlaying(false);
+        setAudioStatus('Paused');
     }, []);
 
     const handleAudioStop = useCallback(() => {
@@ -117,7 +168,8 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
         } catch {
             // ignore
         }
-        setAudioStatus('Stopped ⏹');
+        setAudioPlaying(false);
+        setAudioStatus('Stopped');
     }, []);
 
     useEffect(() => {
@@ -134,11 +186,15 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
 
             if (audioRef.current.paused) {
                 audioRef.current.play()
-                    .then(() => setAudioStatus('Playing ▶'))
+                    .then(() => {
+                        setAudioPlaying(true);
+                        setAudioStatus('Playing');
+                    })
                     .catch((err) => setAudioStatus(`Cannot play: ${err?.message || 'unknown error'}`));
             } else {
                 audioRef.current.pause();
-                setAudioStatus('Paused ⏸');
+                setAudioPlaying(false);
+                setAudioStatus('Paused');
             }
         };
 
@@ -146,142 +202,144 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
         return () => document.removeEventListener('keydown', onKeyDown);
     }, []);
 
-    const entityTitle = entity?.name ?? 'Book Reader';
+    const entityTitle = entity?.name ?? 'Untitled';
 
     return (
         <div
             id="readerRoot"
             ref={rootRef}
-            className="min-h-screen flex flex-col bg-orange-50 dark:bg-gray-900"
+            className="flex-1 min-h-0 flex flex-col bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]"
         >
-            <header className="flex-none bg-white dark:bg-gray-800 border-b-2 border-gray-400 dark:border-gray-600 shadow-md">
-                <div className="flex flex-wrap items-center justify-center gap-3 px-4 py-3">
-                    <div className="flex items-center gap-2">
-                        <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100">{entityTitle}</h1>
-                        <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">{lang}</span>
-                    </div>
-
-                    <div className="h-6 w-px bg-gray-400 dark:bg-gray-600"/>
-
-                    <div className="flex items-center gap-1">
-                        <button
-                            id="fontSizeDecrease"
-                            type="button"
-                            className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 hover:cursor-pointer text-gray-700 dark:text-gray-200 rounded transition"
-                            onClick={() => adjustFontSize(-2)}
-                        >
-                            <span className="text-lg font-semibold">−</span>
-                        </button>
-                        <span
-                            id="fontSizeValue"
-                            className="text-xs text-gray-600 dark:text-gray-400 font-mono w-8 text-center"
-                        >
-                            {fontSize}
-                        </span>
-                        <button
-                            id="fontSizeIncrease"
-                            type="button"
-                            className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 hover:cursor-pointer text-gray-700 dark:text-gray-200 rounded transition"
-                            onClick={() => adjustFontSize(2)}
-                        >
-                            <span className="text-lg font-semibold">+</span>
-                        </button>
-                    </div>
-
-                    <div className="h-6 w-px bg-gray-400 dark:bg-gray-600"/>
-
-                    <label className="inline-flex items-center gap-2 cursor-pointer">
-                        <input
-                            id="toggleAll"
-                            type="checkbox"
-                            className="w-4 h-4 text-gray-700 dark:text-gray-300 rounded border-gray-300 dark:border-gray-600 focus:ring-gray-600 dark:bg-gray-700"
-                            checked={showAll}
-                            onChange={(event) => setShowAll(event.target.checked)}
-                        />
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Show All</span>
-                    </label>
-
+            <header className="flex-none border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]">
+                <div className="px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
                     <button
-                        id="layoutToggle"
                         type="button"
-                        className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 hover:cursor-pointer text-gray-700 dark:text-gray-200 text-sm rounded transition"
-                        onClick={() => setSideBySide((value) => !value)}
+                        onClick={() => history.length > 1 ? history.back() : null}
+                        className="font-sans text-xs tracking-wide text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm"
                     >
-                        {sideBySide ? 'Stacked' : 'Side by Side'}
+                        ← Library
                     </button>
 
-                    <button
-                        id="widthToggle"
-                        type="button"
-                        className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 hover:cursor-pointer text-gray-700 dark:text-gray-200 text-sm rounded transition"
-                        onClick={() => setWideMode((value) => !value)}
-                    >
-                        {wideMode ? 'Normal Mode' : 'Wide Mode'}
-                    </button>
+                    <Divider/>
 
-                    <div className="h-6 w-px bg-gray-400 dark:bg-gray-600"/>
-
-                    <div className="flex items-center gap-2">
-                        <input
-                            ref={audioPickerRef}
-                            id="audioPicker"
-                            type="file"
-                            accept="audio/*"
-                            className="hidden"
-                            onChange={handleAudioFileChange}
-                        />
-                        <button
-                            id="pickAudioBtn"
-                            type="button"
-                            className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 hover:cursor-pointer text-gray-700 dark:text-gray-200 text-sm rounded transition"
-                            onClick={handlePickAudio}
-                        >
-                            Pick Audio
-                        </button>
-                        <button
-                            id="audioPlay"
-                            type="button"
-                            className="px-3 py-1.5 bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500 hover:cursor-pointer text-white text-sm rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={!audioReady}
-                            onClick={handleAudioPlay}
-                        >
-                            Play
-                        </button>
-                        <button
-                            id="audioPause"
-                            type="button"
-                            className="px-3 py-1.5 bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500 hover:cursor-pointer text-white text-sm rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={!audioReady}
-                            onClick={handleAudioPause}
-                        >
-                            Pause
-                        </button>
-                        <button
-                            id="audioStop"
-                            type="button"
-                            className="px-3 py-1.5 bg-gray-700 dark:bg-gray-600 hover:bg-gray-800 dark:hover:bg-gray-500 hover:cursor-pointer text-white text-sm rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={!audioReady}
-                            onClick={handleAudioStop}
-                        >
-                            Stop
-                        </button>
-                        <span id="audioStatus" className="text-xs text-gray-600 dark:text-gray-400">
-                            {audioStatus}
+                    <div className="min-w-0 flex items-baseline gap-3">
+                        <h1 className="truncate font-serif text-lg sm:text-xl tracking-tight">{entityTitle}</h1>
+                        <span className="font-sans text-[10px] tracking-[0.2em] uppercase text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
+                            {LANG_GLYPH[lang] ?? lang}
                         </span>
+                    </div>
+
+                    <div className="ml-auto flex flex-wrap items-center gap-2 sm:gap-3">
+                        <div className="flex items-center gap-0.5 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm">
+                            <IconButton label="Decrease text size" onClick={() => adjustFontSize(-FONT_STEP)}>
+                                −
+                            </IconButton>
+                            <span
+                                id="fontSizeValue"
+                                aria-live="off"
+                                className="font-serif text-xs tabular-nums w-7 text-center text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70"
+                            >
+                                {fontSize}
+                            </span>
+                            <IconButton label="Increase text size" onClick={() => adjustFontSize(FONT_STEP)}>
+                                +
+                            </IconButton>
+                        </div>
+
+                        <Divider/>
+
+                        <ToggleButton active={showAll} onClick={() => setShowAll((v) => !v)}>
+                            Show all
+                        </ToggleButton>
+                        <ToggleButton active={sideBySide} onClick={() => setSideBySide((v) => !v)}>
+                            {sideBySide ? 'Stacked' : 'Side by side'}
+                        </ToggleButton>
+                        <ToggleButton active={wideMode} onClick={() => setWideMode((v) => !v)}>
+                            {wideMode ? 'Normal width' : 'Wide'}
+                        </ToggleButton>
+
+                        <Divider/>
+
+                        <div className="flex items-center gap-2">
+                            <input
+                                ref={audioPickerRef}
+                                id="audioPicker"
+                                type="file"
+                                accept="audio/*"
+                                className="hidden"
+                                onChange={handleAudioFileChange}
+                            />
+                            <button
+                                id="pickAudioBtn"
+                                type="button"
+                                onClick={handlePickAudio}
+                                className="px-2.5 h-8 font-sans text-xs tracking-wide rounded-sm border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:border-[var(--color-ink)] dark:hover:border-[var(--color-vellum-night)] hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
+                            >
+                                Pick audio
+                            </button>
+                            <div className="flex items-center gap-0.5 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm">
+                                <IconButton
+                                    id="audioPlay"
+                                    label="Play"
+                                    disabled={!audioReady}
+                                    onClick={handleAudioPlay}
+                                >
+                                    ▶
+                                </IconButton>
+                                <IconButton
+                                    id="audioPause"
+                                    label="Pause"
+                                    disabled={!audioReady}
+                                    onClick={handleAudioPause}
+                                >
+                                    ❚❚
+                                </IconButton>
+                                <IconButton
+                                    id="audioStop"
+                                    label="Stop"
+                                    disabled={!audioReady}
+                                    onClick={handleAudioStop}
+                                >
+                                    ■
+                                </IconButton>
+                            </div>
+                            <span
+                                id="audioStatus"
+                                className={[
+                                    'font-sans text-xs',
+                                    audioPlaying
+                                        ? 'text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]'
+                                        : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60',
+                                ].join(' ')}
+                            >
+                                {audioStatus}
+                            </span>
+                        </div>
                     </div>
                 </div>
             </header>
 
-            <main className="flex-1 overflow-y-auto bg-orange-100 dark:bg-gray-800 pb-5">
+            <main
+                id="contentContainer"
+                className="flex-1 min-h-0 overflow-y-auto"
+            >
                 <div
-                    id="contentContainer"
                     className={[
-                        'mx-auto px-4 sm:px-6 lg:px-8 py-6',
-                        wideMode ? '' : 'max-w-7xl',
+                        'mx-auto px-5 sm:px-8 lg:px-10 pt-12 pb-24 transition-all duration-300',
+                        wideMode ? 'w-[95%] max-w-[1400px] 2xl:max-w-[1600px]' : 'max-w-[62rem]',
                     ].join(' ')}
-                    style={wideMode ? {width: '95%'} : undefined}
                 >
-                    <div className="bg-white dark:bg-gray-700 rounded-md shadow-sm border-2 border-gray-400 dark:border-gray-600 p-6">
+                    <div className="mb-10 text-center">
+                        <span className="font-sans text-[10px] tracking-[0.24em] uppercase text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/50">
+                            Folio · {rows.length} {rows.length === 1 ? 'line' : 'lines'}
+                        </span>
+                        <h2 className="mt-2 font-serif font-light text-3xl sm:text-4xl tracking-tight leading-tight">
+                            {entityTitle}
+                        </h2>
+                        <span className="mt-4 inline-block h-px w-12 bg-[var(--color-vermilion)] dark:bg-[var(--color-vermilion-night)]"/>
+                    </div>
+
+                    <ol role="list" className="list-none m-0 p-0 space-y-1">
                         {rows.map(([primary, translation], index) => (
                             <ReaderRow
                                 key={index}
@@ -295,7 +353,11 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                                 onToggle={toggleRow}
                             />
                         ))}
-                    </div>
+                    </ol>
+
+                    <p className="mt-12 text-center font-sans text-xs tracking-wide text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/50">
+                        Tap a line to reveal its translation · Spacebar toggles audio playback
+                    </p>
                 </div>
             </main>
 
@@ -303,7 +365,10 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                 ref={audioRef}
                 id="readerAudio"
                 className="hidden"
-                onEnded={() => setAudioStatus('Ended')}
+                onEnded={() => {
+                    setAudioPlaying(false);
+                    setAudioStatus('Ended');
+                }}
             />
         </div>
     );

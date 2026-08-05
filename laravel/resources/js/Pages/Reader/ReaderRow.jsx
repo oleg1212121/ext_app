@@ -12,50 +12,91 @@ export default function ReaderRow({
 }) {
     const hasTranslation = translation.trim() !== '';
     const isVisible = showAll || expanded;
+    const rowRef = useRef(null);
+    const [hovered, setHovered] = useState(false);
+
+    useEffect(() => {
+        if (rowRef.current) {
+            rowRef.current.style.setProperty('--fs', `${fontSize}px`);
+        }
+    }, [fontSize]);
 
     return (
-        <article
-            className={[
-                'reader-row mb-4 pb-4 last:mb-0 last:pb-0 border-b border-gray-200 dark:border-gray-600 last:border-0',
-                sideBySide ? 'md:grid md:grid-cols-2 md:gap-8 items-start' : '',
-            ].join(' ')}
+        <li
+            ref={rowRef}
+            className="reader-row group relative"
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
         >
-            <button
-                type="button"
-                className="en w-full text-left cursor-pointer text-gray-800 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-400 transition-colors duration-150 disabled:cursor-default"
-                style={{
-                    lineHeight: 1.8,
-                    fontSize: `${fontSize}px`,
-                    fontFamily: 'Georgia, Times New Roman, serif',
-                }}
-                data-index={index}
-                onClick={() => {
-                    if (!showAll && hasTranslation) {
-                        onToggle(index);
-                    }
-                }}
-                disabled={showAll || !hasTranslation}
+            <div
+                className={[
+                    'grid gap-x-8 gap-y-3 py-4',
+                    sideBySide ? 'lg:grid-cols-[1fr_1px_1fr] lg:items-start' : 'grid-cols-1',
+                ].join(' ')}
             >
-                <span className="whitespace-pre-line">{primary}</span>
-            </button>
-            {hasTranslation && (
-                <div
+                <button
+                    type="button"
+                    data-index={index}
+                    disabled={showAll || !hasTranslation}
+                    onClick={() => {
+                        if (!showAll && hasTranslation) {
+                            onToggle(index);
+                        }
+                    }}
                     className={[
-                        'ru mt-3 text-emerald-700 dark:text-emerald-400 leading-relaxed transition-opacity duration-150',
-                        isVisible ? '' : 'hidden',
+                        'primary-line block text-left w-full',
+                        'transition-colors duration-150',
+                        'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]',
+                        hasTranslation && !showAll ? 'cursor-pointer' : 'cursor-default',
+                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] focus-visible:rounded-sm',
                     ].join(' ')}
                     style={{
-                        lineHeight: 1.75,
-                        fontSize: `${fontSize * 0.95}px`,
-                        fontFamily: 'Georgia, Times New Roman, serif',
-                        opacity: isVisible ? 1 : 0,
+                        lineHeight: 1.7,
+                        fontSize: `${fontSize}px`,
+                        fontFamily: 'var(--font-serif)',
                     }}
+                    aria-expanded={hasTranslation ? isVisible : undefined}
                 >
-                    <div className="pl-4 border-l-2 border-emerald-400 dark:border-emerald-500 whitespace-pre-line">
-                        {translation}
+                    <span className="whitespace-pre-line">{primary}</span>
+                </button>
+
+                {sideBySide && hasTranslation && (
+                    <span aria-hidden="true" className="gutter-cane hidden lg:block row-span-2 self-stretch h-full min-h-[3rem]" data-row-hover={hovered || isVisible ? 'true' : 'false'}/>
+                )}
+
+                {hasTranslation && (
+                    <div
+                        className={[
+                            'transition-opacity duration-150',
+                            isVisible ? 'opacity-100' : 'opacity-0 hidden',
+                        ].join(' ')}
+                        style={{
+                            lineHeight: 1.7,
+                            fontSize: `${Math.round(fontSize * 0.95)}px`,
+                            fontFamily: 'var(--font-serif)',
+                            color: 'var(--color-verdigris)',
+                        }}
+                        aria-hidden={!isVisible}
+                    >
+                        <div
+                            className="whitespace-pre-line italic"
+                            style={{
+                                paddingLeft: sideBySide ? undefined : '1.25rem',
+                                borderLeft: sideBySide ? undefined : '1px solid var(--color-verdigris)',
+                            }}
+                        >
+                            {translation}
+                        </div>
                     </div>
-                </div>
+                )}
+            </div>
+
+            {!sideBySide && (
+                <span
+                    aria-hidden="true"
+                    className="absolute left-0 top-4 bottom-4 w-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)] opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                />
             )}
-        </article>
+        </li>
     );
 }

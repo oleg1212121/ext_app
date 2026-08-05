@@ -13,4 +13,85 @@
 
 @theme {
     --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    --font-serif: 'Fraunces', 'Figtree', Georgia, 'Times New Roman', serif;
+
+    --color-vellum: #ECE4D0;
+    --color-vellum-deep: #E2D7BC;
+    --color-ink: #1A1814;
+    --color-ink-soft: #4B4639;
+    --color-verdigris: #2F6E66;
+    --color-vermilion: #B0451E;
+    --color-hairline: #C7BC9C;
+
+    --color-ink-night: #14120F;
+    --color-vellum-night: #E7DFCC;
+    --color-hairline-night: #3A352A;
+    --color-verdigris-night: #6FA89F;
+    --color-vermilion-night: #D4562F;
+}
+
+.gutter-cane {
+    width: 1px;
+    background-color: var(--color-hairline);
+    position: relative;
+}
+
+.gutter-cane::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    transform: translate(-50%, -50%) rotate(45deg);
+    background-color: var(--color-vermilion);
+    opacity: 0;
+    transition: opacity 180ms ease;
+}
+
+.dark .gutter-cane::before {
+    background-color: var(--color-vermilion-night);
+}
+
+.gutter-cane[data-row-hover="true"]::before,
+.group:hover .gutter-cane::before {
+    opacity: 1;
+}
+
+.ribbon-mark {
+    width: 0;
+    background-color: var(--color-vermilion);
+    transition: width 200ms ease, opacity 200ms ease;
+    opacity: 0;
+}
+
+.dark .ribbon-mark {
+    background-color: var(--color-vermilion-night);
+}
+
+.group:hover .ribbon-mark,
+.group:focus-within .ribbon-mark {
+    width: 3px;
+    opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gutter-cane::before,
+    .ribbon-mark {
+        transition: none;
+    }
+}
+
+.reader-row:hover .primary-line {
+    color: var(--color-vermilion);
+}
+
+.dark .reader-row:hover .primary-line {
+    color: var(--color-vermilion-night);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .reader-row:hover .primary-line {
+        transition: none;
+    }
 }

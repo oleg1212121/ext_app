@@ -2,6 +2,26 @@ import {Link, router, usePage} from '@inertiajs/react'
 import {useEffect, useMemo, useState} from 'react'
 import {DarkThemeToggle} from "flowbite-react";
 
+const tabClass = (isActive) => [
+    'relative inline-flex items-center px-2 py-2 text-sm font-medium tracking-wide transition-colors duration-200',
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm',
+    isActive
+        ? 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]'
+        : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
+].join(' ');
+
+const Underline = ({isActive}) => (
+    <span
+        aria-hidden="true"
+        className={[
+            'absolute left-1 right-1 -bottom-px h-px bg-[var(--color-vermilion)]',
+            'dark:bg-[var(--color-vermilion-night)] transition-transform duration-300 origin-left',
+            isActive ? 'scale-x-100' : 'scale-x-0',
+        ].join(' ')}
+        style={{transformOrigin: 'left center'}}
+    />
+);
+
 export default function NavBar() {
     const {url, props} = usePage()
 
@@ -10,36 +30,30 @@ export default function NavBar() {
     const isAuthenticated = !!user
     const canRegister = auth?.canRegister ?? true
 
-    const [darkMode, setDarkMode] = useState(() => {
-        if (typeof window === 'undefined') return false
-        return localStorage.getItem('darkMode') === 'true'
-    })
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return
-        localStorage.setItem('darkMode', String(darkMode))
-        document.documentElement.classList.toggle('dark', darkMode)
-    }, [darkMode])
-
     const [userMenuOpen, setUserMenuOpen] = useState(false)
+    const [mobileOpen, setMobileOpen] = useState(false)
 
     useEffect(() => {
         const onDocClick = (e) => {
             if (!e.target.closest?.('[data-user-menu]')) {
                 setUserMenuOpen(false)
             }
+            if (!e.target.closest?.('[data-mobile-menu]')) {
+                setMobileOpen(false)
+            }
         }
         document.addEventListener('click', onDocClick)
         return () => document.removeEventListener('click', onDocClick)
     }, [])
 
+    useEffect(() => {
+        setMobileOpen(false)
+        setUserMenuOpen(false)
+    }, [url])
+
     const navLinks = useMemo(() => {
         if (!isAuthenticated) return []
         return [
-            // {href: '/dashboard', label: 'Dashboard'},
-            // {href: '/crossword', label: 'Crossword'},
-            // {href: '/reader', label: 'Reader'},
-            // {href: '/alignments', label: 'Alignments'},
             {href: '/bilinguals/en/ru/simulator', label: 'Bilinguals'},
             {href: '/admin/sentence-alignments', label: 'Alignments'},
             {href: '/crossword-react/en', label: 'Crossword'},
@@ -54,139 +68,156 @@ export default function NavBar() {
     }
 
     const logoHref = isAuthenticated ? '/dashboard' : '/'
+    const brand = props?.appName ?? 'Bilingual'
+    const eyebrow = 'Antiphonal'
 
     return (
-        <nav className="border-b bg-orange-100 dark:bg-gray-800 dark:border-gray-700">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex justify-between items-center h-16">
-                    <div className="flex items-center">
-                        <div className="shrink-0">
-                            <Link href={logoHref} className="flex items-center gap-2">
-                <span className="font-semibold text-gray-900 dark:text-gray-100">
-                  {props?.appName ?? 'Laravel'}
-                </span>
-                            </Link>
-                        </div>
+        <nav className="sticky top-0 z-40 bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]">
+            <div className="px-4 sm:px-6 lg:px-10">
+                <div className="flex items-center justify-between h-14 sm:h-16">
+                    <div className="flex items-center gap-8">
+                        <Link href={logoHref} className="group flex flex-col leading-none">
+                            <span className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-[10px] tracking-[0.22em] uppercase">
+                                {eyebrow}
+                            </span>
+                            <span className="font-serif text-lg sm:text-xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+                                {brand}
+                            </span>
+                        </Link>
 
-                        {isAuthenticated && (
-                            <div className="flex space-x-6 ml-8">
+                        {isAuthenticated && navLinks.length > 0 && (
+                            <div className="hidden md:flex items-end gap-1 border-b border-transparent">
                                 {navLinks.map((l) => (
                                     <Link
                                         key={l.href}
                                         href={l.href}
-                                        className={[
-                                            'inline-flex items-center border-b-2 px-1 pt-1 text-sm font-medium transition',
-                                            isActive(l.href)
-                                                ? 'border-indigo-400 text-gray-900 dark:text-gray-100'
-                                                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200',
-                                        ].join(' ')}
+                                        className={tabClass(isActive(l.href))}
+                                        aria-current={isActive(l.href) ? 'page' : undefined}
                                     >
                                         {l.label}
+                                        <Underline isActive={isActive(l.href)}/>
                                     </Link>
                                 ))}
                             </div>
                         )}
                     </div>
 
-                    <div className="flex items-center gap-4">
-                        {/*<button*/}
-                        {/*    type="button"*/}
-                        {/*    onClick={() => setDarkMode((v) => !v)}*/}
-                        {/*    className="p-2 rounded-lg bg-orange-200 border-2 border-dashed dark:bg-gray-700 dark:hover:bg-gray-600 transition hover:cursor-pointer"*/}
-                        {/*    title="Toggle dark mode"*/}
-                        {/*>*/}
-                        {/*{darkMode ? (*/}
-                        {/*    <svg*/}
-                        {/*        xmlns="http://www.w3.org/2000/svg"*/}
-                        {/*        className="h-5 w-5 text-yellow-400"*/}
-                        {/*        fill="none"*/}
-                        {/*        viewBox="0 0 24 24"*/}
-                        {/*        stroke="currentColor"*/}
-                        {/*    >*/}
-                        {/*        <path*/}
-                        {/*            strokeLinecap="round"*/}
-                        {/*            strokeLinejoin="round"*/}
-                        {/*            strokeWidth="2"*/}
-                        {/*            d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"*/}
-                        {/*        />*/}
-                        {/*    </svg>*/}
-                        {/*) : (*/}
-                        {/*    <svg*/}
-                        {/*        xmlns="http://www.w3.org/2000/svg"*/}
-                        {/*        className="h-5 w-5 text-gray-700"*/}
-                        {/*        fill="none"*/}
-                        {/*        viewBox="0 0 24 24"*/}
-                        {/*        stroke="currentColor"*/}
-                        {/*    >*/}
-                        {/*        <path*/}
-                        {/*            strokeLinecap="round"*/}
-                        {/*            strokeLinejoin="round"*/}
-                        {/*            strokeWidth="2"*/}
-                        {/*            d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"*/}
-                        {/*        />*/}
-                        {/*    </svg>*/}
-                        {/*)}*/}
+                    <div className="flex items-center gap-3 sm:gap-4">
                         <DarkThemeToggle/>
-                        {/*</button>*/}
 
                         {isAuthenticated ? (
                             <div className="relative" data-user-menu>
                                 <button
                                     type="button"
                                     onClick={() => setUserMenuOpen((v) => !v)}
-                                    className="flex items-center text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:cursor-pointer"
+                                    className="flex items-center gap-2 text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm px-1"
+                                    aria-haspopup="menu"
+                                    aria-expanded={userMenuOpen}
                                 >
-                                    <span>{user?.name ?? 'User'}</span>
-                                    <svg className="ml-1 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                        <path
-                                            fillRule="evenodd"
-                                            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                                            clipRule="evenodd"
-                                        />
+                                    <span className="hidden sm:inline font-serif italic">{user?.name ?? 'User'}</span>
+                                    <span className="sm:hidden font-serif italic">{(user?.name ?? 'U').charAt(0)}</span>
+                                    <svg className="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
                                     </svg>
                                 </button>
 
                                 {userMenuOpen && (
                                     <div
-                                        className="absolute right-0 mt-2 w-48 rounded-md bg-white dark:bg-gray-800 shadow ring-1 ring-black/5 overflow-hidden">
+                                        role="menu"
+                                        className="absolute right-0 mt-2 w-48 bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] shadow-lg overflow-hidden">
                                         <Link
                                             href="/profile"
-                                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                                            role="menuitem"
+                                            className="block px-4 py-2.5 text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:bg-[var(--color-vellum-deep)] dark:hover:bg-[var(--color-hairline-night)]/40 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors"
                                         >
                                             Profile
                                         </Link>
+                                        <span className="block h-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]"/>
                                         <button
                                             type="button"
+                                            role="menuitem"
                                             onClick={() => router.post('/logout')}
-                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                                            className="w-full text-left px-4 py-2.5 text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:bg-[var(--color-vellum-deep)] dark:hover:bg-[var(--color-hairline-night)]/40 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] transition-colors"
                                         >
-                                            Log Out
+                                            Log out
                                         </button>
                                     </div>
                                 )}
                             </div>
                         ) : (
-                            <div className="flex items-center space-x-4">
+                            <div className="hidden sm:flex items-center gap-4">
                                 <Link
                                     href="/login"
-                                    className="text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
+                                    className="text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors"
                                 >
                                     Log in
                                 </Link>
-
                                 {canRegister && (
                                     <Link
                                         href="/register"
-                                        className="text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
+                                        className="text-sm font-medium text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)] hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors"
                                     >
                                         Register
                                     </Link>
                                 )}
                             </div>
                         )}
+
+                        {isAuthenticated && navLinks.length > 0 && (
+                            <button
+                                type="button"
+                                data-mobile-menu
+                                onClick={() => setMobileOpen((v) => !v)}
+                                className="md:hidden inline-flex items-center justify-center h-9 w-9 text-[var(--color-ink)] dark:text-[var(--color-vellum-night)] hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm"
+                                aria-label="Toggle menu"
+                                aria-expanded={mobileOpen}
+                            >
+                                {mobileOpen ? (
+                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                ) : (
+                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                                    </svg>
+                                )}
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
+
+            {isAuthenticated && navLinks.length > 0 && mobileOpen && (
+                <div
+                    data-mobile-menu
+                    className="md:hidden border-t border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)]"
+                >
+                    <ul role="list" className="px-4 sm:px-6 py-2 divide-y divide-[var(--color-hairline)] dark:divide-[var(--color-hairline-night)]">
+                        {navLinks.map((l) => {
+                            const active = isActive(l.href)
+                            return (
+                                <li key={l.href}>
+                                    <Link
+                                        href={l.href}
+                                        aria-current={active ? 'page' : undefined}
+                                        className={[
+                                            'flex items-center justify-between py-3 font-serif text-lg tracking-tight transition-colors',
+                                            active
+                                                ? 'text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]'
+                                                : 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]/80 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)]',
+                                        ].join(' ')}
+                                    >
+                                        {l.label}
+                                        <span aria-hidden="true" className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-base">
+                                            {active ? '·' : '→'}
+                                        </span>
+                                    </Link>
+                                </li>
+                            )
+                        })}
+                    </ul>
+                </div>
+            )}
         </nav>
     )
 }
