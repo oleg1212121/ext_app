@@ -1,4 +1,34 @@
-/* Crossword Grid Styling — vellum / ink / vermilion system */
+/* Crossword Workbench — wbench tokens: cold paper + ultramarine accent.
+   One accent role on this surface: the currently-selected (active) word.
+   Solved cells read as ink-on-paper, quiet and inactive. */
+
+/* Row edge — local subset of the global .ribbon-mark pattern,
+   retinted to --wbench-accent so it does not touch the legacy
+   vermilion rule shared by the simulator and Reader pages. */
+.xword-edge {
+    width: 0;
+    background-color: var(--wbench-accent);
+    transition: width 200ms ease, opacity 200ms ease;
+    opacity: 0;
+}
+
+.dark .xword-edge {
+    background-color: var(--wbench-accent-night);
+}
+
+.group:hover .xword-edge,
+.group:focus-within .xword-edge {
+    width: 3px;
+    opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .xword-edge {
+        transition: none;
+    }
+}
+
+/* Grid */
 .row {
     display: flex;
 }
@@ -8,226 +38,230 @@
     height: 40px;
     display: flex;
     align-items: center;
-    border: 1px solid var(--color-hairline);
+    border: 1px solid var(--wbench-rule);
     box-sizing: border-box;
     transition: background-color 160ms ease, border-color 160ms ease;
 }
 
 .dark .cell {
-    border-color: var(--color-hairline-night);
+    border-color: var(--wbench-rule-night);
+}
+
+/* Default play surface — paper-deep so the paper symbol cells read lighter */
+.crossword-board {
+    background-color: var(--wbench-paper-deep);
+}
+
+.dark .crossword-board {
+    background-color: var(--wbench-paper-night);
 }
 
 .symbol {
-    background-color: var(--color-vellum);
+    background-color: var(--wbench-paper);
 }
 
 .dark .symbol {
-    background-color: var(--color-ink-night);
+    background-color: var(--wbench-paper-night);
 }
 
 .empty {
-    background-color: var(--color-ink-soft);
+    background-color: var(--wbench-ink-soft);
 }
 
 .dark .empty {
-    background-color: var(--color-ink);
+    background-color: var(--wbench-rule-night);
 }
 
-.horizontal {
-    background-color: var(--color-vellum-deep);
-    position: relative;
-}
-
-.horizontal::before {
-    content: '';
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 3px;
-    background-color: var(--color-vermilion);
-    opacity: 0.65;
-}
-
-.dark .horizontal {
-    background-color: var(--color-hairline-night);
-}
-
-.dark .horizontal::before {
-    background-color: var(--color-vermilion-night);
-}
-
+/* Arrow cells — the same paper-deep base, with a 2px accent edge on the
+   leading side. Direction (across/down) reads from layout, not from a
+   second hue — the accent has one job here: "a word starts at this cell". */
+.horizontal,
 .vertical {
-    background-color: var(--color-vellum-deep);
+    background-color: var(--wbench-paper-deep);
     position: relative;
 }
 
+.horizontal::before,
 .vertical::before {
     content: '';
     position: absolute;
     inset: 0 auto 0 0;
-    width: 3px;
-    background-color: var(--color-verdigris);
-    opacity: 0.75;
+    width: 2px;
+    background-color: var(--wbench-accent);
+    opacity: 0.7;
 }
 
+.dark .horizontal,
 .dark .vertical {
-    background-color: var(--color-hairline-night);
+    background-color: var(--wbench-paper-deep-night);
 }
 
+.dark .horizontal::before,
 .dark .vertical::before {
-    background-color: var(--color-verdigris-night);
+    background-color: var(--wbench-accent-night);
 }
 
 .input_symbol {
     width: 100%;
     height: 100%;
     font-size: 1.4em;
-    font-weight: 600;
+    font-weight: 500;
     text-align: center;
     border: none;
     outline: none;
     background: transparent;
-    font-family: 'Fraunces', 'Figtree', Georgia, serif;
-    color: var(--color-ink);
+    font-family: var(--font-wbench-serif);
+    color: var(--wbench-ink);
+    letter-spacing: 0.01em;
 }
 
 .dark .input_symbol {
-    color: var(--color-vellum-night);
+    color: var(--wbench-ink-night);
 }
 
 .cell_text {
     width: 100%;
-    font-size: 1em;
+    font-size: 0.85em;
     text-align: center;
-    font-family: 'Fraunces', 'Figtree', Georgia, serif;
-    color: var(--color-ink-soft);
+    font-family: var(--font-wbench-mono);
+    color: var(--wbench-ink-soft);
 }
 
 .dark .cell_text {
-    color: var(--color-vellum-night);
+    color: var(--wbench-ink-soft-night);
 }
 
-/* Cell State Colors — mapped to verdigris/vermilion */
-.green {
-    background-color: var(--color-verdigris);
-}
-
-.dark .green {
-    background-color: #3a5a55;
-}
-
-.green .input_symbol {
-    color: var(--color-vellum);
-}
-
-.dark .green .input_symbol {
-    color: var(--color-vellum-night);
-}
-
+/* Cell state colors */
+/* Active word — the single accent moment on the board. */
 .blue {
-    background-color: color-mix(in srgb, var(--color-vermilion) 18%, var(--color-vellum));
+    background-color: color-mix(in srgb, var(--wbench-accent) 14%, var(--wbench-paper));
+    border-color: color-mix(in srgb, var(--wbench-accent) 28%, var(--wbench-rule));
 }
 
 .dark .blue {
-    background-color: color-mix(in srgb, var(--color-vermilion-night) 22%, var(--color-ink-night));
+    background-color: color-mix(in srgb, var(--wbench-accent-night) 22%, var(--wbench-paper-night));
+    border-color: color-mix(in srgb, var(--wbench-accent-night) 40%, var(--wbench-rule-night));
 }
 
+/* Solved — ink-on-paper, calm. Reads as "done / inactive", does not steal
+   the accent's role from the active word. */
+.green {
+    background-color: var(--wbench-ink);
+    border-color: var(--wbench-ink);
+}
+
+.dark .green {
+    background-color: var(--wbench-ink-night);
+    border-color: var(--wbench-ink-night);
+}
+
+.green .input_symbol {
+    color: var(--wbench-paper);
+}
+
+.dark .green .input_symbol {
+    color: var(--wbench-paper-night);
+}
+
+.green .cell_text {
+    color: color-mix(in srgb, var(--wbench-paper) 70%, transparent);
+}
+
+/* Desisted / neutral */
 .grey {
-    background-color: var(--color-hairline);
+    background-color: var(--wbench-rule);
 }
 
 .dark .grey {
-    background-color: var(--color-hairline-night);
+    background-color: var(--wbench-rule-night);
 }
 
-/* Workspace Layout */
-.workspace {
-    width: 100%;
-    height: 100%;
+.white {
+    background-color: var(--wbench-paper);
 }
 
-.left {
-    width: 50%;
-    height: 100%;
+.dark .white {
+    background-color: var(--wbench-paper-night);
 }
 
-.right {
-    width: 50%;
-    height: 100%;
-}
-
-/* Drag Handles */
+/* Drag Handles — hairlines that flip to accent on hover. */
 .drag-handle-vertical {
-    width: 8px;
+    width: 6px;
     flex: none;
     cursor: col-resize;
-    background-color: var(--color-hairline);
+    background-color: var(--wbench-rule);
     transition: background-color 0.15s ease;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.drag-handle-vertical:hover {
-    background-color: var(--color-vermilion);
+.dark .drag-handle-vertical {
+    background-color: var(--wbench-rule-night);
+}
+
+.drag-handle-vertical:hover,
+.drag-handle-vertical:active {
+    background-color: var(--wbench-accent);
+}
+
+.dark .drag-handle-vertical:hover,
+.dark .drag-handle-vertical:active {
+    background-color: var(--wbench-accent-night);
 }
 
 .drag-handle-vertical::after {
     content: '';
     width: 2px;
-    height: 24px;
+    height: 22px;
     border-radius: 1px;
-    background-color: var(--color-ink-soft);
-}
-
-.dark .drag-handle-vertical {
-    background-color: var(--color-hairline-night);
-}
-
-.dark .drag-handle-vertical:hover {
-    background-color: var(--color-vermilion-night);
+    background-color: var(--wbench-ink-soft);
 }
 
 .dark .drag-handle-vertical::after {
-    background-color: var(--color-vellum-night);
+    background-color: var(--wbench-ink-soft-night);
 }
 
 .drag-handle-horizontal {
-    height: 8px;
+    height: 6px;
     width: 100%;
     cursor: row-resize;
-    background-color: var(--color-hairline);
+    background-color: var(--wbench-rule);
     transition: background-color 0.15s ease;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.drag-handle-horizontal:hover {
-    background-color: var(--color-vermilion);
+.dark .drag-handle-horizontal {
+    background-color: var(--wbench-rule-night);
+}
+
+.drag-handle-horizontal:hover,
+.drag-handle-horizontal:active {
+    background-color: var(--wbench-accent);
+}
+
+.dark .drag-handle-horizontal:hover,
+.dark .drag-handle-horizontal:active {
+    background-color: var(--wbench-accent-night);
 }
 
 .drag-handle-horizontal::after {
     content: '';
-    width: 24px;
+    width: 22px;
     height: 2px;
     border-radius: 1px;
-    background-color: var(--color-ink-soft);
-}
-
-.dark .drag-handle-horizontal {
-    background-color: var(--color-hairline-night);
-}
-
-.dark .drag-handle-horizontal:hover {
-    background-color: var(--color-vermilion-night);
+    background-color: var(--wbench-ink-soft);
 }
 
 .dark .drag-handle-horizontal::after {
-    background-color: var(--color-vellum-night);
+    background-color: var(--wbench-ink-soft-night);
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .cell {
+    .cell,
+    .xword-edge {
         transition: none;
     }
 }

@@ -4,7 +4,7 @@ export default function Textarea({label, value, id, placeholder, ref, className,
     return (
         <div className="">
             <div className="mb-2 block">
-                <Label htmlFor={id} className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-xs tracking-[0.2em] uppercase">{label}</Label>
+                <Label htmlFor={id} className="font-[var(--wbench-mono)] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] text-[10px] tracking-[0.24em] uppercase">{label}</Label>
             </div>
             <FlowbiteTextarea
                 ref={ref}
@@ -12,11 +12,11 @@ export default function Textarea({label, value, id, placeholder, ref, className,
                 placeholder={placeholder}
                 defaultValue={value}
                 className={[
-                    'bg-[var(--color-vellum-deep)] dark:bg-[var(--color-hairline-night)]/40',
-                    'border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]',
-                    'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)] placeholder:text-[var(--color-ink-soft)]/60 dark:placeholder:text-[var(--color-vellum-night)]/40',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
-                    'rounded-sm',
+                    'bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-deep-night)]',
+                    'border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]',
+                    'text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] placeholder:text-[var(--wbench-ink-soft)]/60 dark:placeholder:text-[var(--wbench-ink-soft-night)]/60',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] focus-visible:border-[var(--wbench-accent)]',
+                    'rounded-sm font-[var(--wbench-serif)]',
                     className || "",
                 ].join(' ')}
                 rows={4}

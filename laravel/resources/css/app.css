@@ -28,6 +28,28 @@
     --color-hairline-night: #3A352A;
     --color-verdigris-night: #6FA89F;
     --color-vermilion-night: #D4562F;
+
+    /* Bilinguals workbench — scoped tokens; simulator page only. */
+    --font-wbench-serif: 'Source Serif 4', 'Fraunces', Georgia, 'Times New Roman', serif;
+    --font-wbench-sans: 'IBM Plex Sans', 'Figtree', ui-sans-serif, system-ui, sans-serif;
+    --font-wbench-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+    --wbench-paper: #FBFAF8;
+    --wbench-paper-deep: #F2F1ED;
+    --wbench-ink: #0D0D0F;
+    --wbench-ink-soft: #54555A;
+    --wbench-rule: #DAD8D1;
+    --wbench-accent: #1F3DDB;
+    --wbench-accent-ink: #15296F;
+    --wbench-danger: #B1251C;
+
+    --wbench-paper-night: #111111;
+    --wbench-paper-deep-night: #1A1A1A;
+    --wbench-ink-night: #ECEAE6;
+    --wbench-ink-soft-night: #9A9890;
+    --wbench-rule-night: #2D2D2D;
+    --wbench-accent-night: #5A78FF;
+    --wbench-danger-night: #E66B62;
 }
 
 .gutter-cane {

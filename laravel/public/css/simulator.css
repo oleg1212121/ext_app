@@ -1,28 +1,31 @@
 /* Simulator Page Styles */
 #workplace_textarea {
-    line-height: 1.5;
+    line-height: 1.55;
 }
 
 #question_textarea {
-    line-height: 1.5;
+    line-height: 1.55;
 }
 
-/* Text Highlighting */
+/* Text emphasis — accent italic, ink semi-bold; replaces legacy red literals. */
 em {
-    text-decoration: underline;
-    color: #dc2626;
+    color: var(--wbench-accent);
+    font-style: italic;
     font-weight: 400;
+}
+
+b, strong {
+    color: var(--wbench-ink);
+    font-weight: 600;
+}
+
+.dark b, .dark strong {
+    color: var(--wbench-ink-night);
 }
 
 /* Custom styles for dynamic font resizing */
 .resizeable_element {
     font-size: inherit;
-}
-
-/* Bold text styling for content */
-b, strong {
-    color: #dc2626; /* red-600 */
-    font-weight: 600;
 }
 
 /* Checkbox visibility logic for bilingual content */
@@ -31,11 +34,7 @@ b, strong {
     opacity: 0;
     user-select: none;
     pointer-events: none;
-}
-
-table:not(.bilingual-table) .hide_en,
-table:not(.bilingual-table) .hide_ru {
-    width: 45%;
+    transition: opacity 120ms ease;
 }
 
 table.table:has(#all_ru:checked) .hide_ru {
@@ -78,96 +77,206 @@ table.table:has(#all_en:checked) .hide_en {
     display: block !important;
 }
 
-/* AI Response sentence hover effect */
-#ai_answer_div em, b, li {
-    padding: 5px;
+/* AI Response prose — one deliberate accent, ink headings, quiet lists. */
+.ai-prose {
+    color: var(--wbench-ink);
+    font-family: var(--font-wbench-serif);
+    line-height: 1.6;
 }
 
-#ai_answer_div p:hover, em:hover, b:hover, h1:hover, h2:hover, h3:hover, li:hover {
-    background-color: #fff2d7;
-    cursor: pointer;
+.dark .ai-prose {
+    color: var(--wbench-ink-night);
 }
 
-#ai_answer_div h1, h2, h3, h4 {
-    /*text-decoration: underline;*/
-    color: #3b82f6;
-    margin: 20px 5px;
+.ai-prose p {
+    margin: 0 0 1em;
 }
 
-#ai_answer_div p {
-    margin: 20px 5px;
+.ai-prose p:last-child {
+    margin-bottom: 0;
 }
 
-/* Dark theme support */
+.ai-prose em {
+    color: var(--wbench-accent);
+    font-style: italic;
+    padding: 0;
+}
 
-/* Drag Handles */
+.dark .ai-prose em {
+    color: var(--wbench-accent-night);
+}
+
+.ai-prose b,
+.ai-prose strong {
+    color: var(--wbench-ink);
+    font-weight: 600;
+    padding: 0;
+}
+
+.dark .ai-prose b,
+.dark .ai-prose strong {
+    color: var(--wbench-ink-night);
+}
+
+.ai-prose h1,
+.ai-prose h2,
+.ai-prose h3,
+.ai-prose h4 {
+    color: var(--wbench-ink);
+    font-family: var(--font-wbench-mono);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 11px;
+    margin: 1.4em 0 0.6em;
+    line-height: 1.2;
+}
+
+.dark .ai-prose h1,
+.dark .ai-prose h2,
+.dark .ai-prose h3,
+.dark .ai-prose h4 {
+    color: var(--wbench-ink-night);
+}
+
+.ai-prose ul,
+.ai-prose ol {
+    margin: 0 0 1em;
+    padding-left: 1.25em;
+}
+
+.ai-prose li {
+    padding: 0;
+    margin: 0.25em 0;
+}
+
+.ai-prose ul > li::marker {
+    color: var(--wbench-accent);
+}
+
+.dark .ai-prose ul > li::marker {
+    color: var(--wbench-accent-night);
+}
+
+.ai-prose a {
+    color: var(--wbench-accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.ai-prose hr {
+    border: 0;
+    border-top: 1px solid var(--wbench-rule);
+    margin: 1.5em 0;
+}
+
+.dark .ai-prose hr {
+    border-top-color: var(--wbench-rule-night);
+}
+
+/* AI loader rule — fills left-to-right once per request, then resets. */
+.ai-loader-rule {
+    width: 0;
+    transition: none;
+}
+
+.ai-loader-rule.is-loading {
+    animation: ai-rule-fill 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes ai-rule-fill {
+    0% { width: 0; }
+    100% { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ai-loader-rule.is-loading {
+        animation: none;
+        width: 100%;
+    }
+}
+
+/* Drag Handles — thin hairlines, not grey bars. */
 .drag-handle-vertical {
-    width: 8px;
+    width: 6px;
     flex: none;
     cursor: col-resize;
-    background-color: #d1d5db;
+    background-color: var(--wbench-rule);
     transition: background-color 0.15s ease;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.drag-handle-vertical:hover {
-    background-color: #9ca3af;
+.dark .drag-handle-vertical {
+    background-color: var(--wbench-rule-night);
+}
+
+.drag-handle-vertical:hover,
+.drag-handle-vertical:active {
+    background-color: var(--wbench-accent);
+}
+
+.dark .drag-handle-vertical:hover,
+.dark .drag-handle-vertical:active {
+    background-color: var(--wbench-accent-night);
 }
 
 .drag-handle-vertical::after {
     content: '';
     width: 2px;
-    height: 24px;
+    height: 22px;
     border-radius: 1px;
-    background-color: #6b7280;
+    background-color: rgba(0, 0, 0, 0.18);
+}
+
+.dark .drag-handle-vertical::after {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+.drag-handle-vertical:hover::after,
+.drag-handle-vertical:active::after {
+    background-color: rgba(255, 255, 255, 0.6);
 }
 
 .drag-handle-horizontal {
-    height: 8px;
+    height: 6px;
     flex: none;
     cursor: row-resize;
-    background-color: #d1d5db;
+    background-color: var(--wbench-rule);
     transition: background-color 0.15s ease;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.drag-handle-horizontal:hover {
-    background-color: #9ca3af;
+.dark .drag-handle-horizontal {
+    background-color: var(--wbench-rule-night);
+}
+
+.drag-handle-horizontal:hover,
+.drag-handle-horizontal:active {
+    background-color: var(--wbench-accent);
+}
+
+.dark .drag-handle-horizontal:hover,
+.dark .drag-handle-horizontal:active {
+    background-color: var(--wbench-accent-night);
 }
 
 .drag-handle-horizontal::after {
     content: '';
     height: 2px;
-    width: 24px;
+    width: 22px;
     border-radius: 1px;
-    background-color: #6b7280;
-}
-
-.dark .drag-handle-vertical {
-    background-color: #374151;
-}
-
-.dark .drag-handle-vertical:hover {
-    background-color: #4b5563;
-}
-
-.dark .drag-handle-vertical::after {
-    background-color: #9ca3af;
-}
-
-.dark .drag-handle-horizontal {
-    background-color: #374151;
-}
-
-.dark .drag-handle-horizontal:hover {
-    background-color: #4b5563;
+    background-color: rgba(0, 0, 0, 0.18);
 }
 
 .dark .drag-handle-horizontal::after {
-    background-color: #9ca3af;
+    background-color: rgba(255, 255, 255, 0.18);
 }
 
+.drag-handle-horizontal:hover::after,
+.drag-handle-horizontal:active::after {
+    background-color: rgba(255, 255, 255, 0.6);
+}

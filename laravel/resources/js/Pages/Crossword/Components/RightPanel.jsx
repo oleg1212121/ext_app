@@ -1,5 +1,5 @@
 import TabContent from './TabContent';
-import React from "react";
+import React from 'react';
 
 const TABS = [
     {id: 0, label: 'Definitions'},
@@ -8,19 +8,21 @@ const TABS = [
     {id: 3, label: 'Forms'},
 ];
 
+const HAIRLINE = 'h-6 w-px bg-[var(--wbench-rule)] dark:bg-[var(--wbench-rule-night)]';
+
 const tabClass = (isActive) => [
-    'relative px-2.5 py-1.5 text-sm font-medium tracking-wide transition-colors duration-200 rounded-sm',
-    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
+    'relative inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium tracking-wide transition-colors duration-200 rounded-sm',
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]',
     isActive
-        ? 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]'
-        : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
+        ? 'text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]'
+        : 'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]',
 ].join(' ');
 
 const Underline = ({isActive}) => (
     <span
         aria-hidden="true"
         className={[
-            'absolute left-1 right-1 -bottom-px h-px bg-[var(--color-vermilion)] dark:bg-[var(--color-vermilion-night)]',
+            'absolute left-1 right-1 -bottom-px h-[2px] bg-[var(--wbench-accent)] dark:bg-[var(--wbench-accent-night)]',
             'transition-transform duration-300 origin-left',
             isActive ? 'scale-x-100' : 'scale-x-0',
         ].join(' ')}
@@ -28,15 +30,13 @@ const Underline = ({isActive}) => (
     />
 );
 
-const HAIRLINE = 'h-6 w-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]';
-
 const GhostButton = ({onClick, title, children}) => (
     <button
         type="button"
         title={title}
         aria-label={title}
         onClick={onClick}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-sm cursor-pointer transition-colors duration-200 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-transparent text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] hover:border-[var(--color-vermilion)] dark:hover:border-[var(--color-vermilion-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-sm cursor-pointer transition-colors duration-200 border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-transparent text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-accent)] dark:hover:text-[var(--wbench-accent-night)] hover:border-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
     >
         {children}
     </button>
@@ -71,10 +71,10 @@ export default function RightPanel({
             />
 
             <div
-                className="right overflow-auto p-4 flex flex-col bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border-l border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]"
+                className="right overflow-auto p-4 flex flex-col bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] border-l border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]"
                 style={{width: `${width}px`}}
             >
-                <div className="flex flex-wrap items-end gap-1 mb-4 pb-4 border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]">
+                <div className="flex flex-wrap items-end gap-1 mb-4 pb-4 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
                     {TABS.map((tab) => (
                         <button
                             key={tab.id}
@@ -101,6 +101,7 @@ export default function RightPanel({
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/>
                         </svg>
+                        Approve
                     </GhostButton>
                     <GhostButton onClick={onDismiss} title="Delete">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -1,5 +1,88 @@
 # Directory Update Log
 
+## 2026-08-06
+
+* **Redesign: Crossword workbench migrated to the wbench design system.**
+  Rebuilt `/crossword-react/{lang}` (`CrosswordApp.jsx` and all components:
+  `CrosswordHeader`, `CrosswordGrid`, `RightPanel`, `TabContent`,
+  `UnsolvedModal`) on `--wbench-*` tokens so it reads as a sibling of the
+  Bilinguals simulator instead of the legacy vellum + vermilion + verdigris
+  palette. `resources/css/crossword.css` rewritten end-to-end: cold paper
+  `--wbench-paper` board, `--wbench-rule` hairlines, Source Serif 4 cell
+  letters and definitions, JetBrains Mono coordinate markers and eyebrows,
+  IBM Plex Sans chrome. One accent role on this surface — the active
+  (currently-selected) word reads as `color-mix(--wbench-accent 14%,
+  --wbench-paper)`; solved cells go ink-on-paper (`--wbench-ink` bg + paper
+  text), quiet and inactive, so the accent stays exclusive to the active
+  word. Both arrow cells now share `--wbench-paper-deep` with a 2px
+  accent leading edge — direction reads from layout, not from a second
+  hue (the old across=vermilion / down=verdigris split was the loudest
+  inconsistency with the system's "one accent job per surface" rule).
+  Drag handles flip to `--wbench-accent` on hover, matching the
+  `simulator.css` pattern. Added a local `.xword-edge` rule in
+  `crossword.css` instead of retinting the global `.ribbon-mark` (which stays
+  vermilion — shared with the simulator's `TextContent` and the Reader
+  index, so both are untouched). Implemented the four-state contract on the
+  grid surface: `CrosswordGrid` now returns a centered serif invitation
+  under a mono `NO CROSSWORD LOADED` eyebrow when no crossword is built,
+  and a serif `--wbench-danger` line + `Retry` control (re-calling
+  `getCrossword`) when `isError` is set — instead of returning `null`.
+  Definition rows tightened (`text-lg`, `py-2`, mono zero-padded index
+  `01`, `02`); tab strip rewritten with the simulator's `tabClass` + 2px
+  accent `Underline`; `RightPanel` ghost buttons retinted to
+  `--wbench-accent` on hover. `CrosswordHeader` reworked: compact `py-2`,
+  mono `CROSSWORD · EN` eyebrow + serif `Workbench` name, hairline divider
+  before the `Build` control (which becomes an ultramarine CTA on
+  hairline, not vermilion). No controller, route, request/response, or
+  prop shape changed; `useCrossword.js` and `constants.js` untouched.
+  Follow-ups noted: (1) `useCrossword` does not expose a build-pending
+  flag, so the grid's loading state currently collapses into the empty
+  state — adding a `pending` flag would let a `WORKING · BUILDING` mono
+  label + `.ai-loader-rule` fill sit here per the four-state contract;
+  (2) the global `.ribbon-mark` in `app.css`, and the shared
+  `Select` / `Button` / `SelectGroup` components, are still on
+  `--color-vellum*` / vermilion — migrating the simulator only (the
+  shared form controls are used by no other page) and the global
+  ribbon-mark (which would also retint Reader) is left for a later pass
+  to keep this change self-contained to the crossword. Bumped
+  `conventions/design-system.md` `generated.at`.
+
+* **Redesign: Reader index migrated to the wbench design system.**
+  Rebuilt `resources/js/Pages/Reader/ReaderIndexApp.jsx` (the
+  `/reader-react/{lang}` index) on `--wbench-*` tokens so it reads as a sibling
+  of the Bilinguals simulator instead of the legacy vellum palette. Removed the
+  editorial display treatment (italic "Antiphonal" eyebrow, 7xl serif heading,
+  italic gloss, vermilion flourish, decorative aside, the `→` arrow belt) and
+  replaced it with a single compact hairline toolbar (mono `READER · EN ↔ RU` +
+  `Parallel Library` eyebrow, `ml-auto` underline tabs), a single-column dense
+  list with mono row numbers `01 02 …` and the existing `.ribbon-mark` hover
+  edge. Implemented the four-state contract on the entity list — the page's one
+  signature: while Inertia navigates between EN/RU libraries a `.ai-loader-rule`
+  fills under the toolbar and a mono `LOADING · {Lang}` label sits in the
+  content area (reduced-motion defanged by the existing
+  `simulator.css` media query); empty state is the mono `NO TEXTS IN THIS
+  LIBRARY` eyebrow + serif invite. No controller, request/response, or prop
+  shape changed; `ReaderReactIndex.jsx` (the Inertia wrapper) untouched. The
+  entity reader at `/reader-react/{lang}/{entityId}` (`ReaderApp.jsx` /
+  `ReaderRow.jsx`) is still on `--color-vellum/*` — tracked as a follow-up in
+  `domains/reader.md` so a library switch does not cross palettes when entering
+  a text. Bumped `conventions/design-system.md` and `domains/reader.md`.
+
+* **Redesign: Bilinguals simulator + design system convention.** Redesigned
+  `/bilinguals/en/ru/simulator` with a cold-paper palette (`--wbench-paper`
+  #FBFAF8 / `--wbench-ink` #0D0D0F / `--wbench-accent` ultramarine #1F3DDB) and
+  three typefaces (Source Serif 4 reading / IBM Plex Sans chrome / JetBrains
+  Mono marginalia), all scoped via new `--wbench-*` tokens in
+  `resources/css/app.css` so other app pages keep the `--color-vellum/*`
+  identity. Densified the layout (22px reading, `py-2` rows, 168px workplace),
+  added an empty/loading/answer/error four-state AI Response rail (signature
+  surface), retinted drag handles and `.ribbon-mark`, and removed the legacy
+  red/blue/yellow literals from `public/css/simulator.css`. Controllers and
+  request/response shapes untouched. Added `conventions/design-system.md`
+  documenting tokens, type roles, compact scale, layout principles, and the
+  four-state contract for request-replaceable surfaces; linked from
+  `conventions/index.md` and root `index.md`.
+
 ## 2026-08-04
 
 * **Pest TIA Engine**: Bumped Pest 4 → 5 and PHPUnit 12 → 13

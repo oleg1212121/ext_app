@@ -13,29 +13,31 @@ function getCsrfToken() {
 }
 
 const DEFAULT_PER_PAGE = 50;
-const DEFAULT_FONT_SIZE = 30;
-const CONTROL_FONT_SCALE = 0.65;
+const DEFAULT_FONT_SIZE = 22;
+const CONTROL_FONT_SCALE = 0.62;
 const FONT_SIZE_STEP = 2;
-const MIN_FONT_SIZE = 10;
-const MAX_FONT_SIZE = 72;
+const MIN_FONT_SIZE = 12;
+const MAX_FONT_SIZE = 48;
+
+const HAIRLINE = 'h-5 w-px bg-[var(--wbench-rule)] dark:bg-[var(--wbench-rule-night)]';
 
 function panelToggleIconClass(active) {
-    return `h-5 w-5 shrink-0 transition-colors ${active ? 'text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]' : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60'}`;
+    return `h-4 w-4 shrink-0 transition-colors ${active ? 'text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]' : 'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]'}`;
 }
 
 const tabClass = (isActive) => [
-    'relative inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium tracking-wide transition-colors duration-200 rounded-sm',
-    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
+    'relative inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium tracking-wide transition-colors duration-200 rounded-sm',
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]',
     isActive
-        ? 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]'
-        : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
+        ? 'text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]'
+        : 'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]',
 ].join(' ');
 
 const Underline = ({isActive}) => (
     <span
         aria-hidden="true"
         className={[
-            'absolute left-1 right-1 -bottom-px h-px bg-[var(--color-vermilion)] dark:bg-[var(--color-vermilion-night)]',
+            'absolute left-1 right-1 -bottom-px h-[2px] bg-[var(--wbench-accent)] dark:bg-[var(--wbench-accent-night)]',
             'transition-transform duration-300 origin-left',
             isActive ? 'scale-x-100' : 'scale-x-0',
         ].join(' ')}
@@ -43,16 +45,14 @@ const Underline = ({isActive}) => (
     />
 );
 
-const HAIRLINE = 'h-6 w-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]';
-
 const FontButton = ({onClick, label, children}) => (
     <button
         type="button"
         aria-label={label}
         onClick={onClick}
-        className="h-8 w-8 flex items-center justify-center border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum-deep)] dark:bg-[var(--color-hairline-night)]/30 text-[var(--color-ink)] dark:text-[var(--color-vellum-night)] hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] hover:border-[var(--color-vermilion)] dark:hover:border-[var(--color-vermilion-night)] rounded-sm transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
+        className="h-7 w-7 flex items-center justify-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-deep-night)] text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] hover:text-[var(--wbench-accent)] dark:hover:text-[var(--wbench-accent-night)] hover:border-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] rounded-sm transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
     >
-        <span className="font-serif text-lg leading-none">{children}</span>
+        <span className="font-[var(--wbench-mono)] text-sm leading-none">{children}</span>
     </button>
 );
 
@@ -71,6 +71,7 @@ function updateResizeableFontStyles(fontSize) {
         textarea.resizeable_element,
         #ai_answer_div {
             font-size: ${fontSize}px;
+            line-height: 1.55;
         }
 
         .bilingual-control-resizeable {
@@ -134,6 +135,8 @@ const Bilinguals = (props) => {
     let [currentQuestion, setCurrentQuestion] = React.useState(props.currentQuestion)
     const [pending, setPending] = React.useState(false);
     const [aiAnswer, setAiAnswer] = React.useState('');
+    const [aiError, setAiError] = React.useState(null);
+    const [lastAskPayload, setLastAskPayload] = React.useState(null);
     const workplaceRef = React.useRef(null);
     const questionRef = React.useRef(null);
     const pendingWorkplaceFocusRef = React.useRef(false);
@@ -223,20 +226,27 @@ const Bilinguals = (props) => {
         focusOnWorkplace();
     }, [showWorkplace]);
 
-    const ask = async (row) => {
+    const ask = async (row, overrides = {}) => {
         if (pending) {
             return;
         }
 
         const cellContent = String(row?.[1] ?? '').trim().replace('*', '');
-        const workplaceText = String(workplaceRef.current?.value ?? '').trim().replace('*', '');
-        const question = String(questionRef.current?.value ?? '').trim();
+        const workplaceText = String(overrides.workplaceText ?? workplaceRef.current?.value ?? '').trim().replace('*', '');
+        const question = String(overrides.question ?? questionRef.current?.value ?? '').trim();
 
         if (!cellContent || !workplaceText) {
             return;
         }
 
+        const payload = {
+            data: `${cellContent}\n${workplaceText}`,
+            question: overrides.question ?? currentQuestion,
+            model: overrides.model ?? currentModel,
+        };
+        setLastAskPayload(payload);
         setPending(true);
+        setAiError(null);
         try {
             const token = getCsrfToken();
             const res = await fetch('/ai/question', {
@@ -246,37 +256,67 @@ const Bilinguals = (props) => {
                     Accept: 'application/json',
                     ...(token ? {'X-CSRF-TOKEN': token} : {}),
                 },
-                body: JSON.stringify({
-                    data: `${cellContent}\n${workplaceText}`,
-                    question: currentQuestion,
-                    model: currentModel,
-                }),
+                body: JSON.stringify(payload),
             });
             const json = await res.json();
             if (json?.data?.code === 200) {
                 setAiAnswer(json.data.answer ?? '');
             } else {
                 setAiAnswer('');
+                setAiError(json?.data?.data?.error ?? json?.message ?? `Request failed (${res.status})`);
             }
-        } catch {
+        } catch (e) {
             setAiAnswer('');
+            setAiError(e instanceof Error ? e.message : "Couldn't reach the model.");
         } finally {
             setPending(false);
         }
     };
+
+    const retryAsk = async (overrides = {}) => {
+        if (!lastAskPayload || pending) {
+            return;
+        }
+        const payload = {...lastAskPayload, ...(overrides.question ? {question: overrides.question} : {}), ...(overrides.model ? {model: overrides.model} : {})};
+        setLastAskPayload(payload);
+        setPending(true);
+        setAiError(null);
+        try {
+            const token = getCsrfToken();
+            const res = await fetch('/ai/question', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    ...(token ? {'X-CSRF-TOKEN': token} : {}),
+                },
+                body: JSON.stringify(payload),
+            });
+            const json = await res.json();
+            if (json?.data?.code === 200) {
+                setAiAnswer(json.data.answer ?? '');
+            } else {
+                setAiAnswer('');
+                setAiError(json?.data?.data?.error ?? json?.message ?? `Request failed (${res.status})`);
+            }
+        } catch (e) {
+            setAiAnswer('');
+            setAiError(e instanceof Error ? e.message : "Couldn't reach the model.");
+        } finally {
+            setPending(false);
+        }
+    };
+
     return (
-        <div className="body w-full flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
-            <div className="flex-none border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum-deep)] dark:bg-[var(--color-ink-night)]">
-                <div className="flex flex-wrap items-center gap-3 px-4 sm:px-6 py-3">
-                    <div className="flex items-center gap-3">
-                        <span className="hidden sm:flex flex-col leading-none">
-                            <span className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-[10px] tracking-[0.22em] uppercase">Antiphonal</span>
-                            <span className="font-serif text-base tracking-tight">Bilinguals</span>
-                        </span>
-                        <span className={`sm:hidden ${HAIRLINE}`} aria-hidden="true"/>
-                        <SelectGroup value={currentModel} onChange={(e) => setCurrentModel(e.target.value)}
-                                     groups={aiModels}/>
-                    </div>
+        <div className="body w-full flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-sans)]">
+            <div className="flex-none border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]">
+                <div className="flex flex-1 flex-wrap items-center gap-3 px-4 sm:px-5 py-2">
+                    <span className="font-[var(--wbench-mono)] text-[11px] tracking-[0.22em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] whitespace-nowrap">
+                        Bilinguals <span className="text-[var(--wbench-rule)] dark:text-[var(--wbench-rule-night)]">·</span> en&nbsp;↔&nbsp;ru
+                    </span>
+                    <span className={HAIRLINE} aria-hidden="true"/>
+                    <SelectGroup value={currentModel} onChange={(e) => setCurrentModel(e.target.value)}
+                                 groups={aiModels}/>
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div className="flex items-center gap-2">
                         <Select value={currentText} onChange={(e) => setCurrentText(e.target.value)}
@@ -288,8 +328,7 @@ const Bilinguals = (props) => {
                         <FontButton aria-label="Increase font size" onClick={() => changeFontSize('+')}>+</FontButton>
                         <FontButton aria-label="Decrease font size" onClick={() => changeFontSize('-')}>−</FontButton>
                     </div>
-                    <span className={HAIRLINE} aria-hidden="true"/>
-                    <div className="flex items-end gap-1 border-b border-transparent">
+                    <div className="ml-auto flex items-end gap-0.5 border-b border-transparent">
                         <button
                             type="button"
                             className={tabClass(showText)}
@@ -347,15 +386,17 @@ const Bilinguals = (props) => {
             </div>
             <Spinner errors={errors} pending={pending}/>
             <div className="flex-1 min-h-0 flex gap-0 overflow-hidden">
-                <div className="flex-1 min-h-0 flex flex-col bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border-r border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] overflow-hidden">
+                <div className="flex-1 min-h-0 flex flex-col bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] border-r border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] overflow-hidden">
                     {showText === true &&
                         <>
                             {textMeta && textMeta.last_page > 1 && (
                                 <div
-                                    className="flex-none flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6 py-2.5 bg-[var(--color-vellum-deep)] dark:bg-[var(--color-hairline-night)]/30 border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
-                                    <span className="font-serif italic">
-                                        Page <span className="not-italic font-medium text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">{textMeta.current_page}</span> of <span className="not-italic font-medium text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">{textMeta.last_page}</span>
-                                        <span className="ml-2 font-sans text-xs opacity-60">· {textMeta.total} rows</span>
+                                    className="flex-none flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-2 bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)] border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] font-[var(--wbench-mono)] text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                    <span className="tracking-wide">
+                                        <span className="text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">{textMeta.current_page}</span>
+                                        <span className="mx-1 opacity-50">/</span>
+                                        {textMeta.last_page}
+                                        <span className="ml-3 opacity-60">· {textMeta.total} rows</span>
                                     </span>
                                     <div className="flex items-center gap-2">
                                         <Button color="dark" size="xs" outline type="button"
@@ -375,7 +416,7 @@ const Bilinguals = (props) => {
                                             }}
                                             disabled={pending}
                                             aria-label="Page number"
-                                            className="w-16 rounded-sm border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] px-2 py-1 text-center text-sm font-serif text-[var(--color-ink)] dark:text-[var(--color-vellum-night)] disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
+                                            className="w-14 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 py-1 text-center font-[var(--wbench-mono)] text-xs text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
                                         />
                                         <Button color="dark" size="xs" outline type="button"
                                                 disabled={textMeta.current_page >= textMeta.last_page || pending}
@@ -383,15 +424,15 @@ const Bilinguals = (props) => {
                                     </div>
                                 </div>
                             )}
-                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset}/>
+                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText}/>
                         </>
                     }
                     {showWorkplace === true &&
-                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion}/>
+                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)}/>
                     }
                 </div>
                 {showAI === true &&
-                    <AI aiAnswer={aiAnswer}/>
+                    <AI aiAnswer={aiAnswer} pending={pending} aiError={aiError} onRetry={retryAsk}/>
                 }
             </div>
         </div>
