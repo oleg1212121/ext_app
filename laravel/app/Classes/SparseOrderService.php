@@ -84,6 +84,41 @@ class SparseOrderService
     }
 
     /**
+     * Assign evenly-spread orders for $count items placed strictly between
+     * $low and $high (exclusive). When both anchors leave no room for distinct
+     * integers, the block is widened from $low using the stride (overflowing
+     * $high is acceptable — within-row sequence is what matters).
+     *
+     * @return list<int>
+     */
+    public function spreadOrders(int $count, ?int $low, ?int $high): array
+    {
+        if ($count <= 0) {
+            return [];
+        }
+
+        if ($low === null && $high === null) {
+            return array_map(fn (int $i): int => $this->initial($i), range(0, $count - 1));
+        }
+
+        if ($low === null) {
+            return array_map(fn (int $i): int => $high - (self::STRIDE * ($count - $i)), range(0, $count - 1));
+        }
+
+        if ($high === null) {
+            return array_map(fn (int $i): int => $low + (self::STRIDE * ($i + 1)), range(0, $count - 1));
+        }
+
+        $step = intdiv($high - $low, $count + 1);
+
+        if ($step >= 1) {
+            return array_map(fn (int $i): int => $low + ($step * ($i + 1)), range(0, $count - 1));
+        }
+
+        return array_map(fn (int $i): int => $low + (self::STRIDE * ($i + 1)), range(0, $count - 1));
+    }
+
+    /**
      * @param  list<array{key: string, order: int}>  $items
      * @return list<array{key: string, order: int}>
      */

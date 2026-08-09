@@ -53,4 +53,11 @@ class EnRuEntityMatch extends Model
     {
         return $this->hasMany(EnRuMeaningMatch::class, 'en_ru_entity_match_id');
     }
+
+    public function getConfirmedCountAttribute(): int
+    {
+        return (int) $this->meaningMatches()
+            ->where(fn ($query) => $query->whereHas('enSentenceMatches')->orWhereHas('ruSentenceMatches'))
+            ->count();
+    }
 }

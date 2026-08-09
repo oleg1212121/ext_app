@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /*
@@ -17,6 +18,14 @@ use Tests\TestCase;
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
+
+// Safety guard: tests must always run against the dedicated `testing`
+// connection. If a test run is started with the wrong connection (e.g.
+// `--database=pgsql` from the shell), the first test fails here BEFORE any
+// destructive migration can touch the main dev database.
+beforeEach(function () {
+    expect(DB::connection()->getName())->toBe('testing');
+});
 
 pest()->tia()
     ->filtered()

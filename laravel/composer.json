@@ -69,7 +69,7 @@
         "test:tia": [
             "@php artisan config:clear --ansi",
             "@php scripts/tia-setup.php",
-            "XDEBUG_MODE=coverage vendor/bin/pest --parallel --tia"
+            "XDEBUG_MODE=coverage vendor/bin/pest --parallel --tia --drop-databases"
         ]
     },
     "extra": {

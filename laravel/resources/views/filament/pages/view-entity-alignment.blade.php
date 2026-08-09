@@ -42,7 +42,7 @@
             </div>
             <div>
                 <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Links Created</span>
-                <span class="ml-2 font-semibold">{{ $run->linked_count }}</span>
+                <span class="ml-2 font-semibold">{{ $run->confirmed_count }}</span>
             </div>
             @if($run->error_message)
                 <div class="w-full">

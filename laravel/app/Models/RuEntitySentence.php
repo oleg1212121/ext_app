@@ -51,7 +51,7 @@ class RuEntitySentence extends Model
                     continue;
                 }
 
-                if ($meaningMatch->enSentenceMatches()->count() === 0 || $meaningMatch->ruSentenceMatches()->count() === 0) {
+                if ($meaningMatch->enSentenceMatches()->count() === 0 && $meaningMatch->ruSentenceMatches()->count() === 0) {
                     $entityMatch = $meaningMatch->entityMatch;
                     $meaningMatch->delete();
 

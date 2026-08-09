@@ -57,8 +57,6 @@ class AlignmentEditorPersister
 
             $linkedCount = EnRuMeaningMatch::query()
                 ->where('en_ru_entity_match_id', $entityMatch->id)
-                ->whereHas('enSentenceMatches')
-                ->whereHas('ruSentenceMatches')
                 ->count();
 
             $entityMatch->update([
@@ -226,10 +224,6 @@ class AlignmentEditorPersister
             $ruSentenceIds = $this->resolveSentenceIds($row['ru_sentences'], $ruIdMap);
             $order = (int) ($row['order'] ?? app(SparseOrderService::class)->initial($index));
 
-            if ($enSentenceIds === [] && $ruSentenceIds === []) {
-                continue;
-            }
-
             if ($row['id'] !== null && $existingMeaningMatches->has($row['id'])) {
                 $meaningId = $row['id'];
                 $model = $existingMeaningMatches->get($meaningId);
@@ -299,7 +293,7 @@ class AlignmentEditorPersister
                     'en_ru_entity_match_id' => $entityMatch->id,
                     'order' => $row['order'],
                     'similarity' => 1.0,
-                    'alignment_chunk' => 0,
+                    'alignment_chunk' => -1,
                 ]);
                 $meaningId = $meaningMatch->id;
             } else {

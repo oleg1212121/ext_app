@@ -2,39 +2,49 @@
 
 namespace App\Http\Controllers;
 
-use App\Classes\MeaningMatchPresenter;
+use App\Classes\AlignmentEditorApiPresenter;
 use App\Models\EnRuEntityMatch;
-use Illuminate\Contracts\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class AlignmentController extends Controller
 {
     public function __construct(
-        private readonly MeaningMatchPresenter $presenter,
+        private readonly AlignmentEditorApiPresenter $presenter,
     ) {}
 
-    public function index(): View
+    public function index(): Response
     {
         $entityMatches = EnRuEntityMatch::query()
             ->with(['enEntity', 'ruEntity'])
             ->latest()
             ->paginate(15);
 
-        return view('alignments.index', [
-            'entityMatches' => $entityMatches,
+        return Inertia::render('Alignments/Index', [
+            'entityMatches' => $entityMatches->through(
+                fn (EnRuEntityMatch $entityMatch): array => $this->presenter->matchPayload($entityMatch),
+            )->items(),
+            'meta' => [
+                'current_page' => $entityMatches->currentPage(),
+                'last_page' => $entityMatches->lastPage(),
+                'total' => $entityMatches->total(),
+                'per_page' => $entityMatches->perPage(),
+            ],
         ]);
     }
 
-    public function show(EnRuEntityMatch $entityMatch): View
+    public function show(EnRuEntityMatch $entityMatch): Response
     {
         $entityMatch->load(['enEntity', 'ruEntity']);
 
-        $meaningMatches = $this->presenter
-            ->meaningMatchesQuery($entityMatch)
-            ->get();
+        $payload = $this->presenter->rowsPagePayload($entityMatch, 1, 25);
 
-        return view('alignments.show2', [
-            'entityMatch' => $entityMatch,
-            'rows' => $this->presenter->toDisplayRows($meaningMatches),
+        return Inertia::render('Alignments/Show', [
+            'match' => $this->presenter->matchPayload($entityMatch),
+            'rows' => $payload['rows'],
+            'rows_meta' => $payload['meta'],
+            'unmatched_en' => $this->presenter->unmatchedPayload($entityMatch, 'en', 1),
+            'unmatched_ru' => $this->presenter->unmatchedPayload($entityMatch, 'ru', 1),
         ]);
     }
 }

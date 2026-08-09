@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AlignmentController;
+use App\Http\Controllers\AlignmentEditorController;
 use App\Http\Controllers\Bilinguals\SimulatorController;
 use App\Http\Controllers\BilingualsController;
 use App\Http\Controllers\ProfileController;
@@ -45,6 +46,16 @@ Route::middleware('auth')->group(function () {
         ->name('reader.react.index');
     Route::get('/alignments', [AlignmentController::class, 'index'])->name('alignments.index');
     Route::get('/alignments/{entityMatch}', [AlignmentController::class, 'show'])->name('alignments.show');
+
+    Route::get('/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'rows']);
+    Route::get('/alignments/{entityMatch}/unmatched', [AlignmentEditorController::class, 'unmatched']);
+    Route::post('/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'storeRow']);
+    Route::delete('/alignments/{entityMatch}/rows/{meaningMatch}', [AlignmentEditorController::class, 'destroyRow']);
+    Route::post('/alignments/{entityMatch}/sentences', [AlignmentEditorController::class, 'storeSentence']);
+    Route::post('/alignments/{entityMatch}/sentences/move', [AlignmentEditorController::class, 'moveSentence']);
+    Route::patch('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'updateSentence'])->whereNumber('sentence');
+    Route::delete('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'unlinkSentence'])->whereNumber('sentence');
+    Route::delete('/alignments/{entityMatch}/unmatched/{sentence}', [AlignmentEditorController::class, 'destroyUnmatched'])->whereNumber('sentence');
     Route::get('/bilinguals/en/ru/simulator', [SimulatorController::class, 'simulator'])->name('bilinguals.simulator');
     Route::post('/get-crossword', [Test::class, 'getCrossword']);
     Route::get('/get-texts', [Test::class, 'getTexts']);

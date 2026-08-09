@@ -11,6 +11,7 @@ use App\Models\RuSentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
 
@@ -54,9 +55,11 @@ test('authenticated users can view the alignments list', function () {
         ->get(route('alignments.index'));
 
     $response->assertOk();
-    $response->assertSee('Sentence Alignments');
-    $response->assertSee('English chapter');
-    $response->assertSee('Russian chapter');
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('Alignments/Index')
+        ->has('entityMatches', 1)
+        ->where('entityMatches.0.en_entity_name', 'English chapter')
+        ->where('entityMatches.0.ru_entity_name', 'Russian chapter'));
 });
 
 test('authenticated users can view alignment details', function () {
@@ -121,9 +124,12 @@ test('authenticated users can view alignment details', function () {
         ->get(route('alignments.show', $entityMatch));
 
     $response->assertOk();
-    $response->assertSee('English chapter');
-    $response->assertSee('Russian chapter');
-    $response->assertSee('The first English sentence.');
-    $response->assertSee('Первое русское предложение.');
-    $response->assertSee('Back to alignments');
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('Alignments/Show')
+        ->where('match.en_entity_name', 'English chapter')
+        ->where('match.ru_entity_name', 'Russian chapter')
+        ->has('rows.0.en_sentences', 1)
+        ->where('rows.0.en_sentences.0.content', 'The first English sentence.')
+        ->has('rows.0.ru_sentences', 1)
+        ->where('rows.0.ru_sentences.0.content', 'Первое русское предложение.'));
 });

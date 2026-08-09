@@ -1,5 +1,36 @@
 # Directory Update Log
 
+## 2026-08-09
+
+* **Fix: alignments editor sentence keys are now language-scoped.**
+  `AlignmentEditorApiPresenter::sentencePayload` emitted keys of the form
+  `s-{id}` ignoring language; since `en_entity_sentences` and
+  `ru_entity_sentences` are separate tables their ids can overlap, so the
+  Inertia editor's shared sentence lookup (keyed by that key) let a RU
+  sentence clobber an EN sentence with the same id — rendering Russian text
+  in the EN column ("ru/ru"). Keys are now `{lang}:s-{id}` (e.g. `en:s-6776`),
+  making them unique across the whole drag-and-drop surface. No schema change.
+
+* **Alignments editor (Inertia/React) replaces the Filament entry point for
+  pair editing.** New `/alignments` (pair list) → `/alignments/{id}` (editor)
+  pages in `resources/js/Pages/Alignments/`, linked from the NavBar instead of
+  `/admin/sentence-alignments`. The editor shows paginated EN/RU pair rows with
+  @dnd-kit drag-and-drop, inline add/edit/delete, an "Unmatched" pool
+  (collapsible, 15/lang, draggable in/out, trash = permanent delete), and
+  immediate persistence (optimistic updates reconciled from server responses,
+  revert + error banner on failure). Backed by the existing surgical
+  `AlignmentEditorController` endpoints (rows/unmatched pagination, create/
+  delete pair, add/edit/unlink/hard-delete sentence, `sentences/move`).
+  `AlignmentEditorApiPresenter::unmatchedPayload` now nests `{items, meta}`
+  including `last_page`; `AlignmentController::index` passes the paginator
+  `items()` as a plain array so Inertia props stay a list. Deleted the legacy
+  blade `resources/views/alignments/*` + `resources/js/pages/alignments/*`
+  (incl. vite entries). Added `@dnd-kit/core|sortable|utilities` to
+  `package.json`. New `AlignmentEditorApiTest` (20 cases: pair CRUD, add
+  placement, within-row reorder, cross-row relink, unmatched moves, trash,
+  pagination, counts) and `AlignmentPagesTest` switched to `assertInertia`
+  prop assertions. Filament admin pages untouched.
+
 ## 2026-08-06
 
 * **Redesign: Crossword workbench migrated to the wbench design system.**
@@ -125,6 +156,29 @@
   `domains/sentence-alignment.md`.
   * Also updated `architecture/docker-services.md` (python service description,
     new mounts, `ai_models` volume).
+
+* **Database safety hardening.** A real dev-database wipe (`migrate:fresh`
+  against the default `pgsql` connection) triggered a review of the test
+  database setup. Changes:
+  * `config/database.php`: added a dedicated `testing` connection (pgsql clone
+    with `database => env('DB_TEST_DATABASE', 'ext_app_test')`). Tests are now
+    bound by connection *name*, not by mutating `DB_DATABASE` on the shared
+    `pgsql` connection.
+  * `phpunit.xml`: `DB_CONNECTION=testing` + `DB_TEST_DATABASE=ext_app_test`
+    (force), keeping `DB_DATABASE=ext_app_test` as a backstop.
+  * `tests/TestCase.php` guard tightened: refuses to boot unless the resolved
+    default connection is `testing` and its database is `ext_app_test` (was
+    only checking the `pgsql` connection's database name).
+  * `tests/Pest.php`: added `beforeEach` assertion that
+    `DB::connection()->getName() === 'testing'`.
+  * `composer.json`: `test:tia` now passes `--drop-databases` so parallel
+    Pest workers drop their `ext_app_test_test_{N}` DBs after each run (they
+    were accumulating as orphans).
+  * Cleaned up 16 orphaned `ext_app_test_test_{N}` databases on the dev
+    Postgres instance.
+  * `AGENTS.md`: documented the `testing`-connection rule for destructive ops.
+  * The main dev DB `ext_app` is currently empty (from the wipe); restore via
+    the alignment pipeline when needed.
 
 ## 2026-07-28
 

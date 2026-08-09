@@ -55,7 +55,7 @@ export default function NavBar() {
         if (!isAuthenticated) return []
         return [
             {href: '/bilinguals/en/ru/simulator', label: 'Bilinguals'},
-            {href: '/admin/sentence-alignments', label: 'Alignments'},
+            {href: '/alignments', label: 'Alignments'},
             {href: '/crossword-react/en', label: 'Crossword'},
             {href: '/reader-react', label: 'Reader'},
         ]

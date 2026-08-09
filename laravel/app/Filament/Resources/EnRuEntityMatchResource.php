@@ -6,6 +6,7 @@ use App\Filament\Resources\EnRuEntityMatchResource\Pages;
 use App\Jobs\AlignEntitySentences;
 use App\Models\EnEntity;
 use App\Models\EnRuEntityMatch;
+use App\Models\EnRuMeaningMatch;
 use App\Models\RuEntity;
 use Filament\Actions;
 use Filament\Forms\Components\Select;
@@ -106,7 +107,7 @@ class EnRuEntityMatchResource extends Resource
                             return '-';
                         }
 
-                        return "{$record->linked_count} links";
+                        return "{$record->confirmed_count} links";
                     }),
                 TextColumn::make('en_total_sentences')
                     ->label('EN Sents')
@@ -144,6 +145,20 @@ class EnRuEntityMatchResource extends Resource
                     ->icon('heroicon-o-arrow-path')
                     ->color('warning')
                     ->requiresConfirmation()
+                    ->modalDescription(function (EnRuEntityMatch $record): string {
+                        $humanMadeCount = EnRuMeaningMatch::query()
+                            ->where('en_ru_entity_match_id', $record->id)
+                            ->where('alignment_chunk', -1)
+                            ->count();
+
+                        $description = 'This will delete all meaning matches and re-run the alignment pipeline from scratch.';
+
+                        if ($humanMadeCount > 0) {
+                            $description .= " {$humanMadeCount} human-made row(s) will be wiped.";
+                        }
+
+                        return $description;
+                    })
                     ->action(function (EnRuEntityMatch $record) {
                         $record->meaningMatches()->delete();
                         $record->update([

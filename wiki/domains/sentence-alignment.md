@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/opencode-go, at: 2026-08-03T19:30:00Z }
+generated: { by: agent/opencode-go, at: 2026-08-09T18:45:00Z }
 verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
@@ -67,11 +67,15 @@ sentence(s). The output powers the
    `SparseOrderService`; `entity-orders:rebalance` runs **daily** (see
    `routes/console.php`).
 5. **Review** — humans fix machine output in the Filament
-   `EnRuEntityMatch` resource's custom `EditEntityAlignment` page, backed by
-   `AlignmentEditorDraftStore` → `AlignmentEditorPersister` →
-   `AlignmentEditorPresenter`; `MeaningMatchPresenter` shapes matches for the
-   simulator UI. Read-only web views: `/alignments`, `/alignments/{id}`
-   (`AlignmentController`).
+   `EnRuEntityMatch` resource's custom `EditEntityAlignment` page (kept as-is),
+   or in the new Inertia/React **Alignments editor**: `/alignments` (pair list)
+   → `/alignments/{id}` (pair editor), linked from the NavBar. The editor is a
+   parallel entry point backed by the surgical `AlignmentEditorController`
+   endpoints — create/delete pair, add/edit/unlink/hard-delete sentence, and
+   `sentences/move` (within-row reorder / cross-row relink / to-or-from the
+   unmatched pool) — with immediate persistence, sparse orders via
+   `SparseOrderService`, and JSON payloads shaped by `AlignmentEditorApiPresenter`
+   (`rows` + `unmatched` pagination, `last_page` included).
 6. **Sentence editing** — individual entity sentences can be created, edited,
    deleted, and reordered from the *Sentences* tab on each `EnEntity` /
    `RuEntity` edit page. The relation manager uses `SparseOrderService` to keep

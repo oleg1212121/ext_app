@@ -19,11 +19,13 @@ abstract class TestCase extends BaseTestCase
     {
         $app = parent::createApplication();
 
-        $database = $app['config']->get('database.connections.pgsql.database');
+        $connection = $app['config']->get('database.default');
+        $database = $app['config']->get("database.connections.{$connection}.database");
 
-        if ($database !== 'ext_app_test') {
+        if ($connection !== 'testing' || $database !== 'ext_app_test') {
             throw new RuntimeException(
-                "Tests must run against 'ext_app_test', but resolved database is '{$database}'. ".
+                "Tests must run against the 'testing' connection (database 'ext_app_test'), ".
+                "but resolved connection is '{$connection}' with database '{$database}'. ".
                 "Run 'php artisan config:clear' — a cached config may be pointing tests at the real database."
             );
         }

@@ -290,7 +290,6 @@ class EditEntityAlignment extends Page
 
         usort($draft['unmatched_en'], fn (array $a, array $b): int => $a['order'] <=> $b['order']);
         usort($draft['unmatched_ru'], fn (array $a, array $b): int => $a['order'] <=> $b['order']);
-        $this->removeEmptyMeaningRows($draft);
         $this->putDraft($draft);
 
         app(AlignmentEditorPersister::class)->persist($this->getRecord(), $draft);
@@ -345,7 +344,6 @@ class EditEntityAlignment extends Page
     {
         $draft = $this->getDraft();
         $this->removeSentenceFromDraft($draft, $lang, $sentenceKey);
-        $this->removeEmptyMeaningRows($draft);
         $this->putDraft($draft);
         $this->markDirty();
         $this->refreshVisibleData();
@@ -363,7 +361,6 @@ class EditEntityAlignment extends Page
         $unmatchedKey = $lang === 'en' ? 'unmatched_en' : 'unmatched_ru';
         $draft[$unmatchedKey][] = $sentence;
         usort($draft[$unmatchedKey], fn (array $a, array $b): int => $a['order'] <=> $b['order']);
-        $this->removeEmptyMeaningRows($draft);
         $this->putDraft($draft);
         $this->markDirty();
         $this->refreshVisibleData();
@@ -950,18 +947,5 @@ class EditEntityAlignment extends Page
         }
 
         return false;
-    }
-
-    /**
-     * @param  array<string, mixed>  $draft
-     */
-    private function removeEmptyMeaningRows(array &$draft): void
-    {
-        $draft['meaning_rows'] = array_values(array_filter(
-            $draft['meaning_rows'],
-            fn (array $row): bool => $row['en_sentences'] !== [] || $row['ru_sentences'] !== [],
-        ));
-
-        usort($draft['meaning_rows'], fn (array $a, array $b): int => $a['order'] <=> $b['order']);
     }
 }

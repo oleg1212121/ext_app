@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database.
 tags: [testing, pest]
 status: stable
-generated: { by: human:opencode, at: 2026-08-04T19:50:00Z }
+generated: { by: human:opencode, at: 2026-08-09T16:52:00Z }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -29,13 +29,25 @@ sources:
   cache/session.
 * `composer run test` clears the config cache first, then runs the suite.
 * **Safety layers against wiping the real `ext_app` database:**
-  * `phpunit.xml` sets `APP_ENV=testing` and `DB_DATABASE=ext_app_test` with
+  * A dedicated **`testing` connection** (a `pgsql` clone with
+    `database => env('DB_TEST_DATABASE', 'ext_app_test')`) is defined in
+    `config/database.php`. Tests are bound by connection **name**, not by
+    mutating `DB_DATABASE` on the shared `pgsql` connection.
+  * `phpunit.xml` sets `APP_ENV=testing`, `DB_CONNECTION=testing`,
+    `DB_TEST_DATABASE=ext_app_test` and `DB_DATABASE=ext_app_test` all with
     `force="true"`, so container-level env vars cannot shadow them.
   * `.env.testing` pins the same test DB for `--env=testing` artisan runs.
   * `tests/TestCase.php::createApplication()` throws if the **resolved**
-    `pgsql` database is not `ext_app_test`. This runs before
-    `RefreshDatabase`, so a stale config cache (which would bake in
-    `ext_app`) aborts the suite instead of wiping data.
+    default connection is not `testing` or its database is not
+    `ext_app_test`. This runs before `RefreshDatabase`, so a stale config
+    cache (which would bake in `ext_app`) aborts the suite instead of wiping
+    data.
+  * `tests/Pest.php` adds a `beforeEach` asserting
+    `DB::connection()->getName() === 'testing'` as a second guardrail.
+* **Parallel workers self-clean:** `composer run test:tia` passes
+  `--drop-databases` to Pest, so each parallel worker drops its temporary
+  `ext_app_test_test_{N}` database after the run and orphaned test DBs must
+  not accumulate.
 
 # Commands
 
@@ -67,9 +79,16 @@ docker exec -e XDEBUG_MODE=coverage ext_app_laravel sh -c \
 # Gotchas
 
 * **Never run tests with a cached config.** If `php artisan config:cache` was
-  run in the container, `DB_DATABASE` resolves to `ext_app` and the
-  `TestCase` guard will abort every test with a `RuntimeException` — fix with
-  `php artisan config:clear`.
+  run in the container, `DB_CONNECTION`/`DB_DATABASE` resolve to the dev
+  values and the `TestCase` guard will abort every test with a
+  `RuntimeException` — fix with `php artisan config:clear`.
+* **Never run destructive artisan commands against the default `pgsql`
+  connection.** It points at the dev `ext_app` database. For a destructive
+  reset of the test DB use `composer run test` / `composer run test:tia`, or
+  pin the testing connection explicitly:
+  `DB_CONNECTION=testing php artisan migrate:fresh`.
+* **Never start two test runs concurrently** — they share `ext_app_test` and
+  corrupt each other's `RefreshDatabase` state. Run suites sequentially.
 * If a migration was just added, the test DB needs it too; Laravel's test
   runner migrates when tests use the `RefreshDatabase` trait — check sibling
   tests for the convention.

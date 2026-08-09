@@ -329,10 +329,8 @@ class SentenceAlignmentService
 
     private function countLinkedPairs(int $entityMatchId): int
     {
-        return (int) DB::table('en_sentence_meaning_matches as esm')
-            ->join('ru_sentence_meaning_matches as rsm', 'esm.en_ru_meaning_match_id', '=', 'rsm.en_ru_meaning_match_id')
-            ->join('en_ru_meaning_matches as emm', 'emm.id', '=', 'esm.en_ru_meaning_match_id')
-            ->where('emm.en_ru_entity_match_id', $entityMatchId)
+        return (int) EnRuMeaningMatch::query()
+            ->where('en_ru_entity_match_id', $entityMatchId)
             ->count();
     }
 
