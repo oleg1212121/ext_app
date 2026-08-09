@@ -68,6 +68,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     const [adding, setAdding] = useState(null);
     const [addDraft, setAddDraft] = useState('');
     const [unmatchedOpen, setUnmatchedOpen] = useState(false);
+    const [activeId, setActiveId] = useState(null);
 
     const activeContainer = useRef(null);
 
