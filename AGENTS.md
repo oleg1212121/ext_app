@@ -88,9 +88,20 @@ docker exec -e XDEBUG_MODE=coverage ext_app_laravel sh -c 'cd /var/www && php sc
 Test database: `ext_app_test` (configured in phpunit.xml, not the default).
 
 ### Database
+
+> **⚠️ DESTRUCTIVE COMMAND WARNING**
+> The main dev database is `ext_app`, on the default `pgsql` connection.
+> **NEVER run `migrate:fresh`, `migrate:refresh`, `migrate:reset`, `migrate:rollback`, or `db:wipe` against the default `pgsql` connection** — it points at `ext_app`, not the test DB. This was the cause of a real dev-database wipe (see `wiki/log.md`).
+>
+> - Tests use a **dedicated `testing` connection** (defined in `config/database.php`, pinned in `phpunit.xml` via `DB_CONNECTION=testing`) that points at `ext_app_test`. `tests/Pest.php` asserts `DB::connection()->getName() === 'testing'` before every Feature test, so a test run on the wrong connection fails before any destructive migration runs.
+> - For destructive ops on the test DB, go through the test runner: `composer run test` / `composer run test:tia`, or `php artisan migrate:fresh` with `DB_CONNECTION=testing` explicitly set. Verify the resolved database name is `ext_app_test` (not `ext_app`) before pressing enter.
+> - **Never start two test runs concurrently** — they share `ext_app_test` and corrupt each other's `RefreshDatabase` state. Run suites sequentially.
+> - `composer run test:tia` runs Pest in parallel; the `--drop-databases` flag makes each parallel worker drop its temporary `ext_app_test_test_{N}` database after the run, so orphaned test DBs must not accumulate.
+
 ```bash
 docker exec ext_app_laravel php artisan migrate
-docker exec ext_app_laravel php artisan migrate:fresh --seed
+# SAFE destructive reset ONLY when pinned to the testing connection:
+docker exec ext_app_laravel sh -c 'DB_CONNECTION=testing php artisan migrate:fresh --seed'
 ```
 
 PostgreSQL is exposed on host port `54321`.
