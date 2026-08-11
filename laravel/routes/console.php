@@ -9,3 +9,7 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('entity-orders:rebalance')->daily();
+
+Schedule::command('alignments:resume')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

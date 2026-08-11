@@ -30,7 +30,7 @@ class CreateEnRuEntityMatch extends CreateRecord
                 $existing->delete();
             });
 
-        AlignEntitySentences::dispatch($this->record->id);
+        AlignEntitySentences::begin($this->record->id);
 
         Notification::make()
             ->title('Alignment started')

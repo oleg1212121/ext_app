@@ -44,8 +44,15 @@ _Avoid_: score
 `entity_similarity` on the entity match — the whole-pair embedding similarity,
 distinct from per-row similarity.
 
-**linked_count**:
+linked_count**:
 The number of meaning matches in an entity match (empty ones included).
+
+**Resume**:
+Advance an alignment that has stopped before reaching the end of the text.
+Triggered manually (Re-run) or automatically (the `alignments:resume` command).
+The cursor — the EN/RU sentence offsets where the next chunk starts — is the
+only state a resume reads, so a stopped run can continue without wiping
+already-aligned chunks. _Avoid_: restart, retry.
 
 **Add sentence**:
 Create a new sentence in an entity and link it to a meaning match.

@@ -143,7 +143,7 @@ class EnEntityResource extends Resource
                             'status' => 'pending',
                         ]);
 
-                        AlignEntitySentences::dispatch($entityMatch->id);
+                        AlignEntitySentences::begin($entityMatch->id);
 
                         Notification::make()
                             ->title('Alignment started')

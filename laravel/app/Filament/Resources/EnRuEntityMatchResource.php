@@ -22,9 +22,9 @@ class EnRuEntityMatchResource extends Resource
 {
     protected static ?string $model = EnRuEntityMatch::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-link';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-link';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Entities';
+    protected static string|\UnitEnum|null $navigationGroup = 'Entities';
 
     protected static ?string $label = 'Sentence Alignment';
 
@@ -119,7 +119,6 @@ class EnRuEntityMatchResource extends Resource
                     ->badge()
                     ->color(fn (string $state) => match ($state) {
                         'pending' => 'gray',
-                        'verifying' => 'info',
                         'aligning' => 'warning',
                         'completed' => 'success',
                         'failed' => 'danger',
@@ -160,17 +159,7 @@ class EnRuEntityMatchResource extends Resource
                         return $description;
                     })
                     ->action(function (EnRuEntityMatch $record) {
-                        $record->meaningMatches()->delete();
-                        $record->update([
-                            'status' => 'pending',
-                            'linked_count' => 0,
-                            'dp_path' => null,
-                            'error_message' => null,
-                            'started_at' => null,
-                            'completed_at' => null,
-                        ]);
-
-                        AlignEntitySentences::dispatch($record->id);
+                        AlignEntitySentences::begin($record->id);
                     })
                     ->visible(fn (EnRuEntityMatch $record) => in_array($record->status, ['completed', 'failed'])),
                 Actions\DeleteAction::make(),

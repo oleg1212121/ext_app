@@ -5,7 +5,7 @@ description: Bilingual texts, their sentences, and the machine/human alignment b
 tags: [database, schema, alignment, entities]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/kimi-k3, at: 2026-07-28T15:00:00Z }
+generated: { by: agent/kimi-k3, at: 2026-08-10T20:15:00Z }
 sources:
   - id: migrations
     resource: laravel/database/migrations

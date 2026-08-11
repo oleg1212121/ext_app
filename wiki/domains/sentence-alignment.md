@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/opencode-go, at: 2026-08-09T18:45:00Z }
+generated: { by: agent/opencode-go, at: 2026-08-10T21:30:00Z }
 verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
@@ -53,20 +53,56 @@ sentence(s). The output powers the
    entity (`GenerateEntitySignature` job) via `/embed` (**BGE-M3, 1024-dim**).
    `verifyEntityPair()` rejects pairs whose cosine similarity < **0.70** before
    alignment is attempted.
-3. **Align** — `AlignEntitySentences` dispatches `AlignEntitySentenceChunk`
-   jobs (job timeout 600s). Each chunk POSTs its EN/RU sentence lists to
+3. **Align** — `AlignEntitySentences::begin($entityMatchId)` verifies the
+   pair, snapshots counts, resets the cursor
+   (`last_en_sentence_offset`/`last_ru_sentence_offset` on
+   `EnRuEntityMatch`), transitions `pending → aligning`, and dispatches the
+   first `AlignEntitySentences` job. Each `handle()` invocation reads the
+   cursor from the model, slices one chunk of EN and RU sentences
+   **sequentially** (RU offset = EN offset, no overlap), POSTs them to
    `/align` via `SentenceAlignmentService::alignChunkRemote()`
-   (`services.python.align_timeout`, default 600); python runs DP over window
-   groupings up to `max_window` (gain = score² when cosine ≥ **`ALIGN_DEFAULT_THRESHOLD`** (default 0.4, editable live in `docker-compose/python/env/.env`; MiniLM-L12 typically needs ~0.55), else −2.0
-   penalty; the DP force-covers every sentence — no in-window skips), and PHP
-   `adaptMatches()` writes the result to `EnRuMeaningMatch`,
-   `EnSentenceMeaningMatch` / `RuSentenceMeaningMatch`. The aligner uses a
-   separate smaller model (`ALIGN_MODEL_PATH`, default
-   `paraphrase-multilingual-MiniLM-L12-v2`, 384-dim) — see [Python microservice](#python-microservice)
-4. **Order** — sentences and matches carry sparse order values managed by
+   (`services.python.align_timeout`, default 600), and writes the result via
+   `storeAlignmentSegmentFromMatches()` (one `EnRuMeaningMatch` per DP step +
+   `EnSentenceMeaningMatch`/`RuSentenceMeaningMatch` junction rows). The job
+   commits only matches up to and including the **last confident anchor**
+   (score ≥ `ANCHOR_SCORE_THRESHOLD` = 0.40): the DP force-aligns every
+   sentence in the window, so the tail near the chunk seam can be garbage
+   (5:1 then 1:5 at the seam) — dropping it and advancing the cursor to the
+   anchor's `en_end`/`ru_end` (not the full chunk size) lets the next
+   invocation re-align that tail with the correct RU context now in-window
+   (a port of `BilingualAligner._trim_to_last_anchor`). With no anchor the
+   whole chunk is committed to guarantee forward progress; on the final
+   chunk (both windows reach their totals) everything is committed and the
+   match flips to `completed`. Because the strict 1:1 window gives the DP no
+   backward reach, the seam garbage re-appears at the *head* of the next
+   chunk (a 1:5 span that scores as an anchor and survives trim). So before
+   aligning, the job **rolls back** the last `ROLLBACK_MATCHES` (2) committed
+   meaning matches: their rows are deleted (junction rows cascade via FK),
+   the cursor rewinds to the first sentence those matches covered, the limits
+   grow by the rolled-back spans, and the DP re-aligns that region with fresh
+   forward context (see ADR 0004). Only matches with junction rows on both
+   sides are candidates; skip steps and human-edit rows
+   (`alignment_chunk = -1`) are never rolled back. A monotone-cursor safety
+   net force-advances EN past the stored offset if a rolled-back commit would
+   otherwise not move forward. `alignment_chunk` on meaning matches is a
+   monotonic per-run id (`MAX + 1`, never the human-edit `-1` sentinel), so
+   a re-run cannot wipe a previously committed chunk. If sentences remain
+   the job `self::dispatch()`es the next invocation, otherwise the entity
+   match flips to `completed`. Job timeout 600s, `tries=5` with backoff
+   `[30, 60, 120, 300]` to heal transient python failures; `failed()` is
+   terminal and leaves the cursor untouched so a future resume can continue.
+   The standalone `AlignEntitySentenceChunk` job and the `Bus::chain()` fan-out
+   were replaced by this single self-restarting job — see ADR 0003 / 0004.
+4. **Schedule** — `Schedule::command('alignments:resume')->everyFiveMinutes()
+   ->withoutOverlapping()` picks up to 10 `status='pending'` matches per tick
+   and runs them through `AlignEntitySentences::begin()`. Without-overlap
+   prevents concurrent ticks colliding with each other. Set
+   `DB_QUEUE_RETRY_AFTER=900` so the database queue does not re-lease a
+   long-running chunk to a second worker mid-flight.
+5. **Order** — sentences and matches carry sparse order values managed by
    `SparseOrderService`; `entity-orders:rebalance` runs **daily** (see
    `routes/console.php`).
-5. **Review** — humans fix machine output in the Filament
+6. **Review** — humans fix machine output in the Filament
    `EnRuEntityMatch` resource's custom `EditEntityAlignment` page (kept as-is),
    or in the new Inertia/React **Alignments editor**: `/alignments` (pair list)
    → `/alignments/{id}` (pair editor), linked from the NavBar. The editor is a
@@ -76,7 +112,7 @@ sentence(s). The output powers the
    unmatched pool) — with immediate persistence, sparse orders via
    `SparseOrderService`, and JSON payloads shaped by `AlignmentEditorApiPresenter`
    (`rows` + `unmatched` pagination, `last_page` included).
-6. **Sentence editing** — individual entity sentences can be created, edited,
+7. **Sentence editing** — individual entity sentences can be created, edited,
    deleted, and reordered from the *Sentences* tab on each `EnEntity` /
    `RuEntity` edit page. The relation manager uses `SparseOrderService` to keep
    insertions efficient; deleting a sentence cleans up any now-empty meaning

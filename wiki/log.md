@@ -1,5 +1,72 @@
 # Directory Update Log
 
+## 2026-08-10
+
+* **Fix: chunk-seam head garbage by commit-rollback of the last two
+  matches.** Trim-to-last-anchor (above) only drops the *tail* of the current
+  chunk; the strict 1:1 RU window gives the DP no backward reach, so the
+  garbage re-appears at the *head* of the next chunk (a 1:5 span that scores
+  as an anchor and survives trim). `AlignEntitySentences::handle()` now
+  rolls back the last `ROLLBACK_MATCHES` (2) committed meaning matches
+  before aligning: `rollbackPriorMatches()` deletes their rows (junction
+  rows cascade via FK), rewinds the cursor to the first sentence those
+  matches covered via `rollbackOffset()` (position in the `order, id`
+  sequence), and grows `en_limit`/`ru_limit` by the rolled-back spans so the
+  forward reach is unchanged — the DP re-aligns that region with fresh
+  forward context. Only matches with junction rows on **both** sides are
+  candidates (skip steps and human-edit `alignment_chunk = -1` rows are
+  never rolled back). A monotone-cursor safety net force-advances EN past
+  the pre-rollback stored offset if a rolled-back commit would otherwise
+  not move forward, so the job cannot pinwheel. Each match is rewritten at
+  most twice before stabilizing (bounded churn, no schema change). Updated
+  ADR 0004 and `domains/sentence-alignment.md` stage 3.
+* **Fix: chunk-seam garbage (5:1 / 1:5 mis-pairs) by trim-to-last-anchor.**
+  The reworked self-restarting job advanced its cursor by the full chunk
+  size and committed every DP match, but the DP force-aligns every sentence
+  in the window — so at each seam the EN tail got jammed onto the RU tail
+  of the current window (5:1) and the next window's head did the reverse
+  (1:5). `AlignEntitySentences::handle()` now commits only matches up to
+  and including the last match with `score >= ANCHOR_SCORE_THRESHOLD`
+  (0.40) and advances the cursor to that anchor's `en_end`/`ru_end`
+  instead of `offset + chunk_size`; the dropped tail is re-aligned with
+  fresh context by the next invocation (a port of
+  `BilingualAligner._trim_to_last_anchor`). No-anchor chunks commit
+  everything (forward-progress guarantee); the final chunk (both windows
+  reach their totals) commits everything and completes. Because the cursor
+  no longer advances by a fixed chunk size, `alignment_chunk` is now a
+  monotonic per-run id (`MAX + 1`, never the human-edit `-1` sentinel) via
+  `nextAlignmentChunk()` instead of `intdiv(enOffset, chunkSize)`, so the
+  per-chunk idempotent delete can never wipe a previous chunk.
+  `alignChunkRemote()` returns the raw python `matches` alongside the
+  adapted links/dpPath; `storeAlignmentSegmentFromMatches()` persists only
+  the committed prefix (skip-fill bounded by the last anchor, or by the
+  full window on the last chunk). `storeAlignmentSegment()` kept for the
+  legacy full-alignment path. Updated ADR 0004 (drift handled by trim, not
+  overlap) and `domains/sentence-alignment.md` stage 3.
+* **Rework: alignment pipeline is now a single self-restarting job driven
+  by a 5-minute command.** `AlignEntitySentences::handle()` reads its chunk
+  slice from a new per-match cursor (`last_en_sentence_offset` /
+  `last_ru_sentence_offset` on `en_ru_entity_matches`) and
+  `self::dispatch()`es the next invocation until the cursor reaches
+  `en_total_sentences`, then flips to `completed`. The standalone
+  `AlignEntitySentenceChunk` job and the `Bus::chain()` fan-out are deleted
+  (ADR 0003). Verify + cursor reset + transition run in a shared
+  `AlignEntitySentences::begin($id)` static called by all Filament dispatch
+  sites and a new `alignments:resume` console command (scheduled
+  `everyFiveMinutes()->withoutOverlapping()` in `routes/console.php`). On a
+  transient chunk failure `tries=5` with backoff heals in-process; on a hard
+  failure `failed()` is terminal and the cursor is **left untouched** so a
+  resume is possible. `db_path` column is dropped (it was dead — read by
+  nothing). `entity_similarity` is now set by `begin()` rather than the
+  chunk chain. `DB_QUEUE_RETRY_AFTER=900` shipped in `.env.example`.
+* **Rework: RU alignment window now tracks EN strictly (no overlap).**
+  `AlignEntitySentences::RU_WINDOW_OVERLAP = 25` and `ruWindowForEnRange()`
+  are deleted. The RU window uses the same offset and limit as the EN
+  window, assuming the importer pins EN/RU sentence orders 1:1 (ADR 0004).
+  Filament status badge colors and the Alignment view Blade template no
+  longer reference the `verifying` state; the status set is
+  `pending | aligning | completed | failed`.
+
 ## 2026-08-09
 
 * **Fix: alignments editor sentence keys are now language-scoped.**

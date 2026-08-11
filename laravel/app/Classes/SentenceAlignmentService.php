@@ -62,9 +62,11 @@ class SentenceAlignmentService
 
     /**
      * Align a chunk of sentences via the python service and adapt the result
-     * into links + dpPath steps for storeAlignmentSegment().
+     * into links + dpPath steps for storeAlignmentSegment(). The raw python
+     * matches are returned too so the caller can trim to the last confident
+     * anchor before persisting (see AlignEntitySentences).
      *
-     * @return array{links: array, dpPath: array}
+     * @return array{links: array, dpPath: array, matches: array}
      */
     public function alignChunkRemote(Collection $enSentences, Collection $ruSentences, int $maxN = 3): array
     {
@@ -75,6 +77,7 @@ class SentenceAlignmentService
             return [
                 'links' => [],
                 'dpPath' => $this->buildSkipOnlyPath('skip_ru', $ruIds),
+                'matches' => [],
             ];
         }
 
@@ -82,6 +85,7 @@ class SentenceAlignmentService
             return [
                 'links' => [],
                 'dpPath' => $this->buildSkipOnlyPath('skip_en', $enIds),
+                'matches' => [],
             ];
         }
 
@@ -104,9 +108,25 @@ class SentenceAlignmentService
             );
         }
 
-        $matches = $response->json('matches', []);
+        $matches = [];
 
-        return $this->adaptMatches($matches, $enSentences, $ruSentences);
+        foreach ($response->json('matches', []) as $raw) {
+            if (! is_array($raw)) {
+                continue;
+            }
+
+            $matches[] = [
+                'en_start' => (int) ($raw['en_start'] ?? 0),
+                'en_end' => (int) ($raw['en_end'] ?? 0),
+                'ru_start' => (int) ($raw['ru_start'] ?? 0),
+                'ru_end' => (int) ($raw['ru_end'] ?? 0),
+                'score' => (float) ($raw['score'] ?? 0.0),
+            ];
+        }
+
+        $adapted = $this->adaptMatches($matches, $enSentences, $ruSentences);
+
+        return [...$adapted, 'matches' => $matches];
     }
 
     /**
@@ -118,16 +138,45 @@ class SentenceAlignmentService
      */
     private function adaptMatches(array $matches, Collection $enSentences, Collection $ruSentences): array
     {
+        return $this->buildCommittedPath(
+            $matches,
+            $enSentences,
+            $ruSentences,
+            $enSentences->count(),
+            $ruSentences->count(),
+        );
+    }
+
+    /**
+     * Build links + dpPath for a committed prefix of python matches. Skip
+     * steps are only emitted up to the last committed match's end indices
+     * (or an explicit stop), so sentences after the commit boundary are left
+     * untouched — they are re-aligned with fresh context in the next chunk.
+     *
+     * @param  list<array{en_start: int, en_end: int, ru_start: int, ru_end: int, score: float}>  $committedMatches
+     * @return array{links: array, dpPath: array}
+     */
+    private function buildCommittedPath(
+        array $committedMatches,
+        Collection $enSentences,
+        Collection $ruSentences,
+        ?int $enStop = null,
+        ?int $ruStop = null,
+    ): array {
         $enIds = $enSentences->pluck('id')->values()->all();
         $ruIds = $ruSentences->pluck('id')->values()->all();
         $enOrders = $enSentences->pluck('order', 'id')->toArray();
         $ruOrders = $ruSentences->pluck('order', 'id')->toArray();
 
+        $lastCommitted = $committedMatches[array_key_last($committedMatches)] ?? null;
+        $enStop ??= (int) ($lastCommitted['en_end'] ?? 0);
+        $ruStop ??= (int) ($lastCommitted['ru_end'] ?? 0);
+
         $steps = [];
         $i = 0;
         $j = 0;
 
-        foreach ($matches as $match) {
+        foreach ($committedMatches as $match) {
             $enStart = (int) $match['en_start'];
             $enEnd = (int) $match['en_end'];
             $ruStart = (int) $match['ru_start'];
@@ -155,11 +204,11 @@ class SentenceAlignmentService
             $j = $ruEnd;
         }
 
-        while ($i < count($enIds)) {
+        while ($i < $enStop) {
             $steps[] = ['type' => 'skip_en', 'index' => $i];
             $i++;
         }
-        while ($j < count($ruIds)) {
+        while ($j < $ruStop) {
             $steps[] = ['type' => 'skip_ru', 'index' => $j];
             $j++;
         }
@@ -216,6 +265,43 @@ class SentenceAlignmentService
      * Store alignment meaning matches for a single chunk.
      */
     public function storeAlignmentSegment(
+        EnRuEntityMatch $entityMatch,
+        int $alignmentChunk,
+        array $links,
+        array $dpPathSegment,
+    ): void {
+        $this->persistSegment($entityMatch, $alignmentChunk, $links, $dpPathSegment);
+    }
+
+    /**
+     * Store the committed prefix of python matches for a single chunk. Only
+     * the passed matches are persisted; sentences after the last committed
+     * match (up to chunk end) are left untouched and re-fed on the next
+     * invocation. On the last chunk the full window is stored, including
+     * trailing skip markers.
+     *
+     * @param  list<array{en_start: int, en_end: int, ru_start: int, ru_end: int, score: float}>  $committedMatches
+     */
+    public function storeAlignmentSegmentFromMatches(
+        EnRuEntityMatch $entityMatch,
+        int $alignmentChunk,
+        array $committedMatches,
+        Collection $enSentences,
+        Collection $ruSentences,
+        bool $isLastChunk = false,
+    ): void {
+        if ($committedMatches === []) {
+            return;
+        }
+
+        $path = $isLastChunk
+            ? $this->buildCommittedPath($committedMatches, $enSentences, $ruSentences, $enSentences->count(), $ruSentences->count())
+            : $this->buildCommittedPath($committedMatches, $enSentences, $ruSentences);
+
+        $this->persistSegment($entityMatch, $alignmentChunk, $path['links'], $path['dpPath']);
+    }
+
+    private function persistSegment(
         EnRuEntityMatch $entityMatch,
         int $alignmentChunk,
         array $links,

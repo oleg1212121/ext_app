@@ -15,7 +15,6 @@
                 @php
                     $statusColor = match($run->status) {
                         'pending' => 'gray',
-                        'verifying' => 'info',
                         'aligning' => 'warning',
                         'completed' => 'success',
                         'failed' => 'danger',
@@ -56,7 +55,7 @@
     @if($display['total'] === 0)
         <div class="rounded-lg bg-white p-8 text-center shadow-sm dark:bg-gray-800">
             <p class="text-gray-500 dark:text-gray-400">
-                @if(in_array($run->status, ['pending', 'verifying', 'aligning']))
+                @if(in_array($run->status, ['pending', 'aligning']))
                     Alignment is in progress. Sentences will appear here as they are processed.
                 @elseif($run->status === 'failed')
                     Alignment failed. No results to display.
