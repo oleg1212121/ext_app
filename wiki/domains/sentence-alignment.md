@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/opencode-go, at: 2026-08-11T15:30:00Z }
+generated: { by: agent/opencode-go, at: 2026-08-11T18:45:00Z }
 verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
@@ -84,28 +84,52 @@ sentence(s). The output powers the
    anchor's `en_end`/`ru_end` (not the full chunk size) lets the next
    invocation re-align that tail with the correct RU context now in-window
    (a port of `BilingualAligner._trim_to_last_anchor`). With no anchor the
-   whole chunk is committed to guarantee forward progress; on the final
-   chunk (both windows reach their totals) everything is committed and the
-   match flips to `completed`. Because the strict 1:1 window gives the DP no
-   backward reach, the seam garbage re-appears at the *head* of the next
-   chunk (a 1:5 span that scores as an anchor and survives trim). So before
-   aligning, the job **rolls back** the last `ROLLBACK_MATCHES` (2) committed
-   meaning matches: their rows are deleted (junction rows cascade via FK),
-   the cursor rewinds to the first sentence those matches covered, the limits
-   grow by the rolled-back spans, and the DP re-aligns that region with fresh
-   forward context (see ADR 0004). Only matches with junction rows on both
-   sides are candidates; skip steps and human-edit rows
-   (`alignment_chunk = -1`) are never rolled back. A monotone-cursor safety
-   net force-advances EN past the stored offset if a rolled-back commit would
-   otherwise not move forward. `alignment_chunk` on meaning matches is a
-   monotonic per-run id (`MAX + 1`, never the human-edit `-1` sentinel), so
-   a re-run cannot wipe a previously committed chunk. If sentences remain
-   the job `self::dispatch()`es the next invocation, otherwise the entity
-   match flips to `completed`. Job timeout 600s, `tries=5` with backoff
-   `[30, 60, 120, 300]` to heal transient python failures; `failed()` is
-   terminal and leaves the cursor untouched so a future resume can continue.
-   The standalone `AlignEntitySentenceChunk` job and the `Bus::chain()` fan-out
-   were replaced by this single self-restarting job — see ADR 0003 / 0004.
+    whole chunk is committed to guarantee forward progress; on the final
+    chunk (both windows reach their totals) everything is committed and the
+    match flips to `completed`. Because the strict 1:1 window gives the DP no
+    backward reach, the seam garbage re-appears at the *head* of the next
+    chunk (a 1:5 span that scores as an anchor and survives trim). So before
+    aligning, the job **rolls back** the last `ROLLBACK_MATCHES` (2) committed
+    meaning matches: their rows are deleted (junction rows cascade via FK),
+    the cursor rewinds to the first sentence those matches covered, the limits
+    grow by the rolled-back spans, and the DP re-aligns that region with fresh
+    forward context (see ADR 0004). Only matches with junction rows on both
+    sides are candidates; skip steps and human-edit rows
+    (`alignment_chunk = -1`) are never rolled back. A monotone-cursor safety
+    net force-advances EN past the stored offset if a rolled-back commit would
+    otherwise not move forward. `alignment_chunk` on meaning matches is a
+    monotonic per-run id (`MAX + 1`, never the human-edit `-1` sentinel), so
+    a re-run cannot wipe a previously committed chunk. If sentences remain
+    the job `self::dispatch()`es the next invocation, otherwise the entity
+    match flips to `completed`. Job timeout 600s, `tries=5` with backoff
+    `[30, 60, 120, 300]` to heal transient python failures; `failed()` is
+    terminal and leaves the cursor untouched so a future resume can continue.
+    The standalone `AlignEntitySentenceChunk` job and the `Bus::chain()` fan-out
+    were replaced by this single self-restarting job — see ADR 0003 / 0004.
+    Small entities (`max(en_total, ru_total) ≤ 75`) are raised to a single
+    chunk in `begin()`, so the seam rollback/trim machinery is skipped for
+    them entirely.
+3. **Align (precision knobs, Aug 2026)** — the python DP no longer
+    force-aligns every sentence. Two live knobs
+    (`docker-compose/python/env/.env`, apply on the next request):
+    - **Skip branch** — `ALIGN_SKIP_PENALTY` (per-sentence cost of consuming
+      a sentence without emitting a match; default `-0.5`). Edges that consume
+      only EN or only RU sentences are now legal DP transitions, so a sentence
+      with no counterpart is **skipped** (reported in `unmatched_en` /
+      `unmatched_ru`) instead of being force-matched into a <0.6 garbage
+      meaning match. The php gap-filling in `SentenceAlignmentService`
+      converts those gaps to the existing `skip_en` / `skip_ru` steps, so no
+      new persistence path was needed.
+    - **Span cap** — `ALIGN_MAX_TOTAL_SPAN` (default `6`) rejects match edges
+      whose `en_step + ru_step` exceeds the cap, dropping 1:5 / 5:1 spans.
+    - `ALIGN_DEFAULT_THRESHOLD` raised `0.4 → 0.55` (MiniLM calibration; a
+      live histogram of `meaning_match.similarity` showed a long garbage tail
+      below ~0.55). Sub-threshold windows are now skipped rather than matched.
+    - **Embedding cache** — `_generate_window_embeddings` caches window
+      embeddings per process (`EmbeddingCache`, LRU 10k, keyed by model id +
+      joined window text), so chunk-seam re-alignment and entities that share
+      source text no longer re-encode the same windows. Regression tests:
+      `docker-compose/python/ai/alignment/test_aligner.py` (stub model).
 4. **Schedule** — `Schedule::command('alignments:resume')->everyFiveMinutes()
    ->withoutOverlapping()` picks up to 10 `status='pending'` matches per tick
    and runs them through `AlignEntitySentences::begin()`. Without-overlap
@@ -142,8 +166,8 @@ sentence(s). The output powers the
     cosine compare itself is pure numpy). Backs `TextSignatureService`.
   - **Aligner model** `ALIGN_MODEL_PATH` (default
     `paraphrase-multilingual-MiniLM-L12-v2`, 384-dim) — used by `/align`. ~2.5–3×
-    faster on CPU than BGE-M3; cosine scores run hotter (threshold likely needs
-    ~0.55 — recalibrate per pair).
+    faster on CPU than BGE-M3; cosine scores run hotter (threshold set to
+    `ALIGN_DEFAULT_THRESHOLD = 0.55`, see the calibrations above).
 * **Model weights** live in a named Docker volume `ai_models` mounted at
   `/app/models/<subdir>` (BGE-M3 at `/app/models/bge_m3`, MiniLM at
   `/app/models/minilm`). The image carries no models; the source tree carries
@@ -158,9 +182,9 @@ sentence(s). The output powers the
   swaps survive). `docker-compose.yml` also sets `env_file:` so import-time
   constants (validation limits) see env at container start. The live per-request
   accessors in `ai/config.py` (`align_default_threshold()`,
-  `align_default_window()`, `model_path()`, `align_model_path()`) re-read
-  `/app/env/.env` on every call — edits apply on the next request with **no
-  recreate or restart**.
+  `align_default_window()`, `align_max_total_span()`, `align_skip_penalty()`,
+  `model_path()`, `align_model_path()`) re-read `/app/env/.env` on every call —
+  edits apply on the next request with **no recreate or restart**.
 * **Code iteration** (`docker-compose.yml` dev `command:` = `uvicorn --reload
   --reload-dir /app/ai`): save a `.py` under `docker-compose/python/ai/` →
   uvicorn reloads in ~1–2s (models stay cached across reloads via the empty

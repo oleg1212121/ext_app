@@ -155,6 +155,73 @@ it('completes a begin run early when one side has no sentences', function () {
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
 
+it('runs a small entity as a single chunk regardless of the configured chunk size', function () {
+    $calls = [];
+    Http::fake(function (Request $request) use (&$calls) {
+        $calls[] = count($request->data()['en_sentences'] ?? []);
+
+        return Http::response([
+            'matches' => [
+                ['en_start' => 0, 'en_end' => 1, 'ru_start' => 0, 'ru_end' => 1, 'score' => 0.9],
+                ['en_start' => 1, 'en_end' => 2, 'ru_start' => 1, 'ru_end' => 2, 'score' => 0.9],
+                ['en_start' => 2, 'en_end' => 3, 'ru_start' => 2, 'ru_end' => 3, 'score' => 0.9],
+            ],
+            'unmatched_en' => [],
+            'unmatched_ru' => [],
+        ]);
+    });
+
+    Bus::fake();
+
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $enEntity = EnEntity::create([
+        'name' => 'English',
+        'signature' => json_encode([1.0, 0.0]),
+    ]);
+    $ruEntity = RuEntity::create([
+        'name' => 'Russian',
+        'signature' => json_encode([1.0, 0.0]),
+    ]);
+
+    foreach (range(1, 3) as $order) {
+        EnEntitySentence::create([
+            'en_entity_id' => $enEntity->id,
+            'sentence_type_id' => $sentenceType->id,
+            'content' => "English {$order}.",
+            'order' => $order,
+        ]);
+        RuEntitySentence::create([
+            'ru_entity_id' => $ruEntity->id,
+            'sentence_type_id' => $sentenceType->id,
+            'content' => "Russian {$order}.",
+            'order' => $order,
+        ]);
+    }
+
+    $entityMatch = EnRuEntityMatch::create([
+        'en_entity_id' => $enEntity->id,
+        'ru_entity_id' => $ruEntity->id,
+        'status' => 'pending',
+        'chunk_size' => 1,
+    ]);
+
+    AlignEntitySentences::begin($entityMatch->id);
+
+    $entityMatch->refresh();
+    (new AlignEntitySentences($entityMatch->id))->handle();
+
+    $entityMatch->refresh();
+
+    expect($entityMatch->chunk_size)->toBe(3)
+        ->and($calls)->toBe([3])
+        ->and($entityMatch->status)->toBe('completed')
+        ->and($entityMatch->last_en_sentence_offset)->toBe(3)
+        ->and($entityMatch->last_ru_sentence_offset)->toBe(3)
+        ->and(EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->count())->toBe(3);
+
+    Bus::assertDispatched(AlignEntitySentences::class, 1);
+});
+
 it('persists one alignment chunk as meaning matches and junction rows', function () {
     Http::fake(function (Request $request) {
         return Http::response([

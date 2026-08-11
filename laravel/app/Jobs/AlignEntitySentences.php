@@ -96,6 +96,13 @@ class AlignEntitySentences implements ShouldQueue
         $chunkSize = min(max((int) $entityMatch->chunk_size, 1), self::MAX_EFFECTIVE_CHUNK_SIZE);
         $maxN = min(max((int) $entityMatch->max_n, 1), self::MAX_EFFECTIVE_SPAN);
 
+        // Small entities fit a single /align call: raise the effective chunk
+        // size to cover the whole text so one invocation is the last chunk,
+        // skipping the seam rollback/trim machinery entirely.
+        if (max($enSentenceCount, $ruSentenceCount) <= self::MAX_EFFECTIVE_CHUNK_SIZE) {
+            $chunkSize = max($enSentenceCount, $ruSentenceCount, 1);
+        }
+
         $entityMatch->meaningMatches()->delete();
 
         $entityMatch->update([

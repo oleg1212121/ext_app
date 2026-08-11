@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 
+from ai import config
 from ai.alignment.bilingual_aligner import BilingualAligner
 from ai.api.schemas import AlignRequest, AlignResponse
 from ai.models_cache import ModelCache
@@ -18,6 +19,8 @@ def align(req: AlignRequest, request: Request):
         model=align_model,
         max_window=req.max_window,
         similarity_threshold=req.similarity_threshold,
+        max_total_span=config.align_max_total_span(),
+        skip_penalty=config.align_skip_penalty(),
     )
 
     return AlignResponse(**aligner.align_lists(req.en_sentences, req.ru_sentences))

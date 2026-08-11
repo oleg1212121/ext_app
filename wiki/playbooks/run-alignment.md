@@ -4,7 +4,7 @@ title: Running an Alignment
 description: End-to-end workflow for aligning an EN/RU text pair into sentence meaning matches.
 tags: [alignment, embeddings, jobs, howto]
 status: stable
-generated: { by: agent/opencode-go, at: 2026-08-10T21:30:00Z }
+generated: { by: agent/opencode-go, at: 2026-08-11T18:45:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -84,10 +84,16 @@ sources:
    and re-aligns that region with fresh forward context. Skip steps and
    human-edit rows (`alignment_chunk = -1`) are never rolled back, and a
    monotone-cursor safety net force-advances EN if a rolled-back commit
-   would otherwise stall. The job
-   `self::dispatch()`es the next invocation until the cursor reaches
-   `en_total_sentences`, at which point the entity match flips to
-   `completed`. Meaning matches carry a monotonic `alignment_chunk` per run.
+    would otherwise stall. The job
+    `self::dispatch()`es the next invocation until the cursor reaches
+    `en_total_sentences`, at which point the entity match flips to
+    `completed`. Meaning matches carry a monotonic `alignment_chunk` per run.
+    Small entities (`max(en_total, ru_total) ≤ 75`) are raised to a single
+    chunk in `begin()`, skipping the seam rollback/trim machinery entirely.
+    The python DP also has a skip branch (sentences with no counterpart land
+    in `unmatched_en`/`unmatched_ru` instead of a <0.6 garbage match) and a
+    span cap (`ALIGN_MAX_TOTAL_SPAN`) — see
+    [Sentence Alignment](/domains/sentence-alignment.md).
 4. **Let the scheduler pick up pending pairs automatically** —
    `Schedule::command('alignments:resume')->everyFiveMinutes()
    ->withoutOverlapping()` picks up to **10** `status='pending'` entity

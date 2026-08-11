@@ -13,7 +13,7 @@ use Throwable;
 
 class TextSignatureService
 {
-    private const SIMILARITY_THRESHOLD = 0.80;
+    private const SIMILARITY_THRESHOLD = 0.95;
 
     private const RETRY_DELAYS_MS = [500, 1_500, 3_000];
 

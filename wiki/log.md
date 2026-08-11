@@ -2,6 +2,25 @@
 
 ## 2026-08-11
 
+* **Improve: aligner precision & speed — skip branch, span cap, embedding
+  cache.** The python DP force-aligned every sentence, so a sentence with no
+  counterpart was matched to an unrelated window (a <0.6 garbage meaning
+  match). `BilingualAligner` now supports skip edges (consume EN-only or
+  RU-only sentences, reported via `unmatched_en`/`unmatched_ru`, default
+  `ALIGN_SKIP_PENALTY=-0.5`/sentence), a span cap (default
+  `ALIGN_MAX_TOTAL_SPAN=6` rejects 1:5/5:1 edges), and a process-level
+  embedding cache (`EmbeddingCache`, LRU 10k) so chunk-seam and shared-entity
+  windows are not re-encoded. `ALIGN_DEFAULT_THRESHOLD` raised 0.4 → 0.55
+  (MiniLM calibration against a live `meaning_match.similarity` histogram:
+  garbage tail below ~0.55). `AlignEntitySentences::begin()` raises small
+  entities to a single chunk. The php gap-filling already converts skipped
+  spans to `skip_en`/`skip_ru` steps, so no persistence change was needed.
+  Regression tests: `docker-compose/python/ai/alignment/test_aligner.py`
+  (stub model, no weights). Updated `domains/sentence-alignment.md` stages 3
+  + python microservice.
+
+## 2026-08-11
+
 * **Fix: pysbd quote-region swallowing dialogue during split.**
   The python splitter flattened line breaks to spaces before segmentation
   (`SentenceSplitter::split_text` normalized input; `TypedSentenceSplitter`

@@ -1,32 +1,93 @@
 import logging
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
+import torch
 from sentence_transformers import SentenceTransformer, util
+
+from ai import config
 
 logger = logging.getLogger(__name__)
 
 
+class EmbeddingCache:
+    """Process-level LRU cache of window embeddings.
+
+    The dominant per-chunk cost is embedding encode, and the same window texts
+    recur heavily: across chunk seams (~2 sentences re-aligned per boundary)
+    and across entities that share source material. Caching by
+    (model id, joined window text) means each unique window is embedded once
+    per process lifetime instead of once per chunk.
+    """
+
+    def __init__(self, max_entries: int = 10_000):
+        self._entries: "OrderedDict[tuple[int, str], torch.Tensor]" = OrderedDict()
+        self._max_entries = max_entries
+
+    def get(self, key: tuple[int, str]) -> torch.Tensor | None:
+        if key in self._entries:
+            self._entries.move_to_end(key)
+            return self._entries[key]
+        return None
+
+    def put(self, key: tuple[int, str], value: torch.Tensor) -> None:
+        self._entries[key] = value
+        self._entries.move_to_end(key)
+        if len(self._entries) > self._max_entries:
+            self._entries.popitem(last=False)
+
+
+_EMBEDDING_CACHE = EmbeddingCache()
+
+
 class BilingualAligner:
-    def __init__(self, model=None, chunk_size=100, max_window=3, similarity_threshold=0.4):
+    def __init__(
+        self,
+        model=None,
+        chunk_size=100,
+        max_window=3,
+        similarity_threshold=0.4,
+        max_total_span=None,
+        skip_penalty=None,
+    ):
         # model accepts a ready SentenceTransformer (to share one loaded model
         # between classes), a model path, or None to load the default local model.
         if model is None:
             model = Path(__file__).parent.parent / "bge_m3_local"
-        if isinstance(model, SentenceTransformer):
-            self.model = model
-        else:
+        if isinstance(model, (str, Path)):
             self.model = SentenceTransformer(str(model))
+        else:
+            # Ready model object (real SentenceTransformer or a duck-typed stand-in).
+            self.model = model
         self.chunk_size = chunk_size
         self.max_window = max_window
         self.similarity_threshold = similarity_threshold
+        # Match edges consuming en_step + ru_step sentences above this cap are
+        # rejected: 1:5 / 5:1 spans are almost never genuine translations, and
+        # capping the total span also shrinks the DP's edge set.
+        self.max_total_span = max(
+            max_total_span if max_total_span is not None else config.align_max_total_span(),
+            2,
+        )
+        # Per-sentence cost of consuming a sentence without a match. The DP
+        # prefers this over a below-threshold force-match (penalty -2.0) so
+        # sentences with no counterpart land in the unmatched pool instead of
+        # producing the <0.6 meaning-match garbage.
+        self.skip_penalty = min(
+            skip_penalty if skip_penalty is not None else config.align_skip_penalty(),
+            0.0,
+        )
 
     def align_lists(self, en_sentences: list[str], ru_sentences: list[str]) -> dict:
         """Align two in-memory sentence lists and return structured matches.
 
         Returns matches as index spans into the submitted lists plus the
-        indices not covered by any match (only possible when one side is
-        empty, since the DP forces full coverage of both lists).
+        indices not covered by any match. Indices not covered are exactly the
+        sentences the DP chose to skip (no counterpart on the other side) —
+        with the skip branch the DP no longer force-aligns every sentence, so
+        a sentence with no genuine translation lands here instead of in a
+        low-similarity meaning match.
         """
         matches = self._align_chunk(en_sentences, ru_sentences)
 
@@ -151,11 +212,32 @@ class BilingualAligner:
                 if start + step <= len(sentences):
                     window_texts.append(" ".join(sentences[start : start + step]))
                     window_keys.append((start, step))
-        embs = self.model.encode(
-            window_texts, batch_size=64, show_progress_bar=False, convert_to_tensor=True
-        )
+
+        model_id = id(self.model)
+        embs = [None] * len(window_texts)
+        missing = []
+
+        for pos, text in enumerate(window_texts):
+            cached = _EMBEDDING_CACHE.get((model_id, text))
+            if cached is not None:
+                embs[pos] = cached
+            else:
+                missing.append(pos)
+
+        if missing:
+            batch = self.model.encode(
+                [window_texts[pos] for pos in missing],
+                batch_size=64,
+                show_progress_bar=False,
+                convert_to_tensor=True,
+            )
+            for k, pos in enumerate(missing):
+                vector = batch[k]
+                _EMBEDDING_CACHE.put((model_id, window_texts[pos]), vector)
+                embs[pos] = vector
+
         index = {key: pos for pos, key in enumerate(window_keys)}
-        return index, embs
+        return index, torch.stack(embs)
 
     def _align_chunk(self, en_sentences, ru_sentences):
         n = len(en_sentences)
@@ -179,8 +261,32 @@ class BilingualAligner:
                 if dp[i][j] == -float("inf"):
                     continue
 
+                # Skip edges: consume sentences on one side without emitting a
+                # meaning match. Preferred over force-matching a sub-threshold
+                # window, so sentences whose true counterpart is absent land in
+                # the unmatched pool instead of a garbage <0.6 match.
+                for en_step in range(1, self.max_window + 1):
+                    next_i = i + en_step
+                    if next_i <= n:
+                        gain = self.skip_penalty * en_step
+                        if dp[i][j] + gain > dp[next_i][j]:
+                            dp[next_i][j] = dp[i][j] + gain
+                            parent[next_i][j] = (i, j, en_step, 0)
+
+                for ru_step in range(1, self.max_window + 1):
+                    next_j = j + ru_step
+                    if next_j <= m:
+                        gain = self.skip_penalty * ru_step
+                        if dp[i][j] + gain > dp[i][next_j]:
+                            dp[i][next_j] = dp[i][j] + gain
+                            parent[i][next_j] = (i, j, 0, ru_step)
+
+                # Match edges (both sides consumed), capped by total span.
                 for en_step in range(1, self.max_window + 1):
                     for ru_step in range(1, self.max_window + 1):
+                        if en_step + ru_step > self.max_total_span:
+                            continue
+
                         next_i, next_j = i + en_step, j + ru_step
 
                         if next_i <= n and next_j <= m:
@@ -201,25 +307,38 @@ class BilingualAligner:
         if dp[n][m] == -float("inf"):
             curr_j = int(np.argmax(dp[n]))
 
-        while curr_i > 0 and curr_j > 0:
+        while curr_i > 0 or curr_j > 0:
             if parent[curr_i][curr_j] is None:
-                prev_i, prev_j, en_step, ru_step = curr_i - 1, curr_j - 1, 1, 1
+                if curr_i <= 0:
+                    prev_i, prev_j, en_step, ru_step = curr_i, curr_j - 1, 0, 1
+                elif curr_j <= 0:
+                    prev_i, prev_j, en_step, ru_step = curr_i - 1, curr_j, 1, 0
+                else:
+                    prev_i, prev_j, en_step, ru_step = curr_i - 1, curr_j - 1, 1, 1
             else:
                 prev_i, prev_j, en_step, ru_step = parent[curr_i][curr_j]
 
-            alignment.append(
-                {
-                    "en_start": prev_i,
-                    "en_end": curr_i,
-                    "ru_start": prev_j,
-                    "ru_end": curr_j,
-                    "en_text": " ".join(en_sentences[prev_i:curr_i]),
-                    "ru_text": " ".join(ru_sentences[prev_j:curr_j]),
-                    "score": float(sim[en_index[(prev_i, en_step)], ru_index[(prev_j, ru_step)]]),
-                    "en_step": en_step,
-                    "ru_step": ru_step,
-                }
-            )
+            if en_step == 0:
+                # skip_ru: consume ru_step RU sentences without a match
+                pass
+            elif ru_step == 0:
+                # skip_en: consume en_step EN sentences without a match
+                pass
+            else:
+                alignment.append(
+                    {
+                        "en_start": prev_i,
+                        "en_end": curr_i,
+                        "ru_start": prev_j,
+                        "ru_end": curr_j,
+                        "en_text": " ".join(en_sentences[prev_i:curr_i]),
+                        "ru_text": " ".join(ru_sentences[prev_j:curr_j]),
+                        "score": float(sim[en_index[(prev_i, en_step)], ru_index[(prev_j, ru_step)]]),
+                        "en_step": en_step,
+                        "ru_step": ru_step,
+                    }
+                )
+
             curr_i, curr_j = prev_i, prev_j
 
         alignment.reverse()

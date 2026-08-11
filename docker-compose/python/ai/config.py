@@ -83,6 +83,14 @@ def align_default_threshold() -> float:
     return _live_float("ALIGN_DEFAULT_THRESHOLD", 0.4)
 
 
+def align_max_total_span() -> int:
+    return _live_int("ALIGN_MAX_TOTAL_SPAN", 6)
+
+
+def align_skip_penalty() -> float:
+    return _live_float("ALIGN_SKIP_PENALTY", -0.5)
+
+
 def model_path() -> str:
     return _live_env("MODEL_PATH", str(BASE_DIR.parent / "models" / "bge_m3"))
 
