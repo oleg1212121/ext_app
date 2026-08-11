@@ -98,6 +98,44 @@ it('keeps a sentence crossing chunk boundaries intact', function () {
         ->and($stats['max_buffer_bytes'])->toBeGreaterThan(10);
 });
 
+it('keeps a multi-byte utf-8 character crossing chunk boundaries intact', function () {
+    config(['services.python.sentence_split_chunk_bytes' => 5]);
+
+    Http::fake(function (Request $request) {
+        $text = (string) ($request->data()['text'] ?? '');
+        expect(mb_check_encoding($text, 'UTF-8'))->toBeTrue();
+
+        $finalize = (bool) ($request->data()['finalize'] ?? false);
+        $parts = trim($text) === ''
+            ? []
+            : (preg_split('/(?<=[.!?])\s+/', trim($text), -1, PREG_SPLIT_NO_EMPTY) ?: []);
+        $sentences = array_map(
+            fn (string $part): array => ['content' => $part, 'type' => 'sentence'],
+            $parts,
+        );
+        $remainder = '';
+        if (! $finalize && $sentences !== []) {
+            $last = array_pop($sentences)['content'];
+            $pos = strrpos($text, $last);
+            $remainder = $pos === false ? $last : substr($text, $pos);
+        }
+
+        return Http::response(['sentences' => $sentences, 'remainder' => $remainder]);
+    });
+
+    $text = 'АБВ. ГДЕ.';
+    $filePath = 'entities/'.uniqid('utf8_', true).'.txt';
+    Storage::disk('local')->put($filePath, $text);
+
+    $entity = EnEntity::query()->create(['name' => 'Utf8', 'file_path' => $filePath]);
+
+    $stats = (new SentenceSplitter)->process($entity->id, $filePath, 'en');
+
+    expect($entity->sentences()->orderBy('order')->pluck('content')->all())
+        ->toEqual(['АБВ.', 'ГДЕ.'])
+        ->and($stats['sentences'])->toBe(2);
+});
+
 it('requests finalization only for the trailing remainder', function () {
     config(['services.python.sentence_split_chunk_bytes' => 10]);
 

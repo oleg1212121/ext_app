@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/opencode-go, at: 2026-08-10T21:30:00Z }
+generated: { by: agent/opencode-go, at: 2026-08-11T11:00:00Z }
 verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
@@ -45,7 +45,9 @@ sentence(s). The output powers the
 1. **Split** — `SentenceSplitter` streams entity files in
    ~`services.python.sentence_split_chunk_bytes` chunks to the python `/split`
    endpoint (UTF-8-safe cut + raw-remainder stitching, so chunk seams are
-   seamless) and writes `EnEntitySentence` / `RuEntitySentence` rows
+   seamless: incomplete trailing UTF-8 bytes are held back
+   (`carryIncompleteTrailingBytes`) and re-prefixed to the next chunk) and
+   writes `EnEntitySentence` / `RuEntitySentence` rows
    (`SplitEntityFileSentences` job; `ProcessEntityFile` orchestrates file
    ingestion). Splitting itself (pysbd + title heuristics ported from the old
    PHP splitter) lives in python `ai/splitting/`.

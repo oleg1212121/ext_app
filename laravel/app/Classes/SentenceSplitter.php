@@ -129,9 +129,9 @@ class SentenceSplitter
                 // fread may cut a multi-byte UTF-8 character at the chunk edge;
                 // hold the incomplete trailing bytes for the next iteration.
                 $chunk = $rawCarry.$chunk;
-                $cut = mb_strcut($chunk, 0, strlen($chunk), 'UTF-8');
-                $rawCarry = substr($chunk, strlen($cut));
-                $chunk = $cut;
+                $carry = $this->carryIncompleteTrailingBytes($chunk);
+                $chunk = substr($chunk, 0, strlen($chunk) - strlen($carry));
+                $rawCarry = $carry;
 
                 $buffer = $remainder.$chunk;
                 $stats['max_buffer_bytes'] = max($stats['max_buffer_bytes'], strlen($buffer));
@@ -173,6 +173,36 @@ class SentenceSplitter
         }
 
         return $stats;
+    }
+
+    /**
+     * Returns the incomplete trailing UTF-8 sequence of $chunk (at most 3 bytes)
+     * so it can be carried over to the next chunk. mb_strcut() keeps a partial
+     * trailing character, so it cannot be used to trim chunk edges.
+     */
+    private function carryIncompleteTrailingBytes(string $chunk): string
+    {
+        $length = strlen($chunk);
+
+        for ($i = $length - 1; $i >= max(0, $length - 4); $i--) {
+            $byte = ord($chunk[$i]);
+
+            if ($byte < 0x80) {
+                break;
+            }
+
+            if ($byte >= 0xC0) {
+                $expected = $byte >= 0xF0 ? 3 : ($byte >= 0xE0 ? 2 : 1);
+
+                if ($length - ($i + 1) < $expected) {
+                    return substr($chunk, $i);
+                }
+
+                break;
+            }
+        }
+
+        return '';
     }
 
     /**

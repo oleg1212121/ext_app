@@ -1,5 +1,19 @@
 # Directory Update Log
 
+## 2026-08-11
+
+* **Fix: split jobs dying on malformed UTF-8 at chunk seams.**
+  `SplitEntityFileSentences` failed for RU entities with Guzzle's
+  `json_encode error: Malformed UTF-8 characters` when an `fread` chunk ended
+  mid-multibyte-character. The old guard relied on `mb_strcut($chunk, 0,
+  strlen($chunk), 'UTF-8')`, which does **not** strip an incomplete trailing
+  sequence (it returns the chunk unchanged), so `$rawCarry` was always empty
+  and the partial leading byte flowed into the JSON POST body.
+  `SentenceSplitter::insertSentencesFromFile()` now trims incomplete trailing
+  UTF-8 bytes with `carryIncompleteTrailingBytes()` (a backward scan of the
+  last ≤4 bytes) and re-prefixes them to the next chunk. Regression test
+  added with Cyrillic text whose character lands exactly on a chunk seam.
+
 ## 2026-08-10
 
 * **Fix: chunk-seam head garbage by commit-rollback of the last two
