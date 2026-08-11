@@ -2,8 +2,9 @@
 
 Combines pysbd sentence boundaries with the title/quote typing heuristics
 ported from the old PHP splitter. Title detection is line-based (a short
-stand-alone line), so paragraph structure is preserved during
-normalization instead of flattening all whitespace.
+stand-alone line). Buffered prose is handed to pysbd with its line breaks
+intact: flattening them to spaces first lets pysbd's quote-region heuristic
+merge long dialogue spans into a single "sentence".
 """
 
 import re
@@ -44,7 +45,9 @@ class TypedSentenceSplitter:
             def flush_buffer() -> None:
                 if not buffer_lines:
                     return
-                pending = " ".join(buffer_lines).strip()
+                # Join with newlines (not spaces) so pysbd still sees the line
+                # structure when it segments the buffered prose.
+                pending = "\n".join(buffer_lines).strip()
                 buffer_lines.clear()
                 if not pending:
                     return

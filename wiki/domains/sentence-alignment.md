@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/opencode-go, at: 2026-08-11T11:00:00Z }
+generated: { by: agent/opencode-go, at: 2026-08-11T15:30:00Z }
 verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
@@ -50,7 +50,18 @@ sentence(s). The output powers the
    writes `EnEntitySentence` / `RuEntitySentence` rows
    (`SplitEntityFileSentences` job; `ProcessEntityFile` orchestrates file
    ingestion). Splitting itself (pysbd + title heuristics ported from the old
-   PHP splitter) lives in python `ai/splitting/`.
+   PHP splitter) lives in python `ai/splitting/`. The python splitter must
+   **keep line breaks intact while segmenting**: `SentenceSplitter::split_text`
+   hands pysbd the buffered prose without collapsing newlines, and
+   `TypedSentenceSplitter::flush_buffer` joins buffered lines with `\n`, not
+   spaces. Flattening the text to one line first lets pysbd's quote-region
+   heuristic merge long dialogue spans into a single "sentence" (a lone `"`
+   left over at a line end swallows everything up to the next closing quote —
+   the Book Thief entity split into 547 sentences incl. a 1761-char monster;
+   with the fix it splits into 1036 clean sentences). Regression test:
+   `docker-compose/python/ai/splitting/test_splitter.py` (runs the splitter
+   over the exact production entity fixture; fails under the flattening
+   behavior).
 2. **Sign** — `TextSignatureService` builds an embedding-based signature per
    entity (`GenerateEntitySignature` job) via `/embed` (**BGE-M3, 1024-dim**).
    `verifyEntityPair()` rejects pairs whose cosine similarity < **0.70** before

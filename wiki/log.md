@@ -2,6 +2,20 @@
 
 ## 2026-08-11
 
+* **Fix: pysbd quote-region swallowing dialogue during split.**
+  The python splitter flattened line breaks to spaces before segmentation
+  (`SentenceSplitter::split_text` normalized input; `TypedSentenceSplitter`
+  joined buffered lines with `" "`), which let pysbd's quote heuristic merge
+  long dialogue spans: a line ending in a stray `"` opened a quote region that
+  swallowed everything up to the next closing quote. The Book Thief entity
+  (en) split into 547 sentences including one 1761-char monster (15 sentences
+  > 500 chars). Now `split_text` segments with line breaks intact and
+  `flush_buffer` joins lines with `\n`; the entity re-split into 1036 clean
+  sentences (max 222). Added regression test
+  `docker-compose/python/ai/splitting/test_splitter.py` running the splitter
+  over the exact production entity fixture (fails under the old behavior,
+  passes now). Updated `domains/sentence-alignment.md` stage 1.
+
 * **Fix: split jobs dying on malformed UTF-8 at chunk seams.**
   `SplitEntityFileSentences` failed for RU entities with Guzzle's
   `json_encode error: Malformed UTF-8 characters` when an `fread` chunk ended
