@@ -124,7 +124,7 @@ export default function SentenceItem({item, lang, editing, draft, busy, onStartE
 
             {!editing && (
                 <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                    <button type="button" onClick={onStartEdit} aria-label="Edit sentence" title="Edit" className={iconBtn}>
+                    <button type="button" onClick={() => onStartEdit(item.key, lang)} aria-label="Edit sentence" title="Edit" className={iconBtn}>
                         <EditIcon/>
                     </button>
                     {showUnlink && (

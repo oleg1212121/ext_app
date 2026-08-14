@@ -29,10 +29,13 @@ class SentenceSplitter:
         return re.sub(r"\s+", " ", text).strip()
 
     def split_text(self, text: str) -> list[str]:
-        # Keep line breaks intact while segmenting: pysbd treats newlines as
-        # strong boundary signals. Flattening them to spaces first lets pysbd's
-        # quote-region heuristic merge long dialogue spans (a lone `"` left over
-        # at a line end can swallow every sentence up to the next closing quote).
+        # By the time prose reaches pysbd it has been selectively flattened
+        # (see TypedSentenceSplitter.selective_flatten), so the only remaining
+        # newlines follow sentence-ending punctuation. Keeping those intact
+        # still matters: flattening everything to spaces lets pysbd's
+        # quote-region heuristic merge long dialogue spans (a lone `"` left
+        # over at a line end can swallow every sentence up to the next closing
+        # quote).
         sentences: list[str] = []
         for raw in self.segmenter.segment(text):
             sentence = self.normalize_whitespace(raw)

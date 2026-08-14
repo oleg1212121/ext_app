@@ -103,7 +103,7 @@ function SentenceColumn({lang, containerKey, keys, lookup, adding, draft, busy, 
     );
 }
 
-export default function PairRow({row, enKeys, ruKeys, lookup, editing, adding, draft, busy, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete}) {
+export default function PairRow({row, enKeys, ruKeys, lookup, editing, adding, draft, busy, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete, onApprove}) {
     return (
         <section className="border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] last:border-b-0">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)] px-3 py-1.5">
@@ -119,10 +119,13 @@ export default function PairRow({row, enKeys, ruKeys, lookup, editing, adding, d
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                    <button type="button" onClick={onCreateBelow} disabled={busy} className={railBtn}>
+                    <button type="button" onClick={() => onApprove(row)} disabled={busy} title="Approve" aria-label="Approve pair" className={railBtn}>
+                        Approve
+                    </button>
+                    <button type="button" onClick={() => onCreateBelow(row)} disabled={busy} className={railBtn}>
                         Create below
                     </button>
-                    <button type="button" onClick={onDelete} disabled={busy} aria-label="Delete pair" title="Delete pair — sentences move to unmatched" className={`${railBtn} hover:border-[var(--wbench-danger)] hover:text-[var(--wbench-danger)] dark:hover:border-[var(--wbench-danger-night)] dark:hover:text-[var(--wbench-danger-night)]`}>
+                    <button type="button" onClick={() => onDelete(row)} disabled={busy} aria-label="Delete pair" title="Delete pair — sentences move to unmatched" className={`${railBtn} hover:border-[var(--wbench-danger)] hover:text-[var(--wbench-danger)] dark:hover:border-[var(--wbench-danger-night)] dark:hover:text-[var(--wbench-danger-night)]`}>
                         Delete
                     </button>
                 </div>

@@ -2,9 +2,12 @@
 
 Combines pysbd sentence boundaries with the title/quote typing heuristics
 ported from the old PHP splitter. Title detection is line-based (a short
-stand-alone line). Buffered prose is handed to pysbd with its line breaks
-intact: flattening them to spaces first lets pysbd's quote-region heuristic
-merge long dialogue spans into a single "sentence".
+stand-alone line). Buffered prose is handed to pysbd with newlines
+selectively flattened: only newlines that follow sentence-ending
+punctuation survive, so pysbd's quote-region heuristic cannot merge long
+dialogue spans into a single "sentence" while mid-sentence hard wraps are
+still collapsed (pysbd otherwise treats every newline as a boundary and
+splits wrapped prose into fragments).
 """
 
 import re
@@ -29,6 +32,42 @@ class TypedSentenceSplitter:
             text = text.replace("\n\n\n", "\n\n")
         return text.strip()
 
+    @staticmethod
+    def selective_flatten(text: str) -> str:
+        """Keep a newline only when it follows sentence-ending punctuation.
+
+        pysbd treats a bare newline as a sentence boundary even when the line
+        ends mid-sentence (hard-wrapped prose), producing fragments like
+        "Когда Лизель оглядывалась … оказывались" / "едва ли не самыми яркими
+        воспоминаниями." as two "sentences". Collapsing those newlines to
+        spaces lets pysbd segment on punctuation alone (respecting Mr./Ms.
+        abbreviations), while newlines after `. ! ? … » " ' ) ” ’` still mark
+        real paragraph breaks and keep pysbd's quote-region heuristic from
+        merging long dialogue spans. The curly closers `”` (U+201D) and `’`
+        (U+2019) matter: dialogue lines closed with curly quotes (the Book
+        Thief uses `“...”`) must keep their line break, otherwise pysbd masks
+        the punctuation inside the quote span and merges the whole dialogue
+        block into one "sentence".
+        """
+        out: list[str] = []
+
+        for char in text:
+            if char != "\n":
+                out.append(char)
+                continue
+
+            # Walk back over trailing spaces to the last emitted character.
+            index = len(out) - 1
+            while index >= 0 and out[index] in (" ", "\t"):
+                index -= 1
+
+            if index > 0 and out[index] in ".!?…»\"')\u201d\u2019":
+                out.append("\n")
+            else:
+                out.append(" ")
+
+        return "".join(out)
+
     def split(self, text: str, finalize: bool = False) -> tuple[list[dict], str]:
         """Split text into typed sentences.
 
@@ -45,9 +84,9 @@ class TypedSentenceSplitter:
             def flush_buffer() -> None:
                 if not buffer_lines:
                     return
-                # Join with newlines (not spaces) so pysbd still sees the line
-                # structure when it segments the buffered prose.
-                pending = "\n".join(buffer_lines).strip()
+                # Collapse mid-sentence hard wraps, keep paragraph breaks, so
+                # pysbd segments on punctuation instead of every newline.
+                pending = self.selective_flatten("\n".join(buffer_lines)).strip()
                 buffer_lines.clear()
                 if not pending:
                     return

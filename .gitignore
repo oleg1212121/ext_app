@@ -2,6 +2,7 @@ dual_translate_builder/
 .vscode/
 docker-compose/postgres/
 .plans/
+.playwright-mcp/
 docker-compose/embedding/models/
 # Python service: model snapshots live in a named Docker volume, not the repo
 docker-compose/python/ai/bge_m3_local/

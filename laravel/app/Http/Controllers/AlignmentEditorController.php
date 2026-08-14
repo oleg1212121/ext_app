@@ -96,6 +96,15 @@ class AlignmentEditorController extends Controller
         );
     }
 
+    public function approveRow(EnRuEntityMatch $entityMatch, EnRuMeaningMatch $meaningMatch): JsonResponse
+    {
+        abort_unless($meaningMatch->en_ru_entity_match_id === $entityMatch->id, 404);
+
+        $meaningMatch->update(['similarity' => 1.0, 'alignment_chunk' => -1]);
+
+        return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch->refresh())]);
+    }
+
     public function storeSentence(EnRuEntityMatch $entityMatch, AddSentenceRequest $request): JsonResponse
     {
         $lang = $request->validated('lang');

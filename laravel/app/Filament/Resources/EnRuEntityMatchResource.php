@@ -139,28 +139,47 @@ class EnRuEntityMatchResource extends Resource
                     ->label('Edit alignment')
                     ->icon('heroicon-o-pencil-square')
                     ->url(fn (EnRuEntityMatch $record): string => static::getUrl('edit', ['record' => $record])),
-                Actions\Action::make('rerun')
-                    ->label('Re-run')
+                Actions\Action::make('realign')
+                    ->label('Re-align')
                     ->icon('heroicon-o-arrow-path')
                     ->color('warning')
                     ->requiresConfirmation()
                     ->modalDescription(function (EnRuEntityMatch $record): string {
+                        $humanMade = EnRuMeaningMatch::query()
+                            ->where('en_ru_entity_match_id', $record->id)
+                            ->where('alignment_chunk', -1)
+                            ->count();
+
+                        $confident = EnRuMeaningMatch::query()
+                            ->where('en_ru_entity_match_id', $record->id)
+                            ->where('similarity', '>=', AlignEntitySentences::LANDMARK_THRESHOLD)
+                            ->where('alignment_chunk', '!=', -1)
+                            ->count();
+
+                        return "{$humanMade} human-made + {$confident} confident row(s) preserved; only low-confidence rows will be re-aligned.";
+                    })
+                    ->action(fn (EnRuEntityMatch $record) => AlignEntitySentences::begin($record->id))
+                    ->visible(fn (EnRuEntityMatch $record) => in_array($record->status, ['completed', 'failed'])),
+                Actions\Action::make('rerunScratch')
+                    ->label('Run from scratch')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalDescription(function (EnRuEntityMatch $record): string {
+                        $description = 'This deletes ALL meaning matches (including human-made ones) and re-runs the alignment pipeline from scratch.';
+
                         $humanMadeCount = EnRuMeaningMatch::query()
                             ->where('en_ru_entity_match_id', $record->id)
                             ->where('alignment_chunk', -1)
                             ->count();
 
-                        $description = 'This will delete all meaning matches and re-run the alignment pipeline from scratch.';
-
                         if ($humanMadeCount > 0) {
-                            $description .= " {$humanMadeCount} human-made row(s) will be wiped.";
+                            $description .= " {$humanMadeCount} human-made row(s) will be deleted.";
                         }
 
                         return $description;
                     })
-                    ->action(function (EnRuEntityMatch $record) {
-                        AlignEntitySentences::begin($record->id);
-                    })
+                    ->action(fn (EnRuEntityMatch $record) => AlignEntitySentences::beginFromScratch($record->id))
                     ->visible(fn (EnRuEntityMatch $record) => in_array($record->status, ['completed', 'failed'])),
                 Actions\DeleteAction::make(),
             ])

@@ -1,5 +1,6 @@
 <?php
 
+use App\Classes\SentenceAlignmentService;
 use App\Jobs\AlignEntitySentences;
 use App\Models\EnEntity;
 use App\Models\EnEntitySentence;
@@ -60,7 +61,7 @@ it('begins a fresh alignment run from a pending entity match', function () {
         'chunk_size' => 200,
     ]);
 
-    AlignEntitySentences::begin($entityMatch->id);
+    AlignEntitySentences::beginFromScratch($entityMatch->id);
 
     $entityMatch->refresh();
 
@@ -108,7 +109,7 @@ it('fails a begin run when verify rejects the pair', function () {
         'status' => 'pending',
     ]);
 
-    AlignEntitySentences::begin($entityMatch->id);
+    AlignEntitySentences::beginFromScratch($entityMatch->id);
 
     $entityMatch->refresh();
 
@@ -144,7 +145,7 @@ it('completes a begin run early when one side has no sentences', function () {
         'status' => 'pending',
     ]);
 
-    AlignEntitySentences::begin($entityMatch->id);
+    AlignEntitySentences::beginFromScratch($entityMatch->id);
 
     $entityMatch->refresh();
 
@@ -205,7 +206,7 @@ it('runs a small entity as a single chunk regardless of the configured chunk siz
         'chunk_size' => 1,
     ]);
 
-    AlignEntitySentences::begin($entityMatch->id);
+    AlignEntitySentences::beginFromScratch($entityMatch->id);
 
     $entityMatch->refresh();
     (new AlignEntitySentences($entityMatch->id))->handle();
@@ -972,7 +973,7 @@ it('rolls back the last two meaning matches and re-aligns them with backward con
         $match = EnRuMeaningMatch::create([
             'en_ru_entity_match_id' => $entityMatch->id,
             'order' => $index,
-            'similarity' => 0.9,
+            'similarity' => 0.8,
             'alignment_chunk' => 0,
         ]);
         EnSentenceMeaningMatch::create([
@@ -1116,7 +1117,7 @@ it('rolls back a single prior match when the previous chunk committed just one',
     $seed = EnRuMeaningMatch::create([
         'en_ru_entity_match_id' => $entityMatch->id,
         'order' => 0,
-        'similarity' => 0.9,
+        'similarity' => 0.8,
         'alignment_chunk' => 0,
     ]);
     EnSentenceMeaningMatch::create([
@@ -1273,7 +1274,7 @@ it('force-advances the cursor when a rolled-back commit cannot reach the stored 
         $seed = EnRuMeaningMatch::create([
             'en_ru_entity_match_id' => $entityMatch->id,
             'order' => $index,
-            'similarity' => 0.9,
+            'similarity' => 0.8,
             'alignment_chunk' => 0,
         ]);
         EnSentenceMeaningMatch::create([
@@ -1298,4 +1299,64 @@ it('force-advances the cursor when a rolled-back commit cannot reach the stored 
         ->and(EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->count())->toBe(7);
 
     Bus::assertDispatched(AlignEntitySentences::class, 1);
+});
+
+it('passes landmarks and high confidence to the alignment endpoint', function () {
+    Http::fake(fn (Request $request) => Http::response([
+        'matches' => [],
+        'unmatched_en' => [],
+        'unmatched_ru' => [],
+    ]));
+
+    $enSentence = new EnEntitySentence(['content' => 'English.', 'order' => 1]);
+    $enSentence->id = 1;
+    $ruSentence = new RuEntitySentence(['content' => 'Russian.', 'order' => 1]);
+    $ruSentence->id = 1;
+
+    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+
+    $service->alignChunkRemote(
+        collect([$enSentence]),
+        collect([$ruSentence]),
+        5,
+        landmarks: [
+            ['en_start' => 0, 'en_end' => 1, 'ru_start' => 0, 'ru_end' => 1],
+        ],
+        highConfidence: 0.9,
+    );
+
+    Http::assertSent(function (Request $request): bool {
+        return str_ends_with($request->url(), '/align')
+            && $request->data()['landmarks'] === [
+                ['en_start' => 0, 'en_end' => 1, 'ru_start' => 0, 'ru_end' => 1],
+            ]
+            && $request->data()['high_confidence'] === 0.9;
+    });
+});
+
+it('omits landmark and high confidence keys from the payload when not given', function () {
+    Http::fake(fn (Request $request) => Http::response([
+        'matches' => [],
+        'unmatched_en' => [],
+        'unmatched_ru' => [],
+    ]));
+
+    $enSentence = new EnEntitySentence(['content' => 'English.', 'order' => 1]);
+    $enSentence->id = 1;
+    $ruSentence = new RuEntitySentence(['content' => 'Russian.', 'order' => 1]);
+    $ruSentence->id = 1;
+
+    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+
+    $service->alignChunkRemote(
+        collect([$enSentence]),
+        collect([$ruSentence]),
+        5,
+    );
+
+    Http::assertSent(function (Request $request): bool {
+        return str_ends_with($request->url(), '/align')
+            && ! array_key_exists('landmarks', $request->data())
+            && ! array_key_exists('high_confidence', $request->data());
+    });
 });

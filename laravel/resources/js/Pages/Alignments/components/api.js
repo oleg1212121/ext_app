@@ -62,6 +62,10 @@ export const alignmentsApi = {
         return request(`/alignments/${matchId}/rows/${rowId}`, {method: 'DELETE'});
     },
 
+    approveRow(matchId, rowId) {
+        return request(`/alignments/${matchId}/rows/${rowId}/approve`, {method: 'POST'});
+    },
+
     addSentence(matchId, {lang, meaning_match_id, content}) {
         return request(`/alignments/${matchId}/sentences`, {
             method: 'POST',

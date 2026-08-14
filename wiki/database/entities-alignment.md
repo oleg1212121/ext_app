@@ -5,7 +5,7 @@ description: Bilingual texts, their sentences, and the machine/human alignment b
 tags: [database, schema, alignment, entities]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/kimi-k3, at: 2026-08-10T20:15:00Z }
+generated: { by: agent/kimi-k3, at: 2026-08-14T20:30:00Z }
 sources:
   - id: migrations
     resource: laravel/database/migrations
@@ -33,6 +33,12 @@ sources:
   maintained by `SparseOrderService`; columns were widened in the
   2026_06 `widen_sparse_order_columns` migration. Rebalance daily via
   `entity-orders:rebalance`.
+* **Landmarks**: `en_ru_meaning_matches.alignment_chunk = -1` marks
+  human-made rows (always `similarity = 1.0`); machine rows carry a monotonic
+  per-run chunk id (never `-1`). Machine rows with
+  `similarity >= LANDMARK_THRESHOLD` (0.90) are promoted to auto-landmarks on
+  re-align. Both tiers survive Re-align and act as pool boundaries; "Run from
+  scratch" deletes both (see [Sentence Alignment](/domains/sentence-alignment.md)).
 * **Admin editing**: both `EnEntityResource` and `RuEntityResource` expose a
   *Sentences* relation manager on the entity edit page. It supports creating,
   editing, deleting, and reordering sentences while preserving sparse order.

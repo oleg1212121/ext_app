@@ -1,6 +1,415 @@
 # Directory Update Log
 
+## 2026-08-14
+
+* **Polish: page picker in the Alignments editor rows table.** The rows
+  `Pagination` component
+  (`resources/js/Pages/Alignments/components/Pagination.jsx`) now renders
+  numbered page buttons with ellipsis (window of current ±2 plus first/last,
+  e.g. `1 … 4 5 [6] 7 8 … 62`) between Prev/Next, so a user can jump to any
+  page instead of stepping one by one. The native per-page `<select>` (whose
+  number was clipped by Tailwind preflight's `appearance:none` + chevron
+  background in some browsers) was replaced by a small custom dropdown button
+  (`PerPageSelect`) that always shows the current value and lists the options
+  on click — the value is rendered as plain button text, so it can never be
+  cut off. Unmatched pools keep their arrows-only paging. Backend already
+  supported `page`/`per_page` (`RowsRequest`, `rowsPagePayload`) — no PHP
+  changes. Bumped `domains/sentence-alignment.md` + `log.md`.
+
+## 2026-08-14
+
+* **Add: Approve action in the Alignments editor.** Each meaning-match row in
+  `resources/js/Pages/Alignments/` gains an **Approve** button (leftmost in the
+  row rail, next to Create below / Delete). It calls the new
+  `POST /alignments/{entityMatch}/rows/{meaningMatch}/approve` endpoint
+  (`AlignmentEditorController::approveRow`), which sets `similarity = 1.0` and
+  `alignment_chunk = -1` — promoting the row to a hard human landmark, exactly
+  the tier that survives re-align (Plan 08/10). Optimistic UI update + revert
+  on error, matching the create/delete pattern. New tests in
+  `AlignmentEditorApiTest` (sets similarity 1 + landmark marker; 404 for a row
+  of another match; guests 401). Updated `domains/sentence-alignment.md` +
+  `log.md`.
+
+## 2026-08-14
+
+* **Add: landmark tiers concept (Plan 10 close-out).** Consolidated the two
+  classes of meaning-match rows that survive a re-align as explicit
+  **landmark tiers** in `domains/sentence-alignment.md`: **hard** (human-made,
+  `alignment_chunk = -1`, `similarity = 1.0` — never deleted, rolled back, or
+  re-aligned) vs **auto** (machine rows with
+  `similarity >= LANDMARK_THRESHOLD` 0.90, promoted to landmarks on
+  re-align). Both feed
+  `landmarkRows()`/`landmarkBounds()` and act as pool boundaries; only the
+  delete scope of Re-align (machine rows below the bar) vs "Run from scratch"
+  (both tiers) differs. `database/entities-alignment.md` gained the same
+  markers under its invariants. Bumped both concepts' `generated.at` +
+  `log.md`.
+
+## 2026-08-14
+
+* **Add: split Filament re-run actions (Plan 09).** The single destructive
+  "Re-run" action on `EnRuEntityMatchResource` (list table) is replaced by two
+  explicit confirmation actions, both visible only on `status ∈
+  {completed, failed}`: **Re-align** (`realign`, warning, `heroicon-o-arrow-path`)
+  calls `AlignEntitySentences::begin()` and preserves human-made rows
+  (`alignment_chunk = -1`) plus confident landmarks
+  (`similarity >= AlignEntitySentences::LANDMARK_THRESHOLD`), re-aligning only
+  the low-confidence gaps — its modal reports the live preserved counts;
+  **Run from scratch** (`rerunScratch`, danger, `heroicon-o-trash`) calls
+  `beginFromScratch()`, deletes ALL meaning matches including human-made ones,
+  and states so in its modal (adding the human-made count when > 0).
+  `LANDMARK_THRESHOLD` made `public` so the resource can reference it. New
+  `FilamentReAlignActionTest` (3 tests: per-status visibility, realign dispatch
+  + modal copy, scratch dispatch + modal copy). Updated
+  `domains/sentence-alignment.md` + `playbooks/run-alignment.md` + `log.md`.
+
+* **Add: landmark-aware re-align (Plan 08).** `AlignEntitySentences` gains a
+  fresh-alignment entry point `beginFromScratch()` (the old `begin()`:
+  verify, wipe every meaning match, snapshot totals, raise small entities to
+  one chunk, dispatch) while the Filament "Re-run" action switches to the new
+  landmark-aware `begin()`: it deletes only machine rows below
+  `LANDMARK_THRESHOLD` (0.90), preserving human rows (`alignment_chunk = -1`)
+  and high-confidence auto-landmarks, resets the cursor, and re-dispatches
+  (delegating to `beginFromScratch()` when the match was never set up).
+  `handle()` is now pool-aware: `landmarkRows()`/`landmarkBounds()` carve
+  non-overlapping pools around landmarks (1:N landmark spans merge, bounds
+  clamp to snapshot totals), each aligned independently so pins are never
+  crossed; the whole-pool fast path is taken only when a pool fits one window
+  and no rollback candidates remain inside it, otherwise the chunk path with
+  seam rollback (`rollbackCandidates()`: machine rows junctioned on both
+  sides in the pool, last 2) applies. Fresh-alignment callers
+  (`CreateEnRuEntityMatch`, `ListEnRuEntityMatches`, `alignments:resume`,
+  `EnEntityResource`/`RuEntityResource` buttons) moved to `beginFromScratch()`.
+  New `ReAlignPreservesLandmarksTest` (3 tests); rollback seeds in
+  `ChunkedEntityAlignmentTest` lowered 0.9 → 0.8 so they fall under the
+  landmark bar. Updated `domains/sentence-alignment.md` +
+  `playbooks/run-alignment.md` + `log.md`.
+
+* **Add: alignment landmark passthrough (Plan 07).** The PHP alignment client
+  now accepts the Python knobs introduced in plans 02–06:
+  `SentenceAlignmentService::alignChunkRemote()` gained optional
+  `array $landmarks = []` and `?float $highConfidence = null` parameters and
+  passes them to `/align` as `landmarks` (list of `{en_start, en_end,
+  ru_start, ru_end}` ints) and `high_confidence`. When neither is given the
+  payload is byte-identical to the previous shape — no `landmarks`/
+  `high_confidence` keys are sent — so existing callers are untouched.
+  `AlignEntitySentences` reserves `LANDMARK_THRESHOLD = 0.90` (inert until
+  plan 08 wires human-edited rows in as pins on re-align). New feature tests
+  assert the keys appear in the payload when passed and are omitted when not.
+  Updated `domains/sentence-alignment.md` + `log.md`.
+
+* **Add: hard landmark pins on `/align` (Plan 06).** `BilingualAligner`
+  `align_lists`/`_align_pair` now accept and honor `landmarks: list[dict]`
+  (`{en_start, en_end, ru_start, ru_end}` — indices into the submitted lists).
+  New module-level `_validate_pins` rejects (ValueError → 422 via
+  `api/align.py`) zero-length, out-of-range, and crossing/overlapping pins
+  (sorted by `en_start`, any pin whose EN or RU span intersects the previous
+  pin's is rejected — sharing a sentence is contradictory). `_prepass_anchors`
+  skips cells inside a pin's rectangle (`range(en_start,en_end) ×
+  range(ru_start,ru_end)`), and `_align_with_anchors` builds the sub-pool
+  boundaries from the union of pins + prepass anchors: pins delimit the
+  top-level gaps, only anchors lying entirely inside a gap split it further, so
+  machine output can never cross or overlap a pin **by construction** (pools
+  sit strictly between boundaries). Pins are emitted verbatim with score 1.0 in
+  document order; unmatched lists exclude pinned indices automatically. Honored
+  in both greedy and dp. The request schema uses a new `AlignLandmark` model
+  (four int spans, no `score` — pins are always 1.0), so `AlignRequest.landmarks`
+  is no longer `list[AlignMatch]`; `api/align.py` converts pins to dicts and
+  translates ValueError → 422. Verified live: a 1:2 pin honored by `dp`, a 1:1
+  pin emitted verbatim at score 1.0, out-of-range/crossing/zero-length pins all
+  → 422 with clear messages, and landmark-less requests unchanged (200).
+  New stub tests in `test_aligner.py` (pin emitted verbatim score 1.0 both
+  algorithms; prepass skips pinned cells + no machine match overlaps a pin;
+  pinned indices excluded from unmatched; invalid pins rejected). All 29 checks
+  pass; `.env.example` comments un-staled (knobs now applied). Updated
+  `domains/sentence-alignment.md` + `log.md`.
+
+* **Add: per-sentence embedding aggregation for multi-sentence windows
+  (Plan 05).** `BilingualAligner` gained `_sentence_vectors`, `_aggregate_window`,
+  and the `_window_vector` routing point; `_generate_window_embeddings` and
+  `_embed_windows` now hand every window to `_window_vector`, which dispatches
+  on the live `window_embed` knob (`ALIGN_WINDOW_EMBED`, default `aggregate`,
+  coerced from anything not `aggregate|joined`). `aggregate` (default) embeds
+  each single sentence once through the shared cache (key = model id +
+  normalized single text — the same key the prepass step-1 windows use) and
+  builds each window vector as a length-weighted, L2-normalized mean of its
+  sentence vectors (`_aggregate_window`: weights = window sentences' character
+  counts; step-1 reduces to the normalized single) — so no joined window text
+  is ever embedded and encode count ≈ `n + m` regardless of banding or window
+  expansions. `joined` keeps the legacy join-then-embed (cached by joined
+  text; one encode per window text on miss). `EmbeddingCache` docstring updated
+  to the single-vs-joined key semantics. Equal-length window sentences
+  reproduce old pooled-mean scores exactly; differing lengths shift toward the
+  longer sentence. New stub regression tests in `test_aligner.py`: aggregate
+  ranks the correct 1:2 fusion window highest; weights follow sentence lengths
+  (unit `_aggregate_window` check + end-to-end 2:1); per-sentence vectors
+  cached (counting stub, pooled window adds zero encodes); joined-mode smoke
+  (4 texts). Existing tests updated: window encode counts drop under aggregate
+  (1:2/1:3/1:4 ladder 8→5, orphan-merge 4→3, span-cap 1:2 4→3), the
+  banding test now asserts aggregate is band-independent (7/7) and keeps the
+  joined 11-vs-16 variant, and three pooled-window score asserts converted to
+  `assert_same_matches` (aggregate float32 arithmetic differs from the stub's
+  numpy normalization in the last bits). All 25 checks pass; LaBSE smoke on
+  `testen.txt`/`testru.txt` (greedy, 20 lines each): aggregate 9 matches mean
+  0.624, joined 10 matches mean 0.571. Updated
+  `domains/sentence-alignment.md` (Plan 02 `window_embed` now consumed;
+  embedding-cache bullet updated to the new key semantics; new Plan 05
+  section) + `log.md`.
+
+## 2026-08-14
+
+* **Add: diagonal banding of per-sub-pool match edges (Plan 04).**
+  Per-sub-pool match edges are restricted to a diagonal band around the
+  expected length-ratio line: `k = len(sub_en)/len(sub_ru)` per pool, cell
+  `(i, j)` in-band when `abs(j*k - i) <= band` (`_band_allowed`); the
+  half-width comes from the live `band_width` knob (`ALIGN_BAND_WIDTH`,
+  default unset → derived per pool as `max(2, max_window)`, `_resolve_band`).
+  DP (`_align_chunk`) gates match edges on their start cell (skip edges stay
+  unbounded) and embeds only windows whose start positions appear in some
+  in-band cell (`_in_band_starts` → `_generate_window_embeddings(sentences,
+  starts)`), so off-band windows never reach the model. Greedy
+  (`_align_chunk_greedy`) bands its internal `anchor_threshold` anchors
+  (`_find_anchors(sim, n, m, threshold, k=None, band=None)`), the gap window
+  ladder (`_best_window_pair`, gated on window centers, in-band-only step
+  filtering), and the skip decision (`_should_skip_en` clamps lookahead slices
+  to in-band cells; both-axes-out tiebreak `return j * k > i` walks back
+  toward the diagonal). Prepass anchors stay deliberately unbanded (they can
+  exist anywhere on the full singles matrix). The DP path no longer
+  precomputes the full chunk's `(n + m) * max_window` windows: `_align_pair`
+  embeds only the chunk's singles for the prepass matrix, and each pool embeds
+  only its own in-band windows through the cache (clean list → exactly `n + m`
+  encodes, matching greedy). Five new stub regression tests in
+  `test_aligner.py` (out-of-band pair rejected tight / accepted wide; in-band
+  pair at the band edge; recovery to the far diagonal pair across a divergent
+  middle; `band_width` knob controls match density with dp == greedy;
+  banding suppresses 5 out-of-band window embeddings on a 6×1 chunk); the
+  existing DP encode-count test now asserts `dp == greedy == 6` singles; all
+  21 checks pass. Updated `domains/sentence-alignment.md` (Plan 02
+  `band_width` now consumed; Plan 03 DP-window cost text corrected; new Plan 04
+  section) + `log.md`.
+
+## 2026-08-14
+
+* **Add: high-confidence 1:1 prepass anchors (Plan 03).**
+  `BilingualAligner._align_pair` now embeds the chunk's single sentences once,
+  locks prepass anchors — non-crossing, mutually-best 1:1 cells at/above
+  `high_confidence` (`ALIGN_HIGH_CONFIDENCE`, default 0.9) via the shared
+  `_find_anchors(sim, n, m, threshold)` core (greedy's internal
+  `anchor_threshold` anchors still call it with `anchor_threshold`; the new
+  `_prepass_anchors` wraps it with `high_confidence`) — and dispatches
+  `_align_with_anchors`, which splits the chunk into sub-pools at the anchors
+  and aligns each pool in isolation with the chosen algorithm (greedy gap
+  alignment or per-pool DP reusing the precomputed window embeddings through
+  the cache), emitting the anchors as committed 1:1 matches with their cell
+  cosine scores in strict document order. The DP path precomputes the full
+  chunk's window embeddings once (unchanged cost) and derives the prepass's
+  singles matrix from its step-1 submatrix; the greedy path embeds the singles
+  once and reuses them per pool. No match can consume sentences on both sides
+  of a locked pair. Three new stub regression tests in `test_aligner.py`
+  (identical anchor set for greedy and dp on ≥0.9 pairs; pools stay between
+  anchors in document order; lowering `high_confidence` locks more anchors);
+  all 13 prior checks pass unchanged. Updated
+  `domains/sentence-alignment.md` (Plan 02 section now notes `high_confidence`
+  is consumed by plan 03; new Plan 03 section) + `log.md`.
+
+## 2026-08-14
+
+* **Add: reserved alignment knobs plumbed end-to-end (Plan 02, no behavior yet).**
+  Three new live config accessors in `ai/config.py` —
+  `align_high_confidence()` (`ALIGN_HIGH_CONFIDENCE`, default 0.9),
+  `align_band_width()` (`ALIGN_BAND_WIDTH`, default unset → derived later as
+  `max(2, max_window)`), `align_window_embed()` (`ALIGN_WINDOW_EMBED`, default
+  `aggregate`, coerced from anything not `aggregate|joined`) — plus four new
+  optional `/align` request fields on `AlignRequest` (`high_confidence`
+  `[0,1]`, `band_width` `[1,50]`, `window_embed` pattern `^(aggregate|joined)$`,
+  `landmarks: list[AlignMatch]` default `[]`). `api/align.py` passes them to
+  `BilingualAligner(...)`; the constructor resolves `None` from config and
+  stores them as `self.high_confidence` / `self.band_width` /
+  `self.window_embed` (unused until plans 03/04/05/06). `AlignMatch` moved above
+  `AlignRequest` so `landmarks` can reference it. Verified: all 13 stub aligner
+  tests pass unchanged, schema round-trips the new fields, invalid
+  `window_embed` / out-of-range bounds → 422, and a full `/align` request with
+  the new fields returns 200 (real LaBSE). `.env.example` documents the new
+  keys; updated `domains/sentence-alignment.md` + `log.md`.
+
+## 2026-08-14
+
+* **Refactor: python normalizes every sentence once at alignment entry.**
+  `BilingualAligner._align_pair(en_raw, ru_raw, landmarks=None)` is now the
+  single normalization point for alignment: it runs the new module-level
+  `_normalize_sentences` (casefold + alnum/space only + collapsed whitespace,
+  index-preserving) on both lists, then dispatches to greedy/dp on the
+  normalized forms. `align_lists()` and the demo/`process()` path both route
+  through it, and the internal window code (`_window_text`, `_embed_windows`,
+  `_generate_window_embeddings`, `_generate_sentence_embeddings`,
+  `_best_window_pair`, `_merge_orphans`, `_should_skip_en`) no longer calls
+  `_normalize_text` — it operates on the pre-normalized list, so joining
+  pre-normalized sentences *is* the normalized window text and the
+  embedding-cache keys (raw and pre-normalized input hash to the same keys;
+  `_match`'s diagnostic text now shows the same normalized form in both DP and
+  greedy). Normalization is idempotent, so existing inputs align
+  byte-identically (verified: 11 prior stub tests pass unchanged, real-model
+  `process()` smoke on LaBSE both algorithms). `landmarks` is accepted on
+  `_align_pair` as the reserved seam for the landmark-pins API (Plan 06). New
+  stub tests: `_normalize_sentences` contract + the whistler pair scoring
+  ≥ 0.68 in its normalized form, and raw vs pre-normalized input aligning
+  identically (0 extra encodes). Updated `domains/sentence-alignment.md` +
+  `log.md`.
+
+## 2026-08-13
+
+* **Fix: greedy 1:1 anchors pre-commit past a better pooled window, leaving
+  orphans.** Root cause (verified on the real LaBSE aligner): the default
+  greedy is anchor-first, so a 1:1 that clears `ALIGN_ANCHOR_THRESHOLD` and is
+  mutually-best in its window is locked before the window ladder ever runs at
+  that cursor — yet the pooled multi-sentence window can outscore the 1:1. On
+  the repro chunk EN0↔RU0 locked at 0.701, the cursor jumped to (1,1), RU was
+  exhausted, and the trailing "Where are those damn scissors?" stayed
+  unmatched, while the pooled EN0:2↔RU0 scored 0.743 (the DP, which considers
+  all edges, gets it right — the bug is greedy-specific). **Rejected fix:** the
+  earlier idea of making `_find_anchors` reject an anchor when any pooled
+  window beats the 1:1 degraded real loosely-aligned text (outputen/outputru:
+  52/52 matches dropped 50 → 20–42, orphans 2 → 8–30) — anchor locking does
+  real reliability work. **Shipped fix:** a greedy-only orphan-merge post-pass.
+  `BilingualAligner._merge_orphans()` runs at the end of `_align_chunk_greedy`,
+  walks the matches left-to-right, and for each match whose following gap has
+  orphans on exactly one side (the other side consumed) extends the match's
+  window over the orphan run — every extension length up to the bound
+  (`max_window`, `ALIGN_MAX_TOTAL_SPAN`) is lazily embedded and scored, and
+  the best pooled window replaces the match only if it beats its score by
+  `ALIGN_MERGE_MARGIN` (new live knob, default 0.02; config accessor
+  `align_merge_margin()`, `.env.example` updated). Measured: the repro becomes
+  a correct 2:1 (0.7433), 0 unmatched, +2 encodes; real text keeps all 50
+  matches, orphans 2 → 1 (a genuine merge), +4 encodes; all 10 prior stub
+  regression tests pass unchanged (no encode-count regressions — it only fires
+  on orphans). New stub test
+  `greedy_merges_an_orphan_into_a_beating_pooled_window` (2 EN / 1 RU where
+  the pooled 2:1 beats a bar-clearing 1:1 → merged, no unmatched, 4 encodes;
+  plus a below-margin guard case where the anchor survives). Real-model repro
+  re-run on LaBSE: EN ["We are alive, the four of us.", "Where are those damn
+  scissors?"] vs single-RU confirms 1:1 at 0.7002 with merge off (orphan left)
+  → 2:1 at 0.8088 with merge on (no unmatched). No PHP changes — the job
+  consumes the unchanged `matches` payload; `ChunkedEntityAlignmentTest` +
+  `SentenceAlignmentServiceTest` (83 alignment tests) pass. Updated
+  `domains/sentence-alignment.md` + `log.md`.
+
+* **Fix: The whistler ↔ «СВИСТУН» alignment misses.** LaBSE scores the raw
+  pair 0.32 — below `ALIGN_DEFAULT_THRESHOLD` 0.55 — so it was skipped;
+  lowercase + alnum-only ("the whistler" ↔ "свистун") scores 0.685. Root cause
+  was normalization, not the algorithm. `BilingualAligner` now embeds every
+  window through `_normalize_text` (casefold + keep only alphanumerics/
+  whitespace, unicode-aware + collapse whitespace), applied in both the DP
+  (`_generate_window_embeddings`) and greedy (`_embed_windows`) paths — and the
+  embedding cache is keyed on the normalized joined text, so DP/greedy share
+  keys. Stored DB text is untouched (PHP persists raw sentences; only
+  `_match`'s diagnostic text shows the normalized form). **Also fixed the
+  greedy "forced 1:1":** `_align_gap` no longer commits a 1:1 the moment it
+  clears the bar — it always runs `_best_window_pair`, which is now a ladder
+  (`ALIGN_PRIMARY_WINDOW`, default 3): steps 1..primary compared as one set,
+  highest-scoring combo above threshold wins, then widen one step per side up
+  to `max_window` (still bounded by `ALIGN_MAX_TOTAL_SPAN`). Verified live via
+  `/align` (1:1 at 0.685; raw 0.320 vs normalized 0.685 measured directly on
+  LaBSE) and `test_aligner.py` (10 checks, incl. new whistler and 1:4-widen
+  ladder tests). Updated `domains/sentence-alignment.md` + `log.md`.
+
+* **Calibrate: LaBSE aligner thresholds re-lowered 0.75/0.8 → 0.55/0.6.**
+  The Aug-13 LaBSE switch set `ALIGN_DEFAULT_THRESHOLD = 0.75` /
+  `ALIGN_ANCHOR_THRESHOLD = 0.8` (provisional, sanity-checked on the
+  `testen.txt`/`testru.txt` smoke test which scored 0.768–0.965, mean 0.833).
+  A real-world check on adapted learning texts showed genuine meaning matches
+  scoring well below that: The Gamblers titles (THE GAMBLERS ↔ ИГРОКИ) score
+  0.59 and the full parenthetical titles 0.67 under LaBSE (measured via `/align`
+  on the running service, live config). At 0.75 those genuine matches were
+  silently skipped by the aligner. Re-lowered `ALIGN_DEFAULT_THRESHOLD` to
+  **0.55** (the established MiniLM garbage-floor calibration from the Aug-11
+  histogram; LaBSE runs hotter than MiniLM so 0.55 stays conservative) and
+  `ALIGN_ANCHOR_THRESHOLD` to **0.6** in `docker-compose/python/env/.env` (live,
+  no restart; verified `config.align_default_threshold()` reads 0.55) and synced
+  `.env.example`. `/align` on the two title pairs now commits both matches
+  (0.588, 0.668). Final numbers still to be refined from a real
+  `meaning_match.similarity` distribution once a live corpus is aligned.
+  Updated `domains/sentence-alignment.md` (calibration notes + `generated.at`)
+  and `log.md`.
+
+* **Improve: LaBSE as the aligner model (fast-defaults calibration).**
+  Swapped the `/align` model from MiniLM to **LaBSE**
+  (`sentence-transformers/LaBSE`, 768-dim) for higher bilingual alignment
+  quality. Downloaded into the `ai_models` volume via
+  `docker exec -e HF_HUB_OFFLINE=0 ext_python python /app/scripts/download_model.py
+  sentence-transformers/LaBSE /app/models/labse`, activated live by setting
+  `ALIGN_MODEL_PATH=/app/models/labse` in `docker-compose/python/env/.env`
+  (and `.env.example`); the next `/align` request lazy-loaded it (dim=768 in
+  logs) with no rebuild/restart, `MODEL_PATH=/app/models/bge_m3` (signatures)
+  unchanged. Verification: the `test.py` sample against LaBSE gives
+  b↔c = 0.81 > a↔c = 0.39 (MiniLM gives 0.43 for the same translation pair,
+  so LaBSE runs markedly hotter); `/health` still reports dim=1024; a `/align`
+  smoke test on `testen.txt`/`testru.txt` returned 16 matches scoring
+  0.768–0.965 (mean 0.833), validating the new thresholds. **Calibration
+  (provisional):** `ALIGN_DEFAULT_THRESHOLD` 0.55 → **0.75** and
+  `ALIGN_ANCHOR_THRESHOLD` 0.6 → **0.8** (LaBSE bitext cosine runs hot vs
+  MiniLM's 0.55/0.6); sanity-checked on the test pair, to be refined from a
+  real `meaning_match.similarity` distribution once a live corpus is aligned.
+  **Token cap audit:** LaBSE caps at 256 tokens (`max_seq_length=256`);
+  `testen.txt` had one 3-sentence window at 270 tokens and it is silently
+  truncated to the head 256 (tail dropped, warning only, no crash) — noted in
+  `domains/sentence-alignment.md` as a known quality caveat for long-sentence
+  joins. `test_aligner.py` (8 checks, stub model) and `test_splitter.py` pass
+  unchanged. Updated `domains/sentence-alignment.md` (aligner-model section +
+  threshold/calibration notes) and `log.md`.
+
+## 2026-08-12
+
+* **Improve: alignment speed — anchor-first greedy algorithm.** With BGE-M3 as
+  the aligner (`ALIGN_MODEL_PATH=/app/models/bge_m3`), the full-window DP in
+  `bilingual_aligner.py` embedded `(n + m) * max_window` window texts per
+  `/align` call (~1260 encodes ≈ 4 min for a 100-sentence entity at
+  `max_window=6`). The new **greedy** mode (default, `ALIGN_ALGORITHM=greedy`;
+  `dp` restores the old DP) embeds each single sentence once per side, locks
+  confident non-crossing 1:1 anchors (`ALIGN_ANCHOR_THRESHOLD`, default 0.6)
+  from the n×m sentence matrix, and greedily aligns only the gaps between
+  anchors — lazily embedding multi-sentence windows (`1:2`, `2:1`, `2:2`, …
+  bounded by `max_window` and `max_total_span`) only when the cursor's 1:1 is
+  sub-threshold, and skipping the side whose best 1:1 partner is weaker. The
+  DP's skip/unmatched semantics and the `matches` payload shape are unchanged,
+  so no Laravel-side changes were needed (the job's anchor-trim/rollback still
+  works). Embedding count drops to ≈ `n + m` singles plus a few expansions per
+  messy cursor (~6× fewer for a clean text). `/align` accepts optional
+  `algorithm`/`anchor_threshold` overrides; `dp` path and all its behavior are
+  intact behind the knob. Regression tests in
+  `docker-compose/python/ai/alignment/test_aligner.py` (stub model, asserts
+  encode counts and greedy/DP equivalence, 1:2 expansion, skip, anchor+gap).
+  Updated `domains/sentence-alignment.md` stages 3/4.
+
 ## 2026-08-11
+
+* **Fix: pysbd merging curly-quote dialogue blocks into one sentence.**
+  Book dialogue lines close with curly `”` (U+201D), which was missing from
+  `selective_flatten`'s keep-set (`".!?…»\"')"`), so the newline after each
+  line — and a blank line's `\n\n` — collapsed to one/two spaces. pysbd masks
+  `.`/`?` inside `“...”` spans and re-splits at `[!?.-]` + closing quote +
+  exactly one space + uppercase; the two collapsed spaces broke that re-split,
+  so the whole dialogue block plus the next unquoted prose sentence merged
+  into one 464-char "sentence" (entity 10: 5952 sentences incl. the monster).
+  `selective_flatten` now keeps newlines after `”` (U+201D) and `’` (U+2019)
+  too. Entity 10 re-split into 6814 clean sentences (max 575, a pre-existing
+  pysbd em-dash/quote limitation unrelated to this bug). Regression test
+  `test_splitter.py` gained a `check_curly_quote_dialogue` guard. Updated
+  `domains/sentence-alignment.md` stage 1.
+
+* **Fix: pysbd splitting hard-wrapped prose into sentence fragments.**
+  The RU "Книжный вор 2" source is hard-wrapped (~70 col lines, single
+  newline per line, no blank lines between paragraphs). pysbd treats every
+  `\n` as a sentence boundary, so "Когда Лизель оглядывалась … оказывались"
+  and "едва ли не самыми яркими воспоминаниями." came out as two sentences
+  (9926 total). `TypedSentenceSplitter` now selectively flattens buffered
+  prose before segmentation: `selective_flatten` collapses a `\n` to a space
+  unless the preceding char is sentence-ending punctuation (`. ! ? … » " ' )`),
+  preserving real paragraph breaks so pysbd's quote-region heuristic still
+  cannot merge long dialogue spans (EN Book Thief stays ~1036 sentences).
+  The entity re-split into 7148 real sentences (max 277 chars, 189 titles
+  preserved). Regression test `test_splitter.py` now covers both the EN
+  quote-region fixture and the RU hard-wrap fixture (fails under either
+  extreme behavior). Updated `domains/sentence-alignment.md` stage 1.
 
 * **Improve: aligner precision & speed — skip branch, span cap, embedding
   cache.** The python DP force-aligned every sentence, so a sentence with no

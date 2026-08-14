@@ -66,10 +66,20 @@ class SentenceAlignmentService
      * matches are returned too so the caller can trim to the last confident
      * anchor before persisting (see AlignEntitySentences).
      *
+     * Optional landmarks (hard human-made pins) and a high-confidence prepass
+     * bar are passed straight through to the python service. When omitted the
+     * request payload is byte-identical to the previous shape.
+     *
+     * @param  list<array{en_start: int, en_end: int, ru_start: int, ru_end: int}>  $landmarks
      * @return array{links: array, dpPath: array, matches: array}
      */
-    public function alignChunkRemote(Collection $enSentences, Collection $ruSentences, int $maxN = 3): array
-    {
+    public function alignChunkRemote(
+        Collection $enSentences,
+        Collection $ruSentences,
+        int $maxN = 3,
+        array $landmarks = [],
+        ?float $highConfidence = null,
+    ): array {
         $enIds = $enSentences->pluck('id')->values()->all();
         $ruIds = $ruSentences->pluck('id')->values()->all();
 
@@ -89,6 +99,20 @@ class SentenceAlignmentService
             ];
         }
 
+        $payload = [
+            'en_sentences' => $enSentences->pluck('content')->map(fn ($c) => (string) $c)->values()->all(),
+            'ru_sentences' => $ruSentences->pluck('content')->map(fn ($c) => (string) $c)->values()->all(),
+            'max_window' => max(1, $maxN),
+        ];
+
+        if ($landmarks !== []) {
+            $payload['landmarks'] = $landmarks;
+        }
+
+        if ($highConfidence !== null) {
+            $payload['high_confidence'] = $highConfidence;
+        }
+
         $response = Http::timeout($this->alignTimeout ?? $this->timeout)
             ->retry(
                 self::RETRY_DELAYS_MS,
@@ -96,11 +120,7 @@ class SentenceAlignmentService
                 fn (Throwable $exception, PendingRequest $request): bool => $exception instanceof ConnectionException,
                 false,
             )
-            ->post("{$this->apiUrl}/align", [
-                'en_sentences' => $enSentences->pluck('content')->map(fn ($c) => (string) $c)->values()->all(),
-                'ru_sentences' => $ruSentences->pluck('content')->map(fn ($c) => (string) $c)->values()->all(),
-                'max_window' => max(1, $maxN),
-            ]);
+            ->post("{$this->apiUrl}/align", $payload);
 
         if (! $response->successful()) {
             throw new \RuntimeException(

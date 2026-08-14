@@ -8,9 +8,9 @@ Two layers of env access:
    never change, so a fast `docker compose up -d python` recreate is acceptable
    on the rare occasion you tweak one.
 
-2. Live per-request accessors (`align_default_window()`, `align_default_threshold()`,
-   `align_model_path()`). These re-read the bind-mounted `/app/.env` file on every
-   call. Edits to those keys apply on the next request with no container
+2. Live per-request accessors (`align_default_window()`, `align_primary_window()`,
+   `align_default_threshold()`, `align_model_path()`). These re-read the
+   bind-mounted `/app/.env` file on every call. Edits to those keys apply on the next request with no container
    recreate or restart — the file is mounted read-only at /app/.env.
 """
 
@@ -79,6 +79,12 @@ def align_default_window() -> int:
     return _live_int("ALIGN_DEFAULT_WINDOW", 3)
 
 
+def align_primary_window() -> int:
+    """Greedy gap-search ladder: compare steps 1..primary as one set, then
+    widen one step per side up to max_window if nothing clears the bar."""
+    return _live_int("ALIGN_PRIMARY_WINDOW", 3)
+
+
 def align_default_threshold() -> float:
     return _live_float("ALIGN_DEFAULT_THRESHOLD", 0.4)
 
@@ -89,6 +95,43 @@ def align_max_total_span() -> int:
 
 def align_skip_penalty() -> float:
     return _live_float("ALIGN_SKIP_PENALTY", -0.5)
+
+
+def align_algorithm() -> str:
+    value = (_live_env("ALIGN_ALGORITHM", "greedy") or "greedy").strip().lower()
+    return value if value in ("greedy", "dp") else "greedy"
+
+
+def align_anchor_threshold() -> float:
+    return _live_float("ALIGN_ANCHOR_THRESHOLD", 0.6)
+
+
+def align_merge_margin() -> float:
+    """Greedy orphan-merge: extend a match over a single-sided orphan run
+    only if the pooled window beats the match's score by at least this margin."""
+    return _live_float("ALIGN_MERGE_MARGIN", 0.02)
+
+
+def align_high_confidence() -> float:
+    """1:1 prepass anchor bar: mutually-best cells at/above this cosine are
+    locked as committed matches that split the chunk into sub-pools."""
+    return _live_float("ALIGN_HIGH_CONFIDENCE", 0.9)
+
+
+def align_band_width() -> int | None:
+    """Diagonal band half-width around the expected length-ratio diagonal
+    (match edges restricted to the band). None -> derived per chunk as
+    max(2, max_window)."""
+    v = _live_env("ALIGN_BAND_WIDTH")
+    return int(v) if v not in ("", None) else None
+
+
+def align_window_embed() -> str:
+    """Multi-sentence window embedding mode: "aggregate" (length-weighted mean
+    of per-sentence vectors, L2-normalized) or "joined" (today's join-then-
+    embed). Coerces anything else to "aggregate"."""
+    value = (_live_env("ALIGN_WINDOW_EMBED", "aggregate") or "aggregate").strip().lower()
+    return value if value in ("aggregate", "joined") else "aggregate"
 
 
 def model_path() -> str:

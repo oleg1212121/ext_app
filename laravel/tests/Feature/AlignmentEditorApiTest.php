@@ -91,6 +91,41 @@ test('guests cannot call editor endpoints', function () {
 
     $this->getJson("/alignments/{$world['match']->id}/unmatched?lang=en")
         ->assertUnauthorized();
+
+    $row = makeRow($world['match']->id, 100);
+
+    $this->postJson("/alignments/{$world['match']->id}/rows/{$row->id}/approve")
+        ->assertUnauthorized();
+});
+
+test('approves a row by setting its similarity to 1 and marking it as a hard landmark', function () {
+    $world = editorWorld();
+    $row = makeRow($world['match']->id, 100, 0.42);
+
+    $response = actingAs(User::factory()->create())
+        ->postJson("/alignments/{$world['match']->id}/rows/{$row->id}/approve");
+
+    $response->assertOk();
+    $this->assertSame(1.0, (float) $response->json('rows.0.similarity'));
+    $this->assertDatabaseHas('en_ru_meaning_matches', [
+        'id' => $row->id,
+        'similarity' => 1.0,
+        'alignment_chunk' => -1,
+    ]);
+});
+
+test('cannot approve a row belonging to another entity match', function () {
+    $world = editorWorld();
+    $otherMatch = EnRuEntityMatch::create([
+        'en_entity_id' => EnEntity::create(['name' => 'Other En'])->id,
+        'ru_entity_id' => RuEntity::create(['name' => 'Other Ru'])->id,
+        'status' => 'pending',
+    ]);
+    $row = makeRow($world['match']->id, 100);
+
+    actingAs(User::factory()->create())
+        ->postJson("/alignments/{$otherMatch->id}/rows/{$row->id}/approve")
+        ->assertNotFound();
 });
 
 test('creates an empty pair between the current and next row', function () {

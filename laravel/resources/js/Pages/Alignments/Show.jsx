@@ -365,6 +365,20 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         await runMutation(() => alignmentsApi.deleteRow(initialMatch.id, row.id));
     }, [actionBusy, initialMatch.id, runMutation]);
 
+    const onApprove = useCallback(async (row) => {
+        if (actionBusy) {
+            return;
+        }
+
+        setEditing(null);
+        setData((prev) => ({
+            ...prev,
+            rows: prev.rows.map((existing) => (existing.id === row.id ? {...existing, similarity: 1} : existing)),
+        }));
+
+        await runMutation(() => alignmentsApi.approveRow(initialMatch.id, row.id));
+    }, [actionBusy, initialMatch.id, runMutation]);
+
     const containerOf = useCallback((id) => {
         if (typeof id === 'string' && id.startsWith('row:')) {
             return id;
@@ -506,7 +520,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                         </p>
                     )}
 
-                    <div className="overflow-hidden border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
+                    <div className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
                         {tableError && (
                             <div className="px-3 py-8 text-center">
                                 <p className="font-serif text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
@@ -553,6 +567,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                                         onUnlink={onUnlink}
                                         onCreateBelow={onCreateBelow}
                                         onDelete={onDeleteRow}
+                                        onApprove={onApprove}
                                     />
                                 ))}
 

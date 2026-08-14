@@ -45,7 +45,7 @@ class AlignmentsResumeCommand extends Command
             $before = $entityMatch->status;
 
             try {
-                AlignEntitySentences::begin($entityMatch->id);
+                AlignEntitySentences::beginFromScratch($entityMatch->id);
             } catch (\Throwable $exception) {
                 $this->error("Entity match #{$entityMatch->id} failed during begin: {$exception->getMessage()}");
                 EnRuEntityMatch::whereKey($entityMatch->id)->update([
