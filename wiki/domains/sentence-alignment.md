@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/opencode, at: 2026-08-14T22:30:00Z }
+generated: { by: agent/opencode, at: 2026-08-16T14:00:00Z }
 verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
@@ -122,6 +122,25 @@ sentence(s). The output powers the
     Small entities (`max(en_total, ru_total) ≤ 75`) are raised to a single
     chunk in `beginFromScratch()`, so the seam rollback/trim machinery is
     skipped for them entirely.
+    Completion funnels through a single gate (`AlignEntitySentences::finalize()`,
+    Aug 2026): before the match flips to `completed`, every sentence on the
+    **original side** (`en_ru_entity_matches.is_original_en` — the language the
+    text was authored in) that is still junction-less — dropped by an
+    empty-commit seam, left over when the translation side was exhausted, or
+    skipped during a re-align — is junctioned into a **single-sided meaning
+    match** (`similarity 0.0`, next machine `alignment_chunk` id), ordered
+    positionally (`SparseOrderService::spreadOrders` between the neighbouring
+    junctioned anchors) so the reader's meaning-match sequence preserves the
+    original document order. The repair is best-effort: if it fails, a warning
+    is logged and completion proceeds regardless. `storeSkipSentences()` on
+    `SentenceAlignmentService` persists single-sided rows, and the crawl's
+    empty-commit seams (`alignWholePool`, `alignPoolChunk`) use it to junction
+    the first uncommitted original sentence instead of silently advancing past
+    it. "RU sentences exhausted before EN" is a normal completion now, not an
+    error: the remaining original tail is drained as single-sided rows. This is
+    the **original completeness** invariant — original sentences are never
+    unmatched; only translation-side sentences may be junction-less (the
+    editor's unmatched section).
 3. **Align (precision knobs, Aug 2026)** — the python DP no longer
     force-aligns every sentence. Two live knobs
     (`docker-compose/python/env/.env`, apply on the next request):
@@ -411,7 +430,14 @@ sentence(s). The output powers the
     rolls back the last machine matches (`rollbackCandidates()`:
     `alignment_chunk != -1`, similarity < 0.90, junctioned on both sides
     within the pool, last `ROLLBACK_MATCHES` = 2), re-aligns, and
-    self-dispatches. Feature tests (`ReAlignPreservesLandmarksTest`) assert
+    self-dispatches. The whole-pool fast path also self-dispatches: `handle()`
+    persists the cursor via `persistOffsets()` and returns after **each pool**,
+    so a re-align of many small landmark-delimited pools runs as one queued
+    job per pool instead of one long job draining every pool in a single
+    `handle()` (a match with 141 pools previously ran one ~2m16s job). Pools
+    larger than `chunk_size` on either side skip the fast path and are still
+    drained chunk-by-chunk across jobs by `alignPoolChunk()`. Feature tests
+    (`ReAlignPreservesLandmarksTest`) assert
     human rows and auto-landmarks survive a re-run, `beginFromScratch()`
     wipes everything, and 1:N human landmark spans never overlap a machine
     window.
@@ -470,9 +496,28 @@ sentence(s). The output powers the
     `SparseOrderService`, and JSON payloads shaped by `AlignmentEditorApiPresenter`
     (`rows` + `unmatched` pagination, `last_page` included; the rows table's
     `Pagination` component shows Prev/Next + numbered page buttons with ellipsis
-    and a custom per-page dropdown). Once a run lands,
+    and a custom per-page dropdown). Below the unmatched pool, the editor shows a
+    collapsible **Needs review** section (collapsed by default) listing meaning
+    matches a human should inspect: rows whose `similarity < 0.55`
+    (`AlignmentEditorApiPresenter::LOW_SIMILARITY_THRESHOLD`) or that are
+    **one-sided** (junctions on exactly one side, any similarity — see the
+    original-completeness repair above). Each row shows its `#order`,
+    `similarity`, EN/RU parts, a `1-sided` badge, and a `→ p. N` marker; clicking
+    it jumps the editor's rows table to the exact page (`ceil(rank / per_page)`,
+    the server returns page-independent per-row `rank`) and briefly highlights
+    the row (client-side scroll, no URL change). Paginated 25/page via
+    `GET /alignments/{entityMatch}/needs-review`
+    (`AlignmentEditorController::needsReview`, `NeedsReviewRequest`); the section
+    refetches its current page after every editor mutation. The editor never
+    rewrites an existing
+    sentence's document order: dragging edits the row's **junction** orders
+    only, so `en_entity_sentences.order` keeps reflecting the original text and
+    a later Re-align places sentences correctly. Each row still shows the raw
+    `order` of its sentences. Once a run lands,
     the Filament list's **Re-align** / **Run from scratch** actions (Plan 09)
-    restart it — preserving or wiping the human work respectively.
+    restart it — preserving or wiping the human work respectively. Re-align
+    deletes non-landmark machine rows and re-creates them in document order, so
+    a within-row switch on a non-approved row is reset by it.
 7. **Sentence editing** — individual entity sentences can be created, edited,
    deleted, and reordered from the *Sentences* tab on each `EnEntity` /
    `RuEntity` edit page. The relation manager uses `SparseOrderService` to keep

@@ -131,5 +131,6 @@ test('authenticated users can view alignment details', function () {
         ->has('rows.0.en_sentences', 1)
         ->where('rows.0.en_sentences.0.content', 'The first English sentence.')
         ->has('rows.0.ru_sentences', 1)
-        ->where('rows.0.ru_sentences.0.content', 'Первое русское предложение.'));
+        ->where('rows.0.ru_sentences.0.content', 'Первое русское предложение.')
+        ->where('needs_review.meta.total', 0));
 });

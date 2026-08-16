@@ -49,6 +49,7 @@ class OpenRouter extends AiProvider
         'google/gemini-3-flash-preview' => 'Google: Gemini 3 Flash Preview ($0.50/$3)',
         'z-ai/glm-5' => 'Z.ai: GLM 5 ($0.72/$2.30)',
         'openai/gpt-5.4-mini' => 'OpenAI: GPT-5.4 Mini ($0.75/$4.50)',
+        'google/gemini-3.7-flash' => 'Google: Gemini 3.7 Flash ($0.375/$1.875)'
         // 'anthropic/claude-haiku-4.5' => 'Anthropic: Claude Haiku 4.5 ($1/$5)',
         // 'openai/o3-mini' => 'OpenAI: o3 Mini ($1.10/$4.40)',
         // 'z-ai/glm-5-turbo' => 'Z.ai: GLM 5 Turbo ($1.20/$4)',

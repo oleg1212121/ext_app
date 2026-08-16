@@ -3,18 +3,24 @@
 namespace App\Jobs;
 
 use App\Classes\SentenceAlignmentService;
+use App\Classes\SparseOrderService;
 use App\Models\EnEntity;
 use App\Models\EnEntitySentence;
 use App\Models\EnRuEntityMatch;
 use App\Models\EnRuMeaningMatch;
+use App\Models\EnSentenceMeaningMatch;
 use App\Models\RuEntity;
 use App\Models\RuEntitySentence;
+use App\Models\RuSentenceMeaningMatch;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class AlignEntitySentences implements ShouldQueue
 {
@@ -124,11 +130,7 @@ class AlignEntitySentences implements ShouldQueue
         ]);
 
         if ($enSentenceCount === 0 || $ruSentenceCount === 0) {
-            $entityMatch->update([
-                'status' => 'completed',
-                'error_message' => 'One or both entities have no sentences',
-                'completed_at' => now(),
-            ]);
+            (new self($entityMatchId))->finalize($entityMatch);
 
             return;
         }
@@ -233,13 +235,12 @@ class AlignEntitySentences implements ShouldQueue
             }
 
             if ($remainingRu <= 0) {
-                $entityMatch->update([
-                    'status' => 'completed',
-                    'error_message' => 'RU sentences exhausted before EN',
-                    'last_en_sentence_offset' => max($enOffset, $pool['en_end']),
-                    'last_ru_sentence_offset' => $ruOffset,
-                    'completed_at' => now(),
-                ]);
+                $this->persistOffsets(
+                    $entityMatch,
+                    max($enOffset, $pool['en_end']),
+                    $ruOffset,
+                    $enTotal,
+                );
 
                 return;
             }
@@ -263,14 +264,14 @@ class AlignEntitySentences implements ShouldQueue
                         $pool['ru_end'],
                     );
 
-                    $enOffset = $offsets['en_offset'];
-                    $ruOffset = $offsets['ru_offset'];
+                    $this->persistOffsets(
+                        $entityMatch,
+                        $offsets['en_offset'],
+                        $offsets['ru_offset'],
+                        $enTotal,
+                    );
 
-                    if ($enOffset >= $pool['en_end'] && $ruOffset >= $pool['ru_end']) {
-                        $poolIndex++;
-                    }
-
-                    continue;
+                    return;
                 }
             }
 
@@ -473,6 +474,15 @@ class AlignEntitySentences implements ShouldQueue
             ->get();
 
         if ($enSentences->isEmpty() || $ruSentences->isEmpty()) {
+            if ($entityMatch->is_original_en && $enSentences->isNotEmpty()) {
+                SentenceAlignmentService::create()->storeSkipSentences(
+                    $entityMatch,
+                    $this->nextAlignmentChunk($entityMatch->id),
+                    'en',
+                    $enSentences->take(1),
+                );
+            }
+
             return ['en_offset' => $enStart + 1, 'ru_offset' => $ruStart];
         }
 
@@ -487,6 +497,15 @@ class AlignEntitySentences implements ShouldQueue
         $committed = $this->committedMatches($matches, true);
 
         if ($committed === []) {
+            if ($entityMatch->is_original_en) {
+                $service->storeSkipSentences(
+                    $entityMatch,
+                    $this->nextAlignmentChunk($entityMatch->id),
+                    'en',
+                    $enSentences->take(1),
+                );
+            }
+
             return ['en_offset' => $enStart + 1, 'ru_offset' => $ruStart];
         }
 
@@ -586,6 +605,23 @@ class AlignEntitySentences implements ShouldQueue
         $lastCommitted = $committed[array_key_last($committed)] ?? null;
 
         if ($lastCommitted === null) {
+            if ($entityMatch->is_original_en) {
+                $skippedSentence = EnEntitySentence::query()
+                    ->where('en_entity_id', $enEntity->id)
+                    ->orderBy('order')
+                    ->orderBy('id')
+                    ->offset(max($enOffset, $storedEnOffset))
+                    ->limit(1)
+                    ->get();
+
+                SentenceAlignmentService::create()->storeSkipSentences(
+                    $entityMatch,
+                    $this->nextAlignmentChunk($entityMatch->id),
+                    'en',
+                    $skippedSentence,
+                );
+            }
+
             $this->persistOffsets(
                 $entityMatch,
                 max($enOffset, $storedEnOffset) + min(1, $enLimit),
@@ -830,15 +866,200 @@ class AlignEntitySentences implements ShouldQueue
         ]);
 
         if ($newEnOffset >= $enTotal) {
-            $entityMatch->update([
-                'status' => 'completed',
-                'completed_at' => now(),
-            ]);
+            $this->finalize($entityMatch);
 
             return;
         }
 
         self::dispatch($this->entityMatchId);
+    }
+
+    /**
+     * The single completion gate for an entity match. Every completion site
+     * funnels through here so the original-side invariant holds on exit: any
+     * original-side sentence still junction-less (dropped by a crawl seam,
+     * left over after the translation side was exhausted, or skipped during a
+     * re-align) is junctioned into a single-sided meaning match. The repair
+     * is best-effort — if it fails, a warning is logged and completion
+     * proceeds regardless.
+     */
+    private function finalize(EnRuEntityMatch $entityMatch): void
+    {
+        $side = $entityMatch->is_original_en ? 'en' : 'ru';
+
+        [$junctionless, $index] = $this->junctionlessSentences($entityMatch, $side);
+
+        if ($junctionless->isNotEmpty()) {
+            try {
+                $this->repairJunctionlessOriginals($entityMatch, $side, $junctionless, $index);
+            } catch (Throwable $exception) {
+                Log::warning('Failed to junction original sentences on alignment completion', [
+                    'en_ru_entity_match_id' => $entityMatch->id,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        $entityMatch->update([
+            'status' => 'completed',
+            'error_message' => null,
+            'completed_at' => now(),
+            'linked_count' => EnRuMeaningMatch::query()
+                ->where('en_ru_entity_match_id', $entityMatch->id)
+                ->count(),
+        ]);
+    }
+
+    /**
+     * The junction-less original-side sentences in document order, plus the
+     * sentence-id => document-index map that anchors their position among the
+     * meaning matches.
+     *
+     * @param  'en'|'ru'  $side
+     * @return array{0: Collection<int, EnEntitySentence|RuEntitySentence>, 1: array<int, int>}
+     */
+    private function junctionlessSentences(EnRuEntityMatch $entityMatch, string $side): array
+    {
+        $sentenceModel = $side === 'en' ? EnEntitySentence::class : RuEntitySentence::class;
+        $entityColumn = $side === 'en' ? 'en_entity_id' : 'ru_entity_id';
+        $junctionRelation = $side === 'en' ? 'enMeaningMatches' : 'ruMeaningMatches';
+        $entityId = $side === 'en' ? $entityMatch->en_entity_id : $entityMatch->ru_entity_id;
+
+        return [
+            $sentenceModel::query()
+                ->where($entityColumn, $entityId)
+                ->orderBy('order')
+                ->orderBy('id')
+                ->doesntHave($junctionRelation)
+                ->get(),
+            self::sentenceIndex($sentenceModel, $entityColumn, $entityId),
+        ];
+    }
+
+    /**
+     * Junction every junction-less original-side sentence into a single-sided
+     * meaning match (similarity 0.0, next machine alignment chunk id) ordered
+     * so the reader's meaning-match sequence preserves document order. Runs
+     * of junction-less sentences falling between the same pair of junctioned
+     * anchors share the machine chunk id, so a future re-align deletes and
+     * re-feeds them like any other machine row.
+     *
+     * @param  'en'|'ru'  $side
+     * @param  Collection<int, EnEntitySentence|RuEntitySentence>  $junctionless
+     * @param  array<int, int>  $index
+     */
+    private function repairJunctionlessOriginals(
+        EnRuEntityMatch $entityMatch,
+        string $side,
+        Collection $junctionless,
+        array $index,
+    ): void {
+        $junctionRelation = $side === 'en' ? 'enSentenceMatches' : 'ruSentenceMatches';
+        $junctionColumn = $side === 'en' ? 'en_entity_sentence_id' : 'ru_entity_sentence_id';
+        $junctionModel = $side === 'en' ? EnSentenceMeaningMatch::class : RuSentenceMeaningMatch::class;
+
+        $anchors = [];
+
+        EnRuMeaningMatch::query()
+            ->where('en_ru_entity_match_id', $entityMatch->id)
+            ->orderBy('order')
+            ->orderBy('id')
+            ->with($junctionRelation)
+            ->get()
+            ->each(function (EnRuMeaningMatch $match) use (&$anchors, $junctionRelation, $junctionColumn, $index): void {
+                foreach ($match->{$junctionRelation} as $junction) {
+                    $docIndex = $index[$junction->{$junctionColumn}] ?? null;
+
+                    if ($docIndex !== null) {
+                        $anchors[$docIndex] = (int) $match->order;
+                    }
+                }
+            });
+
+        ksort($anchors);
+
+        $runs = [];
+        $run = [];
+        $previousIndex = null;
+
+        foreach ($junctionless as $sentence) {
+            $docIndex = $index[$sentence->id] ?? null;
+
+            if ($docIndex === null) {
+                continue;
+            }
+
+            if ($run !== [] && $previousIndex !== null && $docIndex === $previousIndex + 1) {
+                $run[] = $sentence;
+            } else {
+                if ($run !== []) {
+                    $runs[] = $run;
+                }
+
+                $run = [$sentence];
+            }
+
+            $previousIndex = $docIndex;
+        }
+
+        if ($run !== []) {
+            $runs[] = $run;
+        }
+
+        if ($runs === []) {
+            return;
+        }
+
+        $sparseOrder = app(SparseOrderService::class);
+        $alignmentChunk = $this->nextAlignmentChunk($entityMatch->id);
+        $anchorIndexes = array_keys($anchors);
+
+        DB::transaction(function () use (
+            $entityMatch,
+            $junctionColumn,
+            $junctionModel,
+            $sparseOrder,
+            $alignmentChunk,
+            $anchorIndexes,
+            $anchors,
+            $index,
+            $runs,
+        ): void {
+            foreach ($runs as $run) {
+                $firstIndex = $index[$run[0]->id];
+                $lastIndex = $index[$run[array_key_last($run)]->id];
+
+                $low = null;
+                $high = null;
+
+                foreach ($anchorIndexes as $anchorIndex) {
+                    if ($anchorIndex < $firstIndex) {
+                        $low = $anchors[$anchorIndex];
+                    }
+
+                    if ($anchorIndex > $lastIndex && $high === null) {
+                        $high = $anchors[$anchorIndex];
+                    }
+                }
+
+                $orders = $sparseOrder->spreadOrders(count($run), $low, $high);
+
+                foreach ($orders as $offset => $order) {
+                    $meaningMatch = EnRuMeaningMatch::create([
+                        'en_ru_entity_match_id' => $entityMatch->id,
+                        'order' => $order,
+                        'similarity' => 0.0,
+                        'alignment_chunk' => $alignmentChunk,
+                    ]);
+
+                    $junctionModel::create([
+                        $junctionColumn => $run[$offset]->id,
+                        'en_ru_meaning_match_id' => $meaningMatch->id,
+                        'order' => 0,
+                    ]);
+                }
+            }
+        });
     }
 
     public function failed(\Throwable $exception): void

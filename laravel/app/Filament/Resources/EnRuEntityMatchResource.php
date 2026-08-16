@@ -9,6 +9,7 @@ use App\Models\EnRuEntityMatch;
 use App\Models\EnRuMeaningMatch;
 use App\Models\RuEntity;
 use Filament\Actions;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
@@ -63,6 +64,10 @@ class EnRuEntityMatchResource extends Resource
                             ->required()
                             ->searchable()
                             ->preload(),
+                        Radio::make('is_original_en')
+                            ->label('Original Text')
+                            ->boolean('English', 'Russian')
+                            ->default(true),
                     ]),
                 TextInput::make('chunk_size')
                     ->label('Chunk Size')
@@ -91,6 +96,11 @@ class EnRuEntityMatchResource extends Resource
                     ->label('RU Entity')
                     ->searchable()
                     ->limit(30),
+                TextColumn::make('is_original_en')
+                    ->label('Original')
+                    ->formatStateUsing(fn (bool $state): string => $state ? 'EN' : 'RU')
+                    ->badge()
+                    ->color(fn (bool $state): string => $state ? 'info' : 'warning'),
                 TextColumn::make('entity_similarity')
                     ->label('Similarity')
                     ->formatStateUsing(fn ($state) => $state !== null ? number_format((float) $state, 4) : '-')

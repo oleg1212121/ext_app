@@ -8,6 +8,7 @@ use App\Models\EnEntity;
 use App\Models\EnRuEntityMatch;
 use App\Models\RuEntity;
 use Filament\Actions;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -46,6 +47,10 @@ class ListEnRuEntityMatches extends ListRecords
                         )
                         ->searchable()
                         ->preload(),
+                    Radio::make('is_original_en')
+                        ->label('Original Text')
+                        ->boolean('English', 'Russian')
+                        ->default(true),
                     TextInput::make('chunk_size')
                         ->label('Chunk Size')
                         ->numeric()
@@ -71,6 +76,7 @@ class ListEnRuEntityMatches extends ListRecords
                     $entityMatch = EnRuEntityMatch::create([
                         'en_entity_id' => $data['en_entity_id'],
                         'ru_entity_id' => $data['ru_entity_id'],
+                        'is_original_en' => $data['is_original_en'] ?? true,
                         'chunk_size' => $data['chunk_size'] ?? 75,
                         'max_n' => $data['max_n'] ?? 6,
                         'status' => 'pending',

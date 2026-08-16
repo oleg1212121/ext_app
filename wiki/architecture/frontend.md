@@ -4,7 +4,7 @@ title: Frontend Architecture
 description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, and Vite build.
 tags: [frontend, react, inertia, livewire, tailwind]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-07-26T12:00:00Z }
+generated: { by: agent/kimi-k3, at: 2026-08-15T12:00:00Z }
 sources:
   - id: package
     resource: laravel/package.json

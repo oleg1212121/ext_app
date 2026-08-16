@@ -6,6 +6,7 @@ use App\Classes\AlignmentEditorApiPresenter;
 use App\Classes\SparseOrderService;
 use App\Http\Requests\AddSentenceRequest;
 use App\Http\Requests\MoveSentenceRequest;
+use App\Http\Requests\NeedsReviewRequest;
 use App\Http\Requests\RowsRequest;
 use App\Http\Requests\SentenceLangRequest;
 use App\Http\Requests\StoreMeaningMatchRequest;
@@ -142,10 +143,12 @@ class AlignmentEditorController extends Controller
 
             $this->persistSideOrderChanges($entityId, $lang, $result['items']);
 
+            $junctionOrder = $this->appendJunctionOrder($lang, $meaningMatch);
+
             $this->junctionClass($lang)::query()->create([
                 $this->sentenceForeignKey($lang) => $sentence->id,
                 'en_ru_meaning_match_id' => $meaningMatch->id,
-                'order' => $result['order'],
+                'order' => $junctionOrder,
             ]);
 
             $meaningMatch->update(['similarity' => 1.0]);
@@ -243,7 +246,7 @@ class AlignmentEditorController extends Controller
                     return;
                 }
 
-                $this->assignNewRowSequence($entityMatch, $lang, $toRowId, $seq, $sentenceId);
+                $this->reorderRowJunctions($lang, $toRowId, $seq, $sentenceId);
                 $affectedRowIds[] = $toRowId;
 
                 return;
@@ -255,7 +258,7 @@ class AlignmentEditorController extends Controller
             }
 
             if ($toRowId !== null) {
-                $this->link($entityMatch, $lang, $sentenceId, $toRowId, $index);
+                $this->link($lang, $sentenceId, $toRowId, $index);
                 $affectedRowIds[] = $toRowId;
             }
         });
@@ -283,6 +286,13 @@ class AlignmentEditorController extends Controller
     {
         return response()->json(
             $this->presenter->unmatchedPayload($entityMatch, $request->validated('lang'), $request->page()),
+        );
+    }
+
+    public function needsReview(EnRuEntityMatch $entityMatch, NeedsReviewRequest $request): JsonResponse
+    {
+        return response()->json(
+            $this->presenter->needsReviewPagePayload($entityMatch, $request->page()),
         );
     }
 
@@ -379,6 +389,25 @@ class AlignmentEditorController extends Controller
     }
 
     /**
+     * @param  list<array{key: string, order: int}>  $items
+     */
+    private function persistJunctionOrderChanges(int $rowId, string $lang, array $items): void
+    {
+        $currentOrders = $this->junctionClass($lang)::query()
+            ->where('en_ru_meaning_match_id', $rowId)
+            ->get(['id', 'order'])
+            ->mapWithKeys(fn ($junction): array => [$junction->id => (int) $junction->order]);
+
+        foreach ($items as $item) {
+            $id = (int) substr($item['key'], 2);
+
+            if (($currentOrders->get($id) ?? null) !== $item['order']) {
+                $this->junctionClass($lang)::query()->whereKey($id)->update(['order' => $item['order']]);
+            }
+        }
+    }
+
+    /**
      * @return array{
      *     sentences: array<int, array{order: int, row_id: ?int}>,
      *     rows: array<int, array{order: int, ids: list<int>}>
@@ -446,17 +475,14 @@ class AlignmentEditorController extends Controller
         $currentRowOrder = (int) $meaningMatch->order;
 
         if (isset($layout['rows'][$meaningMatch->id]) && $layout['rows'][$meaningMatch->id]['ids'] !== []) {
-            $ids = $layout['rows'][$meaningMatch->id]['ids'];
-
-            return $layout['sentences'][$ids[count($ids) - 1]]['order'];
+            return $this->rowRightBoundary($layout, $layout['rows'][$meaningMatch->id]['ids']);
         }
 
         $anchor = SparseOrderService::BEGINNING_SENTINEL;
 
         foreach ($layout['rows'] as $row) {
             if ($row['order'] < $currentRowOrder && $row['ids'] !== []) {
-                $ids = $row['ids'];
-                $anchor = $layout['sentences'][$ids[count($ids) - 1]]['order'];
+                $anchor = $this->rowRightBoundary($layout, $row['ids']);
             }
         }
 
@@ -464,73 +490,89 @@ class AlignmentEditorController extends Controller
     }
 
     /**
+     * @param  array{
+     *     sentences: array<int, array{order: int, row_id: ?int}>,
+     *     rows: array<int, array{order: int, ids: list<int>}>
+     * }  $layout
+     * @param  list<int>  $ids
+     */
+    private function rowRightBoundary(array $layout, array $ids): int
+    {
+        return max(array_map(fn (int $id): int => $layout['sentences'][$id]['order'], $ids));
+    }
+
+    /**
      * @param  list<int>  $seq
      */
-    private function assignNewRowSequence(EnRuEntityMatch $entityMatch, string $lang, int $rowId, array $seq, ?int $movedId = null): void
+    private function reorderRowJunctions(string $lang, int $rowId, array $seq, ?int $movedId = null): void
     {
-        $layout = $this->sideLayout($entityMatch, $lang);
-        $rows = $layout['rows'];
-        $sentences = $layout['sentences'];
+        $sideForeignKey = $this->sentenceForeignKey($lang);
 
-        $targetRowOrder = (int) EnRuMeaningMatch::query()->whereKey($rowId)->value('order');
+        $junctions = $this->junctionClass($lang)::query()
+            ->where('en_ru_meaning_match_id', $rowId)
+            ->orderBy('order')
+            ->orderBy($sideForeignKey)
+            ->get(['id', $sideForeignKey, 'order'])
+            ->values();
 
-        $low = null;
-        $high = null;
+        $orders = [];
 
-        foreach ($rows as $row) {
-            if ($row['order'] < $targetRowOrder && $row['ids'] !== []) {
-                $ids = $row['ids'];
-                $low = $sentences[$ids[count($ids) - 1]]['order'];
-            }
-        }
-
-        foreach ($rows as $row) {
-            if ($row['order'] > $targetRowOrder && $row['ids'] !== []) {
-                $ids = $row['ids'];
-                $high = $sentences[$ids[0]]['order'];
-                break;
-            }
+        foreach ($junctions as $junction) {
+            $orders[(int) $junction->{$sideForeignKey}] = (int) $junction->order;
         }
 
         if ($movedId !== null) {
             $remaining = array_values(array_filter($seq, fn (int $id): bool => $id !== $movedId));
             $insertIndex = array_search($movedId, $seq, true);
 
-            $prevOrder = $insertIndex > 0 ? $sentences[$remaining[$insertIndex - 1]]['order'] : $low;
-            $nextOrder = $insertIndex < count($remaining) ? $sentences[$remaining[$insertIndex]]['order'] : $high;
+            $prevOrder = $insertIndex > 0 ? ($orders[$remaining[$insertIndex - 1]] ?? null) : null;
+            $nextOrder = $insertIndex < count($remaining) ? ($orders[$remaining[$insertIndex]] ?? null) : null;
 
             $newOrder = $this->sparseOrder->between($prevOrder, $nextOrder);
 
             if ($newOrder !== null) {
-                $this->setSentenceOrderRaw($lang, $movedId, $newOrder);
+                $this->setJunctionOrderRaw($lang, $movedId, $newOrder);
 
                 return;
             }
         }
 
-        $orders = $this->sparseOrder->spreadOrders(count($seq), $low, $high);
+        $spread = $this->sparseOrder->spreadOrders(count($seq), null, null);
 
         foreach ($seq as $index => $id) {
-            $this->setSentenceOrderRaw($lang, $id, $orders[$index]);
+            $this->setJunctionOrderRaw($lang, $id, $spread[$index]);
         }
     }
 
-    private function link(EnRuEntityMatch $entityMatch, string $lang, int $sentenceId, int $rowId, int $index): void
+    private function link(string $lang, int $sentenceId, int $rowId, int $index): void
     {
-        $layout = $this->sideLayout($entityMatch, $lang);
+        $sideForeignKey = $this->sentenceForeignKey($lang);
 
-        $existing = $layout['rows'][$rowId]['ids'] ?? [];
-        $seq = $existing;
-        array_splice($seq, $index, 0, [$sentenceId]);
+        $junctions = $this->junctionClass($lang)::query()
+            ->where('en_ru_meaning_match_id', $rowId)
+            ->orderBy('order')
+            ->orderBy($sideForeignKey)
+            ->get(['id', $sideForeignKey, 'order'])
+            ->values();
 
-        $this->assignNewRowSequence($entityMatch, $lang, $rowId, $seq, $sentenceId);
+        $items = $junctions
+            ->map(fn ($junction): array => ['key' => 'j-'.$junction->id, 'order' => (int) $junction->order])
+            ->values()
+            ->all();
 
-        $newOrder = $this->sentenceClass($lang)::query()->whereKey($sentenceId)->value('order');
+        $afterIndex = min($index, $junctions->count()) - 1;
+        $afterOrder = $afterIndex >= 0
+            ? (int) $junctions[$afterIndex]->order
+            : SparseOrderService::BEGINNING_SENTINEL;
+
+        $result = $this->sparseOrder->orderForInsertAfter($items, null, $afterOrder);
+
+        $this->persistJunctionOrderChanges($rowId, $lang, $result['items']);
 
         $this->junctionClass($lang)::query()->create([
             $this->sentenceForeignKey($lang) => $sentenceId,
             'en_ru_meaning_match_id' => $rowId,
-            'order' => (int) $newOrder,
+            'order' => $result['order'],
         ]);
 
         EnRuMeaningMatch::query()->whereKey($rowId)->update(['similarity' => 1.0]);
@@ -549,7 +591,42 @@ class AlignmentEditorController extends Controller
     private function setSentenceOrderRaw(string $lang, int $sentenceId, int $order): void
     {
         $this->sentenceClass($lang)::query()->whereKey($sentenceId)->update(['order' => $order]);
-        $this->junctionClass($lang)::query()->where($this->sentenceForeignKey($lang), $sentenceId)->update(['order' => $order]);
+    }
+
+    private function setJunctionOrderRaw(string $lang, int $sentenceId, int $order): void
+    {
+        $this->junctionClass($lang)::query()
+            ->where($this->sentenceForeignKey($lang), $sentenceId)
+            ->update(['order' => $order]);
+    }
+
+    /**
+     * Compute a sparse order that appends a new junction at the end of the
+     * row's junction-order sequence, independent of the linked sentence's
+     * document order.
+     */
+    private function appendJunctionOrder(string $lang, EnRuMeaningMatch $meaningMatch): int
+    {
+        $junctions = $this->junctionClass($lang)::query()
+            ->where('en_ru_meaning_match_id', $meaningMatch->id)
+            ->orderBy('order')
+            ->orderBy('id')
+            ->get(['id', 'order']);
+
+        $items = $junctions
+            ->map(fn ($junction): array => ['key' => 'j-'.$junction->id, 'order' => (int) $junction->order])
+            ->values()
+            ->all();
+
+        $result = $this->sparseOrder->orderForInsertAfter(
+            $items,
+            null,
+            $junctions->last()?->order ?? SparseOrderService::BEGINNING_SENTINEL,
+        );
+
+        $this->persistJunctionOrderChanges($meaningMatch->id, $lang, $result['items']);
+
+        return $result['order'];
     }
 
     private function rowIdOfSentence(string $lang, int $sentenceId): ?int

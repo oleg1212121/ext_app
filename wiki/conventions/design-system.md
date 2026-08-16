@@ -4,7 +4,7 @@ title: Design System
 description: Visual language for the app — colors, type, layout, and signature patterns to keep new pages consistent with the Bilinguals simulator redesign.
 tags: [design, frontend, ui, tailwind, tokens]
 status: stable
-generated: { by: agent/glm-5.2, at: 2026-08-06T18:10:00Z }
+generated: { by: agent/glm-5.2, at: 2026-08-16T00:00:00Z }
 ---
 
 # Design System
@@ -40,11 +40,13 @@ block, so they emit as CSS variables usable both as Tailwind utilities
 | `--wbench-accent` | `#1F3DDB` | `#5A78FF` | Focus ring, active state, `em`, "Ask", link |
 | `--wbench-accent-ink` | `#15296F` | — | Accent-on-hover (light) |
 | `--wbench-danger` | `#B1251C` | `#E66B62` | Errors only |
+| `--wbench-emphasis` | `#B0451E` | `#E0664A` | Bold emphasis (`b`, `strong`), `mark` tint |
 
 **Accent discipline:** the ultramarine accent does *one* job per surface — focus
-ring, active marker, the one emphasis run, the one CTA. Do not paint chrome with
-it. If a second accent appears to be needed, re-read the layout; an accent is a
-signal, not decoration.
+ring, active marker, the one italic emphasis run (`em`), the one CTA. Bold
+emphasis (`strong`, `b`) is a separate channel, painted in `--wbench-emphasis`
+(vermilion). Do not paint chrome with either. If a third accent appears to be
+needed, re-read the layout; an accent is a signal, not decoration.
 
 > The legacy `--color-vellum/*` token family (warm cream + vermilion) remains in
 > `app.css` for backward compatibility with other pages and Blade/Alpine views.
@@ -122,7 +124,7 @@ list, search results) must implement all four, in the interface's voice:
 |-------|-----------|
 | **Empty (no request yet)** | Serif sentence inviting the next action; mono eyebrow drops the drop-label (`NO TEXT LOADED`) |
 | **Loading (request pending)** | One orchestrated moment, not scattered shimmer — a single filling accent rule or ping dot with a mono `WORKING` label; reduced-motion stays static |
-| **Answer / data** | Scoped `.ai-prose`-style treatment; accent `em`, ink `strong`, mono-caps headings; no per-line `:hover` background |
+| **Answer / data** | Scoped `.ai-prose`-style treatment; accent `em`, emphasis-red `strong`, mono-caps headings; **gloss-run hover** — text-bearing elements get a pointer cursor and an accent-tinted background on `:hover`, scoped to `#ai_answer_div` (no full-row backgrounds) |
 | **Error** | Serif line in `--wbench-danger` with the real failure message + a `Retry` control that re-sends the original payload |
 
 No region returns blank `''` HTML. No region displays fake skeleton content when
@@ -147,7 +149,7 @@ every animation; reduced motion is not a graceful-degradation afterthought.
 |---------|-------|-------|
 | Scoped `--wbench-*` tokens | `resources/css/app.css` `@theme` | Emit as CSS vars; usable from Tailwind arbitrary-value utilities |
 | `.ribbon-mark` active row edge | `resources/css/app.css` | Width 0 → 3px on `group:hover` / `focus-within`; retint to `--wbench-accent` |
-| `.ai-prose` markdown styling | `public/css/simulator.css` | For AI / markdown-rendered answer divs only |
+| `.ai-prose` markdown styling | `public/css/simulator.css` | For AI / markdown-rendered answer divs only; accent `em`/`i`, emphasis-red `b`/`strong`, plus `mark`/`u`/`del`/`code`/`blockquote` treatments; gloss-run `:hover` affordance (pointer + accent tint) scoped to `#ai_answer_div` |
 | `.ai-loader-rule` filling underline | `public/css/simulator.css` | Keyframe `ai-rule-fill`, 900ms cubic ease-out; `motion-safe`-gated |
 | `.resizeable_element` font-scaling hook | `public/css/simulator.css` + `Bilinguals.jsx::updateResizeableFontStyles` | For surfaces that support user font-size control |
 | Segmented tab strip with `Underline` | `Bilinguals.jsx` | 2px accent underline, `scale-x` reveal, shared `tabClass()` helper |

@@ -5,10 +5,15 @@ namespace App\Classes;
 use App\Models\EnRuEntityMatch;
 use App\Models\EnRuMeaningMatch;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 
 class AlignmentEditorApiPresenter
 {
     public const UNMATCHED_PER_PAGE = 15;
+
+    public const NEEDS_REVIEW_PER_PAGE = 25;
+
+    public const LOW_SIMILARITY_THRESHOLD = 0.55;
 
     /**
      * @return array<string, mixed>
@@ -161,6 +166,104 @@ class AlignmentEditorApiPresenter
         }
 
         return $sentences;
+    }
+
+    /**
+     * @return array{items: list<array<string, mixed>>, meta: array{current_page: int, last_page: int, total: int, per_page: int}}
+     */
+    public function needsReviewPagePayload(EnRuEntityMatch $entityMatch, int $page = 1): array
+    {
+        $rows = EnRuMeaningMatch::query()
+            ->where('en_ru_entity_match_id', $entityMatch->id)
+            ->where(function ($query) {
+                $query
+                    ->where(function ($oneSided) {
+                        $oneSided
+                            ->whereHas('enSentenceMatches')
+                            ->whereDoesntHave('ruSentenceMatches');
+                    })
+                    ->orWhere(function ($oneSided) {
+                        $oneSided
+                            ->whereDoesntHave('enSentenceMatches')
+                            ->whereHas('ruSentenceMatches');
+                    })
+                    ->orWhere('similarity', '<', self::LOW_SIMILARITY_THRESHOLD);
+            })
+            ->with([
+                'enSentenceMatches.enEntitySentence',
+                'ruSentenceMatches.ruEntitySentence',
+            ])
+            ->orderBy('order')
+            ->paginate(self::NEEDS_REVIEW_PER_PAGE, ['*'], 'page', $page);
+
+        return [
+            'items' => $this->needsReviewItems($entityMatch, $rows->getCollection()),
+            'meta' => [
+                'current_page' => $rows->currentPage(),
+                'last_page' => $rows->lastPage(),
+                'total' => $rows->total(),
+                'per_page' => $rows->perPage(),
+            ],
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function needsReviewItems(EnRuEntityMatch $entityMatch, Collection $meaningMatches): array
+    {
+        if ($meaningMatches->isEmpty()) {
+            return [];
+        }
+
+        $ranks = $this->ranksByRowId($entityMatch, $meaningMatches->pluck('id')->all());
+
+        return $meaningMatches
+            ->map(function (EnRuMeaningMatch $meaningMatch) use ($ranks): array {
+                $enSentences = $this->linkedSentences($meaningMatch, 'en');
+                $ruSentences = $this->linkedSentences($meaningMatch, 'ru');
+
+                return [
+                    'key' => 'mm-'.$meaningMatch->id,
+                    'id' => $meaningMatch->id,
+                    'order' => (int) $meaningMatch->order,
+                    'similarity' => $meaningMatch->similarity !== null
+                        ? round((float) $meaningMatch->similarity, 4)
+                        : null,
+                    'en_part' => $this->partContent($enSentences),
+                    'ru_part' => $this->partContent($ruSentences),
+                    'one_sided' => ($enSentences !== [] && $ruSentences === []) || ($enSentences === [] && $ruSentences !== []),
+                    'rank' => (int) ($ranks[$meaningMatch->id] ?? 1),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @return array<int, int>
+     */
+    private function ranksByRowId(EnRuEntityMatch $entityMatch, array $ids): array
+    {
+        $subquery = DB::table('en_ru_meaning_matches')
+            ->where('en_ru_entity_match_id', $entityMatch->id)
+            ->select('id')
+            ->selectRaw('ROW_NUMBER() OVER (ORDER BY "order") AS rn');
+
+        return DB::table($subquery, 't')
+            ->whereIn('id', $ids)
+            ->pluck('rn', 'id')
+            ->map(fn ($rn): int => (int) $rn)
+            ->all();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $sentences
+     */
+    private function partContent(array $sentences): string
+    {
+        return implode(' / ', array_map(fn (array $sentence): string => $sentence['content'], $sentences));
     }
 
     /**

@@ -4,7 +4,7 @@ title: Running an Alignment
 description: End-to-end workflow for aligning an EN/RU text pair into sentence meaning matches.
 tags: [alignment, embeddings, jobs, howto]
 status: stable
-generated: { by: agent/opencode-go, at: 2026-08-14T18:35:31Z }
+generated: { by: agent/opencode, at: 2026-08-15T22:50:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -73,7 +73,13 @@ sources:
     (`alignment_chunk = -1`) and high-confidence auto-landmarks
     (similarity ≥ 0.90) and only deletes lower-confidence machine rows, then
     re-aligns the gaps between landmarks as independent pools (see the
-    pipeline doc for pool semantics). The chunk job
+    pipeline doc for pool semantics). Each pool that fits one window is
+    aligned by a single job invocation: `handle()` persists the cursor and
+    re-dispatches after every pool, so a re-align of many small landmark
+    pools runs as one queued job per pool (a match with 141 pools previously
+    ran one long ~2m16s job). Pools larger than `chunk_size` on either side
+    fall through to the chunk machinery below and are drained chunk-by-chunk
+    across jobs. The chunk job
     (`AlignEntitySentences::handle()`) processes one chunk of
    `chunk_size` sentences (default 75) per invocation. Each chunk reads its
    slice from `last_en_sentence_offset` / `last_ru_sentence_offset` (RU
@@ -94,6 +100,13 @@ sources:
     `self::dispatch()`es the next invocation until the cursor reaches
     `en_total_sentences`, at which point the entity match flips to
     `completed`. Meaning matches carry a monotonic `alignment_chunk` per run.
+    Completion goes through a single gate (`AlignEntitySentences::finalize()`):
+    any original-text sentence still junction-less is drained as a
+    **single-sided meaning match** (`similarity 0.0`) ordered to preserve
+    document order, so the original side is never unmatched. "RU sentences
+    exhausted before EN" is a normal completion (the remaining original tail
+    is drained), not an error — see
+    [Sentence Alignment](/domains/sentence-alignment.md).
     Small entities (`max(en_total, ru_total) ≤ 75`) are raised to a single
     chunk in `beginFromScratch()`, skipping the seam rollback/trim machinery
     entirely.

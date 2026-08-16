@@ -103,9 +103,15 @@ function SentenceColumn({lang, containerKey, keys, lookup, adding, draft, busy, 
     );
 }
 
-export default function PairRow({row, enKeys, ruKeys, lookup, editing, adding, draft, busy, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete, onApprove}) {
+export default function PairRow({row, enKeys, ruKeys, lookup, editing, adding, draft, busy, highlighted, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete, onApprove}) {
     return (
-        <section className="border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] last:border-b-0">
+        <section
+            data-row-id={row.id}
+            className={[
+                'border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] last:border-b-0 transition-shadow',
+                highlighted ? 'ring-2 ring-[var(--wbench-accent)] dark:ring-[var(--wbench-accent-night)]' : '',
+            ].join(' ')}
+        >
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)] px-3 py-1.5">
                 <div className="flex items-center gap-3">
                     <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">

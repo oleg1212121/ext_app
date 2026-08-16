@@ -121,7 +121,7 @@ it('fails a begin run when verify rejects the pair', function () {
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
 
-it('completes a begin run early when one side has no sentences', function () {
+it('drains the original side as skip rows when one side has no sentences', function () {
     Bus::fake();
 
     $enEntity = EnEntity::create([
@@ -150,8 +150,11 @@ it('completes a begin run early when one side has no sentences', function () {
     $entityMatch->refresh();
 
     expect($entityMatch->status)->toBe('completed')
-        ->and($entityMatch->error_message)->toBe('One or both entities have no sentences')
-        ->and($entityMatch->completed_at)->not->toBeNull();
+        ->and($entityMatch->error_message)->toBeNull()
+        ->and($entityMatch->completed_at)->not->toBeNull()
+        ->and(EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->count())->toBe(1)
+        ->and(EnSentenceMeaningMatch::count())->toBe(1)
+        ->and(EnEntitySentence::whereDoesntHave('enMeaningMatches')->where('en_entity_id', $enEntity->id)->count())->toBe(0);
 
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
@@ -412,7 +415,7 @@ it('completes when reaching the final chunk', function () {
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
 
-it('completes early when RU sentences are exhausted before EN', function () {
+it('drains remaining original sentences when RU sentences are exhausted before EN', function () {
     Http::fake(fn (Request $request) => Http::response([
         'matches' => [],
         'unmatched_en' => [],
@@ -454,9 +457,310 @@ it('completes early when RU sentences are exhausted before EN', function () {
 
     $entityMatch->refresh();
 
+    $skipped = EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->first();
+
     expect($entityMatch->status)->toBe('completed')
-        ->and($entityMatch->error_message)->toBe('RU sentences exhausted before EN')
-        ->and($entityMatch->last_en_sentence_offset)->toBe(2);
+        ->and($entityMatch->error_message)->toBeNull()
+        ->and($entityMatch->last_en_sentence_offset)->toBe(2)
+        ->and(EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->count())->toBe(1)
+        ->and($skipped)->not->toBeNull()
+        ->and((float) $skipped->similarity)->toBe(0.0)
+        ->and($skipped->enSentenceMatches()->count())->toBe(1)
+        ->and($skipped->ruSentenceMatches()->count())->toBe(0)
+        ->and(EnEntitySentence::whereDoesntHave('enMeaningMatches')->where('en_entity_id', $enEntity->id)->count())->toBe(0);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
+it('stores a single-sided skip row when a chunk commits no matches and advances', function () {
+    Http::fake(fn (Request $request) => Http::response([
+        'matches' => [],
+        'unmatched_en' => [],
+        'unmatched_ru' => [],
+    ]));
+
+    Bus::fake();
+
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $enEntity = EnEntity::create(['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = RuEntity::create(['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    foreach (range(1, 2) as $order) {
+        EnEntitySentence::create([
+            'en_entity_id' => $enEntity->id,
+            'sentence_type_id' => $sentenceType->id,
+            'content' => "English {$order}.",
+            'order' => $order,
+        ]);
+    }
+
+    RuEntitySentence::create([
+        'ru_entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'Russian.',
+        'order' => 1,
+    ]);
+
+    $entityMatch = EnRuEntityMatch::create([
+        'en_entity_id' => $enEntity->id,
+        'ru_entity_id' => $ruEntity->id,
+        'status' => 'aligning',
+        'chunk_size' => 1,
+        'max_n' => 1,
+        'en_total_sentences' => 2,
+        'ru_total_sentences' => 1,
+        'last_en_sentence_offset' => 0,
+        'last_ru_sentence_offset' => 0,
+    ]);
+
+    (new AlignEntitySentences($entityMatch->id))->handle();
+
+    $entityMatch->refresh();
+
+    $firstEnSentence = EnEntitySentence::where('en_entity_id', $enEntity->id)->orderBy('order')->first();
+
+    expect($entityMatch->status)->toBe('aligning')
+        ->and($entityMatch->last_en_sentence_offset)->toBe(1)
+        ->and($firstEnSentence->enMeaningMatches()->count())->toBe(1)
+        ->and(EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->first()->ruSentenceMatches()->count())->toBe(0)
+        ->and(EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->count())->toBe(1);
+
+    Bus::assertDispatched(AlignEntitySentences::class, 1);
+});
+
+it('drains the RU original tail as skip rows when RU is the original side and longer', function () {
+    Http::fake(fn (Request $request) => Http::response([
+        'matches' => [],
+        'unmatched_en' => [],
+        'unmatched_ru' => [],
+    ]));
+
+    Bus::fake();
+
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $enEntity = EnEntity::create(['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = RuEntity::create(['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    EnEntitySentence::create([
+        'en_entity_id' => $enEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'English.',
+        'order' => 1,
+    ]);
+
+    foreach (range(1, 2) as $order) {
+        RuEntitySentence::create([
+            'ru_entity_id' => $ruEntity->id,
+            'sentence_type_id' => $sentenceType->id,
+            'content' => "Russian {$order}.",
+            'order' => $order,
+        ]);
+    }
+
+    $entityMatch = EnRuEntityMatch::create([
+        'en_entity_id' => $enEntity->id,
+        'ru_entity_id' => $ruEntity->id,
+        'status' => 'aligning',
+        'is_original_en' => false,
+        'chunk_size' => 2,
+        'max_n' => 2,
+        'en_total_sentences' => 1,
+        'ru_total_sentences' => 2,
+        'last_en_sentence_offset' => 0,
+        'last_ru_sentence_offset' => 0,
+    ]);
+
+    (new AlignEntitySentences($entityMatch->id))->handle();
+
+    $entityMatch->refresh();
+
+    expect($entityMatch->status)->toBe('completed')
+        ->and($entityMatch->error_message)->toBeNull()
+        ->and(EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->count())->toBe(2)
+        ->and(EnSentenceMeaningMatch::count())->toBe(0)
+        ->and(RuSentenceMeaningMatch::count())->toBe(2)
+        ->and(RuEntitySentence::whereDoesntHave('ruMeaningMatches')->where('ru_entity_id', $ruEntity->id)->count())->toBe(0);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
+it('inserts a position-aware skip row for a mid-text junction-less original sentence on completion', function () {
+    Bus::fake();
+
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $enEntity = EnEntity::create(['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = RuEntity::create(['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    $enSentences = collect(range(1, 3))->map(fn (int $order): EnEntitySentence => EnEntitySentence::create([
+        'en_entity_id' => $enEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => "English {$order}.",
+        'order' => $order,
+    ]));
+    $ruSentences = collect(range(1, 3))->map(fn (int $order): RuEntitySentence => RuEntitySentence::create([
+        'ru_entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => "Russian {$order}.",
+        'order' => $order,
+    ]));
+
+    $entityMatch = EnRuEntityMatch::create([
+        'en_entity_id' => $enEntity->id,
+        'ru_entity_id' => $ruEntity->id,
+        'status' => 'aligning',
+        'chunk_size' => 3,
+        'max_n' => 3,
+        'en_total_sentences' => 3,
+        'ru_total_sentences' => 3,
+        'last_en_sentence_offset' => 3,
+        'last_ru_sentence_offset' => 3,
+    ]);
+
+    foreach ([0 => 0, 2 => 2048] as $index => $order) {
+        $meaningMatch = EnRuMeaningMatch::create([
+            'en_ru_entity_match_id' => $entityMatch->id,
+            'order' => $order,
+            'similarity' => 0.95,
+            'alignment_chunk' => -1,
+        ]);
+
+        EnSentenceMeaningMatch::create([
+            'en_entity_sentence_id' => $enSentences[$index]->id,
+            'en_ru_meaning_match_id' => $meaningMatch->id,
+            'order' => 0,
+        ]);
+        RuSentenceMeaningMatch::create([
+            'ru_entity_sentence_id' => $ruSentences[$index]->id,
+            'en_ru_meaning_match_id' => $meaningMatch->id,
+            'order' => 0,
+        ]);
+    }
+
+    (new AlignEntitySentences($entityMatch->id))->handle();
+
+    $entityMatch->refresh();
+
+    $inserted = EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)
+        ->where('order', '>', 0)
+        ->where('order', '<', 2048)
+        ->first();
+
+    expect($entityMatch->status)->toBe('completed')
+        ->and(EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->count())->toBe(3)
+        ->and($inserted)->not->toBeNull()
+        ->and((float) $inserted->similarity)->toBe(0.0)
+        ->and($inserted->enSentenceMatches()->first()->en_entity_sentence_id)->toBe($enSentences[1]->id)
+        ->and($inserted->ruSentenceMatches()->count())->toBe(0)
+        ->and(EnEntitySentence::whereDoesntHave('enMeaningMatches')->where('en_entity_id', $enEntity->id)->count())->toBe(0);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
+it('completes without failing when a human-unlinked original sentence is still junction-less', function () {
+    Bus::fake();
+
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $enEntity = EnEntity::create(['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = RuEntity::create(['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    $enSentences = collect(range(1, 2))->map(fn (int $order): EnEntitySentence => EnEntitySentence::create([
+        'en_entity_id' => $enEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => "English {$order}.",
+        'order' => $order,
+    ]));
+    $ruSentences = collect(range(1, 2))->map(fn (int $order): RuEntitySentence => RuEntitySentence::create([
+        'ru_entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => "Russian {$order}.",
+        'order' => $order,
+    ]));
+
+    $entityMatch = EnRuEntityMatch::create([
+        'en_entity_id' => $enEntity->id,
+        'ru_entity_id' => $ruEntity->id,
+        'status' => 'aligning',
+        'chunk_size' => 2,
+        'max_n' => 2,
+        'en_total_sentences' => 2,
+        'ru_total_sentences' => 2,
+        'last_en_sentence_offset' => 2,
+        'last_ru_sentence_offset' => 2,
+    ]);
+
+    $landmark = EnRuMeaningMatch::create([
+        'en_ru_entity_match_id' => $entityMatch->id,
+        'order' => 0,
+        'similarity' => 0.95,
+        'alignment_chunk' => -1,
+    ]);
+
+    EnSentenceMeaningMatch::create([
+        'en_entity_sentence_id' => $enSentences[0]->id,
+        'en_ru_meaning_match_id' => $landmark->id,
+        'order' => 0,
+    ]);
+    RuSentenceMeaningMatch::create([
+        'ru_entity_sentence_id' => $ruSentences[0]->id,
+        'en_ru_meaning_match_id' => $landmark->id,
+        'order' => 0,
+    ]);
+
+    EnRuMeaningMatch::create([
+        'en_ru_entity_match_id' => $entityMatch->id,
+        'order' => 512,
+        'similarity' => 0.0,
+        'alignment_chunk' => -1,
+    ]);
+
+    (new AlignEntitySentences($entityMatch->id))->handle();
+
+    $entityMatch->refresh();
+
+    expect($entityMatch->status)->toBe('completed')
+        ->and($entityMatch->error_message)->toBeNull()
+        ->and(EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->count())->toBe(3)
+        ->and($enSentences[1]->refresh()->enMeaningMatches()->count())->toBe(1)
+        ->and(EnEntitySentence::whereDoesntHave('enMeaningMatches')->where('en_entity_id', $enEntity->id)->count())->toBe(0);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
+it('drains the original side as skip rows when the translation side has no sentences', function () {
+    Bus::fake();
+
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $enEntity = EnEntity::create(['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = RuEntity::create(['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    foreach (range(1, 2) as $order) {
+        EnEntitySentence::create([
+            'en_entity_id' => $enEntity->id,
+            'sentence_type_id' => $sentenceType->id,
+            'content' => "English {$order}.",
+            'order' => $order,
+        ]);
+    }
+
+    $entityMatch = EnRuEntityMatch::create([
+        'en_entity_id' => $enEntity->id,
+        'ru_entity_id' => $ruEntity->id,
+        'status' => 'pending',
+        'chunk_size' => 2,
+        'max_n' => 2,
+    ]);
+
+    AlignEntitySentences::beginFromScratch($entityMatch->id);
+
+    $entityMatch->refresh();
+
+    expect($entityMatch->status)->toBe('completed')
+        ->and($entityMatch->error_message)->toBeNull()
+        ->and($entityMatch->en_total_sentences)->toBe(2)
+        ->and($entityMatch->ru_total_sentences)->toBe(0)
+        ->and(EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->count())->toBe(2)
+        ->and(EnSentenceMeaningMatch::count())->toBe(2)
+        ->and(EnEntitySentence::whereDoesntHave('enMeaningMatches')->where('en_entity_id', $enEntity->id)->count())->toBe(0);
 
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });

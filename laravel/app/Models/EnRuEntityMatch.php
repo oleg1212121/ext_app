@@ -11,6 +11,7 @@ class EnRuEntityMatch extends Model
     protected $fillable = [
         'en_entity_id',
         'ru_entity_id',
+        'is_original_en',
         'status',
         'entity_similarity',
         'en_total_sentences',
@@ -29,6 +30,7 @@ class EnRuEntityMatch extends Model
     {
         return [
             'entity_similarity' => 'decimal:4',
+            'is_original_en' => 'boolean',
             'en_total_sentences' => 'integer',
             'ru_total_sentences' => 'integer',
             'linked_count' => 'integer',

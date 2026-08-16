@@ -4,7 +4,7 @@ title: Importing Dictionary Data
 description: How to import Kaikki/Wiktionary dumps into the EN/RU dictionary tables and link translations.
 tags: [dictionary, import, wiktionary, kaikki]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-07-26T12:00:00Z }
+generated: { by: agent/kimi-k3, at: 2026-08-16T15:35:00Z }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php

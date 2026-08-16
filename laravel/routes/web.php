@@ -49,6 +49,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'rows']);
     Route::get('/alignments/{entityMatch}/unmatched', [AlignmentEditorController::class, 'unmatched']);
+    Route::get('/alignments/{entityMatch}/needs-review', [AlignmentEditorController::class, 'needsReview']);
     Route::post('/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'storeRow']);
     Route::delete('/alignments/{entityMatch}/rows/{meaningMatch}', [AlignmentEditorController::class, 'destroyRow']);
     Route::post('/alignments/{entityMatch}/rows/{meaningMatch}/approve', [AlignmentEditorController::class, 'approveRow']);

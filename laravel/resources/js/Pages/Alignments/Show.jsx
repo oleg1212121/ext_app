@@ -1,4 +1,4 @@
-import {useCallback, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
     DndContext,
     PointerSensor,
@@ -10,6 +10,7 @@ import {
 import {sortableKeyboardCoordinates} from '@dnd-kit/sortable';
 import PairRow from './components/PairRow.jsx';
 import UnmatchedSection from './components/UnmatchedSection.jsx';
+import NeedsReviewSection from './components/NeedsReviewSection.jsx';
 import Pagination from './components/Pagination.jsx';
 import {alignmentsApi} from './components/api.js';
 import Main from '../../Layouts/Main.jsx';
@@ -45,13 +46,14 @@ function buildLookup({rows, unmatchedEn, unmatchedRu}) {
     return lookup;
 }
 
-export default function Show({match: initialMatch, rows: initialRows, rows_meta: initialRowsMeta, unmatched_en: initialUnmatchedEn, unmatched_ru: initialUnmatchedRu}) {
+export default function Show({match: initialMatch, rows: initialRows, rows_meta: initialRowsMeta, unmatched_en: initialUnmatchedEn, unmatched_ru: initialUnmatchedRu, needs_review: initialNeedsReview}) {
     const [data, setData] = useState(() => ({
         match: initialMatch,
         rows: initialRows,
         rowsMeta: initialRowsMeta,
         unmatchedEn: initialUnmatchedEn,
         unmatchedRu: initialUnmatchedRu,
+        needsReview: initialNeedsReview,
     }));
 
     const lastServer = useRef(data);
@@ -63,6 +65,9 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     const [poolError, setPoolError] = useState({en: null, ru: null});
     const [actionBusy, setActionBusy] = useState(false);
     const [actionError, setActionError] = useState(null);
+    const [needsReviewBusy, setNeedsReviewBusy] = useState(false);
+    const [needsReviewOpen, setNeedsReviewOpen] = useState(false);
+    const [highlightedRowId, setHighlightedRowId] = useState(null);
 
     const [editing, setEditing] = useState(null);
     const [adding, setAdding] = useState(null);
@@ -73,7 +78,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     const activeContainer = useRef(null);
 
     const lookup = useMemo(() => buildLookup(data), [data]);
-    const {match, rows, rowsMeta, unmatchedEn, unmatchedRu} = data;
+    const {match, rows, rowsMeta, unmatchedEn, unmatchedRu, needsReview} = data;
 
     const applyData = useCallback((next) => {
         setData(next);
@@ -117,6 +122,46 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         }
     }, [initialMatch.id, applyData]);
 
+    const loadNeedsReview = useCallback(async (page) => {
+        setNeedsReviewBusy(true);
+
+        try {
+            const res = await alignmentsApi.needsReview(initialMatch.id, page);
+            applyData({...lastServer.current, needsReview: res});
+        } catch {
+            // keep the last list on failure
+        } finally {
+            setNeedsReviewBusy(false);
+        }
+    }, [initialMatch.id, applyData]);
+
+    useEffect(() => {
+        if (highlightedRowId === null) {
+            return;
+        }
+
+        const element = document.querySelector(`[data-row-id="${highlightedRowId}"]`);
+
+        if (element) {
+            element.scrollIntoView({block: 'center', behavior: 'smooth'});
+        }
+    }, [highlightedRowId, rows]);
+
+    const jumpToRow = useCallback(async (item, page) => {
+        if (tableBusy || actionBusy) {
+            return;
+        }
+
+        const {current_page, per_page} = lastServer.current.rowsMeta;
+
+        if (page !== current_page) {
+            await loadRows(page, per_page);
+        }
+
+        setHighlightedRowId(item.id);
+        window.setTimeout(() => setHighlightedRowId((prev) => (prev === item.id ? null : prev)), 2500);
+    }, [tableBusy, actionBusy, loadRows]);
+
     const applyMutation = useCallback(async (res) => {
         const base = lastServer.current;
         let rows = base.rows;
@@ -142,7 +187,9 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             const key = lang === 'en' ? 'unmatchedEn' : 'unmatchedRu';
             await loadUnmatched(lang, lastServer.current[key].meta.current_page);
         }
-    }, [applyData, loadUnmatched]);
+
+        await loadNeedsReview(lastServer.current.needsReview.meta.current_page);
+    }, [applyData, loadUnmatched, loadNeedsReview]);
 
     const runMutation = useCallback(async (request) => {
         setActionBusy(true);
@@ -556,6 +603,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                                         adding={adding}
                                         draft={addDraft}
                                         busy={actionBusy}
+                                        highlighted={highlightedRowId === row.id}
                                         onAddStart={onAddStart}
                                         onAddChange={onAddChange}
                                         onAddCommit={onAddCommit}
@@ -598,6 +646,17 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                         onCancelEdit={onCancelEdit}
                         onRemove={onRemove}
                         onPageChange={(lang, page) => loadUnmatched(lang, page)}
+                    />
+
+                    <NeedsReviewSection
+                        expanded={needsReviewOpen}
+                        onToggle={() => setNeedsReviewOpen((prev) => !prev)}
+                        items={needsReview.items}
+                        meta={needsReview.meta}
+                        busy={needsReviewBusy}
+                        rowsPerPage={rowsMeta.per_page}
+                        onPageChange={(page) => loadNeedsReview(page)}
+                        onRowClick={jumpToRow}
                     />
                 </div>
             </div>

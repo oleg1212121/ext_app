@@ -120,6 +120,3 @@ the tests affected by your latest changes, replaying the rest from cache.
   the git context and `--tia --fresh` re-records the graph. CI baseline sharing
   (`.github/workflows/tia-baseline.yml`) lets new checkouts download a
   pre-recorded baseline instead of paying the local recording cost.
-* **5 pre-existing test failures** (`OpenRouterTest`, `WiktionaryParserTest`,
-  `ImportSimulatorEntitiesCommandTest`) are always re-run by TIA because failed
-  tests cannot be cached/replayed. Fixing them will shrink replay runs further.

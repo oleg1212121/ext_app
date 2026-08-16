@@ -321,6 +321,33 @@ class SentenceAlignmentService
         $this->persistSegment($entityMatch, $alignmentChunk, $path['links'], $path['dpPath']);
     }
 
+    /**
+     * Store single-sided (skip) meaning matches for sentences on one side.
+     * Each sentence becomes a meaning match with only that side junctioned,
+     * keeping it visible in the reader while the other column stays empty.
+     *
+     * @param  'en'|'ru'  $side
+     */
+    public function storeSkipSentences(
+        EnRuEntityMatch $entityMatch,
+        int $alignmentChunk,
+        string $side,
+        Collection $sentences,
+    ): void {
+        if ($sentences->isEmpty()) {
+            return;
+        }
+
+        $type = $side === 'en' ? 'skip_en' : 'skip_ru';
+
+        $this->persistSegment(
+            $entityMatch,
+            $alignmentChunk,
+            [],
+            $this->buildSkipOnlyPath($type, $sentences->pluck('id')->values()->all()),
+        );
+    }
+
     private function persistSegment(
         EnRuEntityMatch $entityMatch,
         int $alignmentChunk,

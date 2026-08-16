@@ -319,6 +319,8 @@ class WiktionaryParser
             $this->uniqueByCompound($wordUpserts, ['word', $wordClassFk]);
             $wordModel::upsert($wordUpserts, ['word', $wordClassFk]);
 
+            $this->stats['words_imported'] += count($wordUpserts);
+
             $wordIds = $wordModel::whereIn('word', collect($batch)->pluck('word')->unique()->toArray())
                 ->get(['id', 'word', $wordClassFk])
                 ->keyBy(fn ($w) => mb_strtolower($w->word).'|'.$w->{$wordClassFk});

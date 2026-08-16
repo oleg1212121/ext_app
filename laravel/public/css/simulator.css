@@ -7,20 +7,24 @@
     line-height: 1.55;
 }
 
-/* Text emphasis — accent italic, ink semi-bold; replaces legacy red literals. */
-em {
+/* Text emphasis — accent italic, emphasis-red bold; replaces legacy red literals. */
+em, i {
     color: var(--wbench-accent);
     font-style: italic;
     font-weight: 400;
 }
 
 b, strong {
-    color: var(--wbench-ink);
+    color: var(--wbench-emphasis);
     font-weight: 600;
 }
 
+.dark em, .dark i {
+    color: var(--wbench-accent-night);
+}
+
 .dark b, .dark strong {
-    color: var(--wbench-ink-night);
+    color: var(--wbench-emphasis-night);
 }
 
 /* Custom styles for dynamic font resizing */
@@ -96,26 +100,127 @@ table.table:has(#all_en:checked) .hide_en {
     margin-bottom: 0;
 }
 
-.ai-prose em {
+.ai-prose em,
+.ai-prose i {
     color: var(--wbench-accent);
     font-style: italic;
+    font-weight: 400;
     padding: 0;
 }
 
-.dark .ai-prose em {
+.dark .ai-prose em,
+.dark .ai-prose i {
     color: var(--wbench-accent-night);
 }
 
 .ai-prose b,
 .ai-prose strong {
-    color: var(--wbench-ink);
+    color: var(--wbench-emphasis);
     font-weight: 600;
     padding: 0;
 }
 
 .dark .ai-prose b,
 .dark .ai-prose strong {
-    color: var(--wbench-ink-night);
+    color: var(--wbench-emphasis-night);
+}
+
+.ai-prose mark {
+    background-color: color-mix(in srgb, var(--wbench-emphasis) 18%, transparent);
+    color: inherit;
+    padding: 0 0.05em;
+    border-radius: 2px;
+}
+
+.dark .ai-prose mark {
+    background-color: color-mix(in srgb, var(--wbench-emphasis-night) 22%, transparent);
+}
+
+.ai-prose u,
+.ai-prose ins {
+    text-decoration: underline;
+    text-decoration-color: var(--wbench-accent);
+    text-underline-offset: 2px;
+}
+
+.dark .ai-prose u,
+.dark .ai-prose ins {
+    text-decoration-color: var(--wbench-accent-night);
+}
+
+.ai-prose del,
+.ai-prose s {
+    color: var(--wbench-ink-soft);
+    text-decoration: line-through;
+    text-decoration-color: var(--wbench-emphasis);
+    text-decoration-thickness: 1px;
+}
+
+.dark .ai-prose del,
+.dark .ai-prose s {
+    color: var(--wbench-ink-soft-night);
+    text-decoration-color: var(--wbench-emphasis-night);
+}
+
+.ai-prose small {
+    font-size: 0.85em;
+    color: var(--wbench-ink-soft);
+}
+
+.dark .ai-prose small {
+    color: var(--wbench-ink-soft-night);
+}
+
+.ai-prose sub,
+.ai-prose sup {
+    font-size: 0.72em;
+    line-height: 0;
+    color: var(--wbench-ink-soft);
+}
+
+.dark .ai-prose sub,
+.dark .ai-prose sup {
+    color: var(--wbench-ink-soft-night);
+}
+
+.ai-prose code,
+.ai-prose kbd,
+.ai-prose samp {
+    font-family: var(--font-wbench-mono);
+    font-size: 0.9em;
+    background-color: var(--wbench-paper-deep);
+    color: var(--wbench-accent-ink);
+    padding: 0.1em 0.3em;
+    border-radius: 2px;
+}
+
+.dark .ai-prose code,
+.dark .ai-prose kbd,
+.dark .ai-prose samp {
+    background-color: var(--wbench-paper-deep-night);
+    color: var(--wbench-accent-night);
+}
+
+.ai-prose blockquote {
+    margin: 0 0 1em;
+    padding-left: 1em;
+    border-left: 2px solid var(--wbench-accent);
+    color: var(--wbench-ink-soft);
+    font-style: italic;
+}
+
+.dark .ai-prose blockquote {
+    border-left-color: var(--wbench-accent-night);
+    color: var(--wbench-ink-soft-night);
+}
+
+.ai-prose q {
+    color: var(--wbench-accent);
+    font-style: italic;
+}
+
+.dark .ai-prose q {
+    color: var(--wbench-accent-night);
 }
 
 .ai-prose h1,
@@ -172,6 +277,31 @@ table.table:has(#all_en:checked) .hide_en {
 
 .dark .ai-prose hr {
     border-top-color: var(--wbench-rule-night);
+}
+
+/* Gloss-run hover affordance — scoped to the AI answer panel.
+   Every text-bearing element signals interactivity: pointer cursor
+   plus an accent-tinted background on hover (uniform layering:
+   a nested run's fill paints over its parent block's fill). */
+#ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a) {
+    transition: background-color 150ms ease;
+    border-radius: 2px;
+    box-decoration-break: clone;
+}
+
+#ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a):hover {
+    background-color: color-mix(in srgb, var(--wbench-accent) 14%, transparent);
+    cursor: pointer;
+}
+
+.dark #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a):hover {
+    background-color: color-mix(in srgb, var(--wbench-accent-night) 22%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a) {
+        transition: none;
+    }
 }
 
 /* AI loader rule — fills left-to-right once per request, then resets. */

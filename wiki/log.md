@@ -1,5 +1,147 @@
 # Directory Update Log
 
+## 2026-08-16
+
+* **Add: gloss-run hover affordance in the bilinguals simulator AI panel.**
+  Text-bearing elements of the AI answer (the **Gloss**) now signal
+  interactivity: a pointer cursor plus an accent-tinted background on `:hover`
+  (uniform layering — a nested run's fill paints over its parent block's fill).
+  Pure CSS in `public/css/simulator.css`, scoped to `#ai_answer_div .ai-prose`
+  (blocks + inline runs; excludes `ul`/`ol` containers and `br`/`hr`), accent
+  `color-mix` fill ~14% light / ~22% dark, 150ms `background-color` transition,
+  `prefers-reduced-motion` disables the transition. Deviation from the prior
+  "no per-line `:hover` background" rule — `conventions/design-system.md`
+  amended accordingly; `generated.at` bumped. Docs: `CONTEXT.md` ("Gloss" and
+  "Gloss run" terms). No JSX/Vite change (file is served directly).
+
+* **Add: "Needs review" section in the Alignments editor.** `/alignments/{id}`
+  now shows a collapsible (collapsed by default) **Needs review** list below the
+  unmatched pool, surfacing meaning matches a human should inspect: rows with
+  `similarity < 0.55` (`AlignmentEditorApiPresenter::LOW_SIMILARITY_THRESHOLD`)
+  or **one-sided** rows (junctions on exactly one side, any similarity — the
+  original-completeness repair rows; empty rows are excluded). Backed by a new
+  `GET /alignments/{entityMatch}/needs-review` endpoint
+  (`AlignmentEditorController::needsReview`, `NeedsReviewRequest`) returning
+  `{items, meta}` paginated 25/page; each item carries a page-independent
+  **`rank`** (window `ROW_NUMBER() OVER (ORDER BY "order")` over the full
+  filtered set, excluding unmatched-pool rows) plus `#order`, `similarity`,
+  EN/RU parts, and `one_sided`. Clicking a row jumps the editor's rows table to
+  the exact page (`ceil(rank / live per_page)`, matching the user's per-page
+  choice) and scrolls + briefly highlights the row (client-side, no URL
+  change). The section refetches its current page after every mutation; initial
+  page-1 is passed as the `needs_review` prop from `AlignmentController@show` so
+  the header count is immediate. Frontend: new
+  `resources/js/Pages/Alignments/components/NeedsReviewSection.jsx`,
+  `api.js:needsReview()`, `Show.jsx` state/`jumpToRow`/scroll-highlight,
+  `PairRow` `data-row-id` + `highlighted` prop. New tests in
+  `AlignmentEditorApiTest` (membership incl. high-similarity one-sided rows,
+  interleaved rank ordering, 25/page pagination) + guest 401 +
+  `AlignmentPagesTest` `needs_review.meta.total` assertion. Docs: `CONTEXT.md`
+  ("Needs review" term), `domains/sentence-alignment.md` (Review stage) +
+  `database/entities-alignment.md` (single-sided bullet); `generated.at` bumped.
+
+* **Fix: the alignment editor no longer corrupts sentence document order.**
+  Dragging a sentence within a row previously rewrote `sentence.order`
+  (`assignNewRowSequence` → `setSentenceOrderRaw`), and `spreadOrders`'s
+  stride-1024 fallback jumped a dropped sentence's order (e.g. 3 → 1024), so a
+  later Re-align (which reads sentences strictly by `order`) placed it at the
+  tail against the wrong sentences. The editor now treats `sentence.order` as
+  immutable **document order** and rewrites only the within-row **junction
+  order** (row-local sparse helpers): `reorderRowJunctions` for within-row
+  drags, `link()` via `orderForInsertAfter` for cross-row/unmatched relinks,
+  `appendJunctionOrder` for new sentences (junction appends at the row's end;
+  the sentence is placed at the row's document boundary via the new
+  doc-order `sideAnchorOrder`/`rowRightBoundary`). Display still shows raw
+  `sentence.order`. `AlignmentEditorApiTest` strengthened (exact order
+  preservation, cross-row/unmatched order immutability) plus a new decoupling
+  test. Docs: `CONTEXT.md` (Sentence/Junction), ADR 0005, `wiki` concepts +
+  `log.md`; `generated.at` bumped. Existing corrupt orders were left in the DB
+  for manual repair.
+
+* **Fix: the 5 pre-existing test failures are gone (full suite green).**
+  `tests/Unit/OpenRouterTest.php` was updated to match the current
+  `OpenRouter::$models` array (bare `:free` display names are now accepted,
+  expected identifiers reflect the active model set from the July AI-model
+  cull — commented-out paid models dropped, `nemotron-3-nano-30b-a3b:free`
+  renamed to `nemotron-3-super-120b-a12b:free`). `SimulatorEntitySeeder`
+  excludes `001_articles.txt` (the local, gitignored corpus file) alongside
+  `book_thief_1.txt`. `WiktionaryParser::flushBatch()` now increments
+  `words_imported` per batch, so the import stat is no longer stuck at 0.
+  Bumped `generated.at` on `domains/dictionary-import.md` and
+  `playbooks/import-dictionary-data.md`; dropped the stale "5 pre-existing
+  test failures" note from `playbooks/running-tests.md`.
+
+## 2026-08-15
+
+* **Rework: original-side sentence completeness in the aligner.** Completion of
+  an entity match now funnels through a single gate
+  (`AlignEntitySentences::finalize()`) that enforces the **original
+  completeness** invariant: every sentence on the original-text side
+  (`is_original_en`) is junctioned into a meaning match, in document order,
+  before `status` flips to `completed`. Junction-less original sentences
+  (dropped by an empty-commit crawl seam, left over when the translation side
+  is exhausted, or skipped by a re-align) are repaired as **single-sided
+  meaning matches** (`similarity 0.0`, next machine `alignment_chunk` id),
+  ordered positionally via `SparseOrderService::spreadOrders` between the
+  neighbouring junctioned anchors. The repair is best-effort (logs a warning,
+  never throws). "RU sentences exhausted before EN" is now a normal completion
+  (the remaining original tail is drained) instead of an error. New
+  `SentenceAlignmentService::storeSkipSentences()` persists single-sided rows;
+  the empty-commit seams in `alignWholePool()`/`alignPoolChunk()` skip rather
+  than silently drop the first uncommitted original sentence. Updated
+  `domains/sentence-alignment.md` + `CONTEXT.md` glossary ("Original
+  completeness", "Single-sided meaning match"). Tests in
+  `ChunkedEntityAlignmentTest` cover the RU-exhausted drain, RU-original long
+  tails, empty-commit seams, position-aware mid-text repair, human-unlinked
+  sentences, and empty-side starts. Bumped `generated.at`.
+
+## 2026-08-15
+
+* **Polish: emphasis colors in AI prose + new `--wbench-emphasis` token.**
+  Bold emphasis (`b`, `strong`) in the AI gloss/answer — previously painted in
+  `--wbench-ink` (near-black, invisible on paper) — is now a theme red. Added
+  `--wbench-emphasis` (#B0451E / night #E0664A) to the `@theme` block in
+  `laravel/resources/css/app.css` so `--wbench-danger` stays reserved for
+  errors. `laravel/public/css/simulator.css`: global `em`/`i` stay
+  `--wbench-accent` italic (unchanged) and `b`/`strong` move to
+  `--wbench-emphasis`; the scoped `.ai-prose` block adds a full emphasis set
+  with dark-mode pairs — `mark` (soft red highlight via `color-mix`),
+  `u`/`ins` (accent underline), `del`/`s` (muted ink-soft + red
+  line-through), `small`, `sub`/`sup`, `code`/`kbd`/`samp` (mono chip on
+  `--wbench-paper-deep`), `blockquote` (accent left border), `q` (accent
+  italic). Extras are scoped to `.ai-prose` so global pages that load
+  `simulator.css` are untouched beyond the `em`/`i`/`b`/`strong` rules. Bumped
+  `conventions/design-system.md` (token table, accent-discipline note, state
+  contract row, `.ai-prose` pattern note) + `log.md`.
+
+## 2026-08-15
+
+* **Add: original-text flag on entity matches.** `en_ru_entity_matches` gains
+  `is_original_en` (boolean, default `true` = English is the original text)
+  so a match records which language the paired text was authored in (the
+  other side being a translation). Set via a radio ("Original Text" →
+  English/Russian) on the admin create form and the List page "New Alignment"
+  action; stored as metadata only (no simulator/pipeline wiring), read-only
+  "Original" badge column on the List table. Added the "Original text" term
+  to `CONTEXT.md`. Bumped `database/entities-alignment.md` + `log.md`.
+
+## 2026-08-15
+
+* **Fix: re-align runs as one job per pool instead of one long job.** A
+  re-align of a match with many landmark-delimited pools previously drained
+  every pool in a single `handle()` invocation — a 141-pool match ran one
+  ~2m16s job (141 sequential `/align` calls, no cursor progress until the
+  end). `AlignEntitySentences::handle()` now persists the cursor via
+  `persistOffsets()` and `return`s after **each** whole-pool fast-path align,
+  so each pool runs as its own queued job (~10–30s) with offsets persisted
+  between pools and crash-resilient resume. Pools larger than `chunk_size`
+  on either side still fall through to `alignPoolChunk()` and are drained
+  chunk-by-chunk across jobs (unchanged). Updated
+  `ReAlignPreservesLandmarksTest` (both re-align tests now drain the
+  re-dispatched queue and assert intermediate `aligning` status + offsets +
+  dispatch counts). Bumped `domains/sentence-alignment.md` (Plan 08) +
+  `playbooks/run-alignment.md` + `log.md`.
+
 ## 2026-08-14
 
 * **Polish: page picker in the Alignments editor rows table.** The rows

@@ -51,6 +51,10 @@ export const alignmentsApi = {
         return request(`/alignments/${matchId}/unmatched?lang=${lang}&page=${page}`);
     },
 
+    needsReview(matchId, page) {
+        return request(`/alignments/${matchId}/needs-review?page=${page}`);
+    },
+
     createRow(matchId, afterRowId) {
         return request(`/alignments/${matchId}/rows`, {
             method: 'POST',

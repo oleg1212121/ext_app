@@ -5,11 +5,11 @@ description: Bilingual texts, their sentences, and the machine/human alignment b
 tags: [database, schema, alignment, entities]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/kimi-k3, at: 2026-08-14T20:30:00Z }
+generated: { by: agent/opencode, at: 2026-08-16T14:00:00Z }
 sources:
   - id: migrations
     resource: laravel/database/migrations
-    title: 2026_04–06 entity/alignment migrations (incl. widen_sparse_order_columns)
+    title: 2026_04–08 entity/alignment migrations (incl. add_is_original_en_to_en_ru_entity_matches)
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
     title: Writer of meaning matches
@@ -33,6 +33,14 @@ sources:
   maintained by `SparseOrderService`; columns were widened in the
   2026_06 `widen_sparse_order_columns` migration. Rebalance daily via
   `entity-orders:rebalance`.
+* **Document order vs junction order**: `en_entity_sentences.order` is the
+  sentence's **document order** — its position in the original text. It is
+  immutable in the alignment editor (only the *Sentences* tab, import, and
+  `entity-orders:rebalance` change it). `en_sentence_meaning_matches.order` is
+  an independent **within-row sequence**: the display order of a row's
+  sentences. Dragging within a row, linking into a row, and appending a new
+  sentence rewrite junction orders only, via row-local sparse helpers (see
+  ADR 0005).
 * **Landmarks**: `en_ru_meaning_matches.alignment_chunk = -1` marks
   human-made rows (always `similarity = 1.0`); machine rows carry a monotonic
   per-run chunk id (never `-1`). Machine rows with
@@ -45,5 +53,18 @@ sources:
 * **Deletion cleanup**: deleting a sentence cascades to its per-side meaning
   matches; if a meaning match is left without sentences on either side, the
   match is deleted and the parent `EnRuEntityMatch.linked_count` is updated.
+* **Single-sided meaning matches**: the aligner keeps unmatched *original-text*
+  sentences visible by junctioning them into a meaning match with only one
+  side junctioned (`similarity 0.0`, next machine `alignment_chunk` id). The
+  completion gate `AlignEntitySentences::finalize()` enforces the
+  original-completeness invariant — original sentences are never unmatched —
+  and creates these rows positionally via `SparseOrderService`
+  (see [Sentence Alignment](/domains/sentence-alignment.md)). The editor's
+  **Needs review** section surfaces these (one-sided, any similarity) plus
+  two-sided rows with `similarity < 0.55`.
+* **Original text**: `EnRuEntityMatch.is_original_en` (boolean, default `true`)
+  records which side is the original text — the language the text was authored
+  in, the other side being a translation of it. Metadata only; set on the
+  admin create form and read-only in the table. See `CONTEXT.md` "Original text".
 * `EnRuEntityMatch` is what the simulator's text dropdown lists — joining
   `enEntity` / `ruEntity` for display names.

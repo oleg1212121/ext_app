@@ -9,6 +9,7 @@ use Illuminate\Database\Seeder;
 class SimulatorEntitySeeder extends Seeder
 {
     public const EXCLUDED_FILES = [
+        '001_articles.txt',
         'book_thief_1.txt',
     ];
 

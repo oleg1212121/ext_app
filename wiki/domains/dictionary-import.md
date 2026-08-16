@@ -4,7 +4,7 @@ title: Dictionary Import
 description: Parsing Kaikki/Wiktionary dumps into the mirrored EN/RU dictionary tables and linking translations.
 tags: [dictionary, import, wiktionary, kaikki]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-07-26T12:00:00Z }
+generated: { by: agent/kimi-k3, at: 2026-08-16T15:35:00Z }
 sources:
   - id: kaikki
     resource: laravel/app/Classes/KaikkiParser.php

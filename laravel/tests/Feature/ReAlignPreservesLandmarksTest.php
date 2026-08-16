@@ -131,6 +131,21 @@ it('preserves human rows and auto-landmarks, deletes low-confidence rows, and re
 
     $entityMatch->refresh();
 
+    expect($entityMatch->status)->toBe('aligning')
+        ->and($entityMatch->last_en_sentence_offset)->toBe(1)
+        ->and($entityMatch->last_ru_sentence_offset)->toBe(1)
+        ->and($entityMatch->completed_at)->toBeNull();
+
+    Bus::assertDispatched(AlignEntitySentences::class, 2);
+
+    $guard = 0;
+
+    while ($entityMatch->status === 'aligning' && $guard < 10) {
+        (new AlignEntitySentences($entityMatch->id))->handle();
+        $entityMatch->refresh();
+        $guard++;
+    }
+
     expect($entityMatch->status)->toBe('completed')
         ->and($entityMatch->last_en_sentence_offset)->toBe(6)
         ->and($entityMatch->last_ru_sentence_offset)->toBe(6)
@@ -169,7 +184,7 @@ it('preserves human rows and auto-landmarks, deletes low-confidence rows, and re
             ->and($call['ru'])->not->toContain('Russian 4.');
     }
 
-    Bus::assertDispatched(AlignEntitySentences::class, 1);
+    Bus::assertDispatched(AlignEntitySentences::class, 3);
 });
 
 it('wipes every row including human-edited ones when starting from scratch', function () {
@@ -305,6 +320,19 @@ it('carves pools that never overlap a 1:N human landmark span', function () {
     (new AlignEntitySentences($entityMatch->id))->handle();
 
     $entityMatch->refresh();
+
+    expect($entityMatch->status)->toBe('aligning')
+        ->and($entityMatch->last_en_sentence_offset)->toBe(4)
+        ->and($entityMatch->last_ru_sentence_offset)->toBe(4)
+        ->and($entityMatch->completed_at)->toBeNull();
+
+    $guard = 0;
+
+    while ($entityMatch->status === 'aligning' && $guard < 10) {
+        (new AlignEntitySentences($entityMatch->id))->handle();
+        $entityMatch->refresh();
+        $guard++;
+    }
 
     expect($entityMatch->status)->toBe('completed')
         ->and($entityMatch->last_en_sentence_offset)->toBe(9)
