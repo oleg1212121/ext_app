@@ -146,19 +146,19 @@ export default function NavBar() {
                             </div>
                         ) : (
                             <div className="hidden sm:flex items-center gap-4">
-                                <Link
+                                <a
                                     href="/login"
                                     className="text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors"
                                 >
                                     Log in
-                                </Link>
+                                </a>
                                 {canRegister && (
-                                    <Link
+                                    <a
                                         href="/register"
                                         className="text-sm font-medium text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)] hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors"
                                     >
                                         Register
-                                    </Link>
+                                    </a>
                                 )}
                             </div>
                         )}

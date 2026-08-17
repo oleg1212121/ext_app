@@ -98,6 +98,18 @@ services:
     networks:
       - ext_net
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ext_cloudflared
+    command: tunnel --no-autoupdate run
+    env_file:
+      - ./docker-compose/cloudflare/.env
+    depends_on:
+      - nginx
+    restart: unless-stopped
+    networks:
+      - ext_net
+
 networks:
   ext_net:
     driver: bridge
