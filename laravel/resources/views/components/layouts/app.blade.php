@@ -1471,7 +1471,7 @@
 </head>
 <body>
 
-<x-navigation></x-navigation>
+@include('layouts.navigation')
 {{ $slot }}
 </body>
 </html>

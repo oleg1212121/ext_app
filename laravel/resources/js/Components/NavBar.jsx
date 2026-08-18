@@ -59,6 +59,7 @@ export default function NavBar() {
     }, [url])
 
     const isApproved = user?.is_approved ?? false
+    const isAdmin = user?.role === 'admin'
 
     const navLinks = useMemo(() => {
         if (!isAuthenticated || !isApproved) return []
@@ -69,9 +70,9 @@ export default function NavBar() {
                 {href: '/crossword-react/en', label: 'Crossword'},
             ]},
             {href: '/reader-react', label: 'Reader'},
-            {href: '/admin', label: 'Admin', external: true},
+            ...(isAdmin ? [{href: '/admin', label: 'Admin', external: true}] : []),
         ]
-    }, [isAuthenticated, isApproved])
+    }, [isAuthenticated, isApproved, isAdmin])
 
     const isActive = (href) => {
         if (!url) return false
@@ -183,13 +184,13 @@ export default function NavBar() {
                                     <div
                                         role="menu"
                                         className="absolute right-0 mt-2 w-48 bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] shadow-lg overflow-hidden">
-                                        <a
+                                        <Link
                                             href="/profile"
                                             role="menuitem"
                                             className="block px-4 py-2.5 text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:bg-[var(--color-vellum-deep)] dark:hover:bg-[var(--color-hairline-night)]/40 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors"
                                         >
                                             Profile
-                                        </a>
+                                        </Link>
                                         <span className="block h-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]"/>
                                         <button
                                             type="button"

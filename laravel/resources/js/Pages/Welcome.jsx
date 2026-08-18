@@ -16,7 +16,7 @@ const Card = ({ lang, children }) => (
 
 const Welcome = ({ lang = "en" }) => {
     return (
-        <div className="flex-1 min-h-0 overflow-y-auto bg-[var(--color-vellum)] dark:bg-[var(--color-ink)] text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+        <div className="flex-1 min-h-0 overflow-y-auto bg-white dark:bg-[var(--color-ink)] text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
             <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
                 {/* Eyebrow */}
                 <p className="text-center font-sans text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
