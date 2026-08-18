@@ -12,6 +12,10 @@ use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable implements FilamentUser
 {
+    public const string ROLE_USER = 'user';
+
+    public const string ROLE_ADMIN = 'admin';
+
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
@@ -24,6 +28,8 @@ class User extends Authenticatable implements FilamentUser
         'name',
         'email',
         'password',
+        'role',
+        'is_approved',
     ];
 
     /**
@@ -46,11 +52,17 @@ class User extends Authenticatable implements FilamentUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_approved' => 'boolean',
         ];
     }
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return true;
+        return $this->isAdmin() && $this->is_approved;
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->role === self::ROLE_ADMIN;
     }
 }

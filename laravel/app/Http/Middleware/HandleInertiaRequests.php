@@ -43,6 +43,7 @@ class HandleInertiaRequests extends Middleware
                         'id' => $request->user()->id,
                         'name' => $request->user()->name,
                         'email' => $request->user()->email,
+                        'is_approved' => $request->user()->is_approved,
                     ]
                     : null,
                 'canRegister' => \Illuminate\Support\Facades\Route::has('register'),

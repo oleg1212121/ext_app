@@ -16,6 +16,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             HandleInertiaRequests::class,
         ]);
+        $middleware->alias([
+            'approved' => \App\Http\Middleware\EnsureUserIsApproved::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

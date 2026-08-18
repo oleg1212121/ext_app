@@ -86,4 +86,10 @@ return [
         'sentence_split_chunk_bytes' => (int) env('PYTHON_SPLIT_CHUNK_BYTES', 262_144),
     ],
 
+    'admin' => [
+        'name' => env('ADMIN_NAME', 'Admin'),
+        'email' => env('ADMIN_EMAIL'),
+        'password' => env('ADMIN_PASSWORD'),
+    ],
+
 ];

@@ -28,6 +28,10 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        if (! $request->user()->is_approved) {
+            return redirect()->route('pending-approval');
+        }
+
         return redirect()->intended(route('dashboard', absolute: false));
     }
 

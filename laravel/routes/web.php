@@ -18,16 +18,23 @@ Route::get('/', function () {
 // Authentication routes (login, register, etc.)
 require __DIR__.'/auth.php';
 
-// All other routes require authentication
+Route::get('/pending-approval', function () {
+    return view('auth.pending-approval');
+})->middleware('auth')->name('pending-approval');
+
+// Profile routes - accessible to all authenticated users (including unapproved)
 Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+// All other routes require authentication + approval
+Route::middleware(['auth', 'approved'])->group(function () {
     Route::get('/dashboard', function () {
         //        return view('dashboard');
         return Inertia::render('Dashboard');
     })->middleware('verified')->name('dashboard');
-
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     Route::get('/test', [Test::class, 'test']);
     Route::get('/crossword', [Test::class, 'crossword'])->name('crossword');

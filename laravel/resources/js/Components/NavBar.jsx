@@ -32,6 +32,8 @@ export default function NavBar() {
 
     const [userMenuOpen, setUserMenuOpen] = useState(false)
     const [mobileOpen, setMobileOpen] = useState(false)
+    const [puzzlesOpen, setPuzzlesOpen] = useState(false)
+    const [puzzlesExpanded, setPuzzlesExpanded] = useState(false)
 
     useEffect(() => {
         const onDocClick = (e) => {
@@ -41,6 +43,9 @@ export default function NavBar() {
             if (!e.target.closest?.('[data-mobile-menu]')) {
                 setMobileOpen(false)
             }
+            if (!e.target.closest?.('[data-puzzles-dropdown]')) {
+                setPuzzlesOpen(false)
+            }
         }
         document.addEventListener('click', onDocClick)
         return () => document.removeEventListener('click', onDocClick)
@@ -49,17 +54,24 @@ export default function NavBar() {
     useEffect(() => {
         setMobileOpen(false)
         setUserMenuOpen(false)
+        setPuzzlesOpen(false)
+        setPuzzlesExpanded(false)
     }, [url])
 
+    const isApproved = user?.is_approved ?? false
+
     const navLinks = useMemo(() => {
-        if (!isAuthenticated) return []
+        if (!isAuthenticated || !isApproved) return []
         return [
             {href: '/bilinguals/en/ru/simulator', label: 'Bilinguals'},
             {href: '/alignments', label: 'Alignments'},
-            {href: '/crossword-react/en', label: 'Crossword'},
+            {label: 'Puzzles', children: [
+                {href: '/crossword-react/en', label: 'Crossword'},
+            ]},
             {href: '/reader-react', label: 'Reader'},
+            {href: '/admin', label: 'Admin', external: true},
         ]
-    }, [isAuthenticated])
+    }, [isAuthenticated, isApproved])
 
     const isActive = (href) => {
         if (!url) return false
@@ -67,19 +79,20 @@ export default function NavBar() {
         return url === href || url.startsWith(`${href}/`)
     }
 
-    const logoHref = isAuthenticated ? '/dashboard' : '/'
-    const brand = props?.appName ?? 'Bilingual'
-    const eyebrow = 'Antiphonal'
+    const hasActiveChild = (item) => {
+        if (!item.children) return false
+        return item.children.some((c) => isActive(c.href))
+    }
+
+    const logoHref = '/'
+    const brand = props?.appName ?? 'Abibook'
 
     return (
         <nav className="sticky top-0 z-40 bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]">
             <div className="px-4 sm:px-6 lg:px-10">
                 <div className="flex items-center justify-between h-14 sm:h-16">
                     <div className="flex items-center gap-8">
-                        <Link href={logoHref} className="group flex flex-col leading-none">
-                            <span className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-[10px] tracking-[0.22em] uppercase">
-                                {eyebrow}
-                            </span>
+                        <Link href={logoHref} className="group leading-none">
                             <span className="font-serif text-lg sm:text-xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
                                 {brand}
                             </span>
@@ -87,17 +100,62 @@ export default function NavBar() {
 
                         {isAuthenticated && navLinks.length > 0 && (
                             <div className="hidden md:flex items-end gap-1 border-b border-transparent">
-                                {navLinks.map((l) => (
-                                    <Link
-                                        key={l.href}
-                                        href={l.href}
-                                        className={tabClass(isActive(l.href))}
-                                        aria-current={isActive(l.href) ? 'page' : undefined}
-                                    >
-                                        {l.label}
-                                        <Underline isActive={isActive(l.href)}/>
-                                    </Link>
-                                ))}
+                                {navLinks.map((l) => {
+                                    if (l.children) {
+                                        return (
+                                            <div key={l.label} className="relative" data-puzzles-dropdown>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setPuzzlesOpen((v) => !v)
+                                                    }}
+                                                    className={tabClass(hasActiveChild(l))}
+                                                    aria-haspopup="menu"
+                                                    aria-expanded={puzzlesOpen}
+                                                >
+                                                    {l.label}
+                                                    <svg className="ml-0.5 h-3 w-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
+                                                    </svg>
+                                                    <Underline isActive={hasActiveChild(l)}/>
+                                                </button>
+
+                                                {puzzlesOpen && (
+                                                    <div
+                                                        role="menu"
+                                                        className="absolute left-0 mt-2 w-48 bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] shadow-lg overflow-hidden"
+                                                    >
+                                                        {l.children.map((child) => (
+                                                            <Link
+                                                                key={child.href}
+                                                                href={child.href}
+                                                                role="menuitem"
+                                                                className="block px-4 py-2.5 text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:bg-[var(--color-vellum-deep)] dark:hover:bg-[var(--color-hairline-night)]/40 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors"
+                                                            >
+                                                                {child.label}
+                                                            </Link>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    }
+
+                                    const Tag = l.external ? 'a' : Link
+                                    const linkProps = l.external ? {href: l.href} : {href: l.href}
+                                    return (
+                                        <Tag
+                                            key={l.href}
+                                            {...linkProps}
+                                            className={tabClass(isActive(l.href))}
+                                            aria-current={isActive(l.href) ? 'page' : undefined}
+                                        >
+                                            {l.label}
+                                            <Underline isActive={isActive(l.href)}/>
+                                        </Tag>
+                                    )
+                                })}
                             </div>
                         )}
                     </div>
@@ -125,13 +183,13 @@ export default function NavBar() {
                                     <div
                                         role="menu"
                                         className="absolute right-0 mt-2 w-48 bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] shadow-lg overflow-hidden">
-                                        <Link
+                                        <a
                                             href="/profile"
                                             role="menuitem"
                                             className="block px-4 py-2.5 text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:bg-[var(--color-vellum-deep)] dark:hover:bg-[var(--color-hairline-night)]/40 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors"
                                         >
                                             Profile
-                                        </Link>
+                                        </a>
                                         <span className="block h-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]"/>
                                         <button
                                             type="button"
@@ -194,24 +252,84 @@ export default function NavBar() {
                 >
                     <ul role="list" className="px-4 sm:px-6 py-2 divide-y divide-[var(--color-hairline)] dark:divide-[var(--color-hairline-night)]">
                         {navLinks.map((l) => {
+                            if (l.children) {
+                                return (
+                                    <li key={l.label}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPuzzlesExpanded((v) => !v)}
+                                            className={[
+                                                'w-full flex items-center justify-between py-3 font-serif text-lg tracking-tight transition-colors',
+                                                hasActiveChild(l)
+                                                    ? 'text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]'
+                                                    : 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]/80 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)]',
+                                            ].join(' ')}
+                                        >
+                                            {l.label}
+                                            <svg
+                                                className={[
+                                                    'h-4 w-4 opacity-60 transition-transform duration-200',
+                                                    puzzlesExpanded ? 'rotate-180' : '',
+                                                ].join(' ')}
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                            >
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
+                                            </svg>
+                                        </button>
+
+                                        {puzzlesExpanded && (
+                                            <ul role="list" className="pl-4 pb-1 divide-y divide-[var(--color-hairline)]/50 dark:divide-[var(--color-hairline-night)]/50">
+                                                {l.children.map((child) => {
+                                                    const active = isActive(child.href)
+                                                    return (
+                                                        <li key={child.href}>
+                                                            <Link
+                                                                href={child.href}
+                                                                aria-current={active ? 'page' : undefined}
+                                                                className={[
+                                                                    'flex items-center justify-between py-2.5 ps-2 font-serif text-base tracking-tight transition-colors',
+                                                                    active
+                                                                        ? 'text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]'
+                                                                        : 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]/80 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)]',
+                                                                ].join(' ')}
+                                                            >
+                                                                {child.label}
+                                                                <span aria-hidden="true" className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-base">
+                                                                    {active ? '\u00B7' : '\u2192'}
+                                                                </span>
+                                                            </Link>
+                                                        </li>
+                                                    )
+                                                })}
+                                            </ul>
+                                        )}
+                                    </li>
+                                )
+                            }
+
                             const active = isActive(l.href)
-                            return (
-                                <li key={l.href}>
-                                    <Link
-                                        href={l.href}
-                                        aria-current={active ? 'page' : undefined}
-                                        className={[
-                                            'flex items-center justify-between py-3 font-serif text-lg tracking-tight transition-colors',
-                                            active
-                                                ? 'text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]'
-                                                : 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]/80 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)]',
-                                        ].join(' ')}
-                                    >
-                                        {l.label}
-                                        <span aria-hidden="true" className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-base">
-                                            {active ? '·' : '→'}
-                                        </span>
-                                    </Link>
+                                    const Tag = l.external ? 'a' : Link
+                                    const linkProps = l.external ? {href: l.href} : {href: l.href}
+                                    return (
+                                        <li key={l.href}>
+                                            <Tag
+                                                {...linkProps}
+                                                aria-current={active ? 'page' : undefined}
+                                                className={[
+                                                    'flex items-center justify-between py-3 font-serif text-lg tracking-tight transition-colors',
+                                                    active
+                                                        ? 'text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]'
+                                                        : 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]/80 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)]',
+                                                ].join(' ')}
+                                            >
+                                                {l.label}
+                                                <span aria-hidden="true" className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-base">
+                                                    {active ? '\u00B7' : '\u2192'}
+                                                </span>
+                                            </Tag>
                                 </li>
                             )
                         })}
