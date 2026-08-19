@@ -70,6 +70,12 @@ EMBED_MAX_TEXT_LENGTH = _env_int("EMBED_MAX_TEXT_LENGTH", 1000000)
 EMBED_BATCH_MAX_TEXTS = _env_int("EMBED_BATCH_MAX_TEXTS", 100)
 COSINE_MAX_CANDIDATES = _env_int("COSINE_MAX_CANDIDATES", 2000)
 SPLIT_MAX_TEXT_LENGTH = _env_int("SPLIT_MAX_TEXT_LENGTH", 5242880)
+
+
+def splitter_engine() -> str:
+    """Sentence splitter backend: 'razdel' (default) or 'pysbd'."""
+    value = (_live_env("SPLITTER_ENGINE", "razdel") or "razdel").strip().lower()
+    return value if value in ("razdel", "pysbd") else "razdel"
 ALIGN_MAX_SENTENCES = _env_int("ALIGN_MAX_SENTENCES", 500)
 ALIGN_MAX_WINDOW = _env_int("ALIGN_MAX_WINDOW", 8)
 

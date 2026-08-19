@@ -258,3 +258,35 @@ it('throws when the python split service responds with an error', function () {
 
     (new SentenceSplitter)->process($entity->id, $filePath, 'en', $text);
 })->throws(RuntimeException::class, 'Python split service error');
+
+it('decodes html numeric character references before splitting', function () {
+    Http::fake(function (Request $request) {
+        $text = (string) ($request->data()['text'] ?? '');
+
+        expect($text)->not->toContain('&#252;')
+            ->and($text)->not->toContain('&#1090;')
+            ->and($text)->toContain('ü')
+            ->and($text)->toContain('т');
+
+        return Http::response([
+            'sentences' => [
+                ['content' => $text, 'type' => 'sentence'],
+            ],
+            'remainder' => '',
+        ]);
+    });
+
+    $text = 'Gr&#252;ße und &#1090;екст.';
+    $filePath = 'entities/'.uniqid('html_', true).'.txt';
+    Storage::disk('local')->put($filePath, $text);
+
+    $entity = EnEntity::query()->create(['name' => 'HtmlEntities', 'file_path' => $filePath]);
+
+    (new SentenceSplitter)->process($entity->id, $filePath, 'en', $text);
+
+    expect($entity->sentences()->pluck('content')->first())
+        ->toContain('ü')
+        ->toContain('т')
+        ->not->toContain('&#252;')
+        ->not->toContain('&#1090;');
+});

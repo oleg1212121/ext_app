@@ -205,11 +205,18 @@ class SentenceSplitter
         return '';
     }
 
+    private function decodeHtmlEntities(string $text): string
+    {
+        return html_entity_decode($text, ENT_QUOTES | ENT_HTML5);
+    }
+
     /**
      * @return array{sentences: list<array{content: string, type: string}>, remainder: string}
      */
     private function splitViaPython(string $text, string $lang, bool $finalize): array
     {
+        $text = $this->decodeHtmlEntities($text);
+
         $response = Http::timeout((int) config('services.python.timeout', 30))
             ->retry(
                 self::RETRY_DELAYS_MS,

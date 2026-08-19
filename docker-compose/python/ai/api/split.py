@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 
+from ai import config
 from ai.api.schemas import SplitRequest, SplitResponse, SplitSentence
 from ai.splitting.typed_splitter import TypedSentenceSplitter
 
@@ -15,7 +16,10 @@ def split(req: SplitRequest, request: Request):
         splitters = {}
         request.app.state.splitters = splitters
 
-    if req.language not in splitters:
+    cached = splitters.get(req.language)
+    engine = config.splitter_engine()
+
+    if cached is None or cached.backend != engine:
         try:
             splitters[req.language] = TypedSentenceSplitter(language=req.language)
         except ValueError as exc:

@@ -1,24 +1,31 @@
 """Typed sentence segmentation for the /split endpoint.
 
-Combines pysbd sentence boundaries with the title/quote typing heuristics
-ported from the old PHP splitter. Title detection is line-based (a short
-stand-alone line). Buffered prose is handed to pysbd with newlines
-selectively flattened: only newlines that follow sentence-ending
-punctuation survive, so pysbd's quote-region heuristic cannot merge long
-dialogue spans into a single "sentence" while mid-sentence hard wraps are
-still collapsed (pysbd otherwise treats every newline as a boundary and
-splits wrapped prose into fragments).
+Combines a configurable sentence boundary detector (``razdel`` or ``pysbd``)
+with title/quote typing heuristics ported from the old PHP splitter.
+
+Title detection is line-based (a short stand-alone line).  Buffered prose
+is handed to the chosen backend.  When the backend is ``pysbd``,
+newlines are selectively flattened so that pysbd's quote-region heuristic
+cannot merge long dialogue spans into a single "sentence" while mid-sentence
+hard wraps are still collapsed.  When the backend is ``razdel`` this step
+is skipped because razdel does not have the quote-region bug.
 """
+
+from __future__ import annotations
 
 import re
 
+from ai import config
+from ai.splitting.preprocessing import postprocess, preprocess
 from ai.splitting.sentence_splitter import SentenceSplitter
 from ai.splitting.sentence_typer import SentenceTyper
 
 
 class TypedSentenceSplitter:
     def __init__(self, language: str = "en") -> None:
-        self.splitter = SentenceSplitter(language=language)
+        backend = config.splitter_engine()
+        self.backend = backend
+        self.splitter = SentenceSplitter(language=language, backend=backend)
         self.typer = SentenceTyper()
 
     @staticmethod
@@ -41,11 +48,11 @@ class TypedSentenceSplitter:
         "Когда Лизель оглядывалась … оказывались" / "едва ли не самыми яркими
         воспоминаниями." as two "sentences". Collapsing those newlines to
         spaces lets pysbd segment on punctuation alone (respecting Mr./Ms.
-        abbreviations), while newlines after `. ! ? … » " ' ) ” ’` still mark
+        abbreviations), while newlines after `. ! ? … » " ' ) " '` still mark
         real paragraph breaks and keep pysbd's quote-region heuristic from
-        merging long dialogue spans. The curly closers `”` (U+201D) and `’`
+        merging long dialogue spans. The curly closers `"` (U+201D) and `'`
         (U+2019) matter: dialogue lines closed with curly quotes (the Book
-        Thief uses `“...”`) must keep their line break, otherwise pysbd masks
+        Thief uses `"...`) must keep their line break, otherwise pysbd masks
         the punctuation inside the quote span and merges the whole dialogue
         block into one "sentence".
         """
@@ -76,6 +83,10 @@ class TypedSentenceSplitter:
         file chunk by chunk without cutting a sentence in half.
         """
         normalized = self.normalize(text)
+        # Apply language-specific preprocessing (quote normalisation, noise
+        # removal, German date protection, etc.) before splitting.
+        normalized = preprocess(normalized, self.splitter.language)
+
         sentences: list[dict] = []
 
         if normalized:
@@ -84,9 +95,11 @@ class TypedSentenceSplitter:
             def flush_buffer() -> None:
                 if not buffer_lines:
                     return
-                # Collapse mid-sentence hard wraps, keep paragraph breaks, so
-                # pysbd segments on punctuation instead of every newline.
-                pending = self.selective_flatten("\n".join(buffer_lines)).strip()
+                raw = "\n".join(buffer_lines)
+                # pysbd needs selective newline flattening; razdel does not.
+                if self.backend == "pysbd":
+                    raw = self.selective_flatten(raw)
+                pending = raw.strip()
                 buffer_lines.clear()
                 if not pending:
                     return
@@ -103,6 +116,16 @@ class TypedSentenceSplitter:
                     buffer_lines.append(line)
 
             flush_buffer()
+
+        # Apply language-specific postprocessing (French » reattachment,
+        # German date restoration, etc.) after splitting.
+        contents = [s["content"] for s in sentences]
+        contents = postprocess(contents, self.splitter.language)
+        sentences = [
+            {"content": c, "type": sentences[i]["type"]}
+            for i, c in enumerate(contents)
+            if c.strip()
+        ]
 
         remainder = ""
         if sentences and not finalize:

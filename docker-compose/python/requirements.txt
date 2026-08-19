@@ -10,4 +10,5 @@ safetensors==0.8.0
 scipy==1.18.0
 scikit-learn==1.9.0
 pysbd==0.3.4
+razdel>=0.5
 regex==2026.7.19
