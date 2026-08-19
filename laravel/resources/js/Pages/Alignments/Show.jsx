@@ -473,7 +473,23 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setContainers((prev) => {
             const activeItems = prev[activeContainerKey] ?? [];
             const overItems = prev[overContainerKey] ?? [];
-            const overIndex = overId === overContainerKey ? overItems.length : Math.max(overItems.indexOf(overId), 0);
+
+            let overIndex;
+
+            if (activeContainerKey.startsWith('row:') && overContainerKey.startsWith('row:')) {
+                const srcRowId = Number(activeContainerKey.split(':')[1]);
+                const tgtRowId = Number(overContainerKey.split(':')[1]);
+                const srcRow = rows.find((r) => r.id === srcRowId);
+                const tgtRow = rows.find((r) => r.id === tgtRowId);
+
+                if (srcRow && tgtRow) {
+                    overIndex = srcRow.order < tgtRow.order ? 0 : overItems.length;
+                } else {
+                    overIndex = overId === overContainerKey ? overItems.length : Math.max(overItems.indexOf(overId), 0);
+                }
+            } else {
+                overIndex = overId === overContainerKey ? overItems.length : Math.max(overItems.indexOf(overId), 0);
+            }
 
             return {
                 ...prev,
@@ -481,7 +497,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                 [overContainerKey]: [...overItems.slice(0, overIndex), active.id, ...overItems.slice(overIndex)],
             };
         });
-    }, [containerOf]);
+    }, [containerOf, rows]);
 
     const onDragEnd = useCallback(async ({active, over}) => {
         const overId = over?.id;

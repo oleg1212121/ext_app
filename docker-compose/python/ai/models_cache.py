@@ -5,6 +5,10 @@ restart the app in ~1-2s after a source edit without re-loading the multi-GB
 model files. The first endpoint call that needs a model pays the load; later
 calls reuse the cached instance on `app.state`.
 
+Set CACHE_MODELS=0 in the env file to disable caching — models are loaded on
+each request and garbage-collected when the handler returns. All memory is
+freed when the container stops.
+
 Swapping models at runtime:
   - Edit `ALIGN_MODEL_PATH` in `docker-compose/python/.env`.
   - On the next `/align` request, `aligner_model()` re-reads the env, sees the
@@ -14,6 +18,7 @@ Swapping models at runtime:
 """
 
 import logging
+import os
 from pathlib import Path
 
 from sentence_transformers import SentenceTransformer
@@ -28,11 +33,18 @@ class ModelCache:
     def __init__(self, app_state):
         self.state = app_state
 
+    @staticmethod
+    def _should_cache() -> bool:
+        return os.environ.get("CACHE_MODELS", "1").strip() != "0"
+
     def _get(self, key):
+        if not self._should_cache():
+            return None
         return getattr(self.state, key, None)
 
     def _set(self, key, value):
-        setattr(self.state, key, value)
+        if self._should_cache():
+            setattr(self.state, key, value)
 
     def signature_model(self) -> SentenceTransformer:
         m = self._get("model")

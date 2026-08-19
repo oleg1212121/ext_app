@@ -1,7 +1,7 @@
 from ai.signatures.text_signature import TextSignature
 # ts = TextSignature("/app/models/bge_m3_local")          # load once (~2GB, takes ~30-60s)
 # ts = TextSignature("/app/models/minilm")          # load once (~2GB, takes ~30-60s)
-ts = TextSignature("/app/models/labse")          # load once (~2GB, takes ~30-60s)
+ts = TextSignature("/app/models/bge_m3")          # load once (~2GB, takes ~30-60s)
 sent_en_1 = "Mystery bores me "
 sent_en_2 = "It chores me I know what happens and so do you"
 sent_en_3 = f"{sent_en_1} {sent_en_2}"

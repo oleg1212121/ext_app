@@ -144,7 +144,7 @@ export default function PairRow({row, enKeys, ruKeys, lookup, editing, adding, d
                         containerKey={`row:${row.id}:en`}
                         keys={enKeys}
                         lookup={lookup}
-                        adding={adding?.lang === 'en'}
+                        adding={adding?.lang === 'en' && adding?.rowId === row.id}
                         draft={draft}
                         busy={busy}
                         editing={editing}
@@ -165,7 +165,7 @@ export default function PairRow({row, enKeys, ruKeys, lookup, editing, adding, d
                         containerKey={`row:${row.id}:ru`}
                         keys={ruKeys}
                         lookup={lookup}
-                        adding={adding?.lang === 'ru'}
+                        adding={adding?.lang === 'ru' && adding?.rowId === row.id}
                         draft={draft}
                         busy={busy}
                         editing={editing}
