@@ -46,10 +46,10 @@ document order.
 _Avoid_: line
 
 **Junction**:
-A sentence's membership link to a meaning match. Its `order` is an **independent
-within-row sequence** — the display order of the row's sentences. Dragging a
-sentence within a row rewrites junction orders only and never affects the
-sentence's document order.
+A sentence's membership link to a meaning match. Junctions are pure association
+tables with no `order` column. Within-row display order is determined by each
+sentence's document order (`*_entity_sentences.order`). Dragging a sentence
+within a row reorders via document order on the sentence table.
 
 **Unmatched sentence**:
 A sentence with no junction to any meaning match.

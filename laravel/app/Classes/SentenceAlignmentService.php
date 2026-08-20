@@ -391,10 +391,9 @@ class SentenceAlignmentService
                         ->unique('en_entity_sentence_id')
                         ->sortBy('en_order')
                         ->values()
-                        ->map(fn (array $link, int $index) => [
+                        ->map(fn (array $link) => [
                             'en_entity_sentence_id' => $link['en_entity_sentence_id'],
                             'en_ru_meaning_match_id' => $meaningMatch->id,
-                            'order' => $index,
                             'created_at' => $now,
                             'updated_at' => $now,
                         ])
@@ -404,10 +403,9 @@ class SentenceAlignmentService
                         ->unique('ru_entity_sentence_id')
                         ->sortBy('ru_order')
                         ->values()
-                        ->map(fn (array $link, int $index) => [
+                        ->map(fn (array $link) => [
                             'ru_entity_sentence_id' => $link['ru_entity_sentence_id'],
                             'en_ru_meaning_match_id' => $meaningMatch->id,
-                            'order' => $index,
                             'created_at' => $now,
                             'updated_at' => $now,
                         ])
@@ -428,7 +426,6 @@ class SentenceAlignmentService
                     EnSentenceMeaningMatch::create([
                         'en_entity_sentence_id' => $step['en_sentence_id'],
                         'en_ru_meaning_match_id' => $meaningMatch->id,
-                        'order' => 0,
                     ]);
 
                     continue;
@@ -438,7 +435,6 @@ class SentenceAlignmentService
                     RuSentenceMeaningMatch::create([
                         'ru_entity_sentence_id' => $step['ru_sentence_id'],
                         'en_ru_meaning_match_id' => $meaningMatch->id,
-                        'order' => 0,
                     ]);
                 }
             }

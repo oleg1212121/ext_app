@@ -141,7 +141,7 @@ def align_window_embed() -> str:
 
 
 def model_path() -> str:
-    return _live_env("MODEL_PATH", str(BASE_DIR.parent / "models" / "bge_m3"))
+    return _live_env("MODEL_PATH", str(BASE_DIR.parent / "models" / "labse"))
 
 
 def align_model_path() -> str:
@@ -151,7 +151,7 @@ def align_model_path() -> str:
 # Backwards-compatible import-time constants (still used by code that wants the
 # startup default, e.g. validation Field max_length). For live model swaps,
 # use the accessor functions above.
-MODEL_PATH = os.environ.get("MODEL_PATH", str(BASE_DIR.parent / "models" / "bge_m3"))
+MODEL_PATH = os.environ.get("MODEL_PATH", str(BASE_DIR.parent / "models" / "labse"))
 ALIGN_MODEL_PATH = os.environ.get("ALIGN_MODEL_PATH", str(BASE_DIR.parent / "models" / "minilm"))
 
 

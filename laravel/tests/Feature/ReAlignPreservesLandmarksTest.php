@@ -14,17 +14,15 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 
-function seedMeaningMatchJunction(EnRuMeaningMatch $match, EnEntitySentence $en, RuEntitySentence $ru, int $ruOrder = 0): void
+function seedMeaningMatchJunction(EnRuMeaningMatch $match, EnEntitySentence $en, RuEntitySentence $ru): void
 {
     EnSentenceMeaningMatch::create([
         'en_entity_sentence_id' => $en->id,
         'en_ru_meaning_match_id' => $match->id,
-        'order' => 0,
     ]);
     RuSentenceMeaningMatch::create([
         'ru_entity_sentence_id' => $ru->id,
         'en_ru_meaning_match_id' => $match->id,
-        'order' => $ruOrder,
     ]);
 }
 
@@ -305,13 +303,11 @@ it('carves pools that never overlap a 1:N human landmark span', function () {
     EnSentenceMeaningMatch::create([
         'en_entity_sentence_id' => $enSentences[4]->id,
         'en_ru_meaning_match_id' => $humanRow->id,
-        'order' => 0,
     ]);
-    foreach (range(0, 2) as $order) {
+    foreach (range(0, 2) as $i) {
         RuSentenceMeaningMatch::create([
-            'ru_entity_sentence_id' => $ruSentences[4 + $order]->id,
+            'ru_entity_sentence_id' => $ruSentences[4 + $i]->id,
             'en_ru_meaning_match_id' => $humanRow->id,
-            'order' => $order,
         ]);
     }
 

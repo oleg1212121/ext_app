@@ -74,7 +74,7 @@ class AlignmentEditorPresenter
 
         $sentences = [];
 
-        foreach ($matches->sortBy('order') as $match) {
+        foreach ($matches as $match) {
             $sentence = $lang === 'en'
                 ? $match->enEntitySentence
                 : $match->ruEntitySentence;
@@ -85,14 +85,19 @@ class AlignmentEditorPresenter
 
             $linkedIds[] = $sentence->id;
 
-            $sentences[] = $this->sentencePayload(
-                id: $sentence->id,
-                content: $sentence->content,
-                order: $sentence->order,
-            );
+            $sentences[] = [
+                'order' => (int) $sentence->order,
+                'payload' => $this->sentencePayload(
+                    id: $sentence->id,
+                    content: $sentence->content,
+                    order: $sentence->order,
+                ),
+            ];
         }
 
-        return $sentences;
+        usort($sentences, fn (array $a, array $b): int => $a['order'] <=> $b['order']);
+
+        return array_column($sentences, 'payload');
     }
 
     /**

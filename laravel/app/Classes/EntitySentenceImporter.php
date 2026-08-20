@@ -184,7 +184,6 @@ class EntitySentenceImporter
                 $enJunctionRows[] = [
                     'en_entity_sentence_id' => $enSentences[$index]->id,
                     'en_ru_meaning_match_id' => $meaningMatch->id,
-                    'order' => 0,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
@@ -192,7 +191,6 @@ class EntitySentenceImporter
                 $ruJunctionRows[] = [
                     'ru_entity_sentence_id' => $ruSentences[$index]->id,
                     'en_ru_meaning_match_id' => $meaningMatch->id,
-                    'order' => 0,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];

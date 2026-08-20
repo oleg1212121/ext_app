@@ -19,22 +19,22 @@ class EnSentenceMeaningMatchSeeder extends Seeder
                 'en_entity_name' => EnEntitySeeder::ENTITY_NAME,
                 'ru_entity_name' => RuEntitySeeder::ENTITY_NAME,
                 'links' => [
-                    ['sentence_order' => 1, 'meaning_order' => 1, 'order' => 0],
-                    ['sentence_order' => 2, 'meaning_order' => 2, 'order' => 0],
-                    ['sentence_order' => 3, 'meaning_order' => 3, 'order' => 0],
-                    ['sentence_order' => 4, 'meaning_order' => 4, 'order' => 0],
-                    ['sentence_order' => 5, 'meaning_order' => 5, 'order' => 0],
-                    ['sentence_order' => 6, 'meaning_order' => 6, 'order' => 0],
+                    ['sentence_order' => 1, 'meaning_order' => 1],
+                    ['sentence_order' => 2, 'meaning_order' => 2],
+                    ['sentence_order' => 3, 'meaning_order' => 3],
+                    ['sentence_order' => 4, 'meaning_order' => 4],
+                    ['sentence_order' => 5, 'meaning_order' => 5],
+                    ['sentence_order' => 6, 'meaning_order' => 6],
                 ],
             ],
             [
                 'en_entity_name' => EnEntitySeeder::SECOND_ENTITY_NAME,
                 'ru_entity_name' => RuEntitySeeder::SECOND_ENTITY_NAME,
                 'links' => [
-                    ['sentence_order' => 1, 'meaning_order' => 1, 'order' => 0],
-                    ['sentence_order' => 2, 'meaning_order' => 2, 'order' => 0],
-                    ['sentence_order' => 3, 'meaning_order' => 3, 'order' => 0],
-                    ['sentence_order' => 4, 'meaning_order' => 4, 'order' => 0],
+                    ['sentence_order' => 1, 'meaning_order' => 1],
+                    ['sentence_order' => 2, 'meaning_order' => 2],
+                    ['sentence_order' => 3, 'meaning_order' => 3],
+                    ['sentence_order' => 4, 'meaning_order' => 4],
                 ],
             ],
         ];
@@ -63,9 +63,6 @@ class EnSentenceMeaningMatchSeeder extends Seeder
                     [
                         'en_entity_sentence_id' => $enSentences[$link['sentence_order']]->id,
                         'en_ru_meaning_match_id' => $meaningMatches[$link['meaning_order']]->id,
-                    ],
-                    [
-                        'order' => $link['order'],
                     ],
                 );
             }

@@ -12,9 +12,9 @@ use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable implements FilamentUser
 {
-    public const string ROLE_USER = 'user';
+    public const ROLE_USER = 'user';
 
-    public const string ROLE_ADMIN = 'admin';
+    public const ROLE_ADMIN = 'admin';
 
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;

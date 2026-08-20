@@ -8,7 +8,7 @@ router = APIRouter()
 @router.get("/health")
 async def health(request: Request):
     # Lazy-load the signature model on first health check; cached after.
-    # `dim` is the signature model's dimension (BGE-M3 = 1024).
+    # `dim` is the signature model's dimension (LaBSE = 768).
     cache = ModelCache(request.app.state)
     try:
         m = cache.signature_model()

@@ -17,7 +17,6 @@ it('paginates meaning rows and unmatched sentences from draft data', function ()
         $draft['meaning_rows'][] = [
             'key' => "mm-{$i}",
             'id' => $i,
-            'order' => $i - 1,
             'en_sentences' => [$presenter->sentencePayload($i, "EN {$i}", $i)],
             'ru_sentences' => [$presenter->sentencePayload($i + 100, "RU {$i}", $i)],
         ];

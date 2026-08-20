@@ -60,13 +60,11 @@ function createAlignmentFixture(): array
     EnSentenceMeaningMatch::create([
         'en_entity_sentence_id' => $en1->id,
         'en_ru_meaning_match_id' => $meaningMatch->id,
-        'order' => 0,
     ]);
 
     RuSentenceMeaningMatch::create([
         'ru_entity_sentence_id' => $ru1->id,
         'en_ru_meaning_match_id' => $meaningMatch->id,
-        'order' => 0,
     ]);
 
     return compact('entityMatch', 'en1', 'en2', 'ru1', 'meaningMatch', 'enEntity', 'ruEntity');

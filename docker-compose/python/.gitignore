@@ -1,6 +1,6 @@
 __pycache__
 ai_env
 venv
-bge_m3_local
+labse_local
 *.txt
 !requirements.txt

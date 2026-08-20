@@ -18,14 +18,22 @@ class MeaningMatchPresenter
 
         foreach ($meaningMatches as $meaningMatch) {
             $enText = $meaningMatch->enSentenceMatches
+                ->map(fn ($match) => [
+                    'order' => $match->enEntitySentence?->order ?? 0,
+                    'content' => $match->enEntitySentence?->content ?? '',
+                ])
                 ->sortBy('order')
-                ->map(fn ($match) => $match->enEntitySentence?->content ?? '')
+                ->pluck('content')
                 ->filter()
                 ->implode("\n");
 
             $ruText = $meaningMatch->ruSentenceMatches
+                ->map(fn ($match) => [
+                    'order' => $match->ruEntitySentence?->order ?? 0,
+                    'content' => $match->ruEntitySentence?->content ?? '',
+                ])
                 ->sortBy('order')
-                ->map(fn ($match) => $match->ruEntitySentence?->content ?? '')
+                ->pluck('content')
                 ->filter()
                 ->implode("\n");
 
@@ -46,21 +54,21 @@ class MeaningMatchPresenter
 
         foreach ($meaningMatches as $meaningMatch) {
             $enItems = $meaningMatch->enSentenceMatches
-                ->sortBy('order')
                 ->map(fn ($match) => [
                     'order' => $match->enEntitySentence?->order ?? 0,
                     'content' => $match->enEntitySentence?->content ?? '',
                 ])
+                ->sortBy('order')
                 ->filter(fn (array $item) => $item['content'] !== '')
                 ->values()
                 ->all();
 
             $ruItems = $meaningMatch->ruSentenceMatches
-                ->sortBy('order')
                 ->map(fn ($match) => [
                     'order' => $match->ruEntitySentence?->order ?? 0,
                     'content' => $match->ruEntitySentence?->content ?? '',
                 ])
+                ->sortBy('order')
                 ->filter(fn (array $item) => $item['content'] !== '')
                 ->values()
                 ->all();

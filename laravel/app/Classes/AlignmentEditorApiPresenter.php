@@ -153,7 +153,7 @@ class AlignmentEditorApiPresenter
 
         $sentences = [];
 
-        foreach ($matches->sortBy('order') as $match) {
+        foreach ($matches as $match) {
             $sentence = $lang === 'en'
                 ? $match->enEntitySentence
                 : $match->ruEntitySentence;
@@ -162,10 +162,27 @@ class AlignmentEditorApiPresenter
                 continue;
             }
 
-            $sentences[] = $this->sentencePayload($sentence->id, $sentence->content, $sentence->order, $lang);
+            $sentences[] = [
+                'id' => $sentence->id,
+                'order' => (int) $sentence->order,
+                'match' => $match,
+            ];
         }
 
-        return $sentences;
+        usort($sentences, fn (array $a, array $b): int => $a['order'] <=> $b['order']);
+
+        $result = [];
+
+        foreach ($sentences as $entry) {
+            $match = $entry['match'];
+            $sentence = $lang === 'en'
+                ? $match->enEntitySentence
+                : $match->ruEntitySentence;
+
+            $result[] = $this->sentencePayload($sentence->id, $sentence->content, $sentence->order, $lang);
+        }
+
+        return $result;
     }
 
     /**

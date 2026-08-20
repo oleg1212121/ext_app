@@ -10,15 +10,7 @@ class EnSentenceMeaningMatch extends Model
     protected $fillable = [
         'en_entity_sentence_id',
         'en_ru_meaning_match_id',
-        'order',
     ];
-
-    protected function casts(): array
-    {
-        return [
-            'order' => 'integer',
-        ];
-    }
 
     public function enEntitySentence(): BelongsTo
     {

@@ -110,13 +110,11 @@ test('authenticated users can view alignment details', function () {
     EnSentenceMeaningMatch::create([
         'en_entity_sentence_id' => $enSentence->id,
         'en_ru_meaning_match_id' => $meaningMatch->id,
-        'order' => 0,
     ]);
 
     RuSentenceMeaningMatch::create([
         'ru_entity_sentence_id' => $ruSentence->id,
         'en_ru_meaning_match_id' => $meaningMatch->id,
-        'order' => 0,
     ]);
 
     $response = $this

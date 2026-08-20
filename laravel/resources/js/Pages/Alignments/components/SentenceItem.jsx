@@ -85,7 +85,7 @@ export default function SentenceItem({item, lang, editing, draft, busy, onStartE
             <DragHandle attributes={attributes} listeners={listeners} dragging={isDragging}/>
 
             <span className="mt-1.5 w-9 shrink-0 text-right font-mono text-[10px] tabular-nums text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                {item.order}
+                {item.display_order}
             </span>
 
             {editing ? (

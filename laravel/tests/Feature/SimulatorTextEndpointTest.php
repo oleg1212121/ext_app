@@ -49,13 +49,11 @@ it('returns paginated alignment rows for en_ru_entity_match_id', function () {
     EnSentenceMeaningMatch::create([
         'en_entity_sentence_id' => $en1->id,
         'en_ru_meaning_match_id' => $matchRow->id,
-        'order' => 0,
     ]);
 
     RuSentenceMeaningMatch::create([
         'ru_entity_sentence_id' => $ru1->id,
         'en_ru_meaning_match_id' => $matchRow->id,
-        'order' => 0,
     ]);
 
     $skipRow = EnRuMeaningMatch::create([
@@ -68,7 +66,6 @@ it('returns paginated alignment rows for en_ru_entity_match_id', function () {
     RuSentenceMeaningMatch::create([
         'ru_entity_sentence_id' => $ru1->id,
         'en_ru_meaning_match_id' => $skipRow->id,
-        'order' => 0,
     ]);
 
     $response = $this->actingAs($user)->postJson('/text', [

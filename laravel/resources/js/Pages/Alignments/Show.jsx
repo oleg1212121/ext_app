@@ -32,16 +32,29 @@ function buildContainers({rows, unmatchedEn, unmatchedRu}) {
 }
 
 function buildLookup({rows, unmatchedEn, unmatchedRu}) {
-    const lookup = new Map();
-    const add = (sentence, lang, rowId) => lookup.set(sentence.key, {...sentence, lang, row_id: rowId});
+    const all = [];
 
     rows.forEach((row) => {
-        row.en_sentences.forEach((s) => add(s, 'en', row.id));
-        row.ru_sentences.forEach((s) => add(s, 'ru', row.id));
+        row.en_sentences.forEach((s) => all.push({...s, lang: 'en', row_id: row.id}));
+        row.ru_sentences.forEach((s) => all.push({...s, lang: 'ru', row_id: row.id}));
     });
 
-    unmatchedEn.items.forEach((s) => add(s, 'en', null));
-    unmatchedRu.items.forEach((s) => add(s, 'ru', null));
+    unmatchedEn.items.forEach((s) => all.push({...s, lang: 'en', row_id: null}));
+    unmatchedRu.items.forEach((s) => all.push({...s, lang: 'ru', row_id: null}));
+
+    const lookup = new Map();
+    let enCounter = 0;
+    let ruCounter = 0;
+
+    all
+        .sort((a, b) => a.order - b.order)
+        .filter((s) => s.lang === 'en')
+        .forEach((s) => { lookup.set(s.key, {...s, display_order: ++enCounter}); });
+
+    all
+        .sort((a, b) => a.order - b.order)
+        .filter((s) => s.lang === 'ru')
+        .forEach((s) => { lookup.set(s.key, {...s, display_order: ++ruCounter}); });
 
     return lookup;
 }
@@ -181,7 +194,13 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             });
         }
 
-        applyData({...base, rows, match: res.match});
+        const nextRowsMeta = {
+            ...base.rowsMeta,
+            total: res.match.linked_count ?? base.rowsMeta.total,
+            last_page: Math.max(Math.ceil((res.match.linked_count ?? base.rowsMeta.total) / base.rowsMeta.per_page), 1),
+        };
+
+        applyData({...base, rows, rowsMeta: nextRowsMeta, match: res.match});
 
         for (const lang of res.unmatched_changed ?? []) {
             const key = lang === 'en' ? 'unmatchedEn' : 'unmatchedRu';
@@ -608,10 +627,11 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
                         {!tableError && rows.length > 0 && (
                             <>
-                                {rows.map((row) => (
+                                {rows.map((row, index) => (
                                     <PairRow
                                         key={row.key}
                                         row={row}
+                                        position={(rowsMeta.current_page - 1) * rowsMeta.per_page + index + 1}
                                         enKeys={containers[`row:${row.id}:en`] ?? []}
                                         ruKeys={containers[`row:${row.id}:ru`] ?? []}
                                         lookup={lookup}

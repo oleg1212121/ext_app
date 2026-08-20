@@ -627,12 +627,10 @@ it('inserts a position-aware skip row for a mid-text junction-less original sent
         EnSentenceMeaningMatch::create([
             'en_entity_sentence_id' => $enSentences[$index]->id,
             'en_ru_meaning_match_id' => $meaningMatch->id,
-            'order' => 0,
         ]);
         RuSentenceMeaningMatch::create([
             'ru_entity_sentence_id' => $ruSentences[$index]->id,
             'en_ru_meaning_match_id' => $meaningMatch->id,
-            'order' => 0,
         ]);
     }
 
@@ -698,12 +696,10 @@ it('completes without failing when a human-unlinked original sentence is still j
     EnSentenceMeaningMatch::create([
         'en_entity_sentence_id' => $enSentences[0]->id,
         'en_ru_meaning_match_id' => $landmark->id,
-        'order' => 0,
     ]);
     RuSentenceMeaningMatch::create([
         'ru_entity_sentence_id' => $ruSentences[0]->id,
         'en_ru_meaning_match_id' => $landmark->id,
-        'order' => 0,
     ]);
 
     EnRuMeaningMatch::create([
@@ -817,7 +813,10 @@ it('persists one english sentence linked to five russian sentences in a single c
     $entityMatch->refresh();
     $meaningMatch = EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->first();
     $enJunctions = EnSentenceMeaningMatch::where('en_ru_meaning_match_id', $meaningMatch->id)->get();
-    $ruJunctions = RuSentenceMeaningMatch::where('en_ru_meaning_match_id', $meaningMatch->id)->orderBy('order')->get();
+    $ruJunctions = RuSentenceMeaningMatch::where('en_ru_meaning_match_id', $meaningMatch->id)
+        ->get()
+        ->sortBy(fn ($match) => $match->ruEntitySentence?->order ?? 0)
+        ->values();
 
     expect($entityMatch->status)->toBe('completed')
         ->and($entityMatch->linked_count)->toBe(1)
@@ -1283,12 +1282,10 @@ it('rolls back the last two meaning matches and re-aligns them with backward con
         EnSentenceMeaningMatch::create([
             'en_entity_sentence_id' => $enSentences[$index]->id,
             'en_ru_meaning_match_id' => $match->id,
-            'order' => 0,
         ]);
         RuSentenceMeaningMatch::create([
             'ru_entity_sentence_id' => $ruSentences[$index]->id,
             'en_ru_meaning_match_id' => $match->id,
-            'order' => 0,
         ]);
     }
 
@@ -1427,12 +1424,10 @@ it('rolls back a single prior match when the previous chunk committed just one',
     EnSentenceMeaningMatch::create([
         'en_entity_sentence_id' => $enSentences[0]->id,
         'en_ru_meaning_match_id' => $seed->id,
-        'order' => 0,
     ]);
     RuSentenceMeaningMatch::create([
         'ru_entity_sentence_id' => $ruSentences[0]->id,
         'en_ru_meaning_match_id' => $seed->id,
-        'order' => 0,
     ]);
 
     (new AlignEntitySentences($entityMatch->id))->handle();
@@ -1505,12 +1500,10 @@ it('does not roll back human-edit sentinel matches', function () {
     EnSentenceMeaningMatch::create([
         'en_entity_sentence_id' => $enSentences[0]->id,
         'en_ru_meaning_match_id' => $humanEdit->id,
-        'order' => 0,
     ]);
     RuSentenceMeaningMatch::create([
         'ru_entity_sentence_id' => $ruSentences[0]->id,
         'en_ru_meaning_match_id' => $humanEdit->id,
-        'order' => 0,
     ]);
 
     (new AlignEntitySentences($entityMatch->id))->handle();
@@ -1584,12 +1577,10 @@ it('force-advances the cursor when a rolled-back commit cannot reach the stored 
         EnSentenceMeaningMatch::create([
             'en_entity_sentence_id' => $enSentences[$index]->id,
             'en_ru_meaning_match_id' => $seed->id,
-            'order' => 0,
         ]);
         RuSentenceMeaningMatch::create([
             'ru_entity_sentence_id' => $ruSentences[$index]->id,
             'en_ru_meaning_match_id' => $seed->id,
-            'order' => 0,
         ]);
     }
 

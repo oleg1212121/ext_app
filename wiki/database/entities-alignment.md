@@ -33,14 +33,13 @@ sources:
   maintained by `SparseOrderService`; columns were widened in the
   2026_06 `widen_sparse_order_columns` migration. Rebalance daily via
   `entity-orders:rebalance`.
-* **Document order vs junction order**: `en_entity_sentences.order` is the
-  sentence's **document order** — its position in the original text. It is
+* **Document order is the single source of truth**: `en_entity_sentences.order` is
+  the sentence's **document order** — its position in the original text. It is
   immutable in the alignment editor (only the *Sentences* tab, import, and
-  `entity-orders:rebalance` change it). `en_sentence_meaning_matches.order` is
-  an independent **within-row sequence**: the display order of a row's
-  sentences. Dragging within a row, linking into a row, and appending a new
-  sentence rewrite junction orders only, via row-local sparse helpers (see
-  ADR 0005).
+  `entity-orders:rebalance` change it). The junction tables
+  (`en_sentence_meaning_matches` / `ru_sentence_meaning_matches`) are pure
+  association tables with no `order` column. Within-row display order is
+  determined by each sentence's document order.
 * **Landmarks**: `en_ru_meaning_matches.alignment_chunk = -1` marks
   human-made rows (always `similarity = 1.0`); machine rows carry a monotonic
   per-run chunk id (never `-1`). Machine rows with

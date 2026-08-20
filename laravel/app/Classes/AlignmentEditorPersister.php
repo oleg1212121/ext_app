@@ -300,21 +300,19 @@ class AlignmentEditorPersister
                 $meaningId = $row['meaning_id'];
             }
 
-            foreach ($row['en_sentences'] as $junctionOrder => $sentenceId) {
+            foreach ($row['en_sentences'] as $sentenceId) {
                 $enJunctionInserts[] = [
                     'en_entity_sentence_id' => $sentenceId,
                     'en_ru_meaning_match_id' => $meaningId,
-                    'order' => $junctionOrder,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
             }
 
-            foreach ($row['ru_sentences'] as $junctionOrder => $sentenceId) {
+            foreach ($row['ru_sentences'] as $sentenceId) {
                 $ruJunctionInserts[] = [
                     'ru_entity_sentence_id' => $sentenceId,
                     'en_ru_meaning_match_id' => $meaningId,
-                    'order' => $junctionOrder,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];

@@ -103,7 +103,7 @@ function SentenceColumn({lang, containerKey, keys, lookup, adding, draft, busy, 
     );
 }
 
-export default function PairRow({row, enKeys, ruKeys, lookup, editing, adding, draft, busy, highlighted, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete, onApprove}) {
+export default function PairRow({row, position, enKeys, ruKeys, lookup, editing, adding, draft, busy, highlighted, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete, onApprove}) {
     return (
         <section
             data-row-id={row.id}
@@ -115,7 +115,7 @@ export default function PairRow({row, enKeys, ruKeys, lookup, editing, adding, d
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)] px-3 py-1.5">
                 <div className="flex items-center gap-3">
                     <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                        #{row.order}
+                        #{position}
                     </span>
                     {row.similarity !== null && (
                         <span className="font-mono text-[10px] tabular-nums text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">

@@ -11,7 +11,7 @@ class TextSignature:
         # Accepts a ready SentenceTransformer (to share one loaded model between
         # classes), a model path, or None to load the default local model.
         if model is None:
-            model = Path(__file__).parent.parent / "bge_m3_local"
+            model = Path(__file__).parent.parent / "labse_local"
         if isinstance(model, SentenceTransformer):
             self.model = model
         else:

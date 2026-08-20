@@ -199,8 +199,12 @@ class SparseOrderService
         $end = min($count - 1, $start + self::WINDOW_SIZE - 1);
         $start = max(0, $end - self::WINDOW_SIZE + 1);
 
-        $previousAnchor = $start > 0 ? $items[$start - 1]['order'] : null;
-        $nextAnchor = $end < $count - 1 ? $items[$end + 1]['order'] : null;
+        $previousAnchor = ($start > 0 && $items[$start - 1]['order'] !== PHP_INT_MIN)
+            ? $items[$start - 1]['order']
+            : null;
+        $nextAnchor = ($end < $count - 1 && $items[$end + 1]['order'] !== PHP_INT_MIN)
+            ? $items[$end + 1]['order']
+            : null;
         $windowCount = $end - $start + 1;
 
         if ($previousAnchor !== null && $nextAnchor !== null) {

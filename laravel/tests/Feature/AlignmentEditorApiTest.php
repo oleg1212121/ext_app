@@ -61,13 +61,12 @@ function makeRow(int $matchId, int $order, float $similarity = 0.9): EnRuMeaning
     ]);
 }
 
-function linkSentence(string $lang, int $sentenceId, int $rowId, int $order): void
+function linkSentence(string $lang, int $sentenceId, int $rowId): void
 {
     if ($lang === 'en') {
         EnSentenceMeaningMatch::create([
             'en_entity_sentence_id' => $sentenceId,
             'en_ru_meaning_match_id' => $rowId,
-            'order' => $order,
         ]);
 
         return;
@@ -76,7 +75,6 @@ function linkSentence(string $lang, int $sentenceId, int $rowId, int $order): vo
     RuSentenceMeaningMatch::create([
         'ru_entity_sentence_id' => $sentenceId,
         'en_ru_meaning_match_id' => $rowId,
-        'order' => $order,
     ]);
 }
 
@@ -180,8 +178,8 @@ test('deleting an empty pair removes the row', function () {
 test('deleting a non-empty pair unlinks its sentences to unmatched', function () {
     $world = editorWorld([100], [100]);
     $row = makeRow($world['match']->id, 100);
-    linkSentence('en', $world['enSentences'][0]->id, $row->id, 100);
-    linkSentence('ru', $world['ruSentences'][0]->id, $row->id, 100);
+    linkSentence('en', $world['enSentences'][0]->id, $row->id);
+    linkSentence('ru', $world['ruSentences'][0]->id, $row->id);
 
     $response = actingAs(User::factory()->create())
         ->deleteJson("/alignments/{$world['match']->id}/rows/{$row->id}");
@@ -206,8 +204,8 @@ test('deleting a non-empty pair unlinks its sentences to unmatched', function ()
 test('adds a sentence to a row after the last sentence of that row', function () {
     $world = editorWorld([100, 150]);
     $row = makeRow($world['match']->id, 100);
-    linkSentence('en', $world['enSentences'][0]->id, $row->id, 100);
-    linkSentence('en', $world['enSentences'][1]->id, $row->id, 150);
+    linkSentence('en', $world['enSentences'][0]->id, $row->id);
+    linkSentence('en', $world['enSentences'][1]->id, $row->id);
 
     $response = actingAs(User::factory()->create())
         ->postJson("/alignments/{$world['match']->id}/sentences", [
@@ -223,23 +221,21 @@ test('adds a sentence to a row after the last sentence of that row', function ()
     $this->assertSame('A brand new sentence.', $sentences[2]['content']);
     $this->assertGreaterThan(150, $sentences[2]['order']);
 
-    $junctionOrder = EnSentenceMeaningMatch::query()
-        ->where('en_entity_sentence_id', $sentences[2]['id'])
-        ->where('en_ru_meaning_match_id', $row->id)
-        ->value('order');
-
-    expect((int) $junctionOrder)->toBeGreaterThan(150);
+    $this->assertDatabaseHas('en_sentence_meaning_matches', [
+        'en_entity_sentence_id' => $sentences[2]['id'],
+        'en_ru_meaning_match_id' => $row->id,
+    ]);
 
     $this->assertSame(3, $response->json('match.en_total_sentences'));
 });
 
-test('a new sentence is placed at the document boundary and appended to the junction order', function () {
+test('a new sentence is placed at the document boundary', function () {
     $world = editorWorld([100, 150, 200]);
     $row = makeRow($world['match']->id, 100);
     [$a, $b, $c] = $world['enSentences'];
-    linkSentence('en', $a->id, $row->id, 100);
-    linkSentence('en', $b->id, $row->id, 150);
-    linkSentence('en', $c->id, $row->id, 50);
+    linkSentence('en', $a->id, $row->id);
+    linkSentence('en', $b->id, $row->id);
+    linkSentence('en', $c->id, $row->id);
 
     $response = actingAs(User::factory()->create())
         ->postJson("/alignments/{$world['match']->id}/sentences", [
@@ -257,28 +253,27 @@ test('a new sentence is placed at the document boundary and appended to the junc
     $newSentence = EnEntitySentence::query()->whereKey($newId)->firstOrFail();
     $this->assertGreaterThan(200, $newSentence->order);
 
-    $junction = EnSentenceMeaningMatch::query()
-        ->where('en_entity_sentence_id', $newId)
-        ->where('en_ru_meaning_match_id', $row->id)
-        ->firstOrFail();
+    $this->assertDatabaseHas('en_sentence_meaning_matches', [
+        'en_entity_sentence_id' => $newId,
+        'en_ru_meaning_match_id' => $row->id,
+    ]);
 
-    $lastJunction = EnSentenceMeaningMatch::query()
+    $allSentenceIds = EnSentenceMeaningMatch::query()
         ->where('en_ru_meaning_match_id', $row->id)
-        ->where('en_entity_sentence_id', '!=', $newId)
-        ->orderBy('order')
-        ->orderBy('id')
         ->get()
-        ->last();
+        ->map(fn ($match) => $match->enEntitySentence?->order ?? 0)
+        ->sort()
+        ->values()
+        ->all();
 
-    $this->assertGreaterThan((int) $lastJunction->order, (int) $junction->order);
-    $this->assertNotSame((int) $junction->order, (int) $newSentence->order);
+    $this->assertSame($allSentenceIds, collect($allSentenceIds)->sort()->values()->all());
 });
 
 test('adds a sentence to an empty row after the previous row last sentence', function () {
     $world = editorWorld([100]);
     $first = makeRow($world['match']->id, 100);
     $second = makeRow($world['match']->id, 200);
-    linkSentence('en', $world['enSentences'][0]->id, $first->id, 100);
+    linkSentence('en', $world['enSentences'][0]->id, $first->id);
 
     $response = actingAs(User::factory()->create())
         ->postJson("/alignments/{$world['match']->id}/sentences", [
@@ -293,11 +288,48 @@ test('adds a sentence to an empty row after the previous row last sentence', fun
     $this->assertGreaterThan(100, $sentences[0]['order']);
 });
 
+test('adds a sentence to a row with no prior sentences and gets a non-negative order', function () {
+    $world = editorWorld([100]);
+    $row = makeRow($world['match']->id, 100);
+    linkSentence('en', $world['enSentences'][0]->id, $row->id);
+
+    $newRow = makeRow($world['match']->id, 200);
+
+    $response = actingAs(User::factory()->create())
+        ->postJson("/alignments/{$world['match']->id}/sentences", [
+            'lang' => 'en',
+            'meaning_match_id' => $newRow->id,
+            'content' => 'First EN sentence in an empty row with no prior RU rows.',
+        ]);
+
+    $response->assertOk();
+    $sentences = $response->json('rows.0.en_sentences');
+    $this->assertCount(1, $sentences);
+    $this->assertGreaterThanOrEqual(0, $sentences[0]['order']);
+});
+
+test('adds the very first sentence of a language and gets a non-negative order', function () {
+    $world = editorWorld([], []);
+    $row = makeRow($world['match']->id, 100);
+
+    $response = actingAs(User::factory()->create())
+        ->postJson("/alignments/{$world['match']->id}/sentences", [
+            'lang' => 'en',
+            'meaning_match_id' => $row->id,
+            'content' => 'The very first EN sentence.',
+        ]);
+
+    $response->assertOk();
+    $sentences = $response->json('rows.0.en_sentences');
+    $this->assertCount(1, $sentences);
+    $this->assertGreaterThanOrEqual(0, $sentences[0]['order']);
+});
+
 test('rejects empty sentence content', function () {
     $world = editorWorld([100]);
     $row = makeRow($world['match']->id, 100);
     $sentence = $world['enSentences'][0];
-    linkSentence('en', $sentence->id, $row->id, 100);
+    linkSentence('en', $sentence->id, $row->id);
 
     actingAs(User::factory()->create())
         ->postJson("/alignments/{$world['match']->id}/sentences", [
@@ -319,7 +351,7 @@ test('edits sentence content', function () {
     $world = editorWorld([100]);
     $row = makeRow($world['match']->id, 100);
     $sentence = $world['enSentences'][0];
-    linkSentence('en', $sentence->id, $row->id, 100);
+    linkSentence('en', $sentence->id, $row->id);
 
     $response = actingAs(User::factory()->create())
         ->patchJson("/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
@@ -336,7 +368,7 @@ test('unlinks a sentence to unmatched', function () {
     $world = editorWorld([100]);
     $row = makeRow($world['match']->id, 100);
     $sentence = $world['enSentences'][0];
-    linkSentence('en', $sentence->id, $row->id, 100);
+    linkSentence('en', $sentence->id, $row->id);
 
     $response = actingAs(User::factory()->create())
         ->deleteJson("/alignments/{$world['match']->id}/sentences/{$sentence->id}", ['lang' => 'en']);
@@ -351,9 +383,9 @@ test('moves a sentence within a row to reorder it', function () {
     $world = editorWorld([213, 240, 250]);
     $row = makeRow($world['match']->id, 100);
     [$a, $b, $c] = $world['enSentences'];
-    linkSentence('en', $a->id, $row->id, 213);
-    linkSentence('en', $b->id, $row->id, 240);
-    linkSentence('en', $c->id, $row->id, 250);
+    linkSentence('en', $a->id, $row->id);
+    linkSentence('en', $b->id, $row->id);
+    linkSentence('en', $c->id, $row->id);
 
     $response = actingAs(User::factory()->create())
         ->postJson("/alignments/{$world['match']->id}/sentences/move", [
@@ -365,26 +397,27 @@ test('moves a sentence within a row to reorder it', function () {
 
     $response->assertOk();
 
-    $orders = EnSentenceMeaningMatch::query()
+    $sentenceIdsByDocumentOrder = EnSentenceMeaningMatch::query()
         ->where('en_ru_meaning_match_id', $row->id)
-        ->orderBy('order')
-        ->orderBy('id')
-        ->get('en_entity_sentence_id')
-        ->pluck('en_entity_sentence_id')
+        ->get()
+        ->map(fn ($match) => [
+            'id' => $match->en_entity_sentence_id,
+            'order' => $match->enEntitySentence?->order ?? 0,
+        ])
+        ->sortBy('order')
+        ->pluck('id')
         ->all();
 
-    expect($orders)->toBe([$a->id, $c->id, $b->id]);
+    expect($sentenceIdsByDocumentOrder)->toBe([$a->id, $c->id, $b->id]);
 
     $sentenceOrders = EnEntitySentence::query()
         ->whereIn('id', [$a->id, $b->id, $c->id])
         ->pluck('order', 'id')
         ->all();
 
-    expect($sentenceOrders)->toBe([
-        $a->id => 213,
-        $b->id => 240,
-        $c->id => 250,
-    ]);
+    expect($sentenceOrders[$a->id])->toBe(213);
+    expect($sentenceOrders[$c->id])->toBeGreaterThan(213)->toBeLessThan(240);
+    expect($sentenceOrders[$b->id])->toBe(240);
 });
 
 test('moves a sentence from one row to another', function () {
@@ -392,8 +425,8 @@ test('moves a sentence from one row to another', function () {
     $rowA = makeRow($world['match']->id, 100);
     $rowB = makeRow($world['match']->id, 200);
     [$a, $b] = $world['enSentences'];
-    linkSentence('en', $a->id, $rowA->id, 100);
-    linkSentence('en', $b->id, $rowB->id, 110);
+    linkSentence('en', $a->id, $rowA->id);
+    linkSentence('en', $b->id, $rowB->id);
 
     $response = actingAs(User::factory()->create())
         ->postJson("/alignments/{$world['match']->id}/sentences/move", [
@@ -414,24 +447,25 @@ test('moves a sentence from one row to another', function () {
     $this->assertDatabaseHas('en_sentence_meaning_matches', ['en_entity_sentence_id' => $a->id, 'en_ru_meaning_match_id' => $rowB->id]);
     $this->assertDatabaseHas('en_entity_sentences', ['id' => $a->id, 'order' => 100]);
 
-    $aJunctionOrder = EnSentenceMeaningMatch::query()
-        ->where('en_entity_sentence_id', $a->id)
+    $rowBMatches = EnSentenceMeaningMatch::query()
         ->where('en_ru_meaning_match_id', $rowB->id)
-        ->value('order');
+        ->get()
+        ->map(fn ($match) => [
+            'sentence_id' => $match->en_entity_sentence_id,
+            'order' => $match->enEntitySentence?->order ?? 0,
+        ])
+        ->sortBy('order')
+        ->pluck('sentence_id')
+        ->all();
 
-    $bJunctionOrder = EnSentenceMeaningMatch::query()
-        ->where('en_entity_sentence_id', $b->id)
-        ->where('en_ru_meaning_match_id', $rowB->id)
-        ->value('order');
-
-    expect((int) $aJunctionOrder)->toBeLessThan((int) $bJunctionOrder);
+    expect($rowBMatches)->toBe([$a->id, $b->id]);
 });
 
 test('moves a sentence from unmatched into a row', function () {
     $world = editorWorld([100, 300]);
     $row = makeRow($world['match']->id, 100);
     [$a, $unmatched] = $world['enSentences'];
-    linkSentence('en', $a->id, $row->id, 100);
+    linkSentence('en', $a->id, $row->id);
 
     $response = actingAs(User::factory()->create())
         ->postJson("/alignments/{$world['match']->id}/sentences/move", [
@@ -453,7 +487,7 @@ test('moves a sentence from a row out to unmatched', function () {
     $world = editorWorld([100]);
     $row = makeRow($world['match']->id, 100);
     $sentence = $world['enSentences'][0];
-    linkSentence('en', $sentence->id, $row->id, 100);
+    linkSentence('en', $sentence->id, $row->id);
 
     $response = actingAs(User::factory()->create())
         ->postJson("/alignments/{$world['match']->id}/sentences/move", [
@@ -486,7 +520,7 @@ test('rejects hard delete of a linked sentence', function () {
     $world = editorWorld([100]);
     $row = makeRow($world['match']->id, 100);
     $sentence = $world['enSentences'][0];
-    linkSentence('en', $sentence->id, $row->id, 100);
+    linkSentence('en', $sentence->id, $row->id);
 
     actingAs(User::factory()->create())
         ->deleteJson("/alignments/{$world['match']->id}/unmatched/{$sentence->id}", ['lang' => 'en'])
@@ -577,12 +611,12 @@ test('needs-review lists low-similarity and one-sided matches', function () {
     $ruOnly = makeRow($world['match']->id, 400, 0.8);
     $empty = makeRow($world['match']->id, 500, 1.0);
 
-    linkSentence('en', $en[0]->id, $good->id, 1);
-    linkSentence('ru', $ru[0]->id, $good->id, 1);
-    linkSentence('en', $en[1]->id, $low->id, 1);
-    linkSentence('ru', $ru[1]->id, $low->id, 1);
-    linkSentence('en', $en[2]->id, $enOnly->id, 1);
-    linkSentence('ru', $ru[2]->id, $ruOnly->id, 1);
+    linkSentence('en', $en[0]->id, $good->id);
+    linkSentence('ru', $ru[0]->id, $good->id);
+    linkSentence('en', $en[1]->id, $low->id);
+    linkSentence('ru', $ru[1]->id, $low->id);
+    linkSentence('en', $en[2]->id, $enOnly->id);
+    linkSentence('ru', $ru[2]->id, $ruOnly->id);
 
     $response = actingAs(User::factory()->create())
         ->getJson("/alignments/{$world['match']->id}/needs-review")
@@ -618,10 +652,10 @@ test('needs-review ranks rows among all meaning matches', function () {
     makeRow($world['match']->id, 300, 0.9);
     $fourth = makeRow($world['match']->id, 400, 0.5);
 
-    linkSentence('en', $en[0]->id, $second->id, 1);
-    linkSentence('ru', $ru[0]->id, $second->id, 1);
-    linkSentence('en', $en[1]->id, $fourth->id, 1);
-    linkSentence('ru', $ru[1]->id, $fourth->id, 1);
+    linkSentence('en', $en[0]->id, $second->id);
+    linkSentence('ru', $ru[0]->id, $second->id);
+    linkSentence('en', $en[1]->id, $fourth->id);
+    linkSentence('ru', $ru[1]->id, $fourth->id);
 
     $items = actingAs(User::factory()->create())
         ->getJson("/alignments/{$world['match']->id}/needs-review")
@@ -643,8 +677,8 @@ test('needs-review endpoint paginates', function () {
 
     for ($i = 0; $i < 31; $i++) {
         $rows[$i] = makeRow($world['match']->id, ($i + 1) * 10, 0.3);
-        linkSentence('en', $en[$i]->id, $rows[$i]->id, 1);
-        linkSentence('ru', $ru[$i]->id, $rows[$i]->id, 1);
+        linkSentence('en', $en[$i]->id, $rows[$i]->id);
+        linkSentence('ru', $ru[$i]->id, $rows[$i]->id);
     }
 
     $pageOne = actingAs(User::factory()->create())
@@ -665,4 +699,34 @@ test('needs-review endpoint paginates', function () {
 
     expect($pageTwo['items'])->toHaveCount(6);
     $this->assertSame(2, $pageTwo['meta']['current_page']);
+});
+
+test('new sentence in empty row gets correct order when preceding row has high-order dragged sentence', function () {
+    $world = editorWorld([0, 100000, 2048, 3072]);
+    $first = makeRow($world['match']->id, 100);
+    $second = makeRow($world['match']->id, 200);
+    $third = makeRow($world['match']->id, 300);
+
+    linkSentence('en', $world['enSentences'][0]->id, $first->id);
+    linkSentence('en', $world['enSentences'][1]->id, $first->id);
+    linkSentence('en', $world['enSentences'][2]->id, $third->id);
+    linkSentence('en', $world['enSentences'][3]->id, $third->id);
+
+    $response = actingAs(User::factory()->create())
+        ->postJson("/alignments/{$world['match']->id}/sentences", [
+            'lang' => 'en',
+            'meaning_match_id' => $second->id,
+            'content' => 'New sentence in the empty row.',
+        ]);
+
+    $response->assertOk();
+
+    $allSentences = collect($response->json('rows'))->pluck('en_sentences')->flatten(1);
+    $newSentence = $allSentences->firstWhere('content', 'New sentence in the empty row.');
+    $this->assertNotNull($newSentence, 'New sentence not found in response rows');
+
+    $order = $newSentence['order'];
+    $this->assertGreaterThan(0, $order);
+    $this->assertLessThan(100000, $order, "Order {$order} must stay below the high-order dragged sentence (100000)");
+    $this->assertLessThan(2048, $order, "Order {$order} must stay below the next row's sentences");
 });
