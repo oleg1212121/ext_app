@@ -4,6 +4,8 @@ namespace App\Classes;
 
 use App\Models\EnRuEntityMatch;
 use App\Models\EnRuMeaningMatch;
+use App\Models\EnSentenceMeaningMatch;
+use App\Models\RuSentenceMeaningMatch;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -67,7 +69,7 @@ class AlignmentEditorApiPresenter
     }
 
     /**
-     * @return array{rows: list<array<string, mixed>>, meta: array{current_page: int, last_page: int, total: int, per_page: int}}
+     * @return array{rows: list<array<string, mixed>>, meta: array{current_page: int, last_page: int, total: int, per_page: int}, sentences_before: array{en: int, ru: int}}
      */
     public function rowsPagePayload(EnRuEntityMatch $entityMatch, int $page = 1, int $perPage = 25): array
     {
@@ -88,7 +90,41 @@ class AlignmentEditorApiPresenter
                 'total' => $rows->total(),
                 'per_page' => $rows->perPage(),
             ],
+            'sentences_before' => $this->sentencesBeforePage($entityMatch, $page, $perPage),
         ];
+    }
+
+    /**
+     * Count linked EN and RU sentences belonging to meaning-matches on pages before the given page.
+     *
+     * @return array{en: int, ru: int}
+     */
+    private function sentencesBeforePage(EnRuEntityMatch $entityMatch, int $page, int $perPage): array
+    {
+        if ($page <= 1) {
+            return ['en' => 0, 'ru' => 0];
+        }
+
+        $allIds = EnRuMeaningMatch::query()
+            ->where('en_ru_entity_match_id', $entityMatch->id)
+            ->orderBy('order')
+            ->pluck('id');
+
+        $previousIds = $allIds->slice(0, ($page - 1) * $perPage)->values();
+
+        if ($previousIds->isEmpty()) {
+            return ['en' => 0, 'ru' => 0];
+        }
+
+        $enCount = EnSentenceMeaningMatch::query()
+            ->whereIn('en_ru_meaning_match_id', $previousIds)
+            ->count();
+
+        $ruCount = RuSentenceMeaningMatch::query()
+            ->whereIn('en_ru_meaning_match_id', $previousIds)
+            ->count();
+
+        return ['en' => $enCount, 'ru' => $ruCount];
     }
 
     /**

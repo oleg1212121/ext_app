@@ -31,7 +31,7 @@ function buildContainers({rows, unmatchedEn, unmatchedRu}) {
     return containers;
 }
 
-function buildLookup({rows, unmatchedEn, unmatchedRu}) {
+function buildLookup({rows, unmatchedEn, unmatchedRu, sentencesBefore}) {
     const all = [];
 
     rows.forEach((row) => {
@@ -43,8 +43,8 @@ function buildLookup({rows, unmatchedEn, unmatchedRu}) {
     unmatchedRu.items.forEach((s) => all.push({...s, lang: 'ru', row_id: null}));
 
     const lookup = new Map();
-    let enCounter = 0;
-    let ruCounter = 0;
+    let enCounter = sentencesBefore?.en ?? 0;
+    let ruCounter = sentencesBefore?.ru ?? 0;
 
     all
         .sort((a, b) => a.order - b.order)
@@ -59,11 +59,12 @@ function buildLookup({rows, unmatchedEn, unmatchedRu}) {
     return lookup;
 }
 
-export default function Show({match: initialMatch, rows: initialRows, rows_meta: initialRowsMeta, unmatched_en: initialUnmatchedEn, unmatched_ru: initialUnmatchedRu, needs_review: initialNeedsReview}) {
+export default function Show({match: initialMatch, rows: initialRows, rows_meta: initialRowsMeta, sentences_before: initialSentencesBefore, unmatched_en: initialUnmatchedEn, unmatched_ru: initialUnmatchedRu, needs_review: initialNeedsReview}) {
     const [data, setData] = useState(() => ({
         match: initialMatch,
         rows: initialRows,
         rowsMeta: initialRowsMeta,
+        sentencesBefore: initialSentencesBefore,
         unmatchedEn: initialUnmatchedEn,
         unmatchedRu: initialUnmatchedRu,
         needsReview: initialNeedsReview,
@@ -89,9 +90,10 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     const [activeId, setActiveId] = useState(null);
 
     const activeContainer = useRef(null);
+    const newRowPosition = useRef(null);
 
     const lookup = useMemo(() => buildLookup(data), [data]);
-    const {match, rows, rowsMeta, unmatchedEn, unmatchedRu, needsReview} = data;
+    const {match, rows, rowsMeta, sentencesBefore, unmatchedEn, unmatchedRu, needsReview} = data;
 
     const applyData = useCallback((next) => {
         setData(next);
@@ -105,7 +107,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
         try {
             const res = await alignmentsApi.rows(initialMatch.id, page, perPage);
-            applyData({...lastServer.current, rows: res.rows, rowsMeta: res.meta, match: res.match});
+            applyData({...lastServer.current, rows: res.rows, rowsMeta: res.meta, sentencesBefore: res.sentences_before, match: res.match});
         } catch (error) {
             setTableError(error.message);
         } finally {
@@ -187,11 +189,20 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             const incoming = res.rows;
             rows = rows.filter((row) => typeof row.id === 'number');
             rows = rows.map((row) => incoming.find((next) => next.id === row.id) ?? row);
-            incoming.forEach((row) => {
-                if (!rows.some((existing) => existing.id === row.id)) {
-                    rows.push(row);
-                }
-            });
+            if (newRowPosition.current !== null) {
+                incoming.forEach((row) => {
+                    if (!rows.some((existing) => existing.id === row.id)) {
+                        rows.splice(newRowPosition.current, 0, row);
+                    }
+                });
+                newRowPosition.current = null;
+            } else {
+                incoming.forEach((row) => {
+                    if (!rows.some((existing) => existing.id === row.id)) {
+                        rows.push(row);
+                    }
+                });
+            }
         }
 
         const nextRowsMeta = {
@@ -210,9 +221,10 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         await loadNeedsReview(lastServer.current.needsReview.meta.current_page);
     }, [applyData, loadUnmatched, loadNeedsReview]);
 
-    const runMutation = useCallback(async (request) => {
+    const runMutation = useCallback(async (request, insertAt = null) => {
         setActionBusy(true);
         setActionError(null);
+        newRowPosition.current = insertAt;
 
         try {
             const res = await request();
@@ -394,11 +406,13 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setEditing(null);
         const tmpId = `tmp-${Date.now()}`;
         const tmpRow = {key: `mm-${tmpId}`, id: tmpId, order: row.order + 0.5, similarity: null, en_sentences: [], ru_sentences: []};
+        let insertAt = 0;
 
         setData((prev) => {
             const index = prev.rows.findIndex((existing) => existing.id === row.id);
             const rows = [...prev.rows];
             rows.splice(index + 1, 0, tmpRow);
+            insertAt = index + 1;
 
             return {...prev, rows};
         });
@@ -409,7 +423,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             [`row:${tmpId}:ru`]: [],
         }));
 
-        await runMutation(() => alignmentsApi.createRow(initialMatch.id, row.id));
+        await runMutation(() => alignmentsApi.createRow(initialMatch.id, row.id), insertAt);
     }, [actionBusy, initialMatch.id, runMutation]);
 
     const onDeleteRow = useCallback(async (row) => {

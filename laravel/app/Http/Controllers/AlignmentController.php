@@ -43,6 +43,7 @@ class AlignmentController extends Controller
             'match' => $this->presenter->matchPayload($entityMatch),
             'rows' => $payload['rows'],
             'rows_meta' => $payload['meta'],
+            'sentences_before' => $payload['sentences_before'],
             'unmatched_en' => $this->presenter->unmatchedPayload($entityMatch, 'en', 1),
             'unmatched_ru' => $this->presenter->unmatchedPayload($entityMatch, 'ru', 1),
             'needs_review' => $this->presenter->needsReviewPagePayload($entityMatch, 1),

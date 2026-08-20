@@ -256,7 +256,7 @@ class AlignmentEditorController extends Controller
                     return;
                 }
 
-                $this->reorderRowJunctions($lang, $toRowId, $seq, $sentenceId);
+                $this->reorderRowJunctions($lang, $toRowId, $seq, $sentenceId, $layout);
                 $affectedRowIds[] = $toRowId;
 
                 return;
@@ -289,6 +289,7 @@ class AlignmentEditorController extends Controller
             'match' => $this->presenter->matchPayload($entityMatch->refresh()),
             'rows' => $payload['rows'],
             'meta' => $payload['meta'],
+            'sentences_before' => $payload['sentences_before'],
         ]);
     }
 
@@ -540,8 +541,12 @@ class AlignmentEditorController extends Controller
 
     /**
      * @param  list<int>  $seq
+     * @param  array{
+     *     sentences: array<int, array{order: int, row_id: ?int}>,
+     *     rows: array<int, array{order: int, ids: list<int>}>
+     * }  $layout
      */
-    private function reorderRowJunctions(string $lang, int $rowId, array $seq, ?int $movedId = null): void
+    private function reorderRowJunctions(string $lang, int $rowId, array $seq, ?int $movedId = null, array $layout = []): void
     {
         if ($movedId === null) {
             return;
@@ -579,11 +584,61 @@ class AlignmentEditorController extends Controller
             return;
         }
 
-        $spread = $this->sparseOrder->spreadOrders(count($seq), null, null);
+        $bounds = $this->rowGlobalBounds($layout, $seq);
+        $spread = $this->sparseOrder->spreadOrders(count($seq), $bounds['low'], $bounds['high']);
 
         foreach ($seq as $index => $id) {
             $this->setSentenceOrderRaw($lang, $id, $spread[$index]);
         }
+    }
+
+    /**
+     * Find the global order bounds immediately surrounding a row's sentences.
+     *
+     * @param  array{
+     *     sentences: array<int, array{order: int, row_id: ?int}>,
+     *     rows: array<int, array{order: int, ids: list<int>}>
+     * }  $layout
+     * @param  list<int>  $seq
+     * @return array{low: ?int, high: ?int}
+     */
+    private function rowGlobalBounds(array $layout, array $seq): array
+    {
+        $rowOrders = [];
+
+        foreach ($seq as $id) {
+            if (isset($layout['sentences'][$id])) {
+                $rowOrders[] = $layout['sentences'][$id]['order'];
+            }
+        }
+
+        if ($rowOrders === []) {
+            return ['low' => null, 'high' => null];
+        }
+
+        $minRowOrder = min($rowOrders);
+        $maxRowOrder = max($rowOrders);
+
+        $low = null;
+        $high = null;
+
+        foreach ($layout['sentences'] as $sentenceId => $info) {
+            if (in_array($sentenceId, $seq, true)) {
+                continue;
+            }
+
+            $order = $info['order'];
+
+            if ($order < $minRowOrder && ($low === null || $order > $low)) {
+                $low = $order;
+            }
+
+            if ($order > $maxRowOrder && ($high === null || $order < $high)) {
+                $high = $order;
+            }
+        }
+
+        return ['low' => $low, 'high' => $high];
     }
 
     private function link(string $lang, int $sentenceId, int $rowId, int $index): void

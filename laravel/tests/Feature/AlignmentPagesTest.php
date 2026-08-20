@@ -132,3 +132,110 @@ test('authenticated users can view alignment details', function () {
         ->where('rows.0.ru_sentences.0.content', 'Первое русское предложение.')
         ->where('needs_review.meta.total', 0));
 });
+
+test('rows endpoint returns sentences_before offset for page 1', function () {
+    $user = User::factory()->create();
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $enEntity = EnEntity::create(['name' => 'EN']);
+    $ruEntity = RuEntity::create(['name' => 'RU']);
+    $entityMatch = EnRuEntityMatch::create([
+        'en_entity_id' => $enEntity->id,
+        'ru_entity_id' => $ruEntity->id,
+        'status' => 'pending',
+    ]);
+
+    $mm = EnRuMeaningMatch::create([
+        'en_ru_entity_match_id' => $entityMatch->id,
+        'order' => 1,
+        'similarity' => 1.0,
+        'alignment_chunk' => 0,
+    ]);
+
+    $enSentence = EnEntitySentence::create([
+        'en_entity_id' => $enEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'Hello.',
+        'order' => 1,
+    ]);
+
+    $ruSentence = RuEntitySentence::create([
+        'ru_entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'Привет.',
+        'order' => 1,
+    ]);
+
+    EnSentenceMeaningMatch::create([
+        'en_entity_sentence_id' => $enSentence->id,
+        'en_ru_meaning_match_id' => $mm->id,
+    ]);
+
+    RuSentenceMeaningMatch::create([
+        'ru_entity_sentence_id' => $ruSentence->id,
+        'en_ru_meaning_match_id' => $mm->id,
+    ]);
+
+    $response = $this
+        ->actingAs($user)
+        ->getJson("/alignments/{$entityMatch->id}/rows?page=1&per_page=10");
+
+    $response->assertOk();
+    $response->assertJsonPath('sentences_before.en', 0);
+    $response->assertJsonPath('sentences_before.ru', 0);
+});
+
+test('rows endpoint returns correct sentences_before for page 2', function () {
+    $user = User::factory()->create();
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $enEntity = EnEntity::create(['name' => 'EN']);
+    $ruEntity = RuEntity::create(['name' => 'RU']);
+    $entityMatch = EnRuEntityMatch::create([
+        'en_entity_id' => $enEntity->id,
+        'ru_entity_id' => $ruEntity->id,
+        'status' => 'pending',
+    ]);
+
+    // Create 12 meaning matches each with 1 EN + 1 RU sentence.
+    // per_page=10 → page 1 has 10 rows (20 sentences), page 2 has 2 rows (4 sentences).
+    for ($i = 1; $i <= 12; $i++) {
+        $mm = EnRuMeaningMatch::create([
+            'en_ru_entity_match_id' => $entityMatch->id,
+            'order' => $i,
+            'similarity' => 1.0,
+            'alignment_chunk' => 0,
+        ]);
+
+        $enSentence = EnEntitySentence::create([
+            'en_entity_id' => $enEntity->id,
+            'sentence_type_id' => $sentenceType->id,
+            'content' => "EN sentence {$i}.",
+            'order' => $i,
+        ]);
+
+        $ruSentence = RuEntitySentence::create([
+            'ru_entity_id' => $ruEntity->id,
+            'sentence_type_id' => $sentenceType->id,
+            'content' => "RU sentence {$i}.",
+            'order' => $i,
+        ]);
+
+        EnSentenceMeaningMatch::create([
+            'en_entity_sentence_id' => $enSentence->id,
+            'en_ru_meaning_match_id' => $mm->id,
+        ]);
+
+        RuSentenceMeaningMatch::create([
+            'ru_entity_sentence_id' => $ruSentence->id,
+            'en_ru_meaning_match_id' => $mm->id,
+        ]);
+    }
+
+    $response = $this
+        ->actingAs($user)
+        ->getJson("/alignments/{$entityMatch->id}/rows?page=2&per_page=10");
+
+    $response->assertOk();
+    $response->assertJsonPath('sentences_before.en', 10);
+    $response->assertJsonPath('sentences_before.ru', 10);
+    $response->assertJsonPath('meta.current_page', 2);
+});

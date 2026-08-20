@@ -420,6 +420,47 @@ test('moves a sentence within a row to reorder it', function () {
     expect($sentenceOrders[$b->id])->toBe(240);
 });
 
+test('reorder within row with consecutive orders uses global bounds', function () {
+    $world = editorWorld([5, 18, 19, 20, 50]);
+    $row = makeRow($world['match']->id, 100);
+    [$before, $a, $b, $c, $after] = $world['enSentences'];
+    linkSentence('en', $a->id, $row->id);
+    linkSentence('en', $b->id, $row->id);
+    linkSentence('en', $c->id, $row->id);
+
+    $response = actingAs(User::factory()->create())
+        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+            'lang' => 'en',
+            'sentence_id' => $c->id,
+            'to_row_id' => $row->id,
+            'index' => 1,
+        ]);
+
+    $response->assertOk();
+
+    $sentenceOrders = EnEntitySentence::query()
+        ->whereIn('id', [$a->id, $b->id, $c->id])
+        ->pluck('order', 'id')
+        ->all();
+
+    $allOrders = EnEntitySentence::query()
+        ->where('en_entity_id', $world['en']->id)
+        ->pluck('order')
+        ->sort()
+        ->values()
+        ->all();
+
+    $indexOfA = array_search($sentenceOrders[$a->id], $allOrders, true);
+    $indexOfB = array_search($sentenceOrders[$b->id], $allOrders, true);
+    $indexOfC = array_search($sentenceOrders[$c->id], $allOrders, true);
+
+    expect($indexOfA)->toBeLessThan($indexOfC);
+    expect($indexOfC)->toBeLessThan($indexOfB);
+
+    expect($sentenceOrders[$c->id])->toBeGreaterThan(5);
+    expect($sentenceOrders[$c->id])->toBeLessThan(50);
+});
+
 test('moves a sentence from one row to another', function () {
     $world = editorWorld([100, 110]);
     $rowA = makeRow($world['match']->id, 100);
