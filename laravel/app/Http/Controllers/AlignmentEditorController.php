@@ -433,6 +433,24 @@ class AlignmentEditorController extends Controller
             ->orderBy('order')
             ->get();
 
+        $allSentenceIds = $rows
+            ->flatMap(fn (EnRuMeaningMatch $row) => ($lang === 'en' ? $row->enSentenceMatches : $row->ruSentenceMatches)->pluck($sideForeignKey))
+            ->unique()
+            ->values()
+            ->all();
+
+        $orderedSentenceIds = $allSentenceIds !== []
+            ? $sentenceClass::query()
+                ->whereIn('id', $allSentenceIds)
+                ->orderBy('order')
+                ->pluck('id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->values()
+                ->all()
+            : [];
+
+        $idOrder = array_flip($orderedSentenceIds);
+
         foreach ($rows as $row) {
             $junctions = $lang === 'en' ? $row->enSentenceMatches : $row->ruSentenceMatches;
 
@@ -445,13 +463,7 @@ class AlignmentEditorController extends Controller
                 ->values()
                 ->all();
 
-            $ids = $sentenceClass::query()
-                ->whereIn('id', $ids)
-                ->orderBy('order')
-                ->pluck('id')
-                ->map(fn ($id): int => (int) $id)
-                ->values()
-                ->all();
+            usort($ids, fn (int $a, int $b): int => ($idOrder[$a] ?? 0) <=> ($idOrder[$b] ?? 0));
 
             foreach ($ids as $id) {
                 $layout['sentences'][$id]['row_id'] = $row->id;
