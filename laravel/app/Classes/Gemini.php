@@ -78,7 +78,7 @@ class Gemini extends AiProvider
         if (isset($answer['candidates'][0]['content']['parts'][0]['text'])) {
             return $answer['candidates'][0]['content']['parts'][0]['text'];
         } else {
-            return 'Error in response: '.print_r($answer, true);
+            $this->throwMalformedResponse(json_encode($answer));
         }
     }
 
@@ -120,7 +120,7 @@ class Gemini extends AiProvider
             $res = $answer['candidates'][0]['content']['parts'][0]['text'];
             $res = $this->markdownToHtml($res);
         } else {
-            $res = 'Error in response: '.print_r($answer, true);
+            $this->throwMalformedResponse(json_encode($answer));
         }
 
         return $res;
@@ -162,7 +162,7 @@ class Gemini extends AiProvider
         curl_close($ch);
 
         if ($httpCode !== 200) {
-            return ['error' => "HTTP $httpCode - $response"];
+            $this->throwHttpError($httpCode, $response);
         }
 
         return json_decode($response, true);

@@ -71,13 +71,13 @@ class Perplexity extends AiProvider
         curl_close($ch);
 
         if ($httpCode !== 200) {
-            return "Error: HTTP $httpCode - $response";
+            $this->throwHttpError($httpCode, $response);
         }
 
         $result = json_decode($response, true);
 
         if (! isset($result['choices'][0]['message']['content'])) {
-            return 'Error in response: '.print_r($result, true);
+            $this->throwMalformedResponse($response);
         }
 
         return $this->markdownToHtml($result['choices'][0]['message']['content']);

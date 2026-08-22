@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Bilinguals;
 
 use App\Classes\AIModelResolver;
 use App\Classes\MeaningMatchPresenter;
+use App\Exceptions\AiProviderException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AiQuestionRequest;
 use App\Http\Requests\BilingualsTextRequest;
@@ -213,10 +214,17 @@ class SimulatorController extends Controller
         } catch (InvalidArgumentException $e) {
             return response()->json([
                 'data' => [
-                    'answer' => 'Error: Invalid model selection',
+                    'data' => ['error' => 'Invalid model selection.'],
                     'code' => 400,
                 ],
             ], 400);
+        } catch (AiProviderException $e) {
+            return response()->json([
+                'data' => [
+                    'data' => ['error' => $e->getMessage()],
+                    'code' => $e->getStatusCode(),
+                ],
+            ], $e->getStatusCode());
         }
 
         $data = [

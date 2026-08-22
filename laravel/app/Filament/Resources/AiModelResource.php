@@ -53,21 +53,30 @@ class AiModelResource extends Resource
     {
         return $table
             ->columns([
+                TextColumn::make('provider')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('external_id')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('context_length')
                     ->numeric()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('pricing')
                     ->label('Pricing ($/1M tokens)')
-                    ->getStateUsing(fn (AiModel $record): string => self::formatPricing($record)),
+                    ->getStateUsing(fn (AiModel $record): string => self::formatPricing($record))
+                    ->sortable(query: fn (Builder $query, string $direction) => $query->orderByRaw("(COALESCE(NULLIF(pricing_prompt, -1), 0) + COALESCE(NULLIF(pricing_completion, -1), 0)) {$direction}"))
+                    ->toggleable(),
                 TextColumn::make('expiration_date')
                     ->date()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('is_enabled')
                     ->label('Enabled')
                     ->badge()
@@ -94,10 +103,7 @@ class AiModelResource extends Resource
                     ->label(fn (AiModel $record): string => $record->is_enabled ? 'Disable' : 'Enable')
                     ->icon(fn (AiModel $record): string => $record->is_enabled ? 'heroicon-o-x-circle' : 'heroicon-o-check-circle')
                     ->color(fn (AiModel $record): string => $record->is_enabled ? 'warning' : 'success')
-                    ->action(fn (AiModel $record) => $record->update(['is_enabled' => ! $record->is_enabled]))
-                    ->requiresConfirmation()
-                    ->modalHeading(fn (AiModel $record): string => $record->is_enabled ? 'Disable AI Model' : 'Enable AI Model')
-                    ->modalDescription(fn (AiModel $record): string => "Toggle \"{$record->name}\" in the model picker?"),
+                    ->action(fn (AiModel $record) => $record->update(['is_enabled' => ! $record->is_enabled])),
             ])
             ->toolbarActions([
                 Actions\BulkActionGroup::make([
@@ -122,13 +128,20 @@ class AiModelResource extends Resource
 
     protected static function formatPricing(AiModel $record): string
     {
-        if ((float) $record->pricing_prompt == 0 && (float) $record->pricing_completion == 0) {
+        $prompt = $record->pricing_prompt;
+        $completion = $record->pricing_completion;
+
+        if ($prompt === null || $completion === null || $prompt < 0 || $completion < 0) {
+            return 'n/a';
+        }
+
+        if ($prompt == 0 && $completion == 0) {
             return 'free';
         }
 
-        $prompt = number_format((float) $record->pricing_prompt * 1_000_000, 2);
-        $completion = number_format((float) $record->pricing_completion * 1_000_000, 2);
+        $promptStr = number_format((float) $prompt * 1_000_000, 2);
+        $completionStr = number_format((float) $completion * 1_000_000, 2);
 
-        return "\${$prompt} / \${$completion}";
+        return "\${$promptStr} / \${$completionStr}";
     }
 }

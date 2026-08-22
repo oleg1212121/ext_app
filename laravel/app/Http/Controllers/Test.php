@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Classes\Crossword;
 use App\Classes\Gemini;
+use App\Exceptions\AiProviderException;
 use App\Http\Requests\GetCrosswordRequest;
 use App\Http\Requests\WordAcknowledgeRequest;
 use App\Http\Requests\WordAskAiRequest;
@@ -268,7 +269,21 @@ class Test extends Controller
         $word = $request->get('word', '');
         $arr = [];
         $gemini = new Gemini;
-        $res = $gemini->ask($word);
+        try {
+            $res = $gemini->ask($word);
+        } catch (AiProviderException $e) {
+            return response()->json(
+                [
+                    'data' => [
+                        'definitions' => [],
+                    ],
+                ],
+                200,
+                [
+                    'Content-Type: application/json;',
+                ]
+            );
+        }
         if ($res) {
             $arr = explode(PHP_EOL, $res);
             $data = [];

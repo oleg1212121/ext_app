@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Classes\AIModelResolver;
 use App\Classes\Parser;
+use App\Exceptions\AiProviderException;
 use App\Http\Requests\AiQuestionRequest;
 use App\Http\Requests\DictionaryInteractionsSaveRequest;
 use App\Http\Requests\DictionarySelectionSaveRequest;
@@ -116,16 +117,23 @@ class BilingualsController extends Controller
 
         $instruction = $request->validated('question') ?? '';
         $modelString = $request->validated('model');
-dd($instruction, $prompt, $modelString);
+
         try {
             $answer = $this->modelResolver->ask($modelString, $instruction, $prompt);
         } catch (InvalidArgumentException $e) {
             return response()->json([
                 'data' => [
-                    'answer' => 'Error: Invalid model selection',
+                    'data' => ['error' => 'Invalid model selection.'],
                     'code' => 400,
                 ],
             ], 400);
+        } catch (AiProviderException $e) {
+            return response()->json([
+                'data' => [
+                    'data' => ['error' => $e->getMessage()],
+                    'code' => $e->getStatusCode(),
+                ],
+            ], $e->getStatusCode());
         }
 
         $data = [

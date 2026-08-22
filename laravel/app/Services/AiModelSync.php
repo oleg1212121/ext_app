@@ -46,8 +46,8 @@ abstract class AiModelSync implements ModelSync
                 'name' => $item['name'] ?? $item['id'],
                 'description' => $item['description'] ?? null,
                 'context_length' => $item['context_length'] ?? null,
-                'pricing_prompt' => $pricing['prompt'] ?? null,
-                'pricing_completion' => $pricing['completion'] ?? null,
+                'pricing_prompt' => static::normalizePrice($pricing['prompt'] ?? null),
+                'pricing_completion' => static::normalizePrice($pricing['completion'] ?? null),
                 'reasoning' => $item['reasoning'] ?? null,
                 'expiration_date' => ! empty($item['expiration_date'])
                     ? $item['expiration_date']
@@ -77,4 +77,13 @@ abstract class AiModelSync implements ModelSync
     }
 
     abstract public function provider(): string;
+
+    protected static function normalizePrice(mixed $value): mixed
+    {
+        if ($value !== null && (float) $value < 0) {
+            return null;
+        }
+
+        return $value;
+    }
 }

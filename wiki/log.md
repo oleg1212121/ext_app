@@ -2,6 +2,13 @@
 
 ## 2026-08-22
 
+* **Change: AI Models admin enable/disable now fires without a confirmation
+  modal.** Removed `requiresConfirmation()` / `modalHeading` / `modalDescription`
+  from the `toggleEnabled` record action in `AiModelResource` so Enable/Disable
+  toggles `is_enabled` immediately on click. The "Sync models" header action
+  still requires confirmation. Added a feature test asserting `callAction`
+  toggles `is_enabled` without a modal interception.
+
 * **Add: shared model-sync across all AI providers.** A `ModelSync` contract +
   abstract `AiModelSync` base (fetch / upsert / delete-missing, parameterized by
   `provider()`) plus an `AiModelSyncRegistry` (parallel to `AIModelResolver`,

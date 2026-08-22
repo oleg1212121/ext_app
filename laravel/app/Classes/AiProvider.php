@@ -3,6 +3,7 @@
 namespace App\Classes;
 
 use App\Contracts\AiProviderInterface;
+use App\Exceptions\AiProviderException;
 
 abstract class AiProvider implements AiProviderInterface
 {
@@ -129,5 +130,61 @@ abstract class AiProvider implements AiProviderInterface
         }
 
         return $this->model;
+    }
+
+    /**
+     * Turn a failed upstream HTTP call into a user-safe error.
+     *
+     * The raw provider response is logged for debugging but never surfaced
+     * to the caller, so provider internals, keys, and user ids stay hidden.
+     */
+    protected function throwHttpError(int $httpCode, string $response): never
+    {
+        logger()->warning('AI provider request failed', [
+            'provider' => static::getProviderKey(),
+            'http_code' => $httpCode,
+            'response' => $response,
+        ]);
+
+        throw new AiProviderException(
+            $this->friendlyMessageForHttpCode($httpCode),
+            $this->statusCodeForHttpCode($httpCode),
+        );
+    }
+
+    /**
+     * Turn an unexpected provider response shape into a user-safe error.
+     */
+    protected function throwMalformedResponse(string $response): never
+    {
+        logger()->warning('AI provider returned an unexpected response', [
+            'provider' => static::getProviderKey(),
+            'response' => $response,
+        ]);
+
+        throw new AiProviderException(
+            'The AI service returned an unexpected response. Please try again.',
+            502,
+        );
+    }
+
+    protected function friendlyMessageForHttpCode(int $httpCode): string
+    {
+        return match ($httpCode) {
+            0 => "Couldn't connect to the AI service. Please try again.",
+            401, 403 => 'The AI service is not configured correctly.',
+            429 => 'The AI service is busy. Please try again in a moment.',
+            500, 502, 503, 504 => 'The AI service encountered an error. Please try again later.',
+            default => "Couldn't reach the AI service. Please try again.",
+        };
+    }
+
+    protected function statusCodeForHttpCode(int $httpCode): int
+    {
+        return match ($httpCode) {
+            429 => 429,
+            401, 403 => 502,
+            default => 502,
+        };
     }
 }

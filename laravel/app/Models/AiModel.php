@@ -77,13 +77,20 @@ class AiModel extends Model
      */
     public function displayLabel(): string
     {
-        if ((float) $this->pricing_prompt == 0 && (float) $this->pricing_completion == 0) {
+        $prompt = $this->pricing_prompt;
+        $completion = $this->pricing_completion;
+
+        if ($prompt === null || $completion === null || $prompt < 0 || $completion < 0) {
+            return "{$this->name} (n/a)";
+        }
+
+        if ($prompt == 0 && $completion == 0) {
             return $this->name.' (free)';
         }
 
-        $prompt = number_format((float) $this->pricing_prompt * 1_000_000, 2);
-        $completion = number_format((float) $this->pricing_completion * 1_000_000, 2);
+        $promptStr = number_format((float) $prompt * 1_000_000, 2);
+        $completionStr = number_format((float) $completion * 1_000_000, 2);
 
-        return "{$this->name} (\${$prompt}/\${$completion})";
+        return "{$this->name} (\${$promptStr}/\${$completionStr})";
     }
 }
