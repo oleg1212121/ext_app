@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-07-27T17:30:00Z }
+generated: { by: agent/kimi-k3, at: 2026-08-22T23:00:00Z }
 sources:
   - id: base
     resource: laravel/app/Classes/AiProvider.php
@@ -18,6 +18,27 @@ sources:
   - id: services
     resource: laravel/config/services.php
     title: API keys, endpoints, default models
+   - id: model
+     resource: laravel/app/Models/AiModel.php
+     title: DB-backed AI model catalog entry
+   - id: sync-contract
+     resource: laravel/app/Contracts/ModelSync.php
+     title: ModelSync contract
+   - id: sync-base
+     resource: laravel/app/Services/AiModelSync.php
+     title: Abstract AI model sync service
+   - id: sync-registry
+     resource: laravel/app/Services/AiModelSyncRegistry.php
+     title: AI model sync registry
+   - id: sync-or
+     resource: laravel/app/Services/OpenRouterModelSync.php
+     title: OpenRouter model sync service
+   - id: command
+     resource: laravel/app/Console/Commands/SyncAiModels.php
+     title: ai:sync-models command
+   - id: job
+     resource: laravel/app/Jobs/SyncAiModelsJob.php
+     title: SyncAiModelsJob
 ---
 
 # Shape of the abstraction
@@ -59,6 +80,44 @@ Each block holds `key` / `url` / `model` from env (e.g. `GEMINI_API_KEY`,
 
 A shared outbound proxy is configured via `services.proxy`
 (`PROXY_LOGIN/PASSWORD/IP/PORT`) for providers that need it.
+
+# AI model catalog
+
+Model lists are **no longer hardcoded** in the provider classes. Every provider
+reads its enabled, unexpired models from the `ai_models` table in its constructor
+(keyed by `provider`, unique with `external_id`), reconstructing the legacy
+`key => "Name ($X.XX/$Y.YY)"` display format via `AiModel::displayLabel()`.
+
+* `App\Services\AiModelSync` (abstract, implements `App\Contracts\ModelSync`)
+  holds the shared fetch / upsert / delete-missing logic. `sync()` reads the
+  provider's catalog endpoint from `services.<provider>.models_url`; a **blank**
+  value short-circuits the HTTP call but still runs delete-missing, so a
+  not-yet-wired provider enforces an API-only catalog without a network call.
+  One concrete subclass exists per provider (`OpenRouterModelSync`,
+  `GeminiModelSync`, `CohereModelSync`, `PerplexityModelSync`,
+  `HuggingFaceModelSync`, `GroqModelSync`), each returning its key from
+  `provider()`.
+* `App\Services\AiModelSyncRegistry` maps provider keys → syncer classes
+  (parallel to `AIModelResolver`'s provider map; a test asserts the two stay in
+  sync). `OpenRouterModelSync` fetches `GET https://openrouter.ai/api/v1/models`
+  (via the Laravel `Http` facade); the other five currently have a blank
+  `models_url` and simply enforce the empty catalog.
+* The sync is triggered manually — either by the `ai:sync-models` artisan
+  command (optionally `--provider=<key>` to sync just one), or by the **"Sync
+  models"** button in the admin panel (`AiModelResource` → `ListAiModels` header
+  action). The button dispatches a queued `App\Jobs\SyncAiModels`;
+  **SyncAiModelsJob** (database queue) and shows a "Sync queued" notification
+  immediately; the job loops every registered syncer in the background with
+  per-provider error isolation (a failed provider is logged and skipped, the lock
+  is always released in `finally`). A `Cache::lock('ai-model-sync')` guard
+  prevents duplicate syncs. There is **no fallback**: until a sync has run at
+  least once (and, for non-OpenRouter providers, their `models_url` has been
+  filled), the model picker is empty for those providers.
+* New rows default to `is_enabled = false`; re-synced rows keep their
+  `is_enabled` value.
+* `is_enabled` gates appearance in the simulator picker. Models are managed in
+  the admin panel via `App\Filament\Resources\AiModelResource` (list + inline
+  enable/disable action; no create/edit form — models are added only by sync).
 
 # Consumers
 

@@ -29,6 +29,16 @@ class AIModelResolver
     protected array $providers = [];
 
     /**
+     * The registered provider keys.
+     *
+     * @return array<string>
+     */
+    public function keys(): array
+    {
+        return array_keys($this->providerClasses);
+    }
+
+    /**
      * Get all available models grouped by provider
      * Format: ['Provider Name' => ['provider:model' => 'model_display_name', ...], ...]
      *

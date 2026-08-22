@@ -1,97 +1,79 @@
 <?php
 
 use App\Classes\OpenRouter;
+use App\Models\AiModel;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
-uses(TestCase::class);
+uses(TestCase::class, RefreshDatabase::class);
 
-describe('OpenRouter Provider', function () {
-    it('has models with prices in the display names', function () {
+describe('OpenRouter Provider (DB-driven models)', function () {
+    it('returns enabled, unexpired openrouter models from the database', function () {
+        AiModel::factory()->enabled()->create([
+            'provider' => 'openrouter',
+            'external_id' => 'openai/gpt-oss-120b:free',
+            'name' => 'OpenAI: GPT-OSS 120B',
+            'pricing_prompt' => '0',
+            'pricing_completion' => '0',
+        ]);
+
+        AiModel::factory()->enabled()->create([
+            'provider' => 'openrouter',
+            'external_id' => 'openai/gpt-4o-mini',
+            'name' => 'OpenAI: GPT-4o-mini',
+            'pricing_prompt' => '0.00000015',
+            'pricing_completion' => '0.00000060',
+        ]);
+
+        AiModel::factory()->enabled()->create([
+            'provider' => 'openrouter',
+            'external_id' => 'expired/model',
+            'name' => 'Expired Model',
+            'expiration_date' => now()->subDay(),
+        ]);
+
+        AiModel::factory()->create([
+            'provider' => 'openrouter',
+            'external_id' => 'disabled/model',
+            'name' => 'Disabled Model',
+            'is_enabled' => false,
+        ]);
+
+        AiModel::factory()->enabled()->create([
+            'provider' => 'gemini',
+            'external_id' => 'gemini-x',
+            'name' => 'Gemini X',
+        ]);
+
         $openRouter = new OpenRouter;
-        $reflection = new ReflectionClass($openRouter);
-        $property = $reflection->getProperty('models');
-        $property->setAccessible(true);
-        $models = $property->getValue($openRouter);
+        $models = $openRouter->getModels();
 
         expect($models)->toBeArray();
-        expect($models)->not->toBeEmpty();
-
-        // Check that all model display names have either prices in parentheses, "(free)",
-        // or a bare identifier for free models
-        foreach ($models as $identifier => $displayName) {
-            expect($displayName)->toMatch('/(\(\$\d+\.?\d*\/\$\d+\.?\d*\)|\(free\)|:free$)/', "Display name for $identifier");
-        }
+        expect($models)->toHaveKey('openai/gpt-oss-120b:free', 'OpenAI: GPT-OSS 120B (free)');
+        expect($models)->toHaveKey('openai/gpt-4o-mini', 'OpenAI: GPT-4o-mini ($0.15/$0.60)');
+        expect($models)->not->toHaveKey('expired/model');
+        expect($models)->not->toHaveKey('disabled/model');
+        expect($models)->not->toHaveKey('gemini-x');
     });
 
-    it('contains specific model identifiers with correct pricing', function () {
+    it('returns an empty list when the database has no enabled models', function () {
         $openRouter = new OpenRouter;
-        $reflection = new ReflectionClass($openRouter);
-        $property = $reflection->getProperty('models');
-        $property->setAccessible(true);
-        $models = $property->getValue($openRouter);
 
-        // Test a few specific models to ensure they have correct prices
-        expect($models['openai/gpt-4o-mini'] ?? null)->toBe('OpenAI: GPT-4o-mini ($0.15/$0.60)');
-        expect($models['google/gemini-2.5-flash'] ?? null)->toBe('Google: Gemini 2.5 Flash ($0.30/$2.50)');
-        expect($models['openai/gpt-5-mini'] ?? null)->toBe('OpenAI: GPT-5 Mini ($0.25/$2)');
+        expect($openRouter->getModels())->toBe([]);
     });
 
-    it('includes all models from the identifiers list', function () {
+    it('reconstructs the legacy pricing display format', function () {
+        $model = AiModel::factory()->enabled()->create([
+            'provider' => 'openrouter',
+            'external_id' => 'openai/gpt-4o-mini',
+            'name' => 'OpenAI: GPT-4o-mini',
+            'pricing_prompt' => '0.00000015',
+            'pricing_completion' => '0.00000060',
+        ]);
+
         $openRouter = new OpenRouter;
-        $reflection = new ReflectionClass($openRouter);
-        $property = $reflection->getProperty('models');
-        $property->setAccessible(true);
-        $models = $property->getValue($openRouter);
 
-        $expectedIdentifiers = [
-            'openai/gpt-oss-120b:free',
-            'nvidia/nemotron-3-super-120b-a12b:free',
-            'poolside/laguna-m.1:free',
-            'poolside/laguna-xs.2:free',
-            'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
-            'nvidia/nemotron-3-ultra-550b-a55b:free',
-            'cohere/north-mini-code:free',
-            'meta-llama/llama-3.1-8b-instruct',
-            'google/gemma-3n-e4b-it',
-            'openai/gpt-oss-20b',
-            'sao10k/l3-lunaris-8b',
-            'qwen/qwen-turbo',
-            'google/gemma-3-12b-it',
-            'openai/gpt-oss-120b',
-            'qwen/qwen3.5-9b',
-            'tencent/hy3-preview',
-            'google/gemma-4-26b-a4b-it',
-            'qwen/qwen3-235b-a22b-instruct-2507',
-            'qwen/qwen3.5-flash-02-23',
-            'google/gemma-3-27b-it',
-            'google/gemini-2.0-flash-lite-001',
-            'google/gemini-2.5-flash-lite-preview-09-2025',
-            'google/gemini-2.5-flash-lite',
-            'google/gemini-2.0-flash-001',
-            'qwen/qwen3-next-80b-a3b-thinking',
-            'openai/gpt-4o-mini',
-            'deepseek/deepseek-chat-v3.1',
-            'minimax/minimax-m2.5',
-            'x-ai/grok-4.1-fast',
-            'x-ai/grok-4-fast',
-            'deepseek/deepseek-chat-v3-0324',
-            'deepseek/deepseek-v3.1-terminus',
-            'deepseek/deepseek-v3.2',
-            'openai/gpt-5.4-nano',
-            'google/gemini-3.1-flash-lite-preview',
-            'deepseek/deepseek-chat',
-            'minimax/minimax-m2.7',
-            'openai/gpt-5-mini',
-            'google/gemini-2.5-flash',
-            'openai/gpt-4.1-mini',
-            'moonshotai/kimi-k2.5',
-            'google/gemini-3-flash-preview',
-            'z-ai/glm-5',
-            'openai/gpt-5.4-mini',
-        ];
-
-        foreach ($expectedIdentifiers as $identifier) {
-            expect(array_key_exists($identifier, $models))->toBeTrue("Missing model: $identifier");
-        }
+        expect($openRouter->getModels())
+            ->toHaveKey('openai/gpt-4o-mini', 'OpenAI: GPT-4o-mini ($0.15/$0.60)');
     });
 });

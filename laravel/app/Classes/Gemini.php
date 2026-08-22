@@ -2,15 +2,10 @@
 
 namespace App\Classes;
 
+use App\Models\AiModel;
+
 class Gemini extends AiProvider
 {
-    protected array $models = [
-        'gemini-2.5-flash-lite' => 'gemini-2.5-flash-lite',
-        'gemini-2.5-flash' => 'gemini-2.5-flash',
-        'gemini-2.5-flash-preview-09-2025' => 'gemini-2.5-flash-preview-09-2025',
-        'gemini-2.5-flash-lite-preview-09-2025' => 'gemini-2.5-flash-lite-preview-09-2025',
-    ];
-
     protected $proxyLogin;
 
     protected $proxyPassword;
@@ -30,6 +25,16 @@ class Gemini extends AiProvider
         $this->proxyPassword = config('services.proxy.password');
         $this->proxyIP = config('services.proxy.ip');
         $this->proxyPort = config('services.proxy.port');
+
+        $this->models = AiModel::query()
+            ->forProvider(static::getProviderKey())
+            ->enabled()
+            ->unexpired()
+            ->get()
+            ->mapWithKeys(fn (AiModel $model): array => [
+                $model->external_id => $model->displayLabel(),
+            ])
+            ->all();
     }
 
     public static function getProviderKey(): string

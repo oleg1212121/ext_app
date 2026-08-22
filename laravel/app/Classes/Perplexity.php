@@ -2,21 +2,25 @@
 
 namespace App\Classes;
 
+use App\Models\AiModel;
+
 class Perplexity extends AiProvider
 {
-    protected array $models = [
-        'sonar' => 'sonar',
-        'sonar-pro' => 'sonar-pro',
-        'sonar-deep-research' => 'sonar-deep-research',
-        'sonar-reasoning' => 'sonar-reasoning',
-        'sonar-reasoning-pro' => 'sonar-reasoning-pro',
-    ];
-
     public function __construct()
     {
         $this->aiApiLink = config('services.perplexity.url', 'https://api.perplexity.ai/chat/completions');
         $this->model = config('services.perplexity.model', 'sonar');
         $this->apiKey = config('services.perplexity.key');
+
+        $this->models = AiModel::query()
+            ->forProvider(static::getProviderKey())
+            ->enabled()
+            ->unexpired()
+            ->get()
+            ->mapWithKeys(fn (AiModel $model): array => [
+                $model->external_id => $model->displayLabel(),
+            ])
+            ->all();
     }
 
     public static function getProviderKey(): string

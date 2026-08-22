@@ -1,5 +1,30 @@
 # Directory Update Log
 
+## 2026-08-22
+
+* **Add: shared model-sync across all AI providers.** A `ModelSync` contract +
+  abstract `AiModelSync` base (fetch / upsert / delete-missing, parameterized by
+  `provider()`) plus an `AiModelSyncRegistry` (parallel to `AIModelResolver`,
+  guarded by a key-parity test) replace the OpenRouter-only sync. The
+  `openrouter:sync-models` command and `SyncOpenRouterModelsJob` are removed;
+  `ai:sync-models` (with an optional `--provider=<key>` filter) and
+  `SyncAiModelsJob` loop all six registered syncers with per-provider error
+  isolation (catch, log, continue). Each provider's catalog endpoint is now
+  `services.<provider>.models_url`; a blank value short-circuits the HTTP call
+  but still runs delete-missing, so not-yet-wired providers enforce an
+  API-only catalog without a network call. All six provider class constructors
+  now read their models from `ai_models` (DB) via `forProvider()->enabled()->
+  unexpired()` instead of hardcoded arrays — so Gemini/Groq/Cohere/Perplexity/
+  HuggingFace temporarily expose no models in the picker until their
+  `models_url` is filled and a sync succeeds. The Filament "Sync models" action
+  now dispatches `SyncAiModelsJob` (lock key `ai-model-sync`). New tests:
+  `EmptyUrlModelSyncTest` (dataset over the five blank-URL providers: returns 0,
+  makes no HTTP call, wipes that provider's rows) and `AiModelSyncRegistryTest`
+  (key parity). `AiModelResourceTest` switched to the new job/lock key.
+  Docs: `CONTEXT.md` ("Models endpoint", "Chat endpoint"), ADR 0007 (supersedes
+  the OpenRouter-only flow in ADR 0006). Bumped `wiki` AI-provider concept +
+  `log.md`.
+
 ## 2026-08-16
 
 * **Add: gloss-run hover affordance in the bilinguals simulator AI panel.**
@@ -887,3 +912,15 @@
   conformance in the test suite.
 * **Integration**: Root `AGENTS.md` gained a "Knowledge base" section routing
   agents here; `wiki/` is bind-mounted into the app container at `/var/wiki`.
+
+## 2026-08-22
+
+* **AI model sync button**: Added a "Sync models" header action to the admin
+  AI Models list (`ListAiModels::getHeaderActions`) that dispatches a queued
+  `App\Jobs\SyncOpenRouterModelsJob` (database queue), replacing the
+  "add models only via the artisan command" comment. The job calls the existing
+  `OpenRouterModelSync::sync()` service and is guarded by a
+  `Cache::lock('openrouter-model-sync')` so a second click while a sync is
+  running is refused with a warning instead of queuing a duplicate. `is_enabled`
+  is preserved by the service's `updateOrCreate` (unchanged). Updated
+  `wiki/domains/ai-providers.md`.

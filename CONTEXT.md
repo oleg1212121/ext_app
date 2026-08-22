@@ -103,3 +103,34 @@ A hoverable text-level unit inside a gloss — any text-bearing element the
 markdown-to-HTML conversion emits (paragraph, list item, heading, `em`/`strong`
 run, code, etc.). Signals interactivity with a pointer cursor and an
 accent-tinted background on hover. _Avoid_: html element (implementation term)
+
+# AI Provider Context
+
+The domain of the AI model catalog — the database-backed registry of models
+available through AI providers, synced from provider APIs and managed via admin.
+
+## Language
+
+**AI model catalog**:
+The database table holding AI models available through providers, synced from
+provider APIs. _Avoid_: model list, model registry
+
+**Model sync**:
+The operation of fetching available models from a provider's API and updating
+the AI model catalog. _Avoid_: model refresh, model fetch
+
+**Enabled model**:
+A catalog entry marked as visible in the simulator's model picker.
+_Avoid_: active model, visible model
+
+**Models endpoint**:
+The URL a provider exposes to list its available models, distinct from the
+chat endpoint. Each provider's config carries it as `services.<provider>.models_url`;
+blank until that provider's **Model sync** is wired up.
+_Avoid_: model URL, list URL, models URL
+
+**Chat endpoint**:
+The URL a provider exposes for chat-completion requests; stored on the
+provider class as `aiApiLink` (e.g. `services.<provider>.url`). Distinct from
+the **models endpoint**.
+_Avoid_: API URL, completion URL

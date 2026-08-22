@@ -2,24 +2,25 @@
 
 namespace App\Classes;
 
+use App\Models\AiModel;
+
 class Cohere extends AiProvider
 {
-    protected array $models = [
-        'command-a-03-2025' => 'command-a-03-2025',
-        'command-r-plus-08-2024' => 'command-r-plus-08-2024',
-        'command-r-08-2024' => 'command-r-08-2024',
-        'command-r7b-12-2024' => 'command-r7b-12-2024',
-        'command' => 'command',
-        'command-light' => 'command-light',
-        'command-nightly' => 'command-nightly',
-        'command-light-nightly' => 'command-light-nightly',
-    ];
-
     public function __construct()
     {
         $this->aiApiLink = config('services.cohere.url', 'https://api.cohere.ai/v1/chat');
         $this->model = config('services.cohere.model', 'command-a-03-2025');
         $this->apiKey = config('services.cohere.key');
+
+        $this->models = AiModel::query()
+            ->forProvider(static::getProviderKey())
+            ->enabled()
+            ->unexpired()
+            ->get()
+            ->mapWithKeys(fn (AiModel $model): array => [
+                $model->external_id => $model->displayLabel(),
+            ])
+            ->all();
     }
 
     public static function getProviderKey(): string
