@@ -2,8 +2,6 @@
 
 namespace App\Classes;
 
-use App\Models\AiModel;
-
 class Gemini extends AiProvider
 {
     protected $proxyLogin;
@@ -116,6 +114,44 @@ class Gemini extends AiProvider
         }
 
         return $res;
+    }
+
+    public function askForContextStreamed($instruction = 'You are a helpful English language assistant.', $question = '', $model = '', ?callable $onChunk = null): void
+    {
+        if ($onChunk === null) {
+            return;
+        }
+
+        $model = $this->resolveModel($model);
+
+        $data = [
+            'system_instruction' => [
+                'parts' => [
+                    ['text' => $instruction],
+                ],
+            ],
+            'contents' => [
+                'parts' => [
+                    ['text' => $question],
+                ],
+            ],
+            'generationConfig' => [
+                'thinkingConfig' => [
+                    'thinkingBudget' => 0,
+                ],
+            ],
+        ];
+
+        $url = $this->aiApiLink.$model.':streamGenerateContent?alt=sse';
+        $headers = $this->buildAiHeaders();
+        $proxy = $this->buildProxyUrl();
+
+        $this->streamOpenAiCompatible($url, $data, $headers, $onChunk, $proxy, setStreamFlag: false);
+    }
+
+    protected function extractStreamText(array $data): ?string
+    {
+        return $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
     }
 
     private function buildAiUrl($model = null)

@@ -2,6 +2,32 @@
 
 ## 2026-08-23
 
+* **Change: simulator AI panel — readable headings, shadow hover, larger base font.**
+  Three visual fixes in the AI Response rail. (1) `.ai-prose h1–h4` were pinned
+  at `11px` while body text scaled with the user font control, so headings read
+  smaller than paragraphs; they now use `1.15em` (mono-caps treatment kept), so
+  they stay ~15% above body text at any size. (2) The gloss-run hover
+  affordance in `#ai_answer_div` swaps its accent-tinted background fill for a
+  crisp accent-tinted `text-shadow: 0 1px 1px` just below the hovered glyphs
+  (night variant on `--wbench-accent-night`, transition retargeted to
+  `text-shadow`; reduced-motion opt-out kept). (3) `DEFAULT_FONT_SIZE` in
+  `Bilinguals.jsx` raised 22 → 26 (`+`/`−` still step ±2 within 12–48).
+  Verified in-browser on `/bilinguals/en/ru/simulator`. Docs:
+  `wiki/domains/bilinguals-simulator.md`,
+  `wiki/conventions/design-system.md` (both `generated.at` bumped).
+
+* **Change: double-quoted phrases in the simulator AI response render red.**
+  `Bilinguals.jsx` gained `highlightQuotes()`, slotted into `renderMarkdown()`
+  between `marked.parse()` and DOMPurify sanitize: it protects `<pre>`/`<code>`
+  blocks with placeholders, wraps straight `"…"` spans (which marked emits as
+  `&quot;` entities, so the match is entity-based) in
+  `<mark class="ai-quote">` outside HTML tags, then restores them. Styled by a
+  new `.ai-prose mark.ai-quote` rule (red text via `--wbench-danger`, night
+  variant via `.dark`, transparent background overriding the generic `mark`
+  tint) in `public/css/simulator.css`. Verified in-browser on
+  `/bilinguals/en/ru/simulator` (light + dark). Docs:
+  `wiki/domains/bilinguals-simulator.md` (`generated.at` bumped).
+
 * **Change: profile API-key rows are now two-state (form vs. stored badge).**
   `Profile/Edit.jsx`'s provider row previously always showed the password input
   above Save/Remove buttons with the masked preview tucked underneath. It now

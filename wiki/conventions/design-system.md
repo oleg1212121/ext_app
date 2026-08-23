@@ -4,7 +4,7 @@ title: Design System
 description: Visual language for the app — colors, type, layout, and signature patterns to keep new pages consistent with the Bilinguals simulator redesign.
 tags: [design, frontend, ui, tailwind, tokens]
 status: stable
-generated: { by: agent/glm-5.2, at: 2026-08-16T00:00:00Z }
+generated: { by: agent:ox-alpha, at: 2026-08-23T20:25:00Z }
 ---
 
 # Design System
@@ -124,7 +124,7 @@ list, search results) must implement all four, in the interface's voice:
 |-------|-----------|
 | **Empty (no request yet)** | Serif sentence inviting the next action; mono eyebrow drops the drop-label (`NO TEXT LOADED`) |
 | **Loading (request pending)** | One orchestrated moment, not scattered shimmer — a single filling accent rule or ping dot with a mono `WORKING` label; reduced-motion stays static |
-| **Answer / data** | Scoped `.ai-prose`-style treatment; accent `em`, emphasis-red `strong`, mono-caps headings; **gloss-run hover** — text-bearing elements get a pointer cursor and an accent-tinted background on `:hover`, scoped to `#ai_answer_div` (no full-row backgrounds) |
+| **Answer / data** | Scoped `.ai-prose`-style treatment; accent `em`, emphasis-red `strong`, mono-caps headings (`1.15em`, scale with the reading font); **gloss-run hover** — text-bearing elements get a pointer cursor and a crisp accent-tinted shadow cast just below the glyphs on `:hover`, scoped to `#ai_answer_div` (no background fills) |
 | **Error** | Serif line in `--wbench-danger` with the real failure message + a `Retry` control that re-sends the original payload |
 
 No region returns blank `''` HTML. No region displays fake skeleton content when
@@ -149,7 +149,7 @@ every animation; reduced motion is not a graceful-degradation afterthought.
 |---------|-------|-------|
 | Scoped `--wbench-*` tokens | `resources/css/app.css` `@theme` | Emit as CSS vars; usable from Tailwind arbitrary-value utilities |
 | `.ribbon-mark` active row edge | `resources/css/app.css` | Width 0 → 3px on `group:hover` / `focus-within`; retint to `--wbench-accent` |
-| `.ai-prose` markdown styling | `public/css/simulator.css` | For AI / markdown-rendered answer divs only; accent `em`/`i`, emphasis-red `b`/`strong`, plus `mark`/`u`/`del`/`code`/`blockquote` treatments; gloss-run `:hover` affordance (pointer + accent tint) scoped to `#ai_answer_div` |
+| `.ai-prose` markdown styling | `public/css/simulator.css` | For AI / markdown-rendered answer divs only; accent `em`/`i`, emphasis-red `b`/`strong`, plus `mark`/`u`/`del`/`code`/`blockquote` treatments; gloss-run `:hover` affordance (pointer + accent text-shadow below) scoped to `#ai_answer_div` |
 | `.ai-loader-rule` filling underline | `public/css/simulator.css` | Keyframe `ai-rule-fill`, 900ms cubic ease-out; `motion-safe`-gated |
 | `.resizeable_element` font-scaling hook | `public/css/simulator.css` + `Bilinguals.jsx::updateResizeableFontStyles` | For surfaces that support user font-size control |
 | Segmented tab strip with `Underline` | `Bilinguals.jsx` | 2px accent underline, `scale-x` reveal, shared `tabClass()` helper |

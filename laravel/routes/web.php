@@ -77,6 +77,7 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::post('/get-texts', [BilingualsController::class, 'getTexts']);
     Route::post('/text', [SimulatorController::class, 'text']);
     Route::post('/ai/question', [SimulatorController::class, 'askAi'])->name('ai.question');
+    Route::post('/ai/question/stream', [SimulatorController::class, 'askAiStreamed'])->name('ai.question.stream');
     Route::post('/dictionary/selection/save', [BilingualsController::class, 'selectionSave']);
     Route::post('/dictionary/interactions/save', [BilingualsController::class, 'interactionsSave']);
 });

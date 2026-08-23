@@ -24,7 +24,9 @@
         "@inertiajs/react": "^3.1.1",
         "@inertiajs/vite": "^3.1.1",
         "@vitejs/plugin-react": "^5.2.0",
+        "dompurify": "^3.4.14",
         "flowbite-react": "^0.12.17",
+        "marked": "^18.0.10",
         "react": "^19.2.6",
         "react-dom": "^19.2.6"
     }

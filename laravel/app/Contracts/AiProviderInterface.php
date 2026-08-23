@@ -34,4 +34,20 @@ interface AiProviderInterface
         string $question,
         string $model
     ): ?string;
+
+    /**
+     * Stream the AI response chunk-by-chunk.
+     *
+     * The callable receives raw markdown text fragments as they arrive from
+     * the upstream provider. Errors are thrown as AiProviderException so the
+     * caller can convert them into an SSE error event.
+     *
+     * @param  callable(string $chunk): void  $onChunk
+     */
+    public function askForContextStreamed(
+        string $instruction,
+        string $question,
+        string $model,
+        callable $onChunk
+    ): void;
 }

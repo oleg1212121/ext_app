@@ -136,6 +136,17 @@ table.table:has(#all_en:checked) .hide_en {
     background-color: color-mix(in srgb, var(--wbench-emphasis-night) 22%, transparent);
 }
 
+.ai-prose mark.ai-quote {
+    background-color: transparent;
+    color: var(--wbench-danger);
+    padding: 0;
+    border-radius: 0;
+}
+
+.dark .ai-prose mark.ai-quote {
+    color: var(--wbench-danger-night);
+}
+
 .ai-prose u,
 .ai-prose ins {
     text-decoration: underline;
@@ -232,9 +243,9 @@ table.table:has(#all_en:checked) .hide_en {
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.18em;
-    font-size: 11px;
+    font-size: 1em;
     margin: 1.4em 0 0.6em;
-    line-height: 1.2;
+    line-height: 1.25;
 }
 
 .dark .ai-prose h1,
@@ -281,21 +292,20 @@ table.table:has(#all_en:checked) .hide_en {
 
 /* Gloss-run hover affordance — scoped to the AI answer panel.
    Every text-bearing element signals interactivity: pointer cursor
-   plus an accent-tinted background on hover (uniform layering:
-   a nested run's fill paints over its parent block's fill). */
+   plus a crisp accent-tinted shadow cast just below the glyphs. */
 #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a) {
-    transition: background-color 150ms ease;
-    border-radius: 2px;
-    box-decoration-break: clone;
+    transition: text-shadow 150ms ease;
 }
 
 #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a):hover {
-    background-color: color-mix(in srgb, var(--wbench-accent) 14%, transparent);
+    /* text-shadow: 0 1px 20px color-mix(in srgb, var(--wbench-accent) 55%, transparent); */
+    text-decoration: underline;
     cursor: pointer;
 }
 
 .dark #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a):hover {
-    background-color: color-mix(in srgb, var(--wbench-accent-night) 22%, transparent);
+    /* text-shadow: 0 1px 20px color-mix(in srgb, var(--wbench-accent-night) 60%, transparent); */
+    text-decoration: underline;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -323,6 +333,29 @@ table.table:has(#all_en:checked) .hide_en {
     .ai-loader-rule.is-loading {
         animation: none;
         width: 100%;
+    }
+}
+
+/* Streaming cursor — blinks at the end of the answer while tokens arrive. */
+.ai-stream-cursor {
+    display: inline-block;
+    width: 0.5em;
+    height: 1.1em;
+    margin-left: 0.15em;
+    vertical-align: text-bottom;
+    background-color: var(--wbench-accent);
+    animation: ai-cursor-blink 1s steps(2, start) infinite;
+}
+
+@keyframes ai-cursor-blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ai-stream-cursor {
+        animation: none;
+        opacity: 0.5;
     }
 }
 

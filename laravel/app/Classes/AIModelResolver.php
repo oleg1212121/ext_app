@@ -237,6 +237,36 @@ class AIModelResolver
     }
 
     /**
+     * Ask AI using the specified provider:model, keyed with the user's own key,
+     * streaming raw markdown chunks to $onChunk as they arrive.
+     *
+     * @param  callable(string $chunk): void  $onChunk
+     */
+    public function askStreamed(
+        string $modelString,
+        string $instruction,
+        string $question,
+        callable $onChunk
+    ): void {
+        $parsed = $this->parseModelString($modelString);
+        $provider = $this->getProvider($parsed['provider']);
+
+        $user = Auth::user();
+        $userKey = $user?->apiKeyForProvider($parsed['provider']);
+
+        if ($userKey === null) {
+            throw new AiProviderException(
+                'You have not added an API key for this provider.',
+                403,
+            );
+        }
+
+        $provider = $provider->withApiKey($userKey->api_key);
+
+        $provider->askForContextStreamed($instruction, $question, $parsed['model'], $onChunk);
+    }
+
+    /**
      * Get or create a provider instance
      */
     protected function getProvider(string $key): AiProviderInterface

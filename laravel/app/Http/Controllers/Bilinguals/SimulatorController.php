@@ -16,6 +16,7 @@ use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 use InvalidArgumentException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SimulatorController extends Controller
 {
@@ -247,5 +248,49 @@ class SimulatorController extends Controller
             ],
             $status
         );
+    }
+
+    /**
+     * Stream the AI response as Server-Sent Events.
+     *
+     * Each text chunk is emitted as `data: {"text": "..."}\n\n`.
+     * On error: `data: {"error": "..."}\n\n`.
+     * On completion: `data: [DONE]\n\n`.
+     */
+    public function askAiStreamed(AiQuestionRequest $request): StreamedResponse
+    {
+        $prompt = $request->validated('data') ?? '';
+        $instruction = $request->validated('question') ?? '';
+        $modelString = $request->validated('model');
+
+        return response()->stream(function () use ($modelString, $instruction, $prompt): void {
+            $sendEvent = function (string $payload): void {
+                echo 'data: '.$payload."\n\n";
+                @ob_flush();
+                flush();
+            };
+
+            try {
+                $this->modelResolver->askStreamed(
+                    $modelString,
+                    $instruction,
+                    $prompt,
+                    function (string $chunk) use ($sendEvent): void {
+                        $sendEvent(json_encode(['text' => $chunk]) ?: '{"text":""}');
+                    }
+                );
+            } catch (InvalidArgumentException) {
+                $sendEvent(json_encode(['error' => 'Invalid model selection.']) ?: '{"error":"Invalid model selection."}');
+            } catch (AiProviderException $e) {
+                $sendEvent(json_encode(['error' => $e->getMessage()]) ?: '{"error":"error"}');
+            }
+
+            $sendEvent('[DONE]');
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache, no-transform',
+            'X-Accel-Buffering' => 'no',
+            'Connection' => 'keep-alive',
+        ]);
     }
 }

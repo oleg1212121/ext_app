@@ -90,7 +90,7 @@ export default function AI(props) {
                         <div className="px-4 py-5 pb-8">
                             <div id="ai_answer_div"
                                  className="resizeable_element ai-prose max-w-none break-words"
-                                 dangerouslySetInnerHTML={{__html: props.aiAnswer ?? ''}}></div>
+                                 dangerouslySetInnerHTML={{__html: (props.aiAnswer ?? '') + (isLoading ? '<span class="ai-stream-cursor"></span>' : '')}}></div>
                         </div>
                     ) : (
                         <div className="px-4 py-6 max-w-none">

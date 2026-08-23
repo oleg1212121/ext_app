@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx'
 import Spinner from '../../Components/Spinner.jsx'
 import Select from "../../Components/Forms/Select.jsx";
@@ -7,13 +8,40 @@ import Button from "../../Components/Forms/Button.jsx";
 import Workplace from "./Components/Workplace.jsx";
 import AI from "./Components/AI.jsx";
 import TextContent from "./Components/TextContent.jsx";
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 function getCsrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
 }
 
+marked.setOptions({breaks: true, gfm: true});
+
+function normalizeArrowNotation(text) {
+    return text.replace(/\$\\rightarrow\$|\\rightarrow|→|\$\\to\$|\$\\Rightarrow\$/g, '=>');
+}
+
+function highlightQuotes(html) {
+    if (!html) return html;
+    const slots = [];
+    const protectedHtml = html.replace(/<(pre|code)\b[^>]*>[\s\S]*?<\/\1>/gi, (m) => {
+        slots.push(m);
+        return `\u0000${slots.length - 1}\u0000`;
+    });
+    const wrapped = protectedHtml.replace(/(<[^>]+>)|&quot;(?:[^<&]|&(?!quot;))+&quot;/g, (m, tag) => {
+        if (tag) return tag;
+        return `<mark class="ai-quote">${m}</mark>`;
+    });
+    return wrapped.replace(/\u0000(\d+)\u0000/g, (_m, i) => slots[Number(i)]);
+}
+
+function renderMarkdown(text) {
+    if (!text) return '';
+    return DOMPurify.sanitize(highlightQuotes(marked.parse(normalizeArrowNotation(text))));
+}
+
 const DEFAULT_PER_PAGE = 50;
-const DEFAULT_FONT_SIZE = 22;
+const DEFAULT_FONT_SIZE = 26;
 const CONTROL_FONT_SCALE = 0.62;
 const FONT_SIZE_STEP = 2;
 const MIN_FONT_SIZE = 12;
@@ -226,6 +254,77 @@ const Bilinguals = (props) => {
         focusOnWorkplace();
     }, [showWorkplace]);
 
+    const streamAsk = async (payload) => {
+        setLastAskPayload(payload);
+        setPending(true);
+        setAiError(null);
+        setAiAnswer('');
+        let markdown = '';
+        let lastRender = 0;
+        try {
+            const token = getCsrfToken();
+            const res = await fetch('/ai/question/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'text/event-stream',
+                    ...(token ? {'X-CSRF-TOKEN': token} : {}),
+                },
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) {
+                const json = await res.json().catch(() => null);
+                throw new Error(json?.data?.data?.error ?? json?.message ?? `Request failed (${res.status})`);
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, {stream: true});
+
+                const events = buffer.split('\n\n');
+                buffer = events.pop();
+
+                for (const event of events) {
+                    const line = event.trim();
+                    if (!line.startsWith('data:')) continue;
+                    const data = line.slice(5).trim();
+                    if (data === '[DONE]') continue;
+
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.error) {
+                            throw new Error(parsed.error);
+                        }
+                        if (parsed.text) {
+                            markdown += parsed.text;
+                            const now = Date.now();
+                            if (now - lastRender > 50) {
+                                lastRender = now;
+                                setAiAnswer(renderMarkdown(markdown));
+                            }
+                        }
+                    } catch (e) {
+                        if (e instanceof SyntaxError) continue;
+                        throw e;
+                    }
+                }
+            }
+            setAiAnswer(renderMarkdown(markdown));
+        } catch (e) {
+            if (markdown) setAiAnswer(renderMarkdown(markdown));
+            setAiError(e instanceof Error ? e.message : "Couldn't reach the model.");
+        } finally {
+            setPending(false);
+        }
+    };
+
     const ask = async (row, overrides = {}) => {
         if (pending) {
             return;
@@ -244,33 +343,8 @@ const Bilinguals = (props) => {
             question: overrides.question ?? currentQuestion,
             model: overrides.model ?? currentModel,
         };
-        setLastAskPayload(payload);
-        setPending(true);
-        setAiError(null);
-        try {
-            const token = getCsrfToken();
-            const res = await fetch('/ai/question', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    ...(token ? {'X-CSRF-TOKEN': token} : {}),
-                },
-                body: JSON.stringify(payload),
-            });
-            const json = await res.json();
-            if (json?.data?.code === 200) {
-                setAiAnswer(json.data.answer ?? '');
-            } else {
-                setAiAnswer('');
-                setAiError(json?.data?.data?.error ?? json?.message ?? `Request failed (${res.status})`);
-            }
-        } catch (e) {
-            setAiAnswer('');
-            setAiError(e instanceof Error ? e.message : "Couldn't reach the model.");
-        } finally {
-            setPending(false);
-        }
+
+        await streamAsk(payload);
     };
 
     const retryAsk = async (overrides = {}) => {
@@ -278,33 +352,7 @@ const Bilinguals = (props) => {
             return;
         }
         const payload = {...lastAskPayload, ...(overrides.question ? {question: overrides.question} : {}), ...(overrides.model ? {model: overrides.model} : {})};
-        setLastAskPayload(payload);
-        setPending(true);
-        setAiError(null);
-        try {
-            const token = getCsrfToken();
-            const res = await fetch('/ai/question', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    ...(token ? {'X-CSRF-TOKEN': token} : {}),
-                },
-                body: JSON.stringify(payload),
-            });
-            const json = await res.json();
-            if (json?.data?.code === 200) {
-                setAiAnswer(json.data.answer ?? '');
-            } else {
-                setAiAnswer('');
-                setAiError(json?.data?.data?.error ?? json?.message ?? `Request failed (${res.status})`);
-            }
-        } catch (e) {
-            setAiAnswer('');
-            setAiError(e instanceof Error ? e.message : "Couldn't reach the model.");
-        } finally {
-            setPending(false);
-        }
+        await streamAsk(payload);
     };
 
     return (

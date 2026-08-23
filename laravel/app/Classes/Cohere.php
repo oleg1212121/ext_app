@@ -2,8 +2,6 @@
 
 namespace App\Classes;
 
-use App\Models\AiModel;
-
 class Cohere extends AiProvider
 {
     public function __construct()
@@ -72,5 +70,28 @@ class Cohere extends AiProvider
         }
 
         return $this->markdownToHtml($result['message']['content']);
+    }
+
+    public function askForContextStreamed($instruction = 'You are a helpful English language assistant.', $question = '', $model = '', ?callable $onChunk = null): void
+    {
+        if ($onChunk === null) {
+            return;
+        }
+
+        $model = $this->resolveModel($model);
+
+        $data = [
+            'model' => $model,
+            'messages' => [
+                ['role' => 'system', 'content' => $instruction],
+                ['role' => 'user', 'content' => $question],
+            ],
+            'temperature' => 0.2,
+        ];
+
+        $this->streamOpenAiCompatible($this->aiApiLink, $data, [
+            'Authorization: Bearer '.$this->apiKey,
+            'Content-Type: application/json',
+        ], $onChunk);
     }
 }

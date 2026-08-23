@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Classes\AIModelResolver;
 use App\Models\User;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -13,7 +14,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Singleton so the FormRequest validation closure and the
+        // constructor-injected controller share one resolver instance —
+        // getProvider() caches the provider and loadModels() runs once.
+        $this->app->singleton(AIModelResolver::class);
     }
 
     /**

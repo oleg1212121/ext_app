@@ -251,4 +251,116 @@ abstract class AiProvider implements AiProviderInterface
             default => 502,
         };
     }
+
+    /**
+     * Extract a text delta from one SSE `data:` JSON payload.
+     *
+     * Default implementation parses the OpenAI-compatible shape
+     * `choices[0].delta.content`. Providers with a different wire format
+     * (e.g. Gemini) override this.
+     *
+     * @param  array<string, mixed>  $data  Decoded JSON from the SSE line.
+     * @return string|null The text fragment, or null when the payload carries no text.
+     */
+    protected function extractStreamText(array $data): ?string
+    {
+        return $data['choices'][0]['delta']['content'] ?? null;
+    }
+
+    /**
+     * Stream an OpenAI-compatible chat-completion endpoint.
+     *
+     * Sets `stream: true`, drives cURL with CURLOPT_WRITEFUNCTION, buffers
+     * incomplete SSE lines, and invokes $onChunk for every text fragment
+     * returned by extractStreamText().
+     *
+     * @param  array<string, mixed>  $data  Request body (without the stream flag).
+     * @param  list<string>  $headers  Raw HTTP header lines.
+     * @param  callable(string $chunk): void  $onChunk
+     * @param  string|null  $proxy  Optional proxy URL (used by Gemini).
+     * @param  bool  $setStreamFlag  Whether to inject `stream: true` into the body (OpenAI-compatible providers) or rely on a URL-based stream endpoint (Gemini).
+     */
+    protected function streamOpenAiCompatible(string $url, array $data, array $headers, callable $onChunk, ?string $proxy = null, bool $setStreamFlag = true): void
+    {
+        if ($setStreamFlag) {
+            $data['stream'] = true;
+        }
+
+        $onHttpError = function (int $httpCode, string $response) {
+            $this->throwHttpError($httpCode, $response);
+        };
+
+        $extract = $this->extractStreamText(...);
+
+        $buffer = '';
+        $httpCode = 0;
+
+        $write = function ($ch, string $raw) use (&$buffer, &$httpCode, $extract, $onChunk, $onHttpError): int {
+            if ($httpCode === 0) {
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            }
+
+            if ($httpCode !== 0 && $httpCode !== 200) {
+                $onHttpError($httpCode, $buffer.$raw);
+            }
+
+            $buffer .= $raw;
+
+            while (($pos = strpos($buffer, "\n")) !== false) {
+                $line = substr($buffer, 0, $pos);
+                $buffer = substr($buffer, $pos + 1);
+                $line = trim($line);
+
+                if ($line === '' || $line === 'data: [DONE]') {
+                    continue;
+                }
+
+                if (! str_starts_with($line, 'data:')) {
+                    continue;
+                }
+
+                $json = trim(substr($line, 5));
+                if ($json === '') {
+                    continue;
+                }
+
+                $decoded = json_decode($json, true);
+                if (! is_array($decoded)) {
+                    continue;
+                }
+
+                $text = $extract($decoded);
+                if ($text !== null && $text !== '') {
+                    $onChunk($text);
+                }
+            }
+
+            return strlen($raw);
+        };
+
+        $curlOptions = [
+            CURLOPT_URL => $url,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($data),
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_WRITEFUNCTION => $write,
+            CURLOPT_TIMEOUT => 120,
+        ];
+
+        if ($proxy !== null) {
+            $curlOptions[CURLOPT_PROXY] = $proxy;
+        }
+
+        $ch = curl_init();
+        curl_setopt_array($ch, $curlOptions);
+
+        curl_exec($ch);
+
+        $finalCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($finalCode !== 200) {
+            $onHttpError($finalCode, $buffer);
+        }
+    }
 }

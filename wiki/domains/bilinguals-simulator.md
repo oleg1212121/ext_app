@@ -4,7 +4,7 @@ title: Bilinguals Simulator
 description: Side-by-side EN/RU reading trainer where users translate and get AI assessment of their translation.
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
-generated: { by: agent:kimi-k3, at: 2026-08-23T18:00:00Z }
+generated: { by: agent:ox-alpha, at: 2026-08-23T20:25:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -47,6 +47,21 @@ grammar, corrections, and improved variants.
   `App\Http\Requests\AiQuestionRequest` / `BilingualsTextRequest`.
 * Answers are rendered from markdown with the shared
   `AiProvider::markdownToHtml()`.
+* On the React page the streamed answer is rendered client-side by
+  `renderMarkdown()` in `Bilinguals.jsx` (arrow normalization → `marked.parse`
+  → `highlightQuotes()` → DOMPurify sanitize). `highlightQuotes()` wraps
+  straight double-quoted `"phrases"` in `<mark class="ai-quote">`, skipping
+  anything inside `<pre>`/`<code>` blocks; they render red via
+  `.ai-prose mark.ai-quote` using the `--wbench-danger` /
+  `--wbench-danger-night` tokens in `public/css/simulator.css`.
+* Answer typography is relative to the user-controlled base font size
+  (`DEFAULT_FONT_SIZE = 26` in `Bilinguals.jsx`, adjustable ±2px via the
+  toolbar `+`/`−` buttons): `.ai-prose h1–h4` are mono-caps labels sized at
+  `1.15em` so they stay visibly larger than body text at any size. The
+  **gloss-run hover** affordance on `#ai_answer_div` text elements casts a
+  crisp accent-tinted shadow just below the glyphs
+  (`text-shadow: 0 1px 1px color-mix(...)` on `--wbench-accent`, night variant
+  on `--wbench-accent-night`) instead of a background fill.
 
 # Frontend
 
