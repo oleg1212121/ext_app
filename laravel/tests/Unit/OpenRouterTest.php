@@ -2,6 +2,7 @@
 
 use App\Classes\OpenRouter;
 use App\Models\AiModel;
+use App\Models\AiProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -10,7 +11,6 @@ uses(TestCase::class, RefreshDatabase::class);
 describe('OpenRouter Provider (DB-driven models)', function () {
     it('returns enabled, unexpired openrouter models from the database', function () {
         AiModel::factory()->enabled()->create([
-            'provider' => 'openrouter',
             'external_id' => 'openai/gpt-oss-120b:free',
             'name' => 'OpenAI: GPT-OSS 120B',
             'pricing_prompt' => '0',
@@ -18,7 +18,6 @@ describe('OpenRouter Provider (DB-driven models)', function () {
         ]);
 
         AiModel::factory()->enabled()->create([
-            'provider' => 'openrouter',
             'external_id' => 'openai/gpt-4o-mini',
             'name' => 'OpenAI: GPT-4o-mini',
             'pricing_prompt' => '0.00000015',
@@ -26,21 +25,21 @@ describe('OpenRouter Provider (DB-driven models)', function () {
         ]);
 
         AiModel::factory()->enabled()->create([
-            'provider' => 'openrouter',
             'external_id' => 'expired/model',
             'name' => 'Expired Model',
             'expiration_date' => now()->subDay(),
         ]);
 
         AiModel::factory()->create([
-            'provider' => 'openrouter',
             'external_id' => 'disabled/model',
             'name' => 'Disabled Model',
             'is_enabled' => false,
         ]);
 
+        $geminiProvider = AiProvider::factory()->create(['key' => 'gemini', 'name' => 'Gemini']);
+
         AiModel::factory()->enabled()->create([
-            'provider' => 'gemini',
+            'ai_provider_id' => $geminiProvider->id,
             'external_id' => 'gemini-x',
             'name' => 'Gemini X',
         ]);
@@ -64,7 +63,6 @@ describe('OpenRouter Provider (DB-driven models)', function () {
 
     it('reconstructs the legacy pricing display format', function () {
         $model = AiModel::factory()->enabled()->create([
-            'provider' => 'openrouter',
             'external_id' => 'openai/gpt-4o-mini',
             'name' => 'OpenAI: GPT-4o-mini',
             'pricing_prompt' => '0.00000015',

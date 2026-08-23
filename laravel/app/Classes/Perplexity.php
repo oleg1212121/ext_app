@@ -12,15 +12,7 @@ class Perplexity extends AiProvider
         $this->model = config('services.perplexity.model', 'sonar');
         $this->apiKey = config('services.perplexity.key');
 
-        $this->models = AiModel::query()
-            ->forProvider(static::getProviderKey())
-            ->enabled()
-            ->unexpired()
-            ->get()
-            ->mapWithKeys(fn (AiModel $model): array => [
-                $model->external_id => $model->displayLabel(),
-            ])
-            ->all();
+        $this->loadModels();
     }
 
     public static function getProviderKey(): string

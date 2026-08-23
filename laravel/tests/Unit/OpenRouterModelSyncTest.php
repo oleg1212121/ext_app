@@ -31,7 +31,6 @@ describe('OpenRouterModelSync', function () {
         ]);
 
         AiModel::factory()->create([
-            'provider' => 'openrouter',
             'external_id' => 'old/model',
             'name' => 'Old Model',
             'is_enabled' => true,
@@ -53,7 +52,6 @@ describe('OpenRouterModelSync', function () {
 
     it('preserves is_enabled for existing models and defaults new ones to disabled', function () {
         AiModel::factory()->enabled()->create([
-            'provider' => 'openrouter',
             'external_id' => 'openai/gpt-4o-mini',
             'name' => 'OpenAI: GPT-4o-mini',
             'pricing_prompt' => '0.00000015',

@@ -4,7 +4,7 @@ title: Adding an AI Provider
 description: Steps to register a new AI provider so it appears in the simulator's model picker.
 tags: [ai, providers, howto]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-08-22T23:00:00Z }
+generated: { by: agent:kimi-k3, at: 2026-08-23T18:00:00Z }
 sources:
   - id: resolver
     resource: laravel/app/Classes/AIModelResolver.php
@@ -37,10 +37,11 @@ through `AIModelResolver` with `provider:model` strings.
 3. **Add config** in `config/services.php` (`'mistral' => ['key' => env(...),
    'url' => env(..., default), 'model' => env(..., default)]`) and the
    corresponding keys in `.env` / `.env.example`.
-4. **Verify**: with a key set, the provider's models appear in
-   `AIModelResolver::getGroupedModels()` and therefore in the simulator UI
-   model picker (unconfigured providers are hidden automatically via
-   `isConfigured()`).
+4. **Verify**: the provider appears in `AIModelResolver::getGroupedModels()` for
+   any user who has stored a **User key** for it (and the admin has it enabled) —
+   visibility is now user-keyed, not env-keyed (`isConfigured()` only probes the
+   `.env` System key). Store a User key for it from the Profile page to see it in
+   the simulator picker.
 5. **Test**: add a Pest test mocking the HTTP call (see existing provider
    tests, if any, for the pattern) and run
    `docker exec ext_app_laravel php artisan test --filter=Ai`.

@@ -2,6 +2,58 @@
 
 ## 2026-08-23
 
+* **Change: profile API-key rows are now two-state (form vs. stored badge).**
+  `Profile/Edit.jsx`'s provider row previously always showed the password input
+  above Save/Remove buttons with the masked preview tucked underneath. It now
+  branches on `apiKeyProviders.*.has_key`: no key → input + icon "Save" button;
+  key stored → green "Current key" badge (`masked()`, still `••••`) plus a
+  trash-icon remove control (`aria-label="Remove key"`); deleting reveals the
+  form again via the existing redirect + Inertia prop refresh. Replacing a key
+  is now remove-then-re-add (the inline replace path is gone). Backend,
+  routes, and tests unchanged; `ProfileApiKeyTest` green. Docs:
+  `wiki/domains/ai-providers.md` (`generated.at` bumped).
+
+* **Change: profile page shows a masked API key preview.**
+  `App\Models\UserApiKey::masked()` returns the first four and last four
+  characters of the decrypted key separated by `••••`; the profile endpoint now
+  exposes this as `apiKeyProviders.*.masked_key`. `Profile/Edit.jsx` renders it
+  as read-only text above the password input so users can identify stored keys,
+  while the input itself stays empty for replacement. The full key is still
+  never echoed. Updated `tests/Feature/ProfileApiKeyTest` to assert the masked
+  prop; `wiki/domains/ai-providers.md` updated.
+
+* **Add: per-user AI provider API keys (supersedes ADR 0010).** Each user now
+  stores their own encrypted API key per provider in a new `user_api_keys`
+  table (`unique(user_id, ai_provider_id)`, `api_key` cast `encrypted`), modeled
+  by `App\Models\UserApiKey` (+ factory) with `User::userApiKeys()`,
+  `apiKeyForProvider($key)`, `hasApiKeyForProvider($key)` relations/helpers and
+  `AiProvider::userApiKeys()`. The `.env` **System key** is retained only for
+  non-user paths (model sync, CLI, admin tooling) — there is no System-key
+  fallback for user requests. `AIModelResolver::getGroupedModels()` is now
+  user-scoped: it lists only providers the authenticated user has a User key for
+  (and that are admin-enabled), sorted within provider by price ascending and
+  across providers by cheapest model (so the default is the globally cheapest);
+  `firstModelKey()` returns that default. `ask()` reads the user's key,
+  stamps it onto a cloned provider via `AiProvider::withApiKey()` (the resolver's
+  cached template is never mutated), and throws a 403 `AiProviderException` when
+  the user has no key. Profile page (`Profile/Edit.jsx`) gained an "AI Provider
+  API Keys" section listing every enabled provider with a masked per-provider
+  input (never echoes the stored key), independent Save/Remove, and a
+  `StoreApiKeyRequest` validating `provider` (enabled, exists) + `api_key`
+  (min 10); endpoints `POST/DELETE /profile/api-keys[/<providerKey>]` live on
+  `ProfileController`. The simulator shows an empty state linking to the Profile
+  when the user has no keys. ADR 0012 records the decision (supersedes ADR 0010,
+  which now notes its supersession). `CONTEXT.md` AI Provider Context gained
+  User key / System key / Available (to a user) terms; `isConfigured()`
+  redefined as a System-key probe. New tests: `Unit/UserApiKeyTest`,
+  `Unit/AIModelResolverTest` (rewritten for the user-scoped gate + price sort),
+  `Feature/ProfileApiKeyTest`, `Feature/SimulatorApiKeyTest`,
+  `Feature/AiQuestionApiKeyTest` (23 tests, full suite green). Docs:
+  `wiki/domains/ai-providers.md` (glossary + registry + resolver behavior),
+  `wiki/domains/bilinguals-simulator.md` (dynamic default + empty state),
+  `wiki/playbooks/add-ai-provider.md` (user-keyed visibility); `generated.at`
+  bumped.
+
 * **Add: access-control authorization skeleton (gates + admin bypass + last-admin
   invariant).** `AppServiceProvider::boot` registers a `Gate::before` hook that
   lets an approved admin pass every ability automatically, plus an
@@ -21,6 +73,24 @@
   `wiki/domains/access-control.md` concept + `log.md`; ADR 0008 records the
   `Gate::before` admin-bypass decision; `CONTEXT.md` gained an Access Control
   Context (Role, Approved, Admin bypass). `generated.at`/`verified` bumped.
+
+* **Add: `ai_providers` table + edit-only admin + seeder; `ai_models` linked by
+  FK.** New `ai_providers` table (`App\Models\AiProvider`) is an *enable-flag
+  overlay* storing `key`/`name`/`is_enabled`/`description`; the hardcoded
+  provider-class maps in `AIModelResolver` and `AiModelSyncRegistry` stay the
+  source of truth for *which* providers exist (ADR 0009). `ai_models.provider`
+  string column dropped in favour of a nullable `ai_provider_id` FK
+  (`nullOnDelete`); sync writes `ai_provider_id` and **ignores
+  `ai_providers.is_enabled`** because sync is a catalog mirror, not an
+  availability gate (ADR 0011). New `Database\Seeders\AiProviderSeeder` seeds one
+  enabled row per registered provider (API keys stay in `.env`, ADR 0010 — the
+  admin `AiProviderResource` is edit-only, no Create page, non-secret fields
+  only). `AIModelResolver` now skips providers that are not *available*
+  (configured AND enabled); `AiProvider::isEnabled()` backs the check. New tests:
+  `AiProviderSeederTest`, `AIModelResolverTest` (two-gate), `AiModelSyncTest`
+  (FK + sync-invariant), `AiProviderResourceTest` (edit-only + toggle). Docs:
+  `wiki/domains/ai-providers.md` gained a Language glossary and registry section;
+  ADRs 0009–0011.
 
 ## 2026-08-22
 

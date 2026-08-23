@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Gate;
@@ -62,6 +63,30 @@ class User extends Authenticatable implements FilamentUser
     public function canAccessPanel(Panel $panel): bool
     {
         return Gate::forUser($this)->allows('accessAdminPanel');
+    }
+
+    /**
+     * The user's stored API keys, one per provider.
+     */
+    public function userApiKeys(): HasMany
+    {
+        return $this->hasMany(UserApiKey::class);
+    }
+
+    /**
+     * The stored key for a provider, addressed by its provider slug (e.g.
+     * 'openrouter'), or null when the user has not added one.
+     */
+    public function apiKeyForProvider(string $providerKey): ?UserApiKey
+    {
+        return $this->userApiKeys()
+            ->forProviderKey($providerKey)
+            ->first();
+    }
+
+    public function hasApiKeyForProvider(string $providerKey): bool
+    {
+        return $this->apiKeyForProvider($providerKey) !== null;
     }
 
     public function isAdmin(): bool

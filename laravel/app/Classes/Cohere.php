@@ -12,15 +12,7 @@ class Cohere extends AiProvider
         $this->model = config('services.cohere.model', 'command-a-03-2025');
         $this->apiKey = config('services.cohere.key');
 
-        $this->models = AiModel::query()
-            ->forProvider(static::getProviderKey())
-            ->enabled()
-            ->unexpired()
-            ->get()
-            ->mapWithKeys(fn (AiModel $model): array => [
-                $model->external_id => $model->displayLabel(),
-            ])
-            ->all();
+        $this->loadModels();
     }
 
     public static function getProviderKey(): string

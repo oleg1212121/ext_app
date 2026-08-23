@@ -26,15 +26,7 @@ class Gemini extends AiProvider
         $this->proxyIP = config('services.proxy.ip');
         $this->proxyPort = config('services.proxy.port');
 
-        $this->models = AiModel::query()
-            ->forProvider(static::getProviderKey())
-            ->enabled()
-            ->unexpired()
-            ->get()
-            ->mapWithKeys(fn (AiModel $model): array => [
-                $model->external_id => $model->displayLabel(),
-            ])
-            ->all();
+        $this->loadModels();
     }
 
     public static function getProviderKey(): string

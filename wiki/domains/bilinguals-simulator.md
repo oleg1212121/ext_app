@@ -4,7 +4,7 @@ title: Bilinguals Simulator
 description: Side-by-side EN/RU reading trainer where users translate and get AI assessment of their translation.
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-07-26T12:00:00Z }
+generated: { by: agent:kimi-k3, at: 2026-08-23T18:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -32,9 +32,11 @@ grammar, corrections, and improved variants.
 # Key behavior
 
 * The page loads with a **default model and a detailed default assessment
-  prompt** (see `simulator()` — currently
-  `openrouter:google/gemini-3.1-flash-lite-preview` and a 4-task prompt:
-  meaning accuracy %, grammar %, highlighted fixes, improved versions).
+  prompt**. The default model is computed by `AIModelResolver::firstModelKey()`
+  — the globally cheapest model **available to the signed-in user** (enabled
+  provider + a User key they stored), sorted by price and grouped by provider.
+  When the user has no stored keys the picker is empty and the page shows an
+  "Add an API key in your Profile" empty state instead of the model dropdown.
 * The text dropdown lists `EnRuEntityMatch` records as
   `"<EN entity name> / <RU entity name>"`.
 * `text()` paginates (default 50/page, max 200) and can serve either an entity

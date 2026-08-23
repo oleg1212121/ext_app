@@ -12,15 +12,7 @@ class HuggingFace extends AiProvider
         $this->model = config('services.huggingface.model', 'deepseek-ai/DeepSeek-V3.1-Terminus:novita');
         $this->apiKey = config('services.huggingface.key');
 
-        $this->models = AiModel::query()
-            ->forProvider(static::getProviderKey())
-            ->enabled()
-            ->unexpired()
-            ->get()
-            ->mapWithKeys(fn (AiModel $model): array => [
-                $model->external_id => $model->displayLabel(),
-            ])
-            ->all();
+        $this->loadModels();
     }
 
     public static function getProviderKey(): string

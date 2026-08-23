@@ -16,7 +16,6 @@ it('lists AI models for an authenticated admin', function () {
     Filament::setCurrentPanel(Filament::getPanel('admin'));
 
     $model = AiModel::factory()->enabled()->create([
-        'provider' => 'openrouter',
         'external_id' => 'openai/gpt-4o-mini',
         'name' => 'OpenAI: GPT-4o-mini',
     ]);
@@ -31,7 +30,6 @@ it('shows both enabled and disabled models so they can be managed', function () 
     Filament::setCurrentPanel(Filament::getPanel('admin'));
 
     $disabled = AiModel::factory()->create([
-        'provider' => 'openrouter',
         'external_id' => 'disabled/model',
         'name' => 'Disabled Model',
         'is_enabled' => false,
@@ -47,7 +45,6 @@ it('toggles is_enabled immediately without a confirmation modal', function () {
     Filament::setCurrentPanel(Filament::getPanel('admin'));
 
     $model = AiModel::factory()->enabled()->create([
-        'provider' => 'openrouter',
         'external_id' => 'toggle/model',
         'name' => 'Toggle Model',
     ]);
@@ -136,12 +133,12 @@ it('makes optional columns toggleable', function () {
 
     $table = Livewire::test(ListAiModels::class)->instance()->getTable();
 
-    foreach (['provider', 'external_id', 'context_length', 'pricing', 'expiration_date', 'api_created_at'] as $name) {
+    foreach (['aiProvider.name', 'external_id', 'context_length', 'pricing', 'expiration_date', 'api_created_at'] as $name) {
         expect($table->getColumn($name)->isToggleable())->toBeTrue();
     }
 
     Livewire::test(ListAiModels::class)
-        ->assertTableColumnVisible('provider');
+        ->assertTableColumnVisible('aiProvider.name');
 });
 
 it('shows n/a for unavailable pricing (negative sentinel)', function () {
@@ -165,7 +162,6 @@ it('preserves is_enabled for existing enabled models when syncing', function () 
     Filament::setCurrentPanel(Filament::getPanel('admin'));
 
     AiModel::factory()->enabled()->create([
-        'provider' => 'openrouter',
         'external_id' => 'openai/gpt-4o-mini',
         'name' => 'OpenAI: GPT-4o-mini',
         'pricing_prompt' => '0.00000015',

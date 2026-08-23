@@ -12,15 +12,7 @@ class OpenRouter extends AiProvider
         $this->model = config('services.openrouter.model', 'google/gemini-3.1-flash-lite-preview');
         $this->apiKey = config('services.openrouter.key');
 
-        $this->models = AiModel::query()
-            ->forProvider(static::getProviderKey())
-            ->enabled()
-            ->unexpired()
-            ->get()
-            ->mapWithKeys(fn (AiModel $model): array => [
-                $model->external_id => $model->displayLabel(),
-            ])
-            ->all();
+        $this->loadModels();
     }
 
     public static function getProviderKey(): string

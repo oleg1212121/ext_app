@@ -128,6 +128,18 @@ available through AI providers, synced from provider APIs and managed via admin.
 
 ## Language
 
+**User key**:
+A per-user API key a user stores (encrypted) for one provider, used for every
+user-facing AI request. One key per provider per user. _Avoid_: personal key.
+
+**System key**:
+The admin's `.env` key for a provider, used only for non-user paths (model
+sync, CLI, admin tooling). _Avoid_: env key, admin key.
+
+**Available (to a user)**:
+An AI provider the current user can use on the simulator: `is_enabled` and the
+user has a **User key**. _Avoid_: configured (old env-key meaning), active.
+
 **AI model catalog**:
 The database table holding AI models available through providers, synced from
 provider APIs. _Avoid_: model list, model registry

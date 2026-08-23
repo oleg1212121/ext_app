@@ -315,8 +315,17 @@ const Bilinguals = (props) => {
                         Bilinguals <span className="text-[var(--wbench-rule)] dark:text-[var(--wbench-rule-night)]">·</span> en&nbsp;↔&nbsp;ru
                     </span>
                     <span className={HAIRLINE} aria-hidden="true"/>
-                    <SelectGroup value={currentModel} onChange={(e) => setCurrentModel(e.target.value)}
-                                 groups={aiModels}/>
+                    {Object.keys(aiModels).length > 0 ? (
+                        <SelectGroup value={currentModel} onChange={(e) => setCurrentModel(e.target.value)}
+                                     groups={aiModels}/>
+                    ) : (
+                        <Link
+                            href="/profile"
+                            className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
+                        >
+                            Add an API key in your Profile to use the AI assistant.
+                        </Link>
+                    )}
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div className="flex items-center gap-2">
                         <Select value={currentText} onChange={(e) => setCurrentText(e.target.value)}

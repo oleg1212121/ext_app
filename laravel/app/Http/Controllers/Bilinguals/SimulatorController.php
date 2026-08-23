@@ -30,6 +30,15 @@ class SimulatorController extends Controller
         $textList = $this->getEntityMatchTextList();
         $firstId = $textList[0]['id'] ?? null;
 
+        $currentModel = null;
+        foreach ($aiModels as $models) {
+            $keys = array_keys($models);
+            if (! empty($keys)) {
+                $currentModel = $keys[0];
+                break;
+            }
+        }
+
         return Inertia::render('Bilinguals/Bilinguals', [
             'aiModels' => $aiModels,
             'textList' => $textList,
@@ -37,7 +46,7 @@ class SimulatorController extends Controller
             'showQuestion' => false,
             'showText' => true,
             'showAI' => true,
-            'currentModel' => 'openrouter:google/gemini-3.1-flash-lite-preview',
+            'currentModel' => $currentModel,
             'currentQuestion' => 'Compare Russian original vs. my translation. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Asses grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version (highlight the changes). 4. Give  a couple of improved versions.',
             'currentText' => $firstId !== null ? (string) $firstId : '',
         ]);

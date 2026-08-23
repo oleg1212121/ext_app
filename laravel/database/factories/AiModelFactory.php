@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\AiModel;
+use App\Models\AiProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -15,7 +16,8 @@ class AiModelFactory extends Factory
     public function definition(): array
     {
         return [
-            'provider' => 'openrouter',
+            'ai_provider_id' => AiProvider::query()->where('key', 'openrouter')->value('id')
+                ?? AiProvider::factory()->create(['key' => 'openrouter', 'name' => 'OpenRouter'])->id,
             'external_id' => fake()->unique()->regexify('[a-z]{4,10}/[a-z0-9]{4,12}'),
             'canonical_slug' => fake()->slug(),
             'name' => fake()->company(),

@@ -4,6 +4,8 @@ namespace App\Classes;
 
 use App\Contracts\AiProviderInterface;
 use App\Exceptions\AiProviderException;
+use App\Models\AiModel;
+use App\Models\AiProvider as AiProviderRecord;
 
 abstract class AiProvider implements AiProviderInterface
 {
@@ -15,6 +17,8 @@ abstract class AiProvider implements AiProviderInterface
 
     protected string $model = '';
 
+    protected ?bool $enabledResolved = null;
+
     abstract public static function getProviderKey(): string;
 
     abstract public static function getProviderName(): string;
@@ -24,9 +28,69 @@ abstract class AiProvider implements AiProviderInterface
         return $this->models;
     }
 
+    /**
+     * Return a copy of this provider carrying the given API key.
+     *
+     * The resolver caches one keyless "template" instance per provider for the
+     * request; user-scoped requests stamp the user's key onto a clone so the
+     * shared cache is never mutated and concurrent requests stay isolated.
+     */
+    public function withApiKey(string $apiKey): static
+    {
+        $clone = clone $this;
+        $clone->apiKey = $apiKey;
+
+        return $clone;
+    }
+
     public function isConfigured(): bool
     {
         return ! empty($this->apiKey);
+    }
+
+    /**
+     * Whether this provider is enabled in the admin panel.
+     *
+     * Mirrors the `ai_providers.is_enabled` flag. Cached per instance so the
+     * resolver does not re-query for every model on the same provider.
+     */
+    public function isEnabled(): bool
+    {
+        if ($this->enabledResolved === null) {
+            $this->enabledResolved = AiProviderRecord::forKey(static::getProviderKey())
+                ->value('is_enabled') ?? false;
+        }
+
+        return $this->enabledResolved;
+    }
+
+    /**
+     * Load the enabled, unexpired models for this provider from the database.
+     *
+     * The provider must have a row in `ai_providers`; if it does not (e.g. the
+     * seeder has not run yet) no models are loaded.
+     */
+    protected function loadModels(): void
+    {
+        $provider = AiProviderRecord::forKey(static::getProviderKey())->first();
+
+        if ($provider === null) {
+            $this->models = [];
+
+            return;
+        }
+
+        $this->models = AiModel::query()
+            ->forProvider($provider->id)
+            ->enabled()
+            ->unexpired()
+            ->orderByRaw('(pricing_prompt + pricing_completion) asc')
+            ->orderBy('name')
+            ->get()
+            ->mapWithKeys(fn (AiModel $model): array => [
+                $model->external_id => $model->displayLabel(),
+            ])
+            ->all();
     }
 
     public function markdownToHtml($text)

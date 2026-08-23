@@ -12,15 +12,7 @@ class Groq extends AiProvider
         $this->model = config('services.groq.model', 'llama-3.3-70b-versatile');
         $this->apiKey = config('services.groq.key');
 
-        $this->models = AiModel::query()
-            ->forProvider(static::getProviderKey())
-            ->enabled()
-            ->unexpired()
-            ->get()
-            ->mapWithKeys(fn (AiModel $model): array => [
-                $model->external_id => $model->displayLabel(),
-            ])
-            ->all();
+        $this->loadModels();
     }
 
     public static function getProviderKey(): string

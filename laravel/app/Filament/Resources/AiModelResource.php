@@ -53,7 +53,8 @@ class AiModelResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('provider')
+                TextColumn::make('aiProvider.name')
+                    ->label('Provider')
                     ->searchable()
                     ->sortable()
                     ->toggleable(),

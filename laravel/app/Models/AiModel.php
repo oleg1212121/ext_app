@@ -6,10 +6,11 @@ use Database\Factories\AiModelFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * @property string $provider
+ * @property int|null $ai_provider_id
  * @property string $external_id
  * @property string|null $canonical_slug
  * @property string $name
@@ -28,7 +29,7 @@ class AiModel extends Model
     use HasFactory;
 
     protected $fillable = [
-        'provider',
+        'ai_provider_id',
         'external_id',
         'canonical_slug',
         'name',
@@ -53,9 +54,14 @@ class AiModel extends Model
         ];
     }
 
-    public function scopeForProvider(Builder $query, string $provider): Builder
+    public function aiProvider(): BelongsTo
     {
-        return $query->where('provider', $provider);
+        return $this->belongsTo(AiProvider::class);
+    }
+
+    public function scopeForProvider(Builder $query, ?int $providerId): Builder
+    {
+        return $query->where('ai_provider_id', $providerId);
     }
 
     public function scopeEnabled(Builder $query): Builder
