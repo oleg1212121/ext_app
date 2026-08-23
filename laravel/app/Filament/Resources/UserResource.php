@@ -43,10 +43,12 @@ class UserResource extends Resource
                         User::ROLE_ADMIN => 'Admin',
                     ])
                     ->required()
-                    ->default(User::ROLE_USER),
+                    ->default(User::ROLE_USER)
+                    ->disabled(fn (?User $record) => $record !== null && ($record->id === auth()->id() || User::isSoleApprovedAdmin($record))),
                 Toggle::make('is_approved')
                     ->label('Approved')
-                    ->default(false),
+                    ->default(false)
+                    ->disabled(fn (?User $record) => $record !== null && ($record->id === auth()->id() || User::isSoleApprovedAdmin($record))),
             ]);
     }
 
@@ -95,9 +97,10 @@ class UserResource extends Resource
                     ->modalHeading(fn (User $record): string => $record->is_approved ? 'Unapprove User' : 'Approve User')
                     ->modalDescription(fn (User $record): string => $record->is_approved
                         ? "Revoke approval for \"{$record->name}\"? They will lose access to the platform."
-                        : "Grant approval for \"{$record->name}\"? They will gain full access to the platform."),
+                        : "Grant approval for \"{$record->name}\"? They will gain full access to the platform.")
+                    ->visible(fn (User $record): bool => $record->id !== auth()->id() && ! User::isSoleApprovedAdmin($record)),
                 Actions\DeleteAction::make()
-                    ->visible(fn (User $record): bool => $record->id !== auth()->id()),
+                    ->visible(fn (User $record): bool => $record->id !== auth()->id() && ! User::isSoleApprovedAdmin($record)),
             ])
             ->toolbarActions([
                 Actions\BulkActionGroup::make([

@@ -1,8 +1,30 @@
 # Directory Update Log
 
+## 2026-08-23
+
+* **Add: access-control authorization skeleton (gates + admin bypass + last-admin
+  invariant).** `AppServiceProvider::boot` registers a `Gate::before` hook that
+  lets an approved admin pass every ability automatically, plus an
+  `accessAdminPanel` ability (`isAdmin() && is_approved`) that is the single
+  source of truth for both `User::canAccessPanel` (Filament panel access) and the
+  frontend admin link. `HandleInertiaRequests` now ships an `auth.can` ability
+  map (starting with `accessAdminPanel`) instead of the raw `role` string, and
+  `NavBar.jsx` reads `can(...)` rather than `user.role === 'admin'`. A new
+  `User` model guard (enforced at the model level so it holds for any entry
+  point) refuses to demote/unapprove/delete the last approved admin and refuses
+  an admin removing their own admin access; `UserResource` additionally hides
+  those actions and disables the `role`/`is_approved` fields for self and for the
+  sole approved admin. New `tests/Feature/AccessControlTest.php` (17 tests:
+  before-hook behavior, `accessAdminPanel` gate for admin/unapproved/guest,
+  `canAccessPanel` delegation, Inertia `auth.can` map, model-level last-admin +
+  self-demotion blocks, and Filament UI action/field gating). Docs: new
+  `wiki/domains/access-control.md` concept + `log.md`; ADR 0008 records the
+  `Gate::before` admin-bypass decision; `CONTEXT.md` gained an Access Control
+  Context (Role, Approved, Admin bypass). `generated.at`/`verified` bumped.
+
 ## 2026-08-22
 
-* **Change: AI Models admin enable/disable now fires without a confirmation
+did* **Change: AI Models admin enable/disable now fires without a confirmation
   modal.** Removed `requiresConfirmation()` / `modalHeading` / `modalDescription`
   from the `toggleEnabled` record action in `AiModelResource` so Enable/Disable
   toggles `is_enabled` immediately on click. The "Sync models" header action

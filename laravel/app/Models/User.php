@@ -9,6 +9,9 @@ use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 class User extends Authenticatable implements FilamentUser
 {
@@ -58,11 +61,93 @@ class User extends Authenticatable implements FilamentUser
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return $this->isAdmin() && $this->is_approved;
+        return Gate::forUser($this)->allows('accessAdminPanel');
     }
 
     public function isAdmin(): bool
     {
         return $this->role === self::ROLE_ADMIN;
+    }
+
+    /**
+     * An admin may never weaken their own access, and at least one approved
+     * admin must always remain. These invariants are enforced at the model
+     * level so they hold regardless of the entry point (Filament form, table
+     * action, bulk action, or any future non-Filament path).
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (User $user) {
+            if (! $user->exists) {
+                return;
+            }
+
+            $wasApprovedAdmin = (string) $user->getOriginal('role') === self::ROLE_ADMIN
+                && (bool) $user->getOriginal('is_approved') === true;
+
+            if (! $wasApprovedAdmin) {
+                return;
+            }
+
+            if ($user->isAdmin() && $user->is_approved) {
+                return;
+            }
+
+            if ($user->id === auth()->id()) {
+                static::failSelfDemotion();
+            }
+
+            if (! static::hasOtherApprovedAdmins($user)) {
+                static::failLastApprovedAdmin();
+            }
+        });
+
+        static::deleting(function (User $user) {
+            if (! $user->isAdmin() || ! $user->is_approved) {
+                return;
+            }
+
+            if ($user->id === auth()->id()) {
+                static::failSelfDemotion();
+            }
+
+            if (! static::hasOtherApprovedAdmins($user)) {
+                static::failLastApprovedAdmin();
+            }
+        });
+    }
+
+    protected static function hasOtherApprovedAdmins(User $user): bool
+    {
+        return static::query()
+            ->whereKeyNot($user->getKey())
+            ->where('role', self::ROLE_ADMIN)
+            ->where('is_approved', true)
+            ->exists();
+    }
+
+    public static function isSoleApprovedAdmin(User $user): bool
+    {
+        if (! $user->isAdmin() || ! $user->is_approved) {
+            return false;
+        }
+
+        return ! static::hasOtherApprovedAdmins($user);
+    }
+
+    protected static function failSelfDemotion(): void
+    {
+        $validator = Validator::make([], []);
+        $validator->errors()->add('role', 'You cannot remove your own admin access.');
+
+        throw new ValidationException($validator);
+    }
+
+    protected static function failLastApprovedAdmin(): void
+    {
+        $validator = Validator::make([], []);
+        $validator->errors()->add('role', 'At least one approved admin must always exist.');
+
+        throw new ValidationException($validator);
     }
 }

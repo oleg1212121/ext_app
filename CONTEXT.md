@@ -104,6 +104,23 @@ markdown-to-HTML conversion emits (paragraph, list item, heading, `em`/`strong`
 run, code, etc.). Signals interactivity with a pointer cursor and an
 accent-tinted background on hover. _Avoid_: html element (implementation term)
 
+# Access Control Context
+
+The domain of who may do what in the application — driven by a user's **Role**
+and **Approved** state, with an **Admin bypass** that lets approved admins pass
+every ability.
+
+## Language
+
+**Role**:
+A user's access tier, stored as the `role` string on `users` (`'user'` | `'admin'`). _Avoid_: permission, grant, group.
+
+**Approved**:
+The `is_approved` boolean on `users`; the prerequisite state for holding any ability. An unapproved user cannot pass any authorization check. _Avoid_: active, verified (conflicts with email-verified).
+
+**Admin bypass**:
+The behavior by which an approved admin automatically passes every ability (via a `Gate::before` hook), so ability definitions only encode the non-admin rule. _Avoid_: superuser, god mode.
+
 # AI Provider Context
 
 The domain of the AI model catalog — the database-backed registry of models

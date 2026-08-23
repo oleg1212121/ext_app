@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -47,7 +48,10 @@ class HandleInertiaRequests extends Middleware
                         'is_approved' => $request->user()->is_approved,
                     ]
                     : null,
-                'canRegister' => \Illuminate\Support\Facades\Route::has('register'),
+                'can' => [
+                    'accessAdminPanel' => $request->user()?->can('accessAdminPanel') ?? false,
+                ],
+                'canRegister' => Route::has('register'),
             ],
         ];
     }

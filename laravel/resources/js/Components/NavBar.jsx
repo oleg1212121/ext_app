@@ -59,7 +59,7 @@ export default function NavBar() {
     }, [url])
 
     const isApproved = user?.is_approved ?? false
-    const isAdmin = user?.role === 'admin'
+    const canAccessAdminPanel = auth?.can?.accessAdminPanel ?? false
 
     const navLinks = useMemo(() => {
         if (!isAuthenticated || !isApproved) return []
@@ -70,9 +70,9 @@ export default function NavBar() {
                 {href: '/crossword-react/en', label: 'Crossword'},
             ]},
             {href: '/reader-react', label: 'Reader'},
-            ...(isAdmin ? [{href: '/admin', label: 'Admin', external: true}] : []),
+            ...(canAccessAdminPanel ? [{href: '/admin', label: 'Admin', external: true}] : []),
         ]
-    }, [isAuthenticated, isApproved, isAdmin])
+    }, [isAuthenticated, isApproved, canAccessAdminPanel])
 
     const isActive = (href) => {
         if (!url) return false
