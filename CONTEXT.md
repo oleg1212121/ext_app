@@ -6,6 +6,10 @@ humans in the Alignments editor.
 
 ## Language
 
+**Entity**:
+A text in exactly one Language, carrying a name, description, an uploaded text file, a signature, and an ordered list of sentences. Concretely an `EnEntity` or a `RuEntity`. An Entity does not span languages; a cross-language pair is an Entity match, not a single Entity.
+_Avoid_: text, document, article
+
 **Entity match**:
 The container pairing one EN entity with one RU entity ("the same text, two languages").
 _Avoid_: match, alignment

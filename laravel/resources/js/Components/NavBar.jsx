@@ -66,6 +66,7 @@ export default function NavBar() {
         return [
             {href: '/bilinguals/en/ru/simulator', label: 'Bilinguals'},
             {href: '/alignments', label: 'Alignments'},
+            {href: '/entities', label: 'Entities'},
             {label: 'Puzzles', children: [
                 {href: '/crossword-react/en', label: 'Crossword'},
             ]},

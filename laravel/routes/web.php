@@ -4,6 +4,7 @@ use App\Http\Controllers\AlignmentController;
 use App\Http\Controllers\AlignmentEditorController;
 use App\Http\Controllers\Bilinguals\SimulatorController;
 use App\Http\Controllers\BilingualsController;
+use App\Http\Controllers\EntityController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\Test;
@@ -53,6 +54,21 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::get('/reader-react/{lang}', [ReaderController::class, 'index'])
         ->where('lang', 'en|ru')
         ->name('reader.react.index');
+
+    Route::get('/entities', [EntityController::class, 'index'])->name('entities.index');
+    Route::get('/entities/{lang}', [EntityController::class, 'list'])
+        ->where('lang', '[a-z]{2}')
+        ->name('entities.list');
+    Route::get('/entities/{lang}/create', [EntityController::class, 'create'])
+        ->where('lang', '[a-z]{2}')
+        ->name('entities.create');
+    Route::post('/entities/{lang}', [EntityController::class, 'store'])
+        ->where('lang', '[a-z]{2}')
+        ->name('entities.store');
+    Route::get('/entities/{lang}/{entity}', [EntityController::class, 'show'])
+        ->where('lang', '[a-z]{2}')
+        ->whereNumber('entity')
+        ->name('entities.show');
     Route::get('/alignments', [AlignmentController::class, 'index'])->name('alignments.index');
     Route::get('/alignments/{entityMatch}', [AlignmentController::class, 'show'])->name('alignments.show');
 

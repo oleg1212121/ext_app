@@ -2,6 +2,27 @@
 
 ## 2026-08-24
 
+* **Add: front-end `/entities` management surface (first consumer of `Language::enabled()`).**
+  New Inertia/React area for approved users to manage per-language text entities,
+  separate from the read-only reader: `/entities` (picker — one card per enabled
+  language with an entity count), `/entities/{lang}` (paginated list + "+ Create
+  entity"), `/entities/{lang}/create` (form: name, description, optional `.txt`
+  upload), `POST /entities/{lang}` (creates the entity, stores the file to
+  `entities/{lang}` on the `local` disk, and dispatches `ProcessEntityFile` only
+  when a file is present), and `/entities/{lang}/{entity}` (detail: header +
+  "Read" link to `/reader-react/{lang}/{id}` + "Open alignment" links to any
+  `EnRuEntityMatch` rows + read-only sentence list). Backed by new
+  `EntityController` (switches on `$lang` via `EnEntity`/`RuEntity`, validates
+  `{lang}` against `Language::enabled()` → 404 otherwise) and
+  `StoreEntityRequest`. Edit/delete stay admin-only; alignment pairing stays in
+  `/alignments`. ADR 0002 records the `Language::enabled()` wiring (first
+  production consumer; ADR 0001's standalone stance evolved, not reversed).
+  `NavBar.jsx` gained an Entities link; `CONTEXT.md` gained the Entity glossary
+  term. New `tests/Feature/EntityControllerTest` (12 tests, green), pint clean.
+  Docs: new `wiki/domains/entities.md` (registered in `index.md`); ADR 0002;
+  `CONTEXT.md` Entity entry; `wiki:sync` regenerated `reference/web-routes.md`.
+  `generated.at` bumped.
+
 * **Add: `languages` table + full admin CRUD + seeder (standalone registry).**
   New `languages` table (`App\Models\Language`) is an admin-managed lookup
   registry surfaced as a full Filament CRUD on `/admin` (`LanguageResource` with
