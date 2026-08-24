@@ -104,6 +104,24 @@ markdown-to-HTML conversion emits (paragraph, list item, heading, `em`/`strong`
 run, code, etc.). Signals interactivity with a pointer cursor and an
 accent-tinted background on hover. _Avoid_: html element (implementation term)
 
+# Language Catalog Context
+
+The domain of the admin-managed registry of languages available in the application, surfaced through the Filament `/admin` panel.
+
+## Language
+
+**Language**:
+An admin-managed entry in the languages registry, identified by its ISO 639-1 code. Distinct from a program's translation locale.
+_Avoid_: locale, tongue
+
+**Language code**:
+The ISO 639-1 two-letter code that uniquely identifies a Language (e.g. "en", "ru").
+_Avoid_: locale code, language tag
+
+**Enabled language**:
+A Language whose `is_enabled` flag is true. The flag is a stored value only; the application does not automatically enforce it in existing code paths.
+_Avoid_: active language, available language
+
 # Access Control Context
 
 The domain of who may do what in the application — driven by a user's **Role**

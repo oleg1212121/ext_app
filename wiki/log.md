@@ -1,5 +1,24 @@
 # Directory Update Log
 
+## 2026-08-24
+
+* **Add: `languages` table + full admin CRUD + seeder (standalone registry).**
+  New `languages` table (`App\Models\Language`) is an admin-managed lookup
+  registry surfaced as a full Filament CRUD on `/admin` (`LanguageResource` with
+  List/Create/Edit pages): `code` (unique ISO 639-1, lowercase, 2-char),
+  `name`, `native_name` (nullable), `is_enabled` (default true, one-click
+  inline toggle + edit-form Toggle), `sort_order`. It is a **standalone**
+  registry — nothing else references it yet and the ~100+ hardcoded
+  `'en'`/`'ru'` literals stay untouched (ADR 0001). `DatabaseSeeder` now runs
+  `LanguageSeeder` first, upserting enabled `en` (English) and `ru` (Russian)
+  rows; deletes are free (no protection on the seeded pair, per decision). New
+  tests: `Feature/Filament/LanguageResourceTest` (list, create, duplicate-code
+  rejection, non-lowercase rejection, edit, inline toggle, delete) and
+  `Unit/Models/LanguageTest` (casts, `enabled()` scope, seeder idempotency);
+  full suite green, pint clean. Docs: ADR 0001, `CONTEXT.md` gained a Language
+  Catalog Context (Language / Language code / Enabled language); `wiki:sync`
+  regenerated `reference/models.md`. `generated.at` bumped.
+
 ## 2026-08-23
 
 * **Change: simulator AI panel — readable headings, shadow hover, larger base font.**
