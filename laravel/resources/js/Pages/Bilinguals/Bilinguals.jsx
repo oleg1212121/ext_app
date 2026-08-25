@@ -152,6 +152,7 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
 
 const Bilinguals = (props) => {
     const aiModels = props.aiModels
+    const canUseAi = props.canUseAi
     const textList = props.textList
     const errors = props.errors
     let [showWorkplace, setShowWorkplace] = React.useState(props.showWorkplace)
@@ -412,32 +413,36 @@ const Bilinguals = (props) => {
                             </svg>
                             <Underline isActive={showWorkplace}/>
                         </button>
-                        <button
-                            type="button"
-                            className={tabClass(showQuestion)}
-                            aria-label="Question"
-                            aria-pressed={showQuestion}
-                            title="Question"
-                            onClick={() => setShowQuestion(!showQuestion)}
-                        >
-                            <svg className={panelToggleIconClass(showQuestion)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.529 9.988a2.502 2.502 0 1 1 5 .191A2.441 2.441 0 0 1 12 12.582V14m-.01 3.008H12M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
-                            </svg>
-                            <Underline isActive={showQuestion}/>
-                        </button>
-                        <button
-                            type="button"
-                            className={tabClass(showAI)}
-                            aria-label="AI"
-                            aria-pressed={showAI}
-                            title="AI"
-                            onClick={() => setShowAI(!showAI)}
-                        >
-                            <svg className={panelToggleIconClass(showAI)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m8 8-4 4 4 4m8 0 4-4-4-4m-2-3-4 14"/>
-                            </svg>
-                            <Underline isActive={showAI}/>
-                        </button>
+                        {canUseAi && (
+                            <button
+                                type="button"
+                                className={tabClass(showQuestion)}
+                                aria-label="Question"
+                                aria-pressed={showQuestion}
+                                title="Question"
+                                onClick={() => setShowQuestion(!showQuestion)}
+                            >
+                                <svg className={panelToggleIconClass(showQuestion)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.529 9.988a2.502 2.502 0 1 1 5 .191A2.441 2.441 0 0 1 12 12.582V14m-.01 3.008H12M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+                                </svg>
+                                <Underline isActive={showQuestion}/>
+                            </button>
+                        )}
+                        {canUseAi && (
+                            <button
+                                type="button"
+                                className={tabClass(showAI)}
+                                aria-label="AI"
+                                aria-pressed={showAI}
+                                title="AI"
+                                onClick={() => setShowAI(!showAI)}
+                            >
+                                <svg className={panelToggleIconClass(showAI)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m8 8-4 4 4 4m8 0 4-4-4-4m-2-3-4 14"/>
+                                </svg>
+                                <Underline isActive={showAI}/>
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -481,11 +486,11 @@ const Bilinguals = (props) => {
                                     </div>
                                 </div>
                             )}
-                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText}/>
+                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi}/>
                         </>
                     }
                     {showWorkplace === true &&
-                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)}/>
+                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)} canUseAi={canUseAi}/>
                     }
                 </div>
                 {showAI === true &&

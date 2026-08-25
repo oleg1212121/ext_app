@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/opencode, at: 2026-08-16T14:00:00Z }
+generated: { by: human:alex, at: 2026-08-25T12:00:00Z }
 verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
@@ -496,7 +496,11 @@ sentence(s). The output powers the
     `SparseOrderService`, and JSON payloads shaped by `AlignmentEditorApiPresenter`
     (`rows` + `unmatched` pagination, `last_page` included; the rows table's
     `Pagination` component shows Prev/Next + numbered page buttons with ellipsis
-    and a custom per-page dropdown). Below the unmatched pool, the editor shows a
+    and a custom per-page dropdown). **Every endpoint is gated first by
+    `EntityAccessService::canReadMatch($user, $entityMatch)`** — a non-granted user
+    (who cannot read BOTH the EN and RU entities) receives `403` on every read and
+    mutation, so a restricted match is neither visible nor mutable in the editor.
+    Below the unmatched pool, the editor shows a
     collapsible **Needs review** section (collapsed by default) listing meaning
     matches a human should inspect: rows whose `similarity < 0.55`
     (`AlignmentEditorApiPresenter::LOW_SIMILARITY_THRESHOLD`) or that are

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Classes\AlignmentEditorApiPresenter;
+use App\Classes\EntityAccessService;
 use App\Models\EnRuEntityMatch;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -13,9 +14,15 @@ class AlignmentController extends Controller
         private readonly AlignmentEditorApiPresenter $presenter,
     ) {}
 
+    private function access(): EntityAccessService
+    {
+        return new EntityAccessService;
+    }
+
     public function index(): Response
     {
-        $entityMatches = EnRuEntityMatch::query()
+        $entityMatches = $this->access()
+            ->readableMatchQuery(auth()->user())
             ->with(['enEntity', 'ruEntity'])
             ->latest()
             ->paginate(15);
@@ -35,6 +42,8 @@ class AlignmentController extends Controller
 
     public function show(EnRuEntityMatch $entityMatch): Response
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         $entityMatch->load(['enEntity', 'ruEntity']);
 
         $payload = $this->presenter->rowsPagePayload($entityMatch, 1, 25);

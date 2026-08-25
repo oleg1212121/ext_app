@@ -4,7 +4,7 @@ title: Bilinguals Simulator
 description: Side-by-side EN/RU reading trainer where users translate and get AI assessment of their translation.
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
-generated: { by: agent:ox-alpha, at: 2026-08-23T20:25:00Z }
+generated: { by: human:alex, at: 2026-08-25T12:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -39,6 +39,12 @@ grammar, corrections, and improved variants.
   "Add an API key in your Profile" empty state instead of the model dropdown.
 * The text dropdown lists `EnRuEntityMatch` records as
   `"<EN entity name> / <RU entity name>"`.
+* **Read access is gated per Entity, not per match.** Both the dropdown and
+  `text()` filter/403 on `EntityAccessService::canReadMatch` — the caller must
+  hold an Access grant (or be admin) on **both** the EN and RU entities of the
+  match (ADR 0014). A user who uploaded only one side of a work therefore cannot
+  read the bilingual simulator content until they also upload/match the other
+  side.
 * `text()` paginates (default 50/page, max 200) and can serve either an entity
   match (`en_ru_entity_match_id`) or legacy text files; meaning matches are
   shaped for the UI by `MeaningMatchPresenter`.

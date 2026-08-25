@@ -236,6 +236,147 @@ class TextSignatureService
     }
 
     /**
+     * Generate a signature for the given text and look for an existing entity in
+     * the same language that is a near-duplicate of it.
+     *
+     * Returns an array with three keys:
+     *  - `entity`: the matching existing entity, or null when none is similar enough
+     *  - `similarity`: the cosine similarity to the matched entity (0.0 when unmatched)
+     *  - `signature`: the generated embedding, or null when the embedding service failed
+     *
+     * The caller uses `signature` to persist the embedding on a newly created
+     * entity and `entity` to instead link the uploader to the existing one.
+     *
+     * @return array{entity: EnEntity|RuEntity|null, similarity: float, signature: array|null}
+     */
+    public function findSimilarExisting(string $text, string $lang): array
+    {
+        $signature = $this->generateSignature($text);
+
+        if ($signature === null) {
+            return ['entity' => null, 'similarity' => 0.0, 'signature' => null];
+        }
+
+        $match = $this->bestSimilarExisting($signature, $lang);
+
+        return [
+            'entity' => $match['entity'] ?? null,
+            'similarity' => $match['similarity'] ?? 0.0,
+            'signature' => $signature,
+        ];
+    }
+
+    /**
+     * Find the most similar existing entity to an already-persisted entity (used
+     * by the defense-in-depth duplicate resolver in ProcessEntityFile).
+     *
+     * @return array{entity: EnEntity|RuEntity, similarity: float}|null
+     */
+    public function findSimilarToEntity(EnEntity|RuEntity $entity): ?array
+    {
+        $signature = json_decode($entity->signature, true);
+        if (! is_array($signature)) {
+            return null;
+        }
+
+        $lang = $entity instanceof EnEntity ? 'en' : 'ru';
+
+        return $this->bestSimilarExisting($signature, $lang, $entity->getKey());
+    }
+
+    /**
+     * Scan same-language entities with a signature for the closest match at or
+     * above the similarity threshold, excluding a given entity id.
+     *
+     * @return array{entity: EnEntity|RuEntity, similarity: float}|null
+     */
+    private function bestSimilarExisting(array $signature, string $lang, ?int $excludeId = null): ?array
+    {
+        $dim = count($signature);
+        if ($dim === 0) {
+            return null;
+        }
+
+        $modelClass = self::LANG_MODELS[$lang];
+        $batchSize = max(1, (int) config('services.python.has_similar_batch_size', 200));
+
+        $candidates = [];
+        $best = null;
+
+        foreach ($modelClass::query()
+            ->whereNotNull('signature')
+            ->where('id', '!=', $excludeId ?? 0)
+            ->select(['id', 'name', 'signature'])
+            ->orderBy('id')
+            ->cursor() as $other) {
+            $otherSignature = json_decode($other->signature, true);
+            if (! is_array($otherSignature) || count($otherSignature) !== $dim) {
+                continue;
+            }
+
+            $candidates[] = ['entity' => $other, 'signature' => $otherSignature];
+
+            if (count($candidates) < $batchSize) {
+                continue;
+            }
+
+            $found = $this->bestMatchInBatch($signature, $candidates);
+            if ($found !== null && ($best === null || $found['similarity'] > $best['similarity'])) {
+                $best = $found;
+            }
+
+            $candidates = [];
+        }
+
+        if ($candidates !== [] && $best === null) {
+            $found = $this->bestMatchInBatch($signature, $candidates);
+            if ($found !== null) {
+                $best = $found;
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * @param  list<array{entity: EnEntity|RuEntity, signature: list<float|int>}>  $candidates
+     * @return array{entity: EnEntity|RuEntity, similarity: float}|null
+     */
+    private function bestMatchInBatch(array $query, array $candidates): ?array
+    {
+        $signatures = array_map(fn (array $candidate): array => $candidate['signature'], $candidates);
+
+        $response = Http::timeout($this->timeout)
+            ->post("{$this->apiUrl}/cosine/batch", [
+                'query' => $query,
+                'candidates' => $signatures,
+            ]);
+
+        if ($response->successful()) {
+            $similarities = $response->json('similarities');
+            $valid = is_array($similarities) && count($similarities) === count($signatures);
+        } else {
+            $similarities = null;
+            $valid = false;
+        }
+
+        if (! $valid) {
+            $similarities = array_map(fn (array $candidate): float => $this->cosineSimilarity($query, $candidate['signature']), $candidates);
+        }
+
+        $best = null;
+        foreach ($candidates as $index => $candidate) {
+            $similarity = (float) ($similarities[$index] ?? 0);
+            if ($similarity >= self::SIMILARITY_THRESHOLD
+                && ($best === null || $similarity > $best['similarity'])) {
+                $best = ['entity' => $candidate['entity'], 'similarity' => $similarity];
+            }
+        }
+
+        return $best;
+    }
+
+    /**
      * Reduces embedding work for long texts while keeping start and end content.
      * Signatures produced before this sampling existed will not compare identically until regenerated.
      */

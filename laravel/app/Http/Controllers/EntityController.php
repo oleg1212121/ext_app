@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\EntityAccessService;
+use App\Classes\TextSignatureService;
 use App\Http\Requests\StoreEntityRequest;
 use App\Jobs\ProcessEntityFile;
 use App\Models\EnEntity;
@@ -10,6 +12,7 @@ use App\Models\Language;
 use App\Models\RuEntity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -39,7 +42,8 @@ class EntityController extends Controller
     {
         $language = $this->resolveLanguage($lang);
 
-        $entities = $this->queryForLanguage($lang)
+        $entities = $this->access()
+            ->readableQuery(auth()->user(), $lang)
             ->withCount('sentences')
             ->orderBy('name')
             ->paginate(15);
@@ -95,11 +99,45 @@ class EntityController extends Controller
             $filePath = $request->file('file')->store("entities/{$lang}", 'local');
         }
 
+        if ($filePath !== null) {
+            $result = TextSignatureService::create()
+                ->findSimilarExisting(TextSignatureService::readFileFromLocalPath($filePath), $lang);
+
+            if ($result['signature'] === null) {
+                Storage::disk('local')->delete($filePath);
+
+                return back()->withErrors([
+                    'file' => 'We could not process the text right now. Please try again later.',
+                ]);
+            }
+
+            if ($result['entity'] !== null) {
+                $this->access()->grant(
+                    $request->user(),
+                    $result['entity'],
+                    (float) $result['similarity'],
+                );
+
+                Storage::disk('local')->delete($filePath);
+
+                return redirect()->route('entities.show', [
+                    'lang' => $lang,
+                    'entity' => $result['entity']->getKey(),
+                ])->with('status', 'Your upload matched an existing text — access granted, no new entity created.');
+            }
+
+            $signature = $result['signature'];
+        }
+
         $entity = $this->queryForLanguage($lang)->create([
             'name' => $data['name'],
             'description' => $data['description'] ?? null,
             'file_path' => $filePath,
+            'is_restricted' => true,
+            'signature' => isset($signature) ? json_encode($signature) : null,
         ]);
+
+        $this->access()->grant($request->user(), $entity, null);
 
         if ($filePath !== null) {
             ProcessEntityFile::dispatch($entity->id, $filePath, $lang);
@@ -115,6 +153,10 @@ class EntityController extends Controller
         $entity = $this->queryForLanguage($lang)
             ->withCount('sentences')
             ->findOrFail($entityId);
+
+        if (! $this->access()->canRead(auth()->user(), $entity)) {
+            abort(403);
+        }
 
         $entityMatches = EnRuEntityMatch::query()
             ->where(function (Builder $query) use ($lang, $entityId): void {
@@ -185,6 +227,11 @@ class EntityController extends Controller
             'ru' => RuEntity::query(),
             default => abort(404),
         };
+    }
+
+    private function access(): EntityAccessService
+    {
+        return new EntityAccessService;
     }
 
     private function signatureStatus(EnEntity|RuEntity $entity): string

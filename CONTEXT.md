@@ -185,3 +185,43 @@ The URL a provider exposes for chat-completion requests; stored on the
 provider class as `aiApiLink` (e.g. `services.<provider>.url`). Distinct from
 the **models endpoint**.
 _Avoid_: API URL, completion URL
+
+# Entity Access Context
+
+The domain of who may read an Entity or an Entity match, layered on top of the
+Access Control Context. Every upload defaults to a Restricted state; an admin
+publishes it to make it Public; a user who uploads text matching an existing
+Entity is granted access to that Entity instead of creating a duplicate.
+
+## Language
+
+**Restricted entity**:
+An Entity readable only by admin and explicitly granted users. The default
+state for every newly uploaded Entity. _Avoid_: copyrighted (legally imprecise
+— every original text is copyrighted by default), paid, premium, licensed.
+
+**Public entity**:
+An Entity any approved user may read. Set by an admin publishing a Restricted
+entity (`is_restricted = false`). _Avoid_: free, open, public-domain (a legal
+term with a specific meaning).
+
+**Access grant**:
+A recorded permission for a specific user to read a specific Restricted
+entity, stored in the `en_entity_user` / `ru_entity_user` pivot (with a
+nullable `similarity`). _Avoid_: link (too generic), license (legal),
+permission (overlaps Role).
+
+**Creator grant**:
+An Access grant with a null `similarity`, recording that the user's upload
+created the Entity (no prior Signature match existed). Distinct from a
+Signature match grant, whose `similarity` is the cosine score.
+
+**Signature match**:
+The event of an uploaded text's Signature cosine-matching an existing Entity
+at ≥0.95. Instead of creating a duplicate, the uploader receives an Access
+grant on the existing Entity. _Avoid_: dedup (that is a side effect, not the
+user-visible concept).
+
+**Publish**:
+An admin action flipping a Restricted entity to Public. Existing Access
+grants remain as audit but are no longer enforced. _Avoid_: release, unlock.

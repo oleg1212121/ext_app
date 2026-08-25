@@ -4,7 +4,7 @@ title: Reader
 description: React reading interface for imported EN/RU entities with dictionary support.
 tags: [reader, inertia, react]
 status: stable
-generated: { by: agent/glm-5.2, at: 2026-08-06T16:30:00Z }
+generated: { by: human:alex, at: 2026-08-25T00:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -36,6 +36,16 @@ with dictionary/translation support. Backed by the same
 
 Inertia pages under `resources/js/Pages/Reader/` — `ReaderIndexApp` (listing)
 and `ReaderApp` + `ReaderRow` (reading view).
+
+# Access
+
+Reads are gated by `EntityAccessService` (see the [Entity Access](
+../../CONTEXT.md#entity-access-context) context). The index lists only entities the
+caller may read (Public, or Restricted with an Access grant); `show` 403s on a
+Restricted entity without a grant. When an entity has an `EnRuEntityMatch`, the
+reader renders bilingual rows only if the caller may also read the *other* side;
+otherwise it falls back to single-language rows rather than leaking the
+restricted counterpart (mirrors the simulator both-sides rule from ADR 0014).
 
 ## Visual system per page
 

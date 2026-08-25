@@ -6,7 +6,9 @@ use App\Models\Language;
 use App\Models\RuEntity;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
@@ -114,6 +116,14 @@ test('store with a file stores the file and dispatches the pipeline', function (
     Queue::fake();
     makeLanguage('en');
 
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), '/embed')) {
+            return Http::response(['vector' => [0.1, 0.2, 0.3]], 200);
+        }
+
+        return Http::response(['similarities' => [0.0]], 200);
+    });
+
     $file = UploadedFile::fake()->create('text.txt', 20, 'text/plain');
 
     $response = $this->actingAs(approvedUser())
@@ -121,6 +131,7 @@ test('store with a file stores the file and dispatches the pipeline', function (
 
     $entity = EnEntity::query()->where('name', 'With File')->firstOrFail();
     expect($entity->file_path)->not->toBeNull();
+    expect($entity->is_restricted)->toBeTrue();
     Storage::disk('local')->assertExists($entity->file_path);
     Queue::assertPushed(ProcessEntityFile::class);
 
@@ -160,4 +171,124 @@ test('show page 404s for an unknown entity', function () {
     $this->actingAs(approvedUser())
         ->get('/entities/en/999999')
         ->assertNotFound();
+});
+
+test('store links the uploader to the existing entity when the text matches', function () {
+    Storage::fake('local');
+    Queue::fake();
+    makeLanguage('en');
+
+    $existing = EnEntity::query()->create([
+        'name' => 'Original Text',
+        'is_restricted' => true,
+        'file_path' => 'entities/en/original.txt',
+        'signature' => json_encode([0.9, 0.1, 0.2]),
+    ]);
+
+    Http::fake(function (Request $request) {
+        if (str_contains($request->url(), '/embed')) {
+            return Http::response(['vector' => [0.9, 0.1, 0.2]], 200);
+        }
+
+        if (str_contains($request->url(), '/cosine/batch')) {
+            return Http::response(['similarities' => [1.0]], 200);
+        }
+
+        return Http::response(['error' => 'unexpected'], 500);
+    });
+
+    $user = approvedUser();
+    $file = UploadedFile::fake()->create('text.txt', 20, 'text/plain');
+
+    $response = $this->actingAs($user)
+        ->post('/entities/en', ['name' => 'Duplicate Upload', 'file' => $file]);
+
+    expect(EnEntity::query()->where('name', 'Duplicate Upload')->exists())->toBeFalse();
+    expect($existing->grantedUsers()->whereKey($user->id)->exists())->toBeTrue();
+    expect($existing->grantedUsers()->whereKey($user->id)->first()->pivot->similarity)->toEqual(1.0);
+    Storage::disk('local')->assertMissing('entities/en/'.$file->hashName());
+
+    $response->assertRedirect("/entities/en/{$existing->id}")
+        ->assertSessionHas('status');
+});
+
+test('store fails hard when the embedding service is unavailable', function () {
+    Storage::fake('local');
+    Queue::fake();
+    makeLanguage('en');
+
+    Http::fake(fn () => Http::response('bad gateway', 502));
+
+    $file = UploadedFile::fake()->create('text.txt', 20, 'text/plain');
+
+    $response = $this->actingAs(approvedUser())
+        ->post('/entities/en', ['name' => 'No Service', 'file' => $file]);
+
+    expect(EnEntity::query()->where('name', 'No Service')->exists())->toBeFalse();
+    Queue::assertNotPushed(ProcessEntityFile::class);
+
+    $response->assertRedirect();
+});
+
+test('user cannot read a restricted entity without a grant', function () {
+    makeLanguage('en');
+    $entity = EnEntity::query()->create(['name' => 'Secret', 'is_restricted' => true]);
+
+    $this->actingAs(approvedUser())
+        ->get("/entities/en/{$entity->id}")
+        ->assertForbidden();
+});
+
+test('user can read a restricted entity they have a grant for', function () {
+    makeLanguage('en');
+    $entity = EnEntity::query()->create(['name' => 'Secret', 'is_restricted' => true]);
+    $user = approvedUser();
+    $entity->grantedUsers()->attach($user->id);
+
+    $this->actingAs($user)
+        ->get("/entities/en/{$entity->id}")
+        ->assertOk();
+});
+
+test('user can read a public entity', function () {
+    makeLanguage('en');
+    $entity = EnEntity::query()->create(['name' => 'Open', 'is_restricted' => false]);
+
+    $this->actingAs(approvedUser())
+        ->get("/entities/en/{$entity->id}")
+        ->assertOk();
+});
+
+test('admin can read any restricted entity', function () {
+    makeLanguage('en');
+    $entity = EnEntity::query()->create(['name' => 'Secret', 'is_restricted' => true]);
+
+    $admin = User::factory()->create(['is_approved' => true, 'role' => 'admin']);
+
+    $this->actingAs($admin)
+        ->get("/entities/en/{$entity->id}")
+        ->assertOk();
+});
+
+test('restricted entity is hidden from the list unless granted', function () {
+    makeLanguage('en');
+    EnEntity::query()->create(['name' => 'Secret', 'is_restricted' => true]);
+    EnEntity::query()->create(['name' => 'Open', 'is_restricted' => false]);
+    $user = approvedUser();
+    $secret = EnEntity::query()->where('name', 'Secret')->firstOrFail();
+    $secret->grantedUsers()->attach($user->id);
+
+    $this->actingAs($user)
+        ->get('/entities/en')
+        ->assertInertia(fn ($page) => $page->has('entities', 2));
+});
+
+test('restricted entity is absent from the list without a grant', function () {
+    makeLanguage('en');
+    EnEntity::query()->create(['name' => 'Secret', 'is_restricted' => true]);
+    EnEntity::query()->create(['name' => 'Open', 'is_restricted' => false]);
+
+    $this->actingAs(approvedUser())
+        ->get('/entities/en')
+        ->assertInertia(fn ($page) => $page->has('entities', 1));
 });

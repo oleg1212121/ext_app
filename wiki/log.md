@@ -1,5 +1,64 @@
 # Directory Update Log
 
+## 2026-08-25
+
+* **Change: simulator hides its AI surface for keyless users.** New
+  `User::canUseAi()` (key for an enabled provider with an enabled, unexpired
+  model — the same predicate `AIModelResolver::getGroupedModels()` applies)
+  is the single capability predicate, surfaced as the `canUseAi` and `showAI`
+  Inertia props (`showAI` is now `false` for keyless users instead of the
+  hardcoded `true`). The frontend hides the per-row "Ask" button
+  (`TextContent.jsx`), the "Question" section + its header toggle, and the
+  "AI response" panel + its header toggle (`Bilinguals.jsx`, `Workplace.jsx`)
+  when `canUseAi` is false; the "Open" button, the translation textarea, the
+  Text/Workplace toggles, and the header "Add an API key in your Profile"
+  link stay visible. The `/ai/question` request paths remain server-guarded by
+  the 403 in `AIModelResolver::ask()`/`askStreamed()` (ADR 0012) — no new
+  backend gate. `AIModelResolver` was intentionally left untouched; drift
+  between the new predicate and `getGroupedModels()` is guarded by a parity
+  test. `canUseAi` is a code-only name (no new CONTEXT.md glossary term;
+  "Available (to a user)" already covers the provider-level predicate). Tests:
+  extended `SimulatorApiKeyTest` (props for capable + keyless users), new
+  `Unit/UserCanUseAiTest` (four capability scenarios), new parity test. No ADR.
+
+* **Add: per-entity access control — default-restricted uploads + Signature-match grants.**
+  New `is_restricted` boolean on `en_entities`/`ru_entities` (default false) and
+  two grant pivots `en_entity_user` / `ru_entity_user` (user_id, nullable
+  `similarity` for creator-vs-match distinction). Every upload now runs a
+  synchronous `TextSignatureService::findSimilarExisting` check: a ≥0.95 cosine
+  match links the uploader to the existing Entity (Access grant, file deleted)
+  instead of creating a duplicate; otherwise a new Restricted entity is created
+  with a creator grant. `EntityAccessService` (canRead / canReadMatch / grant /
+  readableQuery / readableMatchQuery) enforces reads in `EntityController`,
+  `ReaderController`, and `SimulatorController`; admin publishes via the Filament
+  `is_restricted` toggle. No `created_by` column — the uploader's access is a
+  grant row like any other. Defense-in-depth: `ProcessEntityFile` still detects
+  duplicates asynchronously and migrates their grants onto the survivor. ADRs
+  0013 (default-restricted + per-entity grants) and 0014 (per-entity grants
+  require both sides to read a simulator match). `CONTEXT.md` gained the Entity
+  Access context; `SimulatorEntitySeeder` marks `the_book_thief_5.txt` restricted.
+  New/updated tests in `EntityControllerTest` and `TextSignatureServiceTest`
+  (grant-on-match, fail-hard on embedding outage, both-sides 403, pivot
+   migration); full suite green (380). `generated.at` bumped on access-control,
+   entities, entities-alignment, reader, bilinguals-simulator; `wiki:sync`
+   regenerated references.
+
+* **Fix: authorization leak in the Alignments editor (`AlignmentEditorController`).**
+   The 11 editor endpoints (`rows`, `unmatched`, `needs-review`, `storeRow`,
+   `destroyRow`, `approveRow`, `storeSentence`, `updateSentence`, `unlinkSentence`,
+   `destroyUnmatched`, `moveSentence`) bound `EnRuEntityMatch` via route-model
+   binding with zero authorization, so any authenticated user could read *and
+   mutate* alignments on restricted entities. Each endpoint now runs
+   `abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403)`
+   as its first statement (mirroring `AlignmentController`), ahead of the existing
+   `meaningMatch → match` 404 checks, so non-granted users get 403 (never 404).
+   Public matches remain readable by every approved user, so the existing
+   `AlignmentEditorApiTest` suite is unaffected. New
+   `tests/Feature/AlignmentEditorAccessTest.php` asserts 403 for a non-granted user
+   across reads + `approveRow`, and 200 once both-side grants are attached.
+   `wiki:validate` passes; `access-control` / `sentence-alignment` concepts updated.
+
+
 ## 2026-08-24
 
 * **Add: front-end `/entities` management surface (first consumer of `Language::enabled()`).**

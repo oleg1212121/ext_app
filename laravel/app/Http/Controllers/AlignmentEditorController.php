@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Classes\AlignmentEditorApiPresenter;
+use App\Classes\EntityAccessService;
 use App\Classes\SparseOrderService;
 use App\Http\Requests\AddSentenceRequest;
 use App\Http\Requests\MoveSentenceRequest;
@@ -31,8 +32,15 @@ class AlignmentEditorController extends Controller
         private readonly AlignmentEditorApiPresenter $presenter,
     ) {}
 
+    private function access(): EntityAccessService
+    {
+        return new EntityAccessService;
+    }
+
     public function storeRow(EnRuEntityMatch $entityMatch, StoreMeaningMatchRequest $request): JsonResponse
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         $afterRowId = $request->validated('after_row_id');
 
         $meaningMatch = DB::transaction(function () use ($entityMatch, $afterRowId): EnRuMeaningMatch {
@@ -69,6 +77,8 @@ class AlignmentEditorController extends Controller
 
     public function destroyRow(EnRuEntityMatch $entityMatch, EnRuMeaningMatch $meaningMatch): JsonResponse
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         abort_unless($meaningMatch->en_ru_entity_match_id === $entityMatch->id, 404);
 
         $unmatchedChanged = [];
@@ -99,6 +109,8 @@ class AlignmentEditorController extends Controller
 
     public function approveRow(EnRuEntityMatch $entityMatch, EnRuMeaningMatch $meaningMatch): JsonResponse
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         abort_unless($meaningMatch->en_ru_entity_match_id === $entityMatch->id, 404);
 
         $meaningMatch->update(['similarity' => 1.0, 'alignment_chunk' => -1]);
@@ -108,6 +120,8 @@ class AlignmentEditorController extends Controller
 
     public function storeSentence(EnRuEntityMatch $entityMatch, AddSentenceRequest $request): JsonResponse
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         $lang = $request->validated('lang');
         $content = trim((string) $request->validated('content'));
         $meaningMatchId = (int) $request->validated('meaning_match_id');
@@ -172,6 +186,8 @@ class AlignmentEditorController extends Controller
 
     public function updateSentence(EnRuEntityMatch $entityMatch, int $sentence, UpdateSentenceRequest $request): JsonResponse
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         $lang = $request->validated('lang');
         $content = trim((string) $request->validated('content'));
 
@@ -185,6 +201,8 @@ class AlignmentEditorController extends Controller
 
     public function unlinkSentence(EnRuEntityMatch $entityMatch, int $sentence, SentenceLangRequest $request): JsonResponse
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         $lang = $request->validated('lang');
 
         $sentenceModel = $this->findSideSentence($entityMatch, $lang, $sentence);
@@ -206,6 +224,8 @@ class AlignmentEditorController extends Controller
 
     public function destroyUnmatched(EnRuEntityMatch $entityMatch, int $sentence, SentenceLangRequest $request): JsonResponse
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         $lang = $request->validated('lang');
 
         $sentenceModel = $this->findSideSentence($entityMatch, $lang, $sentence);
@@ -229,6 +249,8 @@ class AlignmentEditorController extends Controller
 
     public function moveSentence(EnRuEntityMatch $entityMatch, MoveSentenceRequest $request): JsonResponse
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         $lang = $request->validated('lang');
         $sentenceId = (int) $request->validated('sentence_id');
         $toRowId = $request->validated('to_row_id');
@@ -283,6 +305,8 @@ class AlignmentEditorController extends Controller
 
     public function rows(EnRuEntityMatch $entityMatch, RowsRequest $request): JsonResponse
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         $payload = $this->presenter->rowsPagePayload($entityMatch, $request->page(), $request->perPage());
 
         return response()->json([
@@ -295,6 +319,8 @@ class AlignmentEditorController extends Controller
 
     public function unmatched(EnRuEntityMatch $entityMatch, UnmatchedRequest $request): JsonResponse
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         return response()->json(
             $this->presenter->unmatchedPayload($entityMatch, $request->validated('lang'), $request->page()),
         );
@@ -302,6 +328,8 @@ class AlignmentEditorController extends Controller
 
     public function needsReview(EnRuEntityMatch $entityMatch, NeedsReviewRequest $request): JsonResponse
     {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
         return response()->json(
             $this->presenter->needsReviewPagePayload($entityMatch, $request->page()),
         );

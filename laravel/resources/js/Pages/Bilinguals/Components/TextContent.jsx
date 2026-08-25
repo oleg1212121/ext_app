@@ -97,7 +97,9 @@ export default function TextContent(props) {
                                 </span>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                                     <Button onClick={() => props.focusOnWorkplace()} color='dark' size="xs" outline>Open</Button>
-                                    <Button onClick={() => props.ask(row)} color='green' size="xs">Ask</Button>
+                                    {props.canUseAi && (
+                                        <Button onClick={() => props.ask(row)} color='green' size="xs">Ask</Button>
+                                    )}
                                 </div>
                             </div>
                         </td>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Bilinguals;
 
 use App\Classes\AIModelResolver;
+use App\Classes\EntityAccessService;
 use App\Classes\MeaningMatchPresenter;
 use App\Exceptions\AiProviderException;
 use App\Http\Controllers\Controller;
@@ -40,13 +41,16 @@ class SimulatorController extends Controller
             }
         }
 
+        $canUseAi = auth()->user()->canUseAi();
+
         return Inertia::render('Bilinguals/Bilinguals', [
             'aiModels' => $aiModels,
             'textList' => $textList,
             'showWorkplace' => true,
             'showQuestion' => false,
             'showText' => true,
-            'showAI' => true,
+            'showAI' => $canUseAi,
+            'canUseAi' => $canUseAi,
             'currentModel' => $currentModel,
             'currentQuestion' => 'Compare Russian original vs. my translation. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Asses grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version (highlight the changes). 4. Give  a couple of improved versions.',
             'currentText' => $firstId !== null ? (string) $firstId : '',
@@ -59,7 +63,8 @@ class SimulatorController extends Controller
     private function getEntityMatchTextList(): array
     {
         try {
-            $matches = EnRuEntityMatch::query()
+            $matches = $this->access()
+                ->readableMatchQuery(auth()->user())
                 ->with(['enEntity', 'ruEntity'])
                 ->latest('id')
                 ->get();
@@ -118,6 +123,18 @@ class SimulatorController extends Controller
      */
     private function textFromEntityMatch(int $entityMatchId, int $page, int $perPage): array
     {
+        $match = EnRuEntityMatch::query()
+            ->with(['enEntity', 'ruEntity'])
+            ->find($entityMatchId);
+
+        if ($match === null) {
+            return ['error' => 'Entity match not found', 'code' => 404];
+        }
+
+        if (! $this->access()->canReadMatch(auth()->user(), $match)) {
+            return ['error' => 'You do not have access to this text.', 'code' => 403];
+        }
+
         /** @var LengthAwarePaginator<int, EnRuMeaningMatch> $paginator */
         $paginator = EnRuMeaningMatch::query()
             ->where('en_ru_entity_match_id', $entityMatchId)
@@ -292,5 +309,10 @@ class SimulatorController extends Controller
             'X-Accel-Buffering' => 'no',
             'Connection' => 'keep-alive',
         ]);
+    }
+
+    private function access(): EntityAccessService
+    {
+        return new EntityAccessService;
     }
 }

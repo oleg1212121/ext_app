@@ -62,6 +62,48 @@ test('authenticated users can view the alignments list', function () {
         ->where('entityMatches.0.ru_entity_name', 'Russian chapter'));
 });
 
+test('users cannot see restricted entity matches they are not granted', function () {
+    $user = User::factory()->create();
+
+    $enEntity = EnEntity::create([
+        'name' => 'Restricted EN',
+        'is_restricted' => true,
+    ]);
+
+    $ruEntity = RuEntity::create([
+        'name' => 'Restricted RU',
+        'is_restricted' => true,
+    ]);
+
+    $entityMatch = EnRuEntityMatch::create([
+        'en_entity_id' => $enEntity->id,
+        'ru_entity_id' => $ruEntity->id,
+        'status' => 'completed',
+    ]);
+
+    // Not granted → the match must not leak into the list.
+    $this->actingAs($user)
+        ->get(route('alignments.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->has('entityMatches', 0));
+
+    // Not granted → opening the detail page is forbidden.
+    $this->actingAs($user)
+        ->get(route('alignments.show', $entityMatch))
+        ->assertForbidden();
+
+    // Granted on both sides → the match becomes visible.
+    $enEntity->grantedUsers()->attach($user->id);
+    $ruEntity->grantedUsers()->attach($user->id);
+
+    $this->actingAs($user)
+        ->get(route('alignments.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('entityMatches', 1)
+            ->where('entityMatches.0.en_entity_name', 'Restricted EN'));
+});
+
 test('authenticated users can view alignment details', function () {
     $user = User::factory()->create();
     $sentenceType = SentenceType::create([

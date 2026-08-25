@@ -13,6 +13,14 @@ class SimulatorEntitySeeder extends Seeder
         'book_thief_1.txt',
     ];
 
+    /**
+     * Files that carry third-party copyrighted text and must start restricted.
+     * Admin publishes them (flips is_restricted to false) once appropriate.
+     */
+    public const RESTRICTED_FILES = [
+        'the_book_thief_5.txt',
+    ];
+
     public const FILE_PATH_PREFIX = 'texts/simulator/';
 
     public function run(): void
@@ -34,12 +42,14 @@ class SimulatorEntitySeeder extends Seeder
 
             $basename = pathinfo($filename, PATHINFO_FILENAME);
             $filePath = self::FILE_PATH_PREFIX.$filename;
+            $isRestricted = in_array($filename, self::RESTRICTED_FILES, true);
 
             EnEntity::query()->updateOrCreate(
                 ['name' => self::enEntityName($basename)],
                 [
                     'description' => "English sentences from {$filename}.",
                     'file_path' => $filePath,
+                    'is_restricted' => $isRestricted,
                 ],
             );
 
@@ -48,6 +58,7 @@ class SimulatorEntitySeeder extends Seeder
                 [
                     'description' => "Russian sentences from {$filename}.",
                     'file_path' => $filePath,
+                    'is_restricted' => $isRestricted,
                 ],
             );
         }

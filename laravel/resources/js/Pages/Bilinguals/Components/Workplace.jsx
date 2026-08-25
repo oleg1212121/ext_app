@@ -44,7 +44,7 @@ export default function Workplace(props) {
                         <Textarea onChange={props.changeQuestion} ref={props.questionRef} label="Question" value={props.currentQuestion} placeholder="Question" className="resizeable_element" rows={3}/>
                     </div>
                 )}
-                {props.showQuestion !== true && (
+                {props.canUseAi && props.showQuestion !== true && (
                     <button
                         type="button"
                         onClick={props.onToggleQuestion}

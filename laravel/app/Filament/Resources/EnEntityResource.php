@@ -15,10 +15,13 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 
 class EnEntityResource extends Resource
@@ -40,6 +43,9 @@ class EnEntityResource extends Resource
                     ->maxLength(512),
                 Textarea::make('description')
                     ->maxLength(2048),
+                Toggle::make('is_restricted')
+                    ->label('Restricted (only admin and granted users can read)')
+                    ->default(true),
                 TextInput::make('signature'),
                 FileUpload::make('file')
                     ->label('Text File')
@@ -59,6 +65,9 @@ class EnEntityResource extends Resource
                     ->limit(30),
                 TextColumn::make('file_path')
                     ->limit(30),
+                IconColumn::make('is_restricted')
+                    ->boolean()
+                    ->label('Restricted'),
                 TextColumn::make('sentences_count')
                     ->counts('sentences')
                     ->label('Sentences'),
@@ -68,7 +77,11 @@ class EnEntityResource extends Resource
                     ->dateTime(),
             ])
             ->filters([
-                //
+                TernaryFilter::make('is_restricted')
+                    ->label('Restricted')
+                    ->trueLabel('Restricted only')
+                    ->falseLabel('Public only')
+                    ->native(false),
             ])
             ->recordActions([
                 Actions\EditAction::make(),
@@ -179,6 +192,7 @@ class EnEntityResource extends Resource
     {
         return [
             RelationManagers\SentencesRelationManager::class,
+            RelationManagers\GrantedUsersRelationManager::class,
         ];
     }
 

@@ -6,7 +6,9 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -74,6 +76,26 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * Restricted English entities this user may read via an access grant.
+     */
+    public function grantedEnEntities(): BelongsToMany
+    {
+        return $this->belongsToMany(EnEntity::class, 'en_entity_user')
+            ->withPivot('similarity')
+            ->withTimestamps();
+    }
+
+    /**
+     * Restricted Russian entities this user may read via an access grant.
+     */
+    public function grantedRuEntities(): BelongsToMany
+    {
+        return $this->belongsToMany(RuEntity::class, 'ru_entity_user')
+            ->withPivot('similarity')
+            ->withTimestamps();
+    }
+
+    /**
      * The stored key for a provider, addressed by its provider slug (e.g.
      * 'openrouter'), or null when the user has not added one.
      */
@@ -87,6 +109,21 @@ class User extends Authenticatable implements FilamentUser
     public function hasApiKeyForProvider(string $providerKey): bool
     {
         return $this->apiKeyForProvider($providerKey) !== null;
+    }
+
+    /**
+     * Whether the user can actually use AI: they have stored a User key for at
+     * least one provider that is admin-enabled AND has at least one enabled,
+     * unexpired model. This mirrors the predicate AIModelResolver::
+     * getGroupedModels() applies, so it agrees with whether the simulator's
+     * model picker would be non-empty.
+     */
+    public function canUseAi(): bool
+    {
+        return $this->userApiKeys()
+            ->whereHas('aiProvider', fn (Builder $query): Builder => $query->enabled())
+            ->whereHas('aiProvider.aiModels', fn (Builder $query): Builder => $query->enabled()->unexpired())
+            ->exists();
     }
 
     public function isAdmin(): bool

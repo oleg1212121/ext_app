@@ -18,6 +18,8 @@ it('chooses the cheapest available model as the default', function () {
         ->assertInertia(fn ($page) => $page
             ->where('currentModel', 'openrouter:cheap')
             ->has('aiModels.OpenRouter')
+            ->where('canUseAi', true)
+            ->where('showAI', true)
         );
 });
 
@@ -32,6 +34,8 @@ it('renders an empty state when the user has no keys', function () {
         ->assertInertia(fn ($page) => $page
             ->where('currentModel', null)
             ->where('aiModels', [])
+            ->where('canUseAi', false)
+            ->where('showAI', false)
         );
 });
 
@@ -49,5 +53,6 @@ it('only lists providers the user has a key for', function () {
         ->assertInertia(fn ($page) => $page
             ->has('aiModels.OpenRouter')
             ->missing('aiModels.Gemini')
+            ->where('canUseAi', true)
         );
 });

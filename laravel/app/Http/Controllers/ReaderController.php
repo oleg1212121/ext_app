@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\EntityAccessService;
 use App\Classes\MeaningMatchPresenter;
 use App\Models\EnEntity;
 use App\Models\EnRuEntityMatch;
@@ -33,6 +34,10 @@ class ReaderController extends Controller
             default => abort(404),
         };
 
+        if (! $this->access()->canRead(auth()->user(), $entity)) {
+            abort(403);
+        }
+
         $rows = $this->buildRows($lang, $entityId, $entity);
 
         return Inertia::render('ReaderReact', [
@@ -57,6 +62,11 @@ class ReaderController extends Controller
         };
 
         if ($entityMatch === null) {
+            return $this->singleLanguageRows($entity);
+        }
+
+        $otherEntity = $lang === 'en' ? $entityMatch->ruEntity : $entityMatch->enEntity;
+        if ($otherEntity === null || ! $this->access()->canRead(auth()->user(), $otherEntity)) {
             return $this->singleLanguageRows($entity);
         }
 
@@ -107,11 +117,7 @@ class ReaderController extends Controller
      */
     private function entitiesForLanguage(string $lang): array
     {
-        $query = match ($lang) {
-            'en' => EnEntity::query(),
-            'ru' => RuEntity::query(),
-            default => abort(404),
-        };
+        $query = $this->access()->readableQuery(auth()->user(), $lang);
 
         return $query
             ->select('id', 'name')
@@ -119,5 +125,10 @@ class ReaderController extends Controller
             ->limit(100)
             ->get()
             ->all();
+    }
+
+    private function access(): EntityAccessService
+    {
+        return new EntityAccessService;
     }
 }
