@@ -5,7 +5,7 @@ description: Bilingual texts, their sentences, and the machine/human alignment b
 tags: [database, schema, alignment, entities]
 status: stable
 stale_after: 2026-10-26
-generated: { by: human:alex, at: 2026-08-25T00:00:00Z }
+generated: { by: human:alex, at: 2026-08-25T14:00:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations
@@ -36,11 +36,17 @@ sources:
 * **Sparse ordering**: sentence and match order columns hold sparse values
   maintained by `SparseOrderService`; columns were widened in the
   2026_06 `widen_sparse_order_columns` migration. Rebalance daily via
-  `entity-orders:rebalance`.
+  `entity-orders:rebalance`. Both `EntityController` (entity *Sentences* tab)
+  and `AlignmentEditorController` shift the whole sparse result up whenever a
+  rebalance would push the minimum order negative (mirroring the alignment
+  editor's guard), so `*.order` never carries negative values and the
+  sequential display numbers stay 0/1-based.
 * **Document order is the single source of truth**: `en_entity_sentences.order` is
   the sentence's **document order** — its position in the original text. It is
-  immutable in the alignment editor (only the *Sentences* tab, import, and
-  `entity-orders:rebalance` change it). The junction tables
+  immutable in the alignment editor (only the *Sentences* tab, import,
+  `entity-orders:rebalance`, and — since ADR
+  [0015](../../docs/adr/0015-granted-users-edit-entities-and-sentences.md) — the
+  entities frontend's drag-to-reorder change it). The junction tables
   (`en_sentence_meaning_matches` / `ru_sentence_meaning_matches`) are pure
   association tables with no `order` column. Within-row display order is
   determined by each sentence's document order.

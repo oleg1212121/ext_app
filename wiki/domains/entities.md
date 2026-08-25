@@ -4,7 +4,7 @@ title: Entities (frontend management surface)
 description: Inertia/React management area for creating and viewing per-language text entities, driven by enabled languages.
 tags: [entities, inertia, react, languages]
 status: stable
-generated: { by: human:alex, at: 2026-08-25T00:00:00Z }
+generated: { by: human:alex, at: 2026-08-25T14:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -25,8 +25,11 @@ sources:
 A user-facing **management** surface for [entities](/database/entities-alignment.md),
 distinct from the reader (the read-only [consume](/domains/reader.md) surface). It lets an
 approved user browse entities per enabled language, create a new entity (with an
-optional text file), and inspect a single entity's detail. Edit/delete remain
-admin-only (Filament); alignment pairing stays in `/alignments`.
+optional text file), inspect a single entity's detail, and — since ADR
+[0015](../../docs/adr/0015-granted-users-edit-entities-and-sentences.md) — edit
+entity metadata (name, description) and manage sentences (insert, edit content
++type, delete, drag-to-reorder). Entity deletion remains admin-only (Filament);
+alignment pairing stays in `/alignments`.
 
 The surface is the **first production consumer** of the `Language` model — the
 picker and every `{lang}` route are driven by `Language::enabled()`. See ADR 0002
@@ -39,8 +42,15 @@ picker and every `{lang}` route are driven by `Language::enabled()`. See ADR 000
 | `/entities` | `EntityController::index` | Picker: one card per enabled language (name, native name, entity count), named `entities.index` |
 | `/entities/{lang}` | `EntityController::list` | Paginated list of that language's entities, named `entities.list` |
 | `/entities/{lang}/create` | `EntityController::create` | Create form, named `entities.create` |
-| `/entities/{lang}` (POST) | `EntityController::store` | Creates the entity; stores an optional file and dispatches `ProcessEntityFile`, named `entities.store` |
+| `/entities/{lang}/{entity}` (POST) | `EntityController::store` | Creates the entity; stores an optional file and dispatches `ProcessEntityFile`, named `entities.store` |
 | `/entities/{lang}/{entity}` | `EntityController::show` | Detail: header + links to the reader and any alignments + read-only sentence list, named `entities.show` |
+| `/entities/{lang}/{entity}/edit` | `EntityController::edit` | Combined edit page: metadata form + drag-and-drop sentence manager (ADR 0015), named `entities.edit` |
+| `/entities/{lang}/{entity}` (PATCH) | `EntityController::update` | Updates entity name/description, named `entities.update` |
+| `/entities/{lang}/{entity}/sentences` (GET) | `EntityController::sentences` | JSON sentence list for the edit page, named `entities.sentences` |
+| `/entities/{lang}/{entity}/sentences` (POST) | `EntityController::storeSentence` | Inserts a sentence at a chosen document-order position (no junction), named `entities.sentences.store` |
+| `/entities/{lang}/{entity}/sentences/reorder` (POST) | `EntityController::reorderSentences` | Moves a sentence to a new document-order position via `SparseOrderService`, named `entities.sentences.reorder` |
+| `/entities/{lang}/{entity}/sentences/{sentence}` (PATCH) | `EntityController::updateSentence` | Updates sentence content + type, named `entities.sentences.update` |
+| `/entities/{lang}/{entity}/sentences/{sentence}` (DELETE) | `EntityController::destroySentence` | Deletes a sentence; cascades to junctions and empty meaning matches (model hooks), named `entities.sentences.destroy` |
 
 All routes sit in the `['auth','approved']` group. `{lang}` is validated against
 enabled language codes (404 otherwise), not the hardcoded `en|ru` regex used by
@@ -50,9 +60,32 @@ other surfaces.
 
 Inertia pages under `resources/js/Pages/Entities/` — `Index` (picker),
 `List` (per-language list + "+ Create entity"), `Create` (form with name,
-description, file upload), `Show` (detail). All use the `--wbench-*` tokens to
-match the sibling Alignments management surface and the
+description, file upload), `Show` (detail), `Edit` (metadata form + dnd-kit
+sortable sentence manager). All use the `--wbench-*` tokens to match the
+sibling Alignments management surface and the
 [design system](/conventions/design-system.md).
+
+# Editing (ADR 0015)
+
+The `Edit` page combines a metadata form (Inertia `PATCH` →
+`entities.update`) with a sentence manager backed by `@dnd-kit/sortable`.
+Sentence CRUD is JSON-driven (mirrors `AlignmentEditorController`): the page
+fetches the sentence list from `entities.sentences`, and each mutation
+(insert / update / delete / reorder) returns the updated list. Drag-to-reorder
+uses `SparseOrderService::orderForInsertAfter` with `after_sentence_id = 0`
+sentinel for "at the beginning".
+
+**Access**: `EntityAccessService::canEdit` mirrors `canRead` — admin bypass;
+Restricted editable by grantees; Public editable by any approved user.
+
+**Cascade delete**: deleting a junctioned sentence cascades — the sentence
+models' `deleting`/`deleted` hooks remove junctions, delete any meaning match
+left empty, and update `linked_count`. This diverges deliberately from the
+alignment editor's unlink-before-delete rule (422 if linked).
+
+**Match staleness**: every sentence mutation flips all `EnRuEntityMatch` rows
+involving the entity to `status = 'pending'`, surfacing the need to re-align.
+The entity `signature` is intentionally left stale.
 
 # Creation pipeline
 

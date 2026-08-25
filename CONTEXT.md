@@ -86,6 +86,13 @@ already-aligned chunks. _Avoid_: restart, retry.
 
 **Add sentence**:
 Create a new sentence in an entity and link it to a meaning match.
+_Avoid_: insert sentence (the entities-frontend operation below — no junction).
+
+**Insert sentence**:
+Create a new sentence in an entity from the entities frontend (`/entities`),
+placing it at a chosen document-order position. No junction to a meaning match
+is created — the sentence starts unmatched. Distinct from Add sentence
+(alignment editor), which always junctions. _Avoid_: add sentence (overloaded).
 
 **Create meaning match / delete meaning match**:
 The row lifecycle. Delete returns the row's sentences to unmatched.
@@ -206,10 +213,22 @@ entity (`is_restricted = false`). _Avoid_: free, open, public-domain (a legal
 term with a specific meaning).
 
 **Access grant**:
-A recorded permission for a specific user to read a specific Restricted
-entity, stored in the `en_entity_user` / `ru_entity_user` pivot (with a
-nullable `similarity`). _Avoid_: link (too generic), license (legal),
-permission (overlaps Role).
+A recorded stake for a specific user in a specific Restricted entity, stored
+in the `en_entity_user` / `ru_entity_user` pivot (with a nullable
+`similarity`). Carries both read and edit permission on the entity (and its
+sentences) until the entity is published. _Avoid_: link (too generic),
+license (legal), permission (overlaps Role).
+
+**Edit rule**:
+Who may edit an Entity (name, description) and its sentences in the entities
+frontend. A Restricted entity is editable by admin and grantees; a Public
+entity is editable by any approved user. The rule mirrors read —
+`EntityAccessService::canEdit` is structurally identical to `canRead`.
+Sentence mutations (insert / update / delete / reorder) flip every
+`EnRuEntityMatch` involving the entity to `status = 'pending'`. Deleting a
+junctioned sentence cascades (junctions removed, emptied meaning matches
+deleted, `linked_count` updated) — a deliberate divergence from the alignment
+editor's unlink-before-delete rule. See ADR 0015.
 
 **Creator grant**:
 An Access grant with a null `similarity`, recording that the user's upload

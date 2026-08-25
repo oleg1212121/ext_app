@@ -38,6 +38,17 @@ class EntityAccessService
     }
 
     /**
+     * Who may edit an Entity (name, description) and its sentences in the
+     * entities frontend. Structurally identical to canRead: admin bypass;
+     * Public editable by any approved user; Restricted editable by grantees.
+     * See ADR 0015.
+     */
+    public function canEdit(User $user, EnEntity|RuEntity $entity): bool
+    {
+        return $this->canRead($user, $entity);
+    }
+
+    /**
      * A bilingual match is readable only when both of its entities are readable.
      */
     public function canReadMatch(User $user, EnRuEntityMatch $match): bool

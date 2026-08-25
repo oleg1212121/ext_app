@@ -165,6 +165,37 @@ test('show page renders a single entity', function () {
             ->where('entity.sentences_count', 0));
 });
 
+test('show page exposes can_edit for a public entity', function () {
+    makeLanguage('en');
+    $entity = EnEntity::create(['name' => 'Open', 'is_restricted' => false]);
+
+    $this->actingAs(approvedUser())
+        ->get("/entities/en/{$entity->id}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('can_edit', true));
+});
+
+test('show page hides can_edit for a restricted entity without a grant', function () {
+    makeLanguage('en');
+    $entity = EnEntity::create(['name' => 'Secret', 'is_restricted' => true]);
+
+    $this->actingAs(approvedUser())
+        ->get("/entities/en/{$entity->id}")
+        ->assertForbidden();
+});
+
+test('show page exposes can_edit for a restricted entity with a grant', function () {
+    makeLanguage('en');
+    $entity = EnEntity::create(['name' => 'Secret', 'is_restricted' => true]);
+    $user = approvedUser();
+    $entity->grantedUsers()->attach($user->id);
+
+    $this->actingAs($user)
+        ->get("/entities/en/{$entity->id}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('can_edit', true));
+});
+
 test('show page 404s for an unknown entity', function () {
     makeLanguage('en');
 

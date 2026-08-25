@@ -2,6 +2,47 @@
 
 ## 2026-08-25
 
+* **Change: entities *Sentences* tab (Edit.jsx) now paginates and shows
+  sequential display order, matching the alignments editor.** `EntityController`
+  `sentences` endpoint is paginated (`page`/`per_page`, default 25) and returns
+  `{sentences, meta, before_first_id}`; `store`/`reorder`/`destroy` JSON
+  endpoints also return the affected page (store/reorder return the page holding
+  the new/moved sentence). The UI renders a 1-based `display_order`
+  `(page-1)*per_page + index + 1` instead of the raw sparse `order` (fixes the
+  negative-number display that drag-to-beginning produced). A per-row "+ add"
+  icon opens an inline form that inserts directly below that row
+  (`after_sentence_id` = that row's id); the top-level "+ Add sentence" button
+  and "Insert position" select were removed (empty list shows a single "Add the
+  first sentence" link). `before_first_id` lets a drop at the top of page N>1
+  anchor to the previous page's last sentence. Non-negative order guard now
+  mirrors `AlignmentEditorController`. Tests: `EntityEditingTest` covers
+  pagination, `before_first_id`, store-page-targeting, and non-negative orders.
+  No routes/models/commands changed (`wiki:sync` not required).
+
+* **Change: granted users may edit entities and sentences in the entities
+  frontend (ADR 0015).** The entities frontend (`/entities`) is now a full
+  editing surface, not read-after-create-only. `EntityAccessService::canEdit`
+  mirrors `canRead` (admin bypass; Restricted → grantees; Public → any
+  approved user) and gates `entities.edit`, `entities.update`, and four JSON
+  sentence endpoints (insert, update content+type, cascade delete, drag
+  reorder). The `Edit` page (`resources/js/Pages/Entities/Edit.jsx`) combines
+  a metadata form (Inertia PATCH) with a `@dnd-kit/sortable` sentence manager
+  that fetches via `entities.sentences` JSON. Drag-to-reorder uses
+  `SparseOrderService::orderForInsertAfter` with `after_sentence_id = 0` as a
+  "beginning" sentinel. Cascade delete reuses the sentence models'
+  `deleting`/`deleted` hooks (junctions removed, empty meaning matches
+  deleted, `linked_count` updated) — a deliberate divergence from the
+  alignment editor's unlink-before-delete rule. Every sentence mutation flips
+  all `EnRuEntityMatch` rows involving the entity to `status = 'pending'`;
+  the `signature` is left stale. Known gaps (v1): public-edit + cascade-delete
+  by any approved user with no audit/soft-delete. Updated: `CONTEXT.md`
+  (Access grant → read+edit; new "Insert sentence" term; new "Edit rule"
+  term), `wiki/domains/entities.md`, `wiki/domains/access-control.md`,
+  `wiki/database/entities-alignment.md`. New: ADR 0015, form requests
+  (`UpdateEntityRequest`, `StoreEntitySentenceRequest`,
+  `UpdateEntitySentenceRequest`, `ReorderEntitySentenceRequest`), test
+  `tests/Feature/EntityEditingTest.php` (28 tests).
+
 * **Change: simulator hides its AI surface for keyless users.** New
   `User::canUseAi()` (key for an enabled provider with an enabled, unexpired
   model — the same predicate `AIModelResolver::getGroupedModels()` applies)

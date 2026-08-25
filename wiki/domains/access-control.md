@@ -5,8 +5,8 @@ description: Role- and approval-based authorization for users, the admin bypass,
 tags: [auth, authorization, roles, admin, approval]
 status: stable
 stale_after: 2026-10-23
-generated: { by: human:alex, at: 2026-08-25T12:00:00Z }
-verified: { by: human:alex, at: 2026-08-25T12:00:00Z }
+generated: { by: human:alex, at: 2026-08-25T14:00:00Z }
+verified: { by: human:alex, at: 2026-08-25T14:00:00Z }
 sources:
    - id: app-provider
      resource: laravel/app/Providers/AppServiceProvider.php
@@ -71,6 +71,11 @@ mirrors the server-side checks instead of re-implementing them.
   `abort_unless($access->canReadMatch(auth()->user(), $entityMatch), 403)` as the
   first statement of each endpoint, before any DB work, so non-granted users get
   403 (never 404) regardless of whether a nested id is valid.
+- **Entity-edit enforcer (ADR 0015).** `EntityAccessService::canEdit` mirrors
+  `canRead` (admin bypass; Restricted → grantees; Public → any approved user)
+  and gates `EntityController::edit`, `update`, `sentences`, `storeSentence`,
+  `updateSentence`, `destroySentence`, `reorderSentences` via
+  `abort_unless($access->canEdit(...), 403)` before any DB work.
 
 # Out of scope
 

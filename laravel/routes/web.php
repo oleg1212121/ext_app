@@ -69,6 +69,36 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->where('lang', '[a-z]{2}')
         ->whereNumber('entity')
         ->name('entities.show');
+    Route::get('/entities/{lang}/{entity}/edit', [EntityController::class, 'edit'])
+        ->where('lang', '[a-z]{2}')
+        ->whereNumber('entity')
+        ->name('entities.edit');
+    Route::patch('/entities/{lang}/{entity}', [EntityController::class, 'update'])
+        ->where('lang', '[a-z]{2}')
+        ->whereNumber('entity')
+        ->name('entities.update');
+    Route::get('/entities/{lang}/{entity}/sentences', [EntityController::class, 'sentences'])
+        ->where('lang', '[a-z]{2}')
+        ->whereNumber('entity')
+        ->name('entities.sentences');
+    Route::post('/entities/{lang}/{entity}/sentences', [EntityController::class, 'storeSentence'])
+        ->where('lang', '[a-z]{2}')
+        ->whereNumber('entity')
+        ->name('entities.sentences.store');
+    Route::post('/entities/{lang}/{entity}/sentences/reorder', [EntityController::class, 'reorderSentences'])
+        ->where('lang', '[a-z]{2}')
+        ->whereNumber('entity')
+        ->name('entities.sentences.reorder');
+    Route::patch('/entities/{lang}/{entity}/sentences/{sentence}', [EntityController::class, 'updateSentence'])
+        ->where('lang', '[a-z]{2}')
+        ->whereNumber('entity')
+        ->whereNumber('sentence')
+        ->name('entities.sentences.update');
+    Route::delete('/entities/{lang}/{entity}/sentences/{sentence}', [EntityController::class, 'destroySentence'])
+        ->where('lang', '[a-z]{2}')
+        ->whereNumber('entity')
+        ->whereNumber('sentence')
+        ->name('entities.sentences.destroy');
     Route::get('/alignments', [AlignmentController::class, 'index'])->name('alignments.index');
     Route::get('/alignments/{entityMatch}', [AlignmentController::class, 'show'])->name('alignments.show');
 
