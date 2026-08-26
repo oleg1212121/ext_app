@@ -4,11 +4,17 @@ title: Docker & Services
 description: Containers, ports, mounts, and the rule that all PHP/Composer/NPM commands run inside the app container.
 tags: [docker, infrastructure, devops]
 status: stable
-generated: { by: agent/opencode-go, at: 2026-08-03T19:30:00Z }
+generated: { by: agent/opencode-go, at: 2026-08-26T15:45:00Z }
 sources:
   - id: compose
     resource: docker-compose.yml
-    title: Docker Compose manifest
+    title: Docker Compose manifest (dev)
+  - id: compose-prod
+    resource: docker-compose.prod.yml
+    title: Docker Compose prod override
+  - id: dockerfile-prod
+    resource: LaravelDockerfile.prod
+    title: Multi-stage prod image build
   - id: agents
     resource: AGENTS.md
     title: Agent guidelines (command rules)
@@ -71,3 +77,31 @@ A prebuilt venv for ML experiments lives at
 `docker-compose/python/ai/ai_env/` (torch, sentence-transformers, transformers,
 numpy, scipy, pysbd). Do **not** reinstall those packages; use
 `docker-compose/python/ai/ai_env/bin/python <script>`.
+
+# Production overlay
+
+`docker-compose.prod.yml` overrides the dev manifest for the production launch
+(same host + Cloudflare tunnel). It is applied with both files:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+Differences from dev (using Compose `!override`/`!reset` merge tags):
+
+| Service | Dev | Prod |
+|---------|-----|------|
+| `app` | bind-mounts `./laravel` + `./`; dev `LaravelDockerfile` (with gh, xdebug) | `LaravelDockerfile.prod` (multi-stage: node build → php-fpm, no xdebug/gh, opcache, baked `public/build` + `public/texts`); env via `laravel/.env.production`; `app_storage` + `app_public` named volumes; entrypoint runs `config:cache route:cache view:cache filament:optimize storage:link migrate --force` |
+| `db` | `image: postgres` (latest), host port `54321`, bind-mount data | pinned `postgres:18-alpine`, no host port, `pgdata` named volume, healthcheck; creds from gitignored `docker-compose/prod/postgres.env` (POSTGRES_*) |
+| `nginx` | bind-mount `./laravel` + `./nginx/conf` | serves baked assets from the shared `app_public` volume (read-only) + `./nginx/conf`; hardened `app.conf` (20M body, security headers, `limit_req` on `/ai/question`) |
+| `python` | host port `8001`, `--reload` | no host port, `--workers 2` |
+| `cloudflared` | unchanged | unchanged (tunnel token untracked after Phase 1.1) |
+| `queue` | — | new; `ext_app_prod` image, `queue:work --tries=1 --timeout=620`, `scale: 2`, waits for migrations |
+| `scheduler` | — | new; `schedule:work` daemon (ticks every minute — drives `alignments:resume` `->withoutOverlapping()`) |
+| `backups` | — | new; `postgres:18-alpine` sidecar running crond → daily `pg_dump` to `pgbackups` volume, 14-day retention |
+
+Secrets never live in compose: `laravel/.env.production`,
+`docker-compose/prod/postgres.env`, and `docker-compose/cloudflare/.env` are
+all gitignored. `.dockerignore` strips dev build output, `vendor/`,
+`node_modules/`, the xdebug inis, and `backup11.sql` from prod build contexts.
+See [production-deployment](../playbooks/production-deployment.md) for the launch playbook.

@@ -1,0 +1,75 @@
+name: Tests
+
+# PR gate + branch pushes. (The TIA baseline workflow runs separately on
+# push/schedule to refresh the coverage baseline.)
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: Pest test suite
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: laravel
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ext_app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ext_app_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo, pdo_pgsql, pgsql, mbstring, exif, pcntl, bcmath, gd, zip, intl
+          coverage: none
+
+      - run: composer install --no-interaction --prefer-dist
+
+      - name: Run test suite
+        env:
+          # No .env.testing in CI; supply the DB + key the test bootstrap needs.
+          # phpunit.xml force-sets DB_CONNECTION=testing, DB_TEST_DATABASE,
+          # DB_DATABASE, CACHE_STORE, QUEUE_CONNECTION, SESSION_DRIVER, etc.
+          APP_KEY: base64:94tzcS36LwLZC4BujS59C5DZWML3vRtFefQuQZDa79c=
+          DB_HOST: 127.0.0.1
+          DB_PORT: '5432'
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+        run: composer run test
+
+  pint:
+    name: Pint (formatting)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: laravel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - run: composer install --no-interaction --prefer-dist
+
+      - run: vendor/bin/pint --test

@@ -11,6 +11,7 @@ docker-compose/python/ai/*_local/
 docker-compose/python/env/.env
 # Cloudflare tunnel token — must never be committed (rotate via Zero Trust dashboard)
 docker-compose/cloudflare/.env
+docker-compose/prod/postgres.env
 docker-compose/nginx/nginx.conf:Zone.Identifier
 laravel/vendor/
 laravel/.devcontainer

@@ -68,58 +68,73 @@ Legend: `[USER]` = only you can do it · `[AGENT]` = I can do it · `[USER+AGENT
 ## Phase 2 — Production Docker (same host + Cloudflare tunnel)
 
 ### 2.1 Multi-stage prod Dockerfile `[AGENT]`
-- [ ] New `LaravelDockerfile.prod`:
+- [x] New `LaravelDockerfile.prod`:
   - Stage 1 `node:20-alpine`: `npm ci && npm run build` → produces `public/build`
   - Stage 2 `php:8.4-fpm`: **no Xdebug**, `composer install --no-dev --optimize-autoloader`, copy `public/build` from stage 1
-- [ ] Bake `public/texts/` into the image (it's gitignored — a git-built image ships without reading materials otherwise)
-- [ ] PHP ini: `upload_max_filesize=20M`, `post_max_size=25M`, `opcache.enable=1`, `opcache.validate_timestamps=0`, `opcache.memory_consumption=128`
-- [ ] Do **not** copy `docker-php-ext-xdebug.ini` or `docker-php-ext-xdebug copy.ini` into prod context
-- [ ] Do **not** install `gh` CLI in the prod image
+- [x] Bake `public/texts/` into the image (it's gitignored — a git-built image ships without reading materials otherwise)
+- [x] PHP ini: `upload_max_filesize=20M`, `post_max_size=25M`, `opcache.enable=1`, `opcache.validate_timestamps=0`, `opcache.memory_consumption=128`
+- [x] Do **not** copy `docker-php-ext-xdebug.ini` or `docker-php-ext-xdebug copy.ini` into prod context
+- [x] Do **not** install `gh` CLI in the prod image
+- Extras: canonical asset copy at `/opt/app-assets/public` + `entrypoint.prod.sh` `rsync` into the nginx-shared volume (refresh on rebuild without `down -v`); `rsync` installed; `www-data` owns `/var/www`.
 
 ### 2.2 `docker-compose.prod.yml` override `[AGENT]`
-- [ ] `app`: use the prod image, **no bind mounts** of source code
-- [ ] `db`: pin `postgres:17-alpine` — first run `docker exec ext_pgdb postgres --version` to confirm the current major and pin to that; **remove `ports: 54321:5432`**; add healthcheck `pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"`
-- [ ] `python`: remove `ports: 8001:8000`; remove the `--reload` command override (the image `CMD` + `HEALTHCHECK` in `docker-compose/python/Dockerfile` are already prod-ready); add `--workers 2` only after checking host RAM (BGE-M3 is heavy)
-- [ ] `nginx`: unchanged except conf updates from 3.3
-- [ ] `cloudflared`: unchanged (env file now untracked after 1.1)
-- [ ] Resource limits (`mem_limit` / `cpus`) on all services
-- [ ] First-boot sequence (entrypoint script or documented manual step): `php artisan config:cache route:cache view:cache filament:optimize storage:link migrate --force`
+- [x] `app`: use the prod image, **no bind mounts** of source code
+- [x] `db`: pin `postgres:18-alpine` (confirmed via `docker exec ext_pgdb postgres --version` — 18.4); **remove `ports: 54321:5432`**; add healthcheck `pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"`
+- [x] `python`: remove `ports: 8001:8000`; remove the `--reload` command override (the image `CMD` + `HEALTHCHECK` in `docker-compose/python/Dockerfile` are already prod-ready); add `--workers 2` only after checking host RAM
+- [x] `nginx`: unchanged except conf updates from 3.3
+- [x] `cloudflared`: unchanged (env file now untracked after 1.1)
+- [x] Resource limits (`mem_limit` / `cpus`) on all services
+- [x] First-boot sequence (entrypoint script or documented manual step): `php artisan config:cache route:cache view:cache filament:optimize storage:link migrate --force`
+- Implementation: uses Compose `!override`/`!reset` merge tags; `nginx` serves baked assets from a shared `app_public` volume (deviation from "unchanged" — necessary since the prod `app` has no host source mount for nginx to read). DB creds live in gitignored `docker-compose/prod/postgres.env` (POSTGRES_* read natively by the image). Validated with `docker compose -f docker-compose.yml -f docker-compose.prod.yml config`.
 
 ### 2.3 Queue workers + scheduler `[AGENT]`
-- [ ] Supervisor (or a dedicated `queue` service) running `php artisan queue:work --tries=1 --timeout=620` with `numprocs=2`, autorestart
-- [ ] Scheduler: `php artisan schedule:work` as its own supervised process (or host cron `* * * * * cd /var/www && php artisan schedule:run >> /dev/null 2>&1`)
+- [x] Supervisor (or a dedicated `queue` service) running `php artisan queue:work --tries=1 --timeout=620` with `numprocs=2`, autorestart
+- [x] Scheduler: `php artisan schedule:work` as its own supervised process (or host cron `* * * * * cd /var/www && php artisan schedule:run >> /dev/null 2>&1`)
+- Implementation: `queue` service (`scale: 2`, `restart: unless-stopped`) + `scheduler` service (single `schedule:work`); both reuse `ext_app_prod`, skip the entrypoint, and wait for `php artisan migrate:status` before starting.
 - **Why P0-adjacent**: `routes/console.php` schedules `alignments:resume` every 5 min (`->withoutOverlapping()`). With no scheduler running, stalled alignments never resume and nothing alerts you
 
 ### 2.4 Postgres backups `[AGENT]`
-- [ ] Daily `pg_dump` cron sidecar → timestamped dumps on a named volume, 14-day retention, gzip
-- [ ] Delete or relocate `backup11.sql` from the repo root (gitignored, but don't ship it)
-- [ ] Document the restore command in this checklist
+- [x] Daily `pg_dump` cron sidecar → timestamped dumps on a named volume, 14-day retention, gzip
+- [x] Delete or relocate `backup11.sql` from the repo root (gitignored, but don't ship it)
+- [x] Document the restore command in this checklist
+- **Restore** (against the prod DB; never the `testing` connection):
+  ```bash
+  gunzip -c /backups/ext_app-YYYYMMDD-HHMMSS.sql.gz \
+    | docker exec -i ext_pgdb psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+  ```
+  (Drop & recreate the DB first for a clean restore.) `backup11.sql` is gitignored **and** excluded from prod build contexts via `.dockerignore`; left on disk (user data) — delete manually if unwanted.
 
 ---
 
 ## Phase 3 — P1 Code & Hardening
 
 ### 3.1 Rate limit AI endpoints `[AGENT]`
-- [ ] `throttle:20,1` on `/ai/question` and `/ai/question/stream` (`laravel/routes/web.php` lines 125–126)
-- [ ] Feature test that hits the limit and asserts 429
+- [x] `throttle:20,1` on `/ai/question` and `/ai/question/stream` (`laravel/routes/web.php` lines 125–126)
+- [x] Feature test that hits the limit and asserts 429 (`tests/Feature/AiQuestionThrottleTest.php` — sends 20 (200) then the 21st (429))
 
 ### 3.2 Env-driven `sslmode` `[AGENT]`
-- [ ] `laravel/config/database.php` lines 97 and 115: `'sslmode' => env('DB_SSLMODE', 'prefer')`
-- [ ] Then `DB_SSLMODE=require` in `.env.production` actually takes effect
-- [ ] Note: also set on the `testing` connection if you want test parity (optional)
+- [x] `laravel/config/database.php` lines 97 and 115: `'sslmode' => env('DB_SSLMODE', 'prefer')`
+- [x] Then `DB_SSLMODE=require` in `.env.production` actually takes effect
+- [x] Note: also set on the `testing` connection if you want test parity (optional)
 
 ### 3.3 nginx hardening `[AGENT]`
-- [ ] `client_max_body_size 20m;` (default 1MB will 413 on real book uploads via `ProcessEntityFile`)
-- [ ] Headers: `X-Frame-Options SAMEORIGIN`, `X-Content-Type-Options nosniff`, `Referrer-Policy strict-origin-when-cross-origin`
-- [ ] Optional defense-in-depth: `limit_req_zone` for AI endpoints (in addition to the Laravel throttle in 3.1)
+- [x] `client_max_body_size 20m;` (default 1MB will 413 on real book uploads via `ProcessEntityFile`)
+- [x] Headers: `X-Frame-Options SAMEORIGIN`, `X-Content-Type-Options nosniff`, `Referrer-Policy strict-origin-when-cross-origin`
+- [x] Optional defense-in-depth: `limit_req_zone` for AI endpoints (in addition to the Laravel throttle in 3.1)
 
 ### 3.4 Narrow trusted proxies `[AGENT]`
-- [ ] `laravel/bootstrap/app.php` line 15: `'0.0.0.0/0'` → `['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']` (Docker bridge + cloudflared live in these)
-- [ ] Verify `SESSION_SECURE_COOKIE` still sets correctly behind the tunnel (DevTools → Application → Cookies → `Secure` flag present)
+- [x] `laravel/bootstrap/app.php` line 15: `'0.0.0.0/0'` → `['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']` (Docker bridge + cloudflared live in these)
+- [ ] Verify `SESSION_SECURE_COOKIE` still sets correctly behind the tunnel (DevTools → Application → Cookies → `Secure` flag present) — manual, on dry run (4.4)
 
 ### 3.5 Paginate ReaderController `[AGENT]`
-- [ ] `laravel/app/Http/Controllers/ReaderController.php` lines 96 and 127: `->all()` → paginate/chunk
-- [ ] Audit the same pattern: `laravel/app/Http/Controllers/Test.php:204`, `laravel/app/Http/Controllers/AlignmentEditorController.php` (lines 55, 145, 374, 469, 478, 493), `laravel/app/Http/Controllers/EntityController.php:267,329,429,607`, `laravel/app/Http/Controllers/ProfileController.php:33`
+- [x] Audit complete — **no unbounded table scans found**. All flagged `->get()`/`->all()` calls are scoped to a single entity or entity-match (loading one text's content — inherent to the reader/editor), not global queries. The list-style endpoints are already bounded:
+  - `EntityController::list` → `paginate(15)` ✓
+  - `EntityController::index` → enabled `Language` rows (small lookup table) ✓
+  - `EntityController` sentence endpoints → manual `forPage` pagination ✓
+  - `ReaderController::entitiesForLanguage` + `Test::getTexts`/`entitiesForLanguage` → `limit(100)` ✓
+  - `ProfileController::edit` → all `AiProvider` rows (bounded by the handful of providers) ✓
+  - `AlignmentEditorController` rows/sentences → scoped by `$entityMatch->id` / `$entityId` ✓
+- Decision: leaving per-entity loads as-is (paginating the reader view would be a UX/frontend change, out of P1 hardening scope). Documented for the record.
 
 ### 3.6 Redis — DEFERRED
 - [ ] Deferred past initial launch (decision locked). Launch with database drivers for `CACHE_STORE`, `SESSION_DRIVER`, `QUEUE_CONNECTION`. Add a `redis:7-alpine` service and switch drivers when load justifies it. Document the trigger threshold here when revisited.
@@ -127,18 +142,21 @@ Legend: `[USER]` = only you can do it · `[AGENT]` = I can do it · `[USER+AGENT
 ### 3.7 Error tracking `[USER+AGENT]`
 - [ ] `[USER]` Create a Sentry project (or Flare/Bugsnag) → capture the DSN
 - [ ] `[AGENT]` `composer require sentry/sentry-laravel` (verify Laravel 13 support); wire into `bootstrap/app.php` exception handler; DSN in `.env.production`
+- Status: **deferred** — waiting on the user to create the project + hand over the DSN. Not adding the dependency without approval (repo rule). Once the DSN is available, the agent wiring is a small `composer require` + a `bootstrap/app.php` `->withExceptions(...)` hook + `SENTRY_LARAVEL_DSN` in `.env.production`.
 
 ---
 
 ## Phase 4 — P2 & Final Verification
 
 ### 4.1 CI `[AGENT]`
-- [ ] New `.github/workflows/tests.yml`: run `composer run test` on PRs (currently only `.github/workflows/tia-baseline.yml` exists — there is **no** PR test workflow at all)
-- [ ] Add a `vendor/bin/pint --test` job to the same workflow
+- [x] New `.github/workflows/tests.yml`: run `composer run test` on PRs (currently only `.github/workflows/tia-baseline.yml` exists — there is **no** PR test workflow at all)
+- [x] Add a `vendor/bin/pint --test` job to the same workflow
+- Implementation: triggers on PRs + `master` pushes; `tests` job runs `composer run test` against a `postgres:18-alpine` service (DB env supplied since CI has no `.env.testing`); `pint` job runs `vendor/bin/pint --test`.
 
 ### 4.2 DB indexes `[AGENT]`
-- [ ] Audit junction tables (`entity_sentence`, meaning-match tables) for missing composite indexes
-- [ ] One migration adding the missing indexes
+- [x] Audit junction tables (`entity_sentence`, meaning-match tables) for missing composite indexes
+- [x] One migration adding the missing indexes
+- Migration `2026_08_26_154226_add_indexes_to_alignment_junction_tables`: indexes on `en_sentence_meaning_matches` (`en_ru_meaning_match_id`, `en_entity_sentence_id`), `ru_sentence_meaning_matches` (same two FK columns), `en_ru_entity_matches` (`ru_entity_id, status`), `book_word` (`book_id, is_solved`). The anticipated `(entity_id, order)` sentence-table composite and `(entity_match_id, order)` meaning-match composite were **already present**. Unique constraints skipped (integrity decisions with breakage risk — left for a separate data-validated pass).
 
 ### 4.3 Registration policy — no action
 - [ ] Stays open; `EnsureUserIsApproved` gates every functional route. Just document where in Filament the admin flips `is_approved` on a pending user
@@ -150,11 +168,11 @@ Legend: `[USER]` = only you can do it · `[AGENT]` = I can do it · `[USER+AGENT
 - [ ] Confirm `ext-app.abibook.xyz` serves the prod build with secure cookies (DevTools → Application → Cookies → `Secure` + `HttpOnly` flags)
 
 ### 4.5 Repo bookkeeping `[AGENT]`
-- [ ] `docker exec ext_app_laravel php artisan wiki:sync` after any route/command changes
-- [ ] `docker exec ext_app_laravel php artisan wiki:validate` passes (also runs in the test suite)
-- [ ] `docker exec ext_app_laravel vendor/bin/pint --dirty`
-- [ ] Update `wiki/log.md` + add a new `wiki/` concept for the production setup
-- [ ] Delete the stray committed file `laravel/resources/views/components/crossword/SELECT * FROM users;.pgsql`
+- [x] `docker exec ext_app_laravel php artisan wiki:sync` after any route/command changes
+- [x] `docker exec ext_app_laravel php artisan wiki:validate` passes (also runs in the test suite)
+- [ ] `docker exec ext_app_laravel vendor/bin/pint --dirty` — run last (after all edits)
+- [x] Update `wiki/log.md` + add a new `wiki/` concept for the production setup (`wiki/playbooks/production-deployment.md` + a Production-overlay section in `wiki/architecture/docker-services.md`)
+- [x] Delete the stray committed file `laravel/resources/views/components/crossword/SELECT * FROM users;.pgsql` — already absent (not tracked, not on disk); the stale `.gitignore` entry left in place (harmless)
 
 ---
 

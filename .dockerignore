@@ -1,0 +1,43 @@
+# Excluded from ALL Docker build contexts. The dev image (LaravelDockerfile)
+# doesn't COPY source — it bind-mounts at runtime — so this only affects prod
+# builds (LaravelDockerfile.prod), keeping them reproducible & lean.
+
+# Dependencies installed inside the image
+laravel/node_modules
+laravel/vendor
+
+# Stale dev build output — prod image rebuilds fresh
+laravel/public/build
+laravel/public/hot
+
+# Dev runtime state (dirs recreated by the image build)
+laravel/storage/logs/*
+laravel/storage/debugbar/*
+laravel/storage/framework/cache/*
+laravel/storage/framework/sessions/*
+laravel/storage/framework/views/*
+laravel/storage/app/public/*
+laravel/storage/app/laravel-excel/*
+
+# Dev-only PHP ini (xdebug must never ship in prod)
+docker-php-ext-xdebug.ini
+docker-php-ext-xdebug copy.ini
+
+# Secrets, large dumps, editor/IDE, agent scratch
+backup11.sql
+**/.env
+.git
+.github
+.idea
+.vscode
+.cursor
+.agents
+.claude
+.plans
+.playwright-mcp
+trash
+*.md
+session-ses_01d8.md
+alignments-plan.md
+homepage-current.png
+test_render.html

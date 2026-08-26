@@ -1,0 +1,89 @@
+FROM node:20-alpine AS frontend
+
+WORKDIR /var/www
+
+# package-lock.json is required for `npm ci` (reproducible builds).
+COPY laravel/package.json laravel/package-lock.json ./
+RUN npm ci
+
+# Application source for the Vite build (resources/, public/, vite.config.js).
+# .dockerignore strips node_modules/ and the stale dev public/build/.
+COPY laravel/ ./
+RUN npm run build
+
+
+FROM php:8.4-fpm AS app
+
+# System dependencies (no gh CLI — prod image is not a dev shell).
+# rsync syncs baked assets into the nginx-shared volume on every boot.
+RUN apt-get update && apt-get install -y \
+        git \
+        curl \
+        rsync \
+        libpq-dev \
+        libpng-dev \
+        libjpeg-dev \
+        libfreetype6-dev \
+        libonig-dev \
+        libxml2-dev \
+        libzip-dev \
+        libicu-dev \
+        zip \
+        unzip \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# GD (freetype + jpeg) then the rest. No xdebug in prod.
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install pdo pdo_pgsql pgsql mbstring exif pcntl bcmath gd zip \
+    && docker-php-ext-configure intl \
+    && docker-php-ext-install intl
+
+# Production PHP ini (upload limits + OPcache).
+COPY docker-compose/php-prod.ini "${PHP_INI_DIR}/conf.d/ext-app-prod.ini"
+
+# Composer.
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+WORKDIR /var/www
+
+# Install PHP deps first (cached layer, no dev tooling).
+COPY laravel/composer.json laravel/composer.lock ./
+RUN composer install --no-dev --optimize-autoloader --no-interaction
+
+# Application source (.dockerignore strips vendor/, build/, dev runtime state).
+COPY laravel/ ./
+
+# Built frontend assets from the node stage.
+COPY --from=frontend /var/www/public/build ./public/build
+
+# Reading materials are gitignored — bake them in from the build context.
+COPY laravel/public/texts ./public/texts
+
+# Canonical copy of public/ (unshadowed by the runtime volume) so the
+# entrypoint can refresh the nginx-shared volume on every boot, even after
+# image rebuilds (avoids stale-asset gotcha with named volumes).
+RUN mkdir -p /opt/app-assets \
+    && cp -a /var/www/public /opt/app-assets/public
+
+# Recreate the storage skeleton (excluded by .dockerignore) and fix perms so
+# www-data (the runtime user) can write storage, bootstrap/cache, and public/.
+RUN mkdir -p \
+        storage/framework/cache \
+        storage/framework/sessions \
+        storage/framework/views \
+        storage/app/public \
+        storage/logs \
+        storage/debugbar \
+        bootstrap/cache \
+    && chown -R www-data:www-data /var/www /opt/app-assets
+
+# Entrypoint: syncs assets, links storage, caches config/routes/views,
+# runs migrations. Idempotent and safe on every container start.
+COPY --chown=www-data:www-data docker-compose/entrypoint.prod.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+USER www-data
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["php-fpm"]

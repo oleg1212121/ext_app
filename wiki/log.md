@@ -2,6 +2,44 @@
 
 ## 2026-08-26
 
+* **Production launch — Phases 2–4 (agent).** Production Docker, P1/P2 code
+  hardening, CI, and DB indexes:
+  * **Phase 2 (prod Docker):** added `LaravelDockerfile.prod` (multi-stage:
+    `node:20-alpine` builds Vite → `php:8.4-fpm` no-xdebug/gh, opcache, baked
+    `public/build` + `public/texts`, canonical asset copy + `rsync` entrypoint);
+    `docker-compose/entrypoint.prod.sh` (idempotent `config:cache route:cache
+    view:cache filament:optimize storage:link migrate --force`); new
+    `docker-compose.prod.yml` override (prod image, no source bind mounts,
+    pinned `postgres:18-alpine`, no host ports, healthcheck, resource limits,
+    shared `app_public`/`app_storage` volumes); new `queue` (scale 2,
+    `--tries=1 --timeout=620`) + `scheduler` (`schedule:work`) + `backups`
+    (crond sidecar, daily `pg_dump`, 14-day retention); `.dockerignore`
+    strips dev output/vendor/xdebug/`backup11.sql`; prod DB creds live in
+    gitignored `docker-compose/prod/postgres.env`. Validated merge with
+    `docker compose config`. Added `wiki/playbooks/production-deployment.md`
+    and a Production-overlay section to
+    [docker-services](architecture/docker-services.md).
+  * **Phase 3 (hardening):** `throttle:20,1` on `/ai/question` +
+    `/ai/question/stream` (+ `tests/Feature/AiQuestionThrottleTest.php`
+    asserting 429 on the 21st request); `DB_SSLMODE` env-driven in
+    `config/database.php` (both `pgsql` + `testing`); narrowed trusted proxies
+    in `bootstrap/app.php` (`0.0.0.0/0` → RFC1918 + loopback); nginx
+    `app.conf` hardened (`client_max_body_size 20m`, `X-Frame-Options`,
+    `X-Content-Type-Options`, `Referrer-Policy`, `limit_req` on `/ai/question`).
+    Phase 3.5 audit: all flagged `->all()`/`->get()` calls are per-entity/per-
+    match scoped (no global scans); list endpoints already use
+    `paginate(15)`/`limit(100)`/`forPage` — no change needed. 3.7 Sentry
+    deferred (pending user creates the project; deps not added without
+    approval).
+  * **Phase 4:** `.github/workflows/tests.yml` (Pest suite against a
+    `postgres:18-alpine` service + `pint --test` on PRs/`master`);
+    `2026_08_26_154226_add_indexes_to_alignment_junction_tables` (indexes on
+    `en_sentence_meaning_matches`/`ru_sentence_meaning_matches` FK columns,
+    `en_ru_entity_matches(ru_entity_id, status)`, `book_word(book_id,
+    is_solved)` — the anticipated `(entity_id,order)` and
+    `(entity_match_id,order)` composites were already present).
+  * Ran `wiki:sync` (regenerated `reference/`) + `wiki:validate` (conformant).
+
 * **Production launch — Phase 1 (agent).** Security + launch-prep changes:
   deleted `App\Livewire\WordsSearch` and its Blade view (`WordsSearch.php:15`
   interpolated `$this->search` into a raw `DB::select()` — SQLi; confirmed zero

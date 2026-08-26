@@ -1,0 +1,145 @@
+# Production override for ext_app — same host + Cloudflare tunnel.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# This file replaces dev-only bits from docker-compose.yml (bind mounts of
+# source, host port mappings, the python --reload command) and adds the
+# prod-only workers (queue, scheduler, backups). `!override` / `!reset` are
+# Compose v2.24+ merge tags (host runs Compose v5).
+#
+# Secrets live in gitignored files, never in this compose:
+#   - laravel/.env.production          (Laravel app + queue + scheduler env)
+#   - docker-compose/prod/postgres.env (POSTGRES_* for the db + backups sidecars)
+#   - docker-compose/cloudflare/.env   (TUNNEL_TOKEN, untracked after Phase 1.1)
+
+services:
+
+  # --- Laravel app (PHP-FPM, baked prod image, no source bind mounts) ---
+  app:
+    build:
+      context: .
+      dockerfile: LaravelDockerfile.prod
+    image: ext_app_prod
+    env_file: ./laravel/.env.production
+    # Drop the dev bind mounts of ./laravel and ./ — code is baked in the image.
+    volumes: !override
+      - app_storage:/var/www/storage
+      - app_public:/var/www/public
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: '2'
+
+  # --- Postgres (pinned, no host port, named volume, healthcheck) ---
+  db:
+    image: postgres:18-alpine
+    env_file: !override
+      - ./docker-compose/prod/postgres.env
+    # Clear the dev environment map (which interpolated test/test defaults) —
+    # POSTGRES_* now come from postgres.env via env_file.
+    environment: !override {}
+    ports: !reset null
+    volumes: !override
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: '2'
+
+  # --- nginx (serves baked assets from the shared app_public volume) ---
+  nginx:
+    volumes: !override
+      - app_public:/var/www/public:ro
+      - ./nginx/conf:/etc/nginx/conf.d
+    depends_on:
+      - app
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: '0.5'
+
+  # --- Python ML service (no host port, no --reload, 2 workers) ---
+  python:
+    command: uvicorn ai.main:app --host 0.0.0.0 --port 8000 --workers 2
+    ports: !reset null
+    restart: unless-stopped
+    mem_limit: 5g
+    cpus: '4'
+
+  # --- Queue workers (2 replicas, tries=1, timeout under retry_after=660s) ---
+  queue:
+    image: ext_app_prod
+    entrypoint: []
+    # Wait for migrations (run by the app's entrypoint) before consuming.
+    command: >-
+      sh -c "until php artisan migrate:status >/dev/null 2>&1; do sleep 2; done
+      && exec php artisan queue:work --tries=1 --timeout=620"
+    env_file: ./laravel/.env.production
+    depends_on:
+      app:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - app_storage:/var/www/storage
+    networks:
+      - ext_net
+    restart: unless-stopped
+    scale: 2
+    mem_limit: 1g
+    cpus: '1.5'
+
+  # --- Scheduler (single, runs `schedule:work` daemon for every-minute ticks) ---
+  scheduler:
+    image: ext_app_prod
+    entrypoint: []
+    command: >-
+      sh -c "until php artisan migrate:status >/dev/null 2>&1; do sleep 2; done
+      && exec php artisan schedule:work"
+    env_file: ./laravel/.env.production
+    depends_on:
+      app:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - app_storage:/var/www/storage
+    networks:
+      - ext_net
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: '0.5'
+
+  # --- Postgres daily backup sidecar (crond, 14-day retention) ---
+  backups:
+    image: postgres:18-alpine
+    env_file: ./docker-compose/prod/postgres.env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "crond -l 2 -f"
+    volumes:
+      - pgbackups:/backups
+      - ./docker-compose/prod/backup.sh:/etc/cron/backup.sh:ro
+      - ./docker-compose/prod/backup.crontab:/etc/crontabs/root:ro
+    networks:
+      - ext_net
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: '0.5'
+
+  # cloudflared: unchanged (env file now untracked after Phase 1.1)
+
+volumes:
+  pgdata:
+  app_storage:
+  app_public:
+  pgbackups:

@@ -1,0 +1,3 @@
+# Daily 03:00 UTC logical backup (run by the `backups` sidecar's crond).
+# Format: min hour dom mon dow command
+0 3 * * * /bin/sh /etc/cron/backup.sh >> /backups/backup.log 2>&1
