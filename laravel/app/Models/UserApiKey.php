@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Database\Factories\UserApiKeyFactory;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -41,7 +42,13 @@ class UserApiKey extends Model
      */
     public function masked(): string
     {
-        $key = $this->api_key;
+        try {
+            $key = $this->api_key;
+        } catch (DecryptException $e) {
+            report($e);
+
+            return '(decryption failed)';
+        }
 
         if (strlen($key) < 8) {
             return str_repeat('•', 4);

@@ -3,6 +3,7 @@
 use App\Models\AiProvider;
 use App\Models\User;
 use App\Models\UserApiKey;
+use Illuminate\Support\Facades\DB;
 
 it('lists enabled providers with a masked key preview and never echoes the full key', function () {
     $user = User::factory()->create();
@@ -19,6 +20,29 @@ it('lists enabled providers with a masked key preview and never echoes the full 
             ->where('apiKeyProviders.0.has_key', true)
             ->where('apiKeyProviders.0.masked_key', 'supe••••cret')
             ->missing('apiKeyProviders.1')
+        );
+});
+
+it('loads the profile even when a stored key can no longer be decrypted', function () {
+    $user = User::factory()->create();
+    $provider = AiProvider::factory()->enabled()->create(['key' => 'openrouter']);
+
+    // Insert a raw, non-encrypted payload so the `encrypted` cast fails to decrypt it
+    // (simulates a row encrypted under a rotated APP_KEY).
+    DB::table('user_api_keys')->insert([
+        'user_id' => $user->id,
+        'ai_provider_id' => $provider->id,
+        'api_key' => 'not-a-valid-encrypted-payload',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('apiKeyProviders.0.has_key', true)
+            ->where('apiKeyProviders.0.masked_key', '(decryption failed)')
         );
 });
 
