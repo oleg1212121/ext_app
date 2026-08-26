@@ -9,6 +9,8 @@ docker-compose/python/ai/bge_m3_local/
 docker-compose/python/ai/*_local/
 # Local env for ext_python (copy from env/.env.example)
 docker-compose/python/env/.env
+# Cloudflare tunnel token — must never be committed (rotate via Zero Trust dashboard)
+docker-compose/cloudflare/.env
 docker-compose/nginx/nginx.conf:Zone.Identifier
 laravel/vendor/
 laravel/.devcontainer

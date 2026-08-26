@@ -39,8 +39,8 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            // Must exceed the longest job timeout (e.g. entity processing at 180s) or a second worker may retry the same job.
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 300),
+            // Must exceed the longest job timeout (AlignEntitySentences at 600s) or a second worker may retry the still-running job.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 660),
             'after_commit' => false,
         ],
 

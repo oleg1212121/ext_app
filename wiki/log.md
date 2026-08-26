@@ -1,5 +1,25 @@
 # Directory Update Log
 
+## 2026-08-26
+
+* **Production launch — Phase 1 (agent).** Security + launch-prep changes:
+  deleted `App\Livewire\WordsSearch` and its Blade view (`WordsSearch.php:15`
+  interpolated `$this->search` into a raw `DB::select()` — SQLi; confirmed zero
+  references, dead code); raised the database queue `retry_after` default
+  `300 → 660` so it exceeds the 600s `AlignEntitySentences::$timeout` (a second
+  worker could otherwise retry a still-running job and duplicate alignment),
+  guarded by `tests/Unit/QueueConfigTest.php`; added a committed
+  `laravel/.env.production.example` (prod template — daily logs, `DB_HOST=db`
+  /`5432`, `SESSION_*` secure cookies, `MAIL_MAILER=resend`) plus a gitignored
+  `laravel/.env.production`; untracked and gitignored
+  `docker-compose/cloudflare/.env` (leaked tunnel token); ran
+  `composer require resend/resend-laravel` (Resend mail transport — reads
+  `RESEND_API_KEY`, falls back to the existing `RESEND_KEY` wiring).
+  Tombstoned `wiki/domains/words-search.md` and updated
+  `wiki/architecture/frontend.md`. **User steps remaining:** rotate Cloudflare
+  tunnel token, AI provider keys, admin/DB/proxy secrets; create Resend API
+  key + verify sending domain; end-to-end registration/password-reset email flow.
+
 ## 2026-08-25
 
 * **Change: entities *Sentences* tab (Edit.jsx) now paginates and shows
