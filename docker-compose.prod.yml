@@ -26,8 +26,11 @@ services:
     # survive Docker Desktop "Purge data". See entrypoint.prod.sh for the
     # storage-skeleton recreation that bind mounts require.
     volumes: !override
-      - ./docker-compose/prod/storage:/var/www/storage
-      - ./docker-compose/prod/public:/var/www/public
+      # :U makes Docker chown the host dir to the container UID (www-data/33) on
+      # mount, so the entrypoint can create the storage skeleton. Required because
+      # host bind mounts are owned by the host user, not www-data.
+      - ./docker-compose/prod/storage:/var/www/storage:U
+      - ./docker-compose/prod/public:/var/www/public:U
     depends_on:
       db:
         condition: service_healthy
@@ -95,7 +98,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./docker-compose/prod/storage:/var/www/storage
+      - ./docker-compose/prod/storage:/var/www/storage:U
     networks:
       - ext_net
     restart: unless-stopped
@@ -117,7 +120,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./docker-compose/prod/storage:/var/www/storage
+      - ./docker-compose/prod/storage:/var/www/storage:U
     networks:
       - ext_net
     restart: unless-stopped
