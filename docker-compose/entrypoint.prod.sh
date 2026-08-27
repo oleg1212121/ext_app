@@ -26,5 +26,14 @@ php artisan filament:optimize
 # Migrate (non-destructive: only applies pending migrations).
 php artisan migrate --force
 
+# Seed idempotent reference data required by runtime jobs/features.
+# SentenceSplitter throws "No sentence types found" if this is empty, which
+# caused SplitEntityFileSentences jobs to fail in a retry loop in prod.
+php artisan db:seed --class=SentenceTypeSeeder --force
+
+# Seed AI providers (updateOrCreate: idempotent). Runtime features that call
+# AI providers fail if this table is empty, so ensure rows exist on every boot.
+php artisan db:seed --class=AiProviderSeeder --force
+
 # Hand off to the image CMD (php-fpm).
 exec "$@"

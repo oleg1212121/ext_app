@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * @property int|null $ai_provider_id
+ * @property int $ai_provider_id
  * @property string $external_id
  * @property string|null $canonical_slug
  * @property string $name

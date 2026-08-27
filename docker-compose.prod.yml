@@ -42,7 +42,10 @@ services:
     environment: !override {}
     ports: !reset null
     volumes: !override
-      - pgdata:/var/lib/postgresql/data
+      # PG 18+ images expect the mount at /var/lib/postgresql (not /data) so the
+      # cluster lands in the version-specific subdirectory; mounting at /data
+      # makes the entrypoint refuse to initialize.
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s

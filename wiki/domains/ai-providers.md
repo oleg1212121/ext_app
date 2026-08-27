@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent/ox-alpha, at: 2026-08-23T22:00:00Z }
+generated: { by: agent/opencode, at: 2026-08-27T12:10:00Z }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base
@@ -46,9 +46,12 @@ sources:
    - id: provider-migration
      resource: laravel/database/migrations/2026_08_23_000001_create_ai_providers_table.php
      title: ai_providers table
-   - id: model-fk-migration
-     resource: laravel/database/migrations/2026_08_23_000002_add_ai_provider_id_to_ai_models.php
-     title: ai_models.ai_provider_id FK
+    - id: model-fk-migration
+      resource: laravel/database/migrations/2026_08_23_000002_add_ai_provider_id_to_ai_models.php
+      title: ai_models.ai_provider_id FK (added nullable)
+    - id: model-fk-not-null
+      resource: laravel/database/migrations/2026_08_24_000001_make_ai_models_provider_not_null.php
+      title: ai_models.ai_provider_id made NOT NULL + cascade delete
    - id: provider-seeder
      resource: laravel/database/seeders/AiProviderSeeder.php
      title: AiProviderSeeder
@@ -166,9 +169,12 @@ both; `ask()` returns 403 if the user has no User key for the requested provider
 
 Model lists are **no longer hardcoded** in the provider classes. Every provider
 reads its enabled, unexpired models from `ai_models` in its constructor, via the
-`ai_provider_id` foreign key to `ai_providers` (unique with `external_id`),
-reconstructing the legacy `key => "Name ($X.XX/$Y.YY)"` display format via
-`AiModel::displayLabel()`.
+**NOT NULL** `ai_provider_id` foreign key to `ai_providers` (unique with
+`external_id`, `cascadeOnDelete`), reconstructing the legacy
+`key => "Name ($X.XX/$Y.YY)"` display format via `AiModel::displayLabel()`. The
+column was originally added nullable (leaving pre-existing catalog rows
+orphaned); a follow-up migration enforces NOT NULL, so orphan rows can no longer
+exist.
 
 * `App\Services\AiModelSync` (abstract, implements `App\Contracts\ModelSync`)
   holds the shared fetch / upsert / delete-missing logic. `sync()` reads the

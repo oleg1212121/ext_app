@@ -11,6 +11,7 @@ laravel/public/build
 laravel/public/hot
 
 # Dev runtime state (dirs recreated by the image build)
+laravel/bootstrap/cache
 laravel/storage/logs/*
 laravel/storage/debugbar/*
 laravel/storage/framework/cache/*

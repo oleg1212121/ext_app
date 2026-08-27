@@ -9,12 +9,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('ai_models', function (Blueprint $table) {
-            $table->unsignedBigInteger('ai_provider_id')->nullable()->after('id');
+            $table->unsignedBigInteger('ai_provider_id')->after('id');
 
             $table->foreign('ai_provider_id')
                 ->references('id')
                 ->on('ai_providers')
-                ->nullOnDelete();
+                ->cascadeOnDelete();
 
             $table->dropUnique(['provider', 'external_id']);
             $table->dropColumn('provider');

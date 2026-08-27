@@ -48,8 +48,11 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www
 
 # Install PHP deps first (cached layer, no dev tooling).
+# --no-scripts: script `post-autoload-dump` runs `artisan package:discover`
+# / `filament:upgrade`, but `artisan` is only copied in at line 55 below — so
+# defer the scripts until the full source is present.
 COPY laravel/composer.json laravel/composer.lock ./
-RUN composer install --no-dev --optimize-autoloader --no-interaction
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
 
 # Application source (.dockerignore strips vendor/, build/, dev runtime state).
 COPY laravel/ ./
@@ -77,6 +80,17 @@ RUN mkdir -p \
         storage/debugbar \
         bootstrap/cache \
     && chown -R www-data:www-data /var/www /opt/app-assets
+
+# Run the composer post-install scripts skipped by --no-scripts (artisan now
+# exists and bootstrap/cache is created/writable). `package:discover` bakes the
+# provider cache into bootstrap/cache/packages.php for the image. Stale dev
+# cache is excluded from the build via .dockerignore (laravel/bootstrap/cache);
+# the rm is defense-in-depth. `filament:upgrade` is omitted on purpose — it
+# publishes assets and runs migrations (needs a DB, absent at build time);
+# `filament:optimize` in the entrypoint handles prod optimization.
+RUN rm -f bootstrap/cache/*.php \
+    && php artisan package:discover --ansi \
+    && chown www-data:www-data bootstrap/cache/packages.php
 
 # Entrypoint: syncs assets, links storage, caches config/routes/views,
 # runs migrations. Idempotent and safe on every container start.

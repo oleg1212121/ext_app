@@ -54,7 +54,8 @@ The `app` service builds `LaravelDockerfile.prod` → tags `ext_app_prod`.
 `queue`/`scheduler` reuse that image (no separate build). The image entrypoint
 syncs baked assets into the nginx-shared `app_public` volume, runs
 `storage:link`, `config:cache`, `route:cache`, `view:cache`,
-`filament:optimize`, then `migrate --force`, and finally `php-fpm`.
+`filament:optimize`, then `migrate --force`, seeds idempotent reference data
+(`SentenceTypeSeeder`, `AiProviderSeeder`), and finally `php-fpm`.
 
 `queue`/`scheduler` skip the entrypoint and wait for
 `php artisan migrate:status` to succeed before consuming/starting.

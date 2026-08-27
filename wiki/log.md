@@ -1,5 +1,21 @@
 # Directory Update Log
 
+## 2026-08-27
+
+* **Change: `ai_models.ai_provider_id` is now NOT NULL (was nullable).** The FK
+  was originally added nullable (migration `2026_08_23_000002`) leaving
+  pre-existing catalog rows orphaned (`ai_provider_id = NULL`); a follow-up
+  migration `2026_08_24_000001_make_ai_models_provider_not_null` now enforces
+  NOT NULL on already-migrated databases (raw `ALTER COLUMN ... SET NOT NULL`,
+  idempotent on Postgres) and switches the FK to `cascadeOnDelete`. Orphan rows
+  can no longer exist, so `App\Services\AiModelSync` dropped its null-provider /
+  orphan-adoption branches and now requires a provider row to exist before
+  syncing (the unique `(ai_provider_id, external_id)` index keeps the catalog
+  mirror sound). `AiModelSyncTest` updated accordingly; affected AI suite green
+  (`AiModelSyncTest`, `AIModelResolverTest`, `OpenRouterTest`, `UserCanUseAiTest`,
+  `SimulatorApiKeyTest`, `UserCanUseAiParityTest`). Docs:
+  `wiki/domains/ai-providers.md` (`generated.at` bumped).
+
 ## 2026-08-26
 
 * **Production launch — Phases 2–4 (agent).** Production Docker, P1/P2 code
