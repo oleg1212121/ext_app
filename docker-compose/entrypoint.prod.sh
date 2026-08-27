@@ -35,5 +35,9 @@ php artisan db:seed --class=SentenceTypeSeeder --force
 # AI providers fail if this table is empty, so ensure rows exist on every boot.
 php artisan db:seed --class=AiProviderSeeder --force
 
+# Seed languages (upsert: idempotent). The picker, reader, and crossword pages
+# 404 or break when the languages table is empty, so ensure rows exist on boot.
+php artisan db:seed --class=LanguageSeeder --force
+
 # Hand off to the image CMD (php-fpm).
 exec "$@"

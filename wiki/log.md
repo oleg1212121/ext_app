@@ -2,6 +2,22 @@
 
 ## 2026-08-27
 
+* **Models now persisted in `ai_models` volume + idempotent `install-models.sh`.**
+  Root-caused the `ext_app-queue-*` `ProcessEntityFile` / `AlignEntitySentences`
+  failures to an empty `ai_models` named volume — the LaBSE model
+  (`/app/models/labse`, used for both signatures and alignment via
+  `MODEL_PATH`/`ALIGN_MODEL_PATH`) had never been downloaded, so the Python
+  service returned `503 Model not loaded`. Added `install-models.sh` (host script:
+  checks each model dir, downloads only missing ones into the volume with
+  `HF_HUB_OFFLINE` temporarily `0`, then verifies both load offline). It now
+  provisions **LaBSE** (`sentence-transformers/LaBSE`) at `/app/models/labse` and
+  **BGE-M3** (`BAAI/bge-m3`) at `/app/models/bge_m3` (staged for future use). The
+  volume persists across `docker compose up/down` recreates, so no re-download on
+  restart — only `down -v` / `volume prune` would wipe it. Reconciled the stale
+  `wiki/architecture/docker-services.md` (it claimed BGE-M3 + MiniLM; actual config
+  is LaBSE active, BGE-M3 staged). Retried the two model-related failed jobs — both
+  DONE. (One unrelated failed job remains: `EnEntity` id 1 `ModelNotFoundException`.)
+
 * **Change: `ai_models.ai_provider_id` is now NOT NULL (was nullable).** The FK
   was originally added nullable (migration `2026_08_23_000002`) leaving
   pre-existing catalog rows orphaned (`ai_provider_id = NULL`); a follow-up

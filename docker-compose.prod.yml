@@ -39,13 +39,13 @@ services:
       - ./docker-compose/prod/postgres.env
     # Clear the dev environment map (which interpolated test/test defaults) —
     # POSTGRES_* now come from postgres.env via env_file.
-    environment: !override {}
+    environment: !override { PGDATA: /var/lib/postgresql/data }
     ports: !reset null
     volumes: !override
-      # PG 18+ images expect the mount at /var/lib/postgresql (not /data) so the
-      # cluster lands in the version-specific subdirectory; mounting at /data
-      # makes the entrypoint refuse to initialize.
-      - pgdata:/var/lib/postgresql
+      # Bind mount to a repo-local host dir so the cluster survives Docker Desktop
+      # "Purge data" (which only wipes Docker-managed named volumes, not host bind
+      # mounts). PGDATA is pinned explicitly so image version bumps can't move it.
+      - ./docker-compose/prod/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
@@ -142,7 +142,6 @@ services:
   # cloudflared: unchanged (env file now untracked after Phase 1.1)
 
 volumes:
-  pgdata:
   app_storage:
   app_public:
   pgbackups:
