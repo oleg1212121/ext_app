@@ -52,7 +52,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 The `app` service builds `LaravelDockerfile.prod` → tags `ext_app_prod`.
 `queue`/`scheduler` reuse that image (no separate build). The image entrypoint
-syncs baked assets into the nginx-shared `app_public` volume, runs
+syncs baked assets into the host bind-mounted `app_public` dir, runs
 `storage:link`, `config:cache`, `route:cache`, `view:cache`,
 `filament:optimize`, then `migrate --force`, seeds idempotent reference data
 (`SentenceTypeSeeder`, `AiProviderSeeder`), and finally `php-fpm`.
@@ -68,10 +68,12 @@ syncs baked assets into the nginx-shared `app_public` volume, runs
 - **Admin**: run `docker exec ext_app_laravel php artisan admin:create`
   against the prod DB (uses `ADMIN_*` from `.env.production`).
 - **Static assets after a rebuild**: the entrypoint `rsync`s the image's
-  canonical `/opt/app-assets/public/` into the `app_public` volume on every
-  boot, so asset updates land without `docker compose down -v`.
-- **`storage` persists** on the `app_storage` named volume (shared by `app`,
-  `queue`, `scheduler`) — uploads and logs survive recreates.
+  canonical `/opt/app-assets/public/` into the host bind-mounted `app_public`
+  dir on every boot, so asset updates land without `docker compose down -v`.
+- **`storage` persists** on the host bind mount `./docker-compose/prod/storage`
+  (shared by `app`, `queue`, `scheduler`) — uploads and logs survive recreates
+  **and Docker Desktop "Purge data"** (host bind mounts are not Docker-managed
+  volumes). The entrypoint recreates the storage skeleton on each boot.
 - **Scheduler**: `routes/console.php` schedules `alignments:resume` every 5
   min with `->withoutOverlapping()`. Without the `scheduler` service,
   stalled alignments never resume.
@@ -79,13 +81,15 @@ syncs baked assets into the nginx-shared `app_public` volume, runs
 # Backups & restore
 
 The `backups` sidecar runs crond → `docker-compose/prod/backup.sh` daily at
-03:00 UTC. Dumps land in the `pgbackups` volume as
-`ext_app-YYYYMMDD-HHMMSS.sql.gz`, 14-day retention.
+03:00 UTC. Dumps land in the host bind mount `./docker-compose/prod/backups` (mounted
+at `/backups` in the container) as `ext_app-YYYYMMDD-HHMMSS.sql.gz`, 14-day
+retention. Because this is a **host bind mount** (not a named volume), the dumps
+survive Docker Desktop "Purge data" — which previously wiped them.
 
 Restore (against the prod DB; never the `testing` connection):
 
 ```bash
-gunzip -c /backups/ext_app-YYYYMMDD-HHMMSS.sql.gz \
+gunzip -c docker-compose/prod/backups/ext_app-YYYYMMDD-HHMMSS.sql.gz \
   | docker exec -i ext_pgdb psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
 ```
 

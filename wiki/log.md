@@ -2,6 +2,24 @@
 
 ## 2026-08-27
 
+* **Persistence hardening: all Docker data moved off named volumes onto host bind mounts.**
+  Root cause of repeated data loss: Docker Desktop "Clean / Purge data" is a factory
+  reset that wipes every Docker-managed **named volume** and reformats the VM disk — so
+  the `ai_models` (model weights) and `pgbackups` (DB dumps) named volumes, plus the
+  prod `app_storage`/`app_public` volumes, were destroyed on each Purge. The prod DB
+  bind mount (`./docker-compose/prod/postgres`) also vanished because a bind mount only
+  protects data if the project dir is in Docker Desktop **file sharing** (otherwise it
+  silently resolves inside the VM). Changed `docker-compose.yml` (`ai_models` →
+  `./docker-compose/python/models`) and `docker-compose.prod.yml` (`pgbackups` →
+  `./docker-compose/prod/backups`; `app_storage`/`app_public` →
+  `./docker-compose/prod/storage` + `./docker-compose/prod/public`). Added the storage
+  skeleton recreation (`mkdir -p storage/framework/* ...`) to `entrypoint.prod.sh`
+  because bind mounts shadow the image's skeleton (named volumes used to copy it on
+  first mount). Updated `.gitignore`, `install-models.sh`, `env/.env`, and the wiki
+  concepts. **Action for operators:** add the project root to Docker Desktop file
+  sharing, and `chown -R 33:33 docker-compose/prod/storage docker-compose/prod/public`
+  so `www-data` can write; then re-run `install-models.sh`.
+
 * **Models now persisted in `ai_models` volume + idempotent `install-models.sh`.**
   Root-caused the `ext_app-queue-*` `ProcessEntityFile` / `AlignEntitySentences`
   failures to an empty `ai_models` named volume — the LaBSE model

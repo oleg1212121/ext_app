@@ -8,9 +8,15 @@ set -e
 
 cd /var/www
 
-# Refresh the nginx-shared volume with the image's baked assets (handles
+# Recreate the storage skeleton. Named volumes used to copy this from the image
+# on first mount; host bind mounts shadow the image dir instead, so we must
+# ensure the directories exist ourselves (runs as www-data).
+mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views \
+         storage/app/public storage/logs storage/debugbar bootstrap/cache
+
+# Refresh the host bind-mounted public dir with the image's baked assets (handles
 # image rebuilds without `docker compose down -v`). --delete keeps the
-# volume an exact mirror of the canonical public/; storage:link re-adds the
+# bind mount an exact mirror of the canonical public/; storage:link re-adds the
 # storage symlink below.
 rsync -a --delete /opt/app-assets/public/ /var/www/public/
 

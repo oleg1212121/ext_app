@@ -16,6 +16,15 @@ This document provides guidelines for agents operating in this Laravel bilingual
 
 ## Docker Environment
 
+**Never click Docker Desktop "Clean / Purge data" / "Reset to factory defaults".**
+That is a factory reset: it deletes every Docker-managed **named volume** and
+reformats the VM disk. All persistent data (model weights, Postgres cluster, DB
+backups, Laravel storage) lives in **host bind mounts** (`./docker-compose/...`)
+specifically so it survives that reset — but only if the project directory is in
+Docker Desktop **file sharing**. To stop the stack without losing data use
+`docker compose down` (no `-v`); to reclaim space safely use `docker system prune`
+(which does not touch volumes).
+
 All Laravel/PHP/Composer/NPM commands must run inside the `ext_app_laravel` container.
 
 ```bash

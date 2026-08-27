@@ -556,9 +556,10 @@ sentence(s). The output powers the
     truncated to the head 256 tokens, dropping the tail — a known quality note,
     not a crash. Windows are single/joined sentences up to `max_window=3`, so
     over-cap joins are rare on clean prose but plausible on long messy sentences.
-* **Model weights** live in a named Docker volume `ai_models` mounted at
-  `/app/models/<subdir>` (BGE-M3 at `/app/models/bge_m3`, MiniLM at
-  `/app/models/minilm`, LaBSE at `/app/models/labse`). The image carries no
+* **Model weights** live in a host bind mount `./docker-compose/python/models`
+  (mounted at `/app/models` in the container) — **not** a Docker named volume, so
+  they survive Docker Desktop "Purge data". BGE-M3 at `/app/models/bge_m3`,
+  MiniLM at `/app/models/minilm`, LaBSE at `/app/models/labse`. The image carries no
   models; the source tree carries none (the old
   `docker-compose/python/ai/bge_m3_local/` is gitignored/removed).
   Download a new model with:

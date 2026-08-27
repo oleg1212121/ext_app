@@ -2,6 +2,12 @@ dual_translate_builder/
 .vscode/
 docker-compose/postgres/
 docker-compose/prod/postgres/
+# Host bind mounts for persistent Docker data (survive Docker Desktop "Purge
+# data" because they live on the host disk, not in named volumes / the VM).
+docker-compose/python/models/
+docker-compose/prod/backups/
+docker-compose/prod/storage/
+docker-compose/prod/public/
 .plans/
 .playwright-mcp/
 docker-compose/embedding/models/

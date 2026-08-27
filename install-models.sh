@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# install-models.sh — populate the `ai_models` named volume with the ML models
-# the ext_python FastAPI service needs, so they survive container recreates
-# and don't have to be re-downloaded on every `docker compose up`.
+# install-models.sh — populate ./docker-compose/python/models (host bind mount)
+# with the ML models the ext_python FastAPI service needs, so they survive
+# container recreates AND Docker Desktop "Purge data" (which only wipes Docker
+# managed named volumes / the VM disk, not host bind mounts).
 #
-# Idempotent: models already present in the volume are skipped.
+# Idempotent: models already present on disk are skipped.
 # Run once after `docker compose up -d` (dev or prod — same `ext_python` container).
 #
 # Usage:

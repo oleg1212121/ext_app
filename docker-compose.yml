@@ -86,9 +86,10 @@ services:
         source: ./docker-compose/python/ai
         target: /app/ai
         consistency: cached
-      # Model weights: named Docker volume. Survives recreates; not in git.
-      # Download models via /app/scripts/download_model.py.
-      - ai_models:/app/models
+      # Model weights: host bind mount (NOT a named volume). Lives on the host
+      # disk and survives Docker Desktop "Purge data" (which only wipes Docker
+      # managed named volumes / the VM disk). Download via install-models.sh.
+      - ./docker-compose/python/models:/app/models
       # Live .env: bind-mount the directory (not the single file — single-file
       # mounts break on sed -i / editor inodes). config.py re-reads /app/env/.env
       # per request, so edits to threshold/window/model paths apply instantly
@@ -114,6 +115,3 @@ services:
 networks:
   ext_net:
     driver: bridge
-
-volumes:
-  ai_models:

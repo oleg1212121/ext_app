@@ -22,9 +22,12 @@ services:
     image: ext_app_prod
     env_file: ./laravel/.env.production
     # Drop the dev bind mounts of ./laravel and ./ — code is baked in the image.
+    # app_storage/app_public are host bind mounts (NOT named volumes) so they
+    # survive Docker Desktop "Purge data". See entrypoint.prod.sh for the
+    # storage-skeleton recreation that bind mounts require.
     volumes: !override
-      - app_storage:/var/www/storage
-      - app_public:/var/www/public
+      - ./docker-compose/prod/storage:/var/www/storage
+      - ./docker-compose/prod/public:/var/www/public
     depends_on:
       db:
         condition: service_healthy
@@ -32,7 +35,7 @@ services:
     mem_limit: 1g
     cpus: '2'
 
-  # --- Postgres (pinned, no host port, named volume, healthcheck) ---
+  # --- Postgres (pinned, no host port, host bind mount, healthcheck) ---
   db:
     image: postgres:18-alpine
     env_file: !override
@@ -42,10 +45,12 @@ services:
     environment: !override { PGDATA: /var/lib/postgresql/data }
     ports: !reset null
     volumes: !override
-      # Bind mount to a repo-local host dir so the cluster survives Docker Desktop
-      # "Purge data" (which only wipes Docker-managed named volumes, not host bind
-      # mounts). PGDATA is pinned explicitly so image version bumps can't move it.
-      - ./docker-compose/prod/postgres:/var/lib/postgresql/data
+    # Bind mount to a repo-local host dir so the cluster survives Docker Desktop
+    # "Purge data" (which only wipes Docker-managed named volumes, not host bind
+    # mounts). PGDATA is pinned explicitly so image version bumps can't move it.
+    # IMPORTANT: the project dir must be in Docker Desktop's file sharing, or the
+    # bind mount silently resolves inside the VM and is wiped on Purge too.
+    - ./docker-compose/prod/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
@@ -56,10 +61,10 @@ services:
     mem_limit: 2g
     cpus: '2'
 
-  # --- nginx (serves baked assets from the shared app_public volume) ---
+  # --- nginx (serves baked assets from the host bind-mounted app_public dir) ---
   nginx:
     volumes: !override
-      - app_public:/var/www/public:ro
+      - ./docker-compose/prod/public:/var/www/public:ro
       - ./nginx/conf:/etc/nginx/conf.d
     depends_on:
       - app
@@ -90,7 +95,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - app_storage:/var/www/storage
+      - ./docker-compose/prod/storage:/var/www/storage
     networks:
       - ext_net
     restart: unless-stopped
@@ -112,7 +117,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - app_storage:/var/www/storage
+      - ./docker-compose/prod/storage:/var/www/storage
     networks:
       - ext_net
     restart: unless-stopped
@@ -127,7 +132,7 @@ services:
     command:
       - "crond -l 2 -f"
     volumes:
-      - pgbackups:/backups
+      - ./docker-compose/prod/backups:/backups
       - ./docker-compose/prod/backup.sh:/etc/cron/backup.sh:ro
       - ./docker-compose/prod/backup.crontab:/etc/crontabs/root:ro
     networks:
@@ -140,8 +145,3 @@ services:
     cpus: '0.5'
 
   # cloudflared: unchanged (env file now untracked after Phase 1.1)
-
-volumes:
-  app_storage:
-  app_public:
-  pgbackups:
