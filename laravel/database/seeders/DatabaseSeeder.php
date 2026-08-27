@@ -16,14 +16,14 @@ class DatabaseSeeder extends Seeder
             LanguageSeeder::class,
             AiProviderSeeder::class,
             SentenceTypeSeeder::class,
-            EnEntitySeeder::class,
-            RuEntitySeeder::class,
-            EnEntitySentenceSeeder::class,
-            RuEntitySentenceSeeder::class,
-            EnRuEntityMatchSeeder::class,
-            EnRuMeaningMatchSeeder::class,
-            EnSentenceMeaningMatchSeeder::class,
-            RuSentenceMeaningMatchSeeder::class,
+            // EnEntitySeeder::class,
+            // RuEntitySeeder::class,
+            // EnEntitySentenceSeeder::class,
+            // RuEntitySentenceSeeder::class,
+            // EnRuEntityMatchSeeder::class,
+            // EnRuMeaningMatchSeeder::class,
+            // EnSentenceMeaningMatchSeeder::class,
+            // RuSentenceMeaningMatchSeeder::class,
         ]);
     }
 }
