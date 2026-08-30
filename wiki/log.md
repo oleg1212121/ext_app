@@ -1,5 +1,33 @@
 # Directory Update Log
 
+## 2026-08-30
+
+* **Simulator AI panel retint: shared red + softer gloss-run shadow.** Inside
+  `#ai_answer_div` (`public/css/simulator.css`), `--wbench-danger` and
+  `--wbench-emphasis` are both overridden to `#fe2500` (scoped to the AI
+  answer, the global tokens in the `@theme` block are unchanged), and the
+  gloss-run `:hover` loses its underline in favor of a gray shadow
+  (`text-shadow: 1px 1px 5px rgb(128 128 128 / 50%)`, day + night).
+  Updated the Bilinguals Simulator concept.
+
+## 2026-08-30
+
+* **Rich AI-answer highlighting in the Bilinguals simulator.** The streamed
+  answer pipeline `renderMarkdown()` in `Bilinguals.jsx` now does more than
+  straight-quote wrapping: `==…==` phrases become `<mark>` (via `\u0001`
+  sentinels around `marked.parse` so inline markdown inside them still parses),
+  correction pairs `X => Y` (each side a quote, a wrapped inline tag, or a
+  word) become `.ai-correction` spans with danger-struck old / accent
+  underlined new / soft-ink mono arrow, quotes are wrapped in all four styles
+  (`"…"`, `«…»`, `“…”`, `‘…’`), and `\d{1,3}%` scores become
+  `<mark class="ai-score">` mono chips. New rules in `public/css/simulator.css`
+  (day + night, existing `--wbench-*` tokens) plus GFM table styling; the
+  gloss-run hover list gained `td, th`. The default assessment prompt in
+  `SimulatorController` now instructs the model to use `##` headings,
+  `~~removed~~`/`**added**`, `==double equals==`, quoted citations, and `>`
+  blockquotes so the model's output maps onto the styled elements
+  deterministically. Updated the Bilinguals Simulator concept.
+
 ## 2026-08-27
 
 * **Removed Xdebug from the dev image; switched Pest TIA coverage to PCOV.**

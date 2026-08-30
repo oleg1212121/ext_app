@@ -124,7 +124,7 @@ list, search results) must implement all four, in the interface's voice:
 |-------|-----------|
 | **Empty (no request yet)** | Serif sentence inviting the next action; mono eyebrow drops the drop-label (`NO TEXT LOADED`) |
 | **Loading (request pending)** | One orchestrated moment, not scattered shimmer — a single filling accent rule or ping dot with a mono `WORKING` label; reduced-motion stays static |
-| **Answer / data** | Scoped `.ai-prose`-style treatment; accent `em`, emphasis-red `strong`, mono-caps headings (`1.15em`, scale with the reading font); **gloss-run hover** — text-bearing elements get a pointer cursor and a crisp accent-tinted shadow cast just below the glyphs on `:hover`, scoped to `#ai_answer_div` (no background fills) |
+| **Answer / data** | Scoped `.ai-prose`-style treatment; accent `em`, emphasis-red `strong`, mono-caps headings (`1.15em`, scale with the reading font); **gloss-run hover** — text-bearing elements get a pointer cursor and a soft gray shadow cast just below the glyphs on `:hover`, scoped to `#ai_answer_div` (no background fills) |
 | **Error** | Serif line in `--wbench-danger` with the real failure message + a `Retry` control that re-sends the original payload |
 
 No region returns blank `''` HTML. No region displays fake skeleton content when

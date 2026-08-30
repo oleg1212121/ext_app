@@ -4,7 +4,7 @@ title: Bilinguals Simulator
 description: Side-by-side EN/RU reading trainer where users translate and get AI assessment of their translation.
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
-generated: { by: human:alex, at: 2026-08-25T12:00:00Z }
+generated: { by: agent:opencode, at: 2026-08-30T13:45:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -54,20 +54,36 @@ grammar, corrections, and improved variants.
 * Answers are rendered from markdown with the shared
   `AiProvider::markdownToHtml()`.
 * On the React page the streamed answer is rendered client-side by
-  `renderMarkdown()` in `Bilinguals.jsx` (arrow normalization → `marked.parse`
-  → `highlightQuotes()` → DOMPurify sanitize). `highlightQuotes()` wraps
-  straight double-quoted `"phrases"` in `<mark class="ai-quote">`, skipping
-  anything inside `<pre>`/`<code>` blocks; they render red via
-  `.ai-prose mark.ai-quote` using the `--wbench-danger` /
-  `--wbench-danger-night` tokens in `public/css/simulator.css`.
+  `renderMarkdown()` in `Bilinguals.jsx`: arrow normalization (all `→`/LaTeX
+  arrow forms → `=>`) → `==highlight==` phrases swapped for `\u0001` sentinels
+  (fenced/inline code slot-protected first) → `marked.parse` → four HTML
+  passes over slot-protected HTML (`<pre>`/`<code>`/`<kbd>`/`<samp>` content
+  untouched): sentinel pairs → `<mark>`, correction pairs `X => Y` (also
+  `-&gt;`; each side a quoted phrase, a wrapped inline tag, or one word) →
+  `.ai-correction` spans, quotes in four styles — `"…"`, `«…»`, `“…”`, `‘…’`
+  — → `<mark class="ai-quote">`, and `\d{1,3}%` scores →
+  `<mark class="ai-score">` → DOMPurify sanitize.
+* Styling in `public/css/simulator.css` (day + night, `--wbench-*` tokens):
+  quotes red (`--wbench-danger`), scores as JetBrains Mono chips
+  (`--wbench-emphasis` tint), corrections with a danger-struck old side, a
+  soft-ink mono `→`, and an accent-underlined new side; `==…==` uses the base
+  `mark` emphasis tint; quotes nested inside a correction inherit that side's
+  color. GFM tables get hairline rules and mono-caps headers. Inside the AI
+  answer panel (`#ai_answer_div`), `--wbench-danger` and `--wbench-emphasis`
+  are both overridden to the shared red `#fe2500`.
+* The default assessment question (`SimulatorController::simulator`) instructs
+  the model to use `##` headings per task, straight double quotes for cited
+  words, `~~removed~~`/`**added**` for corrections, `==double equals==` for the
+  key weak-point phrases, and `>` blockquotes for improved versions — each
+  maps onto a styled element above.
 * Answer typography is relative to the user-controlled base font size
   (`DEFAULT_FONT_SIZE = 26` in `Bilinguals.jsx`, adjustable ±2px via the
   toolbar `+`/`−` buttons): `.ai-prose h1–h4` are mono-caps labels sized at
   `1.15em` so they stay visibly larger than body text at any size. The
   **gloss-run hover** affordance on `#ai_answer_div` text elements casts a
-  crisp accent-tinted shadow just below the glyphs
-  (`text-shadow: 0 1px 1px color-mix(...)` on `--wbench-accent`, night variant
-  on `--wbench-accent-night`) instead of a background fill.
+  soft gray shadow just below the glyphs
+  (`text-shadow: 1px 1px 5px rgb(128 128 128 / 50%)`) instead of a background
+  fill.
 
 # Frontend
 

@@ -52,7 +52,7 @@ class SimulatorController extends Controller
             'showAI' => $canUseAi,
             'canUseAi' => $canUseAi,
             'currentModel' => $currentModel,
-            'currentQuestion' => 'Compare Russian original vs. my translation. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Asses grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version (highlight the changes). 4. Give  a couple of improved versions.',
+            'currentQuestion' => 'Compare Russian original vs. my translation. Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; wrap the few most important weak-point phrases in ==double equals==; put improved versions in > blockquotes. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Assess grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version. 4. Give a couple of improved versions.',
             'currentText' => $firstId !== null ? (string) $firstId : '',
         ]);
     }

@@ -81,6 +81,12 @@ table.table:has(#all_en:checked) .hide_en {
     display: block !important;
 }
 
+/* AI answer panel — danger and emphasis converge on one red. */
+#ai_answer_div {
+    --wbench-danger: #fe2500;
+    --wbench-emphasis: #fe2500;
+}
+
 /* AI Response prose — one deliberate accent, ink headings, quiet lists. */
 .ai-prose {
     color: var(--wbench-ink);
@@ -145,6 +151,68 @@ table.table:has(#all_en:checked) .hide_en {
 
 .dark .ai-prose mark.ai-quote {
     color: var(--wbench-danger-night);
+}
+
+.ai-prose mark.ai-score {
+    font-family: var(--font-wbench-mono);
+    font-size: 0.85em;
+    font-weight: 500;
+    color: var(--wbench-emphasis);
+    padding: 0.05em 0.3em;
+}
+
+.dark .ai-prose mark.ai-score {
+    color: var(--wbench-emphasis-night);
+}
+
+.ai-prose mark.ai-quote mark.ai-score {
+    background-color: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    padding: 0;
+}
+
+.ai-prose .ai-correction-old {
+    color: var(--wbench-danger);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+}
+
+.dark .ai-prose .ai-correction-old {
+    color: var(--wbench-danger-night);
+}
+
+.ai-prose .ai-correction-arrow {
+    font-family: var(--font-wbench-mono);
+    font-size: 0.9em;
+    color: var(--wbench-ink-soft);
+    padding: 0 0.25em;
+}
+
+.dark .ai-prose .ai-correction-arrow {
+    color: var(--wbench-ink-soft-night);
+}
+
+.ai-prose .ai-correction-new {
+    color: var(--wbench-accent);
+    text-decoration: underline;
+    text-decoration-color: var(--wbench-accent);
+    text-underline-offset: 2px;
+}
+
+.dark .ai-prose .ai-correction-new {
+    color: var(--wbench-accent-night);
+    text-decoration-color: var(--wbench-accent-night);
+}
+
+.ai-prose .ai-correction-old mark.ai-quote,
+.ai-prose .ai-correction-new mark.ai-quote {
+    background-color: transparent;
+    color: inherit;
+    padding: 0;
+    border-radius: 0;
 }
 
 .ai-prose u,
@@ -290,26 +358,58 @@ table.table:has(#all_en:checked) .hide_en {
     border-top-color: var(--wbench-rule-night);
 }
 
+.ai-prose table {
+    border-collapse: collapse;
+    margin: 0 0 1em;
+    font-size: 0.95em;
+}
+
+.ai-prose th,
+.ai-prose td {
+    border: 1px solid var(--wbench-rule);
+    padding: 0.3em 0.6em;
+    text-align: left;
+    vertical-align: top;
+}
+
+.dark .ai-prose th,
+.dark .ai-prose td {
+    border-color: var(--wbench-rule-night);
+}
+
+.ai-prose th {
+    font-family: var(--font-wbench-mono);
+    font-size: 0.8em;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--wbench-ink-soft);
+    background-color: var(--wbench-paper-deep);
+}
+
+.dark .ai-prose th {
+    color: var(--wbench-ink-soft-night);
+    background-color: var(--wbench-paper-deep-night);
+}
+
 /* Gloss-run hover affordance — scoped to the AI answer panel.
    Every text-bearing element signals interactivity: pointer cursor
-   plus a crisp accent-tinted shadow cast just below the glyphs. */
-#ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a) {
+   plus a soft shadow cast just below the glyphs. */
+#ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a, td, th) {
     transition: text-shadow 150ms ease;
 }
 
-#ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a):hover {
-    /* text-shadow: 0 1px 20px color-mix(in srgb, var(--wbench-accent) 55%, transparent); */
-    text-decoration: underline;
+#ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a, td, th):hover {
+    text-shadow: 1px 1px 5px rgb(128 128 128 / 50%);
     cursor: pointer;
 }
 
-.dark #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a):hover {
-    /* text-shadow: 0 1px 20px color-mix(in srgb, var(--wbench-accent-night) 60%, transparent); */
-    text-decoration: underline;
+.dark #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a, td, th):hover {
+    text-shadow: 1px 1px 5px rgb(128 128 128 / 50%);
 }
 
 @media (prefers-reduced-motion: reduce) {
-    #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a) {
+    #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a, td, th) {
         transition: none;
     }
 }
