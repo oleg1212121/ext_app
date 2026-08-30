@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database.
 tags: [testing, pest]
 status: stable
-generated: { by: human:opencode, at: 2026-08-09T16:52:00Z }
+generated: { by: human:opencode, at: 2026-08-27T00:00:00Z }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -105,9 +105,10 @@ the tests affected by your latest changes, replaying the rest from cache.
 * **Config**: `tests/Pest.php` calls `pest()->tia()->filtered()->baselined()`.
   `filtered()` narrows PHPUnit to affected test files; `baselined()` opts in
   to fetching a shared baseline from CI when the local graph drifts.
-* **Coverage driver**: Xdebug is installed but `xdebug.mode = off` by default
-  (fast normal CLI). The `test:tia` composer script sets `XDEBUG_MODE=coverage`
-  so all parallel workers inherit coverage mode for the baseline run only.
+* **Coverage driver**: PCOV is installed but **disabled by default** (fast
+  normal CLI). The `test:tia` composer script enables it only for the baseline
+  run via `-d extension=pcov.so -d pcov.enabled=1 --coverage`, so all parallel
+  workers inherit coverage for the baseline recording only.
 * **Container-local git repo**: because `/var/www` (Laravel project) is bind-
   mounted separately from `/var/repo` (the git repo root), Pest sees no git
   context at `/var/www`. `scripts/tia-setup.php` initialises a container-local

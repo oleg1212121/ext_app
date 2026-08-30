@@ -4,7 +4,7 @@ title: Docker & Services
 description: Containers, ports, mounts, and the rule that all PHP/Composer/NPM commands run inside the app container.
 tags: [docker, infrastructure, devops]
 status: stable
-generated: { by: agent/opencode-go, at: 2026-08-27T17:30:00Z }
+generated: { by: agent/opencode-go, at: 2026-08-27T18:00:00Z }
 sources:
   - id: compose
     resource: docker-compose.yml
@@ -91,7 +91,7 @@ Differences from dev (using Compose `!override`/`!reset` merge tags):
 
 | Service | Dev | Prod |
 |---------|-----|------|
-| `app` | bind-mounts `./laravel` + `./`; dev `LaravelDockerfile` (with gh, xdebug) | `LaravelDockerfile.prod` (multi-stage: node build → php-fpm, no xdebug/gh, opcache, baked `public/build` + `public/texts`); env via `laravel/.env.production`; `app_storage` + `app_public` **host bind mounts** (`./docker-compose/prod/storage`, `./docker-compose/prod/public`); entrypoint recreates the storage skeleton then runs `config:cache route:cache view:cache filament:optimize storage:link migrate --force` |
+| `app` | bind-mounts `./laravel` + `./`; dev `LaravelDockerfile` (with gh, pcov) | `LaravelDockerfile.prod` (multi-stage: node build → php-fpm, no xdebug/gh, opcache, baked `public/build` + `public/texts`); env via `laravel/.env.production`; `app_storage` + `app_public` **host bind mounts** (`./docker-compose/prod/storage`, `./docker-compose/prod/public`); entrypoint recreates the storage skeleton then runs `config:cache route:cache view:cache filament:optimize storage:link migrate --force` |
 | `db` | `image: postgres` (latest), host port `54321`, bind-mount data | pinned `postgres:18-alpine`, no host port, bind-mount data `./docker-compose/prod/postgres` (host disk; survives Purge if the project dir is in Docker Desktop file sharing), healthcheck; creds from gitignored `docker-compose/prod/postgres.env` (POSTGRES_*) |
 | `nginx` | bind-mount `./laravel` + `./nginx/conf` | serves baked assets from the host bind-mounted `app_public` dir (read-only) + `./nginx/conf`; hardened `app.conf` (20M body, security headers, `limit_req` on `/ai/question`) |
 | `python` | host port `8001`, `--reload` | no host port, `--workers 2` |
@@ -103,5 +103,5 @@ Differences from dev (using Compose `!override`/`!reset` merge tags):
 Secrets never live in compose: `laravel/.env.production`,
 `docker-compose/prod/postgres.env`, and `docker-compose/cloudflare/.env` are
 all gitignored. `.dockerignore` strips dev build output, `vendor/`,
-`node_modules/`, the xdebug inis, and `backup11.sql` from prod build contexts.
+`node_modules/`, and `backup11.sql` from prod build contexts.
 See [production-deployment](../playbooks/production-deployment.md) for the launch playbook.

@@ -52,11 +52,9 @@ RUN docker-php-ext-install pdo pdo_pgsql pgsql mbstring exif pcntl bcmath gd zip
 RUN docker-php-ext-configure intl \
     && docker-php-ext-install intl
 
-# xdebug
-RUN pecl install xdebug \
-    && docker-php-ext-enable xdebug
-
-COPY ./docker-php-ext-xdebug.ini "${PHP_INI_DIR}/conf.d"
+# PCOV code-coverage driver (Pest TIA baseline only). Disabled by default so
+# normal CLI stays fast; enabled per-invocation with `-d pcov.enabled=1`.
+RUN pecl install pcov
 
 # Get latest Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer

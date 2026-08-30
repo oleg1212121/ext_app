@@ -85,13 +85,13 @@ docker exec ext_app_laravel php artisan test --testsuite=Unit
 # Run feature tests only
 docker exec ext_app_laravel php artisan test --testsuite=Feature
 
-# Run only tests affected by your changes (Pest TIA — uses Xdebug coverage for the baseline)
+# Run only tests affected by your changes (Pest TIA — uses PCOV coverage for the baseline)
 # First run records the baseline (~50s); subsequent runs replay cached results and re-run
 # only tests touched by changed files. Comment-only edits trigger zero tests.
 docker exec ext_app_laravel composer run test:tia
 
-# Force re-record the TIA graph after large refactors (slower run under Xdebug)
-docker exec -e XDEBUG_MODE=coverage ext_app_laravel sh -c 'cd /var/www && php scripts/tia-setup.php && php vendor/bin/pest --parallel --tia --fresh'
+# Force re-record the TIA graph after large refactors (slower run under PCOV)
+docker exec ext_app_laravel sh -c 'cd /var/www && php scripts/tia-setup.php && php -d extension=pcov.so -d pcov.enabled=1 vendor/bin/pest --parallel --tia --fresh'
 ```
 
 Test database: `ext_app_test` (configured in phpunit.xml, not the default).

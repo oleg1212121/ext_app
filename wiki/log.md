@@ -2,6 +2,15 @@
 
 ## 2026-08-27
 
+* **Removed Xdebug from the dev image; switched Pest TIA coverage to PCOV.**
+  The dev `LaravelDockerfile` no longer installs Xdebug or copies
+  `docker-php-ext-xdebug.ini` (which `.dockerignore` excluded, breaking the
+  build context). PCOV is installed but **disabled by default** so normal CLI
+  stays fast; `composer run test:tia` and the CI `tia-baseline` workflow enable
+  it only for the baseline run via `-d extension=pcov.so -d pcov.enabled=1 --coverage`.
+  Deleted the tracked dead `docker-php-ext-xdebug*.ini` files. Dev TIA and CI baseline
+  both keep working. Updated `composer.json`, `AGENTS.md`, and wiki concepts.
+
 * **Persistence hardening: all Docker data moved off named volumes onto host bind mounts.**
   Root cause of repeated data loss: Docker Desktop "Clean / Purge data" is a factory
   reset that wipes every Docker-managed **named volume** and reformats the VM disk — so

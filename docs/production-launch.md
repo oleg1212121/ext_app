@@ -73,7 +73,7 @@ Legend: `[USER]` = only you can do it · `[AGENT]` = I can do it · `[USER+AGENT
   - Stage 2 `php:8.4-fpm`: **no Xdebug**, `composer install --no-dev --optimize-autoloader`, copy `public/build` from stage 1
 - [x] Bake `public/texts/` into the image (it's gitignored — a git-built image ships without reading materials otherwise)
 - [x] PHP ini: `upload_max_filesize=20M`, `post_max_size=25M`, `opcache.enable=1`, `opcache.validate_timestamps=0`, `opcache.memory_consumption=128`
-- [x] Do **not** copy `docker-php-ext-xdebug.ini` or `docker-php-ext-xdebug copy.ini` into prod context
+- [x] Do **not** copy the PCOV/xdebug coverage ini into prod context (coverage is dev-only)
 - [x] Do **not** install `gh` CLI in the prod image
 - Extras: canonical asset copy at `/opt/app-assets/public` + `entrypoint.prod.sh` `rsync` into the nginx-shared volume (refresh on rebuild without `down -v`); `rsync` installed; `www-data` owns `/var/www`.
 
