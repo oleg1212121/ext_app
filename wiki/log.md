@@ -2,6 +2,28 @@
 
 ## 2026-08-31
 
+* **deploy.sh container-recreation guard + GitHub Actions autodeploy.**
+  `deploy.sh` now refuses to deploy when the containers were not created
+  from the current container definitions: `./deploy.sh --stamp` records the
+  sha256 of `docker-compose.yml`, `docker-compose.prod.yml`,
+  `LaravelDockerfile`, `docker-compose/python/Dockerfile`, and
+  `docker-compose/python/requirements.txt` into a gitignored
+  `.container-stamp`; every deploy compares the stamp against
+  `origin/master` **before pulling** (a refusal leaves the bind-mounted live
+  code at the last-good release) and against the working tree after the
+  pull, aborting with exit 1 + the manual rebuild commands on mismatch or a
+  missing stamp. Deploys are serialized (flock on a gitignored
+  `.deploy.lock`). New `.github/workflows/deploy.yml`: a self-hosted runner
+  on the prod machine (labels `self-hosted`, `prod`) runs `./deploy.sh` on
+  every push to `master` (+ `workflow_dispatch`) — deliberately no
+  `actions/checkout` (deploys must run against the prod bind-mounted
+  checkout) and never a `pull_request` trigger (fork code must not run on
+  the prod runner). AGENTS.md + Production Deployment playbook +
+  Docker & Services updated (stamp bootstrap, runner one-time setup). No
+  routes/models/commands changed (`wiki:sync` not required).
+
+## 2026-08-31
+
 * **Prod overlay recreated for the standalone production machine (bind-mount adapted).**
   Production turns out to run on a separate machine (previously on the baked
   `ext_app_prod` overlay). Recreated `docker-compose.prod.yml` for the

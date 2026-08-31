@@ -4,7 +4,7 @@ title: Docker & Services
 description: Containers, ports, mounts, and the rule that all PHP/Composer/NPM commands run inside the app container.
 tags: [docker, infrastructure, devops]
 status: stable
-generated: { by: agent/opencode-go, at: 2026-08-31T14:08:36Z }
+generated: { by: agent/opencode-go, at: 2026-08-31T16:45:00Z }
 sources:
   - id: compose
     resource: docker-compose.yml
@@ -98,15 +98,20 @@ overlay** (creds `docker-compose/prod/postgres.env`, PGDATA
 Shipping code is `./deploy.sh` on the prod machine: fast-forward `git pull`,
 then `composer install` / `npm ci` / `npm run build` / `storage:link` / cache
 rebuild / **additive** `migrate --force` / idempotent seeds / `queue:restart`
-inside the running `ext_app_laravel` container. Full walkthrough + one-time
-switchover from the baked setup:
+inside the running `ext_app_laravel` container. Pushes to `master` autodeploy
+it via the self-hosted runner (`.github/workflows/deploy.yml`), and a
+**container stamp guard** refuses any deploy — before pulling — when the
+containers were not created from the current container definitions (see the
+playbook). Full walkthrough + one-time switchover from the baked setup:
 [production-deployment](../playbooks/production-deployment.md).
 
 - **Images rebuild manually only** when a Dockerfile changes:
   `docker compose -f docker-compose.yml -f docker-compose.prod.yml build app`
-  (or `build python`).
-- **CI gate**: `.github/workflows/tests.yml` (Pest + Pint) on every `master`
-  push; deploys are human-run.
+  (or `build python`), then `up -d` + `./deploy.sh --stamp`.
+- **CI**: `.github/workflows/tests.yml` (Pest + Pint) on every `master`
+  push (and PRs); `.github/workflows/deploy.yml` autodeploys via the
+  self-hosted `prod` runner — deploys are machine-run, container
+  recreation stays human-run.
 - **No OPcache in the image** → new code applies on the next request, no
   PHP restart needed.
 - **Secrets on the prod machine** (all gitignored): `laravel/.env` (copy of

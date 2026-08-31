@@ -69,9 +69,15 @@ docker exec ext_app_laravel npm run dev
 # git pull + composer install + npm build + cache rebuild + migrate + seeds
 ./deploy.sh
 
+# Refuses to run (exit 1) until containers are recreated + re-stamped after a
+# container-definition change (Dockerfiles, compose yml, python requirements):
+#   build + up -d (commands printed by the refusal) + ./deploy.sh --stamp
+# Pushes to master autodeploy via .github/workflows/deploy.yml (self-hosted
+# prod runner); a refusal surfaces as a red Deploy run on the push.
+
 # Prod machine (standalone) standing stack — once, then ./deploy.sh per release:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile cloudflare up -d
-# See wiki/playbooks/production-deployment.md (switchover + DB guarantees)
+# See wiki/playbooks/production-deployment.md (switchover + DB guarantees + runner setup)
 ```
 
 ### Code Formatting (Required before committing)

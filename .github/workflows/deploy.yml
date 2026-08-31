@@ -1,0 +1,34 @@
+name: Deploy (prod)
+
+# Autodeploy: on push to master, the self-hosted runner on the prod machine
+# (labels: self-hosted, prod) runs deploy.sh against the prod bind-mounted
+# checkout. No actions/checkout on purpose — the containers mount ./laravel
+# from the real checkout, so a runner-workspace clone would deploy nothing.
+#
+# deploy.sh hard-refuses (red run) when container definitions changed and a
+# manual rebuild + ./deploy.sh --stamp is pending — fix manually on the prod
+# machine, then re-run this workflow (workflow_dispatch).
+#
+# NEVER add pull_request to this trigger: fork/PR code must never execute on
+# the prod self-hosted runner.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false # queue pushes; never cancel a running deploy
+
+env:
+  # Absolute path of the prod checkout (the bind-mounted source of truth).
+  # TODO(one-time setup): set this to the real path on the prod machine.
+  PROD_CHECKOUT: /home/<user>/projects/ext_app
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, prod]
+    timeout-minutes: 30
+    steps:
+      - name: Deploy
+        run: bash "$PROD_CHECKOUT/deploy.sh"

@@ -1,10 +1,10 @@
 ---
 type: Playbook
 title: Production Deployment
-description: Bind-mount deploy model — the standalone prod machine runs docker-compose.prod.yml (queue/scheduler/backups/tunnel, db untouched from the baked setup); every release is ./deploy.sh (git pull + composer + npm build + caches + additive migrate); images rebuild only when a Dockerfile changes.
+description: Bind-mount deploy model — the standalone prod machine runs docker-compose.prod.yml (queue/scheduler/backups/tunnel, db untouched from the baked setup); every release is ./deploy.sh (git pull + composer + npm build + caches + additive migrate); images rebuild only when a Dockerfile changes; deploy.sh refuses to run until containers are recreated and re-stamped after a container-definition change; pushes to master autodeploy via a self-hosted runner.
 tags: [docker, production, deployment, devops, howto]
 status: stable
-generated: { by: agent/opencode-go, at: 2026-08-31T14:08:36Z }
+generated: { by: agent/opencode-go, at: 2026-08-31T16:45:00Z }
 sources:
   - id: deploy
     resource: deploy.sh
@@ -21,6 +21,9 @@ sources:
   - id: ci
     resource: .github/workflows/tests.yml
     title: CI workflow (tests gate)
+  - id: deploy-ci
+    resource: .github/workflows/deploy.yml
+    title: Deploy workflow (autodeploy via self-hosted prod runner)
   - id: agents
     resource: AGENTS.md
     title: Agent guidelines
@@ -38,36 +41,69 @@ host checkout bind-mounted at `./laravel`. No code is ever baked into an image
 | Stack | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile cloudflare up -d` |
 | Extra services | — | `queue` (2× `queue:work`), `scheduler` (`schedule:work`), `backups` (daily `pg_dump`), cloudflared |
 | DB data | `docker-compose/postgres/`, creds in `laravel/.env` | `docker-compose/prod/postgres/`, creds in `docker-compose/prod/postgres.env` (identical to the baked setup) |
-| Release | edits are live instantly (bind mount) | `./deploy.sh` |
+| Release | edits are live instantly (bind mount) | `./deploy.sh` (autodeployed on push to master) |
 
 # Deploy (prod machine)
 
 ```bash
-./deploy.sh
+./deploy.sh          # or just push to master — the Deploy workflow runs it
 ```
 
 What it does (all inside the running `ext_app_laravel` container):
 
-1. Guard: refuses to run from any branch other than `master`, then
-   `git pull --ff-only origin master` (aborts if it cannot fast-forward).
-2. `composer install --prefer-dist --optimize-autoloader` — full install
+1. Guards: refuses to run from any branch other than `master`; refuses to
+   start while another deploy holds the `.deploy.lock` (flock — a manual SSH
+   run and the CI runner can never interleave); runs the **container stamp
+   guard** (below), which aborts *before pulling* if incoming master changes
+   container definitions or the stamp is missing.
+2. `git pull --ff-only origin master` (aborts if it cannot fast-forward),
+   then a second stamp comparison against the pulled working tree (catches
+   hand-edits on the prod machine).
+3. `composer install --prefer-dist --optimize-autoloader` — full install
    including dev deps (same tree serves CI/dev tooling).
-3. `npm ci` + `npm run build` — rebuilds `public/build`; nginx serves it
+4. `npm ci` + `npm run build` — rebuilds `public/build`; nginx serves it
    immediately (it bind-mounts `./laravel`).
-4. `php artisan storage:link` (idempotent; keeps `public/storage` wired to
+5. `php artisan storage:link` (idempotent; keeps `public/storage` wired to
    uploads).
-5. `optimize:clear`, then `config:cache` / `route:cache` / `view:cache` —
+6. `optimize:clear`, then `config:cache` / `route:cache` / `view:cache` —
    stale caches from the previous release are dropped before rebuilding.
-6. `migrate --force` — **additive only**: applies pending migrations. Never
+7. `migrate --force` — **additive only**: applies pending migrations. Never
    fresh/refresh/reset/wipe (see the destructive-command warning in AGENTS.md).
-7. Idempotent reference-data seeds: `SentenceTypeSeeder`, `AiProviderSeeder`,
+8. Idempotent reference-data seeds: `SentenceTypeSeeder`, `AiProviderSeeder`,
    `LanguageSeeder`.
-8. `queue:restart` — recycles the overlay's queue workers onto the new code
+9. `queue:restart` — recycles the overlay's queue workers onto the new code
    (workers finish their current job, the container restarts, the new worker
    loads the new code and schema).
 
 No PHP restart is needed: the image has no OPcache, so new code takes effect
 on the next request.
+
+# Container stamp guard
+
+Containers and images are defined by five files: `docker-compose.yml`,
+`docker-compose.prod.yml`, `LaravelDockerfile`,
+`docker-compose/python/Dockerfile`, and
+`docker-compose/python/requirements.txt` (the python image bakes
+requirements.txt; `docker-compose.override.yml` is skipped on prod by the
+explicit `-f` files, and gitignored `.env` files never change via git).
+Nothing tracks whether the running containers were created from their
+*current* content — compose's config-hash ignores Dockerfile-only changes —
+so `deploy.sh` keeps its own record:
+
+- `./deploy.sh --stamp` writes the files' sha256 into `.container-stamp`
+  (gitignored, prod-machine-local). Run it once after every manual
+  rebuild/recreate; it is the only thing that says "the running containers
+  match these files".
+- Every deploy hashes the files at `origin/master` **before pulling** — a
+  refusal leaves prod at the last-good release (important: `./laravel` is
+  bind-mounted, so a pull alone would put new code live without migrations
+  or assets) — and hashes the working tree after the pull. Any mismatch, or
+  a missing stamp, aborts with exit 1, naming the changed files and printing
+  the manual rebuild commands.
+
+The fix path when a deploy refuses: `build` → `up -d` →
+`./deploy.sh --stamp` → `./deploy.sh` (or re-run the Deploy workflow). A
+refusal under CI surfaces as a red Deploy run on the push.
 
 # One-time switchover (from the baked-image setup)
 
@@ -128,6 +164,8 @@ dependency changes (on the machine that needs them):
 docker compose -f docker-compose.yml -f docker-compose.prod.yml build app      # LaravelDockerfile
 docker compose -f docker-compose.yml -f docker-compose.prod.yml build python   # only when requirements.txt changes
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d          # recreate just the rebuilt service
+./deploy.sh --stamp   # record that the containers now match these definitions
+./deploy.sh           # ship the pending release (or re-run the Deploy workflow)
 ```
 
 (On the dev machine, plain `docker compose build app` / `build python`.)
@@ -135,8 +173,36 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d          #
 # CI gate
 
 `.github/workflows/tests.yml` runs the Pest suite + `vendor/bin/pint --test`
-on every push to `master` (and on PRs). Deployment stays human-gated: run
-`./deploy.sh` on the prod machine once CI is green.
+on every push to `master` (and on PRs). `.github/workflows/deploy.yml`
+autodeploys: the self-hosted runner on the prod machine (labels
+`self-hosted`, `prod`) runs `./deploy.sh` against the prod checkout on every
+push to `master` (and via `workflow_dispatch` to re-run after a manual
+container fix). Tests and deploy run in parallel — the stamp guard is the
+container-level safety valve; the test suite is not a deploy gate.
+
+Runner rules: `deploy.yml` must never gain a `pull_request` trigger (fork/PR
+code must never execute on the prod self-hosted runner); the runner service
+user must be able to `git fetch` non-interactively and own the checkout (or
+carry a `safe.directory` entry for it). See the one-time setup below.
+
+# Autodeploy setup (one-time, prod machine)
+
+1. Bootstrap the stamp: verify the stack is current
+   (`docker compose -f docker-compose.yml -f docker-compose.prod.yml
+   --profile cloudflare ps`), then `./deploy.sh --stamp`.
+2. Install a self-hosted runner (GitHub repo → Settings → Actions → Runners
+   → New self-hosted runner), label it `prod`, and install it as a systemd
+   service (`./svc.sh install <user> && ./svc.sh start`), as the user that
+   owns the checkout and has docker group access.
+3. Non-interactive git: the runner service has no SSH agent — verify
+   `sudo -u <user> git -C <checkout> fetch origin master` succeeds (a
+   passphraseless deploy key or an HTTPS token in the remote works). If the
+   runner user differs from the checkout owner, also add
+   `git config --global --add safe.directory <checkout>` for it.
+4. Set `PROD_CHECKOUT` in `.github/workflows/deploy.yml` to the prod
+   checkout's absolute path, and push that change from the dev machine.
+5. Smoke test: push a trivial commit to master (or `workflow_dispatch`) —
+   the Deploy run goes green and `git -C <checkout> log -1` shows the commit.
 
 # Environment
 

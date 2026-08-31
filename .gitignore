@@ -93,3 +93,7 @@ laravel/sample.jsonl
 session-ses_01d8.md
 alignments-plan.md
 homepage-current.png
+
+# deploy.sh container-recreation guard (prod machine): stamp + deploy lock
+.container-stamp
+.deploy.lock
