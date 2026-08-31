@@ -23,7 +23,7 @@ concurrency:
 env:
   # Absolute path of the prod checkout (the bind-mounted source of truth).
   # TODO(one-time setup): set this to the real path on the prod machine.
-  PROD_CHECKOUT: /home/<user>/projects/ext_app
+  PROD_CHECKOUT: /home/alex/projects/ext/ext_app
 
 jobs:
   deploy:
