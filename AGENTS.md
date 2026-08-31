@@ -63,6 +63,17 @@ docker exec ext_app_laravel npm run build
 docker exec ext_app_laravel npm run dev
 ```
 
+### Production deploy
+```bash
+# Ship master to the running bind-mounted containers (no image rebuild):
+# git pull + composer install + npm build + cache rebuild + migrate + seeds
+./deploy.sh
+
+# Prod machine (standalone) standing stack — once, then ./deploy.sh per release:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile cloudflare up -d
+# See wiki/playbooks/production-deployment.md (switchover + DB guarantees)
+```
+
 ### Code Formatting (Required before committing)
 ```bash
 docker exec ext_app_laravel vendor/bin/pint --dirty

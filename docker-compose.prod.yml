@@ -1,36 +1,36 @@
-# Production override for ext_app — same host + Cloudflare tunnel.
+# Production overlay for the STANDALONE production machine (bind-mount model).
 #
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     --profile cloudflare up -d
 #
-# This file replaces dev-only bits from docker-compose.yml (bind mounts of
-# source, host port mappings, the python --reload command) and adds the
-# prod-only workers (queue, scheduler, backups). `!override` / `!reset` are
-# Compose v2.24+ merge tags (host runs Compose v5).
+# Unlike the old baked-image overlay (2026-08-26..30, git history), code is NOT
+# baked into images: app/queue/scheduler run the dev runtime image
+# (eng_ext_laravel) with ./laravel bind-mounted. Shipping code is ./deploy.sh
+# (git pull + composer + npm build + caches + additive migrate inside the
+# running containers); images rebuild ONLY when a Dockerfile changes
+# (docker compose -f docker-compose.yml -f docker-compose.prod.yml build app).
 #
-# Secrets live in gitignored files, never in this compose:
-#   - laravel/.env.production          (Laravel app + queue + scheduler env)
-#   - docker-compose/prod/postgres.env (POSTGRES_* for the db + backups sidecars)
-#   - docker-compose/cloudflare/.env   (TUNNEL_TOKEN, untracked after Phase 1.1)
+# db is identical to the old overlay (creds from postgres.env, PGDATA at
+# ./docker-compose/prod/postgres) so the existing cluster is found and never
+# re-initialized — deploys apply pending migrations only, nothing destructive.
+#
+# Env is a single source: laravel/.env on disk (bind-mounted, no env_file on
+# app/queue/scheduler). On the prod machine it is a copy of .env.production
+# (one-time switchover step; DB_* must match docker-compose/prod/postgres.env).
+#
+# Secrets (all gitignored, live on the prod machine):
+#   - laravel/.env                     app + queue + scheduler env
+#   - docker-compose/prod/postgres.env POSTGRES_* for db + backups
+#   - docker-compose/cloudflare/.env   TUNNEL_TOKEN
+#
+# `!override` / `!reset` are Compose v2.24+ merge tags.
 
 services:
 
-  # --- Laravel app (PHP-FPM, baked prod image, no source bind mounts) ---
+  # --- Laravel app (PHP-FPM): base service untouched — eng_ext_laravel image,
+  # ./laravel + ./ bind mounts, env from laravel/.env on disk. Only prod
+  # guards/limits are added here. ---
   app:
-    build:
-      context: .
-      dockerfile: LaravelDockerfile.prod
-    image: ext_app_prod
-    env_file: ./laravel/.env.production
-    # Drop the dev bind mounts of ./laravel and ./ — code is baked in the image.
-    # app_storage/app_public are host bind mounts (NOT named volumes) so they
-    # survive Docker Desktop "Purge data". See entrypoint.prod.sh for the
-    # storage-skeleton recreation that bind mounts require.
-    volumes: !override
-      # :U makes Docker chown the host dir to the container UID (www-data/33) on
-      # mount, so the entrypoint can create the storage skeleton. Required because
-      # host bind mounts are owned by the host user, not www-data.
-      - ./docker-compose/prod/storage:/var/www/storage:U
-      - ./docker-compose/prod/public:/var/www/public:U
     depends_on:
       db:
         condition: service_healthy
@@ -38,7 +38,8 @@ services:
     mem_limit: 1g
     cpus: '2'
 
-  # --- Postgres (pinned, no host port, host bind mount, healthcheck) ---
+  # --- Postgres: UNCHANGED from the old overlay so the prod machine's
+  # existing cluster is found untouched (no recreation on switchover). ---
   db:
     image: postgres:18-alpine
     env_file: !override
@@ -48,12 +49,9 @@ services:
     environment: !override { PGDATA: /var/lib/postgresql/data }
     ports: !reset null
     volumes: !override
-    # Bind mount to a repo-local host dir so the cluster survives Docker Desktop
-    # "Purge data" (which only wipes Docker-managed named volumes, not host bind
-    # mounts). PGDATA is pinned explicitly so image version bumps can't move it.
-    # IMPORTANT: the project dir must be in Docker Desktop's file sharing, or the
-    # bind mount silently resolves inside the VM and is wiped on Purge too.
-    - ./docker-compose/prod/postgres:/var/lib/postgresql/data
+      # Host bind mount (NOT a named volume) so the cluster survives Docker
+      # "Purge data" wipes of Docker-managed volumes. PGDATA pinned explicitly.
+      - ./docker-compose/prod/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
@@ -64,18 +62,16 @@ services:
     mem_limit: 2g
     cpus: '2'
 
-  # --- nginx (serves baked assets from the host bind-mounted app_public dir) ---
+  # --- nginx: no volume override — the base mounts (./laravel + ./nginx/conf)
+  # serve the bind-mounted checkout; deploy.sh keeps public/build fresh. ---
   nginx:
-    volumes: !override
-      - ./docker-compose/prod/public:/var/www/public:ro
-      - ./nginx/conf:/etc/nginx/conf.d
     depends_on:
       - app
     restart: unless-stopped
     mem_limit: 128m
     cpus: '0.5'
 
-  # --- Python ML service (no host port, no --reload, 2 workers) ---
+  # --- Python ML service (prod toggles: 2 workers, no host port). ---
   python:
     command: uvicorn ai.main:app --host 0.0.0.0 --port 8000 --workers 2
     ports: !reset null
@@ -83,22 +79,28 @@ services:
     mem_limit: 5g
     cpus: '4'
 
-  # --- Queue workers (2 replicas, tries=1, timeout under retry_after=660s) ---
+  # --- cloudflared: re-gated behind the profile (explicit -f files skip
+  # docker-compose.override.yml, which gates it on the dev machine). ---
+  cloudflared:
+    profiles:
+      - cloudflare
+
+  # --- Queue workers (2 replicas, bind-mounted source, no baked image).
+  # The dev image has no ENTRYPOINT, so a plain command override suffices.
+  # deploy.sh's `queue:restart` recycles them onto new code per release. ---
   queue:
-    image: ext_app_prod
-    entrypoint: []
-    # Wait for migrations (run by the app's entrypoint) before consuming.
+    image: eng_ext_laravel
+    # Wait for migrations (run by deploy.sh / first boot) before consuming.
     command: >-
       sh -c "until php artisan migrate:status >/dev/null 2>&1; do sleep 2; done
       && exec php artisan queue:work --tries=1 --timeout=620"
-    env_file: ./laravel/.env.production
     depends_on:
       app:
         condition: service_started
       db:
         condition: service_healthy
     volumes:
-      - ./docker-compose/prod/storage:/var/www/storage:U
+      - ./laravel:/var/www
     networks:
       - ext_net
     restart: unless-stopped
@@ -106,28 +108,27 @@ services:
     mem_limit: 1g
     cpus: '1.5'
 
-  # --- Scheduler (single, runs `schedule:work` daemon for every-minute ticks) ---
+  # --- Scheduler (single; schedule:work daemon for every-minute ticks —
+  # drives alignments:resume ->withoutOverlapping()). ---
   scheduler:
-    image: ext_app_prod
-    entrypoint: []
+    image: eng_ext_laravel
     command: >-
       sh -c "until php artisan migrate:status >/dev/null 2>&1; do sleep 2; done
       && exec php artisan schedule:work"
-    env_file: ./laravel/.env.production
     depends_on:
       app:
         condition: service_started
       db:
         condition: service_healthy
     volumes:
-      - ./docker-compose/prod/storage:/var/www/storage:U
+      - ./laravel:/var/www
     networks:
       - ext_net
     restart: unless-stopped
     mem_limit: 256m
     cpus: '0.5'
 
-  # --- Postgres daily backup sidecar (crond, 14-day retention) ---
+  # --- Postgres daily backup sidecar (crond, 14-day retention). ---
   backups:
     image: postgres:18-alpine
     env_file: ./docker-compose/prod/postgres.env
@@ -146,5 +147,3 @@ services:
     restart: unless-stopped
     mem_limit: 256m
     cpus: '0.5'
-
-  # cloudflared: unchanged (env file now untracked after Phase 1.1)

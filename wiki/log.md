@@ -1,5 +1,45 @@
 # Directory Update Log
 
+## 2026-08-31
+
+* **Prod overlay recreated for the standalone production machine (bind-mount adapted).**
+  Production turns out to run on a separate machine (previously on the baked
+  `ext_app_prod` overlay). Recreated `docker-compose.prod.yml` for the
+  bind-mount model: `app` keeps the base `eng_ext_laravel` image + `./laravel`
+  bind mount (no baked image, no env_file — env is `laravel/.env` on disk);
+  `queue` (2× `queue:work --tries=1 --timeout=620`) and `scheduler`
+  (`schedule:work`) run the runtime image with bind-mounted source and the
+  wait-for-migrations loop; `backups` sidecar unchanged; python `--workers 2`
+  + no host ports; cloudflared re-gated behind its profile (explicit `-f`
+  files skip the override). **`db` is byte-identical to the old overlay**
+  (postgres.env creds, PGDATA `./docker-compose/prod/postgres`) so the
+  existing prod cluster is found untouched — `up -d` won't even recreate the
+  container; every deploy applies pending migrations only. `deploy.sh` gained
+  `php artisan storage:link`. Playbook rewritten (two-machine model, one-time
+  switchover from the baked setup — env copy, one-time `build app`,
+  storage/texts rsync, smoke checklist); Docker & Services + launch checklist
+  updated. Validated with `docker compose -f docker-compose.yml -f
+  docker-compose.prod.yml --profile cloudflare config`.
+
+## 2026-08-31
+
+* **Production deploys switched to the bind-mount model — `./deploy.sh`, no image rebuilds.**
+  The baked-image prod overlay (a ~15-minute `docker compose up -d --build`
+  per code change) was replaced: production runs on the same bind-mounted
+  containers as dev, and deploying is `./deploy.sh` (master-only branch guard,
+  fast-forward pull, `composer install --prefer-dist -o`, `npm ci` +
+  `npm run build`, `optimize:clear` → config/route/view caches,
+  `migrate --force`, idempotent `SentenceTypeSeeder`/`AiProviderSeeder`/
+  `LanguageSeeder` seeds, `queue:restart`). Removed `LaravelDockerfile.prod`,
+  `docker-compose.prod.yml`, `docker-compose/entrypoint.prod.sh`, and
+  `docker-compose/php-prod.ini` (recoverable from git history;
+  `docker-compose/prod/backup.*` + `postgres.env.example` kept, dormant).
+  `.dockerignore` now also excludes host data dirs (postgres cluster, model
+  weights, venvs, prod runtime state) from build contexts. CI unchanged:
+  `tests.yml` (Pest + Pint) gates `master`; deploys are human-run. Updated the
+  Production Deployment playbook, Docker & Services, the launch checklist,
+  and AGENTS.md.
+
 ## 2026-08-30
 
 * **Simulator AI panel retint: shared red + softer gloss-run shadow.** Inside

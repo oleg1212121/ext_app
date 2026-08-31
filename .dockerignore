@@ -1,16 +1,23 @@
-# Excluded from ALL Docker build contexts. The dev image (LaravelDockerfile)
-# doesn't COPY source — it bind-mounts at runtime — so this only affects prod
-# builds (LaravelDockerfile.prod), keeping them reproducible & lean.
+# Excluded from the repo-root Docker build context. The dev image
+# (LaravelDockerfile) COPYs no source (code is bind-mounted at runtime), so
+# this file exists to keep `docker compose build app` contexts lean and free
+# of host data. The python image has its own context (.dockerignore under
+# docker-compose/python/).
 
-# Dependencies installed inside the image
+# Host data: DB clusters, model weights, venvs, prod runtime state — multi-GB,
+# never upload them as build context
+docker-compose/postgres
+docker-compose/prod
+docker-compose/python/models
+docker-compose/python/ai/venv
+docker-compose/python/ai/ai_env
+docker-compose/embedding/models
+
+# Dev runtime state (recreated on demand)
 laravel/node_modules
 laravel/vendor
-
-# Stale dev build output — prod image rebuilds fresh
 laravel/public/build
 laravel/public/hot
-
-# Dev runtime state (dirs recreated by the image build)
 laravel/bootstrap/cache
 laravel/storage/logs/*
 laravel/storage/debugbar/*

@@ -67,6 +67,18 @@ Legend: `[USER]` = only you can do it · `[AGENT]` = I can do it · `[USER+AGENT
 
 ## Phase 2 — Production Docker (same host + Cloudflare tunnel)
 
+> **REVISED (2026-08-31):** this phase's baked-image design (code baked into
+> `ext_app_prod`, prod `app`/`nginx` without bind mounts) was replaced by the
+> **bind-mount model**: production runs on a standalone machine using the
+> base `eng_ext_laravel` runtime image with `./laravel` bind-mounted; shipping
+> code is `./deploy.sh` (git pull + composer + npm build + caches + additive
+> migrate), and images rebuild only when a Dockerfile changes. The overlay was
+> recreated in that form: `db` (2.2's postgres.env + PGDATA pinning +
+> healthcheck) and the `queue`/`scheduler`/`backups` services (2.3/2.4) are
+> retained as-is; only the baked app/nginx bits are gone (git history).
+> One-time switchover + smoke checklist:
+> `wiki/playbooks/production-deployment.md`.
+
 ### 2.1 Multi-stage prod Dockerfile `[AGENT]`
 - [x] New `LaravelDockerfile.prod`:
   - Stage 1 `node:20-alpine`: `npm ci && npm run build` → produces `public/build`
@@ -162,7 +174,7 @@ Legend: `[USER]` = only you can do it · `[AGENT]` = I can do it · `[USER+AGENT
 - [ ] Stays open; `EnsureUserIsApproved` gates every functional route. Just document where in Filament the admin flips `is_approved` on a pending user
 
 ### 4.4 Dry run `[AGENT+USER]`
-- [ ] `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` on this host
+- [ ] `./deploy.sh` on this host (bind-mount model — same containers, no image rebuild)
 - [ ] Run migrations against a **copy** of the dev DB first. ⚠️ Never `migrate:fresh` / `migrate:refresh` / `migrate:reset` / `migrate:rollback` / `db:wipe` on the default `pgsql` connection — it points at `ext_app`, not the test DB (repo rule)
 - [ ] Full user journey: register → pending-approval → admin approves in Filament → verify email (Resend) → dashboard → reader loads texts → simulator AI question (throttle works) → dispatch alignment job → watch queue for duplicates → `laravel.log` at `warning` level shows no errors
 - [ ] Confirm `ext-app.abibook.xyz` serves the prod build with secure cookies (DevTools → Application → Cookies → `Secure` + `HttpOnly` flags)
