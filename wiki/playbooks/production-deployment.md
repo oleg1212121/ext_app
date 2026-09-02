@@ -4,7 +4,7 @@ title: Production Deployment
 description: Bind-mount deploy model — the standalone prod machine runs docker-compose.prod.yml (queue/scheduler/backups/tunnel, db untouched from the baked setup); every release is ./deploy.sh (git pull + composer + npm build + caches + additive migrate); images rebuild only when a Dockerfile changes; deploy.sh refuses to run until containers are recreated and re-stamped after a container-definition change; pushes to master autodeploy via a self-hosted runner.
 tags: [docker, production, deployment, devops, howto]
 status: stable
-generated: { by: agent/opencode-go, at: 2026-08-31T16:45:00Z }
+generated: { by: agent/opencode-go, at: 2026-08-31T20:05:00Z }
 sources:
   - id: deploy
     resource: deploy.sh
@@ -179,6 +179,9 @@ autodeploys: the self-hosted runner on the prod machine (labels
 push to `master` (and via `workflow_dispatch` to re-run after a manual
 container fix). Tests and deploy run in parallel — the stamp guard is the
 container-level safety valve; the test suite is not a deploy gate.
+
+The same runner also drives the hourly Log Doctor error triage
+(`.github/workflows/log-doctor.yml` → `wiki/playbooks/log-doctor.md`).
 
 Runner rules: `deploy.yml` must never gain a `pull_request` trigger (fork/PR
 code must never execute on the prod self-hosted runner); the runner service

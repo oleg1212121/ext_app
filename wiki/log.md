@@ -2,6 +2,23 @@
 
 ## 2026-08-31
 
+* **Log Doctor — hourly scheduled error triage.** Added
+  `.github/workflows/log-doctor.yml` (hourly cron + `workflow_dispatch` on
+  the self-hosted prod runner, `issues: write`): `laravel/scripts/log-doctor/collect.sh`
+  scans the prod checkout's laravel daily logs (ERROR+), the `failed_jobs`
+  table (tinker) and the scheduler container's `docker logs` for errors since
+  the last completed run, deduped by a deterministic signature
+  (headline with digits→`#` and ≥16-char tokens→`TOKEN`, sha1-12); if
+  anything is found, `analyze.sh` runs the **read-only** `log-doctor`
+  opencode agent (`.opencode/agents/log-doctor.md` — no edit/bash/web, only
+  read/glob/grep + `external_directory`) against the live checkout, and
+  `issue-report.php` (in-container) searches open issues for
+  `log-doctor-sig: <hash>` before filing: existing → comment
+  "still occurring", new → issue labelled bug/log-doctor/automated with
+  root cause + suggested solution. Clean runs are grep-only ($0); the
+  `~/.log-doctor` state window advances only after successful filing, so
+  failures reprocess. Never add a `pull_request` trigger (prod-runner rule,
+  same as deploy.yml). New playbook: `wiki/playbooks/log-doctor.md`.
 * **deploy.sh container-recreation guard + GitHub Actions autodeploy.**
   `deploy.sh` now refuses to deploy when the containers were not created
   from the current container definitions: `./deploy.sh --stamp` records the
