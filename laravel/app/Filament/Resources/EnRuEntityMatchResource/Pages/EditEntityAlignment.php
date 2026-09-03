@@ -11,6 +11,7 @@ use App\Models\EnRuEntityMatch;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
 use Filament\Resources\Pages\Page;
+use Filament\Support\Enums\Width;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
@@ -81,9 +82,9 @@ class EditEntityAlignment extends Page
 
     public int $connectInsertAfterMeaningOrder = 0;
 
-    public function getMaxContentWidth(): \Filament\Support\Enums\Width|string|null
+    public function getMaxContentWidth(): Width|string|null
     {
-        return \Filament\Support\Enums\Width::Full;
+        return Width::Full;
     }
 
     public function mount(int|string $record): void

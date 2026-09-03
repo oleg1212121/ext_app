@@ -17,9 +17,9 @@ class EnWordResource extends Resource
 {
     protected static ?string $model = EnWord::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-language';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-language';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Words';
+    protected static string|\UnitEnum|null $navigationGroup = 'Words';
 
     protected static ?string $navigationLabel = 'English Words';
 

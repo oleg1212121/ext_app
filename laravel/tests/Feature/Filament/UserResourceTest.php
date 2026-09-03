@@ -39,7 +39,7 @@ test('admin can access user edit page', function () {
     $user = User::factory()->approved()->create();
 
     $this->actingAs($admin)
-        ->get('/admin/users/' . $user->getRouteKey() . '/edit')
+        ->get('/admin/users/'.$user->getRouteKey().'/edit')
         ->assertOk();
 });
 

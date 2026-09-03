@@ -27,7 +27,6 @@ class AlignmentEditorPersister
 
             $sentenceTypeId = SentenceType::query()->where('name', 'sentence')->value('id');
 
-            
             $enIdMap = $this->syncSentences(
 
                 entityId: $entityMatch->en_entity_id,
@@ -160,7 +159,7 @@ class AlignmentEditorPersister
             }
         }
 
-        if (!empty($updates)) {
+        if (! empty($updates)) {
             foreach (array_chunk($updates, 1000) as $chunk) {
                 if ($lang === 'en') {
                     EnEntitySentence::upsert($chunk, ['id'], ['content', 'order']);
@@ -208,7 +207,7 @@ class AlignmentEditorPersister
 
         $existingMeaningMatchIds = $existingMeaningMatches->keys()->toArray();
 
-        if (!empty($existingMeaningMatchIds)) {
+        if (! empty($existingMeaningMatchIds)) {
             foreach (array_chunk($existingMeaningMatchIds, 1000) as $chunk) {
                 EnSentenceMeaningMatch::query()->whereIn('en_ru_meaning_match_id', $chunk)->delete();
                 RuSentenceMeaningMatch::query()->whereIn('en_ru_meaning_match_id', $chunk)->delete();
@@ -227,7 +226,7 @@ class AlignmentEditorPersister
             if ($row['id'] !== null && $existingMeaningMatches->has($row['id'])) {
                 $meaningId = $row['id'];
                 $model = $existingMeaningMatches->get($meaningId);
-                
+
                 if ($model->order !== $order || $model->similarity != 1.0) {
                     $meaningUpdates[] = [
                         'id' => $meaningId,
@@ -238,7 +237,7 @@ class AlignmentEditorPersister
                     ];
                 }
                 $keptMeaningIds[] = $meaningId;
-                
+
                 $newRows[] = [
                     'is_new' => false,
                     'meaning_id' => $meaningId,
@@ -256,13 +255,13 @@ class AlignmentEditorPersister
         }
 
         $toDelete = array_diff($existingMeaningMatchIds, $keptMeaningIds);
-        if (!empty($toDelete)) {
+        if (! empty($toDelete)) {
             foreach (array_chunk($toDelete, 1000) as $chunk) {
                 EnRuMeaningMatch::query()->whereIn('id', $chunk)->delete();
             }
         }
 
-        if (!empty($meaningUpdates)) {
+        if (! empty($meaningUpdates)) {
             // Temporarily shift orders to negative values to avoid unique constraint violations during swaps
             $tempUpdates = array_map(function ($update) {
                 return [
@@ -319,13 +318,13 @@ class AlignmentEditorPersister
             }
         }
 
-        if (!empty($enJunctionInserts)) {
+        if (! empty($enJunctionInserts)) {
             foreach (array_chunk($enJunctionInserts, 2000) as $chunk) {
                 EnSentenceMeaningMatch::insert($chunk);
             }
         }
 
-        if (!empty($ruJunctionInserts)) {
+        if (! empty($ruJunctionInserts)) {
             foreach (array_chunk($ruJunctionInserts, 2000) as $chunk) {
                 RuSentenceMeaningMatch::insert($chunk);
             }
@@ -367,4 +366,3 @@ class AlignmentEditorPersister
         return (string) ($sentence['key'] ?? $sentence['temp_id'] ?? '');
     }
 }
-

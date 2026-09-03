@@ -1062,7 +1062,7 @@ class AlignEntitySentences implements ShouldQueue
         });
     }
 
-    public function failed(\Throwable $exception): void
+    public function failed(Throwable $exception): void
     {
         EnRuEntityMatch::whereKey($this->entityMatchId)->update([
             'status' => 'failed',

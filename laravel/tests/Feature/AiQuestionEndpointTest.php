@@ -87,4 +87,3 @@ it('returns a friendly message when the model resolver rejects the model', funct
         ->assertJsonPath('data.code', 400)
         ->assertJsonPath('data.data.error', 'Invalid model selection.');
 });
-

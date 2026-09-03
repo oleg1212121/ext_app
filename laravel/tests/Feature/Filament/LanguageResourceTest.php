@@ -1,6 +1,5 @@
 <?php
 
-use App\Filament\Resources\LanguageResource;
 use App\Filament\Resources\LanguageResource\Pages\CreateLanguage;
 use App\Filament\Resources\LanguageResource\Pages\EditLanguage;
 use App\Filament\Resources\LanguageResource\Pages\ListLanguages;

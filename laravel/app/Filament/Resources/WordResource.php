@@ -19,9 +19,9 @@ class WordResource extends Resource
 {
     protected static ?string $model = Word::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-rectangle-stack';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Words';
+    protected static string|\UnitEnum|null $navigationGroup = 'Words';
 
     protected static ?string $navigationLabel = 'Legacy Words';
 
