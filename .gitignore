@@ -98,3 +98,4 @@ homepage-current.png
 .container-stamp
 .deploy.lock
 actions-runner
+laravel/.env.testing

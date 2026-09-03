@@ -82,13 +82,14 @@ abstract class AiModelSync implements ModelSync
             $seenExternalIds[] = $item['id'];
         }
 
-        // Delete catalog-missing rows for this provider.
-        if ($seenExternalIds !== []) {
-            AiModel::query()
-                ->forProvider($providerId)
-                ->whereNotIn('external_id', $seenExternalIds)
-                ->delete();
-        }
+        // Delete catalog-missing rows for this provider. The providerId is
+        // guaranteed non-null by the guard above; when the API returns zero
+        // models, whereNotIn('external_id', []) matches every row and wipes the
+        // catalog, which is the intended catalog-mirror behaviour.
+        AiModel::query()
+            ->forProvider($providerId)
+            ->whereNotIn('external_id', $seenExternalIds)
+            ->delete();
 
         return count($seenExternalIds);
     }
