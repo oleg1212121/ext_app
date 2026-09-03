@@ -2,6 +2,25 @@
 
 ## 2026-09-03
 
+* **CI Tests job root-caused + fixed: provision a `.env` in CI.**
+  The Tests workflow failed with ~45 failed / ~375 warnings / 19 passed while
+  the local suite passed 439. Diagnosed via a faithful CI reproduction
+  (fresh `postgres:18-alpine` with `postgres/postgres`, no env files, `composer
+  run test`). Root cause: CI ships **no `.env` file at all** (both `.env` and
+  `.env.testing` are gitignored). Laravel boots off `.env` via phpdotenv's
+  `@file_get_contents('.env')`; with no env file present, PHPUnit flags a
+  warning on ~every test and, under the stricter CI runtime, ~45 escalate to
+  failures. Local runs only passed because `.env` exists on disk. Fix: added a
+  "Provision environment file" step to `.github/workflows/tests.yml`
+  (`cp .env.example .env` before `composer run test`). `.env.example` is
+  secret-free; `phpunit.xml` (force) + the workflow `env:` supply APP_KEY, DB
+  connection, cache/queue/session drivers. Verified: 439 passed / 0 warnings /
+  0 failures under exact CI parity, and 439 passed in normal local mode.
+  `running-tests.md` playbook updated with the CI `.env` gotcha. No
+  routes/models/commands changed (`wiki:sync` not required).
+
+## 2026-09-03
+
 * **Test suite restored to green + hardened `.env.testing` exposure.**
   Two root causes behind 44 failing tests fixed. (1) **Stale route cache vs
   `APP_KEY` mismatch** (~37 tests): `deploy.sh` runs `php artisan route:cache`,

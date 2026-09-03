@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database.
 tags: [testing, pest]
 status: stable
-generated: { by: human:opencode, at: 2026-09-03T16:30:00Z }
+generated: { by: human:opencode, at: 2026-09-03T20:30:00Z }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -27,6 +27,13 @@ sources:
 * Test database: **`ext_app_test`** (set in `phpunit.xml` and `.env.testing`,
   not the default `testing` DB). Tests use `QUEUE_CONNECTION=sync`, array
   cache/session.
+* **CI needs a `.env` file.** Laravel boots off `.env` via phpdotenv's
+  `@file_get_contents('.env')`; with no env file at all, PHPUnit flags a
+  warning on roughly every test and (under the CI runtime) ~45 of them
+  escalate to failures. `.env` is gitignored, so the Tests workflow
+  (`tests.yml`) provisions it with `cp .env.example .env` before running —
+  `.env.example` is secret-free, and `phpunit.xml` (force) plus the workflow
+  `env:` (APP_KEY + DB connection) supply the real test values.
 * `composer run test` clears the **config and route caches** first, then runs
   the suite. Routing the test run through `route:clear` is required because
   `deploy.sh` runs `php artisan route:cache`, which bakes the production
