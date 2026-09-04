@@ -1,0 +1,89 @@
+name: Log doctor
+
+# Hourly production error triage. The self-hosted prod runner (labels:
+# self-hosted, prod — the same one deploy.yml uses) scans the prod checkout's
+# laravel logs, failed_jobs table and scheduler output for errors since the
+# last completed run. Only if something new is found does the read-only
+# log-doctor opencode agent (defined in .opencode/agents/log-doctor.md)
+# diagnose the errors against the live bind-mounted source, and deterministic
+# scripts file or update GitHub issues. Clean runs cost nothing (no LLM call).
+# The agent never edits anything: the checkout IS the running app; fixes go
+# through the normal dev-machine → push → autodeploy flow.
+#
+# One-time setup (see wiki/playbooks/log-doctor.md): install opencode for the
+# runner user, and set the LOG_DOCTOR_API_KEY secret to the API key of the
+# provider named in LOG_DOCTOR_MODEL below.
+#
+# NEVER add a pull_request trigger: fork/PR code must never execute on the
+# prod self-hosted runner (same rule as deploy.yml).
+
+on:
+  schedule:
+    - cron: '0 * * * *' # hourly, UTC
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: log-doctor
+  cancel-in-progress: false # never overlap runs (shared state file)
+
+env:
+  # Absolute path of the prod checkout (same as deploy.yml).
+  PROD_CHECKOUT: /home/alex/projects/ext/ext_app
+  # Model for the log-doctor agent. The opencode provider authenticates via
+  # auth.json on the machine (run `opencode auth login` as the runner user once)
+  # rather than an API key secret — so LOG_DOCTOR_API_KEY is left unset here.
+  LOG_DOCTOR_MODEL: opencode/big-pickle
+
+jobs:
+  log-doctor:
+    runs-on: [self-hosted, prod]
+    timeout-minutes: 20
+    steps:
+      - name: Collect new production errors
+        id: collect
+        run: |
+          set -euo pipefail
+          run_dir="$("$PROD_CHECKOUT/laravel/scripts/log-doctor/collect.sh")"
+          echo "run_dir=$run_dir" >> "$GITHUB_OUTPUT"
+          if [ -f "$run_dir/findings.md" ]; then
+            echo "findings=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "findings=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Analyze findings with the read-only log-doctor agent
+        id: analyze
+        if: steps.collect.outputs.findings == 'true'
+        env:
+          LOG_DOCTOR_API_KEY: ${{ secrets.LOG_DOCTOR_API_KEY }}
+        run: bash "$PROD_CHECKOUT/laravel/scripts/log-doctor/analyze.sh" "${{ steps.collect.outputs.run_dir }}"
+
+      - name: Create or update GitHub issues
+        if: steps.collect.outputs.findings == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          run_dir="${{ steps.collect.outputs.run_dir }}"
+          # shellcheck disable=SC1091
+          . "$run_dir/meta.env"
+          export LOG_DOCTOR_RUN_AT="$run_start_rfc3339" LOG_DOCTOR_SINCE_AT="$since_rfc3339"
+          docker exec -i \
+            -e GITHUB_TOKEN \
+            -e GITHUB_REPOSITORY \
+            -e GITHUB_SERVER_URL \
+            -e GITHUB_RUN_ID \
+            -e LOG_DOCTOR_RUN_AT \
+            -e LOG_DOCTOR_SINCE_AT \
+            ext_app_laravel php /var/www/scripts/log-doctor/issue-report.php \
+            < "$run_dir/agent-output.json"
+
+      - name: Advance the collection window
+        # Last step, no if-condition: runs only when everything before it
+        # succeeded (a SKIPPED analyze step still counts as success — clean
+        # runs advance the window too). A failed analyze/report leaves the
+        # window in place so the next run reprocesses the same errors.
+        run: bash "$PROD_CHECKOUT/laravel/scripts/log-doctor/collect.sh" --mark-done "${{ steps.collect.outputs.run_dir }}"
