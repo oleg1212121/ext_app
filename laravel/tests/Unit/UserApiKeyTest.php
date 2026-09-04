@@ -28,7 +28,7 @@ it('allows only one key per provider per user', function () {
         DB::transaction(function () use ($user, $provider): void {
             UserApiKey::factory()->create(['user_id' => $user->id, 'ai_provider_id' => $provider->id]);
         });
-    } catch (\Throwable) {
+    } catch (Throwable) {
         // expected unique violation
     }
 

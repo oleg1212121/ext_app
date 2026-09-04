@@ -1,5 +1,72 @@
 # Directory Update Log
 
+## 2026-09-04
+
+* **CI Tests job root-caused + fixed: missing Vite manifest.** After the
+  2026-09-03 `.env` fix, the Tests workflow still failed ~40 feature tests,
+  all with `ViteManifestNotFoundException: Vite manifest not found at
+  laravel/public/build/manifest.json` (thrown while rendering
+  `app.blade.php`, `layouts/guest.blade.php`, `layouts/app.blade.php`).
+  Root cause: `public/build/` is gitignored and CI never runs
+  `npm run build` — local runs only passed because the container has a built
+  manifest. Fix (chosen over building assets in CI): `Tests\TestCase::setUp()`
+  now calls `$this->withoutVite()`, swapping the Vite binding for a no-op so
+  `@vite` renders empty tags; blade layouts with an embedded no-build CSS
+  fallback (`components/*/layouts/*`) were never affected. Also silenced the
+  ~70 "wiki warning: source changed after generated.at" lines printed on
+  every CI run: a fresh checkout stamps all files with mtime = checkout
+  time, so the staleness signal fires forever in CI. New
+  `laravel/config/wiki.php` (`skip_mtime_staleness`, env
+  `WIKI_SKIP_MTIME_CHECKS`) makes `WikiValidator` skip only the mtime
+  comparison; source-not-found / stale_after / error checks stay active.
+  `tests.yml` and `tia-baseline.yml` set the env. Verified: full suite with
+  manifest absent + flag set = 439 passed / 0 failures (exact CI parity);
+  `wiki:validate` clean under the flag. `running-tests.md` playbook updated
+  (its `envtesting` source now points at the tracked
+  `.env.testing.example`). No routes/models/commands changed (`wiki:sync`
+  not required).
+
+## 2026-09-03
+
+* **CI Tests job root-caused + fixed: provision a `.env` in CI.**
+  The Tests workflow failed with ~45 failed / ~375 warnings / 19 passed while
+  the local suite passed 439. Diagnosed via a faithful CI reproduction
+  (fresh `postgres:18-alpine` with `postgres/postgres`, no env files, `composer
+  run test`). Root cause: CI ships **no `.env` file at all** (both `.env` and
+  `.env.testing` are gitignored). Laravel boots off `.env` via phpdotenv's
+  `@file_get_contents('.env')`; with no env file present, PHPUnit flags a
+  warning on ~every test and, under the stricter CI runtime, ~45 escalate to
+  failures. Local runs only passed because `.env` exists on disk. Fix: added a
+  "Provision environment file" step to `.github/workflows/tests.yml`
+  (`cp .env.example .env` before `composer run test`). `.env.example` is
+  secret-free; `phpunit.xml` (force) + the workflow `env:` supply APP_KEY, DB
+  connection, cache/queue/session drivers. Verified: 439 passed / 0 warnings /
+  0 failures under exact CI parity, and 439 passed in normal local mode.
+  `running-tests.md` playbook updated with the CI `.env` gotcha. No
+  routes/models/commands changed (`wiki:sync` not required).
+
+## 2026-09-03
+
+* **Test suite restored to green + hardened `.env.testing` exposure.**
+  Two root causes behind 44 failing tests fixed. (1) **Stale route cache vs
+  `APP_KEY` mismatch** (~37 tests): `deploy.sh` runs `php artisan route:cache`,
+  baking the prod `APP_KEY` into `bootstrap/cache/routes-v7.php`. Livewire
+  derives its `/livewire-<hash>/update` endpoint from `APP_KEY`, so a cached
+  route table built under a different key makes every Livewire/Filament
+  interaction 404 (`mountedActions on null`, null Livewire props). Fixed by
+  adding `php artisan route:clear` to the `test` and `test:tia` composer
+  scripts (next to the existing `config:clear`). (2) **`AiModelSync` regression
+  from commit `403d3ef`** (7 tests): the `if ($seenExternalIds !== [])` guard
+  on the delete-missing block skips the catalog wipe when a provider's
+  `models_url` is blank, so pre-existing `ai_models` rows were never removed —
+  removed the guard so an empty catalog correctly wipes all rows for the
+  provider. `SyncAiModelsCommandTest` now seeds `AiProvider` rows (the
+  intentional `RuntimeException` when no provider row exists fires otherwise).
+  **Secret exposure hardening:** `laravel/.env.testing` was committed and the
+  real `APP_KEY` risked leaking; it is now untracked (`git rm --cached`) and
+  gitignored, replaced by a tracked `laravel/.env.testing.example` template
+  with a throwaway test key. All 439 tests pass. `pint --dirty` clean.
+
 ## 2026-08-31
 
 * **Log Doctor — hourly scheduled error triage.** Added

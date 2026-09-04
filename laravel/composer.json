@@ -65,10 +65,12 @@
         ],
         "test": [
             "@php artisan config:clear --ansi",
+            "@php artisan route:clear --ansi",
             "@php artisan test"
         ],
         "test:tia": [
             "@php artisan config:clear --ansi",
+            "@php artisan route:clear --ansi",
             "@php scripts/tia-setup.php",
             "vendor/bin/pest --parallel --tia --drop-databases -d extension=pcov.so -d pcov.enabled=1 --coverage"
         ]

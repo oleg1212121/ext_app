@@ -8,6 +8,7 @@ use App\Models\EnRuEntityMatch;
 use App\Models\RuEntity;
 use Database\Seeders\SimulatorEntitySeeder;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Collection;
 
 class ImportSimulatorEntitiesCommand extends Command
 {
@@ -107,7 +108,7 @@ class ImportSimulatorEntitiesCommand extends Command
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Collection<int, EnEntity>
+     * @return Collection<int, EnEntity>
      */
     private function resolveEnEntities()
     {

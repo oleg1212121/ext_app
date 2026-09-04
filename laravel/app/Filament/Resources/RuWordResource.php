@@ -17,9 +17,9 @@ class RuWordResource extends Resource
 {
     protected static ?string $model = RuWord::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-globe-alt';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-globe-alt';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Words';
+    protected static string|\UnitEnum|null $navigationGroup = 'Words';
 
     protected static ?string $navigationLabel = 'Russian Words';
 

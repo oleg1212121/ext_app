@@ -8,6 +8,21 @@ use RuntimeException;
 abstract class TestCase extends BaseTestCase
 {
     /**
+     * Swap Vite for a no-op so Blade layouts render without a built manifest.
+     *
+     * CI never runs `npm run build` and `public/build/` is gitignored, so any
+     * `@vite` call would throw ViteManifestNotFoundException and turn every
+     * page-rendering test into a 500. Use withVite() inside a test that needs
+     * real asset resolution (requires a built manifest).
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->withoutVite();
+    }
+
+    /**
      * Boot the application and refuse to run against anything but the test database.
      *
      * The check must live here (not setUp): RefreshDatabase wipes the resolved

@@ -6,6 +6,7 @@ use App\Models\EnRuMeaningMatch;
 use App\Models\RuEntity;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+
 use function Pest\Laravel\actingAs;
 
 uses(RefreshDatabase::class);

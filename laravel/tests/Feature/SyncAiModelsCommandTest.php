@@ -1,10 +1,14 @@
 <?php
 
+use App\Models\AiProvider;
+use App\Services\AiModelSyncRegistry;
 use Illuminate\Support\Facades\Http;
 
 it('syncs only the chosen provider with --provider', function () {
     Http::fake();
     Http::preventStrayRequests();
+
+    AiProvider::factory()->create(['key' => 'groq', 'name' => 'Groq']);
 
     $this->artisan('ai:sync-models', ['--provider' => 'groq'])
         ->assertSuccessful()
@@ -15,6 +19,10 @@ it('syncs only the chosen provider with --provider', function () {
 it('syncs every registered provider by default', function () {
     Http::fake();
     Http::preventStrayRequests();
+
+    foreach (array_keys(app(AiModelSyncRegistry::class)->all()) as $key) {
+        AiProvider::factory()->create(['key' => $key, 'name' => ucfirst($key)]);
+    }
 
     $this->artisan('ai:sync-models')
         ->assertSuccessful()

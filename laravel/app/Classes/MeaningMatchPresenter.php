@@ -4,6 +4,7 @@ namespace App\Classes;
 
 use App\Models\EnRuEntityMatch;
 use App\Models\EnRuMeaningMatch;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class MeaningMatchPresenter
@@ -113,7 +114,7 @@ class MeaningMatchPresenter
         return $rows;
     }
 
-    public function meaningMatchesQuery(EnRuEntityMatch $entityMatch): \Illuminate\Database\Eloquent\Builder
+    public function meaningMatchesQuery(EnRuEntityMatch $entityMatch): Builder
     {
         return EnRuMeaningMatch::query()
             ->where('en_ru_entity_match_id', $entityMatch->id)

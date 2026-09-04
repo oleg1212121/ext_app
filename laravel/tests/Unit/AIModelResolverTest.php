@@ -100,7 +100,7 @@ it('ask throws when the user has no key for the provider', function () {
 });
 
 it('withApiKey returns a distinct instance carrying the given key', function () {
-    $provider = new OpenRouter();
+    $provider = new OpenRouter;
     $clone = $provider->withApiKey('secret');
 
     expect($clone)->not->toBe($provider);

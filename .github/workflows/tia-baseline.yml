@@ -29,6 +29,10 @@ jobs:
         run: php scripts/tia-setup.php
 
       - name: Record TIA baseline
+        env:
+          # Fresh checkouts make every file look newer than wiki generated.at
+          # stamps; mute the resulting staleness warnings (see tests.yml).
+          WIKI_SKIP_MTIME_CHECKS: '1'
         run: vendor/bin/pest --parallel --tia --coverage --fresh -d extension=pcov.so -d pcov.enabled=1
 
       - name: Resolve TIA baseline path

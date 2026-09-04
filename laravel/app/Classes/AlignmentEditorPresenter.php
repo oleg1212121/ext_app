@@ -2,8 +2,10 @@
 
 namespace App\Classes;
 
+use App\Models\EnEntitySentence;
 use App\Models\EnRuEntityMatch;
 use App\Models\EnRuMeaningMatch;
+use App\Models\RuEntitySentence;
 use Illuminate\Support\Str;
 
 class AlignmentEditorPresenter
@@ -101,7 +103,7 @@ class AlignmentEditorPresenter
     }
 
     /**
-     * @param  iterable<int, \App\Models\EnEntitySentence|\App\Models\RuEntitySentence>  $sentences
+     * @param  iterable<int, EnEntitySentence|RuEntitySentence>  $sentences
      * @param  list<int>  $linkedIds
      * @return list<array<string, mixed>>
      */

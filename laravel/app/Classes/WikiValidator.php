@@ -129,6 +129,7 @@ class WikiValidator
         $generatedAt = $frontmatter['generated']['at'] ?? null;
         $generatedTs = is_string($generatedAt) ? strtotime($generatedAt) : null;
         $repoRoot = dirname($this->root);
+        $skipMtimeStaleness = (bool) config('wiki.skip_mtime_staleness', false);
 
         foreach (($frontmatter['sources'] ?? []) as $index => $source) {
             $resource = $source['resource'] ?? null;
@@ -153,7 +154,7 @@ class WikiValidator
                 continue;
             }
 
-            if ($generatedTs !== null && is_file($sourcePath) && filemtime($sourcePath) > $generatedTs) {
+            if (! $skipMtimeStaleness && $generatedTs !== null && is_file($sourcePath) && filemtime($sourcePath) > $generatedTs) {
                 $this->warnings[] = "{$relativePath}: source '{$resource}' changed after generated.at — possibly stale";
             }
         }

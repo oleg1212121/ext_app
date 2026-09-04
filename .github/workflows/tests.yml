@@ -43,16 +43,32 @@ jobs:
 
       - run: composer install --no-interaction --prefer-dist
 
+      - name: Provision environment file
+        # Laravel boots off `.env` (phpdotenv `@file_get_contents('.env')`); with
+        # no env file present PHPUnit flags a warning on ~every test and, under
+        # the CI runtime, ~45 of them escalate to real failures. `.env` is
+        # gitignored, so copy the tracked, secret-free template in. phpunit.xml
+        # force-overrides the test-critical values and the workflow `env:` below
+        # supplies APP_KEY + DB connection, so the template's placeholders are
+        # fine.
+        run: cp .env.example .env
+
       - name: Run test suite
         env:
-          # No .env.testing in CI; supply the DB + key the test bootstrap needs.
-          # phpunit.xml force-sets DB_CONNECTION=testing, DB_TEST_DATABASE,
-          # DB_DATABASE, CACHE_STORE, QUEUE_CONNECTION, SESSION_DRIVER, etc.
+          # `.env` is gitignored/untracked; supply the DB + key the test
+          # bootstrap needs. phpunit.xml force-sets DB_CONNECTION=testing,
+          # DB_TEST_DATABASE, DB_DATABASE, CACHE_STORE, QUEUE_CONNECTION,
+          # SESSION_DRIVER, etc.
           APP_KEY: base64:94tzcS36LwLZC4BujS59C5DZWML3vRtFefQuQZDa79c=
           DB_HOST: 127.0.0.1
           DB_PORT: '5432'
           DB_USERNAME: postgres
           DB_PASSWORD: postgres
+          # Fresh CI checkouts stamp every file with mtime = checkout time, so
+          # the wiki validator's "source changed after generated.at" warnings
+          # would fire on every run for every source. Mute them (local runs
+          # keep the signal).
+          WIKI_SKIP_MTIME_CHECKS: '1'
         run: composer run test
 
   pint:
