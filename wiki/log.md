@@ -1,5 +1,31 @@
 # Directory Update Log
 
+## 2026-09-04
+
+* **CI Tests job root-caused + fixed: missing Vite manifest.** After the
+  2026-09-03 `.env` fix, the Tests workflow still failed ~40 feature tests,
+  all with `ViteManifestNotFoundException: Vite manifest not found at
+  laravel/public/build/manifest.json` (thrown while rendering
+  `app.blade.php`, `layouts/guest.blade.php`, `layouts/app.blade.php`).
+  Root cause: `public/build/` is gitignored and CI never runs
+  `npm run build` — local runs only passed because the container has a built
+  manifest. Fix (chosen over building assets in CI): `Tests\TestCase::setUp()`
+  now calls `$this->withoutVite()`, swapping the Vite binding for a no-op so
+  `@vite` renders empty tags; blade layouts with an embedded no-build CSS
+  fallback (`components/*/layouts/*`) were never affected. Also silenced the
+  ~70 "wiki warning: source changed after generated.at" lines printed on
+  every CI run: a fresh checkout stamps all files with mtime = checkout
+  time, so the staleness signal fires forever in CI. New
+  `laravel/config/wiki.php` (`skip_mtime_staleness`, env
+  `WIKI_SKIP_MTIME_CHECKS`) makes `WikiValidator` skip only the mtime
+  comparison; source-not-found / stale_after / error checks stay active.
+  `tests.yml` and `tia-baseline.yml` set the env. Verified: full suite with
+  manifest absent + flag set = 439 passed / 0 failures (exact CI parity);
+  `wiki:validate` clean under the flag. `running-tests.md` playbook updated
+  (its `envtesting` source now points at the tracked
+  `.env.testing.example`). No routes/models/commands changed (`wiki:sync`
+  not required).
+
 ## 2026-09-03
 
 * **CI Tests job root-caused + fixed: provision a `.env` in CI.**

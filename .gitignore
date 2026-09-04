@@ -99,3 +99,4 @@ homepage-current.png
 .deploy.lock
 actions-runner
 laravel/.env.testing
+errors.txt
