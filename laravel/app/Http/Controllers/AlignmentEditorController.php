@@ -290,7 +290,8 @@ class AlignmentEditorController extends Controller
             }
 
             if ($toRowId !== null) {
-                $this->link($lang, $sentenceId, $toRowId, $index);
+                $this->link($lang, $sentenceId, $toRowId);
+                $this->placeSentenceAt($entityMatch, $lang, $sentenceId, $toRowId, $index);
                 $affectedRowIds[] = $toRowId;
             }
         });
@@ -301,6 +302,71 @@ class AlignmentEditorController extends Controller
             [],
             [$lang],
         );
+    }
+
+    /**
+     * Renumber a freshly linked sentence so it sorts at the drop index within
+     * its destination row, bounded by the document orders of the surrounding
+     * rows so the global numbering stays monotonic with row order.
+     */
+    private function placeSentenceAt(EnRuEntityMatch $entityMatch, string $lang, int $sentenceId, int $rowId, int $index): void
+    {
+        $layout = $this->sideLayout($entityMatch, $lang);
+
+        $current = array_values(array_filter(
+            $layout['rows'][$rowId]['ids'],
+            fn (int $id): bool => $id !== $sentenceId,
+        ));
+
+        if ($current === []) {
+            $this->setSentenceOrderRaw($lang, $sentenceId, $this->emptyRowPlacementOrder($layout, $rowId));
+
+            return;
+        }
+
+        $seq = $current;
+        array_splice($seq, $index, 0, [$sentenceId]);
+
+        $this->reorderRowJunctions($lang, $rowId, $seq, $sentenceId, $layout);
+    }
+
+    /**
+     * Document order for a sentence junctioned into a row holding no other
+     * sentences on this language side: between the closest populated rows.
+     *
+     * @param  array{
+     *     sentences: array<int, array{order: int, row_id: ?int}>,
+     *     rows: array<int, array{order: int, ids: list<int>}>
+     * }  $layout
+     */
+    private function emptyRowPlacementOrder(array $layout, int $rowId): int
+    {
+        $rowOrder = $layout['rows'][$rowId]['order'];
+
+        $low = null;
+        $high = null;
+
+        foreach ($layout['rows'] as $id => $row) {
+            if ($id === $rowId || $row['ids'] === []) {
+                continue;
+            }
+
+            if ($row['order'] < $rowOrder) {
+                $low = $this->rowRightBoundary($layout, $row['ids']);
+            }
+
+            if ($high === null && $row['order'] > $rowOrder) {
+                $high = $this->rowLeftBoundary($layout, $row['ids']);
+            }
+        }
+
+        $order = $this->sparseOrder->between($low, $high);
+
+        if ($order !== null) {
+            return $order;
+        }
+
+        return $high !== null ? $high - 1 : 0;
     }
 
     public function rows(EnRuEntityMatch $entityMatch, RowsRequest $request): JsonResponse
@@ -601,8 +667,22 @@ class AlignmentEditorController extends Controller
         $insertIndex = array_search($movedId, $seq, true);
         $remaining = array_values(array_filter($seq, fn (int $id): bool => $id !== $movedId));
 
+        $bounds = $this->rowGlobalBounds($layout, $seq, $movedId);
+
         $prevOrder = $insertIndex > 0 ? ($orders[$remaining[$insertIndex - 1]] ?? null) : null;
         $nextOrder = $insertIndex < count($remaining) ? ($orders[$remaining[$insertIndex]] ?? null) : null;
+
+        if ($prevOrder === null) {
+            $prevOrder = $bounds['low'];
+        } elseif ($bounds['low'] !== null) {
+            $prevOrder = max($prevOrder, $bounds['low']);
+        }
+
+        if ($nextOrder === null) {
+            $nextOrder = $bounds['high'];
+        } elseif ($bounds['high'] !== null) {
+            $nextOrder = min($nextOrder, $bounds['high']);
+        }
 
         $newOrder = $this->sparseOrder->between($prevOrder, $nextOrder);
 
@@ -612,7 +692,6 @@ class AlignmentEditorController extends Controller
             return;
         }
 
-        $bounds = $this->rowGlobalBounds($layout, $seq);
         $spread = $this->sparseOrder->spreadOrders(count($seq), $bounds['low'], $bounds['high']);
 
         foreach ($seq as $index => $id) {
@@ -622,6 +701,9 @@ class AlignmentEditorController extends Controller
 
     /**
      * Find the global order bounds immediately surrounding a row's sentences.
+     * The moved sentence ($excludeId) is skipped when deriving the block span:
+     * its stale order (e.g. arriving from a far-away row) must not widen the
+     * bounds a fallback spread is confined to.
      *
      * @param  array{
      *     sentences: array<int, array{order: int, row_id: ?int}>,
@@ -630,12 +712,12 @@ class AlignmentEditorController extends Controller
      * @param  list<int>  $seq
      * @return array{low: ?int, high: ?int}
      */
-    private function rowGlobalBounds(array $layout, array $seq): array
+    private function rowGlobalBounds(array $layout, array $seq, ?int $excludeId = null): array
     {
         $rowOrders = [];
 
         foreach ($seq as $id) {
-            if (isset($layout['sentences'][$id])) {
+            if ($id !== $excludeId && isset($layout['sentences'][$id])) {
                 $rowOrders[] = $layout['sentences'][$id]['order'];
             }
         }
@@ -669,7 +751,7 @@ class AlignmentEditorController extends Controller
         return ['low' => $low, 'high' => $high];
     }
 
-    private function link(string $lang, int $sentenceId, int $rowId, int $index): void
+    private function link(string $lang, int $sentenceId, int $rowId): void
     {
         $this->junctionClass($lang)::query()->create([
             $this->sentenceForeignKey($lang) => $sentenceId,
