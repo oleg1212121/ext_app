@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: human:alex, at: 2026-08-25T12:00:00Z }
+generated: { by: human:alex, at: 2026-09-05T23:15:00Z }
 verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
@@ -490,9 +490,10 @@ sentence(s). The output powers the
     parallel entry point backed by the surgical `AlignmentEditorController`
     endpoints — create/delete pair, approve pair (set `similarity = 1.0` +
     `alignment_chunk = -1`, promoting a row to a hard landmark), add/edit/
-    unlink/hard-delete sentence, and
-    `sentences/move` (within-row reorder / cross-row relink / to-or-from the
-    unmatched pool) — with immediate persistence, sparse orders via
+     unlink/hard-delete sentence, and
+     `sentences/move` (within-row reorder / cross-row move / to-or-from the
+     unmatched pool; every drop into a row renumbers document order) — with
+     immediate persistence, sparse orders via
     `SparseOrderService`, and JSON payloads shaped by `AlignmentEditorApiPresenter`
     (`rows` + `unmatched` pagination, `last_page` included; the rows table's
     `Pagination` component shows Prev/Next + numbered page buttons with ellipsis
@@ -512,16 +513,47 @@ sentence(s). The output powers the
     the row (client-side scroll, no URL change). Paginated 25/page via
     `GET /alignments/{entityMatch}/needs-review`
     (`AlignmentEditorController::needsReview`, `NeedsReviewRequest`); the section
-    refetches its current page after every editor mutation. The editor never
-    rewrites an existing
-    sentence's document order: dragging edits the row's **junction** orders
-    only, so `en_entity_sentences.order` keeps reflecting the original text and
-    a later Re-align places sentences correctly. Each row still shows the raw
-    `order` of its sentences. Once a run lands,
+    refetches its current page after every editor mutation. The editor honors
+    the drop position: dragging a sentence — within a row, across rows, or
+    from the unmatched pool into a row — renumbers its document order
+    (`*_entity_sentences.order`) via `SparseOrderService`, clamped by the
+    nearest sentences outside the destination row's span so the global
+     numbering stays monotonic with row order (junctions stay orderless;
+    in-row sequence is the sentence orders themselves). The editor renders an
+      explicit **drop slot** above the first, between every pair, and below the
+      last sentence of each column (a tall standalone slot for an empty
+      column); slots are permanently visible as thin faint dashed lines, so the
+      page never reshuffles when a drag starts. The slot under the pointer
+      lights up while a drag is active, and the drop lands exactly on it —
+      `slot:<containerKey>:#<n>` maps straight to insertion index `n` among the
+      column's other sentences (the API's array_splice space, so a bottom-slot
+      drop is the real last position). While dragging, the two slots directly
+      above and below the dragged sentence in its own column are rendered as
+      inert spacers (its frozen home spot still shows it there, so those two
+      would only mean "keep it" / "move one down"); dropping back onto the
+      sentence itself is a no-op. Container lists are **frozen while
+      dragging**: there is no `onDragOver` preview mutation, so nothing in the
+      layout moves under the pointer and `over` (the slot) can never flip-flop
+      into React error #185; the drop writes the new ordering exactly once.
+      `Show.jsx`'s `collisionDetection` (do not replace it) uses `pointerWithin`
+      then `rectIntersection` and reports the winning slot or item, with a
+      `lastOverId` cache keeping `over` from flapping on no-collision frames.
+      The drop index is direction-agnostic, not the drag-direction default
+      documented in ADR 0016's original spec 3.4/3.5 (amended 2026-09-05,
+      fifth/final form; supersedes the pointer-edge and live-preview
+      amendments). A drop into a column holding no sentences lands at
+      position 0. A drop into a row
+     that is empty on that language side places the sentence between the
+     closest populated rows. Consequence: a drag edits the document a later
+    Re-align consumes; the per-sentence badge keeps showing the global
+    document rank. Each row still shows the raw `order` of its sentences.
+    Once a run lands,
     the Filament list's **Re-align** / **Run from scratch** actions (Plan 09)
     restart it — preserving or wiping the human work respectively. Re-align
-    deletes non-landmark machine rows and re-creates them in document order, so
-    a within-row switch on a non-approved row is reset by it.
+    deletes non-landmark machine rows and re-creates them in document order —
+    the drag-edited order is that input, so a manual re-sequencing survives a
+    re-align as the input order while the grouping of non-approved rows may
+    be re-derived.
 7. **Sentence editing** — individual entity sentences can be created, edited,
    deleted, and reordered from the *Sentences* tab on each `EnEntity` /
    `RuEntity` edit page. The relation manager uses `SparseOrderService` to keep

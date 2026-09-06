@@ -1,5 +1,132 @@
 # Directory Update Log
 
+## 2026-09-05
+
+* **Alignments editor DnD: slots always visible (stable structure) + inert
+  slots around the dragged sentence.** Two UX fixes on the frozen-drag slot
+  model. (1) Drop slots now render permanently (thin faint dashed separators,
+  tall standalone slot for an empty column) so starting a drag — previously
+  suddenly mounting ~2N slot bars — no longer shifts the whole editor layout.
+  (2) In the column that still shows the dragged sentence frozen at its home
+  spot, the two slots directly above and below it are rendered as **inert
+  spacers** (no droppable node, no highlight): they only meant "keep it here"
+  / "move it one down", which users read as a confusing no-op / off-by-one.
+  Dropping back onto the dragged sentence itself is now a guarded no-op (no
+  API call). Drop targets are therefore only the real boundaries between other
+  sentences. ADR 0016 updated (fifth/final form). Updated
+  `wiki/domains/sentence-alignment.md`.
+
+## 2026-09-05
+
+* **Alignments editor DnD: containers frozen during drag (kills #185).** The
+  live-preview slot model still looped: onDragOver mutated the columns, the
+  moved sentence reshuffled the drop-slot bars under the pointer, `over`
+  flip-flopped between adjacent slots, and each flip mutated the columns again
+  (React error #185). The editor now does **not** touch `containers` while a
+  drag is in progress — there is no `onDragOver` mutation at all. The
+  highlighted slot is the only drop feedback; on release `onDragEnd` maps the
+  slot boundary to the array_splice index among the target column's other
+  sentences and writes the new ordering once (removing it from its source
+  column in the same update when crossing columns). `collisionDetection` was
+  simplified to pointerWithin → rectIntersection over slots+items with a
+  `lastOverId` no-collision fallback; the `recentlyMovedToNewContainer`
+  pin/rAF effect and `lastPaddingEdge` were removed. ADR 0016 updated
+  (fourth/final form). Updated `wiki/domains/sentence-alignment.md`.
+
+## 2026-09-05
+
+* **Alignments editor DnD: explicit drop slots with visible highlight.**
+  Earlier attempts (closestCorners, official multi-container strategy,
+  pointer-edge padding) left the drop point invisible and repeatedly landed
+  drops one position early / at the row start, because the index came from
+  fuzzy collision (nearest sentence or column rect) instead of a real target
+  under the pointer. The editor now renders an explicit drop slot droppable
+  per column — above the first, between every pair, below the last sentence,
+  and a tall standalone slot for an empty column — each lit up (dashed accent
+  border/fill) at the drop point while a drag is active. `over` is then the
+  slot itself: `slot:<containerKey>:#<n>`, and both `onDragOver` (preview) and
+  `onDragEnd` map the boundary straight to the API's array_splice index (n
+  clamped to the other-sentence count, so the bottom slot is the real last
+  position). `collisionDetection` was simplified to pointerWithin →
+  rectIntersection over slots+items, keeping the `recentlyMovedToNewContainer`
+  pin (pins `over` to a slot of the item's current column for one frame after
+  a cross-column move) and `lastOverId` cache that stop the #185 bounce;
+  container-level droppables were removed. ADR 0016 updated (third/final form
+  of the drop-position spec). Updated `wiki/domains/sentence-alignment.md`.
+
+## 2026-09-05
+
+* **Alignments editor DnD: drop position fixed via the official dnd-kit
+  multiple-containers collision strategy.** Both prior fixes were wrong. The
+  "containers[target].indexOf(active.id)" approach (previous entry) was
+  reverted the same day: `onDragOver` early-returns for same-container hovers,
+  so once the preview inserts the sentence into the target row, state never
+  tracks within-row hovering — the indexOf was the frozen *entry* index (0),
+  i.e. every cross-row down-drop landed first. The underlying cause of wrong
+  drops is bare `closestCorners` colliding against dnd-kit's
+  transform-agnostic, resize-only-refreshed droppable rects: the row column
+  container itself wins corner-distance in padding/gap areas (and stale rects
+  lag the animated layout by one slot), so `over` was the container or the
+  wrong item and every index resolved to 0. `Show.jsx` now uses the official
+  multiple-containers `collisionDetection`: `pointerWithin` → `rectIntersection`
+  fallback → on a column-container hit, re-resolve to the closest item inside
+  it via `closestCenter` → `lastOverId` cache to stop `over` from flapping;
+  the `recentlyMovedToNewContainer` stickiness ref (from the #185 fix below)
+  stays. A pointer in a column's empty padding (no sentence under it) keeps
+  the column as `over` and records the edge it is beyond (`lastPaddingEdge`),
+  so the drop lands at the first or last position regardless of drag
+  direction — replacing the ADR 0016 direction default, which is amended
+  accordingly. `onDragEnd`'s cross-container index is `over.id`-based
+  (arrayMove-consistent, in the API's post-removal space). Fixes drops
+  between sentences and at a row's end. Frontend only — no backend, route,
+  model, or command changes (`wiki:sync` not required).
+
+## 2026-09-05
+
+* **Alignments editor DnD: cross-row drops kept landing at the row's first
+  position — superseded and reverted same day.** Original note claimed
+  `onDragEnd`'s `over` payload was one preview move stale and that deriving
+  the index from `containers[target].indexOf(active.id)` was correct. Reverted:
+  same-container `onDragOver` early-returns freeze the preview at the entry
+  index, so indexOf was deterministically 0. The real fix is the collision
+  strategy above; see that entry.
+
+## 2026-09-05
+
+* **Alignments editor DnD: fix React #185 infinite-update loop during drags.**
+  The 2026-09-05 drop-position change made `onDragOver` insert the preview at
+  the exact hovered index; every insertion re-measures droppable rects
+  (per-droppable ResizeObserver + 200 ms transform transitions), which can
+  flip `closestCorners` back to the previous container, and dnd-kit's
+  `useEffect([overId])` then re-invokes `onDragOver` — an unbounded update
+  loop React aborts with minified error #185. `Show.jsx` now uses a custom
+  `collisionDetection` callback wrapping `closestCorners` that, for one frame
+  after each cross-container move (`recentlyMovedToNewContainer` ref,
+  released via `requestAnimationFrame` on the `[containers]` effect, cleared
+  on drag end/cancel), pins the over to the container currently holding the
+  item — the official dnd-kit multiple-containers stickiness pattern. Drop
+  behavior unchanged (ADR 0016). Frontend only — no backend, route, model, or
+  command changes (`wiki:sync` not required).
+
+## 2026-09-05
+
+* **Alignments editor DnD: cross-row drops land at the drop position, not the
+  entry position.** Follow-up to the 2026-09-04 drop-position change: the
+  backend honored `index`, but `Show.jsx` sent the wrong one — `onDragOver`
+  splices the dragged sentence into the target row where the drag *enters* and
+  then early-returns while hovering inside that row, so `onDragEnd`'s
+  `targetItems.indexOf(active.id)` was the frozen entry index (drops landed at
+  the row top when dragging down, bottom when dragging up). `onDragEnd` now
+  derives the index from the sentence under the pointer at release
+  (`over.id`, arrayMove-consistent with the same-container branch) and applies
+  the matching optimistic local reorder; a drop on a column's empty area uses
+  the direction default via `emptyAreaIndex` (first position when moving down
+  to a later row, last when moving up — spec 3.4/3.5), which `onDragOver` also
+  honors again for row→row entry. ADR 0016 records the empty-area default;
+  `sentence-alignment.md` editor section notes the index derivation. Frontend
+  only — no backend, route, model, or command changes (`wiki:sync` not
+  required).
+
 ## 2026-09-04
 
 * **CI Tests job root-caused + fixed: missing Vite manifest.** After the
@@ -25,6 +152,28 @@
   (its `envtesting` source now points at the tracked
   `.env.testing.example`). No routes/models/commands changed (`wiki:sync`
   not required).
+
+* **Alignments editor DnD: drop position now renumbers document order.**
+  Fixed the drag-and-drop ordering bugs on `/alignments/{id}` (cross-row drops
+  ignored the drop index and never renumbered, so a moved sentence landed by
+  its stale document order and dragging back left rows permanently showing
+  number 2 above number 1; edge renumbering via `between(null, $o)` = ±1024
+  could leapfrog adjacent rows; the spread fallback could renumber bystanders
+  past far-away anchors). `AlignmentEditorController::moveSentence` now routes
+  every cross-row / unmatched→row drop through `placeSentenceAt`: the
+  destination row's sequence is rebuilt with the moved sentence spliced at the
+  drop index, and `reorderRowJunctions` clamps its `between()` neighbors by
+  `rowGlobalBounds` (moved sentence's stale order excluded from the span). A
+  drop into a row empty on that side lands between the closest populated rows
+  (`emptyRowPlacementOrder`), so moving a sentence back to its own row
+  restores monotonic numbering. `Show.jsx` `onDragOver` no longer forces
+  row→row insertions to index 0/end — the hovered sentence sets the index.
+  Semantics recorded as ADR 0016 (supersedes ADR 0005); CONTEXT.md
+  Sentence/Junction entries de-contradicted and a Move sentence term added;
+  `sentence-alignment.md` editor section rewritten. Tests: 2 cross-row tests
+  updated, 3 added (row-edge bounds, move-back regression, spread bounds) —
+  AlignmentEditorApiTest 32 passed. No routes/models/commands changed
+  (`wiki:sync` not required).
 
 ## 2026-09-03
 
