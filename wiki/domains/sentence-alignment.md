@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: human:alex, at: 2026-09-05T23:15:00Z }
+generated: { by: human:alex, at: 2026-09-06T12:00:00Z }
 verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
@@ -486,7 +486,21 @@ sentence(s). The output powers the
 6. **Review** — humans fix machine output in the Filament
     `EnRuEntityMatch` resource's custom `EditEntityAlignment` page (kept as-is),
     or in the new Inertia/React **Alignments editor**: `/alignments` (pair list)
-    → `/alignments/{id}` (pair editor), linked from the NavBar. The editor is a
+    → `/alignments/{id}` (pair editor), linked from the NavBar. The pair list
+    has a **"+ Create new"** button → `/alignments/create`
+    (`AlignmentController@create`/`@store`, routes `alignments.create`/
+    `alignments.store`): a React form picking an EN and an RU entity (each
+    select filtered to entities that are **readable by the user**, signed
+    (`signature` not null), and non-empty), an "Original text" radio
+    (`is_original_en`), and the Filament-parity `chunk_size` (25–100, default
+    75) + `max_n` (1–8, default 6). A link under each select opens the entity
+    create page (`/entities/{lang}/create`) in the same tab to create a new
+    entity in place. Store creates the match (`status='pending'`), dispatches
+    `AlignEntitySentences::beginFromScratch($id)`, and redirects to the list
+    with a flash; a duplicate `(en_entity_id, ru_entity_id)` pair is blocked
+    with an error plus a "Open existing match" link (flash
+    `existing_match_id`), and creating a match involving an entity the user
+    cannot read is `403`. The editor is a
     parallel entry point backed by the surgical `AlignmentEditorController`
     endpoints — create/delete pair, approve pair (set `similarity = 1.0` +
     `alignment_chunk = -1`, promoting a row to a hard landmark), add/edit/

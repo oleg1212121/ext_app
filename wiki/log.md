@@ -1,5 +1,24 @@
 # Directory Update Log
 
+## 2026-09-06
+
+* **Alignments "+ Create new" entity-match form.** The `/alignments` pair
+  list gains a "+ Create new" button → `/alignments/create`
+  (`AlignmentController@create`/`@store`, routes `alignments.create`/`store`):
+  picks an EN + RU entity (each select filtered server-side to readable,
+  signed, non-empty entities), an `is_original_en` radio, and Filament-parity
+  `chunk_size` (25–100) + `max_n` (1–8) inputs. Store creates the match
+  (`status='pending'`), dispatches `AlignEntitySentences::beginFromScratch`,
+  and redirects to the list with a success flash (now shared via
+  `HandleInertiaRequests`). Duplicate `(en_entity_id, ru_entity_id)` pairs
+  are blocked with an error + "Open existing match" link (flash
+  `existing_match_id`); creating a match with a non-readable entity is 403.
+  "Create a new EN/RU entity" links under each select open the existing
+  entity create page in-tab. New
+  `tests/Feature/AlignmentsCreateMatchTest.php` (6 tests).
+  Routes changed → `wiki:sync` rerun; updated `wiki/domains/sentence-alignment.md`
+  and `wiki/playbooks/run-alignment.md`.
+
 ## 2026-09-05
 
 * **Alignments editor DnD: slots always visible (stable structure) + inert
