@@ -4,7 +4,7 @@ title: Running an Alignment
 description: End-to-end workflow for aligning an EN/RU text pair into sentence meaning matches.
 tags: [alignment, embeddings, jobs, howto]
 status: stable
-generated: { by: agent/opencode, at: 2026-08-15T22:50:00Z }
+generated: { by: agent/opencode, at: 2026-09-06T12:00:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -62,11 +62,13 @@ sources:
    e5-small signatures are incompatible — null them out first
    (`UPDATE en_entities SET signature = NULL;` / `ru_entities`), the command
    only processes entities with NULL signatures.
- 3. **Align** — create an `EnRuEntityMatch` (`status='pending'`; either via
-    Filament, an import command, or directly). Fresh entry points (Filament
-    "new alignment", "align with Russian/English", and the `alignments:resume`
-    command) call `AlignEntitySentences::beginFromScratch($id)` — a shared
-    static that verifies the pair, wipes any prior meaning matches, snapshots
+3. **Align** — create an `EnRuEntityMatch` (`status='pending'`; either via
+     the `/alignments` "+ Create new" React form (`alignments.create/store`),
+     Filament, an import command, or directly). Fresh entry points (Filament
+     "new alignment", "align with Russian/English", the web create form, and
+     the `alignments:resume` command) call
+     `AlignEntitySentences::beginFromScratch($id)` — a shared
+     static that verifies the pair, wipes any prior meaning matches, snapshots
     totals, resets the cursor, transitions to `aligning`, and dispatches the
     first chunk. The Filament **Re-align** action instead calls the
     landmark-aware `begin($id)`: it preserves human-made rows
