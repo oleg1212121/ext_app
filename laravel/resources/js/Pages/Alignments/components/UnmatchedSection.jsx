@@ -1,13 +1,17 @@
-import {useDroppable} from '@dnd-kit/core';
+import {Fragment} from 'react';
+import {useDndContext} from '@dnd-kit/core';
 import {SortableContext, verticalListSortingStrategy} from '@dnd-kit/sortable';
 import SentenceItem from './SentenceItem.jsx';
+import DropSlot from './DropSlot.jsx';
 
 function UnmatchedPool({lang, containerKey, keys, lookup, meta, busy, editing, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onRemove, onPageChange}) {
-    const {setNodeRef, isOver} = useDroppable({id: containerKey});
+    const {active} = useDndContext();
     const sentences = keys.map((key) => lookup.get(key)).filter(Boolean);
+    const activeIndex = active != null ? keys.indexOf(active.id) : -1;
+    const isAdjacentToActive = (index) => activeIndex !== -1 && (index === activeIndex || index === activeIndex + 1);
 
     return (
-        <div className={['flex flex-col border-r border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] last:border-r-0', isOver ? 'bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]' : ''].join(' ')}>
+        <div className="flex flex-col border-r border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] last:border-r-0">
             <div className="flex items-center justify-between border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-3 py-1.5">
                 <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                     {lang} · {meta.total}
@@ -17,23 +21,26 @@ function UnmatchedPool({lang, containerKey, keys, lookup, meta, busy, editing, o
                 </span>
             </div>
 
-            <div ref={setNodeRef} className="flex min-h-[64px] flex-col px-2 py-1.5">
+            <div className="flex min-h-[64px] flex-col px-2 py-1.5">
                 <SortableContext items={keys} strategy={verticalListSortingStrategy}>
-                    {sentences.map((sentence) => (
-                        <SentenceItem
-                            key={sentence.key}
-                            item={sentence}
-                            lang={lang}
-                            editing={editing?.key === sentence.key}
-                            draft={editing?.key === sentence.key ? (editing.draft ?? '') : ''}
-                            busy={busy}
-                            onStartEdit={() => onStartEdit(sentence.key, lang)}
-                            onChangeDraft={onEditChange}
-                            onCommitEdit={onCommitEdit}
-                            onCancelEdit={onCancelEdit}
-                            onRemove={onRemove}
-                        />
+                    {sentences.map((sentence, index) => (
+                        <Fragment key={sentence.key}>
+                            <DropSlot slotId={`slot:${containerKey}:#${index}`} inert={isAdjacentToActive(index)}/>
+                            <SentenceItem
+                                item={sentence}
+                                lang={lang}
+                                editing={editing?.key === sentence.key}
+                                draft={editing?.key === sentence.key ? (editing.draft ?? '') : ''}
+                                busy={busy}
+                                onStartEdit={() => onStartEdit(sentence.key, lang)}
+                                onChangeDraft={onEditChange}
+                                onCommitEdit={onCommitEdit}
+                                onCancelEdit={onCancelEdit}
+                                onRemove={onRemove}
+                            />
+                        </Fragment>
                     ))}
+                    <DropSlot slotId={`slot:${containerKey}:#${keys.length}`} standalone={keys.length === 0}/>
                 </SortableContext>
 
                 {sentences.length === 0 && (

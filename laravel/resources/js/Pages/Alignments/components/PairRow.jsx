@@ -1,6 +1,8 @@
-import {useDroppable} from '@dnd-kit/core';
+import {Fragment} from 'react';
+import {useDndContext} from '@dnd-kit/core';
 import {SortableContext, verticalListSortingStrategy} from '@dnd-kit/sortable';
 import SentenceItem from './SentenceItem.jsx';
+import DropSlot from './DropSlot.jsx';
 
 const railBtn = [
     'inline-flex h-7 items-center px-2.5 font-mono text-[11px] uppercase tracking-[0.14em]',
@@ -13,18 +15,16 @@ const railBtn = [
 ].join(' ');
 
 function SentenceColumn({lang, containerKey, keys, lookup, adding, draft, busy, editing, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink}) {
-    const {setNodeRef, isOver} = useDroppable({id: containerKey});
-
+    const {active} = useDndContext();
     const sentences = keys.map((key) => lookup.get(key)).filter(Boolean);
+    // The dragged sentence still occupies its home slot in the frozen list, so
+    // the two drop zones directly above and below it only mean "keep it" and
+    // "move it one down" — confusing. Render them as inert spacers.
+    const activeIndex = active != null ? keys.indexOf(active.id) : -1;
+    const isAdjacentToActive = (index) => activeIndex !== -1 && (index === activeIndex || index === activeIndex + 1);
 
     return (
-        <div
-            ref={setNodeRef}
-            className={[
-                'flex min-h-[64px] flex-col px-2 py-1.5 transition-colors',
-                isOver ? 'bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]' : '',
-            ].join(' ')}
-        >
+        <div className="flex min-h-[64px] flex-col px-2 py-1.5">
             <div className="flex items-center justify-between px-1 pb-1">
                 <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                     {lang}
@@ -45,21 +45,24 @@ function SentenceColumn({lang, containerKey, keys, lookup, adding, draft, busy, 
             </div>
 
             <SortableContext items={keys} strategy={verticalListSortingStrategy}>
-                {sentences.map((sentence) => (
-                    <SentenceItem
-                        key={sentence.key}
-                        item={sentence}
-                        lang={lang}
-                        editing={editing?.key === sentence.key}
-                        draft={editing?.key === sentence.key ? (editing.draft ?? '') : ''}
-                        busy={busy}
-                        onStartEdit={() => onStartEdit(sentence.key, lang)}
-                        onChangeDraft={onEditChange}
-                        onCommitEdit={onCommitEdit}
-                        onCancelEdit={onCancelEdit}
-                        onUnlink={onUnlink}
-                    />
+                {sentences.map((sentence, index) => (
+                    <Fragment key={sentence.key}>
+                        <DropSlot slotId={`slot:${containerKey}:#${index}`} inert={isAdjacentToActive(index)}/>
+                        <SentenceItem
+                            item={sentence}
+                            lang={lang}
+                            editing={editing?.key === sentence.key}
+                            draft={editing?.key === sentence.key ? (editing.draft ?? '') : ''}
+                            busy={busy}
+                            onStartEdit={() => onStartEdit(sentence.key, lang)}
+                            onChangeDraft={onEditChange}
+                            onCommitEdit={onCommitEdit}
+                            onCancelEdit={onCancelEdit}
+                            onUnlink={onUnlink}
+                        />
+                    </Fragment>
                 ))}
+                <DropSlot slotId={`slot:${containerKey}:#${keys.length}`} standalone={keys.length === 0}/>
             </SortableContext>
 
             {adding && (

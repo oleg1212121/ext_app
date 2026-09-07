@@ -53,6 +53,11 @@ class HandleInertiaRequests extends Middleware
                 ],
                 'canRegister' => Route::has('register'),
             ],
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error' => fn () => $request->session()->get('error'),
+                'existing_match_id' => fn () => $request->session()->get('existing_match_id'),
+            ],
         ];
     }
 }

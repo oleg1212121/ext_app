@@ -35,7 +35,7 @@ export default function NeedsReviewSection({expanded, onToggle, items, meta, bus
                                     className="grid grid-cols-1 gap-x-3 gap-y-0.5 px-3 py-2 text-left hover:bg-[var(--wbench-paper-deep)] dark:hover:bg-[var(--wbench-paper-deep-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-baseline"
                                 >
                                     <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                        #{item.order}
+                                        #{item.rank}
                                         {item.one_sided && (
                                             <span className="ml-1.5 text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]">
                                                 1-sided

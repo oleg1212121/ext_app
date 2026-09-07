@@ -1,6 +1,14 @@
 # Junction order is independent of sentence order
 
-Status: accepted
+Status: superseded by ADR 0016
+
+Commit `b197ae5` ("drag and drop fixes", Aug 2026) dropped the junction `order`
+column entirely and returned to `sentence.order` as the single ordering truth;
+ADR 0016 records the completed semantics (drop-position renumbering with
+bounded sparse insertion). The historical rationale below is preserved for
+context — the corruption hazard it describes is now addressed by clamping
+renumbering to the destination row's neighborhood instead of maintaining a
+second, independent order column.
 
 The React Alignments editor (ADR 0002) used `sentence.order` as the single ordering
 truth for in-row sequence, with the junction `order` mirroring it. Dragging a

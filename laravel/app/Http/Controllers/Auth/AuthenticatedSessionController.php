@@ -32,7 +32,7 @@ class AuthenticatedSessionController extends Controller
             return redirect()->route('pending-approval');
         }
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect()->intended('/');
     }
 
     /**

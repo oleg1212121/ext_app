@@ -45,15 +45,17 @@ _Avoid_: low-similarity match (score-only wording, misses one-sided rows)
 **Sentence**:
 A split sentence of an entity. Its entity-global `order` is the **document order** —
 the order of the sentence in the original text. The alignment pipeline and the
-reader rely on it; the alignment editor never changes an existing sentence's
-document order.
+reader rely on it. The alignment editor renumbers it when a sentence is dragged
+(see Move sentence); the entities frontend's insert/reorder operations are the
+other mutation paths.
 _Avoid_: line
 
 **Junction**:
 A sentence's membership link to a meaning match. Junctions are pure association
 tables with no `order` column. Within-row display order is determined by each
-sentence's document order (`*_entity_sentences.order`). Dragging a sentence
-within a row reorders via document order on the sentence table.
+sentence's document order (`*_entity_sentences.order`). Dragging a sentence —
+within a row or across rows — renumbers document order on the sentence table so
+the sentence sorts exactly where it was dropped.
 
 **Unmatched sentence**:
 A sentence with no junction to any meaning match.
@@ -93,6 +95,15 @@ Create a new sentence in an entity from the entities frontend (`/entities`),
 placing it at a chosen document-order position. No junction to a meaning match
 is created — the sentence starts unmatched. Distinct from Add sentence
 (alignment editor), which always junctions. _Avoid_: add sentence (overloaded).
+
+**Move sentence**:
+Drag a sentence to a new position in the alignment editor — within a row,
+across rows, or to/from the unmatched pool. The drop position wins: the
+sentence's document order is renumbered (sparse, clamped by the nearest
+sentences outside the destination row's span) so it sorts exactly where it was
+dropped and the global numbering stays monotonic with row order. A drop into a
+row empty on that language side lands between the closest populated rows.
+_Avoid_: relink (misses the renumbering)
 
 **Create meaning match / delete meaning match**:
 The row lifecycle. Delete returns the row's sentences to unmatched.

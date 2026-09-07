@@ -3,7 +3,8 @@ import {
     DndContext,
     PointerSensor,
     KeyboardSensor,
-    closestCorners,
+    pointerWithin,
+    rectIntersection,
     useSensor,
     useSensors,
 } from '@dnd-kit/core';
@@ -16,6 +17,20 @@ import {alignmentsApi} from './components/api.js';
 import Main from '../../Layouts/Main.jsx';
 
 const ROW_PER_PAGE_OPTIONS = [10, 25, 50, 100];
+
+// Drop-slot droppable ids look like "slot:<containerKey>:#<n>", where n is the
+// boundary to drop on: 0 = first position, keys.length = after the last.
+const isSlotId = (id) => typeof id === 'string' && id.startsWith('slot:');
+
+function parseSlotIndex(id) {
+    const hash = id.lastIndexOf(':#');
+
+    if (hash === -1) {
+        return null;
+    }
+
+    return Number(id.slice(hash + 2));
+}
 
 function buildContainers({rows, unmatchedEn, unmatchedRu}) {
     const containers = {};
@@ -73,6 +88,10 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     const lastServer = useRef(data);
     const [containers, setContainers] = useState(() => buildContainers(data));
 
+    useEffect(() => {
+        console.log('[alignments-editor] build v9 — 2026-09-05');
+    }, []);
+
     const [tableBusy, setTableBusy] = useState(false);
     const [tableError, setTableError] = useState(null);
     const [poolBusy, setPoolBusy] = useState({en: false, ru: false});
@@ -91,6 +110,14 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
     const activeContainer = useRef(null);
     const newRowPosition = useRef(null);
+    // During a drag the containers are deliberately FROZEN — no onDragOver
+    // mutation — so nothing in the layout shifts under the pointer and `over`
+    // (a drop slot) can't flip-flop into the React #185 loop. The highlighted
+    // slot is the drop feedback. Kept as the last valid collision target so a
+    // no-collision frame still reports the item's own slot.
+    const lastOverId = useRef(null);
+    // TEMP: transition trace for debugging the #185 loop / drop position.
+    const dragTrace = useRef([]);
 
     const lookup = useMemo(() => buildLookup(data), [data]);
     const {match, rows, rowsMeta, sentencesBefore, unmatchedEn, unmatchedRu, needsReview} = data;
@@ -460,6 +487,12 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     }, [actionBusy, initialMatch.id, runMutation]);
 
     const containerOf = useCallback((id) => {
+        if (typeof id === 'string' && isSlotId(id)) {
+            const hash = id.lastIndexOf(':#');
+
+            return hash === -1 ? null : id.slice(5, hash);
+        }
+
         if (typeof id === 'string' && id.startsWith('row:')) {
             return id;
         }
@@ -477,6 +510,28 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         return null;
     }, [containers]);
 
+    // Collisions come from the visible drop slots (`slot:<containerKey>:#<n>`)
+    // plus the sentence items (the keyboard path uses item targets). The
+    // container lists stay frozen while dragging, so `over` is stable for a
+    // still pointer and the highlight tracks the exact drop spot.
+    const collisionDetection = useCallback((args) => {
+        let collisions = pointerWithin(args);
+
+        if (collisions.length === 0) {
+            collisions = rectIntersection(args);
+        }
+
+        const overId = collisions.length > 0 ? collisions[0].id : null;
+
+        if (overId !== null) {
+            lastOverId.current = overId;
+
+            return [{id: overId}];
+        }
+
+        return lastOverId.current !== null ? [{id: lastOverId.current}] : [];
+    }, []);
+
     const sensors = useSensors(
         useSensor(PointerSensor, {activationConstraint: {distance: 6}}),
         useSensor(KeyboardSensor, {coordinateGetter: sortableKeyboardCoordinates}),
@@ -487,59 +542,18 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setEditing(null);
         setAdding(null);
         activeContainer.current = containerOf(active.id);
+        lastOverId.current = null;
+        dragTrace.current = [];
     }, [containerOf]);
-
-    const onDragOver = useCallback(({active, over}) => {
-        const overId = over?.id;
-
-        if (!overId || active.id === overId) {
-            return;
-        }
-
-        const activeContainerKey = containerOf(active.id);
-        const overContainerKey = containerOf(overId);
-
-        if (!activeContainerKey || !overContainerKey || activeContainerKey === overContainerKey) {
-            return;
-        }
-
-        setContainers((prev) => {
-            const activeItems = prev[activeContainerKey] ?? [];
-            const overItems = prev[overContainerKey] ?? [];
-
-            let overIndex;
-
-            if (activeContainerKey.startsWith('row:') && overContainerKey.startsWith('row:')) {
-                const srcRowId = Number(activeContainerKey.split(':')[1]);
-                const tgtRowId = Number(overContainerKey.split(':')[1]);
-                const srcRow = rows.find((r) => r.id === srcRowId);
-                const tgtRow = rows.find((r) => r.id === tgtRowId);
-
-                if (srcRow && tgtRow) {
-                    overIndex = srcRow.order < tgtRow.order ? 0 : overItems.length;
-                } else {
-                    overIndex = overId === overContainerKey ? overItems.length : Math.max(overItems.indexOf(overId), 0);
-                }
-            } else {
-                overIndex = overId === overContainerKey ? overItems.length : Math.max(overItems.indexOf(overId), 0);
-            }
-
-            return {
-                ...prev,
-                [activeContainerKey]: activeItems.filter((id) => id !== active.id),
-                [overContainerKey]: [...overItems.slice(0, overIndex), active.id, ...overItems.slice(overIndex)],
-            };
-        });
-    }, [containerOf, rows]);
 
     const onDragEnd = useCallback(async ({active, over}) => {
         const overId = over?.id;
         const item = lookup.get(active.id);
-        const sourceContainer = activeContainer.current;
-        const targetContainer = overId ? containerOf(active.id) : null;
+        const targetContainer = overId ? containerOf(overId) : null;
 
         setActiveId(null);
         activeContainer.current = null;
+        lastOverId.current = null;
 
         if (!overId || !targetContainer || !item || typeof item.id !== 'number') {
             setContainers(buildContainers(lastServer.current));
@@ -547,24 +561,63 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             return;
         }
 
-        if (sourceContainer === targetContainer) {
-            const items = containers[targetContainer] ?? [];
-            const oldIndex = items.indexOf(active.id);
-            const newIndex = overId === targetContainer ? items.length : Math.max(items.indexOf(overId), 0);
-
-            if (oldIndex !== -1 && oldIndex !== newIndex) {
-                const reordered = [...items];
-                reordered.splice(oldIndex, 1);
-                reordered.splice(newIndex, 0, active.id);
-                setContainers((prev) => ({...prev, [targetContainer]: reordered}));
-            }
+        if (overId === active.id) {
+            // Dropped back onto the sentence itself — nothing changed.
+            return;
         }
 
         const targetItems = containers[targetContainer] ?? [];
+        const others = targetItems.filter((id) => id !== active.id);
+        let index;
+
+        if (isSlotId(overId)) {
+            // Drop slot: the boundary IS the insertion index among the
+            // column's other sentences (slot #0 = first, #n = after the n-th
+            // other sentence = the real last position).
+            const slotN = parseSlotIndex(overId) ?? 0;
+            index = Math.min(slotN, others.length);
+        } else if (overId === targetContainer) {
+            // Safety fallback: hovered the column itself → first position.
+            index = 0;
+        } else {
+            // Keyboard path: `over` is the sentence under the pointer.
+            const overIndex = targetItems.indexOf(overId);
+            const activeIndex = targetItems.indexOf(active.id);
+
+            if (overIndex === -1) {
+                index = Math.max(activeIndex, 0);
+            } else if (activeIndex !== -1 && activeIndex < overIndex) {
+                index = Math.max(overIndex - 1, 0);
+            } else {
+                index = overIndex;
+            }
+        }
+
+        const reordered = [...others.slice(0, index), active.id, ...others.slice(index)];
+
+        setContainers((prev) => {
+            const source = containerOf(active.id);
+            const next = {...prev, [targetContainer]: reordered};
+
+            if (source && source !== targetContainer) {
+                next[source] = (next[source] ?? []).filter((id) => id !== active.id);
+            }
+
+            return next;
+        });
+
+        // Keyboard path may point past the last item; clamp for the API.
+        index = Math.min(index, others.length);
+
         const toRowId = targetContainer.startsWith('row:') ? Number(targetContainer.split(':')[1]) : null;
-        const index = sourceContainer === targetContainer
-            ? (overId === targetContainer ? targetItems.length : Math.max(targetItems.indexOf(overId), 0))
-            : Math.max(targetItems.indexOf(active.id), 0);
+
+        console.log('[dnd-trace] dragEnd', {
+            over: overId,
+            target: targetContainer,
+            index,
+            dropIn: reordered.slice(0, 6),
+            trace: dragTrace.current.slice(0, 60),
+        });
 
         await runMutation(
             () => alignmentsApi.moveSentence(initialMatch.id, {
@@ -581,13 +634,13 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     return (
         <DndContext
             sensors={sensors}
-            collisionDetection={closestCorners}
+            collisionDetection={collisionDetection}
             onDragStart={onDragStart}
-            onDragOver={onDragOver}
             onDragEnd={onDragEnd}
             onDragCancel={() => {
                 setActiveId(null);
                 activeContainer.current = null;
+                lastOverId.current = null;
                 setContainers(buildContainers(lastServer.current));
             }}
         >

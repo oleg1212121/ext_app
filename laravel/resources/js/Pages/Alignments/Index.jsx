@@ -1,4 +1,4 @@
-import {Link} from '@inertiajs/react';
+import {Link, usePage} from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx';
 
 const STATUS_BADGE = {
@@ -38,6 +38,7 @@ const PageLink = ({disabled, href, children, label}) => {
 };
 
 export default function Index({entityMatches, meta}) {
+    const {flash} = usePage().props;
     const {current_page, last_page} = meta;
 
     return (
@@ -52,10 +53,24 @@ export default function Index({entityMatches, meta}) {
                             EN / RU semantic pairs
                         </h1>
                     </div>
-                    <p className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                        {meta.total} {meta.total === 1 ? 'pair' : 'pairs'}
-                    </p>
+                    <div className="flex flex-col items-end gap-2">
+                        <p className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                            {meta.total} {meta.total === 1 ? 'pair' : 'pairs'}
+                        </p>
+                        <Link
+                            href="/alignments/create"
+                            className="inline-flex h-8 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-3 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
+                        >
+                            + Create new
+                        </Link>
+                    </div>
                 </header>
+
+                {flash?.success && (
+                    <div className="border border-[var(--wbench-accent)]/40 bg-[var(--wbench-accent)]/5 px-4 py-3 text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
+                        {flash.success}
+                    </div>
+                )}
 
                 <div className="overflow-hidden border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
                     <div className="overflow-x-auto">

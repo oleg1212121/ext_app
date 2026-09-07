@@ -100,6 +100,8 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('sentence')
         ->name('entities.sentences.destroy');
     Route::get('/alignments', [AlignmentController::class, 'index'])->name('alignments.index');
+    Route::get('/alignments/create', [AlignmentController::class, 'create'])->name('alignments.create');
+    Route::post('/alignments', [AlignmentController::class, 'store'])->name('alignments.store');
     Route::get('/alignments/{entityMatch}', [AlignmentController::class, 'show'])->name('alignments.show');
 
     Route::get('/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'rows']);
