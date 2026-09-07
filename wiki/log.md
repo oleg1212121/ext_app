@@ -1,5 +1,27 @@
 # Directory Update Log
 
+## 2026-09-07
+
+* **Post-auth redirect now lands on `/` instead of the unused dashboard.** Login
+  (`AuthenticatedSessionController`), registration (`RegisteredUserController`),
+  and the password-confirmation / email-verification controllers all changed
+  their `redirect()->intended(route('dashboard'))` target to
+  `redirect()->intended('/')` (registry keeps `?verified=1`). Unapproved users
+  still go to `pending-approval`. Tests updated in
+  `tests/Feature/Auth/{Authentication,Registration,EmailVerification}Test.php`
+  and `tests/Feature/ApprovalTest.php`. Updated
+  `wiki/domains/access-control.md`.
+
+* **Fix: admin panel user creation was missing a password (null not-null
+  violation).** `UserResource` create form had no `password` field, so creating
+  a user at `/admin/users/create` produced an INSERT without a password,
+  violating `users.password` not-null. Added required `password` +
+  `password_confirmation` (`TextInput::password()`, same-rule) — shown only on
+  create (hidden on edit) so admins can't blank an existing password. Added
+  Livewire-tested coverage in `tests/Feature/Filament/UserResourceTest.php`
+  (create-with-password hashes correctly; create-without-password is rejected).
+  Updated `wiki/domains/access-control.md`.
+
 ## 2026-09-06
 
 * **Alignments "+ Create new" entity-match form.** The `/alignments` pair

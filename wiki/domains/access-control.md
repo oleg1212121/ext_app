@@ -5,8 +5,8 @@ description: Role- and approval-based authorization for users, the admin bypass,
 tags: [auth, authorization, roles, admin, approval]
 status: stable
 stale_after: 2026-10-23
-generated: { by: human:alex, at: 2026-08-25T14:00:00Z }
-verified: { by: human:alex, at: 2026-08-25T14:00:00Z }
+generated: { by: human:alex, at: 2026-09-07T00:00:00Z }
+verified: { by: human:alex, at: 2026-09-07T00:00:00Z }
 sources:
    - id: app-provider
      resource: laravel/app/Providers/AppServiceProvider.php
@@ -53,6 +53,12 @@ mirrors the server-side checks instead of re-implementing them.
 - **Approved is a prerequisite for any ability.** An unapproved user is bounced
   to the pending-approval screen by the `approved` route middleware and fails
   every ability check (the admin bypass also requires `is_approved`).
+- **Post-auth landing page.** After login or registration, an approved user is
+  redirected to `/` (the root Inertia `Welcome` page) — the `dashboard` page is
+  unused. Unapproved users are instead redirected to the `pending-approval`
+  screen after login. The auth controllers redirect with
+  `redirect()->intended('/')` so an originally-requested protected URL wins when
+  present.
 - **Admin bypass.** An approved admin passes every ability automatically via a
   `Gate::before` hook. Ability definitions therefore only ever encode the
   non-admin rule; they never repeat `if admin`.
@@ -62,6 +68,11 @@ mirrors the server-side checks instead of re-implementing them.
 - **Filament panel.** The panel is reachable only by an approved admin; the
   `accessAdminPanel` ability is the single source of truth for both the panel's
   `canAccessPanel` contract and the frontend's admin link.
+- **Panel user creation requires a password.** The `UserResource` create form
+  exposes a required `password` (+ `password_confirmation`) field, so a user
+  created through `/admin/users/create` always gets a hashed password (the
+  `password` column is not-null). The password fields are hidden on edit so an
+  admin cannot blank out an existing user's password.
 - **Entity-access enforcers.** `EntityAccessService` gates reads in
   `EntityController`, `ReaderController`, `SimulatorController`,
   `AlignmentController` (pair list + detail), and `AlignmentEditorController`

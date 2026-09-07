@@ -3,10 +3,10 @@
 use App\Models\User;
 use Filament\Facades\Filament;
 
-test('new user has is_approved false by default', function () {
-    $user = User::factory()->create(['is_approved' => false]);
+test('new user has is_approved true by default', function () {
+    $user = User::factory()->create();
 
-    expect($user->is_approved)->toBeFalse();
+    expect($user->is_approved)->toBeTrue();
 });
 
 test('unapproved user is redirected to pending-approval after login', function () {
@@ -22,7 +22,7 @@ test('unapproved user is redirected to pending-approval after login', function (
     $response->assertRedirect(route('pending-approval'));
 });
 
-test('approved user is redirected to dashboard after login', function () {
+test('approved user is redirected to root page after login', function () {
     $user = User::factory()->approved()->create([
         'password' => 'password',
     ]);
@@ -32,7 +32,7 @@ test('approved user is redirected to dashboard after login', function () {
         'password' => 'password',
     ]);
 
-    $response->assertRedirect(route('dashboard'));
+    $response->assertRedirect('/');
 });
 
 test('unapproved user cannot access dashboard', function () {

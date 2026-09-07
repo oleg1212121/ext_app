@@ -1,6 +1,10 @@
 <?php
 
+use App\Filament\Resources\UserResource\Pages\CreateUser;
 use App\Models\User;
+use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Hash;
+use Livewire\Livewire;
 
 test('admin can access admin panel', function () {
     $admin = User::factory()->admin()->approved()->create();
@@ -57,4 +61,46 @@ test('non-admin cannot access users list', function () {
     $this->actingAs($user)
         ->get('/admin/users')
         ->assertForbidden();
+});
+
+test('admin can create a user with a password', function () {
+    $admin = User::factory()->admin()->approved()->create();
+    $this->actingAs($admin);
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+    Livewire::test(CreateUser::class)
+        ->fillForm([
+            'name' => 'pepega',
+            'email' => 'trutru@tru.tru',
+            'role' => User::ROLE_USER,
+            'is_approved' => true,
+            'password' => 'secret-password',
+            'password_confirmation' => 'secret-password',
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors()
+        ->assertRedirect();
+
+    expect(User::query()->where('email', 'trutru@tru.tru')->exists())->toBeTrue();
+
+    $user = User::where('email', 'trutru@tru.tru')->first();
+    expect(Hash::check('secret-password', $user->password))->toBeTrue();
+});
+
+test('admin cannot create a user without a password', function () {
+    $admin = User::factory()->admin()->approved()->create();
+    $this->actingAs($admin);
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+    Livewire::test(CreateUser::class)
+        ->fillForm([
+            'name' => 'pepega',
+            'email' => 'trutru@tru.tru',
+            'role' => User::ROLE_USER,
+            'is_approved' => true,
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['password']);
+
+    expect(User::query()->where('email', 'trutru@tru.tru')->exists())->toBeFalse();
 });
