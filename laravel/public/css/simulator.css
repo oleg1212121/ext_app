@@ -232,7 +232,7 @@ table.table:has(#all_en:checked) .hide_en {
     color: var(--wbench-ink-soft);
     text-decoration: line-through;
     text-decoration-color: var(--wbench-emphasis);
-    text-decoration-thickness: 1px;
+    text-decoration-thickness: 4px;
 }
 
 .dark .ai-prose del,
@@ -397,17 +397,25 @@ table.table:has(#all_en:checked) .hide_en {
    plus a soft shadow cast just below the glyphs. */
 #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a, td, th) {
     transition: text-shadow 150ms ease;
+    cursor: pointer;
 }
 
-#ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a, td, th):hover {
+/* #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a, td, th):hover {
     text-shadow: 1px 1px 5px rgb(128 128 128 / 50%);
-    cursor: pointer;
+    
 }
 
 .dark #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a, td, th):hover {
     text-shadow: 1px 1px 5px rgb(128 128 128 / 50%);
+} */
+#ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, code, td, th):hover {
+    background-color: var( --color-vellum);
+    
 }
 
+.dark #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, code, td, th):hover {
+    background-color: var( --color-vellum);
+}
 @media (prefers-reduced-motion: reduce) {
     #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a, td, th) {
         transition: none;

@@ -37,6 +37,19 @@ class UserResource extends Resource
                     ->required()
                     ->maxLength(255)
                     ->unique(ignoreRecord: true),
+                TextInput::make('password')
+                    ->password()
+                    ->required()
+                    ->maxLength(255)
+                    ->same('password_confirmation')
+                    ->dehydrated(fn ($state) => filled($state))
+                    ->visible(fn (?User $record) => $record === null),
+                TextInput::make('password_confirmation')
+                    ->password()
+                    ->required()
+                    ->maxLength(255)
+                    ->dehydrated(false)
+                    ->visible(fn (?User $record) => $record === null),
                 Select::make('role')
                     ->options([
                         User::ROLE_USER => 'User',
@@ -47,7 +60,7 @@ class UserResource extends Resource
                     ->disabled(fn (?User $record) => $record !== null && ($record->id === auth()->id() || User::isSoleApprovedAdmin($record))),
                 Toggle::make('is_approved')
                     ->label('Approved')
-                    ->default(false)
+                    ->default(true)
                     ->disabled(fn (?User $record) => $record !== null && ($record->id === auth()->id() || User::isSoleApprovedAdmin($record))),
             ]);
     }
