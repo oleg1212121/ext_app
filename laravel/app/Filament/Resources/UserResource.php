@@ -73,6 +73,12 @@ class UserResource extends Resource
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('email')
+                    ->formatStateUsing(function (string $state): string {
+                        $length = mb_strlen($state);
+                        if ($length <= 4) return str_repeat('*', $length);
+                        return mb_substr($state, 0, 2) . str_repeat('*', $length - 4) . mb_substr($state, -2);
+                    })
+                    ->tooltip(fn (string $state): string => $state)
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('role')
