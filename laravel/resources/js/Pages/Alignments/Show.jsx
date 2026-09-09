@@ -116,8 +116,6 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     // slot is the drop feedback. Kept as the last valid collision target so a
     // no-collision frame still reports the item's own slot.
     const lastOverId = useRef(null);
-    // TEMP: transition trace for debugging the #185 loop / drop position.
-    const dragTrace = useRef([]);
 
     const lookup = useMemo(() => buildLookup(data), [data]);
     const {match, rows, rowsMeta, sentencesBefore, unmatchedEn, unmatchedRu, needsReview} = data;
@@ -543,7 +541,6 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setAdding(null);
         activeContainer.current = containerOf(active.id);
         lastOverId.current = null;
-        dragTrace.current = [];
     }, [containerOf]);
 
     const onDragEnd = useCallback(async ({active, over}) => {
@@ -610,14 +607,6 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         index = Math.min(index, others.length);
 
         const toRowId = targetContainer.startsWith('row:') ? Number(targetContainer.split(':')[1]) : null;
-
-        console.log('[dnd-trace] dragEnd', {
-            over: overId,
-            target: targetContainer,
-            index,
-            dropIn: reordered.slice(0, 6),
-            trace: dragTrace.current.slice(0, 60),
-        });
 
         await runMutation(
             () => alignmentsApi.moveSentence(initialMatch.id, {

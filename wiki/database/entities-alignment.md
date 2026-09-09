@@ -5,11 +5,14 @@ description: Bilingual texts, their sentences, and the machine/human alignment b
 tags: [database, schema, alignment, entities]
 status: stable
 stale_after: 2026-10-26
-generated: { by: human:alex, at: 2026-08-25T14:00:00Z }
+generated: { by: human:alex, at: 2026-09-09T20:30:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations
      title: 2026_04–08 entity/alignment migrations (incl. add_is_original_en_to_en_ru_entity_matches)
+   - id: unique-order-migration
+     resource: laravel/database/migrations/2026_09_09_000000_make_entity_sentence_orders_unique.php
+     title: Unique (entity_id, order) indexes + duplicate repair pass
    - id: access-migration
      resource: laravel/database/migrations/2026_08_25_070508_add_entity_access_control.php
      title: is_restricted column + en_entity_user / ru_entity_user pivots
@@ -41,6 +44,17 @@ sources:
   rebalance would push the minimum order negative (mirroring the alignment
   editor's guard), so `*.order` never carries negative values and the
   sequential display numbers stay 0/1-based.
+* **Sentence orders are unique per entity**: since the
+  2026_09 `make_entity_sentence_orders_unique` migration,
+  `(en_entity_id, order)` / `(ru_entity_id, order)` carry **unique indexes**
+  (repair pass renumbered duplicate-affected lists positionally first). Every
+  sentence-order write is therefore two-phase: changed rows are parked at
+  unique negatives (`-(id + 1e9)`) before the final orders are written, so a
+  rebalance never trips the index mid-write
+  (`SparseOrderService::orderForInsertAfter`,
+  `AlignmentEditorPersister::syncSentences`,
+  `EntityController::persistSentenceOrders`,
+  `AlignmentEditorController::placeSideSentence`).
 * **Document order is the single source of truth**: `en_entity_sentences.order` is
   the sentence's **document order** — its position in the original text. It is
   immutable in the alignment editor (only the *Sentences* tab, import,

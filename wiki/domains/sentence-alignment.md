@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: human:alex, at: 2026-09-06T12:00:00Z }
+generated: { by: human:alex, at: 2026-09-09T20:30:00Z }
 verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
@@ -530,9 +530,17 @@ sentence(s). The output powers the
     refetches its current page after every editor mutation. The editor honors
     the drop position: dragging a sentence — within a row, across rows, or
     from the unmatched pool into a row — renumbers its document order
-    (`*_entity_sentences.order`) via `SparseOrderService`, clamped by the
-    nearest sentences outside the destination row's span so the global
-     numbering stays monotonic with row order (junctions stay orderless;
+    (`*_entity_sentences.order`) via
+    `AlignmentEditorController::placeSideSentence`, which picks the new order
+    from the side's **global document order** (midpoint between the sorted
+    neighbours, not just the destination row's pair) and rebalances the sparse
+    window through `SparseOrderService::orderForInsertAfter` when the
+    surrounding gap is exhausted — the old in-row-neighbour placement could
+    emit an order that another (e.g. unmatched) sentence already held,
+    producing duplicate orders and visually shuffling rows; sentence orders
+    are now unique per entity (DB-enforced, see
+    [Entities & Alignment](/database/entities-alignment.md)) and every write
+    parks changed rows at unique negatives first (junctions stay orderless;
     in-row sequence is the sentence orders themselves). The editor renders an
       explicit **drop slot** above the first, between every pair, and below the
       last sentence of each column (a tall standalone slot for an empty

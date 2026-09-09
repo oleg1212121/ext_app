@@ -445,20 +445,13 @@ test('reorder within row with consecutive orders uses global bounds', function (
 
     $allOrders = EnEntitySentence::query()
         ->where('en_entity_id', $world['en']->id)
-        ->pluck('order')
-        ->sort()
-        ->values()
-        ->all();
+        ->pluck('order', 'id');
 
-    $indexOfA = array_search($sentenceOrders[$a->id], $allOrders, true);
-    $indexOfB = array_search($sentenceOrders[$b->id], $allOrders, true);
-    $indexOfC = array_search($sentenceOrders[$c->id], $allOrders, true);
-
-    expect($indexOfA)->toBeLessThan($indexOfC);
-    expect($indexOfC)->toBeLessThan($indexOfB);
-
-    expect($sentenceOrders[$c->id])->toBeGreaterThan(5);
-    expect($sentenceOrders[$c->id])->toBeLessThan(50);
+    expect($allOrders->values()->unique()->count())->toBe($allOrders->count());
+    expect($sentenceOrders[$c->id])->toBeGreaterThan($sentenceOrders[$a->id]);
+    expect($sentenceOrders[$c->id])->toBeLessThan($sentenceOrders[$b->id]);
+    expect($sentenceOrders[$a->id])->toBeGreaterThan($allOrders[$before->id]);
+    expect($sentenceOrders[$b->id])->toBeLessThan($allOrders[$after->id]);
 });
 
 test('moves a sentence from one row to another', function () {
@@ -604,12 +597,13 @@ test('moving a sentence back to its previous row restores document order', funct
     $response->assertOk();
 
     $finalOrders = EnEntitySentence::query()
-        ->whereIn('id', [$s1->id, $s2->id])
+        ->where('en_entity_id', $world['en']->id)
         ->pluck('order', 'id');
 
+    expect($finalOrders->values()->unique()->count())->toBe($finalOrders->count());
     expect($finalOrders[$s1->id])->toBe(1000);
-    expect($finalOrders[$s2->id])->toBe(2024);
-    expect($finalOrders[$s2->id])->toBeGreaterThan($finalOrders[$s1->id]);
+    expect($finalOrders[$s2->id])->toBeGreaterThan($finalOrders[$s1->id])
+        ->toBeLessThan($finalOrders[$above->id]);
 
     $row1Payload = collect($response->json('rows'))->first(fn (array $row) => $row['id'] === $row1->id);
     $row2Payload = collect($response->json('rows'))->first(fn (array $row) => $row['id'] === $row2->id);
@@ -651,6 +645,141 @@ test('cross-row spread is bounded by the destination row neighborhood', function
 
     $rowAPayload = collect($response->json('rows'))->first(fn (array $row) => $row['id'] === $rowA->id);
     expect(collect($rowAPayload['en_sentences'])->pluck('id')->all())->toBe([$a->id, $far->id, $b->id, $c->id]);
+});
+
+test('drop into an empty row with an exhausted gap does not duplicate an order', function () {
+    $world = editorWorld([0, 1024, 1025, 9000]);
+    [$s1, $s2, $s3, $moved] = $world['enSentences'];
+    $r1 = makeRow($world['match']->id, 0);
+    $r2 = makeRow($world['match']->id, 1024);
+    $r4 = makeRow($world['match']->id, 2048); // empty on the EN side
+    $r3 = makeRow($world['match']->id, 3072);
+    linkSentence('en', $s1->id, $r1->id);
+    linkSentence('en', $s2->id, $r2->id);
+    linkSentence('en', $s3->id, $r3->id);
+
+    actingAs(User::factory()->create())
+        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+            'lang' => 'en',
+            'sentence_id' => $moved->id,
+            'to_row_id' => $r4->id,
+            'index' => 0,
+        ])->assertOk();
+
+    $orders = EnEntitySentence::query()
+        ->where('en_entity_id', $world['en']->id)
+        ->pluck('order', 'id');
+
+    expect($orders->values()->unique()->count())->toBe($orders->count());
+    expect($orders[$moved->id])->toBeGreaterThan($orders[$s2->id])
+        ->toBeLessThan($orders[$s3->id]);
+});
+
+test('drop between row sentences does not collide with an interleaved sentence order', function () {
+    $world = editorWorld([0, 1000, 2000, 3000, 9000]);
+    [$low, $a, $interleaved, $b, $moved] = $world['enSentences'];
+    $row = makeRow($world['match']->id, 100);
+    linkSentence('en', $a->id, $row->id);
+    linkSentence('en', $b->id, $row->id);
+
+    actingAs(User::factory()->create())
+        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+            'lang' => 'en',
+            'sentence_id' => $moved->id,
+            'to_row_id' => $row->id,
+            'index' => 1,
+        ])->assertOk();
+
+    $orders = EnEntitySentence::query()
+        ->where('en_entity_id', $world['en']->id)
+        ->pluck('order', 'id');
+
+    expect($orders->values()->unique()->count())->toBe($orders->count());
+    expect($orders[$interleaved->id])->toBe(2000);
+    expect($orders[$moved->id])->toBeGreaterThan($orders[$a->id])
+        ->toBeLessThan($orders[$b->id]);
+});
+
+test('drop at the head of a row sorts before the row without crossing earlier sentences', function () {
+    $world = editorWorld([500, 1000, 3000]);
+    [$before, $a, $b] = $world['enSentences'];
+    $row = makeRow($world['match']->id, 100);
+    linkSentence('en', $a->id, $row->id);
+    linkSentence('en', $b->id, $row->id);
+
+    actingAs(User::factory()->create())
+        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+            'lang' => 'en',
+            'sentence_id' => $b->id,
+            'to_row_id' => $row->id,
+            'index' => 0,
+        ])->assertOk();
+
+    $orders = EnEntitySentence::query()
+        ->where('en_entity_id', $world['en']->id)
+        ->pluck('order', 'id');
+
+    expect($orders->values()->unique()->count())->toBe($orders->count());
+    expect($orders[$b->id])->toBeGreaterThan($orders[$before->id])
+        ->toBeLessThan($orders[$a->id]);
+});
+
+test('repeated moves keep sentence orders unique', function () {
+    $world = editorWorld([100, 200, 300, 400, 500]);
+    [$a, $b, $c, $d, $e] = $world['enSentences'];
+    $rowA = makeRow($world['match']->id, 100);
+    $rowB = makeRow($world['match']->id, 200);
+    linkSentence('en', $a->id, $rowA->id);
+    linkSentence('en', $b->id, $rowA->id);
+    linkSentence('en', $c->id, $rowB->id);
+
+    $moves = [
+        ['sentence_id' => $d->id, 'to_row_id' => $rowB->id, 'index' => 0],
+        ['sentence_id' => $e->id, 'to_row_id' => $rowA->id, 'index' => 1],
+        ['sentence_id' => $d->id, 'to_row_id' => $rowA->id, 'index' => 2],
+        ['sentence_id' => $b->id, 'to_row_id' => $rowB->id, 'index' => 1],
+        ['sentence_id' => $a->id, 'to_row_id' => $rowB->id, 'index' => 0],
+        ['sentence_id' => $e->id, 'to_row_id' => $rowB->id, 'index' => 2],
+    ];
+
+    foreach ($moves as $move) {
+        actingAs(User::factory()->create())
+            ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+                'lang' => 'en',
+                ...$move,
+            ])->assertOk();
+
+        $orders = EnEntitySentence::query()
+            ->where('en_entity_id', $world['en']->id)
+            ->pluck('order', 'id');
+
+        expect($orders->values()->unique()->count())->toBe($orders->count());
+    }
+});
+
+test('adding a sentence into an exhausted order gap rebalances without violating the unique index', function () {
+    $world = editorWorld([0, 1, 2, 9000]);
+    [$a, $b, $unmatched, $far] = $world['enSentences'];
+    $row = makeRow($world['match']->id, 100);
+    linkSentence('en', $a->id, $row->id);
+    linkSentence('en', $b->id, $row->id);
+
+    $response = actingAs(User::factory()->create())
+        ->postJson("/alignments/{$world['match']->id}/sentences", [
+            'lang' => 'en',
+            'content' => 'New sentence.',
+            'meaning_match_id' => $row->id,
+        ]);
+
+    $response->assertOk();
+
+    $orders = EnEntitySentence::query()
+        ->where('en_entity_id', $world['en']->id)
+        ->pluck('order', 'id');
+
+    expect($orders->values()->unique()->count())->toBe($orders->count());
+    expect($orders[$b->id])->toBeGreaterThan($orders[$a->id]);
+    expect($unmatched->refresh()->order)->toBeGreaterThan($orders[$b->id]);
 });
 
 test('hard deletes an unmatched sentence', function () {

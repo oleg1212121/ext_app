@@ -110,6 +110,7 @@ class AlignmentEditorPersister
             : RuEntitySentence::query()->where('ru_entity_id', $entityId)->get()->keyBy('id');
 
         $updates = [];
+        $creates = [];
 
         foreach ($allSentences as $index => $sentence) {
             $order = (int) ($sentence['order'] ?? app(SparseOrderService::class)->initial($index));
@@ -136,30 +137,29 @@ class AlignmentEditorPersister
                 $keptDbIds[] = $sentence['id'];
 
             } else {
-                $attributes = [
-                    'sentence_type_id' => $sentenceTypeId,
-                    'content' => $content,
-                    'order' => $order,
+                $creates[] = [
+                    'key' => $sentenceKey,
+                    'attributes' => [
+                        'sentence_type_id' => $sentenceTypeId,
+                        'content' => $content,
+                        'order' => $order,
+                    ],
                 ];
-
-                if ($lang === 'en') {
-                    $model = EnEntitySentence::query()->create([
-                        'en_entity_id' => $entityId,
-                        ...$attributes,
-                    ]);
-                } else {
-                    $model = RuEntitySentence::query()->create([
-                        'ru_entity_id' => $entityId,
-                        ...$attributes,
-                    ]);
-                }
-
-                $idMap[$sentenceKey] = $model->id;
-                $keptDbIds[] = $model->id;
             }
         }
 
         if (! empty($updates)) {
+            // Park every changed row at a unique negative order first: the
+            // final orders are collision-free as a set, but one row's final
+            // may be another row's current order, so a single upsert would
+            // violate the (entity_id, order) unique index mid-statement.
+            foreach ($updates as $update) {
+                $modelClass = $lang === 'en' ? EnEntitySentence::class : RuEntitySentence::class;
+                $modelClass::query()
+                    ->whereKey($update['id'])
+                    ->update(['order' => -$update['id'] - 1_000_000_000]);
+            }
+
             foreach (array_chunk($updates, 1000) as $chunk) {
                 if ($lang === 'en') {
                     EnEntitySentence::upsert($chunk, ['id'], ['content', 'order']);
@@ -167,6 +167,25 @@ class AlignmentEditorPersister
                     RuEntitySentence::upsert($chunk, ['id'], ['content', 'order']);
                 }
             }
+        }
+
+        foreach ($creates as $create) {
+            $attributes = $create['attributes'];
+
+            if ($lang === 'en') {
+                $model = EnEntitySentence::query()->create([
+                    'en_entity_id' => $entityId,
+                    ...$attributes,
+                ]);
+            } else {
+                $model = RuEntitySentence::query()->create([
+                    'ru_entity_id' => $entityId,
+                    ...$attributes,
+                ]);
+            }
+
+            $idMap[$create['key']] = $model->id;
+            $keptDbIds[] = $model->id;
         }
 
         if ($lang === 'en') {

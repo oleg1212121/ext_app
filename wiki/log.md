@@ -1,5 +1,32 @@
 # Directory Update Log
 
+## 2026-09-09
+
+* **Drag-and-drop duplicate sentence orders fixed (alignment editor).** The
+  Inertia editor's `POST /alignments/{match}/sentences/move` picked a moved
+  sentence's new order from only its destination row's neighbouring sentences
+  (`between(prev, next)`), so it could emit an order another sentence on the
+  side already held: the midpoint of a row pair landed exactly on an
+  interleaved unmatched sentence's order, and the empty-row fallback
+  (`high - 1`) collided when the surrounding gap was exhausted (live
+  corruption: EN sentences 18/19 of match 6 both held order 1024). Tied
+  orders rendered in arbitrary DB order, which shuffled rows between loads
+  and made subsequent drags compute against the wrong neighbours. Fix:
+  `AlignmentEditorController` now derives placement from the side's **global
+  document order** (`placeSideSentence` → `orderForInsertAfter`, window
+  rebalance on exhaustion) and persists two-phase (rows parked at unique
+  negatives first); `SparseOrderService::orderForInsertAfter` no longer
+  recomputes its insertion index from the stale pre-rebalance anchor order;
+  new migration `2026_09_09_000000_make_entity_sentence_orders_unique`
+  repairs existing duplicates and adds unique `(en_entity_id, order)` /
+  `(ru_entity_id, order)` indexes; `EntityController` and
+  `AlignmentEditorPersister` sentence-order writes made two-phase to comply
+  with the index. Regression tests in `AlignmentEditorApiTest` +
+  `SparseOrderServiceTest`. Removed the leftover `[dnd-trace]` console
+  logging from `Show.jsx`. Updated
+  `wiki/domains/sentence-alignment.md` and
+  `wiki/database/entities-alignment.md`.
+
 ## 2026-09-08
 
 * **User settings table with native language.** New `user_settings` table (one
