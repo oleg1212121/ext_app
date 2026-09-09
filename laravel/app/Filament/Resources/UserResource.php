@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
+use App\Models\Language;
 use App\Models\User;
 use Filament\Actions;
 use Filament\Forms\Components\Select;
@@ -62,6 +63,16 @@ class UserResource extends Resource
                     ->label('Approved')
                     ->default(true)
                     ->disabled(fn (?User $record) => $record !== null && ($record->id === auth()->id() || User::isSoleApprovedAdmin($record))),
+                Select::make('settings_native_language_id')
+                    ->label('Native language')
+                    ->options(fn (): array => Language::query()
+                        ->enabled()
+                        ->orderBy('sort_order')
+                        ->orderBy('name')
+                        ->pluck('name', 'id')
+                        ->all())
+                    ->searchable()
+                    ->preload(),
             ]);
     }
 
@@ -73,6 +84,15 @@ class UserResource extends Resource
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('email')
+                    ->formatStateUsing(function (string $state): string {
+                        $length = mb_strlen($state);
+                        if ($length <= 4) {
+                            return str_repeat('*', $length);
+                        }
+
+                        return mb_substr($state, 0, 2).str_repeat('*', $length - 4).mb_substr($state, -2);
+                    })
+                    ->tooltip(fn (string $state): string => $state)
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('role')
@@ -86,6 +106,11 @@ class UserResource extends Resource
                     ->badge()
                     ->color(fn (bool $state): string => $state ? 'success' : 'warning')
                     ->formatStateUsing(fn (bool $state): string => $state ? 'Yes' : 'No'),
+                TextColumn::make('settings.nativeLanguage.name')
+                    ->label('Native language')
+                    ->placeholder('—')
+                    ->searchable()
+                    ->sortable(),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),

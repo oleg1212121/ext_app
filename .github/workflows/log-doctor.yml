@@ -19,7 +19,7 @@ name: Log doctor
 
 on:
   schedule:
-    - cron: '0 * * * *' # hourly, UTC
+    - cron: '0 */12 * * *' # 12 hours period
   workflow_dispatch:
 
 permissions:

@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Gate;
@@ -73,6 +74,22 @@ class User extends Authenticatable implements FilamentUser
     public function userApiKeys(): HasMany
     {
         return $this->hasMany(UserApiKey::class);
+    }
+
+    /**
+     * The user's settings row (one per user), holding their preferences.
+     */
+    public function settings(): HasOne
+    {
+        return $this->hasOne(UserSettings::class);
+    }
+
+    /**
+     * The language the user is a native speaker of, or null if unset.
+     */
+    public function nativeLanguage(): ?Language
+    {
+        return $this->settings?->nativeLanguage;
     }
 
     /**
