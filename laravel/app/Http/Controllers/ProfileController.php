@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
 use App\Http\Requests\StoreApiKeyRequest;
+use App\Http\Requests\UpdateUserSettingsRequest;
 use App\Models\AiProvider;
+use App\Models\Language;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -32,9 +34,23 @@ class ProfileController extends Controller
             ])
             ->all();
 
+        $languages = Language::query()
+            ->enabled()
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Language $language): array => [
+                'id' => $language->id,
+                'name' => $language->name,
+                'native_name' => $language->native_name,
+            ])
+            ->all();
+
         return Inertia::render('Profile/Edit', [
             'user' => $request->user(),
             'apiKeyProviders' => $apiKeyProviders,
+            'nativeLanguageId' => $request->user()->settings?->native_language_id,
+            'languages' => $languages,
         ]);
     }
 
@@ -52,6 +68,21 @@ class ProfileController extends Controller
         $request->user()->save();
 
         return Redirect::route('profile.edit')->with('status', 'profile-updated');
+    }
+
+    /**
+     * Update the user's settings (native language).
+     */
+    public function updateSettings(UpdateUserSettingsRequest $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $user->settings()->updateOrCreate(
+            ['user_id' => $user->id],
+            ['native_language_id' => $request->validated('native_language_id')],
+        );
+
+        return Redirect::route('profile.edit')->with('status', 'settings-updated');
     }
 
     /**

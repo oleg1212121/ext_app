@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Language;
 use App\Models\User;
 
 test('profile page is displayed', function () {
@@ -48,6 +49,39 @@ test('email verification status is unchanged when the email address is unchanged
         ->assertRedirect('/profile');
 
     $this->assertNotNull($user->refresh()->email_verified_at);
+});
+
+test('user settings can update the native language', function () {
+    $user = User::factory()->create();
+    $russian = Language::create(['code' => 'ru', 'name' => 'Russian', 'is_enabled' => true, 'sort_order' => 1]);
+
+    $response = $this
+        ->actingAs($user)
+        ->patch('/profile/settings', [
+            'native_language_id' => $russian->id,
+        ]);
+
+    $response
+        ->assertSessionHasNoErrors()
+        ->assertRedirect('/profile');
+
+    expect($user->settings->refresh()->native_language_id)->toBe($russian->id);
+});
+
+test('user settings rejects a disabled native language', function () {
+    $user = User::factory()->create();
+    $disabled = Language::create(['code' => 'fr', 'name' => 'French', 'is_enabled' => false, 'sort_order' => 2]);
+
+    $originalNativeLanguageId = $user->settings->native_language_id;
+
+    $response = $this
+        ->actingAs($user)
+        ->patch('/profile/settings', [
+            'native_language_id' => $disabled->id,
+        ]);
+
+    $response->assertSessionHasErrors('native_language_id');
+    expect($user->settings->refresh()->native_language_id)->toBe($originalNativeLanguageId);
 });
 
 test('user can delete their account', function () {

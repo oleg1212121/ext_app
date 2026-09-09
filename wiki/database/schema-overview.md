@@ -1,11 +1,11 @@
 ---
 type: Database Schema
 title: Schema Overview
-description: The three table domains — legacy vocabulary, EN/RU dictionary, entities & alignment — and how they relate.
-tags: [database, schema, postgres]
+description: The table domains — legacy vocabulary, EN/RU dictionary, entities & alignment, user settings — and how they relate.
+tags: [database, schema, postgres, users, settings]
 status: stable
 stale_after: 2026-10-26
-generated: { by: agent/kimi-k3, at: 2026-07-26T12:00:00Z }
+generated: { by: agent/opencode, at: 2026-09-08T00:00:00Z }
 sources:
   - id: migrations
     resource: laravel/database/migrations
@@ -31,6 +31,17 @@ chronological source of truth; there is also a large legacy dump
 | [Entities & alignment](entities-alignment.md) | 2026_04–06 | `*_entities`, `*_entity_sentences`, `*_meaning_matches`, `en_ru_translations`/`ru_en_translations` | Texts and their alignment; filled by the [alignment pipeline](/domains/sentence-alignment.md) |
 
 Plus Laravel framework tables: `users`, `cache`, `jobs` (0001_01_01_*).
+
+# User settings
+
+`user_settings` (one row per user) holds per-user preferences, currently a single
+**native language** (`native_language_id` → `languages.id`, nullable, English by
+default). Created at registration; changeable from the profile page (Inertia
+`Profile/Edit`) and admin-managed via the Filament `UserSettingsResource`, plus a
+native-language select on the `UserResource` create/edit forms. See the
+[Access Control domain](../domains/access-control.md) for the user, and the
+**User settings** / **Native language** glossary entries in
+[CONTEXT.md](../../CONTEXT.md#language-catalog-context).
 
 # How they relate
 

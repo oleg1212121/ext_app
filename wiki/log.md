@@ -1,5 +1,22 @@
 # Directory Update Log
 
+## 2026-09-08
+
+* **User settings table with native language.** New `user_settings` table (one
+  row per user, `user_id` unique FK cascade-delete, `native_language_id` nullable
+  FK → `languages`). Existing users backfilled to English (`en`) in a follow-up
+  migration. New `UserSettings` model + `User::settings()` hasOne and
+  `User::nativeLanguage()` accessor; `UserFactory` now creates the settings row
+  (English default). Registration collects an optional native language
+  (dropdown of enabled languages, English preselected) and creates the settings
+  row (`RegisteredUserController`). Profile page gains a **Settings** section
+  with a native-language dropdown, updated via `PATCH /profile/settings`
+  (`ProfileController::updateSettings`, `UpdateUserSettingsRequest` — validates
+  the language is enabled). Admin Filament panel gains `UserSettingsResource`
+  (list/create/edit) and a native-language select on the `UserResource` create/
+  edit forms. Updated `wiki/database/schema-overview.md`; glossary terms
+  **User settings** and **Native language** added to `CONTEXT.md`.
+
 ## 2026-09-07
 
 * **Post-auth redirect now lands on `/` instead of the unused dashboard.** Login
