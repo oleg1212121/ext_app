@@ -68,6 +68,28 @@ function InputError({messages = []}) {
     )
 }
 
+function SelectInput({id, value, onChange, children, error, ...props}) {
+    return (
+        <select
+            id={id}
+            value={value}
+            onChange={onChange}
+            className={[
+                'mt-1 block w-full rounded-sm border px-3 py-2 text-sm shadow-sm',
+                'bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)]',
+                'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]',
+                error
+                    ? 'border-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)]'
+                    : 'border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]',
+                'focus:outline-none focus:ring-2 focus:ring-[var(--color-vermilion)] dark:focus:ring-[var(--color-vermilion-night)] focus:border-transparent',
+            ].join(' ')}
+            {...props}
+        >
+            {children}
+        </select>
+    )
+}
+
 function PrimaryButton({children, disabled = false, className = ''}) {
     return (
         <button
@@ -216,6 +238,52 @@ function ProfileInformation({user}) {
                         error={errors.email}
                     />
                     <InputError messages={errors.email ? [errors.email] : []}/>
+                </div>
+
+                <div className="flex items-center gap-4">
+                    <PrimaryButton disabled={processing}>Save changes</PrimaryButton>
+                    <SavedMessage show={recentlySuccessful}/>
+                </div>
+            </form>
+        </section>
+    )
+}
+
+function Settings({nativeLanguageId, languages = []}) {
+    const {data, setData, patch, processing, recentlySuccessful, errors} = useForm({
+        native_language_id: nativeLanguageId ?? '',
+    })
+
+    const submit = (e) => {
+        e.preventDefault()
+        patch('/profile/settings')
+    }
+
+    return (
+        <section>
+            <SectionHeader
+                eyebrow="Section"
+                title="Settings"
+                description="Choose your native language. It is used to tailor your learning experience."
+            />
+
+            <form onSubmit={submit} className="mt-8 space-y-6">
+                <div>
+                    <InputLabel htmlFor="native_language_id">Native Language</InputLabel>
+                    <SelectInput
+                        id="native_language_id"
+                        value={data.native_language_id}
+                        onChange={(e) => setData('native_language_id', Number(e.target.value))}
+                        error={errors.native_language_id}
+                    >
+                        {languages.map((language) => (
+                            <option key={language.id} value={language.id}>
+                                {language.name}
+                                {language.native_name ? ` (${language.native_name})` : ''}
+                            </option>
+                        ))}
+                    </SelectInput>
+                    <InputError messages={errors.native_language_id ? [errors.native_language_id] : []}/>
                 </div>
 
                 <div className="flex items-center gap-4">
@@ -483,7 +551,7 @@ function ApiKeys({providers = []}) {
     )
 }
 
-function Edit({user, apiKeyProviders = []}) {
+function Edit({user, apiKeyProviders = [], nativeLanguageId = null, languages = []}) {
     return (
         <>
             <Head title="Profile"/>
@@ -503,6 +571,12 @@ function Edit({user, apiKeyProviders = []}) {
                         <div className="border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] rounded-sm p-4 sm:p-8">
                             <div className="max-w-xl">
                                 <ProfileInformation user={user}/>
+                            </div>
+                        </div>
+
+                        <div className="border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] rounded-sm p-4 sm:p-8">
+                            <div className="max-w-xl">
+                                <Settings nativeLanguageId={nativeLanguageId} languages={languages}/>
                             </div>
                         </div>
 

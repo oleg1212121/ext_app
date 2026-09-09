@@ -144,6 +144,13 @@ _Avoid_: locale code, language tag
 A Language whose `is_enabled` flag is true. The flag is a stored value only; the application does not automatically enforce it in existing code paths.
 _Avoid_: active language, available language
 
+**User settings**:
+The per-user configuration row (one per user) holding the user's preferences, currently the **Native language**. Stored in `user_settings`. _Avoid_: preferences, profile (the page, not the row).
+
+**Native language**:
+The language a user is a native speaker of, chosen at registration and changeable from the profile page. References a **Language** in the catalog; defaults to English.
+_Avoid_: mother tongue, first language
+
 # Access Control Context
 
 The domain of who may do what in the application — driven by a user's **Role**

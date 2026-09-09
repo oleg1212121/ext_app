@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Language;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -33,6 +34,24 @@ class UserFactory extends Factory
             'role' => User::ROLE_USER,
             'is_approved' => true,
         ];
+    }
+
+    /**
+     * Ensure every factory-created user has a settings row, native language
+     * defaulting to English.
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (User $user) {
+            $english = Language::query()->firstOrCreate(
+                ['code' => 'en'],
+                ['name' => 'English', 'native_name' => 'English', 'is_enabled' => true, 'sort_order' => 0],
+            );
+
+            $user->settings()->create([
+                'native_language_id' => $english->id,
+            ]);
+        });
     }
 
     /**
