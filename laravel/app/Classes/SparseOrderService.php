@@ -61,9 +61,12 @@ class SparseOrderService
             return ['order' => $order, 'items' => $items];
         }
 
+        // Both rebalances renumber around the insertion index while preserving
+        // the sorted key sequence, so the index stays valid — recomputing it
+        // from $afterOrder would use the anchor's pre-rebalance order and
+        // point at the wrong slot.
         $items = $this->rebalanceWindow($items, $insertIndex);
         $this->sortItems($items);
-        $insertIndex = $this->insertIndexAfter($items, $afterOrder);
         $order = $this->between(
             $insertIndex > 0 ? $items[$insertIndex - 1]['order'] : null,
             $insertIndex < count($items) ? $items[$insertIndex]['order'] : null,
@@ -74,7 +77,6 @@ class SparseOrderService
         }
 
         $items = $this->rebalanceItems($items);
-        $insertIndex = $this->insertIndexAfter($items, $afterOrder);
         $order = $this->between(
             $insertIndex > 0 ? $items[$insertIndex - 1]['order'] : null,
             $insertIndex < count($items) ? $items[$insertIndex]['order'] : null,

@@ -48,6 +48,25 @@ it('produces non-negative order when inserting before all items with small order
     }
 });
 
+it('keeps the insertion position when a rebalance renumbers the anchor item', function () {
+    $service = new SparseOrderService;
+
+    $items = [
+        ['key' => 'a', 'order' => 5],
+        ['key' => 'b', 'order' => 18],
+        ['key' => 'c', 'order' => 19],
+        ['key' => 'd', 'order' => 20],
+        ['key' => 'e', 'order' => 50],
+    ];
+
+    $result = $service->orderForInsertAfter($items, 'new', 18);
+
+    $orders = array_column($result['items'], 'order', 'key');
+
+    expect($result['order'])->toBeGreaterThan($orders['b'])
+        ->toBeLessThan($orders['c']);
+});
+
 it('produces non-negative order when inserting at beginning with BEGINNING_SENTINEL anchor', function () {
     $service = new SparseOrderService;
 

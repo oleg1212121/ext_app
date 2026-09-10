@@ -109,15 +109,15 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     const [activeId, setActiveId] = useState(null);
 
     const activeContainer = useRef(null);
-    const newRowPosition = useRef(null);
+    // Row id after which a freshly created row must be inserted once the
+    // mutation response arrives — resolved at apply time, not dispatch time.
+    const newRowAnchor = useRef(null);
     // During a drag the containers are deliberately FROZEN — no onDragOver
     // mutation — so nothing in the layout shifts under the pointer and `over`
     // (a drop slot) can't flip-flop into the React #185 loop. The highlighted
     // slot is the drop feedback. Kept as the last valid collision target so a
     // no-collision frame still reports the item's own slot.
     const lastOverId = useRef(null);
-    // TEMP: transition trace for debugging the #185 loop / drop position.
-    const dragTrace = useRef([]);
 
     const lookup = useMemo(() => buildLookup(data), [data]);
     const {match, rows, rowsMeta, sentencesBefore, unmatchedEn, unmatchedRu, needsReview} = data;
@@ -216,13 +216,16 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             const incoming = res.rows;
             rows = rows.filter((row) => typeof row.id === 'number');
             rows = rows.map((row) => incoming.find((next) => next.id === row.id) ?? row);
-            if (newRowPosition.current !== null) {
+            if (newRowAnchor.current !== null) {
+                const anchorIndex = rows.findIndex((existing) => existing.id === newRowAnchor.current);
+                let insertIndex = anchorIndex < 0 ? rows.length : anchorIndex + 1;
                 incoming.forEach((row) => {
                     if (!rows.some((existing) => existing.id === row.id)) {
-                        rows.splice(newRowPosition.current, 0, row);
+                        rows.splice(insertIndex, 0, row);
+                        insertIndex++;
                     }
                 });
-                newRowPosition.current = null;
+                newRowAnchor.current = null;
             } else {
                 incoming.forEach((row) => {
                     if (!rows.some((existing) => existing.id === row.id)) {
@@ -248,15 +251,16 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         await loadNeedsReview(lastServer.current.needsReview.meta.current_page);
     }, [applyData, loadUnmatched, loadNeedsReview]);
 
-    const runMutation = useCallback(async (request, insertAt = null) => {
+    const runMutation = useCallback(async (request, insertAfterRowId = null) => {
         setActionBusy(true);
         setActionError(null);
-        newRowPosition.current = insertAt;
+        newRowAnchor.current = insertAfterRowId;
 
         try {
             const res = await request();
             await applyMutation(res);
         } catch (error) {
+            newRowAnchor.current = null;
             applyData(lastServer.current);
             setActionError(error.message);
         } finally {
@@ -433,13 +437,11 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setEditing(null);
         const tmpId = `tmp-${Date.now()}`;
         const tmpRow = {key: `mm-${tmpId}`, id: tmpId, order: row.order + 0.5, similarity: null, en_sentences: [], ru_sentences: []};
-        let insertAt = 0;
 
         setData((prev) => {
             const index = prev.rows.findIndex((existing) => existing.id === row.id);
             const rows = [...prev.rows];
             rows.splice(index + 1, 0, tmpRow);
-            insertAt = index + 1;
 
             return {...prev, rows};
         });
@@ -450,7 +452,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             [`row:${tmpId}:ru`]: [],
         }));
 
-        await runMutation(() => alignmentsApi.createRow(initialMatch.id, row.id), insertAt);
+        await runMutation(() => alignmentsApi.createRow(initialMatch.id, row.id), row.id);
     }, [actionBusy, initialMatch.id, runMutation]);
 
     const onDeleteRow = useCallback(async (row) => {
@@ -543,7 +545,6 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setAdding(null);
         activeContainer.current = containerOf(active.id);
         lastOverId.current = null;
-        dragTrace.current = [];
     }, [containerOf]);
 
     const onDragEnd = useCallback(async ({active, over}) => {
@@ -610,14 +611,6 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         index = Math.min(index, others.length);
 
         const toRowId = targetContainer.startsWith('row:') ? Number(targetContainer.split(':')[1]) : null;
-
-        console.log('[dnd-trace] dragEnd', {
-            over: overId,
-            target: targetContainer,
-            index,
-            dropIn: reordered.slice(0, 6),
-            trace: dragTrace.current.slice(0, 60),
-        });
 
         await runMutation(
             () => alignmentsApi.moveSentence(initialMatch.id, {
