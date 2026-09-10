@@ -45,45 +45,6 @@ function NumberInput({id, value, onChange, error, ...props}) {
     );
 }
 
-function EntitySelect({id, label, value, onChange, items, error, emptyText}) {
-    return (
-        <div>
-            <InputLabel htmlFor={id}>{label}</InputLabel>
-            <select
-                id={id}
-                value={value}
-                onChange={onChange}
-                className={inputClass(error)}
-            >
-                {items.length === 0 ? (
-                    <option value="">{emptyText}</option>
-                ) : (
-                    <>
-                        <option value="" disabled>Select an entity…</option>
-                        {items.map((item) => (
-                            <option key={item.id} value={item.id}>
-                                {item.text}
-                            </option>
-                        ))}
-                    </>
-                )}
-            </select>
-            <FieldError messages={error ? [error] : []}/>
-        </div>
-    );
-}
-
-function CreateEntityLink({href, children}) {
-    return (
-        <Link
-            href={href}
-            className="mt-2 inline-block text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
-        >
-            {children}
-        </Link>
-    );
-}
-
 function PrimaryButton({children, disabled = false}) {
     return (
         <button
@@ -102,22 +63,39 @@ function PrimaryButton({children, disabled = false}) {
     );
 }
 
-export default function Create({enEntities, ruEntities}) {
+export default function Create({works = []}) {
     const {flash} = usePage().props;
     const {data, setData, post, processing, errors} = useForm({
-        en_entity_id: '',
-        ru_entity_id: '',
-        is_original_en: true,
+        work_id: works[0]?.id ?? '',
+        first_entity_id: '',
+        second_entity_id: '',
         chunk_size: 75,
         max_n: 6,
     });
+
+    const work = works.find((item) => String(item.id) === String(data.work_id));
+    const workEntities = work?.entities ?? {};
+
+    const languageLabel = (code) => code.toUpperCase();
+
+    const entityOptions = (excludeLanguageCode) => Object.entries(workEntities)
+        .filter(([code]) => code !== excludeLanguageCode)
+        .flatMap(([code, entities]) => entities.map((entity) => ({
+            ...entity,
+            languageCode: code,
+            text: `[${languageLabel(code)}] ${entity.text}`,
+        })));
+
+    const firstEntity = entityOptions().find((entity) => String(entity.id) === String(data.first_entity_id));
+    const firstOptions = entityOptions();
+    const secondOptions = entityOptions(firstEntity?.languageCode);
 
     const submit = (e) => {
         e.preventDefault();
         post('/alignments', {preserveScroll: true});
     };
 
-    const duplicateBlocked = Boolean(errors.ru_entity_id) && Boolean(flash?.existing_match_id);
+    const duplicateBlocked = Boolean(errors.second_entity_id) && Boolean(flash?.existing_match_id);
 
     return (
         <div className="flex-1 min-h-0 overflow-y-auto bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)]">
@@ -134,7 +112,7 @@ export default function Create({enEntities, ruEntities}) {
                             New entity match
                         </p>
                         <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            Align an EN / RU pair
+                            Align two translations of a work
                         </h1>
                     </div>
                 </header>
@@ -146,60 +124,58 @@ export default function Create({enEntities, ruEntities}) {
                         </legend>
 
                         <div>
-                            <EntitySelect
-                                id="en_entity_id"
-                                label="English entity"
-                                value={data.en_entity_id}
-                                onChange={(e) => setData('en_entity_id', e.target.value)}
-                                items={enEntities}
-                                error={errors.en_entity_id}
-                                emptyText="No alignable EN entities yet"
-                            />
-                            <CreateEntityLink href="/entities/en/create">
-                                + Create a new EN entity
-                            </CreateEntityLink>
+                            <InputLabel htmlFor="work_id">Work</InputLabel>
+                            <select
+                                id="work_id"
+                                value={data.work_id}
+                                onChange={(e) => setData({work_id: e.target.value, first_entity_id: '', second_entity_id: ''})}
+                                className={inputClass(errors.work_id)}
+                            >
+                                {works.length === 0 ? (
+                                    <option value="">No works with alignable entities yet</option>
+                                ) : (
+                                    works.map((item) => (
+                                        <option key={item.id} value={item.id}>{item.title}</option>
+                                    ))
+                                )}
+                            </select>
+                            <p className="mt-1 text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                Both entities must belong to the same work and be in different languages.
+                            </p>
                         </div>
 
                         <div>
-                            <EntitySelect
-                                id="ru_entity_id"
-                                label="Russian entity"
-                                value={data.ru_entity_id}
-                                onChange={(e) => setData('ru_entity_id', e.target.value)}
-                                items={ruEntities}
-                                error={duplicateBlocked ? null : errors.ru_entity_id}
-                                emptyText="No alignable RU entities yet"
-                            />
-                            <CreateEntityLink href="/entities/ru/create">
-                                + Create a new RU entity
-                            </CreateEntityLink>
-                        </div>
-
-                        <div>
-                            <span className="block text-sm font-medium text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                                Original text
-                            </span>
-                            <div className="mt-2 flex gap-6">
-                                {[
-                                    {value: true, label: 'EN is the original text'},
-                                    {value: false, label: 'RU is the original text'},
-                                ].map((option) => (
-                                    <label
-                                        key={String(option.value)}
-                                        className="flex items-center gap-2 text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]"
-                                    >
-                                        <input
-                                            type="radio"
-                                            name="is_original_en"
-                                            checked={data.is_original_en === option.value}
-                                            onChange={() => setData('is_original_en', option.value)}
-                                            className="h-4 w-4 accent-[var(--wbench-accent)]"
-                                        />
-                                        {option.label}
-                                    </label>
+                            <InputLabel htmlFor="first_entity_id">First entity</InputLabel>
+                            <select
+                                id="first_entity_id"
+                                value={data.first_entity_id}
+                                onChange={(e) => setData({first_entity_id: e.target.value, second_entity_id: ''})}
+                                className={inputClass(errors.first_entity_id)}
+                            >
+                                <option value="" disabled>Select an entity…</option>
+                                {firstOptions.map((entity) => (
+                                    <option key={entity.id} value={entity.id}>{entity.text}</option>
                                 ))}
-                            </div>
-                            <FieldError messages={errors.is_original_en ? [errors.is_original_en] : []}/>
+                            </select>
+                            <FieldError messages={errors.first_entity_id ? [errors.first_entity_id] : []}/>
+                        </div>
+
+                        <div>
+                            <InputLabel htmlFor="second_entity_id">
+                                Second entity{firstEntity ? ` — different language than ${languageLabel(firstEntity.languageCode)}` : ''}
+                            </InputLabel>
+                            <select
+                                id="second_entity_id"
+                                value={data.second_entity_id}
+                                onChange={(e) => setData('second_entity_id', e.target.value)}
+                                className={inputClass(errors.second_entity_id)}
+                            >
+                                <option value="" disabled>Select an entity…</option>
+                                {secondOptions.map((entity) => (
+                                    <option key={entity.id} value={entity.id}>{entity.text}</option>
+                                ))}
+                            </select>
+                            <FieldError messages={duplicateBlocked ? null : (errors.second_entity_id ? [errors.second_entity_id] : [])}/>
                         </div>
                     </fieldset>
 

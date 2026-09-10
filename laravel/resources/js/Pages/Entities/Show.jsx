@@ -58,6 +58,11 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                             <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                                 {entity.name}
                             </h1>
+                            {entity.work_title && (
+                                <p className="mt-1 text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                    {entity.work_title}{entity.label ? ` · ${entity.label}` : ''}
+                                </p>
+                            )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                             <Link

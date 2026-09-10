@@ -106,7 +106,10 @@ class EntityController extends Controller
             'language' => $this->languagePayload($language),
             'works' => $this->worksForSelect(),
             'languages' => Language::query()->enabled()->orderBy('sort_order')->get()
-                ->map(fn (Language $item): array => $this->languagePayload($item))->all(),
+                ->map(fn (Language $item): array => [
+                    ...$this->languagePayload($item),
+                    'id' => $item->id,
+                ])->all(),
         ]);
     }
 

@@ -156,7 +156,7 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
     const token = getCsrfToken();
     const isAlignmentRunId = /^\d+$/.test(String(filename ?? ''));
     const body = isAlignmentRunId
-        ? {en_ru_entity_match_id: parseInt(String(filename), 10), page, per_page: perPage}
+        ? {entity_match_id: parseInt(String(filename), 10), page, per_page: perPage}
         : {filename, page, per_page: perPage};
     const res = await fetch('/text', {
         method: 'POST',

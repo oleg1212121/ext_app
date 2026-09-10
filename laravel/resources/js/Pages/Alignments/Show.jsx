@@ -32,56 +32,56 @@ function parseSlotIndex(id) {
     return Number(id.slice(hash + 2));
 }
 
-function buildContainers({rows, unmatchedEn, unmatchedRu}) {
+function buildContainers({rows, unmatchedA, unmatchedB}) {
     const containers = {};
 
     rows.forEach((row) => {
-        containers[`row:${row.id}:en`] = row.en_sentences.map((s) => s.key);
-        containers[`row:${row.id}:ru`] = row.ru_sentences.map((s) => s.key);
+        containers[`row:${row.id}:a`] = row.a_sentences.map((s) => s.key);
+        containers[`row:${row.id}:b`] = row.b_sentences.map((s) => s.key);
     });
 
-    containers['unmatched:en'] = unmatchedEn.items.map((s) => s.key);
-    containers['unmatched:ru'] = unmatchedRu.items.map((s) => s.key);
+    containers['unmatched:a'] = unmatchedA.items.map((s) => s.key);
+    containers['unmatched:b'] = unmatchedB.items.map((s) => s.key);
 
     return containers;
 }
 
-function buildLookup({rows, unmatchedEn, unmatchedRu, sentencesBefore}) {
+function buildLookup({rows, unmatchedA, unmatchedB, sentencesBefore}) {
     const all = [];
 
     rows.forEach((row) => {
-        row.en_sentences.forEach((s) => all.push({...s, lang: 'en', row_id: row.id}));
-        row.ru_sentences.forEach((s) => all.push({...s, lang: 'ru', row_id: row.id}));
+        row.a_sentences.forEach((s) => all.push({...s, side: 'a', row_id: row.id}));
+        row.b_sentences.forEach((s) => all.push({...s, side: 'b', row_id: row.id}));
     });
 
-    unmatchedEn.items.forEach((s) => all.push({...s, lang: 'en', row_id: null}));
-    unmatchedRu.items.forEach((s) => all.push({...s, lang: 'ru', row_id: null}));
+    unmatchedA.items.forEach((s) => all.push({...s, side: 'a', row_id: null}));
+    unmatchedB.items.forEach((s) => all.push({...s, side: 'b', row_id: null}));
 
     const lookup = new Map();
-    let enCounter = sentencesBefore?.en ?? 0;
-    let ruCounter = sentencesBefore?.ru ?? 0;
+    let aCounter = sentencesBefore?.a ?? 0;
+    let bCounter = sentencesBefore?.b ?? 0;
 
     all
         .sort((a, b) => a.order - b.order)
-        .filter((s) => s.lang === 'en')
-        .forEach((s) => { lookup.set(s.key, {...s, display_order: ++enCounter}); });
+        .filter((s) => s.side === 'a')
+        .forEach((s) => { lookup.set(s.key, {...s, display_order: ++aCounter}); });
 
     all
         .sort((a, b) => a.order - b.order)
-        .filter((s) => s.lang === 'ru')
-        .forEach((s) => { lookup.set(s.key, {...s, display_order: ++ruCounter}); });
+        .filter((s) => s.side === 'b')
+        .forEach((s) => { lookup.set(s.key, {...s, display_order: ++bCounter}); });
 
     return lookup;
 }
 
-export default function Show({match: initialMatch, rows: initialRows, rows_meta: initialRowsMeta, sentences_before: initialSentencesBefore, unmatched_en: initialUnmatchedEn, unmatched_ru: initialUnmatchedRu, needs_review: initialNeedsReview}) {
+export default function Show({match: initialMatch, rows: initialRows, rows_meta: initialRowsMeta, sentences_before: initialSentencesBefore, unmatched_a: initialUnmatchedA, unmatched_b: initialUnmatchedB, needs_review: initialNeedsReview}) {
     const [data, setData] = useState(() => ({
         match: initialMatch,
         rows: initialRows,
         rowsMeta: initialRowsMeta,
         sentencesBefore: initialSentencesBefore,
-        unmatchedEn: initialUnmatchedEn,
-        unmatchedRu: initialUnmatchedRu,
+        unmatchedA: initialUnmatchedA,
+        unmatchedB: initialUnmatchedB,
         needsReview: initialNeedsReview,
     }));
 
@@ -94,8 +94,8 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
     const [tableBusy, setTableBusy] = useState(false);
     const [tableError, setTableError] = useState(null);
-    const [poolBusy, setPoolBusy] = useState({en: false, ru: false});
-    const [poolError, setPoolError] = useState({en: null, ru: null});
+    const [poolBusy, setPoolBusy] = useState({a: false, b: false});
+    const [poolError, setPoolError] = useState({a: null, b: null});
     const [actionBusy, setActionBusy] = useState(false);
     const [actionError, setActionError] = useState(null);
     const [needsReviewBusy, setNeedsReviewBusy] = useState(false);
@@ -120,7 +120,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     const lastOverId = useRef(null);
 
     const lookup = useMemo(() => buildLookup(data), [data]);
-    const {match, rows, rowsMeta, sentencesBefore, unmatchedEn, unmatchedRu, needsReview} = data;
+    const {match, rows, rowsMeta, sentencesBefore, unmatchedA, unmatchedB, needsReview} = data;
 
     const applyData = useCallback((next) => {
         setData(next);
@@ -142,25 +142,25 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         }
     }, [initialMatch.id, applyData]);
 
-    const loadUnmatched = useCallback(async (lang, page) => {
-        setPoolBusy((prev) => ({...prev, [lang]: true}));
-        setPoolError((prev) => ({...prev, [lang]: null}));
+    const loadUnmatched = useCallback(async (side, page) => {
+        setPoolBusy((prev) => ({...prev, [side]: true}));
+        setPoolError((prev) => ({...prev, [side]: null}));
 
         try {
-            let res = await alignmentsApi.unmatched(initialMatch.id, lang, page);
+            let res = await alignmentsApi.unmatched(initialMatch.id, side, page);
             const lastPage = Math.max(res.meta.last_page, 1);
             const finalPage = Math.min(page, lastPage);
 
             if (finalPage !== page) {
-                res = await alignmentsApi.unmatched(initialMatch.id, lang, finalPage);
+                res = await alignmentsApi.unmatched(initialMatch.id, side, finalPage);
             }
 
-            const key = lang === 'en' ? 'unmatchedEn' : 'unmatchedRu';
+            const key = side === 'a' ? 'unmatchedA' : 'unmatchedB';
             applyData({...lastServer.current, [key]: res});
         } catch (error) {
-            setPoolError((prev) => ({...prev, [lang]: error.message}));
+            setPoolError((prev) => ({...prev, [side]: error.message}));
         } finally {
-            setPoolBusy((prev) => ({...prev, [lang]: false}));
+            setPoolBusy((prev) => ({...prev, [side]: false}));
         }
     }, [initialMatch.id, applyData]);
 
@@ -243,9 +243,9 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
         applyData({...base, rows, rowsMeta: nextRowsMeta, match: res.match});
 
-        for (const lang of res.unmatched_changed ?? []) {
-            const key = lang === 'en' ? 'unmatchedEn' : 'unmatchedRu';
-            await loadUnmatched(lang, lastServer.current[key].meta.current_page);
+        for (const side of res.unmatched_changed ?? []) {
+            const key = side === 'a' ? 'unmatchedA' : 'unmatchedB';
+            await loadUnmatched(side, lastServer.current[key].meta.current_page);
         }
 
         await loadNeedsReview(lastServer.current.needsReview.meta.current_page);
@@ -272,20 +272,20 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         ...prev,
         rows: prev.rows.map((row) => ({
             ...row,
-            en_sentences: row.en_sentences.map((s) => (s.key === key ? mutate(s) : s)),
-            ru_sentences: row.ru_sentences.map((s) => (s.key === key ? mutate(s) : s)),
+            a_sentences: row.a_sentences.map((s) => (s.key === key ? mutate(s) : s)),
+            b_sentences: row.b_sentences.map((s) => (s.key === key ? mutate(s) : s)),
         })),
-        unmatchedEn: {...prev.unmatchedEn, items: prev.unmatchedEn.items.map((s) => (s.key === key ? mutate(s) : s))},
-        unmatchedRu: {...prev.unmatchedRu, items: prev.unmatchedRu.items.map((s) => (s.key === key ? mutate(s) : s))},
+        unmatchedA: {...prev.unmatchedA, items: prev.unmatchedA.items.map((s) => (s.key === key ? mutate(s) : s))},
+        unmatchedB: {...prev.unmatchedB, items: prev.unmatchedB.items.map((s) => (s.key === key ? mutate(s) : s))},
     }), []);
 
-    const onAddStart = useCallback((row, lang) => {
+    const onAddStart = useCallback((row, side) => {
         if (actionBusy) {
             return;
         }
 
         setEditing(null);
-        setAdding({rowId: row.id, lang});
+        setAdding({rowId: row.id, side});
         setAddDraft('');
     }, [actionBusy]);
 
@@ -295,7 +295,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setAddDraft('');
     }, []);
 
-    const onAddCommit = useCallback(async (lang) => {
+    const onAddCommit = useCallback(async (side) => {
         const content = addDraft.trim();
 
         if (!content || !adding) {
@@ -313,14 +313,14 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                     return row;
                 }
 
-                const field = lang === 'en' ? 'en_sentences' : 'ru_sentences';
+                const field = side === 'a' ? 'a_sentences' : 'b_sentences';
 
                 return {...row, [field]: [...row[field], tmpSentence]};
             }),
         }));
 
         setContainers((prev) => {
-            const key = `row:${rowId}:${lang}`;
+            const key = `row:${rowId}:${side}`;
 
             return {...prev, [key]: [...(prev[key] ?? []), tmpKey]};
         });
@@ -328,10 +328,10 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setAdding(null);
         setAddDraft('');
 
-        await runMutation(() => alignmentsApi.addSentence(initialMatch.id, {lang, meaning_match_id: rowId, content}));
+        await runMutation(() => alignmentsApi.addSentence(initialMatch.id, {side, meaning_match_id: rowId, content}));
     }, [addDraft, adding, initialMatch.id, runMutation]);
 
-    const onStartEdit = useCallback((key, lang) => {
+    const onStartEdit = useCallback((key, side) => {
         if (actionBusy) {
             return;
         }
@@ -343,7 +343,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         }
 
         setAdding(null);
-        setEditing({key, lang, draft: item.content});
+        setEditing({key, side, draft: item.content});
     }, [actionBusy, lookup]);
 
     const onEditChange = useCallback((value) => {
@@ -373,7 +373,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setEditing(null);
 
         await runMutation(
-            () => alignmentsApi.updateSentence(initialMatch.id, item.id, {lang: editing.lang, content}),
+            () => alignmentsApi.updateSentence(initialMatch.id, item.id, {side: editing.side, content}),
         );
     }, [editing, lookup, initialMatch.id, runMutation, withRowSentence]);
 
@@ -387,8 +387,8 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             ...prev,
             rows: prev.rows.map((row) => ({
                 ...row,
-                en_sentences: row.en_sentences.filter((s) => s.key !== item.key),
-                ru_sentences: row.ru_sentences.filter((s) => s.key !== item.key),
+                a_sentences: row.a_sentences.filter((s) => s.key !== item.key),
+                b_sentences: row.b_sentences.filter((s) => s.key !== item.key),
             })),
         }));
 
@@ -402,7 +402,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         });
 
         await runMutation(
-            () => alignmentsApi.unlinkSentence(initialMatch.id, item.id, item.lang),
+            () => alignmentsApi.unlinkSentence(initialMatch.id, item.id, item.side),
         );
     }, [actionBusy, initialMatch.id, runMutation]);
 
@@ -413,19 +413,19 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
         setEditing(null);
         setData((prev) => {
-            const key = item.lang === 'en' ? 'unmatchedEn' : 'unmatchedRu';
+            const key = item.side === 'a' ? 'unmatchedA' : 'unmatchedB';
 
             return {...prev, [key]: {...prev[key], items: prev[key].items.filter((s) => s.key !== item.key)}};
         });
 
         setContainers((prev) => {
-            const containerKey = `unmatched:${item.lang}`;
+            const containerKey = `unmatched:${item.side}`;
 
             return {...prev, [containerKey]: (prev[containerKey] ?? []).filter((id) => id !== item.key)};
         });
 
         await runMutation(
-            () => alignmentsApi.destroyUnmatched(initialMatch.id, item.id, item.lang),
+            () => alignmentsApi.destroyUnmatched(initialMatch.id, item.id, item.side),
         );
     }, [actionBusy, initialMatch.id, runMutation]);
 
@@ -436,7 +436,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
         setEditing(null);
         const tmpId = `tmp-${Date.now()}`;
-        const tmpRow = {key: `mm-${tmpId}`, id: tmpId, order: row.order + 0.5, similarity: null, en_sentences: [], ru_sentences: []};
+        const tmpRow = {key: `mm-${tmpId}`, id: tmpId, order: row.order + 0.5, similarity: null, a_sentences: [], b_sentences: []};
 
         setData((prev) => {
             const index = prev.rows.findIndex((existing) => existing.id === row.id);
@@ -448,8 +448,8 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
         setContainers((prev) => ({
             ...prev,
-            [`row:${tmpId}:en`]: [],
-            [`row:${tmpId}:ru`]: [],
+            [`row:${tmpId}:a`]: [],
+            [`row:${tmpId}:b`]: [],
         }));
 
         await runMutation(() => alignmentsApi.createRow(initialMatch.id, row.id), row.id);
@@ -465,8 +465,8 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
         setContainers((prev) => {
             const next = {...prev};
-            delete next[`row:${row.id}:en`];
-            delete next[`row:${row.id}:ru`];
+            delete next[`row:${row.id}:a`];
+            delete next[`row:${row.id}:b`];
 
             return next;
         });
@@ -614,7 +614,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
         await runMutation(
             () => alignmentsApi.moveSentence(initialMatch.id, {
-                lang: item.lang,
+                side: item.side,
                 sentence_id: item.id,
                 to_row_id: toRowId,
                 index,
@@ -622,7 +622,12 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         );
     }, [containerOf, containers, initialMatch.id, lookup, runMutation]);
 
-    const anyBusy = tableBusy || actionBusy || poolBusy.en || poolBusy.ru;
+    const sideLabels = {
+        a: (match.a_language_code || 'a').toUpperCase(),
+        b: (match.b_language_code || 'b').toUpperCase(),
+    };
+
+    const anyBusy = tableBusy || actionBusy || poolBusy.a || poolBusy.b;
 
     return (
         <DndContext
@@ -645,14 +650,15 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                                 Alignments
                             </p>
                             <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                                {match.en_entity_name || 'EN'} ↔ {match.ru_entity_name || 'RU'}
+                                {match.a_entity_name || 'A'} ↔ {match.b_entity_name || 'B'}
                             </h1>
                             <p className="mt-1 font-mono text-[10px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                                 sim {match.entity_similarity !== null ? Number(match.entity_similarity).toFixed(4) : '—'} · {match.status} · {match.linked_count} linked / {match.confirmed_count} confirmed
+                                {match.work_title ? ` · ${match.work_title}` : ''}
                             </p>
                         </div>
                         <p className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            EN {match.en_total_sentences} · RU {match.ru_total_sentences}
+                            {(match.a_language_code || 'a').toUpperCase()} {match.a_total_sentences} · {(match.b_language_code || 'b').toUpperCase()} {match.b_total_sentences}
                         </p>
                     </header>
 
@@ -692,8 +698,9 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                                         key={row.key}
                                         row={row}
                                         position={(rowsMeta.current_page - 1) * rowsMeta.per_page + index + 1}
-                                        enKeys={containers[`row:${row.id}:en`] ?? []}
-                                        ruKeys={containers[`row:${row.id}:ru`] ?? []}
+                                        aKeys={containers[`row:${row.id}:a`] ?? []}
+                                        sideLabels={sideLabels}
+                                        bKeys={containers[`row:${row.id}:b`] ?? []}
                                         lookup={lookup}
                                         editing={editing}
                                         adding={adding}
@@ -729,11 +736,12 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                     <UnmatchedSection
                         expanded={unmatchedOpen}
                         onToggle={() => setUnmatchedOpen((prev) => !prev)}
-                        enKeys={containers['unmatched:en'] ?? []}
-                        ruKeys={containers['unmatched:ru'] ?? []}
+                        aKeys={containers['unmatched:a'] ?? []}
+                        sideLabels={sideLabels}
+                        bKeys={containers['unmatched:b'] ?? []}
                         lookup={lookup}
-                        unmatchedEn={unmatchedEn}
-                        unmatchedRu={unmatchedRu}
+                        unmatchedA={unmatchedA}
+                        unmatchedB={unmatchedB}
                         busy={actionBusy}
                         editing={editing}
                         onStartEdit={onStartEdit}
@@ -741,7 +749,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                         onCommitEdit={onCommitEdit}
                         onCancelEdit={onCancelEdit}
                         onRemove={onRemove}
-                        onPageChange={(lang, page) => loadUnmatched(lang, page)}
+                        onPageChange={(side, page) => loadUnmatched(side, page)}
                     />
 
                     <NeedsReviewSection

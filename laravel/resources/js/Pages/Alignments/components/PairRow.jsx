@@ -14,7 +14,7 @@ const railBtn = [
     'disabled:opacity-40 disabled:cursor-not-allowed',
 ].join(' ');
 
-function SentenceColumn({lang, containerKey, keys, lookup, adding, draft, busy, editing, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink}) {
+function SentenceColumn({side, sideLabel, containerKey, keys, lookup, adding, draft, busy, editing, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink}) {
     const {active} = useDndContext();
     const sentences = keys.map((key) => lookup.get(key)).filter(Boolean);
     // The dragged sentence still occupies its home slot in the frozen list, so
@@ -27,7 +27,7 @@ function SentenceColumn({lang, containerKey, keys, lookup, adding, draft, busy, 
         <div className="flex min-h-[64px] flex-col px-2 py-1.5">
             <div className="flex items-center justify-between px-1 pb-1">
                 <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    {lang}
+                    {sideLabel ?? side}
                 </span>
                 <button
                     type="button"
@@ -50,11 +50,11 @@ function SentenceColumn({lang, containerKey, keys, lookup, adding, draft, busy, 
                         <DropSlot slotId={`slot:${containerKey}:#${index}`} inert={isAdjacentToActive(index)}/>
                         <SentenceItem
                             item={sentence}
-                            lang={lang}
+                            side={side}
                             editing={editing?.key === sentence.key}
                             draft={editing?.key === sentence.key ? (editing.draft ?? '') : ''}
                             busy={busy}
-                            onStartEdit={() => onStartEdit(sentence.key, lang)}
+                            onStartEdit={() => onStartEdit(sentence.key, side)}
                             onChangeDraft={onEditChange}
                             onCommitEdit={onCommitEdit}
                             onCancelEdit={onCancelEdit}
@@ -73,7 +73,7 @@ function SentenceColumn({lang, containerKey, keys, lookup, adding, draft, busy, 
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                                 e.preventDefault();
-                                onAddCommit(lang);
+                                onAddCommit(side);
                             }
                             if (e.key === 'Escape') {
                                 e.preventDefault();
@@ -83,11 +83,11 @@ function SentenceColumn({lang, containerKey, keys, lookup, adding, draft, busy, 
                         disabled={busy}
                         rows={2}
                         autoFocus
-                        placeholder={`New ${lang} sentence…`}
+                        placeholder={`New ${side} sentence…`}
                         className="min-w-0 flex-1 resize-none rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 py-1 font-serif text-[15px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] focus:outline-none focus:ring-1 focus:ring-[var(--wbench-accent)] dark:focus:ring-[var(--wbench-accent-night)]"
                     />
                     <div className="flex justify-end gap-1">
-                        <button type="button" onClick={() => onAddCommit(lang)} disabled={busy} aria-label="Save" className="h-7 px-2.5 rounded-sm bg-[var(--wbench-accent)] dark:bg-[var(--wbench-accent-night)] text-[var(--wbench-paper)] dark:text-[var(--wbench-paper-night)] font-mono text-[11px] uppercase tracking-[0.14em] hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] disabled:opacity-40">
+                        <button type="button" onClick={() => onAddCommit(side)} disabled={busy} aria-label="Save" className="h-7 px-2.5 rounded-sm bg-[var(--wbench-accent)] dark:bg-[var(--wbench-accent-night)] text-[var(--wbench-paper)] dark:text-[var(--wbench-paper-night)] font-mono text-[11px] uppercase tracking-[0.14em] hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] disabled:opacity-40">
                             Save
                         </button>
                         <button type="button" onClick={onAddCancel} disabled={busy} aria-label="Cancel" className="h-7 px-2.5 rounded-sm font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] disabled:opacity-40">
@@ -106,7 +106,7 @@ function SentenceColumn({lang, containerKey, keys, lookup, adding, draft, busy, 
     );
 }
 
-export default function PairRow({row, position, enKeys, ruKeys, lookup, editing, adding, draft, busy, highlighted, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete, onApprove}) {
+export default function PairRow({row, position, aKeys, bKeys, sideLabels, lookup, editing, adding, draft, busy, highlighted, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete, onApprove}) {
     return (
         <section
             data-row-id={row.id}
@@ -143,15 +143,16 @@ export default function PairRow({row, position, enKeys, ruKeys, lookup, editing,
             <div className="grid grid-cols-1 sm:grid-cols-2">
                 <div className="border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] sm:border-b-0 sm:border-r sm:border-r-[var(--wbench-rule)] sm:dark:border-r-[var(--wbench-rule-night)]">
                     <SentenceColumn
-                        lang="en"
-                        containerKey={`row:${row.id}:en`}
-                        keys={enKeys}
+                        side="a"
+                        sideLabel={sideLabels.a}
+                        containerKey={`row:${row.id}:a`}
+                        keys={aKeys}
                         lookup={lookup}
-                        adding={adding?.lang === 'en' && adding?.rowId === row.id}
+                        adding={adding?.side === 'a' && adding?.rowId === row.id}
                         draft={draft}
                         busy={busy}
                         editing={editing}
-                        onAddStart={() => onAddStart(row, 'en')}
+                        onAddStart={() => onAddStart(row, 'a')}
                         onAddChange={onAddChange}
                         onAddCommit={onAddCommit}
                         onAddCancel={onAddCancel}
@@ -164,15 +165,16 @@ export default function PairRow({row, position, enKeys, ruKeys, lookup, editing,
                 </div>
                 <div>
                     <SentenceColumn
-                        lang="ru"
-                        containerKey={`row:${row.id}:ru`}
-                        keys={ruKeys}
+                        side="b"
+                        sideLabel={sideLabels.b}
+                        containerKey={`row:${row.id}:b`}
+                        keys={bKeys}
                         lookup={lookup}
-                        adding={adding?.lang === 'ru' && adding?.rowId === row.id}
+                        adding={adding?.side === 'b' && adding?.rowId === row.id}
                         draft={draft}
                         busy={busy}
                         editing={editing}
-                        onAddStart={() => onAddStart(row, 'ru')}
+                        onAddStart={() => onAddStart(row, 'b')}
                         onAddChange={onAddChange}
                         onAddCommit={onAddCommit}
                         onAddCancel={onAddCancel}

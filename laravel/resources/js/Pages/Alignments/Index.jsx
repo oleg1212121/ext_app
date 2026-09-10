@@ -50,7 +50,7 @@ export default function Index({entityMatches, meta}) {
                             Alignments
                         </p>
                         <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            EN / RU semantic pairs
+                            Aligned entity pairs
                         </h1>
                     </div>
                     <div className="flex flex-col items-end gap-2">
@@ -77,7 +77,7 @@ export default function Index({entityMatches, meta}) {
                         <table className="min-w-full border-collapse">
                             <thead>
                                 <tr className="border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]">
-                                    {['EN entity', 'RU entity', 'Similarity', 'Progress', 'EN sents', 'RU sents', 'Status', 'Created', 'Open'].map((header, index) => (
+                                    {['A entity', 'B entity', 'Similarity', 'Progress', 'A sents', 'B sents', 'Status', 'Created', 'Open'].map((header, index) => (
                                         <th
                                             key={header}
                                             className={[
@@ -139,18 +139,18 @@ function IndexRow({run}) {
         <tr className="group transition-colors hover:bg-[var(--wbench-paper-deep)] dark:hover:bg-[var(--wbench-paper-deep-night)]">
             <td className="px-4 py-2.5 align-top">
                 <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    EN
+                    {(run.a_language_code || 'a').toUpperCase()}
                 </span>
                 <p className="mt-0.5 font-serif text-[15px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                    {run.en_entity_name || '—'}
+                    {run.a_entity_name || '—'}
                 </p>
             </td>
             <td className="px-4 py-2.5 align-top">
                 <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    RU
+                    {(run.b_language_code || 'b').toUpperCase()}
                 </span>
                 <p className="mt-0.5 font-serif text-[15px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                    {run.ru_entity_name || '—'}
+                    {run.b_entity_name || '—'}
                 </p>
             </td>
             <td className={`px-4 py-2.5 align-top font-mono text-sm ${similarityClass(run.entity_similarity)}`}>
@@ -170,10 +170,10 @@ function IndexRow({run}) {
                 </div>
             </td>
             <td className="px-4 py-2.5 align-top font-mono text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                {run.en_total_sentences ?? '—'}
+                {run.a_total_sentences ?? '—'}
             </td>
             <td className="px-4 py-2.5 align-top font-mono text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                {run.ru_total_sentences ?? '—'}
+                {run.b_total_sentences ?? '—'}
             </td>
             <td className="px-4 py-2.5 align-top">
                 <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] ${STATUS_BADGE[run.status] ?? STATUS_BADGE.pending}`}>

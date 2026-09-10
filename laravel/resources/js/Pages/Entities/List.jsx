@@ -28,7 +28,14 @@ const PageLink = ({disabled, href, children}) => {
     );
 };
 
-export default function List({lang, language, entities = [], meta}) {
+export default function List({lang, language, entities = [], meta, works = [], work_filter: workFilter}) {
+    const workQuery = (page) => {
+        const params = new URLSearchParams();
+        if (workFilter) params.set('work', String(workFilter));
+        params.set('page', String(page));
+        return `/entities/${lang}?${params.toString()}`;
+    };
+
     return (
         <div className="flex-1 min-h-0 overflow-y-auto bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)]">
             <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
@@ -41,12 +48,33 @@ export default function List({lang, language, entities = [], meta}) {
                             {language.native_name || language.name} entities
                         </h1>
                     </div>
-                    <Link
-                        href={`/entities/${lang}/create`}
-                        className="inline-flex h-9 items-center border border-[var(--wbench-accent)] dark:border-[var(--wbench-accent-night)] px-4 font-sans text-sm text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] transition-colors hover:bg-[var(--wbench-accent)] hover:text-white dark:hover:bg-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-ink-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
-                    >
-                        + Create entity
-                    </Link>
+                    <div className="flex items-center gap-3">
+                        {works.length > 0 && (
+                            <form method="get" action={`/entities/${lang}`} className="flex items-center gap-2">
+                                <label htmlFor="work-filter" className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                    Work
+                                </label>
+                                <select
+                                    id="work-filter"
+                                    name="work"
+                                    defaultValue={workFilter ?? ''}
+                                    onChange={(e) => e.currentTarget.form?.requestSubmit()}
+                                    className="h-9 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]"
+                                >
+                                    <option value="">All works</option>
+                                    {works.map((work) => (
+                                        <option key={work.id} value={work.id}>{work.title}</option>
+                                    ))}
+                                </select>
+                            </form>
+                        )}
+                        <Link
+                            href={`/entities/${lang}/create`}
+                            className="inline-flex h-9 items-center border border-[var(--wbench-accent)] dark:border-[var(--wbench-accent-night)] px-4 font-sans text-sm text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] transition-colors hover:bg-[var(--wbench-accent)] hover:text-white dark:hover:bg-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-ink-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
+                        >
+                            + Create entity
+                        </Link>
+                    </div>
                 </header>
 
                 <div className="overflow-hidden border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
@@ -54,12 +82,12 @@ export default function List({lang, language, entities = [], meta}) {
                         <table className="min-w-full border-collapse">
                             <thead>
                                 <tr className="border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]">
-                                    {['Name', 'Description', 'Signature', 'Sentences', 'Created', 'Open'].map((header, index) => (
+                                    {['Name', 'Work', 'Description', 'Signature', 'Sentences', 'Created', 'Open'].map((header, index) => (
                                         <th
                                             key={header}
                                             className={[
                                                 'px-4 py-2 font-mono text-[10px] uppercase tracking-[0.24em]',
-                                                index === 5
+                                                index === 6
                                                     ? 'text-right text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]'
                                                     : 'text-left text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]',
                                             ].join(' ')}
@@ -72,7 +100,7 @@ export default function List({lang, language, entities = [], meta}) {
                             <tbody className="divide-y divide-[var(--wbench-rule)] dark:divide-[var(--wbench-rule-night)]">
                                 {entities.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="px-4 py-12 text-center">
+                                        <td colSpan={7} className="px-4 py-12 text-center">
                                             <p className="font-serif text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                                                 No entities yet.
                                             </p>
@@ -93,13 +121,13 @@ export default function List({lang, language, entities = [], meta}) {
 
                 {meta && meta.last_page > 1 && (
                     <nav aria-label="Pagination" className="flex items-center justify-between border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
-                        <PageLink disabled={meta.current_page <= 1} href={`/entities/${lang}?page=${meta.current_page - 1}`}>
+                        <PageLink disabled={meta.current_page <= 1} href={workQuery(meta.current_page - 1)}>
                             ← Prev
                         </PageLink>
                         <span className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                             {meta.current_page} / {meta.last_page}
                         </span>
-                        <PageLink disabled={meta.current_page >= meta.last_page} href={`/entities/${lang}?page=${meta.current_page + 1}`}>
+                        <PageLink disabled={meta.current_page >= meta.last_page} href={workQuery(meta.current_page + 1)}>
                             Next →
                         </PageLink>
                     </nav>
@@ -119,6 +147,12 @@ function ListRow({entity, lang}) {
                 >
                     {entity.name}
                 </Link>
+            </td>
+            <td className="px-4 py-2.5 align-top">
+                <p className="line-clamp-2 text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                    {entity.work_title || '—'}
+                    {entity.label ? ` · ${entity.label}` : ''}
+                </p>
             </td>
             <td className="px-4 py-2.5 align-top">
                 <p className="line-clamp-2 text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">

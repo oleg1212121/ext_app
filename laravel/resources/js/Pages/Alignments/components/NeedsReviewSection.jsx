@@ -43,10 +43,10 @@ export default function NeedsReviewSection({expanded, onToggle, items, meta, bus
                                         )}
                                     </span>
                                     <span className="font-serif text-[13px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] line-clamp-2">
-                                        {item.en_part || '—'}
+                                        {item.a_part || '—'}
                                     </span>
                                     <span className="font-serif text-[13px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] line-clamp-2">
-                                        {item.ru_part || '—'}
+                                        {item.b_part || '—'}
                                     </span>
                                     <span className="font-mono text-[10px] tabular-nums text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                                         {item.similarity !== null ? `sim ${Number(item.similarity).toFixed(4)}` : 'sim —'} · → p. {page}

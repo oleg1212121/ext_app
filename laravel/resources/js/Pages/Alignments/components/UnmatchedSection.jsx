@@ -4,7 +4,7 @@ import {SortableContext, verticalListSortingStrategy} from '@dnd-kit/sortable';
 import SentenceItem from './SentenceItem.jsx';
 import DropSlot from './DropSlot.jsx';
 
-function UnmatchedPool({lang, containerKey, keys, lookup, meta, busy, editing, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onRemove, onPageChange}) {
+function UnmatchedPool({side, sideLabel, containerKey, keys, lookup, meta, busy, editing, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onRemove, onPageChange}) {
     const {active} = useDndContext();
     const sentences = keys.map((key) => lookup.get(key)).filter(Boolean);
     const activeIndex = active != null ? keys.indexOf(active.id) : -1;
@@ -14,7 +14,7 @@ function UnmatchedPool({lang, containerKey, keys, lookup, meta, busy, editing, o
         <div className="flex flex-col border-r border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] last:border-r-0">
             <div className="flex items-center justify-between border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-3 py-1.5">
                 <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    {lang} · {meta.total}
+                    {sideLabel ?? side} · {meta.total}
                 </span>
                 <span className="font-mono text-[10px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                     {meta.current_page} / {Math.max(meta.last_page, 1)}
@@ -28,11 +28,11 @@ function UnmatchedPool({lang, containerKey, keys, lookup, meta, busy, editing, o
                             <DropSlot slotId={`slot:${containerKey}:#${index}`} inert={isAdjacentToActive(index)}/>
                             <SentenceItem
                                 item={sentence}
-                                lang={lang}
+                                side={side}
                                 editing={editing?.key === sentence.key}
                                 draft={editing?.key === sentence.key ? (editing.draft ?? '') : ''}
                                 busy={busy}
-                                onStartEdit={() => onStartEdit(sentence.key, lang)}
+                                onStartEdit={() => onStartEdit(sentence.key, side)}
                                 onChangeDraft={onEditChange}
                                 onCommitEdit={onCommitEdit}
                                 onCancelEdit={onCancelEdit}
@@ -53,7 +53,7 @@ function UnmatchedPool({lang, containerKey, keys, lookup, meta, busy, editing, o
             <div className="mt-auto flex items-center justify-between border-t border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-2 py-1">
                 <button
                     type="button"
-                    onClick={() => onPageChange(lang, meta.current_page - 1)}
+                    onClick={() => onPageChange(side, meta.current_page - 1)}
                     disabled={meta.current_page <= 1 || busy}
                     aria-label="Previous unmatched page"
                     className="inline-flex h-6 items-center px-1.5 font-mono text-[11px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
@@ -62,7 +62,7 @@ function UnmatchedPool({lang, containerKey, keys, lookup, meta, busy, editing, o
                 </button>
                 <button
                     type="button"
-                    onClick={() => onPageChange(lang, meta.current_page + 1)}
+                    onClick={() => onPageChange(side, meta.current_page + 1)}
                     disabled={meta.current_page >= meta.last_page || busy}
                     aria-label="Next unmatched page"
                     className="inline-flex h-6 items-center px-1.5 font-mono text-[11px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
@@ -74,7 +74,7 @@ function UnmatchedPool({lang, containerKey, keys, lookup, meta, busy, editing, o
     );
 }
 
-export default function UnmatchedSection({expanded, enKeys, ruKeys, lookup, unmatchedEn, unmatchedRu, busy, editing, onToggle, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onRemove, onPageChange}) {
+export default function UnmatchedSection({expanded, aKeys, bKeys, sideLabels, lookup, unmatchedA, unmatchedB, busy, editing, onToggle, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onRemove, onPageChange}) {
     return (
         <section className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
             <button
@@ -87,18 +87,19 @@ export default function UnmatchedSection({expanded, enKeys, ruKeys, lookup, unma
                     Unmatched
                 </span>
                 <span className="font-mono text-[10px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    EN {unmatchedEn.meta.total} / RU {unmatchedRu.meta.total}
+                    EN {unmatchedA.meta.total} / RU {unmatchedB.meta.total}
                 </span>
             </button>
 
             {expanded && (
                 <div className="grid grid-cols-1 sm:grid-cols-2">
                     <UnmatchedPool
-                        lang="en"
-                        containerKey="unmatched:en"
-                        keys={enKeys}
+                        side="a"
+                        sideLabel={sideLabels.a}
+                        containerKey="unmatched:a"
+                        keys={aKeys}
                         lookup={lookup}
-                        meta={unmatchedEn.meta}
+                        meta={unmatchedA.meta}
                         busy={busy}
                         editing={editing}
                         onStartEdit={onStartEdit}
@@ -109,11 +110,12 @@ export default function UnmatchedSection({expanded, enKeys, ruKeys, lookup, unma
                         onPageChange={onPageChange}
                     />
                     <UnmatchedPool
-                        lang="ru"
-                        containerKey="unmatched:ru"
-                        keys={ruKeys}
+                        side="b"
+                        sideLabel={sideLabels.b}
+                        containerKey="unmatched:b"
+                        keys={bKeys}
                         lookup={lookup}
-                        meta={unmatchedRu.meta}
+                        meta={unmatchedB.meta}
                         busy={busy}
                         editing={editing}
                         onStartEdit={onStartEdit}
