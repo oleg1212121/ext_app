@@ -5,7 +5,7 @@ description: Bilingual texts, their sentences, and the machine/human alignment b
 tags: [database, schema, alignment, entities]
 status: stable
 stale_after: 2026-10-26
-generated: { by: human:alex, at: 2026-09-09T20:30:00Z }
+generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations
@@ -37,9 +37,18 @@ sources:
 # Invariants & notes
 
 * **Sparse ordering**: sentence and match order columns hold sparse values
-  maintained by `SparseOrderService`; columns were widened in the
-  2026_06 `widen_sparse_order_columns` migration. Rebalance daily via
-  `entity-orders:rebalance`. Both `EntityController` (entity *Sentences* tab)
+  (stride 1024) maintained by `SparseOrderService`; the columns are signed
+  `bigint` from creation (day-one migrations — the earlier claim about a
+  `widen_sparse_order_columns` migration was wrong; no such migration
+  exists). **Every creation path emits sparse values from birth** — the
+  split pipeline (`SentenceSplitter`, via `SparseOrderService::initial`),
+  the console importer (`EntitySentenceImporter`), the entity *Sentences*
+  tab (`EntityController::storeSentence`), and the Filament relation
+  managers — so a later insert/reorder usually writes only the moved row
+  (midpoint between neighbours). Dense legacy lists are repaired by
+  `entity-orders:rebalance` (runs daily; see
+  [Sentence Alignment](/domains/sentence-alignment.md)).
+  Both `EntityController` (entity *Sentences* tab)
   and `AlignmentEditorController` shift the whole sparse result up whenever a
   rebalance would push the minimum order negative (mirroring the alignment
   editor's guard), so `*.order` never carries negative values and the

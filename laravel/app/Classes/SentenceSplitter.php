@@ -16,6 +16,8 @@ use Throwable;
 
 class SentenceSplitter
 {
+    public function __construct(private readonly SparseOrderService $sparseOrder) {}
+
     private const BATCH_SIZE = 500;
 
     private const DEFAULT_CHUNK_SIZE = 262_144;
@@ -247,17 +249,18 @@ class SentenceSplitter
      */
     private function appendSentenceToBatch(array $sentence, int $entityId, string $entityFk, int $defaultTypeId, array &$batch, int &$order): void
     {
-        $order++;
         $typeId = $this->sentenceTypeMap[$sentence['type']] ?? $defaultTypeId;
 
         $batch[] = [
             $entityFk => $entityId,
             'sentence_type_id' => $typeId,
             'content' => $sentence['content'],
-            'order' => $order,
+            'order' => $this->sparseOrder->initial($order),
             'created_at' => now(),
             'updated_at' => now(),
         ];
+
+        $order++;
     }
 
     private function flushBatch(string $sentenceModel, array &$batch, array &$stats): void

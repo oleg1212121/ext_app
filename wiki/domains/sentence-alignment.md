@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns EN and RU texts into sentence-
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-10-26
-generated: { by: human:alex, at: 2026-09-09T20:30:00Z }
+generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
 verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
@@ -47,9 +47,15 @@ sentence(s). The output powers the
    endpoint (UTF-8-safe cut + raw-remainder stitching, so chunk seams are
    seamless: incomplete trailing UTF-8 bytes are held back
    (`carryIncompleteTrailingBytes`) and re-prefixed to the next chunk) and
-   writes `EnEntitySentence` / `RuEntitySentence` rows
-   (`SplitEntityFileSentences` job; `ProcessEntityFile` orchestrates file
-   ingestion). Splitting itself (pysbd + title heuristics ported from the old
+   writes `EnEntitySentence` / `RuEntitySentence` rows with **sparse orders
+   from birth** (`SparseOrderService::initial($index)` → 0, 1024, 2048, …;
+   the splitter takes `SparseOrderService` via constructor injection). This
+   matters downstream: with dense 1,2,3… orders every editor
+   insert/reorder exhausts the midpoint gap and falls through to a full-list
+   rebalance, whereas sparse-from-creation lets a reorder write only the
+   moved row. Existing dense lists are repaired by `entity-orders:rebalance`
+   (daily schedule, or run manually). (`SplitEntityFileSentences` job;
+   `ProcessEntityFile` orchestrates file ingestion.) Splitting itself (pysbd + title heuristics ported from the old
    PHP splitter) lives in python `ai/splitting/`. The python splitter hands
    pysbd buffered prose with **newlines selectively flattened**:
    `TypedSentenceSplitter::flush_buffer` joins buffered lines with `\n`, then
@@ -511,7 +517,14 @@ sentence(s). The output powers the
     `SparseOrderService`, and JSON payloads shaped by `AlignmentEditorApiPresenter`
     (`rows` + `unmatched` pagination, `last_page` included; the rows table's
     `Pagination` component shows Prev/Next + numbered page buttons with ellipsis
-    and a custom per-page dropdown). **Every endpoint is gated first by
+    and a custom per-page dropdown). Client-side, a mutation response carrying
+    new rows inserts them **by anchor row id**, not a precomputed array index:
+    `Show.jsx`'s `runMutation(request, insertAfterRowId)` remembers the anchor
+    row and `applyMutation` splices the new row after it at response time.
+    (The previous scheme read an index assigned inside a `setState` updater
+    synchronously after the dispatch — React 19 evaluates updaters eagerly
+    only on the first dispatch after mount, so every later "Create below"
+    landed at the top of the page until refresh.) **Every endpoint is gated first by
     `EntityAccessService::canReadMatch($user, $entityMatch)`** — a non-granted user
     (who cannot read BOTH the EN and RU entities) receives `403` on every read and
     mutation, so a restricted match is neither visible nor mutable in the editor.

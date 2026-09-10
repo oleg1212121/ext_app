@@ -1,5 +1,36 @@
 # Directory Update Log
 
+## 2026-09-10
+
+* **Sparse orders from entity creation + editor "Create below" placement
+  fix.** Three related fixes on `aligner-order-rework`. (1) `SentenceSplitter`
+  (the file-upload split pipeline) wrote dense sequential orders
+  `1,2,3,4,5…`; it now takes `SparseOrderService` via constructor injection
+  and assigns `initial($index)` → `0, 1024, 2048, …` like every other
+  creation path. Consequence: the first insert/reorder on an entity's
+  *Sentences* tab no longer exhausts the midpoint gap and falls through to a
+  full-list rebalance (the "all sequence numbers become 0,1024,2048 after
+  reordering" report) — a reorder now writes only the moved row. Existing
+  dense dev lists were repaired with a one-off `entity-orders:rebalance`
+  (3,177 rows); prod picks it up from the daily schedule or the next manual
+  rebalance. (2) The Inertia alignment editor's "Create below" placed the
+  first new row correctly but every subsequent one at the **top of the page**
+  until refresh: `Show.jsx` computed the insert index inside a `setState`
+  updater and read it synchronously after the dispatch — React 19 runs
+  updaters eagerly only on the first dispatch after mount, so later
+  mutations snapshotted index `0`. `runMutation` now receives the **anchor
+  row id** and `applyMutation` resolves the splice position at response
+  time (also reset on mutation failure). (3) Drive-by: removed `'order' => 0`
+  from the junction insert in `AlignEntitySentences`' skip-run drain — the
+  junction tables' `order` column was dropped in Aug 2026
+  (`2026_08_20_131441_drop_order_from_junction_tables`), so that path would
+  have thrown an SQL error when it executed. New regression test in
+  `SentenceSplitterTest` (sparse orders); updated
+  `wiki/domains/sentence-alignment.md` and
+  `wiki/database/entities-alignment.md` (also corrected its stale
+  `widen_sparse_order_columns` migration claim — no such migration exists;
+  the order columns were `bigint` from day one).
+
 ## 2026-09-09
 
 * **Drag-and-drop duplicate sentence orders fixed (alignment editor).** The

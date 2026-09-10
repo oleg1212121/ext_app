@@ -1055,7 +1055,6 @@ class AlignEntitySentences implements ShouldQueue
                     $junctionModel::create([
                         $junctionColumn => $run[$offset]->id,
                         'en_ru_meaning_match_id' => $meaningMatch->id,
-                        'order' => 0,
                     ]);
                 }
             }
