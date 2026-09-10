@@ -19,7 +19,7 @@ sources:
 `ext_app` is a bilingual (English/Russian) language learning application. Its
 core loop: import real texts in both languages, align their sentences using
 embeddings, and let learners read side-by-side, look up dictionary entries,
-practice with crosswords, and get AI feedback on their own translations.
+practice reading translations of the same work, and get AI feedback on their own translations.
 
 # Repository layout
 
@@ -57,10 +57,9 @@ The repo root is a **Docker workspace**; the Laravel application lives in
 2. `routes/web.php` — everything except `/` is behind the `auth` middleware
    (Laravel Breeze stack, see `routes/auth.php`).
 3. Controllers return **Inertia responses** (`Inertia::render(...)`) rendering
-   React pages from `resources/js/Pages/`, or Blade views for the two legacy
-   Livewire components.
+   React pages from `resources/js/Pages/`.
 4. POST endpoints under the same `auth` group serve the interactive features
-   (AI questions, text pagination, crossword generation, dictionary saving).
+   (AI questions, text pagination).
 
 # Version truth
 

@@ -172,7 +172,7 @@
             @foreach([
                 'a' => ['label' => $this->sideLabel('a'), 'rows' => $this->visibleUnmatchedA, 'total' => $this->unmatchedATotal, 'page' => $this->unmatchedAPage, 'lastPage' => $this->unmatchedALastPage, 'action' => 'goToUnmatchedAPage'],
                 'b' => ['label' => $this->sideLabel('b'), 'rows' => $this->visibleUnmatchedB, 'total' => $this->unmatchedBTotal, 'page' => $this->unmatchedBPage, 'lastPage' => $this->unmatchedBLastPage, 'action' => 'goToUnmatchedBPage'],
-            ] as $lang => $panel)
+            ] as $side => $panel)
                 <div class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
                     <div class="p-4">
                         <h3 class="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-200">

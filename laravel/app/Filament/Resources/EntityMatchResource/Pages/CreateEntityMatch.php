@@ -4,10 +4,10 @@ namespace App\Filament\Resources\EntityMatchResource\Pages;
 
 use App\Filament\Resources\EntityMatchResource;
 use App\Jobs\AlignEntitySentences;
+use App\Models\Entity;
 use App\Models\EntityMatch;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
-use Illuminate\Support\Facades\DB;
 
 class CreateEntityMatch extends CreateRecord
 {
@@ -15,54 +15,28 @@ class CreateEntityMatch extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $aId = min((int) $data['first_entity_id'], (int) $data['second_entity_id']);
-        $bId = max((int) $data['first_entity_id'], (int) $data['second_entity_id']);
+        $first = Entity::query()->find((int) ($data['first_entity_id'] ?? 0));
+        $second = Entity::query()->find((int) ($data['second_entity_id'] ?? 0));
+
+        if ($first === null || $second === null
+            || $first->work_id !== $second->work_id
+            || $first->language_id === $second->language_id) {
+            Notification::make()
+                ->title('Entities must be from the same work in different languages.')
+                ->danger()
+                ->send();
+
+            $this->halt();
+        }
 
         unset($data['first_entity_id'], $data['second_entity_id']);
 
         return [
             ...$data,
-            'a_entity_id' => $aId,
-            'b_entity_id' => $bId,
+            'a_entity_id' => min($first->id, $second->id),
+            'b_entity_id' => max($first->id, $second->id),
             'status' => 'pending',
         ];
-    }
-
-    protected function beforeCreate(): void
-    {
-        $data = $this->form->getRawState();
-
-        $this->validatePair((int) $data['first_entity_id'], (int) $data['second_entity_id']);
-    }
-
-    private function validatePair(int $firstEntityId, int $secondEntityId): void
-    {
-        $entities = \App\Models\Entity::query()->whereIn('id', [$firstEntityId, $secondEntityId])->get()->keyBy('id');
-
-        $first = $entities->get($firstEntityId);
-        $second = $entities->get($secondEntityId);
-
-        if ($first === null || $second === null) {
-            $this->halt();
-        }
-
-        if ($first->work_id !== $second->work_id) {
-            Notification::make()
-                ->title('Both entities must belong to the same work.')
-                ->danger()
-                ->send();
-
-            $this->halt();
-        }
-
-        if ($first->language_id === $second->language_id) {
-            Notification::make()
-                ->title('Both entities must be in different languages.')
-                ->danger()
-                ->send();
-
-            $this->halt();
-        }
     }
 
     protected function afterCreate(): void

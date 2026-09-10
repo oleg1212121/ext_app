@@ -8,6 +8,8 @@ use Illuminate\Console\Command;
 
 class GenerateEntitySignaturesCommand extends Command
 {
+    protected $signature = 'entity:generate-signatures';
+
     protected $description = 'Generate signatures for entities that have files but no signature';
 
     public function handle(): int

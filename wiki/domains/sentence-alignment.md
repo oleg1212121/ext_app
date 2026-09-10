@@ -1,12 +1,11 @@
 ---
 type: Pipeline
 title: Sentence Alignment Pipeline
-description: Embedding-based pipeline that aligns EN and RU texts into sentence-level meaning matches, plus the manual editor.
+description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor.
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
-stale_after: 2026-10-26
+stale_after: 2026-12-10
 generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
-verified: { by: human:alex, at: 2026-08-03T19:30:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -33,12 +32,28 @@ sources:
 
 # Purpose
 
-Given an `EnEntity` and a `RuEntity` (the same text in two languages), produce
-sentence-level correspondences: which EN sentence(s) express which RU
-sentence(s). The output powers the
-[Bilinguals Simulator](/domains/bilinguals-simulator.md) and
+Given an `EntityMatch` — two entities of the **same work in different
+languages** (stored canonically `a_entity_id < b_entity_id`; the original side
+is derived from the work, see below) — produce sentence-level correspondences:
+which a-side sentence(s) express which b-side sentence(s). The output powers
+the [Bilinguals Simulator](/domains/bilinguals-simulator.md) and
 [Reader](/domains/reader.md). Tables involved:
 [Entities & Alignment](/database/entities-alignment.md).
+
+**Sides, not languages.** Since ADR
+[0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md) the
+whole chain is language-neutral: everything below names the two texts **a** and
+**b** — `entity_matches` cursor/count columns
+(`a_total_sentences`/`b_total_sentences`,
+`a_last_sentence_offset`/`b_last_sentence_offset`), the python `/align`
+contract (`a_sentences`/`b_sentences`, match spans
+`a_start`/`a_end`/`b_start`/`b_end`, skip steps `skip_a`/`skip_b`, unmatched
+`unmatched_a`/`unmatched_b`), and the `sentence_meaning_matches.side` column
+(`'a'`/`'b'`). The work's original side is **derived, never stored**:
+`EntityMatch::originalSide()` compares each side's `language_id` to
+`works.original_language_id` and returns `'a'`, `'b'`, or `null` when neither
+side is the original language (two translations of a third-language original —
+first-class pairs).
 
 # Stages
 
@@ -47,15 +62,18 @@ sentence(s). The output powers the
    endpoint (UTF-8-safe cut + raw-remainder stitching, so chunk seams are
    seamless: incomplete trailing UTF-8 bytes are held back
    (`carryIncompleteTrailingBytes`) and re-prefixed to the next chunk) and
-   writes `EnEntitySentence` / `RuEntitySentence` rows with **sparse orders
+   writes `EntitySentence` rows with **sparse orders
    from birth** (`SparseOrderService::initial($index)` → 0, 1024, 2048, …;
    the splitter takes `SparseOrderService` via constructor injection). This
    matters downstream: with dense 1,2,3… orders every editor
    insert/reorder exhausts the midpoint gap and falls through to a full-list
    rebalance, whereas sparse-from-creation lets a reorder write only the
    moved row. Existing dense lists are repaired by `entity-orders:rebalance`
-   (daily schedule, or run manually). (`SplitEntityFileSentences` job;
-   `ProcessEntityFile` orchestrates file ingestion.) Splitting itself (pysbd + title heuristics ported from the old
+   (daily schedule, or run manually). (`SplitEntityFileSentences` job —
+   takes `(entityId, filePath)`, reads the language from the entity and sends
+   its code to python as the `language` field; `ProcessEntityFile`
+   orchestrates file ingestion, also `(entityId, filePath)`.) Splitting
+   itself (pysbd + title heuristics ported from the old
    PHP splitter) lives in python `ai/splitting/`. The python splitter hands
    pysbd buffered prose with **newlines selectively flattened**:
    `TypedSentenceSplitter::flush_buffer` joins buffered lines with `\n`, then
@@ -81,27 +99,29 @@ sentence(s). The output powers the
    splitter over the exact production entity fixtures for both languages plus
    a curly-quote dialogue block; fails under either extreme behavior).
 2. **Sign** — `TextSignatureService` builds an embedding-based signature per
-   entity (`GenerateEntitySignature` job) via `/embed` (**BGE-M3, 1024-dim**).
+   entity (`GenerateEntitySignature` job — `(entityId, filePath)`, language
+   code read from the entity) via `/embed` (**BGE-M3, 1024-dim**; the request
+   carries the entity's language code).
    `verifyEntityPair()` rejects pairs whose cosine similarity < **0.70** before
    alignment is attempted.
 3. **Align** — `AlignEntitySentences::beginFromScratch($entityMatchId)` (the
     fresh-entry-point shared static) verifies the
     pair, snapshots counts, resets the cursor
-   (`last_en_sentence_offset`/`last_ru_sentence_offset` on
-   `EnRuEntityMatch`), transitions `pending → aligning`, and dispatches the
+   (`a_last_sentence_offset`/`b_last_sentence_offset` on
+   `EntityMatch`), transitions `pending → aligning`, and dispatches the
    first `AlignEntitySentences` job. Each `handle()` invocation reads the
-   cursor from the model, slices one chunk of EN and RU sentences
-   **sequentially** (RU offset = EN offset, no overlap), POSTs them to
+   cursor from the model, slices one chunk of a-side and b-side sentences
+   **sequentially** (b offset = a offset, no overlap), POSTs them to
    `/align` via `SentenceAlignmentService::alignChunkRemote()`
    (`services.python.align_timeout`, default 600), and writes the result via
-   `storeAlignmentSegmentFromMatches()` (one `EnRuMeaningMatch` per DP step +
-   `EnSentenceMeaningMatch`/`RuSentenceMeaningMatch` junction rows). The job
+   `storeAlignmentSegmentFromMatches()` (one `MeaningMatch` per DP step +
+   `SentenceMeaningMatch` junction rows carrying `side` `'a'`/`'b'`). The job
    commits only matches up to and including the **last confident anchor**
    (score ≥ `ANCHOR_SCORE_THRESHOLD` = 0.40): the DP force-aligns every
    sentence in the window, so the tail near the chunk seam can be garbage
    (5:1 then 1:5 at the seam) — dropping it and advancing the cursor to the
-   anchor's `en_end`/`ru_end` (not the full chunk size) lets the next
-   invocation re-align that tail with the correct RU context now in-window
+   anchor's `a_end`/`b_end` (not the full chunk size) lets the next
+   invocation re-align that tail with the correct b-side context now in-window
    (a port of `BilingualAligner._trim_to_last_anchor`). With no anchor the
     whole chunk is committed to guarantee forward progress; on the final
     chunk (both windows reach their totals) everything is committed and the
@@ -115,51 +135,57 @@ sentence(s). The output powers the
     forward context (see ADR 0004). Only matches with junction rows on both
     sides are candidates; skip steps and human-edit rows
     (`alignment_chunk = -1`) are never rolled back. A monotone-cursor safety
-    net force-advances EN past the stored offset if a rolled-back commit would
-    otherwise not move forward. `alignment_chunk` on meaning matches is a
-    monotonic per-run id (`MAX + 1`, never the human-edit `-1` sentinel), so
-    a re-run cannot wipe a previously committed chunk. If sentences remain
-    the job `self::dispatch()`es the next invocation, otherwise the entity
-    match flips to `completed`. Job timeout 600s, `tries=5` with backoff
-    `[30, 60, 120, 300]` to heal transient python failures; `failed()` is
-    terminal and leaves the cursor untouched so a future resume can continue.
-    The standalone `AlignEntitySentenceChunk` job and the `Bus::chain()` fan-out
-    were replaced by this single self-restarting job — see ADR 0003 / 0004.
-    Small entities (`max(en_total, ru_total) ≤ 75`) are raised to a single
-    chunk in `beginFromScratch()`, so the seam rollback/trim machinery is
-    skipped for them entirely.
-    Completion funnels through a single gate (`AlignEntitySentences::finalize()`,
-    Aug 2026): before the match flips to `completed`, every sentence on the
-    **original side** (`en_ru_entity_matches.is_original_en` — the language the
-    text was authored in) that is still junction-less — dropped by an
-    empty-commit seam, left over when the translation side was exhausted, or
-    skipped during a re-align — is junctioned into a **single-sided meaning
-    match** (`similarity 0.0`, next machine `alignment_chunk` id), ordered
-    positionally (`SparseOrderService::spreadOrders` between the neighbouring
-    junctioned anchors) so the reader's meaning-match sequence preserves the
-    original document order. The repair is best-effort: if it fails, a warning
-    is logged and completion proceeds regardless. `storeSkipSentences()` on
-    `SentenceAlignmentService` persists single-sided rows, and the crawl's
-    empty-commit seams (`alignWholePool`, `alignPoolChunk`) use it to junction
-    the first uncommitted original sentence instead of silently advancing past
-    it. "RU sentences exhausted before EN" is a normal completion now, not an
-    error: the remaining original tail is drained as single-sided rows. This is
-    the **original completeness** invariant — original sentences are never
-    unmatched; only translation-side sentences may be junction-less (the
-    editor's unmatched section).
+    net force-advances the a side past the stored offset if a rolled-back
+    commit would otherwise not move forward. `alignment_chunk` on meaning
+    matches is a monotonic per-run id (`MAX + 1`, never the human-edit `-1`
+    sentinel), so a re-run cannot wipe a previously committed chunk. If
+    sentences remain the job `self::dispatch()`es the next invocation,
+    otherwise the entity match flips to `completed`. Job timeout 600s,
+    `tries=5` with backoff `[30, 60, 120, 300]` to heal transient python
+    failures; `failed()` is terminal and leaves the cursor untouched so a
+    future resume can continue. The standalone `AlignEntitySentenceChunk` job
+    and the `Bus::chain()` fan-out were replaced by this single
+    self-restarting job — see ADR 0003 / 0004. Small entities
+    (`max(a_total, b_total) ≤ 75`) are raised to a single chunk in
+    `beginFromScratch()`, so the seam rollback/trim machinery is skipped for
+    them entirely.
+    Completion funnels through a single gate
+    (`AlignEntitySentences::finalize()`, Aug 2026): before the match flips to
+    `completed`, every sentence on the **covered sides** that is still
+    junction-less — dropped by an empty-commit seam, left over when the other
+    side was exhausted, or skipped during a re-align — is junctioned into a
+    **single-sided meaning match** (`similarity 0.0`, next machine
+    `alignment_chunk` id), ordered positionally
+    (`SparseOrderService::spreadOrders` between the neighbouring junctioned
+    anchors) so the reader's meaning-match sequence preserves the original
+    document order. The covered sides come from `skipSides()`: the work's
+    original side (`EntityMatch::originalSide()` — the language the text was
+    authored in); **when neither side is the original language
+    (translation↔translation pair), BOTH sides are repaired**. The repair is
+    best-effort: if it fails, a warning is logged and completion proceeds
+    regardless. `storeSkipSentences()` on `SentenceAlignmentService` persists
+    single-sided rows (side parameter `'a'|'b'`), and the crawl's empty-commit
+    seams (`alignWholePool`, `alignPoolChunk`) use it to junction the first
+    uncommitted covered-side sentence instead of silently advancing past it.
+    "One side's sentences exhausted before the other's" is a normal
+    completion now, not an error: the remaining covered-side tail is drained
+    as single-sided rows. This is the **original completeness** invariant —
+    original-side sentences are never unmatched (both sides when neither is
+    the original); only non-original translation-side sentences may be
+    junction-less (the editor's unmatched section).
 3. **Align (precision knobs, Aug 2026)** — the python DP no longer
     force-aligns every sentence. Two live knobs
     (`docker-compose/python/env/.env`, apply on the next request):
     - **Skip branch** — `ALIGN_SKIP_PENALTY` (per-sentence cost of consuming
       a sentence without emitting a match; default `-0.5`). Edges that consume
-      only EN or only RU sentences are now legal DP transitions, so a sentence
-      with no counterpart is **skipped** (reported in `unmatched_en` /
-      `unmatched_ru`) instead of being force-matched into a <0.6 garbage
+      only a-side or only b-side sentences are now legal DP transitions, so a
+      sentence with no counterpart is **skipped** (reported in `unmatched_a` /
+      `unmatched_b`) instead of being force-matched into a <0.6 garbage
       meaning match. The php gap-filling in `SentenceAlignmentService`
-      converts those gaps to the existing `skip_en` / `skip_ru` steps, so no
+      converts those gaps to the existing `skip_a` / `skip_b` steps, so no
       new persistence path was needed.
     - **Span cap** — `ALIGN_MAX_TOTAL_SPAN` (default `6`) rejects match edges
-      whose `en_step + ru_step` exceeds the cap, dropping 1:5 / 5:1 spans.
+      whose `a_step + b_step` exceeds the cap, dropping 1:5 / 5:1 spans.
     - `ALIGN_DEFAULT_THRESHOLD` raised `0.4 → 0.55` (MiniLM calibration; a
       live histogram of `meaning_match.similarity` showed a long garbage tail
       below ~0.55). Sub-threshold windows are now skipped rather than matched.
@@ -200,13 +226,13 @@ sentence(s). The output powers the
       auto-committed the moment it clears the bar**, it must beat the other
       window combos up to `primary` — and if nothing in the primary set clears,
       the search widens one step per side up to `max_window`
-      (`ALIGN_MAX_TOTAL_SPAN` still bounds `en_step + ru_step`). Otherwise skip
+      (`ALIGN_MAX_TOTAL_SPAN` still bounds `a_step + b_step`). Otherwise skip
       the side whose best 1:1 partner within lookahead is weaker (the DP's skip
       semantics, localized). **Orphan-merge post-pass (Aug 2026)** — a locked
       anchor can be the head of a genuine multi-sentence window: the pooled
       window scores higher than the 1:1 but is never evaluated because the
       anchor pre-commits and the cursor jumps past it, leaving the tail as
-      orphans (EN0↔RU0 1:1 at 0.701 pre-commits while the pooled EN0:2↔RU0
+      orphans (A0↔B0 1:1 at 0.701 pre-commits while the pooled A0:2↔B0
       scores 0.743 — exactly the pattern fusions produce, a partial 1:1 anchor
       + adjacent orphan). After the anchor/gap pass, `_merge_orphans` walks the
       matches and, for any match whose following gap has orphans on exactly one
@@ -248,7 +274,7 @@ sentence(s). The output powers the
     - `landmarks` (`list[AlignLandmark]`, default `[]`) — hard landmark pins
       (plan 06): human-made committed matches with `score 1.0` that split
       sub-pools and can never be crossed by machine output. Pins carry only
-      the four index spans (`en_start`/`en_end`/`ru_start`/`ru_end`); invalid
+      the four index spans (`a_start`/`a_end`/`b_start`/`b_end`); invalid
       pins (crossing/out-of-range/zero-length) → 422.
     `window_embed` rejects invalid values with 422; `high_confidence` is bounded
     `[0,1]`, `band_width` `[1,50]`.
@@ -297,10 +323,10 @@ sentence(s). The output powers the
       normalized (and the `_match` diagnostic text).
 3. **Align (diagonal banding, Plan 04, Aug 2026)** — per-sub-pool **match
     edges** are restricted to a diagonal band around the expected length-ratio
-    line. Inside each sub-pool the expected ratio is `k = len(sub_en) /
-    len(sub_ru)` and a cell `(i, j)` is in-band when
-    `abs(j * k - i) <= band` (`_band_allowed`); the half-width comes from the
-    live `band_width` knob (`ALIGN_BAND_WIDTH`, default unset → derived per
+    line. Inside each sub-pool the expected ratio is
+    `k = len(a-side pool) / len(b-side pool)` and a cell `(i, j)` is in-band
+    when `abs(j * k - i) <= band` (`_band_allowed`); the half-width comes from
+    the live `band_width` knob (`ALIGN_BAND_WIDTH`, default unset → derived per
     sub-pool as `max(2, max_window)`). Effects:
     - **DP** (`_align_chunk`): match edges are gated by their **start cell** —
       an edge is only considered when `(i, j)` is in-band. Skip edges stay
@@ -312,9 +338,10 @@ sentence(s). The output powers the
     - **Greedy** (`_align_chunk_greedy`): the internal `anchor_threshold`
       anchors (`_find_anchors`), the gap window ladder (`_best_window_pair`,
       gated on the window **centers**
-      `abs((j + ru_step/2)*k - (i + en_step/2)) <= band`, and steps that can
+      `abs((j + b_step/2)*k - (i + a_step/2)) <= band`, and steps that can
       pair into no in-band combo are never embedded), and the skip decision
-      (`_should_skip_en`, whose lookahead slices are clamped to in-band cells)
+      (`_should_skip_en` — historical name; it governs the first/a side,
+      whose lookahead slices are clamped to in-band cells)
       are all banded. When the cursor is out of the band on both axes, the
       walk skips toward the expected diagonal (`return j * k > i`) so it
       re-enters the band instead of drifting.
@@ -372,21 +399,21 @@ sentence(s). The output powers the
 3. **Align (landmark pins, Plan 06, Aug 2026)** — `/align` accepts hard
     **landmark pins** (`landmarks: list[AlignLandmark]`): human-made committed
     matches given as index spans into the submitted lists
-    (`{en_start, en_end, ru_start, ru_end}`, no `score` — pins are always
+    (`{a_start, a_end, b_start, b_end}`, no `score` — pins are always
     emitted with score 1.0). On re-align the PHP side (plan 07+) passes the
     human-edited rows as pins so the machine can never produce output that
     crosses or overlaps them. Semantics in `BilingualAligner`:
     - **Validation** (`_validate_pins`, called from `_align_pair` against the
       submitted list lengths) rejects — with `ValueError`, translated to 422
-      by `api/align.py` — pins that are zero-length (`en_end <= en_start` or
-      `ru_end <= ru_start`), out of range, or that **cross/overlap** another
-      pin (sorted by `en_start`, any pin whose EN or RU span intersects the
-      previous pin's is rejected; a pin that merely shares a sentence is
+      by `api/align.py` — pins that are zero-length (`a_end <= a_start` or
+      `b_end <= b_start`), out of range, or that **cross/overlap** another
+      pin (sorted by `a_start`, any pin whose a-side or b-side span intersects
+      the previous pin's is rejected; a pin that merely shares a sentence is
       contradictory and cannot both be honored). Pins are pairwise disjoint by
       construction, so the boundary union stays sorted and non-crossing.
     - **Prepass skip** — `_prepass_anchors` drops any high-confidence anchor
-      cell inside a pin's rectangle (`range(en_start,en_end) ×
-      range(ru_start,ru_end)`): a pin owns its cells, the prepass never
+      cell inside a pin's rectangle (`range(a_start,a_end) ×
+      range(b_start,b_end)`): a pin owns its cells, the prepass never
       proposes an anchor inside one.
     - **Sub-pool boundaries** — `_align_with_anchors` builds the union of pins
       + prepass anchors as the sub-pool boundaries: pins delimit the top-level
@@ -402,14 +429,14 @@ sentence(s). The output powers the
     emitted verbatim with score 1.0 (both algorithms); the prepass skips pinned
     cells and **no machine match overlaps a pin** (a strong 1:2 pin that would
     otherwise lure the machine into its rectangle); pinned indices are excluded
-    from `unmatched_en`/`unmatched_ru`; and crossing / out-of-range /
+    from `unmatched_a`/`unmatched_b`; and crossing / out-of-range /
     zero-length pins are rejected (`ValueError` → 422 via the API).
 3. **Align (landmark passthrough, Plan 07, Aug 2026)** — the PHP alignment
     client now accepts the Python knobs:
-    `SentenceAlignmentService::alignChunkRemote($en, $ru, $maxN = 3,
-    array $landmarks = [], ?float $highConfidence = null)` passes them to
-    `/align` as `landmarks` (list of `{en_start, en_end, ru_start, ru_end}`
-    ints) and `high_confidence`. When neither is given the payload is
+    `SentenceAlignmentService::alignChunkRemote($aSentences, $bSentences,
+    $maxN = 3, array $landmarks = [], ?float $highConfidence = null)` passes
+    them to `/align` as `landmarks` (list of `{a_start, a_end, b_start,
+    b_end}` ints) and `high_confidence`. When neither is given the payload is
     **byte-identical to the previous shape** (no `landmarks`/`high_confidence`
     keys are sent), so existing callers and the request format are untouched.
     `AlignEntitySentences` reserves `LANDMARK_THRESHOLD = 0.90` (inert until
@@ -424,7 +451,7 @@ sentence(s). The output powers the
     (`alignment_chunk = -1`) and high-confidence auto-landmarks
     (`similarity >= 0.90`) pinned in place, resets the cursor, and
     re-dispatches. Matches that never went through the fresh setup
-    (`en_total_sentences` is null) delegate to `beginFromScratch()`. `handle()`
+    (`a_total_sentences` is null) delegate to `beginFromScratch()`. `handle()`
     is now **pool-aware**: `landmarkRows()` collects every landmark (human +
     auto), `landmarkBounds()` turns them into non-overlapping pools (a 1:N
     landmark span merges into one boundary; bounds clamp to the snapshot
@@ -464,7 +491,7 @@ sentence(s). The output powers the
     below the bar) and what it keeps (both tiers). "Run from scratch"
     deletes both tiers.
 3. **Align (split Filament actions, Plan 09, Aug 2026)** — the single
-    destructive **Re-run** table action on the `EnRuEntityMatch` resource is
+    destructive **Re-run** table action on the `EntityMatch` resource is
     replaced by two explicit confirmation actions, both visible only for
     `status ∈ {completed, failed}`:
     - **Re-align** (`realign`, warning) — calls `begin()`: preserves
@@ -487,26 +514,32 @@ sentence(s). The output powers the
    `DB_QUEUE_RETRY_AFTER=900` so the database queue does not re-lease a
    long-running chunk to a second worker mid-flight.
 5. **Order** — sentences and matches carry sparse order values managed by
-   `SparseOrderService`; `entity-orders:rebalance` runs **daily** (see
-   `routes/console.php`).
+   `SparseOrderService`; `entity-orders:rebalance` (language-agnostic since
+   the unified schema — it scopes `entity_sentences` and `meaning_matches`
+   directly, no `--lang`) runs **daily** (see `routes/console.php`).
 6. **Review** — humans fix machine output in the Filament
-    `EnRuEntityMatch` resource's custom `EditEntityAlignment` page (kept as-is),
-    or in the new Inertia/React **Alignments editor**: `/alignments` (pair list)
+    `EntityMatch` resource's custom `EditEntityAlignment` page (one merged
+    resource since ADR 0018 — side-based draft props with language-name
+    labels via `sideLabel()`, falling back to the side letter), or in the new
+    Inertia/React **Alignments editor**: `/alignments` (pair list)
     → `/alignments/{id}` (pair editor), linked from the NavBar. The pair list
     has a **"+ Create new"** button → `/alignments/create`
     (`AlignmentController@create`/`@store`, routes `alignments.create`/
-    `alignments.store`): a React form picking an EN and an RU entity (each
-    select filtered to entities that are **readable by the user**, signed
-    (`signature` not null), and non-empty), an "Original text" radio
-    (`is_original_en`), and the Filament-parity `chunk_size` (25–100, default
-    75) + `max_n` (1–8, default 6). A link under each select opens the entity
-    create page (`/entities/{lang}/create`) in the same tab to create a new
-    entity in place. Store creates the match (`status='pending'`), dispatches
-    `AlignEntitySentences::beginFromScratch($id)`, and redirects to the list
-    with a flash; a duplicate `(en_entity_id, ru_entity_id)` pair is blocked
-    with an error plus a "Open existing match" link (flash
-    `existing_match_id`), and creating a match involving an entity the user
-    cannot read is `403`. The editor is a
+    `alignments.store`): a **work-first** React form — pick a work, then the
+    two entities (`first_entity_id` / `second_entity_id`; each work's eligible
+    entities are grouped by language and the second select excludes the
+    first's language). Entities are eligible when **readable by the user**,
+    signed (`signature` not null), and non-empty; only works with entities in
+    ≥2 languages appear. There is no "original text" radio — the original
+    language lives on the work. The form also carries the Filament-parity
+    `chunk_size` (25–100, default 75) + `max_n` (1–8, default 6). Store
+    validates **same work + different languages**, canonicalizes the pair
+    order (lower id = a side, so the `unique(a_entity_id, b_entity_id)`
+    constraint covers both orders), creates the match (`status='pending'`),
+    dispatches `AlignEntitySentences::beginFromScratch($id)`, and redirects
+    to the list with a flash; a duplicate pair is blocked with an error plus
+    a "Open existing match" link (flash `existing_match_id`), and creating a
+    match involving an entity the user cannot read is `403`. The editor is a
     parallel entry point backed by the surgical `AlignmentEditorController`
     endpoints — create/delete pair, approve pair (set `similarity = 1.0` +
     `alignment_chunk = -1`, promoting a row to a hard landmark), add/edit/
@@ -515,35 +548,39 @@ sentence(s). The output powers the
      unmatched pool; every drop into a row renumbers document order) — with
      immediate persistence, sparse orders via
     `SparseOrderService`, and JSON payloads shaped by `AlignmentEditorApiPresenter`
-    (`rows` + `unmatched` pagination, `last_page` included; the rows table's
-    `Pagination` component shows Prev/Next + numbered page buttons with ellipsis
-    and a custom per-page dropdown). Client-side, a mutation response carrying
+    (rows carry `a_sentences`/`b_sentences` per row; `rows` + per-side
+    `unmatched_a`/`unmatched_b` pools with pagination, `last_page` included;
+    the rows table's `Pagination` component shows Prev/Next + numbered page
+    buttons with ellipsis and a custom per-page dropdown). Client-side, a
+    mutation response carrying
     new rows inserts them **by anchor row id**, not a precomputed array index:
     `Show.jsx`'s `runMutation(request, insertAfterRowId)` remembers the anchor
     row and `applyMutation` splices the new row after it at response time.
     (The previous scheme read an index assigned inside a `setState` updater
     synchronously after the dispatch — React 19 evaluates updaters eagerly
     only on the first dispatch after mount, so every later "Create below"
-    landed at the top of the page until refresh.) **Every endpoint is gated first by
-    `EntityAccessService::canReadMatch($user, $entityMatch)`** — a non-granted user
-    (who cannot read BOTH the EN and RU entities) receives `403` on every read and
-    mutation, so a restricted match is neither visible nor mutable in the editor.
-    Below the unmatched pool, the editor shows a
+    landed at the top of the page until refresh.) **Every endpoint is gated
+    first by `EntityAccessService::canReadMatch($user, $entityMatch)`** — a
+    non-granted user (who cannot read BOTH entities of the match) receives
+    `403` on every read and mutation, so a restricted match is neither
+    visible nor mutable in the editor.
+    Below the unmatched pools, the editor shows a
     collapsible **Needs review** section (collapsed by default) listing meaning
     matches a human should inspect: rows whose `similarity < 0.55`
     (`AlignmentEditorApiPresenter::LOW_SIMILARITY_THRESHOLD`) or that are
     **one-sided** (junctions on exactly one side, any similarity — see the
     original-completeness repair above). Each row shows its `#order`,
-    `similarity`, EN/RU parts, a `1-sided` badge, and a `→ p. N` marker; clicking
-    it jumps the editor's rows table to the exact page (`ceil(rank / per_page)`,
-    the server returns page-independent per-row `rank`) and briefly highlights
-    the row (client-side scroll, no URL change). Paginated 25/page via
+    `similarity`, both sides' text, a `1-sided` badge, and a `→ p. N` marker;
+    clicking it jumps the editor's rows table to the exact page
+    (`ceil(rank / per_page)`, the server returns page-independent per-row
+    `rank`) and briefly highlights the row (client-side scroll, no URL
+    change). Paginated 25/page via
     `GET /alignments/{entityMatch}/needs-review`
-    (`AlignmentEditorController::needsReview`, `NeedsReviewRequest`); the section
-    refetches its current page after every editor mutation. The editor honors
-    the drop position: dragging a sentence — within a row, across rows, or
-    from the unmatched pool into a row — renumbers its document order
-    (`*_entity_sentences.order`) via
+    (`AlignmentEditorController::needsReview`, `NeedsReviewRequest`); the
+    section refetches its current page after every editor mutation. The
+    editor honors the drop position: dragging a sentence — within a row,
+    across rows, or from an unmatched pool into a row — renumbers its
+    document order (`entity_sentences.order`) via
     `AlignmentEditorController::placeSideSentence`, which picks the new order
     from the side's **global document order** (midpoint between the sorted
     neighbours, not just the destination row's pair) and rebalances the sparse
@@ -578,20 +615,20 @@ sentence(s). The output powers the
       fifth/final form; supersedes the pointer-edge and live-preview
       amendments). A drop into a column holding no sentences lands at
       position 0. A drop into a row
-     that is empty on that language side places the sentence between the
+     that is empty on that side places the sentence between the
      closest populated rows. Consequence: a drag edits the document a later
     Re-align consumes; the per-sentence badge keeps showing the global
     document rank. Each row still shows the raw `order` of its sentences.
-    Once a run lands,
-    the Filament list's **Re-align** / **Run from scratch** actions (Plan 09)
-    restart it — preserving or wiping the human work respectively. Re-align
-    deletes non-landmark machine rows and re-creates them in document order —
-    the drag-edited order is that input, so a manual re-sequencing survives a
-    re-align as the input order while the grouping of non-approved rows may
-    be re-derived.
+    Once a run lands, the Filament list's **Re-align** / **Run from
+    scratch** actions (Plan 09) restart it — preserving or wiping the human
+    work respectively. Re-align deletes non-landmark machine rows and
+    re-creates them in document order — the drag-edited order is that input,
+    so a manual re-sequencing survives a re-align as the input order while
+    the grouping of non-approved rows may be re-derived.
 7. **Sentence editing** — individual entity sentences can be created, edited,
-   deleted, and reordered from the *Sentences* tab on each `EnEntity` /
-   `RuEntity` edit page. The relation manager uses `SparseOrderService` to keep
+   deleted, and reordered from the *Sentences* tab on each entity's edit page
+   in the Filament `EntityResource` (one merged resource with language and
+   work selects). The relation manager uses `SparseOrderService` to keep
    insertions efficient; deleting a sentence cleans up any now-empty meaning
    matches.
 
@@ -654,6 +691,8 @@ sentence(s). The output powers the
 * Endpoints: `/health`, `/embed`, `/embed/batch`, `/cosine/batch`, `/split`,
   `/align` (see `docker-compose/python/ai/main.py` + `ai/api/`). Heavy
   endpoints are sync (`def`) so a long `/align` does not starve `/health`.
+  The `/embed` and `/split` requests carry the entity's language code from
+  Laravel (`language` field).
 * Python writes **nothing** to Postgres — Laravel owns all DB writes.
 * Laravel talks to it via `services.python.url` (default
   `http://ext_python:8000`) with retries at 500/1500/3000 ms; keys:
@@ -662,9 +701,9 @@ sentence(s). The output powers the
 * `TextSignatureService` also exposes `hasSimilar()` / `findCrossLanguage()`
   for duplicate detection (`services.python.has_similar_batch_size`, 200).
 * Signatures from the old e5-small service are 384-dim and incompatible —
-  regenerate: `UPDATE en_entities SET signature = NULL;` (and `ru_entities`),
-  then `php artisan entity:generate-signatures`. (Signature dimension is still
-  1024 — BGE-M3 — and is independent of the aligner model.)
+  regenerate: `UPDATE entities SET signature = NULL;`, then `php artisan
+  entity:generate-signatures`. (Signature dimension is still 1024 — BGE-M3 —
+  and is independent of the aligner model.)
 
 # Operator workflow
 

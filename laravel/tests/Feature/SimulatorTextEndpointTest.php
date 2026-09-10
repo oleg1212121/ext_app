@@ -1,75 +1,70 @@
 <?php
 
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\EnSentenceMeaningMatch;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
-use App\Models\RuSentenceMeaningMatch;
+use App\Models\EntitySentence;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('returns paginated alignment rows for en_ru_entity_match_id', function () {
+it('returns paginated alignment rows for entity_match_id', function () {
     $user = User::factory()->create();
     $sentenceType = SentenceType::create(['name' => 'Narration']);
-    $enEntity = EnEntity::create(['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
-    $ruEntity = RuEntity::create(['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
 
-    $en1 = EnEntitySentence::create([
-        'en_entity_id' => $enEntity->id,
+    $en1 = EntitySentence::create([
+        'entity_id' => $enEntity->id,
         'sentence_type_id' => $sentenceType->id,
         'content' => 'First EN.',
         'order' => 1,
     ]);
-    $ru1 = RuEntitySentence::create([
-        'ru_entity_id' => $ruEntity->id,
+    $ru1 = EntitySentence::create([
+        'entity_id' => $ruEntity->id,
         'sentence_type_id' => $sentenceType->id,
         'content' => 'First RU.',
         'order' => 1,
     ]);
 
-    $entityMatch = EnRuEntityMatch::create([
-        'en_entity_id' => $enEntity->id,
-        'ru_entity_id' => $ruEntity->id,
-        'status' => 'completed',
-    ]);
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, ['status' => 'completed']);
 
-    $matchRow = EnRuMeaningMatch::create([
-        'en_ru_entity_match_id' => $entityMatch->id,
+    $matchRow = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id,
         'order' => 0,
         'similarity' => 0.95,
         'alignment_chunk' => 0,
     ]);
 
-    EnSentenceMeaningMatch::create([
-        'en_entity_sentence_id' => $en1->id,
-        'en_ru_meaning_match_id' => $matchRow->id,
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $en1->id,
+        'meaning_match_id' => $matchRow->id,
+        'side' => 'a',
     ]);
 
-    RuSentenceMeaningMatch::create([
-        'ru_entity_sentence_id' => $ru1->id,
-        'en_ru_meaning_match_id' => $matchRow->id,
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $ru1->id,
+        'meaning_match_id' => $matchRow->id,
+        'side' => 'b',
     ]);
 
-    $skipRow = EnRuMeaningMatch::create([
-        'en_ru_entity_match_id' => $entityMatch->id,
+    $skipRow = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id,
         'order' => 1,
         'similarity' => 0,
         'alignment_chunk' => 0,
     ]);
 
-    RuSentenceMeaningMatch::create([
-        'ru_entity_sentence_id' => $ru1->id,
-        'en_ru_meaning_match_id' => $skipRow->id,
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $ru1->id,
+        'meaning_match_id' => $skipRow->id,
+        'side' => 'b',
     ]);
 
     $response = $this->actingAs($user)->postJson('/text', [
-        'en_ru_entity_match_id' => $entityMatch->id,
+        'entity_match_id' => $entityMatch->id,
         'page' => 1,
         'per_page' => 1,
     ]);
@@ -86,7 +81,7 @@ it('returns paginated alignment rows for en_ru_entity_match_id', function () {
         ->and($rows[0])->toBe(['First EN.', 'First RU.']);
 
     $page2 = $this->actingAs($user)->postJson('/text', [
-        'en_ru_entity_match_id' => $entityMatch->id,
+        'entity_match_id' => $entityMatch->id,
         'page' => 2,
         'per_page' => 1,
     ]);
@@ -130,7 +125,7 @@ it('returns file-based rows when filename is provided without match id', functio
     }
 });
 
-it('requires filename or en_ru_entity_match_id', function () {
+it('requires filename or entity_match_id', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)->postJson('/text', [

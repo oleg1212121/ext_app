@@ -1,13 +1,10 @@
 <?php
 
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\EnSentenceMeaningMatch;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
-use App\Models\RuSentenceMeaningMatch;
+use App\Models\Entity;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -19,51 +16,53 @@ beforeEach(function () {
 });
 
 /**
- * @return array{en: EnEntity, ru: RuEntity, entityMatch: EnRuEntityMatch}
+ * @return array{en: Entity, ru: Entity, entityMatch: EntityMatch}
  */
 function createAlignedReaderEntities(): array
 {
-    $en = EnEntity::query()->create([
+    $work = createWork();
+
+    $en = createEntity('en', $work, [
         'name' => 'Test EN Entity',
         'file_path' => 'texts/simulator/test_en.txt',
     ]);
-    $ru = RuEntity::query()->create([
+    $ru = createEntity('ru', $work, [
         'name' => 'Test RU Entity',
         'file_path' => 'texts/simulator/test_ru.txt',
     ]);
 
-    $enSentence = EnEntitySentence::query()->create([
-        'en_entity_id' => $en->id,
+    $enSentence = EntitySentence::query()->create([
+        'entity_id' => $en->id,
         'content' => 'First EN sentence.',
         'order' => 1,
     ]);
-    $ruSentence = RuEntitySentence::query()->create([
-        'ru_entity_id' => $ru->id,
+    $ruSentence = EntitySentence::query()->create([
+        'entity_id' => $ru->id,
         'content' => 'First RU sentence.',
         'order' => 1,
     ]);
 
-    $entityMatch = EnRuEntityMatch::query()->create([
-        'en_entity_id' => $en->id,
-        'ru_entity_id' => $ru->id,
+    $entityMatch = createEntityMatch($en, $ru, [
         'status' => 'completed',
         'linked_count' => 1,
     ]);
 
-    $meaningMatch = EnRuMeaningMatch::query()->create([
-        'en_ru_entity_match_id' => $entityMatch->id,
+    $meaningMatch = MeaningMatch::query()->create([
+        'entity_match_id' => $entityMatch->id,
         'order' => 0,
         'similarity' => 1.0,
         'alignment_chunk' => 0,
     ]);
 
-    EnSentenceMeaningMatch::query()->create([
-        'en_entity_sentence_id' => $enSentence->id,
-        'en_ru_meaning_match_id' => $meaningMatch->id,
+    SentenceMeaningMatch::query()->create([
+        'entity_sentence_id' => $enSentence->id,
+        'meaning_match_id' => $meaningMatch->id,
+        'side' => 'a',
     ]);
-    RuSentenceMeaningMatch::query()->create([
-        'ru_entity_sentence_id' => $ruSentence->id,
-        'en_ru_meaning_match_id' => $meaningMatch->id,
+    SentenceMeaningMatch::query()->create([
+        'entity_sentence_id' => $ruSentence->id,
+        'meaning_match_id' => $meaningMatch->id,
+        'side' => 'b',
     ]);
 
     return [
@@ -93,7 +92,7 @@ test('reader react index redirects bare path to english route', function () {
 
 test('authenticated users can view reader react index with english entities', function () {
     $user = User::factory()->create();
-    $enEntity = EnEntity::query()->create([
+    $enEntity = createEntity('en', null, [
         'name' => 'Index EN Entity',
         'file_path' => 'texts/simulator/index_en.txt',
     ]);
@@ -112,7 +111,7 @@ test('authenticated users can view reader react index with english entities', fu
 
 test('authenticated users can view reader react index with russian entities', function () {
     $user = User::factory()->create();
-    $ruEntity = RuEntity::query()->create([
+    $ruEntity = createEntity('ru', null, [
         'name' => 'Index RU Entity',
         'file_path' => 'texts/simulator/index_ru.txt',
     ]);
@@ -188,13 +187,13 @@ test('missing reader react entity returns not found', function () {
 
 test('entity without alignment returns single language rows', function () {
     $user = User::factory()->create();
-    $en = EnEntity::query()->create([
+    $en = createEntity('en', null, [
         'name' => 'Unaligned EN Entity',
         'file_path' => 'texts/simulator/unaligned.txt',
     ]);
 
-    EnEntitySentence::query()->create([
-        'en_entity_id' => $en->id,
+    EntitySentence::query()->create([
+        'entity_id' => $en->id,
         'content' => 'Standalone EN sentence.',
         'order' => 1,
     ]);

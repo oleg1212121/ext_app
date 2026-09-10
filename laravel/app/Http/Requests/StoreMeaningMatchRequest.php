@@ -22,8 +22,8 @@ class StoreMeaningMatchRequest extends FormRequest
             'after_row_id' => [
                 'nullable',
                 'integer',
-                Rule::exists('en_ru_meaning_matches', 'id')->where(
-                    'en_ru_entity_match_id',
+                Rule::exists('meaning_matches', 'id')->where(
+                    'entity_match_id',
                     $this->route('entityMatch')->id,
                 ),
             ],

@@ -9,26 +9,26 @@ it('paginates meaning rows and unmatched sentences from draft data', function ()
 
     $draft = [
         'meaning_rows' => [],
-        'unmatched_en' => [],
-        'unmatched_ru' => [],
+        'unmatched_a' => [],
+        'unmatched_b' => [],
     ];
 
     for ($i = 1; $i <= 30; $i++) {
         $draft['meaning_rows'][] = [
             'key' => "mm-{$i}",
             'id' => $i,
-            'en_sentences' => [$presenter->sentencePayload($i, "EN {$i}", $i)],
-            'ru_sentences' => [$presenter->sentencePayload($i + 100, "RU {$i}", $i)],
+            'a_sentences' => [$presenter->sentencePayload($i, "EN {$i}", $i)],
+            'b_sentences' => [$presenter->sentencePayload($i + 100, "RU {$i}", $i)],
         ];
     }
 
     for ($i = 1; $i <= 20; $i++) {
-        $draft['unmatched_en'][] = $presenter->sentencePayload(200 + $i, "Unmatched EN {$i}", $i);
+        $draft['unmatched_a'][] = $presenter->sentencePayload(200 + $i, "Unmatched EN {$i}", $i);
     }
 
     $meaningPage1 = $store->paginateMeaningRows($draft, 1, 25);
     $meaningPage2 = $store->paginateMeaningRows($draft, 2, 25);
-    $unmatchedPage = $store->paginateUnmatched($draft, 'en', 2, 10);
+    $unmatchedPage = $store->paginateUnmatched($draft, 'a', 2, 10);
 
     expect($meaningPage1['total'])->toBe(30)
         ->and($meaningPage1['rows'])->toHaveCount(25)
@@ -41,7 +41,7 @@ it('paginates meaning rows and unmatched sentences from draft data', function ()
 it('stores and retrieves draft in session', function () {
     $store = app(AlignmentEditorDraftStore::class);
 
-    $store->put(1, 5, ['meaning_rows' => [], 'unmatched_en' => [], 'unmatched_ru' => []]);
+    $store->put(1, 5, ['meaning_rows' => [], 'unmatched_a' => [], 'unmatched_b' => []]);
 
     expect($store->get(1, 5))->toBeArray()
         ->and($store->get(2, 5))->toBeNull();

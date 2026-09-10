@@ -1,10 +1,11 @@
 ---
 type: Feature
 title: Bilinguals Simulator
-description: Side-by-side EN/RU reading trainer where users translate and get AI assessment of their translation.
+description: Side-by-side bilingual reading trainer where users translate and get AI assessment of their translation.
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
-generated: { by: agent:opencode, at: 2026-08-30T13:45:00Z }
+stale_after: 2026-12-10
+generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -16,10 +17,12 @@ sources:
 
 # What it does
 
-The simulator presents an English text and its Russian counterpart (produced by
-the [alignment pipeline](/domains/sentence-alignment.md)). The learner writes
-their own translation, then asks an AI model to assess it — meaning accuracy,
-grammar, corrections, and improved variants.
+The simulator presents a text and its aligned counterpart from another
+language (an `EntityMatch` produced by the
+[alignment pipeline](/domains/sentence-alignment.md) — any language pair of a
+work, not just EN/RU). The learner writes their own translation, then asks an
+AI model to assess it — meaning accuracy, grammar, corrections, and improved
+variants.
 
 # Entry points
 
@@ -28,6 +31,7 @@ grammar, corrections, and improved variants.
 | `/bilinguals/en/ru/simulator` | GET | `SimulatorController::simulator` | Inertia page `Bilinguals/Bilinguals` |
 | `/text` | POST | `SimulatorController::text` | Paginated aligned text content (JSON) |
 | `/ai/question` | POST | `SimulatorController::askAi` | Ask an AI model about the text (JSON), named `ai.question` |
+| `/ai/question/stream` | POST | `SimulatorController::askAiStreamed` | SSE-streamed variant, named `ai.question.stream` |
 
 # Key behavior
 
@@ -35,19 +39,20 @@ grammar, corrections, and improved variants.
   prompt**. The default model is computed by `AIModelResolver::firstModelKey()`
   — the globally cheapest model **available to the signed-in user** (enabled
   provider + a User key they stored), sorted by price and grouped by provider.
-  When the user has no stored keys the picker is empty and the page shows an
+  When the user has stored no keys the picker is empty and the page shows an
   "Add an API key in your Profile" empty state instead of the model dropdown.
-* The text dropdown lists `EnRuEntityMatch` records as
-  `"<EN entity name> / <RU entity name>"`.
+* The text dropdown lists `EntityMatch` records as
+  `"<a-side entity name> / <b-side entity name>"`.
 * **Read access is gated per Entity, not per match.** Both the dropdown and
   `text()` filter/403 on `EntityAccessService::canReadMatch` — the caller must
-  hold an Access grant (or be admin) on **both** the EN and RU entities of the
-  match (ADR 0014). A user who uploaded only one side of a work therefore cannot
+  hold an Access grant (or be admin) on **both** entities of the match
+  (ADR 0014). A user who uploaded only one side of a work therefore cannot
   read the bilingual simulator content until they also upload/match the other
   side.
-* `text()` paginates (default 50/page, max 200) and can serve either an entity
-  match (`en_ru_entity_match_id`) or legacy text files; meaning matches are
-  shaped for the UI by `MeaningMatchPresenter`.
+* `text()` paginates (default 50/page, max 200) and serves an entity match by
+  `entity_match_id` (the meaning matches shaped for the UI by
+  `MeaningMatchPresenter`); a legacy `filename` mode still reads pre-aligned
+  file pairs from `public/texts/simulator/`.
 * AI calls go through `AIModelResolver::ask()` with a `provider:model` string —
   see [AI Providers](/domains/ai-providers.md). Validation via
   `App\Http\Requests\AiQuestionRequest` / `BilingualsTextRequest`.
@@ -91,10 +96,3 @@ React page `resources/js/Pages/Bilinguals/` (`Bilinguals.jsx` plus `AI/`,
 `TextContent/`, `Workplace/` sub-components). Props include `aiModels`
 (grouped by provider), `textList`, and `show*` feature flags
 (`showWorkplace`, `showQuestion`, `showText`, `showAI`).
-
-# Legacy sibling
-
-`BilingualsController` (non-namespaced) still serves the older text-file flow:
-`GET /get-texts`, `POST /get-texts`, `POST /dictionary/selection/save`,
-`POST /dictionary/interactions/save` (dictionary lookup interaction tracking).
-Files come from `public/texts/simulator/`.

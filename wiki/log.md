@@ -1,5 +1,40 @@
 # Directory Update Log
 
+## 2026-09-10 (works & unified schema rework)
+
+* **Works + unified language-keyed tables replaced the mirrored EN/RU schema
+  (ADR 0018).** `works` (title/author/original_language_id) now group
+  per-language `entities` (+ `label` for same-language variants); every
+  mirrored `en_*`/`ru_*` table was unified with a `language_id` column
+  (entities/sentences/grants, words + satellites, word classes,
+  transcription types); the alignment chain became
+  `entity_matches` (canonical `a_entity_id < b_entity_id`) →
+  `meaning_matches` → one `sentence_meaning_matches` junction with a `side`
+  column; `is_original_en` is gone — the original side derives from the
+  work's original language, and translation↔translation pairs cover both
+  sides with skips/repairs. One directed `word_translations` pivot replaced
+  the two en_ru/ru_en pivots. Adding a language is an INSERT.
+* **Migrations squashed to a fresh 6-file baseline** (dev/prod data
+  disposable; prod rebuilds fresh at next deploy) and the legacy vocabulary
+  domain deleted outright: `words`/`books`/`book_word`/`saved_phrases`,
+  crossword (Livewire+React), word upvote/acknowledge/dismiss/ask-ai,
+  WordsSearch, Test.php/BilingualsController legacy endpoints, their
+  requests/models/Filament resources/views.
+* **App cutover**: single Entity/EntityMatch models; aligner job + Python
+  /align contract renamed to a/b (a_sentences/b_sentences, skip_a/skip_b);
+  editor stack/simulator/reader/commands/importers ported; match creation
+  validates same work + different languages. Filament: WorkResource (new),
+  merged EntityResource/EntityMatchResource/WordResource. Frontend: work
+  column+filter on entities, work picker on create, work-first alignment
+  create, a/b editor payloads with language-code labels.
+* **Docs**: ADR 0018 written; CONTEXT.md gained Work / A-side/B-side /
+  cover-both-sides terms and updated Entity/Original text/Access grant;
+  wiki database/domain/playbook concepts rewritten (dictionary concept
+  renamed, legacy-vocabulary/crossword/words-search retired); test fixture
+  helpers (createLanguages/createWork/createEntity/createEntityMatch) added
+  to tests/Pest.php; suite 460 green; phpunit.xml pins OPENROUTER_API_KEY
+  empty (a dev .env key was leaking into a unit test).
+
 ## 2026-09-10
 
 * **Entity detail page showed sparse order values as sentence numbers.**

@@ -1,9 +1,8 @@
 <?php
 
 use App\Jobs\ProcessEntityFile;
-use App\Models\EnEntity;
+use App\Models\Entity;
 use App\Models\Language;
-use App\Models\RuEntity;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -41,11 +40,10 @@ test('unapproved user is redirected from the entities index', function () {
 });
 
 test('picker lists enabled languages with entity counts', function () {
-    makeLanguage('en');
-    makeLanguage('ru');
-    EnEntity::create(['name' => 'Alpha']);
-    EnEntity::create(['name' => 'Beta']);
-    RuEntity::create(['name' => 'Гамма']);
+    createLanguages();
+    createEntity('en', null, ['name' => 'Alpha']);
+    createEntity('en', null, ['name' => 'Beta']);
+    createEntity('ru', null, ['name' => 'Гамма']);
 
     $this->actingAs(approvedUser())
         ->get('/entities')
@@ -70,7 +68,7 @@ test('picker ignores disabled languages', function () {
 
 test('list page renders entities for a language', function () {
     makeLanguage('en');
-    EnEntity::create(['name' => 'Alpha']);
+    createEntity('en', null, ['name' => 'Alpha']);
 
     $this->actingAs(approvedUser())
         ->get('/entities/en')
@@ -103,10 +101,15 @@ test('store creates an entity without a file and redirects', function () {
     makeLanguage('en');
 
     $response = $this->actingAs(approvedUser())
-        ->post('/entities/en', ['name' => 'New Entity', 'description' => 'A note']);
+        ->post('/entities/en', [
+            'name' => 'New Entity',
+            'description' => 'A note',
+            'new_work_title' => 'New Work',
+        ]);
 
-    $entity = EnEntity::query()->where('name', 'New Entity')->firstOrFail();
-    expect($entity->exists)->toBeTrue();
+    $entity = Entity::query()->where('name', 'New Entity')->firstOrFail();
+    expect($entity->exists)->toBeTrue()
+        ->and($entity->work->title)->toBe('New Work');
 
     $response->assertRedirect("/entities/en/{$entity->id}");
 });
@@ -127,9 +130,13 @@ test('store with a file stores the file and dispatches the pipeline', function (
     $file = UploadedFile::fake()->create('text.txt', 20, 'text/plain');
 
     $response = $this->actingAs(approvedUser())
-        ->post('/entities/en', ['name' => 'With File', 'file' => $file]);
+        ->post('/entities/en', [
+            'name' => 'With File',
+            'new_work_title' => 'With File Work',
+            'file' => $file,
+        ]);
 
-    $entity = EnEntity::query()->where('name', 'With File')->firstOrFail();
+    $entity = Entity::query()->where('name', 'With File')->firstOrFail();
     expect($entity->file_path)->not->toBeNull();
     expect($entity->is_restricted)->toBeTrue();
     Storage::disk('local')->assertExists($entity->file_path);
@@ -154,7 +161,7 @@ test('store validates the name and file type', function () {
 
 test('show page renders a single entity', function () {
     makeLanguage('en');
-    $entity = EnEntity::create(['name' => 'Detail', 'description' => 'Body']);
+    $entity = createEntity('en', null, ['name' => 'Detail', 'description' => 'Body']);
 
     $this->actingAs(approvedUser())
         ->get("/entities/en/{$entity->id}")
@@ -167,7 +174,7 @@ test('show page renders a single entity', function () {
 
 test('show page exposes can_edit for a public entity', function () {
     makeLanguage('en');
-    $entity = EnEntity::create(['name' => 'Open', 'is_restricted' => false]);
+    $entity = createEntity('en', null, ['name' => 'Open', 'is_restricted' => false]);
 
     $this->actingAs(approvedUser())
         ->get("/entities/en/{$entity->id}")
@@ -177,7 +184,7 @@ test('show page exposes can_edit for a public entity', function () {
 
 test('show page hides can_edit for a restricted entity without a grant', function () {
     makeLanguage('en');
-    $entity = EnEntity::create(['name' => 'Secret', 'is_restricted' => true]);
+    $entity = createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
 
     $this->actingAs(approvedUser())
         ->get("/entities/en/{$entity->id}")
@@ -186,7 +193,7 @@ test('show page hides can_edit for a restricted entity without a grant', functio
 
 test('show page exposes can_edit for a restricted entity with a grant', function () {
     makeLanguage('en');
-    $entity = EnEntity::create(['name' => 'Secret', 'is_restricted' => true]);
+    $entity = createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
     $user = approvedUser();
     $entity->grantedUsers()->attach($user->id);
 
@@ -209,7 +216,7 @@ test('store links the uploader to the existing entity when the text matches', fu
     Queue::fake();
     makeLanguage('en');
 
-    $existing = EnEntity::query()->create([
+    $existing = createEntity('en', null, [
         'name' => 'Original Text',
         'is_restricted' => true,
         'file_path' => 'entities/en/original.txt',
@@ -232,9 +239,13 @@ test('store links the uploader to the existing entity when the text matches', fu
     $file = UploadedFile::fake()->create('text.txt', 20, 'text/plain');
 
     $response = $this->actingAs($user)
-        ->post('/entities/en', ['name' => 'Duplicate Upload', 'file' => $file]);
+        ->post('/entities/en', [
+            'name' => 'Duplicate Upload',
+            'new_work_title' => 'Duplicate Work',
+            'file' => $file,
+        ]);
 
-    expect(EnEntity::query()->where('name', 'Duplicate Upload')->exists())->toBeFalse();
+    expect(Entity::query()->where('name', 'Duplicate Upload')->exists())->toBeFalse();
     expect($existing->grantedUsers()->whereKey($user->id)->exists())->toBeTrue();
     expect($existing->grantedUsers()->whereKey($user->id)->first()->pivot->similarity)->toEqual(1.0);
     Storage::disk('local')->assertMissing('entities/en/'.$file->hashName());
@@ -253,9 +264,13 @@ test('store fails hard when the embedding service is unavailable', function () {
     $file = UploadedFile::fake()->create('text.txt', 20, 'text/plain');
 
     $response = $this->actingAs(approvedUser())
-        ->post('/entities/en', ['name' => 'No Service', 'file' => $file]);
+        ->post('/entities/en', [
+            'name' => 'No Service',
+            'new_work_title' => 'No Service Work',
+            'file' => $file,
+        ]);
 
-    expect(EnEntity::query()->where('name', 'No Service')->exists())->toBeFalse();
+    expect(Entity::query()->where('name', 'No Service')->exists())->toBeFalse();
     Queue::assertNotPushed(ProcessEntityFile::class);
 
     $response->assertRedirect();
@@ -263,7 +278,7 @@ test('store fails hard when the embedding service is unavailable', function () {
 
 test('user cannot read a restricted entity without a grant', function () {
     makeLanguage('en');
-    $entity = EnEntity::query()->create(['name' => 'Secret', 'is_restricted' => true]);
+    $entity = createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
 
     $this->actingAs(approvedUser())
         ->get("/entities/en/{$entity->id}")
@@ -272,7 +287,7 @@ test('user cannot read a restricted entity without a grant', function () {
 
 test('user can read a restricted entity they have a grant for', function () {
     makeLanguage('en');
-    $entity = EnEntity::query()->create(['name' => 'Secret', 'is_restricted' => true]);
+    $entity = createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
     $user = approvedUser();
     $entity->grantedUsers()->attach($user->id);
 
@@ -283,7 +298,7 @@ test('user can read a restricted entity they have a grant for', function () {
 
 test('user can read a public entity', function () {
     makeLanguage('en');
-    $entity = EnEntity::query()->create(['name' => 'Open', 'is_restricted' => false]);
+    $entity = createEntity('en', null, ['name' => 'Open', 'is_restricted' => false]);
 
     $this->actingAs(approvedUser())
         ->get("/entities/en/{$entity->id}")
@@ -292,7 +307,7 @@ test('user can read a public entity', function () {
 
 test('admin can read any restricted entity', function () {
     makeLanguage('en');
-    $entity = EnEntity::query()->create(['name' => 'Secret', 'is_restricted' => true]);
+    $entity = createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
 
     $admin = User::factory()->create(['is_approved' => true, 'role' => 'admin']);
 
@@ -303,10 +318,10 @@ test('admin can read any restricted entity', function () {
 
 test('restricted entity is hidden from the list unless granted', function () {
     makeLanguage('en');
-    EnEntity::query()->create(['name' => 'Secret', 'is_restricted' => true]);
-    EnEntity::query()->create(['name' => 'Open', 'is_restricted' => false]);
+    createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
+    createEntity('en', null, ['name' => 'Open', 'is_restricted' => false]);
     $user = approvedUser();
-    $secret = EnEntity::query()->where('name', 'Secret')->firstOrFail();
+    $secret = Entity::query()->where('name', 'Secret')->firstOrFail();
     $secret->grantedUsers()->attach($user->id);
 
     $this->actingAs($user)
@@ -316,8 +331,8 @@ test('restricted entity is hidden from the list unless granted', function () {
 
 test('restricted entity is absent from the list without a grant', function () {
     makeLanguage('en');
-    EnEntity::query()->create(['name' => 'Secret', 'is_restricted' => true]);
-    EnEntity::query()->create(['name' => 'Open', 'is_restricted' => false]);
+    createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
+    createEntity('en', null, ['name' => 'Open', 'is_restricted' => false]);
 
     $this->actingAs(approvedUser())
         ->get('/entities/en')

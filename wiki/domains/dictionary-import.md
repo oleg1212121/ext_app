@@ -1,17 +1,15 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps into the mirrored EN/RU dictionary tables and linking translations.
+description: Parsing Kaikki/Wiktionary dumps into the unified language-keyed dictionary tables and linking translations across every language pair.
 tags: [dictionary, import, wiktionary, kaikki]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-08-16T15:35:00Z }
+stale_after: 2026-12-10
+generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
 sources:
-  - id: kaikki
-    resource: laravel/app/Classes/KaikkiParser.php
-    title: Kaikki JSONL parser
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
-    title: Wiktionary parser
+    title: Kaikki/Wiktionary JSONL parser
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
     title: wiktionary:import
@@ -22,29 +20,34 @@ sources:
 
 # What it is
 
-The import pipeline that fills the [EN/RU dictionary](/database/en-ru-dictionary.md)
-tables from machine-readable Wiktionary data (kaikki.org JSONL dumps).
+The import pipeline that fills the [unified dictionary](
+/database/dictionary.md) tables from machine-readable Wiktionary data
+(kaikki.org JSONL dumps). Since ADR
+[0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md) there
+is one language-keyed `words` table (+ satellites) per language instead of
+mirrored per-language tables, and a single directed `word_translations`
+pivot.
 
 # Components
 
-* `App\Classes\KaikkiParser` — primary parser for kaikki.org JSONL dumps.
-* `App\Classes\WiktionaryParser` — Wiktionary-format parser; shared base
-  `App\Classes\Parser`.
-* `php artisan wiktionary:import {file}` — parses a dump into `EnWord` /
-  `RuWord` + definitions, forms, transcriptions (+types), etymologies,
-  pronunciations, examples, word classes, tags. Translations are **stored,
-  not linked**, during import.
-* `php artisan wiktionary:link-translations` — links EN↔RU words through the
-  stored translations, stripping Russian stress marks for matching.
+* `App\Classes\WiktionaryParser` — parses kaikki.org JSONL dumps into the
+  unified tables (the former separate `KaikkiParser` was folded into it).
+* `php artisan wiktionary:import {file} --lang= --target-lang=` — parses a
+  dump into the unified `words` table (+ definitions, forms, transcriptions
+  (+types), etymologies, pronunciations, examples, word classes, tags) keyed
+  by `language_id` (`--lang`, currently en/ru; `--target-lang` names the
+  translation target recorded in the raw translations JSON). Translations
+  are **stored, not linked**, during import.
+* `php artisan wiktionary:link-translations` — links words across languages
+  through the stored translations into `word_translations` rows, covering
+  **every ordered language pair** among languages that have imported words
+  (stress-mark stripping applied when pairing into Russian).
 
 # Where it surfaces
 
-* Filament admin `/admin`: `EnWordResource`, `RuWordResource` with relation
-  managers for definitions, pronunciations, translations, etymologies,
-  examples, transcriptions.
-* Runtime lookup features: the [Bilinguals Simulator](bilinguals-simulator.md)
-  dictionary selection/interactions endpoints and
-  [Words Search](words-search.md).
+* Filament admin `/admin`: the single per-language `WordResource` with
+  relation managers for definitions, pronunciations, translations,
+  etymologies, examples, transcriptions.
 
 # Operating it
 

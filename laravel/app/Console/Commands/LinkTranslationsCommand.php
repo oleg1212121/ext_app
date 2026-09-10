@@ -8,7 +8,6 @@ use App\Models\WordClass;
 use App\Models\WordTranslation;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Collection;
 
 class LinkTranslationsCommand extends Command
 {
@@ -177,6 +176,7 @@ class LinkTranslationsCommand extends Command
             FROM pg_stat_activity
             WHERE datname = current_database()
               AND state = 'active'
+              AND pid <> pg_backend_pid()
               AND query ~ 'delete from "words"'
             SQL
         );

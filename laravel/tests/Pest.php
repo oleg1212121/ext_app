@@ -1,5 +1,9 @@
 <?php
 
+use App\Models\Entity;
+use App\Models\EntityMatch;
+use App\Models\Language;
+use App\Models\Work;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -60,4 +64,75 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/*
+|--------------------------------------------------------------------------
+| Entity-domain fixtures (unified works/entities schema)
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Idempotently ensure the seeded languages exist. Returns code => model.
+ *
+ * @return array<string, Language>
+ */
+function createLanguages(): array
+{
+    $en = Language::query()->updateOrCreate(
+        ['code' => 'en'],
+        ['name' => 'English', 'is_enabled' => true, 'sort_order' => 0],
+    );
+
+    $ru = Language::query()->updateOrCreate(
+        ['code' => 'ru'],
+        ['name' => 'Russian', 'is_enabled' => true, 'sort_order' => 1],
+    );
+
+    return ['en' => $en, 'ru' => $ru];
+}
+
+function createWork(array $attributes = []): Work
+{
+    createLanguages();
+
+    return Work::query()->create([
+        'title' => 'Test Work',
+        'original_language_id' => Language::query()->where('code', 'en')->value('id'),
+        ...$attributes,
+    ]);
+}
+
+/**
+ * Create an entity of the given language code ('en'/'ru') for a work.
+ */
+function createEntity(string $languageCode, ?Work $work = null, array $attributes = []): Entity
+{
+    $languages = createLanguages();
+    $language = $languages[$languageCode] ?? Language::query()->where('code', $languageCode)->firstOrFail();
+
+    return Entity::query()->create([
+        'work_id' => ($work ?? createWork())->id,
+        'language_id' => $language->id,
+        'name' => 'Entity ('.$languageCode.')',
+        ...$attributes,
+    ]);
+}
+
+/**
+ * Create an entity match between two entities, enforcing the canonical
+ * a_entity_id < b_entity_id ordering.
+ */
+function createEntityMatch(Entity $first, Entity $second, array $attributes = []): EntityMatch
+{
+    [$aId, $bId] = $first->id < $second->id
+        ? [$first->id, $second->id]
+        : [$second->id, $first->id];
+
+    return EntityMatch::query()->create([
+        'a_entity_id' => $aId,
+        'b_entity_id' => $bId,
+        'status' => 'pending',
+        ...$attributes,
+    ]);
 }

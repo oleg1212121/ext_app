@@ -1,28 +1,39 @@
 # Sentence Alignment Context
 
-The domain of pairing EN and RU sentences of the same text into meaning-equivalent
-groups (meaning matches), produced by the alignment pipeline and refined by
-humans in the Alignments editor.
+The domain of pairing the sentences of two same-work entities (two languages of
+one text) into meaning-equivalent groups (meaning matches), produced by the
+alignment pipeline and refined by humans in the Alignments editor.
 
 ## Language
 
+**Work**:
+The abstract book that entities translate: one row grouping every language version of the same text. Carries the title, author, and the **original language** the book was written in. An Entity always belongs to exactly one Work; a Work may hold several entities in the same language (competing translations, editions), told apart by their label.
+_Avoid_: book (a legacy crossword-domain term), parent entity (Entity already means the per-language text), title
+
 **Entity**:
-A text in exactly one Language, carrying a name, description, an uploaded text file, a signature, and an ordered list of sentences. Concretely an `EnEntity` or a `RuEntity`. An Entity does not span languages; a cross-language pair is an Entity match, not a single Entity.
+A text in exactly one Language — the original or a translation of its **Work** — carrying a name, label, description, an uploaded text file, a signature, and an ordered list of sentences. An Entity does not span languages; a cross-language pairing is an Entity match, not a single Entity.
 _Avoid_: text, document, article
 
+**A-side / B-side**:
+The two positions inside an entity match, stored canonically (the lower entity id is the A-side). The Python aligner's lists, the junction's `side` column, and the editor payloads all speak in sides; displays label them with each side's language. Sides are positional, not semantic — the original text can sit on either side.
+_Avoid_: EN side / RU side (language-specific wording), left/right
+
 **Entity match**:
-The container pairing one EN entity with one RU entity ("the same text, two languages").
+The container pairing two entities of the same **Work** in different languages ("the same text, two languages"), held by its **A-side** and **B-side**.
 _Avoid_: match, alignment
 
 **Original text**:
-The language the paired text was authored in; the counterpart in the entity match
-is a translation of it. A text-level property of the entity match.
+The language the book was authored in — a property of the **Work**, not of a
+pairing. For an entity match, the original side is whichever side's entity is in
+that language, or neither when both are translations of a third language. Not
+storable per match; derived whenever needed.
 _Avoid_: source text, prior text
 
 **Original completeness**:
 The invariant, enforced when an alignment run completes, that every sentence of the
-original text is junctioned into a meaning match (in original order). Only
-translation-side sentences may be unmatched.
+original-side entity is junctioned into a meaning match (in original order). When
+neither side is the original language (translation-pair), the invariant holds for
+BOTH sides — cover both sides.
 _Avoid_: no-unmatched guarantee
 
 **Meaning match**:
@@ -82,7 +93,7 @@ The number of meaning matches in an entity match (empty ones included).
 **Resume**:
 Advance an alignment that has stopped before reaching the end of the text.
 Triggered manually (Re-run) or automatically (the `alignments:resume` command).
-The cursor — the EN/RU sentence offsets where the next chunk starts — is the
+The cursor — the per-side sentence offsets where the next chunk starts — is the
 only state a resume reads, so a stopped run can continue without wiping
 already-aligned chunks. _Avoid_: restart, retry.
 
@@ -102,7 +113,7 @@ across rows, or to/from the unmatched pool. The drop position wins: the
 sentence's document order is renumbered (sparse, clamped by the nearest
 sentences outside the destination row's span) so it sorts exactly where it was
 dropped and the global numbering stays monotonic with row order. A drop into a
-row empty on that language side lands between the closest populated rows.
+row empty on that side lands between the closest populated rows.
 _Avoid_: relink (misses the renumbering)
 
 **Create meaning match / delete meaning match**:
@@ -232,7 +243,7 @@ term with a specific meaning).
 
 **Access grant**:
 A recorded stake for a specific user in a specific Restricted entity, stored
-in the `en_entity_user` / `ru_entity_user` pivot (with a nullable
+in the `entity_user` pivot (with a nullable
 `similarity`). Carries both read and edit permission on the entity (and its
 sentences) until the entity is published. _Avoid_: link (too generic),
 license (legal), permission (overlaps Role).
@@ -243,7 +254,7 @@ frontend. A Restricted entity is editable by admin and grantees; a Public
 entity is editable by any approved user. The rule mirrors read —
 `EntityAccessService::canEdit` is structurally identical to `canRead`.
 Sentence mutations (insert / update / delete / reorder) flip every
-`EnRuEntityMatch` involving the entity to `status = 'pending'`. Deleting a
+entity match involving the entity to `status = 'pending'`. Deleting a
 junctioned sentence cascades (junctions removed, emptied meaning matches
 deleted, `linked_count` updated) — a deliberate divergence from the alignment
 editor's unlink-before-delete rule. See ADR 0015.

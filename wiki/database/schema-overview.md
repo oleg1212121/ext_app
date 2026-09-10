@@ -1,11 +1,11 @@
 ---
 type: Database Schema
 title: Schema Overview
-description: The table domains — legacy vocabulary, EN/RU dictionary, entities & alignment, user settings — and how they relate.
+description: The table domains — works/entities/alignment, unified dictionary, AI catalog, user settings — and how they relate.
 tags: [database, schema, postgres, users, settings]
 status: stable
-stale_after: 2026-10-26
-generated: { by: agent/opencode, at: 2026-09-08T00:00:00Z }
+stale_after: 2026-12-10
+generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
 sources:
   - id: migrations
     resource: laravel/database/migrations
@@ -18,19 +18,27 @@ sources:
 # Engine & access
 
 PostgreSQL (`ext_pgdb`, host port 54321). Dev DB `ext_app`, test DB
-`ext_app_test`. Migrations in `laravel/database/migrations/` (46 files) are the
-chronological source of truth; there is also a large legacy dump
-(`backup11.sql`, ~545 MB) at the repo root.
+`ext_app_test`. The migrations in `laravel/database/migrations/` are a
+**squashed fresh baseline** (2026-09: the 21 historical migrations were
+consolidated into 6; the pre-squash history lives in git). Adding a language
+is an `INSERT` into `languages` — never DDL (ADR
+[0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md)).
 
-# The three domains
+# The domains
 
-| Domain | Era | Tables | Detail |
-|--------|-----|--------|--------|
-| [Legacy vocabulary](legacy-vocabulary.md) | 2025_07–09 | `words`, `books`, `book_word`, `definitions`, `etymologies`, `transcriptions`, `translations`, `forms`, `saved_phrases` | Original generic dictionary; still referenced by legacy UI and `Word` model/Filament resource |
-| [EN/RU dictionary](en-ru-dictionary.md) | 2026_04 | mirrored `en_words`/`ru_words` + satellites, `tags` | Current dictionary, filled by [Dictionary Import](/domains/dictionary-import.md) |
-| [Entities & alignment](entities-alignment.md) | 2026_04–06 | `*_entities`, `*_entity_sentences`, `*_meaning_matches`, `en_ru_translations`/`ru_en_translations` | Texts and their alignment; filled by the [alignment pipeline](/domains/sentence-alignment.md) |
+| Domain | Detail |
+|--------|--------|
+| [Entities & alignment](entities-alignment.md) | `works`, `entities` (+ `language_id`), `entity_sentences`, `entity_matches` (a/b sides), `meaning_matches`, `sentence_meaning_matches` (side column), `entity_user` grants. Filled by the [alignment pipeline](/domains/sentence-alignment.md) |
+| [Dictionary](dictionary.md) | Unified `words` (+ `language_id`) with satellites, `word_classes`/`transcription_types` per language, one directed `word_translations` pivot. Filled by [Dictionary Import](/domains/dictionary-import.md) |
+| AI catalog | `ai_providers`, `ai_models`, `user_api_keys` (2026_09_10_000002) |
+| Users & settings | `users` (role/approval inline), `user_settings` (native language) |
 
-Plus Laravel framework tables: `users`, `cache`, `jobs` (0001_01_01_*).
+Plus Laravel framework tables: `cache`, `jobs` (0001_01_01_*).
+
+The legacy vocabulary domain (`words`/`books`/`book_word`/`saved_phrases` +
+satellites, the 2025 crossword/word-interaction era) was **deleted** in the
+same rework — its routes, controllers, Filament resources and React pages are
+gone.
 
 # User settings
 
@@ -45,11 +53,11 @@ native-language select on the `UserResource` create/edit forms. See the
 
 # How they relate
 
-* Entities/sentences reference the languages' dictionary words at the UI layer
-  (dictionary lookups while reading), not via hard FK everywhere — check models
-  before assuming joins.
-* `en_ru_translations` / `ru_en_translations` bridge the dictionary and
-  alignment domains (word-level links vs sentence-level matches).
-* The legacy domain coexists with the EN/RU dictionary; when adding features,
-  prefer the EN/RU tables and confirm which domain a given controller/model
-  actually uses.
+* `works` group the per-language `entities`; `entity_matches` pair two
+  same-work entities in different languages (canonical `a_entity_id <
+  b_entity_id`). The work's `original_language_id` decides which side of a
+  match is the original — there is no per-match original flag.
+* `word_translations` links dictionary words across languages at the word
+  level, independent of the sentence-level alignment domain.
+* All previously mirrored tables (`en_*`/`ru_*`) are unified with a
+  `language_id` column; cross-language joins are ordinary FKs.
