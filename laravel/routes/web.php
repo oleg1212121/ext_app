@@ -3,11 +3,9 @@
 use App\Http\Controllers\AlignmentController;
 use App\Http\Controllers\AlignmentEditorController;
 use App\Http\Controllers\Bilinguals\SimulatorController;
-use App\Http\Controllers\BilingualsController;
 use App\Http\Controllers\EntityController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
-use App\Http\Controllers\Test;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -40,20 +38,13 @@ Route::middleware(['auth', 'approved'])->group(function () {
         return Inertia::render('Dashboard');
     })->middleware('verified')->name('dashboard');
 
-    Route::get('/test', [Test::class, 'test']);
-    Route::get('/crossword', [Test::class, 'crossword'])->name('crossword');
-    Route::redirect('/crossword-react', '/crossword-react/en');
-    Route::get('/crossword-react/{lang}', [Test::class, 'crosswordReact'])
-        ->where('lang', 'en|ru')
-        ->name('crossword.react');
-    Route::get('/reader', [Test::class, 'reader'])->name('reader');
     Route::redirect('/reader-react', '/reader-react/en');
     Route::get('/reader-react/{lang}/{entityId}', [ReaderController::class, 'show'])
-        ->where('lang', 'en|ru')
+        ->where('lang', '[a-z]{2}')
         ->whereNumber('entityId')
         ->name('reader.react');
     Route::get('/reader-react/{lang}', [ReaderController::class, 'index'])
-        ->where('lang', 'en|ru')
+        ->where('lang', '[a-z]{2}')
         ->name('reader.react.index');
 
     Route::get('/entities', [EntityController::class, 'index'])->name('entities.index');
@@ -117,16 +108,7 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::delete('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'unlinkSentence'])->whereNumber('sentence');
     Route::delete('/alignments/{entityMatch}/unmatched/{sentence}', [AlignmentEditorController::class, 'destroyUnmatched'])->whereNumber('sentence');
     Route::get('/bilinguals/en/ru/simulator', [SimulatorController::class, 'simulator'])->name('bilinguals.simulator');
-    Route::post('/get-crossword', [Test::class, 'getCrossword']);
-    Route::get('/get-texts', [Test::class, 'getTexts']);
-    Route::post('/word/upvote', [Test::class, 'upvote']);
-    Route::post('/word/acknowledge', [Test::class, 'acknowledge']);
-    Route::post('/word/dismiss', [Test::class, 'dismiss']);
-    Route::post('/word/ask-ai/', [Test::class, 'askAI']);
-    Route::post('/get-texts', [BilingualsController::class, 'getTexts']);
     Route::post('/text', [SimulatorController::class, 'text']);
     Route::post('/ai/question', [SimulatorController::class, 'askAi'])->name('ai.question')->middleware('throttle:20,1');
     Route::post('/ai/question/stream', [SimulatorController::class, 'askAiStreamed'])->name('ai.question.stream')->middleware('throttle:20,1');
-    Route::post('/dictionary/selection/save', [BilingualsController::class, 'selectionSave']);
-    Route::post('/dictionary/interactions/save', [BilingualsController::class, 'interactionsSave']);
 });

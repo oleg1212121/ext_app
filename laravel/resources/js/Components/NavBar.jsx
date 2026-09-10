@@ -67,9 +67,6 @@ export default function NavBar() {
             {href: '/bilinguals/en/ru/simulator', label: 'Bilinguals'},
             {href: '/alignments', label: 'Alignments'},
             {href: '/entities', label: 'Entities'},
-            {label: 'Puzzles', children: [
-                {href: '/crossword-react/en', label: 'Crossword'},
-            ]},
             {href: '/reader-react', label: 'Reader'},
             ...(canAccessAdminPanel ? [{href: '/admin', label: 'Admin', external: true}] : []),
         ]
