@@ -1,5 +1,69 @@
 # Directory Update Log
 
+## 2026-09-10
+
+* **Entity detail page showed sparse order values as sentence numbers.**
+  `Entities/Show.jsx` printed the raw `order` column (`000, 1024, 1536, …`)
+  for each sentence. It now derives a positional display number from the
+  pagination meta (`(current_page - 1) * per_page + index + 1`), matching the
+  `displayOrder` pattern already used by `Entities/Edit.jsx`. Display-only;
+  stored sparse orders are untouched.
+* **Sparse orders from entity creation + editor "Create below" placement
+  fix.** Three related fixes on `aligner-order-rework`. (1) `SentenceSplitter`
+  (the file-upload split pipeline) wrote dense sequential orders
+  `1,2,3,4,5…`; it now takes `SparseOrderService` via constructor injection
+  and assigns `initial($index)` → `0, 1024, 2048, …` like every other
+  creation path. Consequence: the first insert/reorder on an entity's
+  *Sentences* tab no longer exhausts the midpoint gap and falls through to a
+  full-list rebalance (the "all sequence numbers become 0,1024,2048 after
+  reordering" report) — a reorder now writes only the moved row. Existing
+  dense dev lists were repaired with a one-off `entity-orders:rebalance`
+  (3,177 rows); prod picks it up from the daily schedule or the next manual
+  rebalance. (2) The Inertia alignment editor's "Create below" placed the
+  first new row correctly but every subsequent one at the **top of the page**
+  until refresh: `Show.jsx` computed the insert index inside a `setState`
+  updater and read it synchronously after the dispatch — React 19 runs
+  updaters eagerly only on the first dispatch after mount, so later
+  mutations snapshotted index `0`. `runMutation` now receives the **anchor
+  row id** and `applyMutation` resolves the splice position at response
+  time (also reset on mutation failure). (3) Drive-by: removed `'order' => 0`
+  from the junction insert in `AlignEntitySentences`' skip-run drain — the
+  junction tables' `order` column was dropped in Aug 2026
+  (`2026_08_20_131441_drop_order_from_junction_tables`), so that path would
+  have thrown an SQL error when it executed. New regression test in
+  `SentenceSplitterTest` (sparse orders); updated
+  `wiki/domains/sentence-alignment.md` and
+  `wiki/database/entities-alignment.md` (also corrected its stale
+  `widen_sparse_order_columns` migration claim — no such migration exists;
+  the order columns were `bigint` from day one).
+
+## 2026-09-09
+
+* **Drag-and-drop duplicate sentence orders fixed (alignment editor).** The
+  Inertia editor's `POST /alignments/{match}/sentences/move` picked a moved
+  sentence's new order from only its destination row's neighbouring sentences
+  (`between(prev, next)`), so it could emit an order another sentence on the
+  side already held: the midpoint of a row pair landed exactly on an
+  interleaved unmatched sentence's order, and the empty-row fallback
+  (`high - 1`) collided when the surrounding gap was exhausted (live
+  corruption: EN sentences 18/19 of match 6 both held order 1024). Tied
+  orders rendered in arbitrary DB order, which shuffled rows between loads
+  and made subsequent drags compute against the wrong neighbours. Fix:
+  `AlignmentEditorController` now derives placement from the side's **global
+  document order** (`placeSideSentence` → `orderForInsertAfter`, window
+  rebalance on exhaustion) and persists two-phase (rows parked at unique
+  negatives first); `SparseOrderService::orderForInsertAfter` no longer
+  recomputes its insertion index from the stale pre-rebalance anchor order;
+  new migration `2026_09_09_000000_make_entity_sentence_orders_unique`
+  repairs existing duplicates and adds unique `(en_entity_id, order)` /
+  `(ru_entity_id, order)` indexes; `EntityController` and
+  `AlignmentEditorPersister` sentence-order writes made two-phase to comply
+  with the index. Regression tests in `AlignmentEditorApiTest` +
+  `SparseOrderServiceTest`. Removed the leftover `[dnd-trace]` console
+  logging from `Show.jsx`. Updated
+  `wiki/domains/sentence-alignment.md` and
+  `wiki/database/entities-alignment.md`.
+
 ## 2026-09-08
 
 * **User settings table with native language.** New `user_settings` table (one

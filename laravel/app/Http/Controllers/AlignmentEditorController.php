@@ -137,27 +137,7 @@ class AlignmentEditorController extends Controller
 
             $anchor = $this->sideAnchorOrder($entityMatch, $lang, $meaningMatch);
 
-            $sentences = $sentenceClass::query()
-                ->where($entityForeignKey, $entityId)
-                ->get(['id', 'order'])
-                ->map(fn ($sentence): array => ['key' => 's-'.$sentence->id, 'order' => (int) $sentence->order])
-                ->values()
-                ->all();
-
-            $result = $this->sparseOrder->orderForInsertAfter($sentences, null, $anchor);
-
-            $allResultOrders = array_column($result['items'], 'order');
-            $allResultOrders[] = $result['order'];
-            $minOrder = min($allResultOrders);
-
-            if ($minOrder < 0) {
-                $shift = -$minOrder;
-                $result['order'] += $shift;
-                foreach ($result['items'] as &$item) {
-                    $item['order'] += $shift;
-                }
-                unset($item);
-            }
+            $order = $this->placeSideSentence($entityMatch, $lang, null, $anchor);
 
             $sentenceTypeId = SentenceType::query()->where('name', 'sentence')->value('id');
 
@@ -165,10 +145,8 @@ class AlignmentEditorController extends Controller
                 $entityForeignKey => $entityId,
                 'sentence_type_id' => $sentenceTypeId,
                 'content' => $content,
-                'order' => $result['order'],
+                'order' => $order,
             ]);
-
-            $this->persistSideOrderChanges($entityId, $lang, $result['items']);
 
             $this->junctionClass($lang)::query()->create([
                 $this->sentenceForeignKey($lang) => $sentence->id,
@@ -278,7 +256,7 @@ class AlignmentEditorController extends Controller
                     return;
                 }
 
-                $this->reorderRowJunctions($lang, $toRowId, $seq, $sentenceId, $layout);
+                $this->placeMovedWithinRow($entityMatch, $lang, $seq, $sentenceId, $layout);
                 $affectedRowIds[] = $toRowId;
 
                 return;
@@ -305,41 +283,50 @@ class AlignmentEditorController extends Controller
     }
 
     /**
-     * Renumber a freshly linked sentence so it sorts at the drop index within
-     * its destination row, bounded by the document orders of the surrounding
-     * rows so the global numbering stays monotonic with row order.
+     * Renumber a moved sentence so it sorts at the drop index within its
+     * destination row: the order is picked from the side's global document
+     * order — after the preceding row sentence, or before the row's first
+     * sentence — so it can never collide with an interleaved sentence's order
+     * and rebalances the neighborhood when the surrounding gap is exhausted.
+     *
+     * @param  list<int>  $seq  the row's sentence ids in intended order
+     * @param  array{
+     *     sentences: array<int, array{order: int, row_id: ?int}>,
+     *     rows: array<int, array{order: int, ids: list<int>}}>
+     * }  $layout
      */
-    private function placeSentenceAt(EnRuEntityMatch $entityMatch, string $lang, int $sentenceId, int $rowId, int $index): void
+    private function placeMovedWithinRow(EnRuEntityMatch $entityMatch, string $lang, array $seq, int $movedId, array $layout): void
     {
-        $layout = $this->sideLayout($entityMatch, $lang);
+        $insertIndex = array_search($movedId, $seq, true);
+        $remaining = array_values(array_filter($seq, fn (int $id): bool => $id !== $movedId));
 
-        $current = array_values(array_filter(
-            $layout['rows'][$rowId]['ids'],
-            fn (int $id): bool => $id !== $sentenceId,
-        ));
+        $prevId = $insertIndex > 0 ? $remaining[$insertIndex - 1] : null;
+        $nextId = $insertIndex < count($remaining) ? $remaining[$insertIndex] : null;
 
-        if ($current === []) {
-            $this->setSentenceOrderRaw($lang, $sentenceId, $this->emptyRowPlacementOrder($layout, $rowId));
-
+        if ($prevId === null && $nextId === null) {
             return;
         }
 
-        $seq = $current;
-        array_splice($seq, $index, 0, [$sentenceId]);
+        $afterOrder = $prevId !== null
+            ? (int) $layout['sentences'][$prevId]['order']
+            : $this->predecessorOrderBelow($layout, (int) $layout['sentences'][$nextId]['order']);
 
-        $this->reorderRowJunctions($lang, $rowId, $seq, $sentenceId, $layout);
+        $this->placeSideSentence($entityMatch, $lang, $movedId, $afterOrder);
     }
 
     /**
-     * Document order for a sentence junctioned into a row holding no other
-     * sentences on this language side: between the closest populated rows.
+     * Place a sentence junctioned into a row holding no other sentences on
+     * this language side: anchored after the closest populated row below (or
+     * before the closest one above) so the global numbering stays monotonic
+     * with row order, again from the side's global document order so the
+     * result cannot collide with an interleaved sentence.
      *
      * @param  array{
      *     sentences: array<int, array{order: int, row_id: ?int}>,
-     *     rows: array<int, array{order: int, ids: list<int>}>
+     *     rows: array<int, array{order: int, ids: list<int>}}>
      * }  $layout
      */
-    private function emptyRowPlacementOrder(array $layout, int $rowId): int
+    private function placeIntoEmptyRow(EnRuEntityMatch $entityMatch, string $lang, int $sentenceId, array $layout, int $rowId): void
     {
         $rowOrder = $layout['rows'][$rowId]['order'];
 
@@ -360,13 +347,131 @@ class AlignmentEditorController extends Controller
             }
         }
 
-        $order = $this->sparseOrder->between($low, $high);
-
-        if ($order !== null) {
-            return $order;
+        if ($low !== null) {
+            $afterOrder = $low;
+        } elseif ($high !== null) {
+            $afterOrder = $this->predecessorOrderBelow($layout, $high);
+        } else {
+            $afterOrder = SparseOrderService::BEGINNING_SENTINEL;
         }
 
-        return $high !== null ? $high - 1 : 0;
+        $this->placeSideSentence($entityMatch, $lang, $sentenceId, $afterOrder);
+    }
+
+    /**
+     * Compute a collision-free order for a sentence placed after $afterOrder
+     * in the side's global document order, rebalancing neighbouring orders
+     * when the surrounding gap is exhausted. Order changes from a rebalance
+     * (and the placed sentence's own change) are persisted two-phase — parked
+     * at unique negatives first — so the (entity_id, order) unique index never
+     * sees a transient collision mid-write.
+     *
+     * @return int the order assigned to the placed sentence
+     */
+    private function placeSideSentence(EnRuEntityMatch $entityMatch, string $lang, ?int $sentenceId, int $afterOrder): int
+    {
+        $sentenceClass = $this->sentenceClass($lang);
+        $entityForeignKey = $this->entityForeignKey($lang);
+        $entityId = $this->entityId($entityMatch, $lang);
+
+        $currentOrders = $sentenceClass::query()
+            ->where($entityForeignKey, $entityId)
+            ->get(['id', 'order'])
+            ->mapWithKeys(fn ($sentence): array => [$sentence->id => (int) $sentence->order]);
+
+        $items = $currentOrders
+            ->map(fn (int $order, int $id): array => ['key' => 's-'.$id, 'order' => $order])
+            ->values()
+            ->all();
+
+        $result = $this->sparseOrder->orderForInsertAfter(
+            $items,
+            $sentenceId !== null ? 's-'.$sentenceId : null,
+            $afterOrder,
+        );
+
+        $allResultOrders = array_column($result['items'], 'order');
+        $allResultOrders[] = $result['order'];
+        $minOrder = min($allResultOrders);
+
+        if ($minOrder < 0) {
+            $shift = -$minOrder;
+            $result['order'] += $shift;
+
+            foreach ($result['items'] as &$item) {
+                $item['order'] += $shift;
+            }
+            unset($item);
+        }
+
+        $updates = [];
+
+        foreach ($result['items'] as $item) {
+            $id = (int) substr($item['key'], 2);
+
+            if (($currentOrders->get($id) ?? null) !== $item['order']) {
+                $updates[] = ['id' => $id, 'order' => $item['order']];
+            }
+        }
+
+        if ($sentenceId !== null && ($currentOrders->get($sentenceId) ?? null) !== $result['order']) {
+            $updates[] = ['id' => $sentenceId, 'order' => $result['order']];
+        }
+
+        foreach ($updates as $update) {
+            $sentenceClass::query()->whereKey($update['id'])->update(['order' => -($update['id'] + 1_000_000_000)]);
+        }
+
+        foreach ($updates as $update) {
+            $sentenceClass::query()->whereKey($update['id'])->update(['order' => $update['order']]);
+        }
+
+        return $result['order'];
+    }
+
+    /**
+     * Largest sentence order strictly below $upperBound, or the beginning
+     * sentinel when nothing sorts below it.
+     *
+     * @param  array{sentences: array<int, array{order: int, row_id: ?int}>}  $layout
+     */
+    private function predecessorOrderBelow(array $layout, int $upperBound): int
+    {
+        $predecessor = SparseOrderService::BEGINNING_SENTINEL;
+
+        foreach ($layout['sentences'] as $info) {
+            if ($info['order'] < $upperBound) {
+                $predecessor = max($predecessor, $info['order']);
+            }
+        }
+
+        return $predecessor;
+    }
+
+    /**
+     * Renumber a freshly linked sentence so it sorts at the drop index within
+     * its destination row, bounded by the document orders of the surrounding
+     * rows so the global numbering stays monotonic with row order.
+     */
+    private function placeSentenceAt(EnRuEntityMatch $entityMatch, string $lang, int $sentenceId, int $rowId, int $index): void
+    {
+        $layout = $this->sideLayout($entityMatch, $lang);
+
+        $current = array_values(array_filter(
+            $layout['rows'][$rowId]['ids'],
+            fn (int $id): bool => $id !== $sentenceId,
+        ));
+
+        if ($current === []) {
+            $this->placeIntoEmptyRow($entityMatch, $lang, $sentenceId, $layout, $rowId);
+
+            return;
+        }
+
+        $seq = $current;
+        array_splice($seq, $index, 0, [$sentenceId]);
+
+        $this->placeMovedWithinRow($entityMatch, $lang, $seq, $sentenceId, $layout);
     }
 
     public function rows(EnRuEntityMatch $entityMatch, RowsRequest $request): JsonResponse
@@ -468,28 +573,6 @@ class AlignmentEditorController extends Controller
 
         foreach ($updates as $update) {
             EnRuMeaningMatch::query()->whereKey($update['id'])->update(['order' => $update['order']]);
-        }
-    }
-
-    /**
-     * @param  list<array{key: string, order: int}>  $items
-     */
-    private function persistSideOrderChanges(int $entityId, string $lang, array $items): void
-    {
-        $sentenceClass = $this->sentenceClass($lang);
-        $entityForeignKey = $this->entityForeignKey($lang);
-
-        $currentOrders = $sentenceClass::query()
-            ->where($entityForeignKey, $entityId)
-            ->get(['id', 'order'])
-            ->mapWithKeys(fn ($sentence): array => [$sentence->id => (int) $sentence->order]);
-
-        foreach ($items as $item) {
-            $id = (int) substr($item['key'], 2);
-
-            if (($currentOrders->get($id) ?? null) !== $item['order']) {
-                $this->setSentenceOrderRaw($lang, $id, $item['order']);
-            }
         }
     }
 
@@ -633,124 +716,6 @@ class AlignmentEditorController extends Controller
         return min(array_map(fn (int $id): int => $layout['sentences'][$id]['order'], $ids));
     }
 
-    /**
-     * @param  list<int>  $seq
-     * @param  array{
-     *     sentences: array<int, array{order: int, row_id: ?int}>,
-     *     rows: array<int, array{order: int, ids: list<int>}>
-     * }  $layout
-     */
-    private function reorderRowJunctions(string $lang, int $rowId, array $seq, ?int $movedId = null, array $layout = []): void
-    {
-        if ($movedId === null) {
-            return;
-        }
-
-        $sideForeignKey = $this->sentenceForeignKey($lang);
-        $sentenceClass = $this->sentenceClass($lang);
-
-        $junctions = $this->junctionClass($lang)::query()
-            ->where('en_ru_meaning_match_id', $rowId)
-            ->get([$sideForeignKey]);
-
-        $orders = [];
-
-        foreach ($junctions as $junction) {
-            $id = (int) $junction->{$sideForeignKey};
-            $sentence = $sentenceClass::query()->whereKey($id)->first(['id', 'order']);
-
-            if ($sentence) {
-                $orders[$id] = (int) $sentence->order;
-            }
-        }
-
-        $insertIndex = array_search($movedId, $seq, true);
-        $remaining = array_values(array_filter($seq, fn (int $id): bool => $id !== $movedId));
-
-        $bounds = $this->rowGlobalBounds($layout, $seq, $movedId);
-
-        $prevOrder = $insertIndex > 0 ? ($orders[$remaining[$insertIndex - 1]] ?? null) : null;
-        $nextOrder = $insertIndex < count($remaining) ? ($orders[$remaining[$insertIndex]] ?? null) : null;
-
-        if ($prevOrder === null) {
-            $prevOrder = $bounds['low'];
-        } elseif ($bounds['low'] !== null) {
-            $prevOrder = max($prevOrder, $bounds['low']);
-        }
-
-        if ($nextOrder === null) {
-            $nextOrder = $bounds['high'];
-        } elseif ($bounds['high'] !== null) {
-            $nextOrder = min($nextOrder, $bounds['high']);
-        }
-
-        $newOrder = $this->sparseOrder->between($prevOrder, $nextOrder);
-
-        if ($newOrder !== null) {
-            $this->setSentenceOrderRaw($lang, $movedId, $newOrder);
-
-            return;
-        }
-
-        $spread = $this->sparseOrder->spreadOrders(count($seq), $bounds['low'], $bounds['high']);
-
-        foreach ($seq as $index => $id) {
-            $this->setSentenceOrderRaw($lang, $id, $spread[$index]);
-        }
-    }
-
-    /**
-     * Find the global order bounds immediately surrounding a row's sentences.
-     * The moved sentence ($excludeId) is skipped when deriving the block span:
-     * its stale order (e.g. arriving from a far-away row) must not widen the
-     * bounds a fallback spread is confined to.
-     *
-     * @param  array{
-     *     sentences: array<int, array{order: int, row_id: ?int}>,
-     *     rows: array<int, array{order: int, ids: list<int>}>
-     * }  $layout
-     * @param  list<int>  $seq
-     * @return array{low: ?int, high: ?int}
-     */
-    private function rowGlobalBounds(array $layout, array $seq, ?int $excludeId = null): array
-    {
-        $rowOrders = [];
-
-        foreach ($seq as $id) {
-            if ($id !== $excludeId && isset($layout['sentences'][$id])) {
-                $rowOrders[] = $layout['sentences'][$id]['order'];
-            }
-        }
-
-        if ($rowOrders === []) {
-            return ['low' => null, 'high' => null];
-        }
-
-        $minRowOrder = min($rowOrders);
-        $maxRowOrder = max($rowOrders);
-
-        $low = null;
-        $high = null;
-
-        foreach ($layout['sentences'] as $sentenceId => $info) {
-            if (in_array($sentenceId, $seq, true)) {
-                continue;
-            }
-
-            $order = $info['order'];
-
-            if ($order < $minRowOrder && ($low === null || $order > $low)) {
-                $low = $order;
-            }
-
-            if ($order > $maxRowOrder && ($high === null || $order < $high)) {
-                $high = $order;
-            }
-        }
-
-        return ['low' => $low, 'high' => $high];
-    }
-
     private function link(string $lang, int $sentenceId, int $rowId): void
     {
         $this->junctionClass($lang)::query()->create([
@@ -769,11 +734,6 @@ class AlignmentEditorController extends Controller
             ->delete();
 
         EnRuMeaningMatch::query()->whereKey($rowId)->update(['similarity' => 1.0]);
-    }
-
-    private function setSentenceOrderRaw(string $lang, int $sentenceId, int $order): void
-    {
-        $this->sentenceClass($lang)::query()->whereKey($sentenceId)->update(['order' => $order]);
     }
 
     private function rowIdOfSentence(string $lang, int $sentenceId): ?int

@@ -5,11 +5,14 @@ description: Bilingual texts, their sentences, and the machine/human alignment b
 tags: [database, schema, alignment, entities]
 status: stable
 stale_after: 2026-10-26
-generated: { by: human:alex, at: 2026-08-25T14:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations
      title: 2026_04–08 entity/alignment migrations (incl. add_is_original_en_to_en_ru_entity_matches)
+   - id: unique-order-migration
+     resource: laravel/database/migrations/2026_09_09_000000_make_entity_sentence_orders_unique.php
+     title: Unique (entity_id, order) indexes + duplicate repair pass
    - id: access-migration
      resource: laravel/database/migrations/2026_08_25_070508_add_entity_access_control.php
      title: is_restricted column + en_entity_user / ru_entity_user pivots
@@ -34,13 +37,33 @@ sources:
 # Invariants & notes
 
 * **Sparse ordering**: sentence and match order columns hold sparse values
-  maintained by `SparseOrderService`; columns were widened in the
-  2026_06 `widen_sparse_order_columns` migration. Rebalance daily via
-  `entity-orders:rebalance`. Both `EntityController` (entity *Sentences* tab)
+  (stride 1024) maintained by `SparseOrderService`; the columns are signed
+  `bigint` from creation (day-one migrations — the earlier claim about a
+  `widen_sparse_order_columns` migration was wrong; no such migration
+  exists). **Every creation path emits sparse values from birth** — the
+  split pipeline (`SentenceSplitter`, via `SparseOrderService::initial`),
+  the console importer (`EntitySentenceImporter`), the entity *Sentences*
+  tab (`EntityController::storeSentence`), and the Filament relation
+  managers — so a later insert/reorder usually writes only the moved row
+  (midpoint between neighbours). Dense legacy lists are repaired by
+  `entity-orders:rebalance` (runs daily; see
+  [Sentence Alignment](/domains/sentence-alignment.md)).
+  Both `EntityController` (entity *Sentences* tab)
   and `AlignmentEditorController` shift the whole sparse result up whenever a
   rebalance would push the minimum order negative (mirroring the alignment
   editor's guard), so `*.order` never carries negative values and the
   sequential display numbers stay 0/1-based.
+* **Sentence orders are unique per entity**: since the
+  2026_09 `make_entity_sentence_orders_unique` migration,
+  `(en_entity_id, order)` / `(ru_entity_id, order)` carry **unique indexes**
+  (repair pass renumbered duplicate-affected lists positionally first). Every
+  sentence-order write is therefore two-phase: changed rows are parked at
+  unique negatives (`-(id + 1e9)`) before the final orders are written, so a
+  rebalance never trips the index mid-write
+  (`SparseOrderService::orderForInsertAfter`,
+  `AlignmentEditorPersister::syncSentences`,
+  `EntityController::persistSentenceOrders`,
+  `AlignmentEditorController::placeSideSentence`).
 * **Document order is the single source of truth**: `en_entity_sentences.order` is
   the sentence's **document order** — its position in the original text. It is
   immutable in the alignment editor (only the *Sentences* tab, import,

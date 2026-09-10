@@ -334,7 +334,7 @@ class EntityController extends Controller
 
             $result = $this->shiftOrdersNonNegative($result);
 
-            $this->persistOrderChanges($lang, $entity->id, $result['items']);
+            $this->persistSentenceOrders($lang, $entity->id, $this->ordersFromItems($result['items']));
 
             return $sentenceClass::query()->create([
                 $entityForeignKey => $entity->id,
@@ -434,9 +434,10 @@ class EntityController extends Controller
 
             $result = $this->shiftOrdersNonNegative($result);
 
-            $this->persistOrderChanges($lang, $entity->id, $result['items']);
+            $orders = $this->ordersFromItems($result['items']);
+            $orders[$sentenceModel->id] = $result['order'];
 
-            $this->setSentenceOrderRaw($lang, $sentenceModel->id, $result['order']);
+            $this->persistSentenceOrders($lang, $entity->id, $orders);
         });
 
         $this->setMatchesPending($lang, $entity->id);
@@ -532,9 +533,15 @@ class EntityController extends Controller
     }
 
     /**
-     * @param  list<array{key: string, order: int}>  $items
+     * Persist sentence orders two-phase: every changed row is parked at a
+     * unique negative order before the finals are written. The final orders
+     * are collision-free as a set, but one row's final may be another row's
+     * current order, so a naive one-by-one write would trip the
+     * (entity_id, order) unique index mid-write.
+     *
+     * @param  array<int, int>  $orders  sentence id => final order
      */
-    private function persistOrderChanges(string $lang, int $entityId, array $items): void
+    private function persistSentenceOrders(string $lang, int $entityId, array $orders): void
     {
         $sentenceClass = $this->sentenceClass($lang);
         $entityForeignKey = $this->entityForeignKey($lang);
@@ -544,18 +551,40 @@ class EntityController extends Controller
             ->get(['id', 'order'])
             ->mapWithKeys(fn ($row): array => [$row->id => (int) $row->order]);
 
-        foreach ($items as $item) {
-            $id = (int) substr($item['key'], 2);
+        $changed = [];
 
-            if (($currentOrders->get($id) ?? null) !== $item['order']) {
-                $this->setSentenceOrderRaw($lang, $id, $item['order']);
+        foreach ($orders as $id => $order) {
+            if (($currentOrders->get($id) ?? null) !== $order) {
+                $changed[$id] = $order;
             }
+        }
+
+        if ($changed === []) {
+            return;
+        }
+
+        foreach (array_keys($changed) as $id) {
+            $sentenceClass::query()->whereKey($id)->update(['order' => -$id - 1_000_000_000]);
+        }
+
+        foreach ($changed as $id => $order) {
+            $sentenceClass::query()->whereKey($id)->update(['order' => $order]);
         }
     }
 
-    private function setSentenceOrderRaw(string $lang, int $sentenceId, int $order): void
+    /**
+     * @param  list<array{key: string, order: int}>  $items
+     * @return array<int, int>
+     */
+    private function ordersFromItems(array $items): array
     {
-        $this->sentenceClass($lang)::query()->whereKey($sentenceId)->update(['order' => $order]);
+        $orders = [];
+
+        foreach ($items as $item) {
+            $orders[(int) substr($item['key'], 2)] = (int) $item['order'];
+        }
+
+        return $orders;
     }
 
     /**

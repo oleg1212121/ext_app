@@ -38,6 +38,7 @@ const PageLink = ({disabled, href, children}) => {
 
 export default function Show({lang, language, entity, entityMatches = [], sentences = [], sentences_meta, can_edit: canEdit = false}) {
     const fileName = entity.file_path ? entity.file_path.split('/').pop() : null;
+    const pageOffset = ((sentences_meta?.current_page ?? 1) - 1) * (sentences_meta?.per_page ?? 20);
 
     return (
         <div className="flex-1 min-h-0 overflow-y-auto bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)]">
@@ -141,10 +142,10 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                         </p>
                     ) : (
                         <ol className="divide-y divide-[var(--wbench-rule)] dark:divide-[var(--wbench-rule-night)]">
-                            {sentences.map((sentence) => (
+                            {sentences.map((sentence, index) => (
                                 <li key={sentence.id} className="flex gap-4 px-5 py-3">
                                     <span className="mt-0.5 font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                        {String(sentence.order).padStart(3, '0')}
+                                        {String(pageOffset + index + 1).padStart(3, '0')}
                                     </span>
                                     <div className="min-w-0 flex-1">
                                         <p className="text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
