@@ -2,6 +2,12 @@
 
 ## 2026-09-10
 
+* **Entity detail page showed sparse order values as sentence numbers.**
+  `Entities/Show.jsx` printed the raw `order` column (`000, 1024, 1536, …`)
+  for each sentence. It now derives a positional display number from the
+  pagination meta (`(current_page - 1) * per_page + index + 1`), matching the
+  `displayOrder` pattern already used by `Entities/Edit.jsx`. Display-only;
+  stored sparse orders are untouched.
 * **Sparse orders from entity creation + editor "Create below" placement
   fix.** Three related fixes on `aligner-order-rework`. (1) `SentenceSplitter`
   (the file-upload split pipeline) wrote dense sequential orders
