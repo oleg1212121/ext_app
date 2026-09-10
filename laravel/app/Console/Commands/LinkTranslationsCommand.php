@@ -2,20 +2,19 @@
 
 namespace App\Console\Commands;
 
-use App\Models\EnRuTranslation;
-use App\Models\EnWord;
-use App\Models\EnWordClass;
-use App\Models\RuEnTranslation;
-use App\Models\RuWord;
-use App\Models\RuWordClass;
+use App\Models\Language;
+use App\Models\Word;
+use App\Models\WordClass;
+use App\Models\WordTranslation;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 
 class LinkTranslationsCommand extends Command
 {
     protected $signature = 'wiktionary:link-translations';
 
-    protected $description = 'Link EN and RU words through stored translations, stripping stress marks for matching';
+    protected $description = 'Link words across languages through stored translations, stripping stress marks for matching';
 
     private const BATCH_SIZE = 1000;
 
@@ -23,11 +22,12 @@ class LinkTranslationsCommand extends Command
 
     public function handle(): int
     {
-        $enWordClasses = EnWordClass::pluck('id', 'slug')->toArray();
-        $ruWordClasses = RuWordClass::pluck('id', 'slug')->toArray();
+        $languages = Language::query()
+            ->whereIn('id', Word::query()->select('language_id')->distinct())
+            ->get();
 
-        if (empty($enWordClasses) || empty($ruWordClasses)) {
-            $this->error('Word classes not found. Run the word class seeders first.');
+        if ($languages->count() < 2) {
+            $this->error('At least two languages with imported words are required.');
 
             return self::FAILURE;
         }
@@ -36,19 +36,30 @@ class LinkTranslationsCommand extends Command
         DB::statement('SET statement_timeout = '.self::STATEMENT_TIMEOUT_MS);
 
         try {
-            $this->info('Linking EN → RU translations...');
-            $enRuStats = $this->linkEnToRu($enWordClasses, $ruWordClasses);
+            $tableRows = [];
 
-            $this->newLine();
-            $this->info('Linking RU → EN translations...');
-            $ruEnStats = $this->linkRuToEn($ruWordClasses, $enWordClasses);
+            foreach ($languages as $fromLanguage) {
+                foreach ($languages as $toLanguage) {
+                    if ($fromLanguage->id === $toLanguage->id) {
+                        continue;
+                    }
+
+                    $this->newLine();
+                    $this->info("Linking {$fromLanguage->code} → {$toLanguage->code} translations...");
+                    $stats = $this->linkDirection($fromLanguage, $toLanguage);
+
+                    $tableRows[] = [
+                        strtoupper($fromLanguage->code).' → '.strtoupper($toLanguage->code),
+                        $stats['linked'],
+                        $stats['skipped'],
+                        $stats['total'],
+                    ];
+                }
+            }
 
             $this->newLine(2);
             $this->info('Linking completed!');
-            $this->table(['Direction', 'Linked', 'Skipped (no match)', 'Total translations'], [
-                ['EN → RU', $enRuStats['linked'], $enRuStats['skipped'], $enRuStats['total']],
-                ['RU → EN', $ruEnStats['linked'], $ruEnStats['skipped'], $ruEnStats['total']],
-            ]);
+            $this->table(['Direction', 'Linked', 'Skipped (no match)', 'Total translations'], $tableRows);
         } finally {
             DB::statement('SET statement_timeout = 0');
         }
@@ -56,55 +67,80 @@ class LinkTranslationsCommand extends Command
         return self::SUCCESS;
     }
 
-    private function linkEnToRu(array $enWordClasses, array $ruWordClasses): array
+    private function linkDirection(Language $fromLanguage, Language $toLanguage): array
     {
         $stats = ['linked' => 0, 'skipped' => 0, 'total' => 0];
         $newLinks = [];
 
-        $enWordIds = EnWord::query()
+        /** @var array<int, int> $fromClassBySlug class id by slug, source language */
+        $fromClassBySlug = WordClass::query()
+            ->where('language_id', $fromLanguage->id)
+            ->pluck('id', 'slug')
+            ->toArray();
+
+        /** @var array<int, string> $slugByFromClassId slug by class id, source language */
+        $slugByFromClassId = array_flip($fromClassBySlug);
+
+        /** @var array<string, int> $toClassBySlug class id by slug, target language */
+        $toClassBySlug = WordClass::query()
+            ->where('language_id', $toLanguage->id)
+            ->pluck('id', 'slug')
+            ->toArray();
+
+        if (empty($toClassBySlug)) {
+            return $stats;
+        }
+
+        $fromWordIds = Word::query()
+            ->where('language_id', $fromLanguage->id)
             ->whereNotNull('translations')
             ->pluck('id');
 
-        $bar = $this->output->createProgressBar($enWordIds->count());
+        $bar = $this->output->createProgressBar($fromWordIds->count());
 
-        foreach ($enWordIds->chunk(500) as $idChunk) {
-            $enWords = EnWord::query()
+        foreach ($fromWordIds->chunk(500) as $idChunk) {
+            $fromWords = Word::query()
                 ->whereIn('id', $idChunk->all())
-                ->select(['id', 'word', 'en_word_class_id', 'translations'])
+                ->select(['id', 'word', 'word_class_id', 'translations'])
                 ->get();
 
-            foreach ($enWords as $enWord) {
+            foreach ($fromWords as $fromWord) {
                 $bar->advance();
-                $translations = $enWord->translations ?? [];
+                $translations = $fromWord->translations ?? [];
+
+                $slug = $slugByFromClassId[$fromWord->word_class_id] ?? null;
+                $toClassId = ($slug !== null && isset($toClassBySlug[$slug])) ? $toClassBySlug[$slug] : reset($toClassBySlug);
 
                 foreach ($translations as $translation) {
                     $stats['total']++;
 
-                    $normalized = $this->normalizeRuWord($translation);
-                    $ruClassId = $this->mapWordClassSlug($enWord->en_word_class_id, $enWordClasses, $ruWordClasses);
+                    $normalized = $this->normalizeTargetWord((string) $translation, $toLanguage->code);
 
-                    $ruWordId = RuWord::where('l_word', $normalized)
-                        ->where('ru_word_class_id', $ruClassId)
+                    $toWordId = Word::query()
+                        ->where('language_id', $toLanguage->id)
+                        ->where('l_word', $normalized)
+                        ->where('word_class_id', $toClassId)
                         ->value('id');
 
-                    if ($ruWordId === null) {
+                    if ($toWordId === null) {
                         $stats['skipped']++;
-                        $this->warn("  No match: EN '{$enWord->word}' → RU '{$translation}' (normalized: '{$normalized}')");
+                        $this->warn("  No match: {$fromLanguage->code} '{$fromWord->word}' → {$toLanguage->code} '{$translation}' (normalized: '{$normalized}')");
 
                         continue;
                     }
 
-                    $linkKey = $enWord->id.'|'.$ruWordId;
-                    if (! isset($newLinks[$linkKey]) && ! EnRuTranslation::where('en_word_id', $enWord->id)->where('ru_word_id', $ruWordId)->exists()) {
+                    $linkKey = $fromWord->id.'|'.$toWordId;
+                    if (! isset($newLinks[$linkKey])
+                        && ! WordTranslation::query()->where('from_word_id', $fromWord->id)->where('to_word_id', $toWordId)->exists()) {
                         $newLinks[$linkKey] = [
-                            'en_word_id' => $enWord->id,
-                            'ru_word_id' => $ruWordId,
+                            'from_word_id' => $fromWord->id,
+                            'to_word_id' => $toWordId,
                         ];
                         $stats['linked']++;
                     }
 
                     if (count($newLinks) >= self::BATCH_SIZE) {
-                        EnRuTranslation::upsert(array_values($newLinks), ['en_word_id', 'ru_word_id']);
+                        WordTranslation::upsert(array_values($newLinks), ['from_word_id', 'to_word_id']);
                         $newLinks = [];
                     }
                 }
@@ -115,93 +151,23 @@ class LinkTranslationsCommand extends Command
         $this->newLine();
 
         if (! empty($newLinks)) {
-            EnRuTranslation::upsert(array_values($newLinks), ['en_word_id', 'ru_word_id']);
+            WordTranslation::upsert(array_values($newLinks), ['from_word_id', 'to_word_id']);
         }
 
         return $stats;
     }
 
-    private function linkRuToEn(array $ruWordClasses, array $enWordClasses): array
+    /**
+     * Normalize a translation for target-language lookup: Cyrillic targets
+     * carry combining stress marks that must be stripped before matching.
+     */
+    private function normalizeTargetWord(string $word, string $targetCode): string
     {
-        $stats = ['linked' => 0, 'skipped' => 0, 'total' => 0];
-        $newLinks = [];
-
-        $ruWordIds = RuWord::query()
-            ->whereNotNull('translations')
-            ->pluck('id');
-
-        $bar = $this->output->createProgressBar($ruWordIds->count());
-
-        foreach ($ruWordIds->chunk(500) as $idChunk) {
-            $ruWords = RuWord::query()
-                ->whereIn('id', $idChunk->all())
-                ->select(['id', 'word', 'ru_word_class_id', 'translations'])
-                ->get();
-
-            foreach ($ruWords as $ruWord) {
-                $bar->advance();
-                $translations = $ruWord->translations ?? [];
-
-                foreach ($translations as $translation) {
-                    $stats['total']++;
-
-                    $normalized = mb_strtolower(trim($translation));
-                    $enClassId = $this->mapWordClassSlug($ruWord->ru_word_class_id, $ruWordClasses, $enWordClasses);
-
-                    $enWordId = EnWord::where('l_word', $normalized)
-                        ->where('en_word_class_id', $enClassId)
-                        ->value('id');
-
-                    if ($enWordId === null) {
-                        $stats['skipped']++;
-                        $this->warn("  No match: RU '{$ruWord->word}' → EN '{$translation}'");
-
-                        continue;
-                    }
-
-                    $linkKey = $ruWord->id.'|'.$enWordId;
-                    if (! isset($newLinks[$linkKey]) && ! RuEnTranslation::where('ru_word_id', $ruWord->id)->where('en_word_id', $enWordId)->exists()) {
-                        $newLinks[$linkKey] = [
-                            'ru_word_id' => $ruWord->id,
-                            'en_word_id' => $enWordId,
-                        ];
-                        $stats['linked']++;
-                    }
-
-                    if (count($newLinks) >= self::BATCH_SIZE) {
-                        RuEnTranslation::upsert(array_values($newLinks), ['ru_word_id', 'en_word_id']);
-                        $newLinks = [];
-                    }
-                }
-            }
+        if ($targetCode === 'ru') {
+            $word = (string) preg_replace('/\p{M}/u', '', $word);
         }
 
-        $bar->finish();
-        $this->newLine();
-
-        if (! empty($newLinks)) {
-            RuEnTranslation::upsert(array_values($newLinks), ['ru_word_id', 'en_word_id']);
-        }
-
-        return $stats;
-    }
-
-    private function normalizeRuWord(string $word): string
-    {
-        $normalized = preg_replace('/\p{M}/u', '', $word);
-
-        return mb_strtolower(trim($normalized ?? $word));
-    }
-
-    private function mapWordClassSlug(int $sourceClassId, array $sourceClasses, array $targetClasses): int
-    {
-        $slug = array_search($sourceClassId, $sourceClasses);
-
-        if ($slug !== false && isset($targetClasses[$slug])) {
-            return $targetClasses[$slug];
-        }
-
-        return reset($targetClasses);
+        return mb_strtolower(trim($word));
     }
 
     private function killStuckDeleteTransactions(): void
@@ -211,7 +177,7 @@ class LinkTranslationsCommand extends Command
             FROM pg_stat_activity
             WHERE datname = current_database()
               AND state = 'active'
-              AND query ~ 'delete from "(en_words|ru_words)"'
+              AND query ~ 'delete from "words"'
             SQL
         );
     }

@@ -9,8 +9,8 @@ use App\Exceptions\AiProviderException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AiQuestionRequest;
 use App\Http\Requests\BilingualsTextRequest;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
+use App\Models\EntityMatch;
+use App\Models\MeaningMatch;
 use Exception;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
@@ -65,15 +65,17 @@ class SimulatorController extends Controller
         try {
             $matches = $this->access()
                 ->readableMatchQuery(auth()->user())
-                ->with(['enEntity', 'ruEntity'])
+                ->with(['aEntity.language', 'bEntity.language'])
                 ->latest('id')
                 ->get();
 
             $result = [];
             foreach ($matches as $match) {
-                $enName = $match->enEntity->name ?? __('English');
-                $ruName = $match->ruEntity->name ?? __('Russian');
-                $result[] = ['id' => $match->id, 'text' => "{$enName} / {$ruName}"];
+                $aName = $match->aEntity->name
+                    ?? strtoupper($match->aEntity->language?->code ?? 'A');
+                $bName = $match->bEntity->name
+                    ?? strtoupper($match->bEntity->language?->code ?? 'B');
+                $result[] = ['id' => $match->id, 'text' => "{$aName} / {$bName}"];
             }
 
             return $result;
@@ -90,9 +92,9 @@ class SimulatorController extends Controller
         $page = max(1, (int) ($validated['page'] ?? 1));
         $perPage = min(200, max(1, (int) ($validated['per_page'] ?? 50)));
 
-        if (! empty($validated['en_ru_entity_match_id'])) {
+        if (! empty($validated['entity_match_id'])) {
             $result = $this->textFromEntityMatch(
-                (int) $validated['en_ru_entity_match_id'],
+                (int) $validated['entity_match_id'],
                 $page,
                 $perPage
             );
@@ -123,8 +125,8 @@ class SimulatorController extends Controller
      */
     private function textFromEntityMatch(int $entityMatchId, int $page, int $perPage): array
     {
-        $match = EnRuEntityMatch::query()
-            ->with(['enEntity', 'ruEntity'])
+        $match = EntityMatch::query()
+            ->with(['aEntity.language', 'bEntity.language'])
             ->find($entityMatchId);
 
         if ($match === null) {
@@ -135,13 +137,10 @@ class SimulatorController extends Controller
             return ['error' => 'You do not have access to this text.', 'code' => 403];
         }
 
-        /** @var LengthAwarePaginator<int, EnRuMeaningMatch> $paginator */
-        $paginator = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatchId)
-            ->with([
-                'enSentenceMatches.enEntitySentence',
-                'ruSentenceMatches.ruEntitySentence',
-            ])
+        /** @var LengthAwarePaginator<int, MeaningMatch> $paginator */
+        $paginator = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatchId)
+            ->with(['sentenceMeaningMatches.entitySentence'])
             ->orderBy('order')
             ->paginate(perPage: $perPage, columns: ['*'], pageName: 'page', page: $page);
 

@@ -18,7 +18,7 @@ class UpdateSentenceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'lang' => ['required', 'in:en,ru'],
+            'side' => ['required', 'in:a,b'],
             'content' => ['required', 'string', 'max:5000', $this->nonEmptyString()],
         ];
     }

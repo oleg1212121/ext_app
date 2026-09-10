@@ -2,60 +2,27 @@
 
 namespace App\Classes;
 
-use App\Models\EnDefinition;
-use App\Models\EnEtymology;
-use App\Models\EnForm;
-use App\Models\EnTranscription;
-use App\Models\EnTranscriptionType;
-use App\Models\EnWord;
-use App\Models\EnWordClass;
-use App\Models\RuDefinition;
-use App\Models\RuEtymology;
-use App\Models\RuForm;
-use App\Models\RuTranscription;
-use App\Models\RuTranscriptionType;
-use App\Models\RuWord;
-use App\Models\RuWordClass;
+use App\Models\Definition;
+use App\Models\Etymology;
+use App\Models\Form;
+use App\Models\Language;
+use App\Models\Transcription;
+use App\Models\TranscriptionType;
+use App\Models\Word;
+use App\Models\WordClass;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Output\OutputInterface;
 
 class WiktionaryParser
 {
-    private const LANG_CONFIG = [
-        'en' => [
-            'word_model' => EnWord::class,
-            'word_class_model' => EnWordClass::class,
-            'word_class_fk' => 'en_word_class_id',
-            'definition_model' => EnDefinition::class,
-            'form_model' => EnForm::class,
-            'etymology_model' => EnEtymology::class,
-            'transcription_model' => EnTranscription::class,
-            'transcription_type_model' => EnTranscriptionType::class,
-            'transcription_type_fk' => 'en_transcription_type_id',
-            'word_fk' => 'en_word_id',
-        ],
-        'ru' => [
-            'word_model' => RuWord::class,
-            'word_class_model' => RuWordClass::class,
-            'word_class_fk' => 'ru_word_class_id',
-            'definition_model' => RuDefinition::class,
-            'form_model' => RuForm::class,
-            'etymology_model' => RuEtymology::class,
-            'transcription_model' => RuTranscription::class,
-            'transcription_type_model' => RuTranscriptionType::class,
-            'transcription_type_fk' => 'ru_transcription_type_id',
-            'word_fk' => 'ru_word_id',
-        ],
-    ];
-
     private string $lang;
 
     private string $targetLang;
 
     private int $batchSize;
 
-    private array $config;
+    private int $languageId;
 
     private array $wordClassMap = [];
 
@@ -73,7 +40,14 @@ class WiktionaryParser
         $this->lang = $lang;
         $this->targetLang = $targetLang;
         $this->batchSize = $batchSize;
-        $this->config = self::LANG_CONFIG[$lang] ?? throw new \InvalidArgumentException("Unsupported language: {$lang}");
+
+        $language = Language::query()->where('code', $lang)->first();
+
+        if ($language === null) {
+            throw new \InvalidArgumentException("Unsupported language: {$lang}");
+        }
+
+        $this->languageId = $language->id;
     }
 
     public function import(string $path, ?OutputInterface $output = null): array
@@ -263,15 +237,20 @@ class WiktionaryParser
 
     private function loadLookupMaps(): void
     {
-        $wordClassModel = $this->config['word_class_model'];
-        $this->wordClassMap = $wordClassModel::pluck('id', 'slug')->toArray();
+        $this->wordClassMap = WordClass::query()
+            ->where('language_id', $this->languageId)
+            ->pluck('id', 'slug')
+            ->toArray();
 
         if (empty($this->wordClassMap)) {
             throw new \RuntimeException('No word classes found. Run the word class seeder first.');
         }
 
-        $transcriptionTypeModel = $this->config['transcription_type_model'];
-        $this->transcriptionTypeMap = $transcriptionTypeModel::pluck('id', 'slug')->toArray();
+        $this->transcriptionTypeMap = TranscriptionType::query()
+            ->where('language_id', $this->languageId)
+            ->pluck('id', 'slug')
+            ->toArray();
+
         if (empty($this->transcriptionTypeMap)) {
             throw new \RuntimeException('No transcription types found. Run the transcription type seeder first.');
         }
@@ -294,15 +273,6 @@ class WiktionaryParser
     public function flushBatch(array $batch): void
     {
         DB::transaction(function () use ($batch) {
-            $wordModel = $this->config['word_model'];
-            $definitionModel = $this->config['definition_model'];
-            $formModel = $this->config['form_model'];
-            $etymologyModel = $this->config['etymology_model'];
-            $transcriptionModel = $this->config['transcription_model'];
-            $wordFk = $this->config['word_fk'];
-            $wordClassFk = $this->config['word_class_fk'];
-            $transcriptionTypeFk = $this->config['transcription_type_fk'];
-
             $defaultWordClassId = $this->wordClassMap['unknown'] ?? reset($this->wordClassMap);
 
             $wordUpserts = [];
@@ -311,57 +281,56 @@ class WiktionaryParser
                 $wordUpserts[] = [
                     'word' => $record['word'],
                     'l_word' => $record['l_word'],
-                    $wordClassFk => $posId,
+                    'language_id' => $this->languageId,
+                    'word_class_id' => $posId,
                     'translations' => ! empty($record['translations']) ? json_encode($record['translations']) : null,
                 ];
             }
 
-            $this->uniqueByCompound($wordUpserts, ['word', $wordClassFk]);
-            $wordModel::upsert($wordUpserts, ['word', $wordClassFk]);
+            $this->uniqueByCompound($wordUpserts, ['word', 'language_id', 'word_class_id']);
+            Word::upsert($wordUpserts, ['word', 'language_id', 'word_class_id']);
 
             $this->stats['words_imported'] += count($wordUpserts);
 
-            $wordIds = $wordModel::whereIn('word', collect($batch)->pluck('word')->unique()->toArray())
-                ->get(['id', 'word', $wordClassFk])
-                ->keyBy(fn ($w) => mb_strtolower($w->word).'|'.$w->{$wordClassFk});
+            $wordIds = Word::query()
+                ->where('language_id', $this->languageId)
+                ->whereIn('word', collect($batch)->pluck('word')->unique()->toArray())
+                ->get(['id', 'word', 'word_class_id'])
+                ->keyBy(fn ($w) => mb_strtolower($w->word).'|'.$w->word_class_id);
 
-            $this->flushDefinitions($batch, $wordIds, $wordClassFk, $defaultWordClassId, $definitionModel, $wordFk);
-            $this->flushForms($batch, $wordIds, $wordClassFk, $defaultWordClassId, $formModel, $wordFk);
-            $this->flushEtymologies($batch, $wordIds, $wordClassFk, $defaultWordClassId, $etymologyModel, $wordFk);
-            $this->flushTranscriptions($batch, $wordIds, $wordClassFk, $defaultWordClassId, $transcriptionModel, $wordFk, $transcriptionTypeFk);
+            $this->flushDefinitions($batch, $wordIds, $defaultWordClassId);
+            $this->flushForms($batch, $wordIds, $defaultWordClassId);
+            $this->flushEtymologies($batch, $wordIds, $defaultWordClassId);
+            $this->flushTranscriptions($batch, $wordIds, $defaultWordClassId);
         });
     }
 
-    private function flushDefinitions(array $batch, object $wordIds, string $wordClassFk, int $defaultWordClassId, string $definitionModel, string $wordFk): void
+    private function flushDefinitions(array $batch, object $wordIds, int $defaultWordClassId): void
     {
         $rows = [];
         foreach ($batch as $record) {
-            $posId = $this->wordClassMap[$record['pos']] ?? $defaultWordClassId;
-            $lookupKey = mb_strtolower($record['word']).'|'.$posId;
-            $wordId = $wordIds[$lookupKey]->id ?? null;
+            $wordId = $this->lookupWordId($record, $wordIds, $defaultWordClassId);
             if ($wordId === null) {
                 continue;
             }
             foreach ($record['definitions'] as $definition) {
                 $rows[] = [
                     'definition' => mb_substr($definition, 0, 500),
-                    $wordFk => $wordId,
+                    'word_id' => $wordId,
                 ];
             }
         }
         if (! empty($rows)) {
-            $this->uniqueByCompound($rows, ['definition', $wordFk]);
-            $this->insertNewOnly($definitionModel, $rows, 'definition', $wordFk);
+            $this->uniqueByCompound($rows, ['definition', 'word_id']);
+            $this->insertNewOnly(Definition::class, $rows, 'definition', 'word_id');
         }
     }
 
-    private function flushForms(array $batch, object $wordIds, string $wordClassFk, int $defaultWordClassId, string $formModel, string $wordFk): void
+    private function flushForms(array $batch, object $wordIds, int $defaultWordClassId): void
     {
         $rows = [];
         foreach ($batch as $record) {
-            $posId = $this->wordClassMap[$record['pos']] ?? $defaultWordClassId;
-            $lookupKey = mb_strtolower($record['word']).'|'.$posId;
-            $wordId = $wordIds[$lookupKey]->id ?? null;
+            $wordId = $this->lookupWordId($record, $wordIds, $defaultWordClassId);
             if ($wordId === null) {
                 continue;
             }
@@ -369,44 +338,40 @@ class WiktionaryParser
                 $rows[] = [
                     'form' => mb_substr($form, 0, 256),
                     'l_word' => mb_strtolower(mb_substr($form, 0, 256)),
-                    $wordFk => $wordId,
+                    'word_id' => $wordId,
                 ];
             }
         }
         if (! empty($rows)) {
-            $this->uniqueByCompound($rows, ['form', $wordFk]);
-            $formModel::upsert($rows, ['form', $wordFk]);
+            $this->uniqueByCompound($rows, ['form', 'word_id']);
+            Form::upsert($rows, ['form', 'word_id']);
         }
     }
 
-    private function flushEtymologies(array $batch, object $wordIds, string $wordClassFk, int $defaultWordClassId, string $etymologyModel, string $wordFk): void
+    private function flushEtymologies(array $batch, object $wordIds, int $defaultWordClassId): void
     {
         $rows = [];
         foreach ($batch as $record) {
-            $posId = $this->wordClassMap[$record['pos']] ?? $defaultWordClassId;
-            $lookupKey = mb_strtolower($record['word']).'|'.$posId;
-            $wordId = $wordIds[$lookupKey]->id ?? null;
+            $wordId = $this->lookupWordId($record, $wordIds, $defaultWordClassId);
             if ($wordId === null || $record['etymology'] === null) {
                 continue;
             }
             $rows[] = [
                 'etymology' => mb_substr($record['etymology'], 0, 1000),
-                $wordFk => $wordId,
+                'word_id' => $wordId,
             ];
         }
         if (! empty($rows)) {
-            $this->uniqueByCompound($rows, ['etymology', $wordFk]);
-            $this->insertNewOnly($etymologyModel, $rows, 'etymology', $wordFk);
+            $this->uniqueByCompound($rows, ['etymology', 'word_id']);
+            $this->insertNewOnly(Etymology::class, $rows, 'etymology', 'word_id');
         }
     }
 
-    private function flushTranscriptions(array $batch, object $wordIds, string $wordClassFk, int $defaultWordClassId, string $transcriptionModel, string $wordFk, string $transcriptionTypeFk): void
+    private function flushTranscriptions(array $batch, object $wordIds, int $defaultWordClassId): void
     {
         $rows = [];
         foreach ($batch as $record) {
-            $posId = $this->wordClassMap[$record['pos']] ?? $defaultWordClassId;
-            $lookupKey = mb_strtolower($record['word']).'|'.$posId;
-            $wordId = $wordIds[$lookupKey]->id ?? null;
+            $wordId = $this->lookupWordId($record, $wordIds, $defaultWordClassId);
             if ($wordId === null) {
                 continue;
             }
@@ -418,15 +383,23 @@ class WiktionaryParser
                 }
                 $rows[] = [
                     'transcription' => mb_substr($sound['value'], 0, 100),
-                    $wordFk => $wordId,
-                    $transcriptionTypeFk => $typeId,
+                    'word_id' => $wordId,
+                    'transcription_type_id' => $typeId,
                 ];
             }
         }
         if (! empty($rows)) {
-            $this->uniqueByCompound($rows, ['transcription', $wordFk, $transcriptionTypeFk]);
-            $transcriptionModel::upsert($rows, ['transcription', $wordFk, $transcriptionTypeFk]);
+            $this->uniqueByCompound($rows, ['transcription', 'word_id', 'transcription_type_id']);
+            Transcription::upsert($rows, ['transcription', 'word_id', 'transcription_type_id']);
         }
+    }
+
+    private function lookupWordId(array $record, object $wordIds, int $defaultWordClassId): ?int
+    {
+        $posId = $this->wordClassMap[$record['pos']] ?? $defaultWordClassId;
+        $lookupKey = mb_strtolower($record['word']).'|'.$posId;
+
+        return $wordIds[$lookupKey]->id ?? null;
     }
 
     private function insertNewOnly(string $model, array $rows, string $textColumn, string $fkColumn): void

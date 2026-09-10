@@ -4,12 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Classes\AlignmentEditorApiPresenter;
 use App\Classes\EntityAccessService;
-use App\Http\Requests\StoreEnRuEntityMatchRequest;
+use App\Http\Requests\StoreEntityMatchRequest;
 use App\Jobs\AlignEntitySentences;
-use App\Models\EnEntity;
-use App\Models\EnRuEntityMatch;
-use App\Models\RuEntity;
+use App\Models\Entity;
+use App\Models\EntityMatch;
+use App\Models\Language;
+use App\Models\Work;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -28,13 +31,13 @@ class AlignmentController extends Controller
     {
         $entityMatches = $this->access()
             ->readableMatchQuery(auth()->user())
-            ->with(['enEntity', 'ruEntity'])
+            ->with(['aEntity.language', 'bEntity.language', 'aEntity.work'])
             ->latest()
             ->paginate(15);
 
         return Inertia::render('Alignments/Index', [
             'entityMatches' => $entityMatches->through(
-                fn (EnRuEntityMatch $entityMatch): array => $this->presenter->matchPayload($entityMatch),
+                fn (EntityMatch $entityMatch): array => $this->presenter->matchPayload($entityMatch),
             )->items(),
             'meta' => [
                 'current_page' => $entityMatches->currentPage(),
@@ -48,39 +51,61 @@ class AlignmentController extends Controller
     public function create(): Response
     {
         return Inertia::render('Alignments/Create', [
-            'enEntities' => $this->eligibleEntities('en'),
-            'ruEntities' => $this->eligibleEntities('ru'),
+            'works' => $this->alignableWorks(),
+            'languages' => Language::query()->enabled()->orderBy('sort_order')->get()
+                ->map(fn (Language $language): array => [
+                    'code' => $language->code,
+                    'name' => $language->name,
+                ])->all(),
         ]);
     }
 
-    public function store(StoreEnRuEntityMatchRequest $request): RedirectResponse
+    public function store(StoreEntityMatchRequest $request): RedirectResponse
     {
         $data = $request->validated();
 
-        $enEntity = EnEntity::find($data['en_entity_id']);
-        $ruEntity = RuEntity::find($data['ru_entity_id']);
+        $firstEntity = Entity::find($data['first_entity_id']);
+        $secondEntity = Entity::find($data['second_entity_id']);
 
-        if ($enEntity === null || $ruEntity === null
-            || ! $this->access()->canRead($request->user(), $enEntity)
-            || ! $this->access()->canRead($request->user(), $ruEntity)) {
+        if ($firstEntity === null || $secondEntity === null
+            || ! $this->access()->canRead($request->user(), $firstEntity)
+            || ! $this->access()->canRead($request->user(), $secondEntity)) {
             abort(403);
         }
 
-        $existing = EnRuEntityMatch::query()
-            ->where('en_entity_id', $data['en_entity_id'])
-            ->where('ru_entity_id', $data['ru_entity_id'])
+        if ($firstEntity->work_id !== $secondEntity->work_id) {
+            return back()->withErrors([
+                'second_entity_id' => 'Both entities must belong to the same work.',
+            ]);
+        }
+
+        if ($firstEntity->language_id === $secondEntity->language_id) {
+            return back()->withErrors([
+                'second_entity_id' => 'Both entities must be in different languages.',
+            ]);
+        }
+
+        // Canonical pair order: the lower entity id is always the a side, so
+        // the unique(a_entity_id, b_entity_id) constraint covers both orders.
+        [$aEntityId, $bEntityId] = [
+            min((int) $data['first_entity_id'], (int) $data['second_entity_id']),
+            max((int) $data['first_entity_id'], (int) $data['second_entity_id']),
+        ];
+
+        $existing = EntityMatch::query()
+            ->where('a_entity_id', $aEntityId)
+            ->where('b_entity_id', $bEntityId)
             ->first();
 
         if ($existing !== null) {
             return back()
-                ->withErrors(['ru_entity_id' => 'A match for this entity pair already exists.'])
+                ->withErrors(['second_entity_id' => 'A match for this entity pair already exists.'])
                 ->with('existing_match_id', $existing->id);
         }
 
-        $entityMatch = EnRuEntityMatch::create([
-            'en_entity_id' => (int) $data['en_entity_id'],
-            'ru_entity_id' => (int) $data['ru_entity_id'],
-            'is_original_en' => (bool) $data['is_original_en'],
+        $entityMatch = EntityMatch::create([
+            'a_entity_id' => $aEntityId,
+            'b_entity_id' => $bEntityId,
             'chunk_size' => (int) $data['chunk_size'],
             'max_n' => (int) $data['max_n'],
             'status' => 'pending',
@@ -92,32 +117,11 @@ class AlignmentController extends Controller
             ->with('success', 'Entity match created — alignment started.');
     }
 
-    /**
-     * Entities the user may read and that are ready to be aligned: they carry
-     * a generated signature and at least one sentence on the side.
-     *
-     * @return list<array{id: int, text: string}>
-     */
-    private function eligibleEntities(string $lang): array
-    {
-        return $this->access()
-            ->readableQuery(auth()->user(), $lang)
-            ->whereNotNull('signature')
-            ->has('sentences')
-            ->orderBy('name')
-            ->get(['id', 'name'])
-            ->map(fn (EnEntity|RuEntity $entity): array => [
-                'id' => $entity->id,
-                'text' => $entity->name,
-            ])
-            ->all();
-    }
-
-    public function show(EnRuEntityMatch $entityMatch): Response
+    public function show(EntityMatch $entityMatch): Response
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
-        $entityMatch->load(['enEntity', 'ruEntity']);
+        $entityMatch->load(['aEntity.language', 'bEntity.language', 'aEntity.work.originalLanguage']);
 
         $payload = $this->presenter->rowsPagePayload($entityMatch, 1, 25);
 
@@ -126,9 +130,59 @@ class AlignmentController extends Controller
             'rows' => $payload['rows'],
             'rows_meta' => $payload['meta'],
             'sentences_before' => $payload['sentences_before'],
-            'unmatched_en' => $this->presenter->unmatchedPayload($entityMatch, 'en', 1),
-            'unmatched_ru' => $this->presenter->unmatchedPayload($entityMatch, 'ru', 1),
+            'unmatched_a' => $this->presenter->unmatchedPayload($entityMatch, 'a', 1),
+            'unmatched_b' => $this->presenter->unmatchedPayload($entityMatch, 'b', 1),
             'needs_review' => $this->presenter->needsReviewPagePayload($entityMatch, 1),
         ]);
+    }
+
+    /**
+     * Works that have at least two eligible entities in distinct languages:
+     * each work carries its eligible entities grouped by language code.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function alignableWorks(): array
+    {
+        $eligible = $this->access()
+            ->readableQuery(auth()->user())
+            ->whereNotNull('signature')
+            ->has('sentences')
+            ->with('language')
+            ->orderBy('name')
+            ->get();
+
+        return Work::query()
+            ->whereKey($eligible->pluck('work_id')->unique()->all())
+            ->orderBy('title')
+            ->get()
+            ->map(function (Work $work) use ($eligible): array {
+                /** @var Collection<int, Entity> $workEntities */
+                $workEntities = $eligible->where('work_id', $work->id)->values();
+
+                $byLanguage = [];
+
+                foreach ($workEntities as $entity) {
+                    $code = $entity->language?->code ?? '?';
+
+                    $byLanguage[$code][] = [
+                        'id' => $entity->id,
+                        'text' => $entity->name.($entity->label !== null ? " ({$entity->label})" : ''),
+                    ];
+                }
+
+                if (count($byLanguage) < 2) {
+                    return [];
+                }
+
+                return [
+                    'id' => $work->id,
+                    'title' => $work->title,
+                    'entities' => $byLanguage,
+                ];
+            })
+            ->filter(fn (array $work): bool => $work !== [])
+            ->values()
+            ->all();
     }
 }

@@ -2,12 +2,10 @@
 
 namespace App\Classes;
 
-use App\Models\EnEntity;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\EnSentenceMeaningMatch;
-use App\Models\RuEntity;
-use App\Models\RuSentenceMeaningMatch;
+use App\Models\Entity;
+use App\Models\EntityMatch;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Collection;
@@ -39,16 +37,16 @@ class SentenceAlignmentService
     /**
      * Verify that two entities are translations of the same text.
      */
-    public function verifyEntityPair(EnEntity $enEntity, RuEntity $ruEntity): array
+    public function verifyEntityPair(Entity $aEntity, Entity $bEntity): array
     {
-        $enSignature = json_decode($enEntity->signature, true);
-        $ruSignature = json_decode($ruEntity->signature, true);
+        $aSignature = json_decode($aEntity->signature, true);
+        $bSignature = json_decode($bEntity->signature, true);
 
-        if (! is_array($enSignature) || ! is_array($ruSignature)) {
+        if (! is_array($aSignature) || ! is_array($bSignature)) {
             return ['similarity' => 0.0, 'passed' => false, 'message' => 'Missing entity signatures'];
         }
 
-        $similarity = $this->cosineSimilarity($enSignature, $ruSignature);
+        $similarity = $this->cosineSimilarity($aSignature, $bSignature);
         $passed = $similarity >= self::VERIFY_THRESHOLD;
 
         return [
@@ -67,41 +65,40 @@ class SentenceAlignmentService
      * anchor before persisting (see AlignEntitySentences).
      *
      * Optional landmarks (hard human-made pins) and a high-confidence prepass
-     * bar are passed straight through to the python service. When omitted the
-     * request payload is byte-identical to the previous shape.
+     * bar are passed straight through to the python service.
      *
-     * @param  list<array{en_start: int, en_end: int, ru_start: int, ru_end: int}>  $landmarks
+     * @param  list<array{a_start: int, a_end: int, b_start: int, b_end: int}>  $landmarks
      * @return array{links: array, dpPath: array, matches: array}
      */
     public function alignChunkRemote(
-        Collection $enSentences,
-        Collection $ruSentences,
+        Collection $aSentences,
+        Collection $bSentences,
         int $maxN = 3,
         array $landmarks = [],
         ?float $highConfidence = null,
     ): array {
-        $enIds = $enSentences->pluck('id')->values()->all();
-        $ruIds = $ruSentences->pluck('id')->values()->all();
+        $aIds = $aSentences->pluck('id')->values()->all();
+        $bIds = $bSentences->pluck('id')->values()->all();
 
-        if (count($enIds) === 0) {
+        if (count($aIds) === 0) {
             return [
                 'links' => [],
-                'dpPath' => $this->buildSkipOnlyPath('skip_ru', $ruIds),
+                'dpPath' => $this->buildSkipOnlyPath('skip_b', $bIds),
                 'matches' => [],
             ];
         }
 
-        if (count($ruIds) === 0) {
+        if (count($bIds) === 0) {
             return [
                 'links' => [],
-                'dpPath' => $this->buildSkipOnlyPath('skip_en', $enIds),
+                'dpPath' => $this->buildSkipOnlyPath('skip_a', $aIds),
                 'matches' => [],
             ];
         }
 
         $payload = [
-            'en_sentences' => $enSentences->pluck('content')->map(fn ($c) => (string) $c)->values()->all(),
-            'ru_sentences' => $ruSentences->pluck('content')->map(fn ($c) => (string) $c)->values()->all(),
+            'a_sentences' => $aSentences->pluck('content')->map(fn ($c) => (string) $c)->values()->all(),
+            'b_sentences' => $bSentences->pluck('content')->map(fn ($c) => (string) $c)->values()->all(),
             'max_window' => max(1, $maxN),
         ];
 
@@ -136,15 +133,15 @@ class SentenceAlignmentService
             }
 
             $matches[] = [
-                'en_start' => (int) ($raw['en_start'] ?? 0),
-                'en_end' => (int) ($raw['en_end'] ?? 0),
-                'ru_start' => (int) ($raw['ru_start'] ?? 0),
-                'ru_end' => (int) ($raw['ru_end'] ?? 0),
+                'a_start' => (int) ($raw['a_start'] ?? 0),
+                'a_end' => (int) ($raw['a_end'] ?? 0),
+                'b_start' => (int) ($raw['b_start'] ?? 0),
+                'b_end' => (int) ($raw['b_end'] ?? 0),
                 'score' => (float) ($raw['score'] ?? 0.0),
             ];
         }
 
-        $adapted = $this->adaptMatches($matches, $enSentences, $ruSentences);
+        $adapted = $this->adaptMatches($matches, $aSentences, $bSentences);
 
         return [...$adapted, 'matches' => $matches];
     }
@@ -153,17 +150,17 @@ class SentenceAlignmentService
      * Convert python alignment matches (index spans) into links + dpPath steps.
      * Unmatched sentences (gaps between/around matches) become skip steps.
      *
-     * @param  list<array{en_start: int, en_end: int, ru_start: int, ru_end: int, score: float}>  $matches
+     * @param  list<array{a_start: int, a_end: int, b_start: int, b_end: int, score: float}>  $matches
      * @return array{links: array, dpPath: array}
      */
-    private function adaptMatches(array $matches, Collection $enSentences, Collection $ruSentences): array
+    private function adaptMatches(array $matches, Collection $aSentences, Collection $bSentences): array
     {
         return $this->buildCommittedPath(
             $matches,
-            $enSentences,
-            $ruSentences,
-            $enSentences->count(),
-            $ruSentences->count(),
+            $aSentences,
+            $bSentences,
+            $aSentences->count(),
+            $bSentences->count(),
         );
     }
 
@@ -173,63 +170,63 @@ class SentenceAlignmentService
      * (or an explicit stop), so sentences after the commit boundary are left
      * untouched — they are re-aligned with fresh context in the next chunk.
      *
-     * @param  list<array{en_start: int, en_end: int, ru_start: int, ru_end: int, score: float}>  $committedMatches
+     * @param  list<array{a_start: int, a_end: int, b_start: int, b_end: int, score: float}>  $committedMatches
      * @return array{links: array, dpPath: array}
      */
     private function buildCommittedPath(
         array $committedMatches,
-        Collection $enSentences,
-        Collection $ruSentences,
-        ?int $enStop = null,
-        ?int $ruStop = null,
+        Collection $aSentences,
+        Collection $bSentences,
+        ?int $aStop = null,
+        ?int $bStop = null,
     ): array {
-        $enIds = $enSentences->pluck('id')->values()->all();
-        $ruIds = $ruSentences->pluck('id')->values()->all();
-        $enOrders = $enSentences->pluck('order', 'id')->toArray();
-        $ruOrders = $ruSentences->pluck('order', 'id')->toArray();
+        $aIds = $aSentences->pluck('id')->values()->all();
+        $bIds = $bSentences->pluck('id')->values()->all();
+        $aOrders = $aSentences->pluck('order', 'id')->toArray();
+        $bOrders = $bSentences->pluck('order', 'id')->toArray();
 
         $lastCommitted = $committedMatches[array_key_last($committedMatches)] ?? null;
-        $enStop ??= (int) ($lastCommitted['en_end'] ?? 0);
-        $ruStop ??= (int) ($lastCommitted['ru_end'] ?? 0);
+        $aStop ??= (int) ($lastCommitted['a_end'] ?? 0);
+        $bStop ??= (int) ($lastCommitted['b_end'] ?? 0);
 
         $steps = [];
         $i = 0;
         $j = 0;
 
         foreach ($committedMatches as $match) {
-            $enStart = (int) $match['en_start'];
-            $enEnd = (int) $match['en_end'];
-            $ruStart = (int) $match['ru_start'];
-            $ruEnd = (int) $match['ru_end'];
+            $aStart = (int) $match['a_start'];
+            $aEnd = (int) $match['a_end'];
+            $bStart = (int) $match['b_start'];
+            $bEnd = (int) $match['b_end'];
 
-            while ($i < $enStart) {
-                $steps[] = ['type' => 'skip_en', 'index' => $i];
+            while ($i < $aStart) {
+                $steps[] = ['type' => 'skip_a', 'index' => $i];
                 $i++;
             }
-            while ($j < $ruStart) {
-                $steps[] = ['type' => 'skip_ru', 'index' => $j];
+            while ($j < $bStart) {
+                $steps[] = ['type' => 'skip_b', 'index' => $j];
                 $j++;
             }
 
             $steps[] = [
                 'type' => 'match',
-                'en_start' => $enStart,
-                'en_end' => $enEnd,
-                'ru_start' => $ruStart,
-                'ru_end' => $ruEnd,
+                'a_start' => $aStart,
+                'a_end' => $aEnd,
+                'b_start' => $bStart,
+                'b_end' => $bEnd,
                 'score' => (float) ($match['score'] ?? 0.0),
             ];
 
-            $i = $enEnd;
-            $j = $ruEnd;
+            $i = $aEnd;
+            $j = $bEnd;
         }
 
-        while ($i < $enStop) {
-            $steps[] = ['type' => 'skip_en', 'index' => $i];
+        while ($i < $aStop) {
+            $steps[] = ['type' => 'skip_a', 'index' => $i];
             $i++;
         }
-        while ($j < $ruStop) {
-            $steps[] = ['type' => 'skip_ru', 'index' => $j];
+        while ($j < $bStop) {
+            $steps[] = ['type' => 'skip_b', 'index' => $j];
             $j++;
         }
 
@@ -241,17 +238,17 @@ class SentenceAlignmentService
             if ($step['type'] === 'match') {
                 $linkGroup++;
 
-                for ($ei = $step['en_start']; $ei < $step['en_end']; $ei++) {
-                    for ($rj = $step['ru_start']; $rj < $step['ru_end']; $rj++) {
-                        if (! isset($enIds[$ei]) || ! isset($ruIds[$rj])) {
+                for ($ai = $step['a_start']; $ai < $step['a_end']; $ai++) {
+                    for ($bj = $step['b_start']; $bj < $step['b_end']; $bj++) {
+                        if (! isset($aIds[$ai]) || ! isset($bIds[$bj])) {
                             continue;
                         }
 
                         $links[] = [
-                            'en_entity_sentence_id' => $enIds[$ei],
-                            'ru_entity_sentence_id' => $ruIds[$rj],
-                            'en_order' => $enOrders[$enIds[$ei]],
-                            'ru_order' => $ruOrders[$ruIds[$rj]],
+                            'a_sentence_id' => $aIds[$ai],
+                            'b_sentence_id' => $bIds[$bj],
+                            'a_order' => $aOrders[$aIds[$ai]],
+                            'b_order' => $bOrders[$bIds[$bj]],
                             'link_group' => $linkGroup,
                             'similarity' => round($step['score'], 4),
                             'alignment_order' => $alignmentOrder,
@@ -260,16 +257,16 @@ class SentenceAlignmentService
                 }
 
                 $dpPath[] = ['type' => 'match', 'alignment_order' => $alignmentOrder];
-            } elseif ($step['type'] === 'skip_en') {
+            } elseif ($step['type'] === 'skip_a') {
                 $dpPath[] = [
-                    'type' => 'skip_en',
-                    'en_sentence_id' => $enIds[$step['index']] ?? null,
+                    'type' => 'skip_a',
+                    'a_sentence_id' => $aIds[$step['index']] ?? null,
                     'alignment_order' => $alignmentOrder,
                 ];
             } else {
                 $dpPath[] = [
-                    'type' => 'skip_ru',
-                    'ru_sentence_id' => $ruIds[$step['index']] ?? null,
+                    'type' => 'skip_b',
+                    'b_sentence_id' => $bIds[$step['index']] ?? null,
                     'alignment_order' => $alignmentOrder,
                 ];
             }
@@ -285,7 +282,7 @@ class SentenceAlignmentService
      * Store alignment meaning matches for a single chunk.
      */
     public function storeAlignmentSegment(
-        EnRuEntityMatch $entityMatch,
+        EntityMatch $entityMatch,
         int $alignmentChunk,
         array $links,
         array $dpPathSegment,
@@ -300,14 +297,14 @@ class SentenceAlignmentService
      * invocation. On the last chunk the full window is stored, including
      * trailing skip markers.
      *
-     * @param  list<array{en_start: int, en_end: int, ru_start: int, ru_end: int, score: float}>  $committedMatches
+     * @param  list<array{a_start: int, a_end: int, b_start: int, b_end: int, score: float}>  $committedMatches
      */
     public function storeAlignmentSegmentFromMatches(
-        EnRuEntityMatch $entityMatch,
+        EntityMatch $entityMatch,
         int $alignmentChunk,
         array $committedMatches,
-        Collection $enSentences,
-        Collection $ruSentences,
+        Collection $aSentences,
+        Collection $bSentences,
         bool $isLastChunk = false,
     ): void {
         if ($committedMatches === []) {
@@ -315,8 +312,8 @@ class SentenceAlignmentService
         }
 
         $path = $isLastChunk
-            ? $this->buildCommittedPath($committedMatches, $enSentences, $ruSentences, $enSentences->count(), $ruSentences->count())
-            : $this->buildCommittedPath($committedMatches, $enSentences, $ruSentences);
+            ? $this->buildCommittedPath($committedMatches, $aSentences, $bSentences, $aSentences->count(), $bSentences->count())
+            : $this->buildCommittedPath($committedMatches, $aSentences, $bSentences);
 
         $this->persistSegment($entityMatch, $alignmentChunk, $path['links'], $path['dpPath']);
     }
@@ -326,10 +323,10 @@ class SentenceAlignmentService
      * Each sentence becomes a meaning match with only that side junctioned,
      * keeping it visible in the reader while the other column stays empty.
      *
-     * @param  'en'|'ru'  $side
+     * @param  'a'|'b'  $side
      */
     public function storeSkipSentences(
-        EnRuEntityMatch $entityMatch,
+        EntityMatch $entityMatch,
         int $alignmentChunk,
         string $side,
         Collection $sentences,
@@ -338,7 +335,7 @@ class SentenceAlignmentService
             return;
         }
 
-        $type = $side === 'en' ? 'skip_en' : 'skip_ru';
+        $type = $side === 'a' ? 'skip_a' : 'skip_b';
 
         $this->persistSegment(
             $entityMatch,
@@ -349,7 +346,7 @@ class SentenceAlignmentService
     }
 
     private function persistSegment(
-        EnRuEntityMatch $entityMatch,
+        EntityMatch $entityMatch,
         int $alignmentChunk,
         array $links,
         array $dpPathSegment,
@@ -357,13 +354,13 @@ class SentenceAlignmentService
         DB::transaction(function () use ($entityMatch, $alignmentChunk, $links, $dpPathSegment) {
             $now = now();
 
-            EnRuMeaningMatch::query()
-                ->where('en_ru_entity_match_id', $entityMatch->id)
+            MeaningMatch::query()
+                ->where('entity_match_id', $entityMatch->id)
                 ->where('alignment_chunk', $alignmentChunk)
                 ->delete();
 
-            $maxOrder = EnRuMeaningMatch::query()
-                ->where('en_ru_entity_match_id', $entityMatch->id)
+            $maxOrder = MeaningMatch::query()
+                ->where('entity_match_id', $entityMatch->id)
                 ->max('order');
 
             $sparseOrder = app(SparseOrderService::class);
@@ -379,62 +376,54 @@ class SentenceAlignmentService
                     ? round((float) $stepLinks->avg('similarity'), 4)
                     : 0.0;
 
-                $meaningMatch = EnRuMeaningMatch::create([
-                    'en_ru_entity_match_id' => $entityMatch->id,
+                $meaningMatch = MeaningMatch::create([
+                    'entity_match_id' => $entityMatch->id,
                     'order' => $order,
                     'similarity' => $similarity,
                     'alignment_chunk' => $alignmentChunk,
                 ]);
 
                 if ($step['type'] === 'match') {
-                    $enRows = $stepLinks
-                        ->unique('en_entity_sentence_id')
-                        ->sortBy('en_order')
-                        ->values()
+                    $rows = $stepLinks
                         ->map(fn (array $link) => [
-                            'en_entity_sentence_id' => $link['en_entity_sentence_id'],
-                            'en_ru_meaning_match_id' => $meaningMatch->id,
+                            ['entity_sentence_id' => $link['a_sentence_id'], 'side' => 'a', 'a_order' => $link['a_order']],
+                            ['entity_sentence_id' => $link['b_sentence_id'], 'side' => 'b', 'b_order' => $link['b_order']],
+                        ])
+                        ->flatten(1)
+                        ->unique(fn (array $row): string => $row['side'].':'.$row['entity_sentence_id'])
+                        ->sortBy(fn (array $row): int => $row['side'] === 'a' ? $row['a_order'] : $row['b_order'])
+                        ->values()
+                        ->map(fn (array $row) => [
+                            'entity_sentence_id' => $row['entity_sentence_id'],
+                            'meaning_match_id' => $meaningMatch->id,
+                            'side' => $row['side'],
                             'created_at' => $now,
                             'updated_at' => $now,
                         ])
                         ->all();
 
-                    $ruRows = $stepLinks
-                        ->unique('ru_entity_sentence_id')
-                        ->sortBy('ru_order')
-                        ->values()
-                        ->map(fn (array $link) => [
-                            'ru_entity_sentence_id' => $link['ru_entity_sentence_id'],
-                            'en_ru_meaning_match_id' => $meaningMatch->id,
-                            'created_at' => $now,
-                            'updated_at' => $now,
-                        ])
-                        ->all();
-
-                    foreach (array_chunk($enRows, 500) as $chunk) {
-                        EnSentenceMeaningMatch::insert($chunk);
-                    }
-
-                    foreach (array_chunk($ruRows, 500) as $chunk) {
-                        RuSentenceMeaningMatch::insert($chunk);
+                    foreach (array_chunk($rows, 500) as $chunk) {
+                        SentenceMeaningMatch::insert($chunk);
                     }
 
                     continue;
                 }
 
-                if ($step['type'] === 'skip_en' && ! empty($step['en_sentence_id'])) {
-                    EnSentenceMeaningMatch::create([
-                        'en_entity_sentence_id' => $step['en_sentence_id'],
-                        'en_ru_meaning_match_id' => $meaningMatch->id,
+                if ($step['type'] === 'skip_a' && ! empty($step['a_sentence_id'])) {
+                    SentenceMeaningMatch::create([
+                        'entity_sentence_id' => $step['a_sentence_id'],
+                        'meaning_match_id' => $meaningMatch->id,
+                        'side' => 'a',
                     ]);
 
                     continue;
                 }
 
-                if ($step['type'] === 'skip_ru' && ! empty($step['ru_sentence_id'])) {
-                    RuSentenceMeaningMatch::create([
-                        'ru_entity_sentence_id' => $step['ru_sentence_id'],
-                        'en_ru_meaning_match_id' => $meaningMatch->id,
+                if ($step['type'] === 'skip_b' && ! empty($step['b_sentence_id'])) {
+                    SentenceMeaningMatch::create([
+                        'entity_sentence_id' => $step['b_sentence_id'],
+                        'meaning_match_id' => $meaningMatch->id,
+                        'side' => 'b',
                     ]);
                 }
             }
@@ -449,7 +438,7 @@ class SentenceAlignmentService
      * Store alignment links and update the entity match.
      */
     public function storeLinks(
-        EnRuEntityMatch $entityMatch,
+        EntityMatch $entityMatch,
         array $links,
         array $dpPathSegment,
     ): void {
@@ -458,8 +447,8 @@ class SentenceAlignmentService
 
     private function countLinkedPairs(int $entityMatchId): int
     {
-        return (int) EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatchId)
+        return (int) MeaningMatch::query()
+            ->where('entity_match_id', $entityMatchId)
             ->count();
     }
 
@@ -473,7 +462,7 @@ class SentenceAlignmentService
         foreach (array_values($sentenceIds) as $alignmentOrder => $sentenceId) {
             $path[] = [
                 'type' => $type,
-                ($type === 'skip_en' ? 'en_sentence_id' : 'ru_sentence_id') => $sentenceId,
+                ($type === 'skip_a' ? 'a_sentence_id' : 'b_sentence_id') => $sentenceId,
                 'alignment_order' => $alignmentOrder,
             ];
         }

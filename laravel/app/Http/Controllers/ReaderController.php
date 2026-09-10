@@ -4,10 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Classes\EntityAccessService;
 use App\Classes\MeaningMatchPresenter;
-use App\Models\EnEntity;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\RuEntity;
+use App\Models\Entity;
+use App\Models\EntityMatch;
+use App\Models\Language;
+use App\Models\MeaningMatch;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -19,26 +19,28 @@ class ReaderController extends Controller
 
     public function index(string $lang): Response
     {
+        $language = $this->resolveLanguage($lang);
+
         return Inertia::render('ReaderReactIndex', [
             'lang' => $lang,
-            'languages' => ['en', 'ru'],
-            'entities' => $this->entitiesForLanguage($lang),
+            'languages' => Language::query()->enabled()->orderBy('sort_order')->pluck('code')->all(),
+            'entities' => $this->entitiesForLanguage($language),
         ]);
     }
 
     public function show(string $lang, int $entityId): Response
     {
-        $entity = match ($lang) {
-            'en' => EnEntity::query()->findOrFail($entityId),
-            'ru' => RuEntity::query()->findOrFail($entityId),
-            default => abort(404),
-        };
+        $language = $this->resolveLanguage($lang);
+
+        $entity = Entity::query()
+            ->where('language_id', $language->id)
+            ->findOrFail($entityId);
 
         if (! $this->access()->canRead(auth()->user(), $entity)) {
             abort(403);
         }
 
-        $rows = $this->buildRows($lang, $entityId, $entity);
+        $rows = $this->buildRows($entity);
 
         return Inertia::render('ReaderReact', [
             'lang' => $lang,
@@ -53,41 +55,42 @@ class ReaderController extends Controller
     /**
      * @return list<array{0: string, 1: string}>
      */
-    private function buildRows(string $lang, int $entityId, EnEntity|RuEntity $entity): array
+    private function buildRows(Entity $entity): array
     {
-        $entityMatch = match ($lang) {
-            'en' => EnRuEntityMatch::query()->where('en_entity_id', $entityId)->first(),
-            'ru' => EnRuEntityMatch::query()->where('ru_entity_id', $entityId)->first(),
-            default => null,
-        };
+        $entityMatch = EntityMatch::query()
+            ->where(function ($query) use ($entity): void {
+                $query->where('a_entity_id', $entity->id)
+                    ->orWhere('b_entity_id', $entity->id);
+            })
+            ->with(['aEntity', 'bEntity'])
+            ->first();
 
         if ($entityMatch === null) {
             return $this->singleLanguageRows($entity);
         }
 
-        $otherEntity = $lang === 'en' ? $entityMatch->ruEntity : $entityMatch->enEntity;
+        $readingSide = $entityMatch->a_entity_id === $entity->id ? 'a' : 'b';
+        $otherEntity = $readingSide === 'a' ? $entityMatch->bEntity : $entityMatch->aEntity;
+
         if ($otherEntity === null || ! $this->access()->canRead(auth()->user(), $otherEntity)) {
             return $this->singleLanguageRows($entity);
         }
 
-        $meaningMatches = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
-            ->with([
-                'enSentenceMatches.enEntitySentence',
-                'ruSentenceMatches.ruEntitySentence',
-            ])
+        $meaningMatches = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
+            ->with(['sentenceMeaningMatches.entitySentence'])
             ->orderBy('order')
             ->get();
 
         $bilingualRows = $this->presenter->toSimulatorRows($meaningMatches);
 
-        return $this->normalizeRowsForLanguage($bilingualRows, $lang);
+        return $this->normalizeRowsForReadingSide($bilingualRows, $readingSide);
     }
 
     /**
      * @return list<array{0: string, 1: string}>
      */
-    private function singleLanguageRows(EnEntity|RuEntity $entity): array
+    private function singleLanguageRows(Entity $entity): array
     {
         return $entity->sentences()
             ->orderBy('order')
@@ -97,12 +100,15 @@ class ReaderController extends Controller
     }
 
     /**
+     * Put the reading language's text first: rows are [a, b] pairs, so flip
+     * them when reading from the b side.
+     *
      * @param  list<array{0: string, 1: string}>  $rows
      * @return list<array{0: string, 1: string}>
      */
-    private function normalizeRowsForLanguage(array $rows, string $lang): array
+    private function normalizeRowsForReadingSide(array $rows, string $readingSide): array
     {
-        if ($lang === 'en') {
+        if ($readingSide === 'a') {
             return $rows;
         }
 
@@ -115,16 +121,23 @@ class ReaderController extends Controller
     /**
      * @return list<array{id: int, name: string}>
      */
-    private function entitiesForLanguage(string $lang): array
+    private function entitiesForLanguage(Language $language): array
     {
-        $query = $this->access()->readableQuery(auth()->user(), $lang);
-
-        return $query
+        return $this->access()
+            ->readableQuery(auth()->user(), $language->id)
             ->select('id', 'name')
             ->orderBy('name')
             ->limit(100)
             ->get()
             ->all();
+    }
+
+    private function resolveLanguage(string $lang): Language
+    {
+        return Language::query()
+            ->enabled()
+            ->where('code', $lang)
+            ->firstOrFail();
     }
 
     private function access(): EntityAccessService

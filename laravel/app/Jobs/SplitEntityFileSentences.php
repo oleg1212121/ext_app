@@ -21,7 +21,6 @@ class SplitEntityFileSentences implements ShouldQueue
     public function __construct(
         private readonly int $entityId,
         private readonly string $filePath,
-        private readonly string $lang,
     ) {}
 
     /**
@@ -37,7 +36,7 @@ class SplitEntityFileSentences implements ShouldQueue
         $t0 = microtime(true);
 
         $tSplit = microtime(true);
-        $stats = $splitter->process($this->entityId, $this->filePath, $this->lang);
+        $stats = $splitter->process($this->entityId, $this->filePath);
         $splitMs = (int) round((microtime(true) - $tSplit) * 1000);
         $totalMs = (int) round((microtime(true) - $t0) * 1000);
 
@@ -45,7 +44,6 @@ class SplitEntityFileSentences implements ShouldQueue
             $stats,
             [
                 'entity_id' => $this->entityId,
-                'lang' => $this->lang,
                 'split_and_insert_ms' => $splitMs,
                 'total_ms' => $totalMs,
                 'used_passthrough_content' => false,

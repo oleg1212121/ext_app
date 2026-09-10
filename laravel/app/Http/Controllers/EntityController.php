@@ -11,13 +11,12 @@ use App\Http\Requests\StoreEntitySentenceRequest;
 use App\Http\Requests\UpdateEntityRequest;
 use App\Http\Requests\UpdateEntitySentenceRequest;
 use App\Jobs\ProcessEntityFile;
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
+use App\Models\Entity;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
 use App\Models\Language;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
 use App\Models\SentenceType;
+use App\Models\Work;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -45,7 +44,7 @@ class EntityController extends Controller
                     'code' => $language->code,
                     'name' => $language->name,
                     'native_name' => $language->native_name,
-                    'entity_count' => $this->queryForLanguage($language->code)->count(),
+                    'entity_count' => Entity::query()->where('language_id', $language->id)->count(),
                 ];
             });
 
@@ -54,13 +53,16 @@ class EntityController extends Controller
         ]);
     }
 
-    public function list(string $lang): Response
+    public function list(string $lang, Request $request): Response
     {
         $language = $this->resolveLanguage($lang);
+        $workId = $request->integer('work');
 
         $entities = $this->access()
-            ->readableQuery(auth()->user(), $lang)
+            ->readableQuery(auth()->user(), $language->id)
+            ->with('work:id,title')
             ->withCount('sentences')
+            ->when($workId > 0, fn (Builder $query): Builder => $query->where('work_id', $workId))
             ->orderBy('name')
             ->paginate(15);
 
@@ -71,10 +73,15 @@ class EntityController extends Controller
                 'name' => $language->name,
                 'native_name' => $language->native_name,
             ],
-            'entities' => $entities->through(function (EnEntity|RuEntity $entity): array {
+            'works' => $this->worksForFilter(),
+            'work_filter' => $workId > 0 ? $workId : null,
+            'entities' => $entities->through(function (Entity $entity): array {
                 return [
                     'id' => $entity->id,
                     'name' => $entity->name,
+                    'label' => $entity->label,
+                    'work_id' => $entity->work_id,
+                    'work_title' => $entity->work?->title,
                     'description' => $entity->description,
                     'signature_status' => $this->signatureStatus($entity),
                     'sentences_count' => $entity->sentences_count,
@@ -96,19 +103,20 @@ class EntityController extends Controller
 
         return Inertia::render('Entities/Create', [
             'lang' => $lang,
-            'language' => [
-                'code' => $language->code,
-                'name' => $language->name,
-                'native_name' => $language->native_name,
-            ],
+            'language' => $this->languagePayload($language),
+            'works' => $this->worksForSelect(),
+            'languages' => Language::query()->enabled()->orderBy('sort_order')->get()
+                ->map(fn (Language $item): array => $this->languagePayload($item))->all(),
         ]);
     }
 
     public function store(StoreEntityRequest $request, string $lang): RedirectResponse
     {
-        $this->resolveLanguage($lang);
+        $language = $this->resolveLanguage($lang);
 
         $data = $request->validated();
+
+        $work = $this->resolveWork($request, $language);
 
         $filePath = null;
         if ($request->hasFile('file')) {
@@ -117,7 +125,7 @@ class EntityController extends Controller
 
         if ($filePath !== null) {
             $result = TextSignatureService::create()
-                ->findSimilarExisting(TextSignatureService::readFileFromLocalPath($filePath), $lang);
+                ->findSimilarExisting(TextSignatureService::readFileFromLocalPath($filePath), $language);
 
             if ($result['signature'] === null) {
                 Storage::disk('local')->delete($filePath);
@@ -145,8 +153,11 @@ class EntityController extends Controller
             $signature = $result['signature'];
         }
 
-        $entity = $this->queryForLanguage($lang)->create([
+        $entity = Entity::query()->create([
+            'work_id' => $work->id,
+            'language_id' => $language->id,
             'name' => $data['name'],
+            'label' => $data['label'] ?? null,
             'description' => $data['description'] ?? null,
             'file_path' => $filePath,
             'is_restricted' => true,
@@ -156,7 +167,7 @@ class EntityController extends Controller
         $this->access()->grant($request->user(), $entity, null);
 
         if ($filePath !== null) {
-            ProcessEntityFile::dispatch($entity->id, $filePath, $lang);
+            ProcessEntityFile::dispatch($entity->id, $filePath);
         }
 
         return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $entity->id]);
@@ -166,7 +177,8 @@ class EntityController extends Controller
     {
         $language = $this->resolveLanguage($lang);
 
-        $entity = $this->queryForLanguage($lang)
+        $entity = Entity::query()
+            ->where('language_id', $language->id)
             ->withCount('sentences')
             ->findOrFail($entityId);
 
@@ -176,16 +188,9 @@ class EntityController extends Controller
 
         $canEdit = $this->access()->canEdit(auth()->user(), $entity);
 
-        $entityMatches = EnRuEntityMatch::query()
-            ->where(function (Builder $query) use ($lang, $entityId): void {
-                if ($lang === 'en') {
-                    $query->where('en_entity_id', $entityId);
-                } else {
-                    $query->where('ru_entity_id', $entityId);
-                }
-            })
+        $entityMatches = $entity->entityMatches()
             ->get(['id', 'status'])
-            ->map(fn (EnRuEntityMatch $match): array => [
+            ->map(fn (EntityMatch $match): array => [
                 'id' => $match->id,
                 'status' => $match->status,
             ]);
@@ -197,14 +202,13 @@ class EntityController extends Controller
 
         return Inertia::render('Entities/Show', [
             'lang' => $lang,
-            'language' => [
-                'code' => $language->code,
-                'name' => $language->name,
-                'native_name' => $language->native_name,
-            ],
+            'language' => $this->languagePayload($language),
             'entity' => [
                 'id' => $entity->id,
                 'name' => $entity->name,
+                'label' => $entity->label,
+                'work_id' => $entity->work_id,
+                'work_title' => $entity->work?->title,
                 'description' => $entity->description,
                 'file_path' => $entity->file_path,
                 'signature_status' => $this->signatureStatus($entity),
@@ -235,7 +239,8 @@ class EntityController extends Controller
     {
         $language = $this->resolveLanguage($lang);
 
-        $entity = $this->queryForLanguage($lang)
+        $entity = Entity::query()
+            ->where('language_id', $language->id)
             ->withCount('sentences')
             ->findOrFail($entityId);
 
@@ -245,18 +250,17 @@ class EntityController extends Controller
             ->orderBy('name')
             ->get(['id', 'name']);
 
-        $alignmentCount = $this->alignmentCount($lang, $entity->id);
+        $alignmentCount = $this->alignmentCount($entity->id);
 
         return Inertia::render('Entities/Edit', [
             'lang' => $lang,
-            'language' => [
-                'code' => $language->code,
-                'name' => $language->name,
-                'native_name' => $language->native_name,
-            ],
+            'language' => $this->languagePayload($language),
             'entity' => [
                 'id' => $entity->id,
                 'name' => $entity->name,
+                'label' => $entity->label,
+                'work_id' => $entity->work_id,
+                'work_title' => $entity->work?->title,
                 'description' => $entity->description,
                 'is_restricted' => $entity->is_restricted,
                 'sentences_count' => $entity->sentences_count,
@@ -272,9 +276,11 @@ class EntityController extends Controller
 
     public function update(UpdateEntityRequest $request, string $lang, int $entityId): RedirectResponse
     {
-        $this->resolveLanguage($lang);
+        $language = $this->resolveLanguage($lang);
 
-        $entity = $this->queryForLanguage($lang)->findOrFail($entityId);
+        $entity = Entity::query()
+            ->where('language_id', $language->id)
+            ->findOrFail($entityId);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
@@ -291,23 +297,27 @@ class EntityController extends Controller
 
     public function sentences(string $lang, int $entityId, Request $request): JsonResponse
     {
-        $this->resolveLanguage($lang);
+        $language = $this->resolveLanguage($lang);
 
-        $entity = $this->queryForLanguage($lang)->findOrFail($entityId);
+        $entity = Entity::query()
+            ->where('language_id', $language->id)
+            ->findOrFail($entityId);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
 
-        return response()->json($this->pageResponse($lang, $entity, $page, $perPage));
+        return response()->json($this->pageResponse($entity, $page, $perPage));
     }
 
     public function storeSentence(StoreEntitySentenceRequest $request, string $lang, int $entityId): JsonResponse
     {
-        $this->resolveLanguage($lang);
+        $language = $this->resolveLanguage($lang);
 
-        $entity = $this->queryForLanguage($lang)->findOrFail($entityId);
+        $entity = Entity::query()
+            ->where('language_id', $language->id)
+            ->findOrFail($entityId);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
@@ -315,12 +325,9 @@ class EntityController extends Controller
         $content = trim((string) $data['content']);
         $afterSentenceId = $data['after_sentence_id'] ?? null;
 
-        $sentence = DB::transaction(function () use ($lang, $entity, $content, $data, $afterSentenceId): Model {
-            $sentenceClass = $this->sentenceClass($lang);
-            $entityForeignKey = $this->entityForeignKey($lang);
-
-            $sentences = $sentenceClass::query()
-                ->where($entityForeignKey, $entity->id)
+        $sentence = DB::transaction(function () use ($entity, $content, $data, $afterSentenceId): Model {
+            $sentences = EntitySentence::query()
+                ->where('entity_id', $entity->id)
                 ->orderBy('order')
                 ->orderBy('id')
                 ->get(['id', 'order'])
@@ -328,84 +335,90 @@ class EntityController extends Controller
                 ->values()
                 ->all();
 
-            $afterOrder = $this->resolveAfterOrder($lang, $afterSentenceId, $sentences);
+            $afterOrder = $this->resolveAfterOrder($afterSentenceId, $sentences);
 
             $result = $this->sparseOrder->orderForInsertAfter($sentences, null, $afterOrder);
 
             $result = $this->shiftOrdersNonNegative($result);
 
-            $this->persistSentenceOrders($lang, $entity->id, $this->ordersFromItems($result['items']));
+            $this->persistSentenceOrders($entity->id, $this->ordersFromItems($result['items']));
 
-            return $sentenceClass::query()->create([
-                $entityForeignKey => $entity->id,
+            return EntitySentence::query()->create([
+                'entity_id' => $entity->id,
                 'sentence_type_id' => (int) $data['sentence_type_id'],
                 'content' => $content,
                 'order' => $result['order'],
             ]);
         });
 
-        $this->setMatchesPending($lang, $entity->id);
+        $this->setMatchesPending($entity->id);
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
-        $position = $this->positionOf($lang, $entity, $sentence);
+        $position = $this->positionOf($entity, $sentence);
         $targetPage = (int) floor($position / $perPage) + 1;
 
         return response()->json([
-            'sentence' => $this->sentencePayload($lang, $sentence),
-            ...$this->pageResponse($lang, $entity, $targetPage, $perPage),
+            'sentence' => $this->sentencePayload($sentence),
+            ...$this->pageResponse($entity, $targetPage, $perPage),
         ]);
     }
 
     public function updateSentence(UpdateEntitySentenceRequest $request, string $lang, int $entityId, int $sentence): JsonResponse
     {
-        $this->resolveLanguage($lang);
+        $language = $this->resolveLanguage($lang);
 
-        $entity = $this->queryForLanguage($lang)->findOrFail($entityId);
+        $entity = Entity::query()
+            ->where('language_id', $language->id)
+            ->findOrFail($entityId);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
         $data = $request->validated();
 
-        $sentenceModel = $this->findEntitySentence($lang, $entity->id, $sentence);
+        $sentenceModel = $this->findEntitySentence($entity->id, $sentence);
 
         $sentenceModel->update([
             'content' => trim((string) $data['content']),
             'sentence_type_id' => (int) $data['sentence_type_id'],
         ]);
 
-        $this->setMatchesPending($lang, $entity->id);
+        $this->setMatchesPending($entity->id);
 
         return response()->json([
-            'sentence' => $this->sentencePayload($lang, $sentenceModel->refresh()),
+            'sentence' => $this->sentencePayload($sentenceModel->refresh()),
         ]);
     }
 
     public function destroySentence(string $lang, int $entityId, int $sentence, Request $request): JsonResponse
     {
-        $this->resolveLanguage($lang);
+        $language = $this->resolveLanguage($lang);
 
-        $entity = $this->queryForLanguage($lang)->findOrFail($entityId);
+        $entity = Entity::query()
+            ->where('language_id', $language->id)
+            ->findOrFail($entityId);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
-        $sentenceModel = $this->findEntitySentence($lang, $entity->id, $sentence);
+        $sentenceModel = $this->findEntitySentence($entity->id, $sentence);
 
         DB::transaction(fn () => $sentenceModel->delete());
 
-        $this->setMatchesPending($lang, $entity->id);
+        $this->setMatchesPending($entity->id);
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
 
-        return response()->json($this->pageResponse($lang, $entity, $page, $perPage));
+        return response()->json($this->pageResponse($entity, $page, $perPage));
     }
 
     public function reorderSentences(ReorderEntitySentenceRequest $request, string $lang, int $entityId): JsonResponse
     {
-        $this->resolveLanguage($lang);
+        $language = $this->resolveLanguage($lang);
 
-        $entity = $this->queryForLanguage($lang)->findOrFail($entityId);
+        $entity = Entity::query()
+            ->where('language_id', $language->id)
+            ->findOrFail($entityId);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
@@ -413,14 +426,11 @@ class EntityController extends Controller
         $sentenceId = (int) $data['sentence_id'];
         $afterSentenceId = $data['after_sentence_id'] ?? null;
 
-        $sentenceModel = $this->findEntitySentence($lang, $entity->id, $sentenceId);
+        $sentenceModel = $this->findEntitySentence($entity->id, $sentenceId);
 
-        DB::transaction(function () use ($lang, $entity, $sentenceModel, $afterSentenceId): void {
-            $sentenceClass = $this->sentenceClass($lang);
-            $entityForeignKey = $this->entityForeignKey($lang);
-
-            $sentences = $sentenceClass::query()
-                ->where($entityForeignKey, $entity->id)
+        DB::transaction(function () use ($entity, $sentenceModel, $afterSentenceId): void {
+            $sentences = EntitySentence::query()
+                ->where('entity_id', $entity->id)
                 ->orderBy('order')
                 ->orderBy('id')
                 ->get(['id', 'order'])
@@ -428,7 +438,7 @@ class EntityController extends Controller
                 ->values()
                 ->all();
 
-            $afterOrder = $this->resolveAfterOrder($lang, $afterSentenceId, $sentences);
+            $afterOrder = $this->resolveAfterOrder($afterSentenceId, $sentences);
 
             $result = $this->sparseOrder->orderForInsertAfter($sentences, 's-'.$sentenceModel->id, $afterOrder);
 
@@ -437,18 +447,18 @@ class EntityController extends Controller
             $orders = $this->ordersFromItems($result['items']);
             $orders[$sentenceModel->id] = $result['order'];
 
-            $this->persistSentenceOrders($lang, $entity->id, $orders);
+            $this->persistSentenceOrders($entity->id, $orders);
         });
 
-        $this->setMatchesPending($lang, $entity->id);
+        $this->setMatchesPending($entity->id);
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
         $sentenceModel->refresh();
-        $position = $this->positionOf($lang, $entity, $sentenceModel);
+        $position = $this->positionOf($entity, $sentenceModel);
         $targetPage = (int) floor($position / $perPage) + 1;
 
-        return response()->json($this->pageResponse($lang, $entity, $targetPage, $perPage));
+        return response()->json($this->pageResponse($entity, $targetPage, $perPage));
     }
 
     private function resolveLanguage(string $lang): Language
@@ -459,13 +469,24 @@ class EntityController extends Controller
             ->firstOrFail();
     }
 
-    private function queryForLanguage(string $lang): Builder
+    /**
+     * Resolve the work for a new entity: an existing work id, or a newly
+     * created one from the inline "new work" fields. When the original
+     * language is not given it defaults to the entity's own language.
+     */
+    private function resolveWork(StoreEntityRequest $request, Language $language): Work
     {
-        return match ($lang) {
-            'en' => EnEntity::query(),
-            'ru' => RuEntity::query(),
-            default => abort(404),
-        };
+        $workId = $request->validated('work_id');
+
+        if ($workId !== null) {
+            return Work::query()->findOrFail((int) $workId);
+        }
+
+        return Work::query()->create([
+            'title' => $request->validated('new_work_title'),
+            'author' => $request->validated('new_work_author'),
+            'original_language_id' => (int) ($request->validated('new_work_original_language_id') ?? $language->id),
+        ]);
     }
 
     private function access(): EntityAccessService
@@ -473,7 +494,7 @@ class EntityController extends Controller
         return new EntityAccessService;
     }
 
-    private function signatureStatus(EnEntity|RuEntity $entity): string
+    private function signatureStatus(Entity $entity): string
     {
         if ($entity->signature !== null) {
             return 'generated';
@@ -486,14 +507,36 @@ class EntityController extends Controller
         return 'none';
     }
 
-    private function sentenceClass(string $lang): string
+    /**
+     * @return array{code: string, name: string, native_name: ?string}
+     */
+    private function languagePayload(Language $language): array
     {
-        return $lang === 'en' ? EnEntitySentence::class : RuEntitySentence::class;
+        return [
+            'code' => $language->code,
+            'name' => $language->name,
+            'native_name' => $language->native_name,
+        ];
     }
 
-    private function entityForeignKey(string $lang): string
+    /**
+     * @return list<array{id: int, title: string}>
+     */
+    private function worksForSelect(): array
     {
-        return $lang === 'en' ? 'en_entity_id' : 'ru_entity_id';
+        return Work::query()
+            ->orderBy('title')
+            ->get(['id', 'title'])
+            ->map(fn (Work $work): array => ['id' => $work->id, 'title' => $work->title])
+            ->all();
+    }
+
+    /**
+     * @return list<array{id: int, title: string}>
+     */
+    private function worksForFilter(): array
+    {
+        return $this->worksForSelect();
     }
 
     /**
@@ -504,27 +547,24 @@ class EntityController extends Controller
      *
      * @param  list<array{key: string, order: int}>  $sentences
      */
-    private function resolveAfterOrder(string $lang, ?int $afterSentenceId, array $sentences): int
+    private function resolveAfterOrder(?int $afterSentenceId, array $sentences): int
     {
         if ($afterSentenceId === 0) {
             return SparseOrderService::BEGINNING_SENTINEL;
         }
 
         if ($afterSentenceId !== null) {
-            return (int) $this->sentenceClass($lang)::query()->whereKey($afterSentenceId)->value('order');
+            return (int) EntitySentence::query()->whereKey($afterSentenceId)->value('order');
         }
 
         return $sentences !== [] ? (int) max(array_column($sentences, 'order')) : SparseOrderService::BEGINNING_SENTINEL;
     }
 
-    private function findEntitySentence(string $lang, int $entityId, int $sentenceId): Model
+    private function findEntitySentence(int $entityId, int $sentenceId): Model
     {
-        $sentenceClass = $this->sentenceClass($lang);
-        $entityForeignKey = $this->entityForeignKey($lang);
-
-        $sentence = $sentenceClass::query()
+        $sentence = EntitySentence::query()
             ->whereKey($sentenceId)
-            ->where($entityForeignKey, $entityId)
+            ->where('entity_id', $entityId)
             ->first();
 
         abort_if($sentence === null, 404);
@@ -541,13 +581,10 @@ class EntityController extends Controller
      *
      * @param  array<int, int>  $orders  sentence id => final order
      */
-    private function persistSentenceOrders(string $lang, int $entityId, array $orders): void
+    private function persistSentenceOrders(int $entityId, array $orders): void
     {
-        $sentenceClass = $this->sentenceClass($lang);
-        $entityForeignKey = $this->entityForeignKey($lang);
-
-        $currentOrders = $sentenceClass::query()
-            ->where($entityForeignKey, $entityId)
+        $currentOrders = EntitySentence::query()
+            ->where('entity_id', $entityId)
             ->get(['id', 'order'])
             ->mapWithKeys(fn ($row): array => [$row->id => (int) $row->order]);
 
@@ -564,11 +601,11 @@ class EntityController extends Controller
         }
 
         foreach (array_keys($changed) as $id) {
-            $sentenceClass::query()->whereKey($id)->update(['order' => -$id - 1_000_000_000]);
+            EntitySentence::query()->whereKey($id)->update(['order' => -$id - 1_000_000_000]);
         }
 
         foreach ($changed as $id => $order) {
-            $sentenceClass::query()->whereKey($id)->update(['order' => $order]);
+            EntitySentence::query()->whereKey($id)->update(['order' => $order]);
         }
     }
 
@@ -588,24 +625,28 @@ class EntityController extends Controller
     }
 
     /**
-     * Flip every EnRuEntityMatch involving this entity to status = 'pending',
+     * Flip every EntityMatch involving this entity to status = 'pending',
      * surfacing the need to re-align. See ADR 0015.
      */
-    private function setMatchesPending(string $lang, int $entityId): void
+    private function setMatchesPending(int $entityId): void
     {
-        $column = $lang === 'en' ? 'en_entity_id' : 'ru_entity_id';
-
-        EnRuEntityMatch::query()
-            ->where($column, $entityId)
+        EntityMatch::query()
+            ->where(function (Builder $query) use ($entityId): void {
+                $query->where('a_entity_id', $entityId)
+                    ->orWhere('b_entity_id', $entityId);
+            })
             ->where('status', '!=', 'pending')
             ->update(['status' => 'pending']);
     }
 
-    private function alignmentCount(string $lang, int $entityId): int
+    private function alignmentCount(int $entityId): int
     {
-        $column = $lang === 'en' ? 'en_entity_id' : 'ru_entity_id';
-
-        return EnRuEntityMatch::query()->where($column, $entityId)->count();
+        return (int) EntityMatch::query()
+            ->where(function (Builder $query) use ($entityId): void {
+                $query->where('a_entity_id', $entityId)
+                    ->orWhere('b_entity_id', $entityId);
+            })
+            ->count();
     }
 
     /**
@@ -613,13 +654,10 @@ class EntityController extends Controller
      *
      * @return array{sentences: list<array{id: int, order: int, content: string, sentence_type_id: int, type: ?string}>, meta: array{current_page: int, last_page: int, total: int, per_page: int}, before_first_id: ?int}
      */
-    private function pageResponse(string $lang, EnEntity|RuEntity $entity, int $page, int $perPage): array
+    private function pageResponse(Entity $entity, int $page, int $perPage): array
     {
-        $sentenceClass = $this->sentenceClass($lang);
-        $entityForeignKey = $this->entityForeignKey($lang);
-
-        $query = $sentenceClass::query()
-            ->where($entityForeignKey, $entity->id)
+        $query = EntitySentence::query()
+            ->where('entity_id', $entity->id)
             ->orderBy('order')
             ->orderBy('id');
 
@@ -632,11 +670,11 @@ class EntityController extends Controller
             ->get();
 
         $sentences = $items
-            ->map(fn (object $sentence): array => $this->sentencePayload($lang, $sentence))
+            ->map(fn (object $sentence): array => $this->sentencePayload($sentence))
             ->all();
 
         $beforeFirstId = $currentPage > 1
-            ? $this->sentenceIdAtOffset($lang, $entity, ($currentPage - 1) * $perPage - 1)
+            ? $this->sentenceIdAtOffset($entity, ($currentPage - 1) * $perPage - 1)
             : null;
 
         return [
@@ -651,17 +689,14 @@ class EntityController extends Controller
         ];
     }
 
-    private function sentenceIdAtOffset(string $lang, EnEntity|RuEntity $entity, int $offset): ?int
+    private function sentenceIdAtOffset(Entity $entity, int $offset): ?int
     {
         if ($offset < 0) {
             return null;
         }
 
-        $sentenceClass = $this->sentenceClass($lang);
-        $entityForeignKey = $this->entityForeignKey($lang);
-
-        return $sentenceClass::query()
-            ->where($entityForeignKey, $entity->id)
+        return EntitySentence::query()
+            ->where('entity_id', $entity->id)
             ->orderBy('order')
             ->orderBy('id')
             ->offset($offset)
@@ -672,13 +707,10 @@ class EntityController extends Controller
     /**
      * 0-based position of a sentence in the global (order, id) ordering.
      */
-    private function positionOf(string $lang, EnEntity|RuEntity $entity, Model $sentence): int
+    private function positionOf(Entity $entity, Model $sentence): int
     {
-        $sentenceClass = $this->sentenceClass($lang);
-        $entityForeignKey = $this->entityForeignKey($lang);
-
-        return (int) $sentenceClass::query()
-            ->where($entityForeignKey, $entity->id)
+        return (int) EntitySentence::query()
+            ->where('entity_id', $entity->id)
             ->where(function ($query) use ($sentence): void {
                 $query
                     ->where('order', '<', $sentence->order)
@@ -723,7 +755,7 @@ class EntityController extends Controller
     /**
      * @return array{id: int, order: int, content: string, sentence_type_id: int, type: ?string}
      */
-    private function sentencePayload(string $lang, Model $sentence): array
+    private function sentencePayload(Model $sentence): array
     {
         return [
             'id' => $sentence->id,

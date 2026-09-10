@@ -4,8 +4,7 @@ namespace App\Jobs;
 
 use App\Classes\EntityAccessService;
 use App\Classes\TextSignatureService;
-use App\Models\EnEntity;
-use App\Models\RuEntity;
+use App\Models\Entity;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -21,15 +20,9 @@ class ProcessEntityFile implements ShouldQueue
 
     public int $tries = 5;
 
-    private const LANG_MODELS = [
-        'en' => EnEntity::class,
-        'ru' => RuEntity::class,
-    ];
-
     public function __construct(
         private int $entityId,
         private string $filePath,
-        private string $lang,
     ) {}
 
     /**
@@ -43,11 +36,8 @@ class ProcessEntityFile implements ShouldQueue
     public function handle(): void
     {
         $tPipeline = microtime(true);
-        $modelClass = self::LANG_MODELS[$this->lang] ?? throw new \InvalidArgumentException(
-            "Unsupported language: {$this->lang}"
-        );
 
-        $entity = $modelClass::findOrFail($this->entityId);
+        $entity = Entity::with('language')->findOrFail($this->entityId);
         $signatureService = TextSignatureService::create();
 
         $tRead = microtime(true);
@@ -56,7 +46,7 @@ class ProcessEntityFile implements ShouldQueue
 
         $signature = $entity->signature !== null
             ? json_decode($entity->signature, true)
-            : $signatureService->generateSignature($content);
+            : $signatureService->generateSignature($content, $entity->language->code);
         $embedMs = (int) round((microtime(true) - $tRead) * 1000);
 
         if ($signature === null) {
@@ -78,7 +68,7 @@ class ProcessEntityFile implements ShouldQueue
 
         Log::info('ProcessEntityFile signature and deduplication', [
             'entity_id' => $this->entityId,
-            'lang' => $this->lang,
+            'lang' => $entity->language->code,
             'read_ms' => $readMs,
             'embed_ms' => $embedMs,
             'has_similar_ms' => $dedupMs,
@@ -92,7 +82,7 @@ class ProcessEntityFile implements ShouldQueue
             return;
         }
 
-        SplitEntityFileSentences::dispatch($this->entityId, $this->filePath, $this->lang);
+        SplitEntityFileSentences::dispatch($this->entityId, $this->filePath);
     }
 
     /**
@@ -100,7 +90,7 @@ class ProcessEntityFile implements ShouldQueue
      * Migrate its access grants onto the surviving entity, then delete it so
      * the uploader keeps their access to the canonical text.
      */
-    private function resolveDuplicate(EnEntity|RuEntity $duplicate, EnEntity|RuEntity $survivor, float $similarity): void
+    private function resolveDuplicate(Entity $duplicate, Entity $survivor, float $similarity): void
     {
         $access = new EntityAccessService;
 

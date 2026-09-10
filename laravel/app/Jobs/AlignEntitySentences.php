@@ -4,14 +4,11 @@ namespace App\Jobs;
 
 use App\Classes\SentenceAlignmentService;
 use App\Classes\SparseOrderService;
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\EnSentenceMeaningMatch;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
-use App\Models\RuSentenceMeaningMatch;
+use App\Models\Entity;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -60,19 +57,19 @@ class AlignEntitySentences implements ShouldQueue
      */
     public static function beginFromScratch(int $entityMatchId): void
     {
-        $entityMatch = EnRuEntityMatch::find($entityMatchId);
+        $entityMatch = self::loadEntityMatch($entityMatchId);
 
         if ($entityMatch === null) {
             return;
         }
 
-        $enEntity = EnEntity::find($entityMatch->en_entity_id);
-        $ruEntity = RuEntity::find($entityMatch->ru_entity_id);
+        $aEntity = $entityMatch->aEntity;
+        $bEntity = $entityMatch->bEntity;
 
-        if ($enEntity === null || $ruEntity === null) {
+        if ($aEntity === null || $bEntity === null) {
             $entityMatch->update([
                 'status' => 'failed',
-                'error_message' => 'Missing en or ru entity for alignment',
+                'error_message' => 'Missing entity for alignment',
                 'completed_at' => now(),
             ]);
 
@@ -81,7 +78,7 @@ class AlignEntitySentences implements ShouldQueue
 
         $service = SentenceAlignmentService::create();
 
-        $verification = $service->verifyEntityPair($enEntity, $ruEntity);
+        $verification = $service->verifyEntityPair($aEntity, $bEntity);
 
         if (! $verification['passed']) {
             $entityMatch->update([
@@ -95,12 +92,8 @@ class AlignEntitySentences implements ShouldQueue
             return;
         }
 
-        $enSentenceCount = EnEntitySentence::query()
-            ->where('en_entity_id', $enEntity->id)
-            ->count();
-        $ruSentenceCount = RuEntitySentence::query()
-            ->where('ru_entity_id', $ruEntity->id)
-            ->count();
+        $aSentenceCount = EntitySentence::query()->where('entity_id', $aEntity->id)->count();
+        $bSentenceCount = EntitySentence::query()->where('entity_id', $bEntity->id)->count();
 
         $chunkSize = min(max((int) $entityMatch->chunk_size, 1), self::MAX_EFFECTIVE_CHUNK_SIZE);
         $maxN = min(max((int) $entityMatch->max_n, 1), self::MAX_EFFECTIVE_SPAN);
@@ -108,8 +101,8 @@ class AlignEntitySentences implements ShouldQueue
         // Small entities fit a single /align call: raise the effective chunk
         // size to cover the whole text so one invocation is the last chunk,
         // skipping the seam rollback/trim machinery entirely.
-        if (max($enSentenceCount, $ruSentenceCount) <= self::MAX_EFFECTIVE_CHUNK_SIZE) {
-            $chunkSize = max($enSentenceCount, $ruSentenceCount, 1);
+        if (max($aSentenceCount, $bSentenceCount) <= self::MAX_EFFECTIVE_CHUNK_SIZE) {
+            $chunkSize = max($aSentenceCount, $bSentenceCount, 1);
         }
 
         $entityMatch->meaningMatches()->delete();
@@ -117,19 +110,19 @@ class AlignEntitySentences implements ShouldQueue
         $entityMatch->update([
             'status' => 'aligning',
             'entity_similarity' => $verification['similarity'],
-            'en_total_sentences' => $enSentenceCount,
-            'ru_total_sentences' => $ruSentenceCount,
+            'a_total_sentences' => $aSentenceCount,
+            'b_total_sentences' => $bSentenceCount,
             'linked_count' => 0,
             'chunk_size' => $chunkSize,
             'max_n' => $maxN,
-            'last_en_sentence_offset' => 0,
-            'last_ru_sentence_offset' => 0,
+            'a_last_sentence_offset' => 0,
+            'b_last_sentence_offset' => 0,
             'error_message' => null,
             'started_at' => now(),
             'completed_at' => null,
         ]);
 
-        if ($enSentenceCount === 0 || $ruSentenceCount === 0) {
+        if ($aSentenceCount === 0 || $bSentenceCount === 0) {
             (new self($entityMatchId))->finalize($entityMatch);
 
             return;
@@ -148,29 +141,29 @@ class AlignEntitySentences implements ShouldQueue
      */
     public static function begin(int $entityMatchId): void
     {
-        $entityMatch = EnRuEntityMatch::find($entityMatchId);
+        $entityMatch = EntityMatch::find($entityMatchId);
 
         if ($entityMatch === null) {
             return;
         }
 
-        if ($entityMatch->en_total_sentences === null) {
+        if ($entityMatch->a_total_sentences === null) {
             self::beginFromScratch($entityMatchId);
 
             return;
         }
 
-        EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
+        MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
             ->where('similarity', '<', self::LANDMARK_THRESHOLD)
             ->delete();
 
         $entityMatch->update([
             'status' => 'aligning',
-            'last_en_sentence_offset' => 0,
-            'last_ru_sentence_offset' => 0,
-            'linked_count' => EnRuMeaningMatch::query()
-                ->where('en_ru_entity_match_id', $entityMatch->id)
+            'a_last_sentence_offset' => 0,
+            'b_last_sentence_offset' => 0,
+            'linked_count' => MeaningMatch::query()
+                ->where('entity_match_id', $entityMatch->id)
                 ->count(),
             'error_message' => null,
             'started_at' => now(),
@@ -182,33 +175,33 @@ class AlignEntitySentences implements ShouldQueue
 
     public function handle(): void
     {
-        $entityMatch = EnRuEntityMatch::find($this->entityMatchId);
+        $entityMatch = self::loadEntityMatch($this->entityMatchId);
 
         if ($entityMatch === null) {
             return;
         }
 
-        $enEntity = EnEntity::find($entityMatch->en_entity_id);
-        $ruEntity = RuEntity::find($entityMatch->ru_entity_id);
+        $aEntity = $entityMatch->aEntity;
+        $bEntity = $entityMatch->bEntity;
 
-        if ($enEntity === null || $ruEntity === null) {
+        if ($aEntity === null || $bEntity === null) {
             $entityMatch->update([
                 'status' => 'failed',
-                'error_message' => 'Missing en or ru entity for alignment',
+                'error_message' => 'Missing entity for alignment',
                 'completed_at' => now(),
             ]);
 
             return;
         }
 
-        $enTotal = (int) $entityMatch->en_total_sentences;
-        $ruTotal = (int) $entityMatch->ru_total_sentences;
+        $aTotal = (int) $entityMatch->a_total_sentences;
+        $bTotal = (int) $entityMatch->b_total_sentences;
 
-        $pools = $this->pools($entityMatch, $enEntity, $ruEntity, $enTotal, $ruTotal);
+        $pools = $this->pools($entityMatch, $aEntity, $bEntity, $aTotal, $bTotal);
 
         $chunkSize = (int) $entityMatch->chunk_size;
-        $enOffset = (int) $entityMatch->last_en_sentence_offset;
-        $ruOffset = (int) $entityMatch->last_ru_sentence_offset;
+        $aOffset = (int) $entityMatch->a_last_sentence_offset;
+        $bOffset = (int) $entityMatch->b_last_sentence_offset;
 
         $poolIndex = 0;
         $poolCount = count($pools);
@@ -216,59 +209,59 @@ class AlignEntitySentences implements ShouldQueue
         while ($poolIndex < $poolCount) {
             $pool = $pools[$poolIndex];
 
-            $poolEnStart = max($pool['en_start'], $enOffset);
-            $poolRuStart = max($pool['ru_start'], $ruOffset);
+            $poolAStart = max($pool['a_start'], $aOffset);
+            $poolBStart = max($pool['b_start'], $bOffset);
 
-            if ($poolEnStart >= $pool['en_end'] && $poolRuStart >= $pool['ru_end']) {
+            if ($poolAStart >= $pool['a_end'] && $poolBStart >= $pool['b_end']) {
                 $poolIndex++;
 
                 continue;
             }
 
-            $remainingEn = $pool['en_end'] - $poolEnStart;
-            $remainingRu = $pool['ru_end'] - $poolRuStart;
+            $remainingA = $pool['a_end'] - $poolAStart;
+            $remainingB = $pool['b_end'] - $poolBStart;
 
-            if ($remainingEn <= 0) {
+            if ($remainingA <= 0) {
                 $poolIndex++;
 
                 continue;
             }
 
-            if ($remainingRu <= 0) {
+            if ($remainingB <= 0) {
                 $this->persistOffsets(
                     $entityMatch,
-                    max($enOffset, $pool['en_end']),
-                    $ruOffset,
-                    $enTotal,
+                    max($aOffset, $pool['a_end']),
+                    $bOffset,
+                    $aTotal,
                 );
 
                 return;
             }
 
-            if ($remainingEn <= $chunkSize && $remainingRu <= $chunkSize) {
+            if ($remainingA <= $chunkSize && $remainingB <= $chunkSize) {
                 $hasRollbackCandidates = $this->rollbackCandidates(
                     $entityMatch,
-                    $enEntity,
-                    $ruEntity,
+                    $aEntity,
+                    $bEntity,
                     $pool,
                 )->isNotEmpty();
 
                 if (! $hasRollbackCandidates) {
                     $offsets = $this->alignWholePool(
                         $entityMatch,
-                        $enEntity,
-                        $ruEntity,
-                        $poolEnStart,
-                        $pool['en_end'],
-                        $poolRuStart,
-                        $pool['ru_end'],
+                        $aEntity,
+                        $bEntity,
+                        $poolAStart,
+                        $pool['a_end'],
+                        $poolBStart,
+                        $pool['b_end'],
                     );
 
                     $this->persistOffsets(
                         $entityMatch,
-                        $offsets['en_offset'],
-                        $offsets['ru_offset'],
-                        $enTotal,
+                        $offsets['a_offset'],
+                        $offsets['b_offset'],
+                        $aTotal,
                     );
 
                     return;
@@ -277,18 +270,25 @@ class AlignEntitySentences implements ShouldQueue
 
             $this->alignPoolChunk(
                 $entityMatch,
-                $enEntity,
-                $ruEntity,
-                $enTotal,
-                $enOffset,
-                $ruOffset,
+                $aEntity,
+                $bEntity,
+                $aTotal,
+                $aOffset,
+                $bOffset,
                 $pool,
             );
 
             return;
         }
 
-        $this->persistOffsets($entityMatch, $enOffset, $ruOffset, $enTotal);
+        $this->persistOffsets($entityMatch, $aOffset, $bOffset, $aTotal);
+    }
+
+    private static function loadEntityMatch(int $entityMatchId): ?EntityMatch
+    {
+        return EntityMatch::query()
+            ->with(['aEntity.work', 'bEntity.work', 'aEntity.language', 'bEntity.language'])
+            ->find($entityMatchId);
     }
 
     /**
@@ -298,82 +298,82 @@ class AlignEntitySentences implements ShouldQueue
      * dropped. With no landmarks the whole span is one pool, which keeps the
      * fresh-alignment path identical to the previous chunking behavior.
      *
-     * @return list<array{en_start: int, en_end: int, ru_start: int, ru_end: int}>
+     * @return list<array{a_start: int, a_end: int, b_start: int, b_end: int}>
      */
     private function pools(
-        EnRuEntityMatch $entityMatch,
-        EnEntity $enEntity,
-        RuEntity $ruEntity,
-        int $enTotal,
-        int $ruTotal,
+        EntityMatch $entityMatch,
+        Entity $aEntity,
+        Entity $bEntity,
+        int $aTotal,
+        int $bTotal,
     ): array {
         $bounds = self::landmarkBounds(
             self::landmarkRows($entityMatch),
-            self::sentenceIndex(EnEntitySentence::class, 'en_entity_id', $enEntity->id),
-            self::sentenceIndex(RuEntitySentence::class, 'ru_entity_id', $ruEntity->id),
+            self::sentenceIndex($aEntity->id),
+            self::sentenceIndex($bEntity->id),
         );
 
         if ($bounds === []) {
             return [[
-                'en_start' => 0,
-                'en_end' => $enTotal,
-                'ru_start' => 0,
-                'ru_end' => $ruTotal,
+                'a_start' => 0,
+                'a_end' => $aTotal,
+                'b_start' => 0,
+                'b_end' => $bTotal,
             ]];
         }
 
         usort(
             $bounds,
-            fn (array $a, array $b): int => $a['en_start'] <=> $b['en_start'] ?: $a['ru_start'] <=> $b['ru_start'],
+            fn (array $a, array $b): int => $a['a_start'] <=> $b['a_start'] ?: $a['b_start'] <=> $b['b_start'],
         );
 
         $pools = [];
-        $enStart = 0;
-        $ruStart = 0;
+        $aStart = 0;
+        $bStart = 0;
 
         foreach ($bounds as $bound) {
             $pools[] = [
-                'en_start' => $enStart,
-                'en_end' => $bound['en_start'],
-                'ru_start' => $ruStart,
-                'ru_end' => $bound['ru_start'],
+                'a_start' => $aStart,
+                'a_end' => $bound['a_start'],
+                'b_start' => $bStart,
+                'b_end' => $bound['b_start'],
             ];
 
-            $enStart = $bound['en_end'];
-            $ruStart = $bound['ru_end'];
+            $aStart = $bound['a_end'];
+            $bStart = $bound['b_end'];
         }
 
         $pools[] = [
-            'en_start' => $enStart,
-            'en_end' => $enTotal,
-            'ru_start' => $ruStart,
-            'ru_end' => $ruTotal,
+            'a_start' => $aStart,
+            'a_end' => $aTotal,
+            'b_start' => $bStart,
+            'b_end' => $bTotal,
         ];
 
         return array_values(array_filter(
             $pools,
-            fn (array $pool): bool => $pool['en_start'] < $pool['en_end'] && $pool['ru_start'] < $pool['ru_end'],
+            fn (array $pool): bool => $pool['a_start'] < $pool['a_end'] && $pool['b_start'] < $pool['b_end'],
         ));
     }
 
     /**
      * Hard pins for the pool partitioner: human-edited rows (alignment_chunk
      * -1) and auto-landmarks at or above the confidence bar. Ordered by order
-     * so the partitioner walks them in document sequence, with both junction
-     * sides eager-loaded.
+     * so the partitioner walks them in document sequence, with the sentence
+     * junctions eager-loaded.
      *
-     * @return Collection<int, EnRuMeaningMatch>
+     * @return Collection<int, MeaningMatch>
      */
-    private static function landmarkRows(EnRuEntityMatch $entityMatch): Collection
+    private static function landmarkRows(EntityMatch $entityMatch): Collection
     {
-        return EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
+        return MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
             ->where(fn ($query) => $query
                 ->where('alignment_chunk', -1)
                 ->orWhere('similarity', '>=', self::LANDMARK_THRESHOLD))
             ->orderBy('order')
             ->orderBy('id')
-            ->with('enSentenceMatches', 'ruSentenceMatches')
+            ->with('sentenceMeaningMatches')
             ->get();
     }
 
@@ -382,39 +382,41 @@ class AlignEntitySentences implements ShouldQueue
      * as absolute [start, end) index ranges. Landmarks without junction rows
      * on either side contribute no boundary.
      *
-     * @param  Collection<int, EnRuMeaningMatch>  $landmarks
-     * @param  array<int, int>  $enIndex
-     * @param  array<int, int>  $ruIndex
-     * @return list<array{en_start: int, en_end: int, ru_start: int, ru_end: int}>
+     * @param  Collection<int, MeaningMatch>  $landmarks
+     * @param  array<int, int>  $aIndex
+     * @param  array<int, int>  $bIndex
+     * @return list<array{a_start: int, a_end: int, b_start: int, b_end: int}>
      */
-    private static function landmarkBounds(Collection $landmarks, array $enIndex, array $ruIndex): array
+    private static function landmarkBounds(Collection $landmarks, array $aIndex, array $bIndex): array
     {
         $bounds = [];
 
         foreach ($landmarks as $landmark) {
-            $enPositions = $landmark->enSentenceMatches
-                ->pluck('en_entity_sentence_id')
-                ->map(fn (int $id): int => $enIndex[$id] ?? -1)
+            $aPositions = $landmark->sentenceMeaningMatches
+                ->where('side', 'a')
+                ->pluck('entity_sentence_id')
+                ->map(fn (int $id): int => $aIndex[$id] ?? -1)
                 ->filter(fn (int $position): bool => $position >= 0)
                 ->values()
                 ->all();
 
-            $ruPositions = $landmark->ruSentenceMatches
-                ->pluck('ru_entity_sentence_id')
-                ->map(fn (int $id): int => $ruIndex[$id] ?? -1)
+            $bPositions = $landmark->sentenceMeaningMatches
+                ->where('side', 'b')
+                ->pluck('entity_sentence_id')
+                ->map(fn (int $id): int => $bIndex[$id] ?? -1)
                 ->filter(fn (int $position): bool => $position >= 0)
                 ->values()
                 ->all();
 
-            if ($enPositions === [] || $ruPositions === []) {
+            if ($aPositions === [] || $bPositions === []) {
                 continue;
             }
 
             $bounds[] = [
-                'en_start' => min($enPositions),
-                'en_end' => max($enPositions) + 1,
-                'ru_start' => min($ruPositions),
-                'ru_end' => max($ruPositions) + 1,
+                'a_start' => min($aPositions),
+                'a_end' => max($aPositions) + 1,
+                'b_start' => min($bPositions),
+                'b_end' => max($bPositions) + 1,
             ];
         }
 
@@ -428,10 +430,10 @@ class AlignEntitySentences implements ShouldQueue
      *
      * @return array<int, int>
      */
-    private static function sentenceIndex(string $modelClass, string $entityColumn, int $entityId): array
+    private static function sentenceIndex(int $entityId): array
     {
-        return array_flip($modelClass::query()
-            ->where($entityColumn, $entityId)
+        return array_flip(EntitySentence::query()
+            ->where('entity_id', $entityId)
             ->orderBy('order')
             ->orderBy('id')
             ->pluck('id')
@@ -440,73 +442,67 @@ class AlignEntitySentences implements ShouldQueue
     }
 
     /**
+     * The sides whose sentences must stay covered when a chunk produces no
+     * committed match: the work's original side; both sides when neither
+     * entity is the original (two translations of a third-language original).
+     *
+     * @return list<'a'|'b'>
+     */
+    private static function skipSides(EntityMatch $entityMatch): array
+    {
+        $originalSide = $entityMatch->originalSide();
+
+        return $originalSide !== null ? [$originalSide] : ['a', 'b'];
+    }
+
+    /**
      * Align a pool small enough to fit a single /align call. The pool edges
      * are the landmarks themselves, so no seam rollback/trim is needed:
      * everything the python service returns is committed and trailing skips
-     * are stored up to the pool boundary. With no committed match the EN
-     * cursor advances by one so the alignment never stalls.
+     * are stored up to the pool boundary. With no committed match the
+     * original-side sentences (both sides for translation↔translation pairs)
+     * are stored as skips and the a cursor advances by one so the alignment
+     * never stalls.
      *
-     * @return array{en_offset: int, ru_offset: int}
+     * @return array{a_offset: int, b_offset: int}
      */
     private function alignWholePool(
-        EnRuEntityMatch $entityMatch,
-        EnEntity $enEntity,
-        RuEntity $ruEntity,
-        int $enStart,
-        int $enEnd,
-        int $ruStart,
-        int $ruEnd,
+        EntityMatch $entityMatch,
+        Entity $aEntity,
+        Entity $bEntity,
+        int $aStart,
+        int $aEnd,
+        int $bStart,
+        int $bEnd,
     ): array {
-        $enSentences = EnEntitySentence::query()
-            ->where('en_entity_id', $enEntity->id)
-            ->orderBy('order')
-            ->orderBy('id')
-            ->offset($enStart)
-            ->limit($enEnd - $enStart)
-            ->get();
+        $aSentences = $this->sentenceSlice($aEntity->id, $aStart, $aEnd - $aStart);
+        $bSentences = $this->sentenceSlice($bEntity->id, $bStart, $bEnd - $bStart);
 
-        $ruSentences = RuEntitySentence::query()
-            ->where('ru_entity_id', $ruEntity->id)
-            ->orderBy('order')
-            ->orderBy('id')
-            ->offset($ruStart)
-            ->limit($ruEnd - $ruStart)
-            ->get();
-
-        if ($enSentences->isEmpty() || $ruSentences->isEmpty()) {
-            if ($entityMatch->is_original_en && $enSentences->isNotEmpty()) {
-                SentenceAlignmentService::create()->storeSkipSentences(
-                    $entityMatch,
-                    $this->nextAlignmentChunk($entityMatch->id),
-                    'en',
-                    $enSentences->take(1),
-                );
+        if ($aSentences->isEmpty() || $bSentences->isEmpty()) {
+            if ($aSentences->isNotEmpty()) {
+                $this->storePoolSkips($entityMatch, ['a' => $aSentences->take(1)]);
             }
 
-            return ['en_offset' => $enStart + 1, 'ru_offset' => $ruStart];
+            return ['a_offset' => $aStart + 1, 'b_offset' => $bStart];
         }
 
         $service = SentenceAlignmentService::create();
 
         $matches = $service->alignChunkRemote(
-            $enSentences,
-            $ruSentences,
+            $aSentences,
+            $bSentences,
             $entityMatch->max_n,
         )['matches'];
 
         $committed = $this->committedMatches($matches, true);
 
         if ($committed === []) {
-            if ($entityMatch->is_original_en) {
-                $service->storeSkipSentences(
-                    $entityMatch,
-                    $this->nextAlignmentChunk($entityMatch->id),
-                    'en',
-                    $enSentences->take(1),
-                );
-            }
+            $this->storePoolSkips($entityMatch, [
+                'a' => $aSentences->take(1),
+                'b' => $bSentences->take(1),
+            ]);
 
-            return ['en_offset' => $enStart + 1, 'ru_offset' => $ruStart];
+            return ['a_offset' => $aStart + 1, 'b_offset' => $bStart];
         }
 
         $alignmentChunk = $this->nextAlignmentChunk($entityMatch->id);
@@ -515,12 +511,44 @@ class AlignEntitySentences implements ShouldQueue
             entityMatch: $entityMatch,
             alignmentChunk: $alignmentChunk,
             committedMatches: $committed,
-            enSentences: $enSentences,
-            ruSentences: $ruSentences,
+            aSentences: $aSentences,
+            bSentences: $bSentences,
             isLastChunk: true,
         );
 
-        return ['en_offset' => $enEnd, 'ru_offset' => $ruEnd];
+        return ['a_offset' => $aEnd, 'b_offset' => $bEnd];
+    }
+
+    /**
+     * Store single-sentence skip rows for the original side(s) of the pool:
+     * the work's original side, or both sides for translation↔translation
+     * pairs. Sentences already covered by an earlier pool are excluded.
+     *
+     * @param  array<'a'|'b', Collection<int, EntitySentence>>  $windowHeads
+     */
+    private function storePoolSkips(EntityMatch $entityMatch, array $windowHeads): void
+    {
+        $chunk = $this->nextAlignmentChunk($entityMatch->id);
+        $service = SentenceAlignmentService::create();
+
+        foreach (self::skipSides($entityMatch) as $side) {
+            $sentences = $windowHeads[$side] ?? null;
+
+            if ($sentences !== null && $sentences->isNotEmpty()) {
+                $service->storeSkipSentences($entityMatch, $chunk, $side, $sentences);
+            }
+        }
+    }
+
+    private function sentenceSlice(int $entityId, int $offset, int $limit): Collection
+    {
+        return EntitySentence::query()
+            ->where('entity_id', $entityId)
+            ->orderBy('order')
+            ->orderBy('id')
+            ->offset($offset)
+            ->limit($limit)
+            ->get();
     }
 
     /**
@@ -530,28 +558,28 @@ class AlignEntitySentences implements ShouldQueue
      * never across a landmark boundary.
      */
     private function alignPoolChunk(
-        EnRuEntityMatch $entityMatch,
-        EnEntity $enEntity,
-        RuEntity $ruEntity,
-        int $enTotal,
-        int $enOffset,
-        int $ruOffset,
+        EntityMatch $entityMatch,
+        Entity $aEntity,
+        Entity $bEntity,
+        int $aTotal,
+        int $aOffset,
+        int $bOffset,
         array $pool,
     ): void {
         $chunkSize = (int) $entityMatch->chunk_size;
 
-        $storedEnOffset = $enOffset;
-        $storedRuOffset = $ruOffset;
+        $storedAOffset = $aOffset;
+        $storedBOffset = $bOffset;
 
-        $enLimit = min($chunkSize, max(0, $pool['en_end'] - $enOffset));
-        $ruLimit = min($chunkSize, max(0, $pool['ru_end'] - $ruOffset));
+        $aLimit = min($chunkSize, max(0, $pool['a_end'] - $aOffset));
+        $bLimit = min($chunkSize, max(0, $pool['b_end'] - $bOffset));
 
-        if ($enLimit <= 0 || $ruLimit <= 0) {
+        if ($aLimit <= 0 || $bLimit <= 0) {
             $this->persistOffsets(
                 $entityMatch,
-                max($enOffset, $pool['en_end']),
-                max($ruOffset, $pool['ru_end']),
-                $enTotal,
+                max($aOffset, $pool['a_end']),
+                max($bOffset, $pool['b_end']),
+                $aTotal,
             );
 
             return;
@@ -559,74 +587,50 @@ class AlignEntitySentences implements ShouldQueue
 
         $rollback = $this->rollbackPriorMatches(
             entityMatch: $entityMatch,
-            enEntity: $enEntity,
-            ruEntity: $ruEntity,
-            enOffset: $enOffset,
-            ruOffset: $ruOffset,
-            enLimit: $enLimit,
-            ruLimit: $ruLimit,
+            aEntity: $aEntity,
+            bEntity: $bEntity,
+            aOffset: $aOffset,
+            bOffset: $bOffset,
+            aLimit: $aLimit,
+            bLimit: $bLimit,
             pool: $pool,
         );
 
-        $enOffset = $rollback['en_offset'];
-        $ruOffset = $rollback['ru_offset'];
-        $enLimit = $rollback['en_limit'];
-        $ruLimit = $rollback['ru_limit'];
+        $aOffset = $rollback['a_offset'];
+        $bOffset = $rollback['b_offset'];
+        $aLimit = $rollback['a_limit'];
+        $bLimit = $rollback['b_limit'];
 
-        $enSentences = EnEntitySentence::query()
-            ->where('en_entity_id', $enEntity->id)
-            ->orderBy('order')
-            ->orderBy('id')
-            ->offset($enOffset)
-            ->limit($enLimit)
-            ->get();
-
-        $ruSentences = RuEntitySentence::query()
-            ->where('ru_entity_id', $ruEntity->id)
-            ->orderBy('order')
-            ->orderBy('id')
-            ->offset($ruOffset)
-            ->limit($ruLimit)
-            ->get();
+        $aSentences = $this->sentenceSlice($aEntity->id, $aOffset, $aLimit);
+        $bSentences = $this->sentenceSlice($bEntity->id, $bOffset, $bLimit);
 
         $service = SentenceAlignmentService::create();
 
         $matches = $service->alignChunkRemote(
-            $enSentences,
-            $ruSentences,
+            $aSentences,
+            $bSentences,
             $entityMatch->max_n,
         )['matches'];
 
-        $isLastChunk = $enOffset + $enLimit >= $pool['en_end']
-            && $ruOffset + $ruLimit >= $pool['ru_end'];
+        $isLastChunk = $aOffset + $aLimit >= $pool['a_end']
+            && $bOffset + $bLimit >= $pool['b_end'];
 
         $committed = $this->committedMatches($matches, $isLastChunk);
 
         $lastCommitted = $committed[array_key_last($committed)] ?? null;
 
         if ($lastCommitted === null) {
-            if ($entityMatch->is_original_en) {
-                $skippedSentence = EnEntitySentence::query()
-                    ->where('en_entity_id', $enEntity->id)
-                    ->orderBy('order')
-                    ->orderBy('id')
-                    ->offset(max($enOffset, $storedEnOffset))
-                    ->limit(1)
-                    ->get();
-
-                SentenceAlignmentService::create()->storeSkipSentences(
-                    $entityMatch,
-                    $this->nextAlignmentChunk($entityMatch->id),
-                    'en',
-                    $skippedSentence,
-                );
-            }
+            $this->storeChunkSkips(
+                $entityMatch,
+                max($aOffset, $storedAOffset),
+                max($bOffset, $storedBOffset),
+            );
 
             $this->persistOffsets(
                 $entityMatch,
-                max($enOffset, $storedEnOffset) + min(1, $enLimit),
-                $storedRuOffset,
-                $enTotal,
+                max($aOffset, $storedAOffset) + min(1, $aLimit),
+                $storedBOffset,
+                $aTotal,
             );
 
             return;
@@ -638,20 +642,45 @@ class AlignEntitySentences implements ShouldQueue
             entityMatch: $entityMatch,
             alignmentChunk: $alignmentChunk,
             committedMatches: $committed,
-            enSentences: $enSentences,
-            ruSentences: $ruSentences,
+            aSentences: $aSentences,
+            bSentences: $bSentences,
             isLastChunk: $isLastChunk,
         );
 
-        $newEnOffset = $enOffset + (int) $lastCommitted['en_end'];
-        $newRuOffset = $ruOffset + (int) $lastCommitted['ru_end'];
+        $newAOffset = $aOffset + (int) $lastCommitted['a_end'];
+        $newBOffset = $bOffset + (int) $lastCommitted['b_end'];
 
-        if ($newEnOffset <= $storedEnOffset) {
-            $newEnOffset = $storedEnOffset + min(1, $enLimit);
-            $newRuOffset = $storedRuOffset;
+        if ($newAOffset <= $storedAOffset) {
+            $newAOffset = $storedAOffset + min(1, $aLimit);
+            $newBOffset = $storedBOffset;
         }
 
-        $this->persistOffsets($entityMatch, $newEnOffset, $newRuOffset, $enTotal);
+        $this->persistOffsets($entityMatch, $newAOffset, $newBOffset, $aTotal);
+    }
+
+    /**
+     * Skip rows for the alignPoolChunk no-progress path: one sentence per
+     * skip side, taken at that side's window head.
+     */
+    private function storeChunkSkips(EntityMatch $entityMatch, int $aOffset, int $bOffset): void
+    {
+        $chunk = $this->nextAlignmentChunk($entityMatch->id);
+        $service = SentenceAlignmentService::create();
+
+        foreach (self::skipSides($entityMatch) as $side) {
+            $entityId = $side === 'a' ? $entityMatch->a_entity_id : $entityMatch->b_entity_id;
+            $offset = $side === 'a' ? $aOffset : $bOffset;
+
+            $sentence = EntitySentence::query()
+                ->where('entity_id', $entityId)
+                ->orderBy('order')
+                ->orderBy('id')
+                ->offset($offset)
+                ->limit(1)
+                ->get();
+
+            $service->storeSkipSentences($entityMatch, $chunk, $side, $sentence);
+        }
     }
 
     /**
@@ -660,39 +689,33 @@ class AlignEntitySentences implements ShouldQueue
      * both sides. Landmark rows are excluded twice over (chunk sentinel and
      * similarity), so the rollback can never pull a pin into a window.
      *
-     * @param  array{en_start: int, en_end: int, ru_start: int, ru_end: int}  $pool
-     * @return Collection<int, EnRuMeaningMatch>
+     * @param  array{a_start: int, a_end: int, b_start: int, b_end: int}  $pool
+     * @return Collection<int, MeaningMatch>
      */
     private function rollbackCandidates(
-        EnRuEntityMatch $entityMatch,
-        EnEntity $enEntity,
-        RuEntity $ruEntity,
+        EntityMatch $entityMatch,
+        Entity $aEntity,
+        Entity $bEntity,
         array $pool,
     ): Collection {
-        $poolEnIds = EnEntitySentence::query()
-            ->where('en_entity_id', $enEntity->id)
-            ->orderBy('order')
-            ->orderBy('id')
-            ->offset($pool['en_start'])
-            ->limit($pool['en_end'] - $pool['en_start'])
+        $poolAIds = $this->sentenceSlice($aEntity->id, $pool['a_start'], $pool['a_end'] - $pool['a_start'])
             ->pluck('id')
             ->all();
 
-        $poolRuIds = RuEntitySentence::query()
-            ->where('ru_entity_id', $ruEntity->id)
-            ->orderBy('order')
-            ->orderBy('id')
-            ->offset($pool['ru_start'])
-            ->limit($pool['ru_end'] - $pool['ru_start'])
+        $poolBIds = $this->sentenceSlice($bEntity->id, $pool['b_start'], $pool['b_end'] - $pool['b_start'])
             ->pluck('id')
             ->all();
 
-        return EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
+        return MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
             ->where('alignment_chunk', '!=', -1)
             ->where('similarity', '<', self::LANDMARK_THRESHOLD)
-            ->whereHas('enSentenceMatches', fn ($query) => $query->whereIn('en_entity_sentence_id', $poolEnIds))
-            ->whereHas('ruSentenceMatches', fn ($query) => $query->whereIn('ru_entity_sentence_id', $poolRuIds))
+            ->whereHas('sentenceMeaningMatches', fn ($query) => $query
+                ->where('side', 'a')
+                ->whereIn('entity_sentence_id', $poolAIds))
+            ->whereHas('sentenceMeaningMatches', fn ($query) => $query
+                ->where('side', 'b')
+                ->whereIn('entity_sentence_id', $poolBIds))
             ->orderByDesc('order')
             ->limit(self::ROLLBACK_MATCHES)
             ->get();
@@ -700,74 +723,74 @@ class AlignEntitySentences implements ShouldQueue
 
     /**
      * Drag the last committed matches back into the window before aligning so
-     * the DP sees the context preceding the chunk seam. The strict 1:1 RU
+     * the DP sees the context preceding the chunk seam. The strict 1:1
      * window of ADR-0004 means python's DP force-aligns the head of each new
      * chunk with no backward reach, producing the 1:5 / 5:1 garbage trim can
      * only catch on the tail. Rolling back the last few commits (deleting the
      * meaning-match rows, junctions cascade via FK) and re-aligning them
      * against fresh forward context lets the seam dissolve into a clean
-     * 1:1 progression. Skip-en/skip-ru steps anchor no sentences and are not
-     * candidates. The rewind is clamped to the pool start so landmarks are
-     * never pulled into a window. The limits grow by the rolled-back spans so
-     * the window's forward reach is unchanged.
+     * 1:1 progression. Skip steps anchor no sentences and are not candidates.
+     * The rewind is clamped to the pool start so landmarks are never pulled
+     * into a window. The limits grow by the rolled-back spans so the window's
+     * forward reach is unchanged.
      *
-     * @param  array{en_start: int, en_end: int, ru_start: int, ru_end: int}  $pool
-     * @return array{en_offset: int, ru_offset: int, en_limit: int, ru_limit: int}
+     * @param  array{a_start: int, a_end: int, b_start: int, b_end: int}  $pool
+     * @return array{a_offset: int, b_offset: int, a_limit: int, b_limit: int}
      */
     private function rollbackPriorMatches(
-        EnRuEntityMatch $entityMatch,
-        EnEntity $enEntity,
-        RuEntity $ruEntity,
-        int $enOffset,
-        int $ruOffset,
-        int $enLimit,
-        int $ruLimit,
+        EntityMatch $entityMatch,
+        Entity $aEntity,
+        Entity $bEntity,
+        int $aOffset,
+        int $bOffset,
+        int $aLimit,
+        int $bLimit,
         array $pool,
     ): array {
-        $candidates = $this->rollbackCandidates($entityMatch, $enEntity, $ruEntity, $pool);
+        $candidates = $this->rollbackCandidates($entityMatch, $aEntity, $bEntity, $pool);
 
         if ($candidates->isEmpty()) {
             return [
-                'en_offset' => $enOffset,
-                'ru_offset' => $ruOffset,
-                'en_limit' => $enLimit,
-                'ru_limit' => $ruLimit,
+                'a_offset' => $aOffset,
+                'b_offset' => $bOffset,
+                'a_limit' => $aLimit,
+                'b_limit' => $bLimit,
             ];
         }
 
-        $enSentenceIds = [];
-        $ruSentenceIds = [];
+        $aSentenceIds = [];
+        $bSentenceIds = [];
 
         foreach ($candidates as $candidate) {
-            $enSentenceIds = [
-                ...$enSentenceIds,
-                ...$candidate->enSentenceMatches()->pluck('en_entity_sentence_id')->all(),
+            $aSentenceIds = [
+                ...$aSentenceIds,
+                ...$candidate->sentenceMeaningMatches()->where('side', 'a')->pluck('entity_sentence_id')->all(),
             ];
-            $ruSentenceIds = [
-                ...$ruSentenceIds,
-                ...$candidate->ruSentenceMatches()->pluck('ru_entity_sentence_id')->all(),
+            $bSentenceIds = [
+                ...$bSentenceIds,
+                ...$candidate->sentenceMeaningMatches()->where('side', 'b')->pluck('entity_sentence_id')->all(),
             ];
         }
 
-        $newEnOffset = max(
-            $this->rollbackOffset(EnEntitySentence::class, 'en_entity_id', $enEntity->id, $enSentenceIds, $enOffset),
-            $pool['en_start'],
+        $newAOffset = max(
+            $this->rollbackOffset($aEntity->id, $aSentenceIds, $aOffset),
+            $pool['a_start'],
         );
-        $newRuOffset = max(
-            $this->rollbackOffset(RuEntitySentence::class, 'ru_entity_id', $ruEntity->id, $ruSentenceIds, $ruOffset),
-            $pool['ru_start'],
+        $newBOffset = max(
+            $this->rollbackOffset($bEntity->id, $bSentenceIds, $bOffset),
+            $pool['b_start'],
         );
 
-        EnRuMeaningMatch::whereKey($candidates->pluck('id'))->delete();
+        MeaningMatch::whereKey($candidates->pluck('id'))->delete();
 
-        $enRollback = max(0, $enOffset - $newEnOffset);
-        $ruRollback = max(0, $ruOffset - $newRuOffset);
+        $aRollback = max(0, $aOffset - $newAOffset);
+        $bRollback = max(0, $bOffset - $newBOffset);
 
         return [
-            'en_offset' => $newEnOffset,
-            'ru_offset' => $newRuOffset,
-            'en_limit' => min($enLimit + $enRollback, max(0, $pool['en_end'] - $newEnOffset)),
-            'ru_limit' => min($ruLimit + $ruRollback, max(0, $pool['ru_end'] - $newRuOffset)),
+            'a_offset' => $newAOffset,
+            'b_offset' => $newBOffset,
+            'a_limit' => min($aLimit + $aRollback, max(0, $pool['a_end'] - $newAOffset)),
+            'b_limit' => min($bLimit + $bRollback, max(0, $pool['b_end'] - $newBOffset)),
         ];
     }
 
@@ -779,8 +802,6 @@ class AlignEntitySentences implements ShouldQueue
      * @param  list<int>  $sentenceIds
      */
     private function rollbackOffset(
-        string $modelClass,
-        string $entityColumn,
         int $entityId,
         array $sentenceIds,
         int $currentOffset,
@@ -789,8 +810,8 @@ class AlignEntitySentences implements ShouldQueue
             return $currentOffset;
         }
 
-        $pivot = $modelClass::query()
-            ->where($entityColumn, $entityId)
+        $pivot = EntitySentence::query()
+            ->where('entity_id', $entityId)
             ->whereIn('id', array_unique($sentenceIds))
             ->orderBy('order')
             ->orderBy('id')
@@ -800,8 +821,8 @@ class AlignEntitySentences implements ShouldQueue
             return $currentOffset;
         }
 
-        $offset = $modelClass::query()
-            ->where($entityColumn, $entityId)
+        $offset = EntitySentence::query()
+            ->where('entity_id', $entityId)
             ->where(fn ($query) => $query
                 ->where('order', '<', $pivot->order)
                 ->orWhere(fn ($query2) => $query2
@@ -820,8 +841,8 @@ class AlignEntitySentences implements ShouldQueue
      * all, everything is committed to guarantee forward progress (mirrors
      * BilingualAligner._trim_to_last_anchor).
      *
-     * @param  list<array{en_start: int, en_end: int, ru_start: int, ru_end: int, score: float}>  $matches
-     * @return list<array{en_start: int, en_end: int, ru_start: int, ru_end: int, score: float}>
+     * @param  list<array{a_start: int, a_end: int, b_start: int, b_end: int, score: float}>  $matches
+     * @return list<array{a_start: int, a_end: int, b_start: int, b_end: int, score: float}>
      */
     private function committedMatches(array $matches, bool $isLastChunk): array
     {
@@ -844,28 +865,28 @@ class AlignEntitySentences implements ShouldQueue
      */
     private function nextAlignmentChunk(int $entityMatchId): int
     {
-        $max = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatchId)
+        $max = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatchId)
             ->max('alignment_chunk');
 
         return $max === null ? 0 : ((int) $max) + 1;
     }
 
     private function persistOffsets(
-        EnRuEntityMatch $entityMatch,
-        int $newEnOffset,
-        int $newRuOffset,
-        int $enTotal,
+        EntityMatch $entityMatch,
+        int $newAOffset,
+        int $newBOffset,
+        int $aTotal,
     ): void {
         $entityMatch->update([
-            'last_en_sentence_offset' => $newEnOffset,
-            'last_ru_sentence_offset' => $newRuOffset,
-            'linked_count' => EnRuMeaningMatch::query()
-                ->where('en_ru_entity_match_id', $entityMatch->id)
+            'a_last_sentence_offset' => $newAOffset,
+            'b_last_sentence_offset' => $newBOffset,
+            'linked_count' => MeaningMatch::query()
+                ->where('entity_match_id', $entityMatch->id)
                 ->count(),
         ]);
 
-        if ($newEnOffset >= $enTotal) {
+        if ($newAOffset >= $aTotal) {
             $this->finalize($entityMatch);
 
             return;
@@ -876,27 +897,31 @@ class AlignEntitySentences implements ShouldQueue
 
     /**
      * The single completion gate for an entity match. Every completion site
-     * funnels through here so the original-side invariant holds on exit: any
+     * funnels through here so the coverage invariant holds on exit: any
      * original-side sentence still junction-less (dropped by a crawl seam,
      * left over after the translation side was exhausted, or skipped during a
-     * re-align) is junctioned into a single-sided meaning match. The repair
-     * is best-effort — if it fails, a warning is logged and completion
-     * proceeds regardless.
+     * re-align) is junctioned into a single-sided meaning match. When neither
+     * side is the original language (translation↔translation pair), BOTH
+     * sides are repaired. The repair is best-effort — if it fails, a warning
+     * is logged and completion proceeds regardless.
      */
-    private function finalize(EnRuEntityMatch $entityMatch): void
+    private function finalize(EntityMatch $entityMatch): void
     {
-        $side = $entityMatch->is_original_en ? 'en' : 'ru';
+        $sides = self::skipSides($entityMatch);
 
-        [$junctionless, $index] = $this->junctionlessSentences($entityMatch, $side);
+        foreach ($sides as $side) {
+            [$junctionless, $index] = $this->junctionlessSentences($entityMatch, $side);
 
-        if ($junctionless->isNotEmpty()) {
-            try {
-                $this->repairJunctionlessOriginals($entityMatch, $side, $junctionless, $index);
-            } catch (Throwable $exception) {
-                Log::warning('Failed to junction original sentences on alignment completion', [
-                    'en_ru_entity_match_id' => $entityMatch->id,
-                    'error' => $exception->getMessage(),
-                ]);
+            if ($junctionless->isNotEmpty()) {
+                try {
+                    $this->repairJunctionlessOriginals($entityMatch, $side, $junctionless, $index);
+                } catch (Throwable $exception) {
+                    Log::warning('Failed to junction sentences on alignment completion', [
+                        'entity_match_id' => $entityMatch->id,
+                        'side' => $side,
+                        'error' => $exception->getMessage(),
+                    ]);
+                }
             }
         }
 
@@ -904,71 +929,64 @@ class AlignEntitySentences implements ShouldQueue
             'status' => 'completed',
             'error_message' => null,
             'completed_at' => now(),
-            'linked_count' => EnRuMeaningMatch::query()
-                ->where('en_ru_entity_match_id', $entityMatch->id)
+            'linked_count' => MeaningMatch::query()
+                ->where('entity_match_id', $entityMatch->id)
                 ->count(),
         ]);
     }
 
     /**
-     * The junction-less original-side sentences in document order, plus the
+     * The junction-less sentences of one side in document order, plus the
      * sentence-id => document-index map that anchors their position among the
      * meaning matches.
      *
-     * @param  'en'|'ru'  $side
-     * @return array{0: Collection<int, EnEntitySentence|RuEntitySentence>, 1: array<int, int>}
+     * @param  'a'|'b'  $side
+     * @return array{0: Collection<int, EntitySentence>, 1: array<int, int>}
      */
-    private function junctionlessSentences(EnRuEntityMatch $entityMatch, string $side): array
+    private function junctionlessSentences(EntityMatch $entityMatch, string $side): array
     {
-        $sentenceModel = $side === 'en' ? EnEntitySentence::class : RuEntitySentence::class;
-        $entityColumn = $side === 'en' ? 'en_entity_id' : 'ru_entity_id';
-        $junctionRelation = $side === 'en' ? 'enMeaningMatches' : 'ruMeaningMatches';
-        $entityId = $side === 'en' ? $entityMatch->en_entity_id : $entityMatch->ru_entity_id;
+        $entityId = $side === 'a' ? $entityMatch->a_entity_id : $entityMatch->b_entity_id;
 
         return [
-            $sentenceModel::query()
-                ->where($entityColumn, $entityId)
+            EntitySentence::query()
+                ->where('entity_id', $entityId)
                 ->orderBy('order')
                 ->orderBy('id')
-                ->doesntHave($junctionRelation)
+                ->doesntHave('meaningJunctions')
                 ->get(),
-            self::sentenceIndex($sentenceModel, $entityColumn, $entityId),
+            self::sentenceIndex($entityId),
         ];
     }
 
     /**
-     * Junction every junction-less original-side sentence into a single-sided
+     * Junction every junction-less sentence of one side into a single-sided
      * meaning match (similarity 0.0, next machine alignment chunk id) ordered
      * so the reader's meaning-match sequence preserves document order. Runs
      * of junction-less sentences falling between the same pair of junctioned
      * anchors share the machine chunk id, so a future re-align deletes and
      * re-feeds them like any other machine row.
      *
-     * @param  'en'|'ru'  $side
-     * @param  Collection<int, EnEntitySentence|RuEntitySentence>  $junctionless
+     * @param  'a'|'b'  $side
+     * @param  Collection<int, EntitySentence>  $junctionless
      * @param  array<int, int>  $index
      */
     private function repairJunctionlessOriginals(
-        EnRuEntityMatch $entityMatch,
+        EntityMatch $entityMatch,
         string $side,
         Collection $junctionless,
         array $index,
     ): void {
-        $junctionRelation = $side === 'en' ? 'enSentenceMatches' : 'ruSentenceMatches';
-        $junctionColumn = $side === 'en' ? 'en_entity_sentence_id' : 'ru_entity_sentence_id';
-        $junctionModel = $side === 'en' ? EnSentenceMeaningMatch::class : RuSentenceMeaningMatch::class;
-
         $anchors = [];
 
-        EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
+        MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
             ->orderBy('order')
             ->orderBy('id')
-            ->with($junctionRelation)
+            ->with(['sentenceMeaningMatches' => fn ($query) => $query->where('side', $side)])
             ->get()
-            ->each(function (EnRuMeaningMatch $match) use (&$anchors, $junctionRelation, $junctionColumn, $index): void {
-                foreach ($match->{$junctionRelation} as $junction) {
-                    $docIndex = $index[$junction->{$junctionColumn}] ?? null;
+            ->each(function (MeaningMatch $match) use (&$anchors, $index): void {
+                foreach ($match->sentenceMeaningMatches as $junction) {
+                    $docIndex = $index[$junction->entity_sentence_id] ?? null;
 
                     if ($docIndex !== null) {
                         $anchors[$docIndex] = (int) $match->order;
@@ -1016,8 +1034,7 @@ class AlignEntitySentences implements ShouldQueue
 
         DB::transaction(function () use (
             $entityMatch,
-            $junctionColumn,
-            $junctionModel,
+            $side,
             $sparseOrder,
             $alignmentChunk,
             $anchorIndexes,
@@ -1045,16 +1062,17 @@ class AlignEntitySentences implements ShouldQueue
                 $orders = $sparseOrder->spreadOrders(count($run), $low, $high);
 
                 foreach ($orders as $offset => $order) {
-                    $meaningMatch = EnRuMeaningMatch::create([
-                        'en_ru_entity_match_id' => $entityMatch->id,
+                    $meaningMatch = MeaningMatch::create([
+                        'entity_match_id' => $entityMatch->id,
                         'order' => $order,
                         'similarity' => 0.0,
                         'alignment_chunk' => $alignmentChunk,
                     ]);
 
-                    $junctionModel::create([
-                        $junctionColumn => $run[$offset]->id,
-                        'en_ru_meaning_match_id' => $meaningMatch->id,
+                    SentenceMeaningMatch::create([
+                        'entity_sentence_id' => $run[$offset]->id,
+                        'meaning_match_id' => $meaningMatch->id,
+                        'side' => $side,
                     ]);
                 }
             }
@@ -1063,7 +1081,7 @@ class AlignEntitySentences implements ShouldQueue
 
     public function failed(Throwable $exception): void
     {
-        EnRuEntityMatch::whereKey($this->entityMatchId)->update([
+        EntityMatch::whereKey($this->entityMatchId)->update([
             'status' => 'failed',
             'error_message' => $exception->getMessage(),
             'completed_at' => now(),

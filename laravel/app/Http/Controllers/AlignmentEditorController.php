@@ -9,16 +9,14 @@ use App\Http\Requests\AddSentenceRequest;
 use App\Http\Requests\MoveSentenceRequest;
 use App\Http\Requests\NeedsReviewRequest;
 use App\Http\Requests\RowsRequest;
-use App\Http\Requests\SentenceLangRequest;
+use App\Http\Requests\SentenceSideRequest;
 use App\Http\Requests\StoreMeaningMatchRequest;
 use App\Http\Requests\UnmatchedRequest;
 use App\Http\Requests\UpdateSentenceRequest;
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\EnSentenceMeaningMatch;
-use App\Models\RuEntitySentence;
-use App\Models\RuSentenceMeaningMatch;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -37,20 +35,20 @@ class AlignmentEditorController extends Controller
         return new EntityAccessService;
     }
 
-    public function storeRow(EnRuEntityMatch $entityMatch, StoreMeaningMatchRequest $request): JsonResponse
+    public function storeRow(EntityMatch $entityMatch, StoreMeaningMatchRequest $request): JsonResponse
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
         $afterRowId = $request->validated('after_row_id');
 
-        $meaningMatch = DB::transaction(function () use ($entityMatch, $afterRowId): EnRuMeaningMatch {
-            $rows = EnRuMeaningMatch::query()
-                ->where('en_ru_entity_match_id', $entityMatch->id)
+        $meaningMatch = DB::transaction(function () use ($entityMatch, $afterRowId): MeaningMatch {
+            $rows = MeaningMatch::query()
+                ->where('entity_match_id', $entityMatch->id)
                 ->orderBy('order')
                 ->get(['id', 'order']);
 
             $items = $rows
-                ->map(fn (EnRuMeaningMatch $row): array => ['key' => 'mm-'.$row->id, 'order' => (int) $row->order])
+                ->map(fn (MeaningMatch $row): array => ['key' => 'mm-'.$row->id, 'order' => (int) $row->order])
                 ->values()
                 ->all();
 
@@ -62,8 +60,8 @@ class AlignmentEditorController extends Controller
 
             $this->persistRowOrderChanges($rows, $result['items']);
 
-            return EnRuMeaningMatch::query()->create([
-                'en_ru_entity_match_id' => $entityMatch->id,
+            return MeaningMatch::query()->create([
+                'entity_match_id' => $entityMatch->id,
                 'order' => $result['order'],
                 'similarity' => 1.0,
                 'alignment_chunk' => -1,
@@ -75,25 +73,22 @@ class AlignmentEditorController extends Controller
         return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch)]);
     }
 
-    public function destroyRow(EnRuEntityMatch $entityMatch, EnRuMeaningMatch $meaningMatch): JsonResponse
+    public function destroyRow(EntityMatch $entityMatch, MeaningMatch $meaningMatch): JsonResponse
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
-        abort_unless($meaningMatch->en_ru_entity_match_id === $entityMatch->id, 404);
+        abort_unless($meaningMatch->entity_match_id === $entityMatch->id, 404);
 
         $unmatchedChanged = [];
 
         DB::transaction(function () use ($entityMatch, $meaningMatch, &$unmatchedChanged): void {
-            if ($meaningMatch->enSentenceMatches()->exists()) {
-                $unmatchedChanged[] = 'en';
+            foreach (['a', 'b'] as $side) {
+                if ($meaningMatch->sideSentenceMeaningMatches($side)->exists()) {
+                    $unmatchedChanged[] = $side;
+                }
             }
 
-            if ($meaningMatch->ruSentenceMatches()->exists()) {
-                $unmatchedChanged[] = 'ru';
-            }
-
-            $meaningMatch->enSentenceMatches()->delete();
-            $meaningMatch->ruSentenceMatches()->delete();
+            $meaningMatch->sentenceMeaningMatches()->delete();
             $meaningMatch->delete();
 
             $entityMatch->update(['linked_count' => $entityMatch->meaningMatches()->count()]);
@@ -107,139 +102,137 @@ class AlignmentEditorController extends Controller
         );
     }
 
-    public function approveRow(EnRuEntityMatch $entityMatch, EnRuMeaningMatch $meaningMatch): JsonResponse
+    public function approveRow(EntityMatch $entityMatch, MeaningMatch $meaningMatch): JsonResponse
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
-        abort_unless($meaningMatch->en_ru_entity_match_id === $entityMatch->id, 404);
+        abort_unless($meaningMatch->entity_match_id === $entityMatch->id, 404);
 
         $meaningMatch->update(['similarity' => 1.0, 'alignment_chunk' => -1]);
 
         return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch->refresh())]);
     }
 
-    public function storeSentence(EnRuEntityMatch $entityMatch, AddSentenceRequest $request): JsonResponse
+    public function storeSentence(EntityMatch $entityMatch, AddSentenceRequest $request): JsonResponse
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
-        $lang = $request->validated('lang');
+        $side = $request->validated('side');
         $content = trim((string) $request->validated('content'));
         $meaningMatchId = (int) $request->validated('meaning_match_id');
 
-        $meaningMatch = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
+        $meaningMatch = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
             ->findOrFail($meaningMatchId);
 
-        DB::transaction(function () use ($entityMatch, $lang, $content, $meaningMatch): void {
-            $sentenceClass = $this->sentenceClass($lang);
-            $entityForeignKey = $this->entityForeignKey($lang);
-            $entityId = $this->entityId($entityMatch, $lang);
+        DB::transaction(function () use ($entityMatch, $side, $content, $meaningMatch): void {
+            $entityId = $this->entityId($entityMatch, $side);
 
-            $anchor = $this->sideAnchorOrder($entityMatch, $lang, $meaningMatch);
+            $anchor = $this->sideAnchorOrder($entityMatch, $side, $meaningMatch);
 
-            $order = $this->placeSideSentence($entityMatch, $lang, null, $anchor);
+            $order = $this->placeSideSentence($entityMatch, $side, null, $anchor);
 
             $sentenceTypeId = SentenceType::query()->where('name', 'sentence')->value('id');
 
-            $sentence = $sentenceClass::query()->create([
-                $entityForeignKey => $entityId,
+            $sentence = EntitySentence::query()->create([
+                'entity_id' => $entityId,
                 'sentence_type_id' => $sentenceTypeId,
                 'content' => $content,
                 'order' => $order,
             ]);
 
-            $this->junctionClass($lang)::query()->create([
-                $this->sentenceForeignKey($lang) => $sentence->id,
-                'en_ru_meaning_match_id' => $meaningMatch->id,
+            SentenceMeaningMatch::query()->create([
+                'entity_sentence_id' => $sentence->id,
+                'meaning_match_id' => $meaningMatch->id,
+                'side' => $side,
             ]);
 
             $meaningMatch->update(['similarity' => 1.0]);
 
-            $totalColumn = $lang === 'en' ? 'en_total_sentences' : 'ru_total_sentences';
-            $entityMatch->update([$totalColumn => $sentenceClass::query()->where($entityForeignKey, $entityId)->count()]);
+            $totalColumn = $side === 'a' ? 'a_total_sentences' : 'b_total_sentences';
+            $entityMatch->update([$totalColumn => EntitySentence::query()->where('entity_id', $entityId)->count()]);
         });
 
         return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch->refresh())]);
     }
 
-    public function updateSentence(EnRuEntityMatch $entityMatch, int $sentence, UpdateSentenceRequest $request): JsonResponse
+    public function updateSentence(EntityMatch $entityMatch, int $sentence, UpdateSentenceRequest $request): JsonResponse
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
-        $lang = $request->validated('lang');
+        $side = $request->validated('side');
         $content = trim((string) $request->validated('content'));
 
-        $sentenceModel = $this->findSideSentence($entityMatch, $lang, $sentence);
+        $sentenceModel = $this->findSideSentence($entityMatch, $side, $sentence);
         $sentenceModel->update(['content' => $content]);
 
-        $rowId = $this->rowIdOfSentence($lang, $sentenceModel->id);
+        $rowId = $this->rowIdOfSentence($side, $sentenceModel->id);
 
         return $this->mutationResponse($entityMatch, $this->rowPayloadsByIds($entityMatch, $rowId !== null ? [$rowId] : []));
     }
 
-    public function unlinkSentence(EnRuEntityMatch $entityMatch, int $sentence, SentenceLangRequest $request): JsonResponse
+    public function unlinkSentence(EntityMatch $entityMatch, int $sentence, SentenceSideRequest $request): JsonResponse
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
-        $lang = $request->validated('lang');
+        $side = $request->validated('side');
 
-        $sentenceModel = $this->findSideSentence($entityMatch, $lang, $sentence);
+        $sentenceModel = $this->findSideSentence($entityMatch, $side, $sentence);
 
-        $rowId = $this->rowIdOfSentence($lang, $sentenceModel->id);
+        $rowId = $this->rowIdOfSentence($side, $sentenceModel->id);
         abort_if($rowId === null, 422, 'Sentence is not linked.');
 
-        DB::transaction(function () use ($entityMatch, $lang, $sentenceModel, $rowId): void {
-            $this->unlink($entityMatch, $lang, $sentenceModel->id, $rowId);
+        DB::transaction(function () use ($entityMatch, $side, $sentenceModel, $rowId): void {
+            $this->unlink($entityMatch, $side, $sentenceModel->id, $rowId);
         });
 
         return $this->mutationResponse(
             $entityMatch,
             $this->rowPayloadsByIds($entityMatch, [$rowId]),
             [],
-            [$lang],
+            [$side],
         );
     }
 
-    public function destroyUnmatched(EnRuEntityMatch $entityMatch, int $sentence, SentenceLangRequest $request): JsonResponse
+    public function destroyUnmatched(EntityMatch $entityMatch, int $sentence, SentenceSideRequest $request): JsonResponse
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
-        $lang = $request->validated('lang');
+        $side = $request->validated('side');
 
-        $sentenceModel = $this->findSideSentence($entityMatch, $lang, $sentence);
+        $sentenceModel = $this->findSideSentence($entityMatch, $side, $sentence);
 
-        if ($this->rowIdOfSentence($lang, $sentenceModel->id) !== null) {
+        if ($this->rowIdOfSentence($side, $sentenceModel->id) !== null) {
             abort(422, 'Linked sentences must be unlinked before deletion.');
         }
 
-        $entityId = $this->entityId($entityMatch, $lang);
-        $entityForeignKey = $this->entityForeignKey($lang);
+        $entityId = $this->entityId($entityMatch, $side);
 
-        DB::transaction(function () use ($entityMatch, $sentenceModel, $lang, $entityId, $entityForeignKey): void {
+        DB::transaction(function () use ($entityMatch, $sentenceModel, $side, $entityId): void {
             $sentenceModel->delete();
 
-            $totalColumn = $lang === 'en' ? 'en_total_sentences' : 'ru_total_sentences';
-            $entityMatch->update([$totalColumn => $this->sentenceClass($lang)::query()->where($entityForeignKey, $entityId)->count()]);
+            $totalColumn = $side === 'a' ? 'a_total_sentences' : 'b_total_sentences';
+            $entityMatch->update([$totalColumn => EntitySentence::query()->where('entity_id', $entityId)->count()]);
         });
 
-        return $this->mutationResponse($entityMatch, [], [], [$lang]);
+        return $this->mutationResponse($entityMatch, [], [], [$side]);
     }
 
-    public function moveSentence(EnRuEntityMatch $entityMatch, MoveSentenceRequest $request): JsonResponse
+    public function moveSentence(EntityMatch $entityMatch, MoveSentenceRequest $request): JsonResponse
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
-        $lang = $request->validated('lang');
+        $side = $request->validated('side');
         $sentenceId = (int) $request->validated('sentence_id');
         $toRowId = $request->validated('to_row_id');
         $index = (int) $request->validated('index');
 
-        $this->findSideSentence($entityMatch, $lang, $sentenceId);
+        $this->findSideSentence($entityMatch, $side, $sentenceId);
 
         $affectedRowIds = [];
 
-        DB::transaction(function () use ($entityMatch, $lang, $sentenceId, $toRowId, $index, &$affectedRowIds): void {
-            $layout = $this->sideLayout($entityMatch, $lang);
+        DB::transaction(function () use ($entityMatch, $side, $sentenceId, $toRowId, $index, &$affectedRowIds): void {
+            $layout = $this->sideLayout($entityMatch, $side);
             $fromRowId = $layout['sentences'][$sentenceId]['row_id'] ?? null;
 
             if ($fromRowId === $toRowId) {
@@ -256,20 +249,20 @@ class AlignmentEditorController extends Controller
                     return;
                 }
 
-                $this->placeMovedWithinRow($entityMatch, $lang, $seq, $sentenceId, $layout);
+                $this->placeMovedWithinRow($entityMatch, $side, $seq, $sentenceId, $layout);
                 $affectedRowIds[] = $toRowId;
 
                 return;
             }
 
             if ($fromRowId !== null) {
-                $this->unlink($entityMatch, $lang, $sentenceId, $fromRowId);
+                $this->unlink($entityMatch, $side, $sentenceId, $fromRowId);
                 $affectedRowIds[] = $fromRowId;
             }
 
             if ($toRowId !== null) {
-                $this->link($lang, $sentenceId, $toRowId);
-                $this->placeSentenceAt($entityMatch, $lang, $sentenceId, $toRowId, $index);
+                $this->link($side, $sentenceId, $toRowId);
+                $this->placeSentenceAt($entityMatch, $side, $sentenceId, $toRowId, $index);
                 $affectedRowIds[] = $toRowId;
             }
         });
@@ -278,7 +271,7 @@ class AlignmentEditorController extends Controller
             $entityMatch,
             $this->rowPayloadsByIds($entityMatch, $affectedRowIds),
             [],
-            [$lang],
+            [$side],
         );
     }
 
@@ -289,13 +282,14 @@ class AlignmentEditorController extends Controller
      * sentence — so it can never collide with an interleaved sentence's order
      * and rebalances the neighborhood when the surrounding gap is exhausted.
      *
+     * @param  'a'|'b'  $side
      * @param  list<int>  $seq  the row's sentence ids in intended order
      * @param  array{
      *     sentences: array<int, array{order: int, row_id: ?int}>,
      *     rows: array<int, array{order: int, ids: list<int>}}>
      * }  $layout
      */
-    private function placeMovedWithinRow(EnRuEntityMatch $entityMatch, string $lang, array $seq, int $movedId, array $layout): void
+    private function placeMovedWithinRow(EntityMatch $entityMatch, string $side, array $seq, int $movedId, array $layout): void
     {
         $insertIndex = array_search($movedId, $seq, true);
         $remaining = array_values(array_filter($seq, fn (int $id): bool => $id !== $movedId));
@@ -311,22 +305,23 @@ class AlignmentEditorController extends Controller
             ? (int) $layout['sentences'][$prevId]['order']
             : $this->predecessorOrderBelow($layout, (int) $layout['sentences'][$nextId]['order']);
 
-        $this->placeSideSentence($entityMatch, $lang, $movedId, $afterOrder);
+        $this->placeSideSentence($entityMatch, $side, $movedId, $afterOrder);
     }
 
     /**
      * Place a sentence junctioned into a row holding no other sentences on
-     * this language side: anchored after the closest populated row below (or
-     * before the closest one above) so the global numbering stays monotonic
-     * with row order, again from the side's global document order so the
-     * result cannot collide with an interleaved sentence.
+     * this side: anchored after the closest populated row below (or before
+     * the closest one above) so the global numbering stays monotonic with
+     * row order, again from the side's global document order so the result
+     * cannot collide with an interleaved sentence.
      *
+     * @param  'a'|'b'  $side
      * @param  array{
      *     sentences: array<int, array{order: int, row_id: ?int}>,
      *     rows: array<int, array{order: int, ids: list<int>}}>
      * }  $layout
      */
-    private function placeIntoEmptyRow(EnRuEntityMatch $entityMatch, string $lang, int $sentenceId, array $layout, int $rowId): void
+    private function placeIntoEmptyRow(EntityMatch $entityMatch, string $side, int $sentenceId, array $layout, int $rowId): void
     {
         $rowOrder = $layout['rows'][$rowId]['order'];
 
@@ -355,7 +350,7 @@ class AlignmentEditorController extends Controller
             $afterOrder = SparseOrderService::BEGINNING_SENTINEL;
         }
 
-        $this->placeSideSentence($entityMatch, $lang, $sentenceId, $afterOrder);
+        $this->placeSideSentence($entityMatch, $side, $sentenceId, $afterOrder);
     }
 
     /**
@@ -366,16 +361,15 @@ class AlignmentEditorController extends Controller
      * at unique negatives first — so the (entity_id, order) unique index never
      * sees a transient collision mid-write.
      *
+     * @param  'a'|'b'  $side
      * @return int the order assigned to the placed sentence
      */
-    private function placeSideSentence(EnRuEntityMatch $entityMatch, string $lang, ?int $sentenceId, int $afterOrder): int
+    private function placeSideSentence(EntityMatch $entityMatch, string $side, ?int $sentenceId, int $afterOrder): int
     {
-        $sentenceClass = $this->sentenceClass($lang);
-        $entityForeignKey = $this->entityForeignKey($lang);
-        $entityId = $this->entityId($entityMatch, $lang);
+        $entityId = $this->entityId($entityMatch, $side);
 
-        $currentOrders = $sentenceClass::query()
-            ->where($entityForeignKey, $entityId)
+        $currentOrders = EntitySentence::query()
+            ->where('entity_id', $entityId)
             ->get(['id', 'order'])
             ->mapWithKeys(fn ($sentence): array => [$sentence->id => (int) $sentence->order]);
 
@@ -419,11 +413,11 @@ class AlignmentEditorController extends Controller
         }
 
         foreach ($updates as $update) {
-            $sentenceClass::query()->whereKey($update['id'])->update(['order' => -($update['id'] + 1_000_000_000)]);
+            EntitySentence::query()->whereKey($update['id'])->update(['order' => -($update['id'] + 1_000_000_000)]);
         }
 
         foreach ($updates as $update) {
-            $sentenceClass::query()->whereKey($update['id'])->update(['order' => $update['order']]);
+            EntitySentence::query()->whereKey($update['id'])->update(['order' => $update['order']]);
         }
 
         return $result['order'];
@@ -452,10 +446,12 @@ class AlignmentEditorController extends Controller
      * Renumber a freshly linked sentence so it sorts at the drop index within
      * its destination row, bounded by the document orders of the surrounding
      * rows so the global numbering stays monotonic with row order.
+     *
+     * @param  'a'|'b'  $side
      */
-    private function placeSentenceAt(EnRuEntityMatch $entityMatch, string $lang, int $sentenceId, int $rowId, int $index): void
+    private function placeSentenceAt(EntityMatch $entityMatch, string $side, int $sentenceId, int $rowId, int $index): void
     {
-        $layout = $this->sideLayout($entityMatch, $lang);
+        $layout = $this->sideLayout($entityMatch, $side);
 
         $current = array_values(array_filter(
             $layout['rows'][$rowId]['ids'],
@@ -463,7 +459,7 @@ class AlignmentEditorController extends Controller
         ));
 
         if ($current === []) {
-            $this->placeIntoEmptyRow($entityMatch, $lang, $sentenceId, $layout, $rowId);
+            $this->placeIntoEmptyRow($entityMatch, $side, $sentenceId, $layout, $rowId);
 
             return;
         }
@@ -471,10 +467,10 @@ class AlignmentEditorController extends Controller
         $seq = $current;
         array_splice($seq, $index, 0, [$sentenceId]);
 
-        $this->placeMovedWithinRow($entityMatch, $lang, $seq, $sentenceId, $layout);
+        $this->placeMovedWithinRow($entityMatch, $side, $seq, $sentenceId, $layout);
     }
 
-    public function rows(EnRuEntityMatch $entityMatch, RowsRequest $request): JsonResponse
+    public function rows(EntityMatch $entityMatch, RowsRequest $request): JsonResponse
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
@@ -488,16 +484,16 @@ class AlignmentEditorController extends Controller
         ]);
     }
 
-    public function unmatched(EnRuEntityMatch $entityMatch, UnmatchedRequest $request): JsonResponse
+    public function unmatched(EntityMatch $entityMatch, UnmatchedRequest $request): JsonResponse
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
         return response()->json(
-            $this->presenter->unmatchedPayload($entityMatch, $request->validated('lang'), $request->page()),
+            $this->presenter->unmatchedPayload($entityMatch, $request->validated('side'), $request->page()),
         );
     }
 
-    public function needsReview(EnRuEntityMatch $entityMatch, NeedsReviewRequest $request): JsonResponse
+    public function needsReview(EntityMatch $entityMatch, NeedsReviewRequest $request): JsonResponse
     {
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
@@ -509,9 +505,9 @@ class AlignmentEditorController extends Controller
     /**
      * @param  list<array<string, mixed>>  $rows
      * @param  list<int>  $deletedRows
-     * @param  list<string>  $unmatchedChanged
+     * @param  list<'a'|'b'>  $unmatchedChanged
      */
-    private function mutationResponse(EnRuEntityMatch $entityMatch, array $rows, array $deletedRows = [], array $unmatchedChanged = []): JsonResponse
+    private function mutationResponse(EntityMatch $entityMatch, array $rows, array $deletedRows = [], array $unmatchedChanged = []): JsonResponse
     {
         return response()->json([
             'match' => $this->presenter->matchPayload($entityMatch->refresh()),
@@ -525,33 +521,30 @@ class AlignmentEditorController extends Controller
      * @param  list<int>  $rowIds
      * @return list<array<string, mixed>>
      */
-    private function rowPayloadsByIds(EnRuEntityMatch $entityMatch, array $rowIds): array
+    private function rowPayloadsByIds(EntityMatch $entityMatch, array $rowIds): array
     {
         if ($rowIds === []) {
             return [];
         }
 
-        return EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
+        return MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
             ->whereIn('id', $rowIds)
-            ->with([
-                'enSentenceMatches.enEntitySentence',
-                'ruSentenceMatches.ruEntitySentence',
-            ])
+            ->with(['sentenceMeaningMatches.entitySentence'])
             ->orderBy('order')
             ->get()
-            ->map(fn (EnRuMeaningMatch $row): array => $this->presenter->rowPayload($row))
+            ->map(fn (MeaningMatch $row): array => $this->presenter->rowPayload($row))
             ->values()
             ->all();
     }
 
     /**
-     * @param  Collection<int, EnRuMeaningMatch>  $rows
+     * @param  Collection<int, MeaningMatch>  $rows
      * @param  list<array{key: string, order: int}>  $items
      */
     private function persistRowOrderChanges($rows, array $items): void
     {
-        $currentOrders = $rows->keyBy('id')->map(fn (EnRuMeaningMatch $row): int => (int) $row->order);
+        $currentOrders = $rows->keyBy('id')->map(fn (MeaningMatch $row): int => (int) $row->order);
 
         $updates = [];
 
@@ -568,29 +561,27 @@ class AlignmentEditorController extends Controller
         }
 
         foreach ($updates as $update) {
-            EnRuMeaningMatch::query()->whereKey($update['id'])->update(['order' => -$update['id']]);
+            MeaningMatch::query()->whereKey($update['id'])->update(['order' => -$update['id']]);
         }
 
         foreach ($updates as $update) {
-            EnRuMeaningMatch::query()->whereKey($update['id'])->update(['order' => $update['order']]);
+            MeaningMatch::query()->whereKey($update['id'])->update(['order' => $update['order']]);
         }
     }
 
     /**
+     * @param  'a'|'b'  $side
      * @return array{
      *     sentences: array<int, array{order: int, row_id: ?int}>,
-     *     rows: array<int, array{order: int, ids: list<int>}>
+     *     rows: array<int, array{order: int, ids: list<int>}}>
      * }
      */
-    private function sideLayout(EnRuEntityMatch $entityMatch, string $lang): array
+    private function sideLayout(EntityMatch $entityMatch, string $side): array
     {
-        $sentenceClass = $this->sentenceClass($lang);
-        $entityForeignKey = $this->entityForeignKey($lang);
-        $entityId = $this->entityId($entityMatch, $lang);
-        $sideForeignKey = $this->sentenceForeignKey($lang);
+        $entityId = $this->entityId($entityMatch, $side);
 
-        $sentences = $sentenceClass::query()
-            ->where($entityForeignKey, $entityId)
+        $sentences = EntitySentence::query()
+            ->where('entity_id', $entityId)
             ->get(['id', 'order']);
 
         $layout = [
@@ -605,20 +596,20 @@ class AlignmentEditorController extends Controller
             ];
         }
 
-        $rows = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
-            ->with($lang === 'en' ? 'enSentenceMatches' : 'ruSentenceMatches')
+        $rows = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
+            ->with(['sentenceMeaningMatches' => fn ($query) => $query->where('side', $side)])
             ->orderBy('order')
             ->get();
 
         $allSentenceIds = $rows
-            ->flatMap(fn (EnRuMeaningMatch $row) => ($lang === 'en' ? $row->enSentenceMatches : $row->ruSentenceMatches)->pluck($sideForeignKey))
+            ->flatMap(fn (MeaningMatch $row) => $row->sentenceMeaningMatches->pluck('entity_sentence_id'))
             ->unique()
             ->values()
             ->all();
 
         $orderedSentenceIds = $allSentenceIds !== []
-            ? $sentenceClass::query()
+            ? EntitySentence::query()
                 ->whereIn('id', $allSentenceIds)
                 ->orderBy('order')
                 ->pluck('id')
@@ -630,14 +621,14 @@ class AlignmentEditorController extends Controller
         $idOrder = array_flip($orderedSentenceIds);
 
         foreach ($rows as $row) {
-            $junctions = $lang === 'en' ? $row->enSentenceMatches : $row->ruSentenceMatches;
+            $junctions = $row->sentenceMeaningMatches;
 
             if ($junctions->isEmpty()) {
                 continue;
             }
 
             $ids = $junctions
-                ->pluck($sideForeignKey)
+                ->pluck('entity_sentence_id')
                 ->values()
                 ->all();
 
@@ -656,9 +647,12 @@ class AlignmentEditorController extends Controller
         return $layout;
     }
 
-    private function sideAnchorOrder(EnRuEntityMatch $entityMatch, string $lang, EnRuMeaningMatch $meaningMatch): int
+    /**
+     * @param  'a'|'b'  $side
+     */
+    private function sideAnchorOrder(EntityMatch $entityMatch, string $side, MeaningMatch $meaningMatch): int
     {
-        $layout = $this->sideLayout($entityMatch, $lang);
+        $layout = $this->sideLayout($entityMatch, $side);
         $currentRowOrder = (int) $meaningMatch->order;
 
         if (isset($layout['rows'][$meaningMatch->id]) && $layout['rows'][$meaningMatch->id]['ids'] !== []) {
@@ -702,7 +696,7 @@ class AlignmentEditorController extends Controller
     /**
      * @param  array{
      *     sentences: array<int, array{order: int, row_id: ?int}>,
-     *     rows: array<int, array{order: int, ids: list<int>}>
+     *     rows: array<int, array{order: int, ids: list<int>}}>
      * }  $layout
      * @param  list<int>  $ids
      */
@@ -716,42 +710,53 @@ class AlignmentEditorController extends Controller
         return min(array_map(fn (int $id): int => $layout['sentences'][$id]['order'], $ids));
     }
 
-    private function link(string $lang, int $sentenceId, int $rowId): void
+    /**
+     * @param  'a'|'b'  $side
+     */
+    private function link(string $side, int $sentenceId, int $rowId): void
     {
-        $this->junctionClass($lang)::query()->create([
-            $this->sentenceForeignKey($lang) => $sentenceId,
-            'en_ru_meaning_match_id' => $rowId,
+        SentenceMeaningMatch::query()->create([
+            'entity_sentence_id' => $sentenceId,
+            'meaning_match_id' => $rowId,
+            'side' => $side,
         ]);
 
-        EnRuMeaningMatch::query()->whereKey($rowId)->update(['similarity' => 1.0]);
+        MeaningMatch::query()->whereKey($rowId)->update(['similarity' => 1.0]);
     }
 
-    private function unlink(EnRuEntityMatch $entityMatch, string $lang, int $sentenceId, int $rowId): void
+    /**
+     * @param  'a'|'b'  $side
+     */
+    private function unlink(EntityMatch $entityMatch, string $side, int $sentenceId, int $rowId): void
     {
-        $this->junctionClass($lang)::query()
-            ->where($this->sentenceForeignKey($lang), $sentenceId)
-            ->where('en_ru_meaning_match_id', $rowId)
+        SentenceMeaningMatch::query()
+            ->where('entity_sentence_id', $sentenceId)
+            ->where('meaning_match_id', $rowId)
             ->delete();
 
-        EnRuMeaningMatch::query()->whereKey($rowId)->update(['similarity' => 1.0]);
+        MeaningMatch::query()->whereKey($rowId)->update(['similarity' => 1.0]);
     }
 
-    private function rowIdOfSentence(string $lang, int $sentenceId): ?int
+    /**
+     * @param  'a'|'b'  $side
+     */
+    private function rowIdOfSentence(string $side, int $sentenceId): ?int
     {
-        $junction = $this->junctionClass($lang)::query()
-            ->where($this->sentenceForeignKey($lang), $sentenceId)
+        $junction = SentenceMeaningMatch::query()
+            ->where('entity_sentence_id', $sentenceId)
             ->first();
 
-        return $junction !== null ? (int) $junction->en_ru_meaning_match_id : null;
+        return $junction !== null ? (int) $junction->meaning_match_id : null;
     }
 
-    private function findSideSentence(EnRuEntityMatch $entityMatch, string $lang, int $sentenceId): Model
+    /**
+     * @param  'a'|'b'  $side
+     */
+    private function findSideSentence(EntityMatch $entityMatch, string $side, int $sentenceId): Model
     {
-        $sentenceClass = $this->sentenceClass($lang);
-
-        $sentence = $sentenceClass::query()
+        $sentence = EntitySentence::query()
             ->whereKey($sentenceId)
-            ->where($this->entityForeignKey($lang), $this->entityId($entityMatch, $lang))
+            ->where('entity_id', $this->entityId($entityMatch, $side))
             ->first();
 
         abort_if($sentence === null, 404);
@@ -759,28 +764,11 @@ class AlignmentEditorController extends Controller
         return $sentence;
     }
 
-    private function sentenceClass(string $lang): string
+    /**
+     * @param  'a'|'b'  $side
+     */
+    private function entityId(EntityMatch $entityMatch, string $side): int
     {
-        return $lang === 'en' ? EnEntitySentence::class : RuEntitySentence::class;
-    }
-
-    private function junctionClass(string $lang): string
-    {
-        return $lang === 'en' ? EnSentenceMeaningMatch::class : RuSentenceMeaningMatch::class;
-    }
-
-    private function sentenceForeignKey(string $lang): string
-    {
-        return $lang === 'en' ? 'en_entity_sentence_id' : 'ru_entity_sentence_id';
-    }
-
-    private function entityForeignKey(string $lang): string
-    {
-        return $lang === 'en' ? 'en_entity_id' : 'ru_entity_id';
-    }
-
-    private function entityId(EnRuEntityMatch $entityMatch, string $lang): int
-    {
-        return $lang === 'en' ? (int) $entityMatch->en_entity_id : (int) $entityMatch->ru_entity_id;
+        return $side === 'a' ? (int) $entityMatch->a_entity_id : (int) $entityMatch->b_entity_id;
     }
 }

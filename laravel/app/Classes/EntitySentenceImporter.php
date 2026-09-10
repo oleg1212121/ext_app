@@ -2,14 +2,11 @@
 
 namespace App\Classes;
 
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\EnSentenceMeaningMatch;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
-use App\Models\RuSentenceMeaningMatch;
+use App\Models\Entity;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +18,9 @@ class EntitySentenceImporter
     ) {}
 
     /**
-     * @return list<array{en: string, ru: string}>
+     * Parse an alternating first/second sentence file into pairs.
+     *
+     * @return list<array{first: string, second: string}>
      */
     public function parsePairs(string $path): array
     {
@@ -31,8 +30,8 @@ class EntitySentenceImporter
             throw new \RuntimeException("Cannot read file: {$path}");
         }
 
-        $expecting = 'en';
-        $currentEn = null;
+        $expectingSecond = false;
+        $currentFirst = null;
         $pairs = [];
 
         try {
@@ -43,22 +42,22 @@ class EntitySentenceImporter
                     continue;
                 }
 
-                if ($expecting === 'en') {
-                    $currentEn = $line;
-                    $expecting = 'ru';
+                if (! $expectingSecond) {
+                    $currentFirst = $line;
+                    $expectingSecond = true;
 
                     continue;
                 }
 
-                $pairs[] = ['en' => $currentEn, 'ru' => $line];
-                $expecting = 'en';
+                $pairs[] = ['first' => $currentFirst, 'second' => $line];
+                $expectingSecond = false;
             }
         } finally {
             fclose($handle);
         }
 
-        if ($expecting === 'ru') {
-            throw new \RuntimeException('Missing Russian sentence for the last English sentence.');
+        if ($expectingSecond) {
+            throw new \RuntimeException('Missing second sentence for the last first sentence.');
         }
 
         return $pairs;
@@ -85,8 +84,16 @@ class EntitySentenceImporter
         return null;
     }
 
-    public function import(EnEntity $enEntity, RuEntity $ruEntity, string $path): EntitySentenceImportResult
+    public function import(Entity $aEntity, Entity $bEntity, string $path): EntitySentenceImportResult
     {
+        if ($aEntity->work_id !== $bEntity->work_id) {
+            throw new \RuntimeException('Both entities must belong to the same work.');
+        }
+
+        if ($aEntity->language_id === $bEntity->language_id) {
+            throw new \RuntimeException('Both entities must be in different languages.');
+        }
+
         $pairs = $this->parsePairs($path);
 
         if ($pairs === []) {
@@ -99,59 +106,63 @@ class EntitySentenceImporter
             throw new \RuntimeException('Sentence type "sentence" not found. Run the SentenceTypeSeeder first.');
         }
 
-        $entityMatch = DB::transaction(function () use ($enEntity, $ruEntity, $pairs, $sentenceTypeId): EnRuEntityMatch {
-            $entityMatch = EnRuEntityMatch::query()->firstOrCreate([
-                'en_entity_id' => $enEntity->id,
-                'ru_entity_id' => $ruEntity->id,
+        [$aEntity, $bEntity] = $aEntity->id < $bEntity->id
+            ? [$aEntity, $bEntity]
+            : [$bEntity, $aEntity];
+
+        $entityMatch = DB::transaction(function () use ($aEntity, $bEntity, $pairs, $sentenceTypeId): EntityMatch {
+            $entityMatch = EntityMatch::query()->firstOrCreate([
+                'a_entity_id' => $aEntity->id,
+                'b_entity_id' => $bEntity->id,
             ]);
 
             $entityMatch->meaningMatches()->delete();
-            $enEntity->sentences()->delete();
-            $ruEntity->sentences()->delete();
+            $aEntity->sentences()->delete();
+            $bEntity->sentences()->delete();
 
             $now = Carbon::now();
             $pairCount = count($pairs);
 
-            $enSentenceRows = [];
-            $ruSentenceRows = [];
+            $aSentenceRows = [];
+            $bSentenceRows = [];
 
             foreach ($pairs as $index => $pair) {
                 $order = $this->sparseOrder->initial($index);
 
-                $enSentenceRows[] = [
-                    'en_entity_id' => $enEntity->id,
+                $aSentenceRows[] = [
+                    'entity_id' => $aEntity->id,
                     'sentence_type_id' => $sentenceTypeId,
-                    'content' => $pair['en'],
+                    'content' => $pair['first'],
                     'order' => $order,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
 
-                $ruSentenceRows[] = [
-                    'ru_entity_id' => $ruEntity->id,
+                $bSentenceRows[] = [
+                    'entity_id' => $bEntity->id,
                     'sentence_type_id' => $sentenceTypeId,
-                    'content' => $pair['ru'],
+                    'content' => $pair['second'],
                     'order' => $order,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
             }
 
-            foreach (array_chunk($enSentenceRows, 500) as $chunk) {
-                EnEntitySentence::query()->insert($chunk);
+            foreach (array_chunk($aSentenceRows, 500) as $chunk) {
+                EntitySentence::query()->insert($chunk);
             }
 
-            foreach (array_chunk($ruSentenceRows, 500) as $chunk) {
-                RuEntitySentence::query()->insert($chunk);
+            foreach (array_chunk($bSentenceRows, 500) as $chunk) {
+                EntitySentence::query()->insert($chunk);
             }
 
-            $enSentences = EnEntitySentence::query()
-                ->where('en_entity_id', $enEntity->id)
+            $aSentences = EntitySentence::query()
+                ->where('entity_id', $aEntity->id)
                 ->orderBy('order')
                 ->get();
 
-            $ruSentences = RuEntitySentence::query()
-                ->where('ru_entity_id', $ruEntity->id)
+            $bSentences = EntitySentence::query()
+                ->where('entity_id', $bEntity->id)
                 ->orderBy('order')
                 ->get();
 
@@ -159,7 +170,7 @@ class EntitySentenceImporter
 
             foreach ($pairs as $index => $pair) {
                 $meaningMatchRows[] = [
-                    'en_ru_entity_match_id' => $entityMatch->id,
+                    'entity_match_id' => $entityMatch->id,
                     'order' => $this->sparseOrder->initial($index),
                     'similarity' => 1.0,
                     'alignment_chunk' => 0,
@@ -169,45 +180,42 @@ class EntitySentenceImporter
             }
 
             foreach (array_chunk($meaningMatchRows, 500) as $chunk) {
-                EnRuMeaningMatch::query()->insert($chunk);
+                MeaningMatch::query()->insert($chunk);
             }
 
-            $meaningMatches = EnRuMeaningMatch::query()
-                ->where('en_ru_entity_match_id', $entityMatch->id)
+            $meaningMatches = MeaningMatch::query()
+                ->where('entity_match_id', $entityMatch->id)
                 ->orderBy('order')
                 ->get();
 
-            $enJunctionRows = [];
-            $ruJunctionRows = [];
+            $junctionRows = [];
 
             foreach ($meaningMatches as $index => $meaningMatch) {
-                $enJunctionRows[] = [
-                    'en_entity_sentence_id' => $enSentences[$index]->id,
-                    'en_ru_meaning_match_id' => $meaningMatch->id,
+                $junctionRows[] = [
+                    'entity_sentence_id' => $aSentences[$index]->id,
+                    'meaning_match_id' => $meaningMatch->id,
+                    'side' => 'a',
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
 
-                $ruJunctionRows[] = [
-                    'ru_entity_sentence_id' => $ruSentences[$index]->id,
-                    'en_ru_meaning_match_id' => $meaningMatch->id,
+                $junctionRows[] = [
+                    'entity_sentence_id' => $bSentences[$index]->id,
+                    'meaning_match_id' => $meaningMatch->id,
+                    'side' => 'b',
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
             }
 
-            foreach (array_chunk($enJunctionRows, 500) as $chunk) {
-                EnSentenceMeaningMatch::query()->insert($chunk);
-            }
-
-            foreach (array_chunk($ruJunctionRows, 500) as $chunk) {
-                RuSentenceMeaningMatch::query()->insert($chunk);
+            foreach (array_chunk($junctionRows, 500) as $chunk) {
+                SentenceMeaningMatch::query()->insert($chunk);
             }
 
             $entityMatch->update([
                 'status' => 'completed',
-                'en_total_sentences' => $pairCount,
-                'ru_total_sentences' => $pairCount,
+                'a_total_sentences' => $pairCount,
+                'b_total_sentences' => $pairCount,
                 'linked_count' => $pairCount,
                 'completed_at' => $now,
             ]);
@@ -217,8 +225,8 @@ class EntitySentenceImporter
 
         return new EntitySentenceImportResult(
             entityMatch: $entityMatch,
-            enEntity: $enEntity,
-            ruEntity: $ruEntity,
+            aEntity: $aEntity,
+            bEntity: $bEntity,
             pairCount: count($pairs),
         );
     }

@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\AlignEntitySentences;
-use App\Models\EnRuEntityMatch;
+use App\Models\EntityMatch;
 use Illuminate\Console\Command;
 
 class AlignmentsResumeCommand extends Command
@@ -19,7 +19,7 @@ class AlignmentsResumeCommand extends Command
         $limit = max(1, (int) $this->option('limit'));
         $dryRun = (bool) $this->option('dry-run');
 
-        $matches = EnRuEntityMatch::query()
+        $matches = EntityMatch::query()
             ->where('status', 'pending')
             ->orderBy('id')
             ->limit($limit)
@@ -36,7 +36,7 @@ class AlignmentsResumeCommand extends Command
 
         foreach ($matches as $entityMatch) {
             if ($dryRun) {
-                $this->line("Would resume entity match #{$entityMatch->id} (en_entity_id={$entityMatch->en_entity_id}, ru_entity_id={$entityMatch->ru_entity_id})");
+                $this->line("Would resume entity match #{$entityMatch->id} (a_entity_id={$entityMatch->a_entity_id}, b_entity_id={$entityMatch->b_entity_id})");
                 $dispatched++;
 
                 continue;
@@ -48,7 +48,7 @@ class AlignmentsResumeCommand extends Command
                 AlignEntitySentences::beginFromScratch($entityMatch->id);
             } catch (\Throwable $exception) {
                 $this->error("Entity match #{$entityMatch->id} failed during begin: {$exception->getMessage()}");
-                EnRuEntityMatch::whereKey($entityMatch->id)->update([
+                EntityMatch::whereKey($entityMatch->id)->update([
                     'status' => 'failed',
                     'error_message' => $exception->getMessage(),
                     'completed_at' => now(),

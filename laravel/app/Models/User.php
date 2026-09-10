@@ -93,21 +93,11 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Restricted English entities this user may read via an access grant.
+     * Restricted entities this user may read via an access grant.
      */
-    public function grantedEnEntities(): BelongsToMany
+    public function grantedEntities(): BelongsToMany
     {
-        return $this->belongsToMany(EnEntity::class, 'en_entity_user')
-            ->withPivot('similarity')
-            ->withTimestamps();
-    }
-
-    /**
-     * Restricted Russian entities this user may read via an access grant.
-     */
-    public function grantedRuEntities(): BelongsToMany
-    {
-        return $this->belongsToMany(RuEntity::class, 'ru_entity_user')
+        return $this->belongsToMany(Entity::class, 'entity_user')
             ->withPivot('similarity')
             ->withTimestamps();
     }

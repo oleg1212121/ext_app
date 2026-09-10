@@ -64,27 +64,27 @@
                             <tr class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                                 <th class="px-3 py-3 text-center text-xs font-semibold text-gray-600 dark:text-gray-300" style="width: 4%;">#</th>
                                 <th class="px-3 py-3 text-center text-xs font-semibold text-gray-600 dark:text-gray-300" style="width: 8%;">Actions</th>
-                                <th class="px-2 py-3 text-center text-xs font-semibold text-gray-600 dark:text-gray-300" style="width: 5%;">EN</th>
+                                <th class="px-2 py-3 text-center text-xs font-semibold text-gray-600 dark:text-gray-300" style="width: 5%;">A</th>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300" style="width: 37%;">
-                                    {{ $run->enEntity->name ?? 'English' }}
+                                    {{ $this->sideLabel("a") }}
                                 </th>
-                                <th class="px-2 py-3 text-center text-xs font-semibold text-gray-600 dark:text-gray-300" style="width: 5%;">RU</th>
+                                <th class="px-2 py-3 text-center text-xs font-semibold text-gray-600 dark:text-gray-300" style="width: 5%;">B</th>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300" style="width: 41%;">
-                                    {{ $run->ruEntity->name ?? 'Russian' }}
+                                    {{ $this->sideLabel("b") }}
                                 </th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach($rows as $index => $row)
                                 @php
-                                    $hasEn = count($row['en_sentences']) > 0;
-                                    $hasRu = count($row['ru_sentences']) > 0;
+                                    $hasA = count($row['a_sentences']) > 0;
+                                    $hasB = count($row['b_sentences']) > 0;
                                     $bgClass = '';
-                                    if ($hasEn && $hasRu) {
+                                    if ($hasA && $hasB) {
                                         $bgClass = $colors[($rowOffset + $index) % count($colors)];
-                                    } elseif ($hasEn) {
+                                    } elseif ($hasA) {
                                         $bgClass = 'bg-red-50 dark:bg-red-900/20';
-                                    } elseif ($hasRu) {
+                                    } elseif ($hasB) {
                                         $bgClass = 'bg-blue-50 dark:bg-blue-900/20';
                                     }
                                 @endphp
@@ -122,14 +122,14 @@
                                         </div>
                                     </td>
                                     <td class="px-2 py-2 text-center text-xs font-medium text-gray-500">
-                                        @foreach($row['en_sentences'] as $sentence)
+                                        @foreach($row['a_sentences'] as $sentence)
                                             <div>{{ $sentence['order'] }}</div>
                                         @endforeach
                                     </td>
                                     <td class="px-4 py-2 text-sm text-gray-800 dark:text-gray-200 align-top">
-                                        @forelse($row['en_sentences'] as $sentence)
+                                        @forelse($row['a_sentences'] as $sentence)
                                             @include('filament.pages.partials.alignment-sentence-editor', [
-                                                'lang' => 'en',
+                                                "side" => 'a',
                                                 'sentence' => $sentence,
                                                 'showActions' => false,
                                             ])
@@ -138,14 +138,14 @@
                                         @endforelse
                                     </td>
                                     <td class="px-2 py-2 text-center text-xs font-medium text-gray-500">
-                                        @foreach($row['ru_sentences'] as $sentence)
+                                        @foreach($row['b_sentences'] as $sentence)
                                             <div>{{ $sentence['order'] }}</div>
                                         @endforeach
                                     </td>
                                     <td class="px-4 py-2 text-sm text-gray-800 dark:text-gray-200 align-top">
-                                        @forelse($row['ru_sentences'] as $sentence)
+                                        @forelse($row['b_sentences'] as $sentence)
                                             @include('filament.pages.partials.alignment-sentence-editor', [
-                                                'lang' => 'ru',
+                                                "side" => 'b',
                                                 'sentence' => $sentence,
                                                 'showActions' => false,
                                             ])
@@ -170,8 +170,8 @@
 
         <div class="mt-6 grid gap-4 md:grid-cols-2">
             @foreach([
-                'en' => ['label' => 'English', 'rows' => $this->visibleUnmatchedEn, 'total' => $this->unmatchedEnTotal, 'page' => $this->unmatchedEnPage, 'lastPage' => $this->unmatchedEnLastPage, 'action' => 'goToUnmatchedEnPage'],
-                'ru' => ['label' => 'Russian', 'rows' => $this->visibleUnmatchedRu, 'total' => $this->unmatchedRuTotal, 'page' => $this->unmatchedRuPage, 'lastPage' => $this->unmatchedRuLastPage, 'action' => 'goToUnmatchedRuPage'],
+                'a' => ['label' => $this->sideLabel('a'), 'rows' => $this->visibleUnmatchedA, 'total' => $this->unmatchedATotal, 'page' => $this->unmatchedAPage, 'lastPage' => $this->unmatchedALastPage, 'action' => 'goToUnmatchedAPage'],
+                'b' => ['label' => $this->sideLabel('b'), 'rows' => $this->visibleUnmatchedB, 'total' => $this->unmatchedBTotal, 'page' => $this->unmatchedBPage, 'lastPage' => $this->unmatchedBLastPage, 'action' => 'goToUnmatchedBPage'],
             ] as $lang => $panel)
                 <div class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
                     <div class="p-4">
@@ -183,16 +183,16 @@
                         @else
                             <ul class="flex flex-col gap-3">
                                 @foreach($panel['rows'] as $sentence)
-                                    <li wire:key="unmatched-{{ $lang }}-{{ $sentence['key'] }}" class="rounded border border-dashed border-gray-300 p-3 dark:border-gray-600">
+                                    <li wire:key="unmatched-{{ $side }}-{{ $sentence['key'] }}" class="rounded border border-dashed border-gray-300 p-3 dark:border-gray-600">
                                         <div class="mb-1 text-xs text-gray-400">#{{ $sentence['order'] }}</div>
                                         @include('filament.pages.partials.alignment-sentence-editor', [
-                                            'lang' => $lang,
+                                            "side" => $side,
                                             'sentence' => $sentence,
                                             'showUnlink' => false,
                                         ])
                                         <div class="mt-2">
                                             <x-filament::button
-                                                wire:click="openConnectModal('{{ $lang }}', '{{ $sentence['key'] }}')"
+                                                wire:click="openConnectModal('{{ $side }}', '{{ $sentence['key'] }}')"
                                                 icon="heroicon-o-link"
                                                 size="xs"
                                                 color="primary"
@@ -221,7 +221,7 @@
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
             <div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl dark:bg-gray-800">
                 <h3 class="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
-                    Add {{ strtoupper($this->addLang) }} sentence
+                    Add {{ strtoupper($this->addSide) }} sentence
                 </h3>
                 <div class="flex flex-col gap-4">
                     <div>
@@ -230,7 +230,7 @@
                             wire:model="addAfterOrder"
                             class="w-full rounded-lg border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
                         >
-                            @foreach($this->getInsertOrderOptions($this->addLang) as $option)
+                            @foreach($this->getInsertOrderOptions($this->addSide) as $option)
                                 <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
                             @endforeach
                         </select>
@@ -268,7 +268,7 @@
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
             <div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl dark:bg-gray-800">
                 <h3 class="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
-                    Connect {{ strtoupper($this->connectLang) }} sentence
+                    Connect {{ strtoupper($this->connectSide) }} sentence
                 </h3>
                 <div class="flex flex-col gap-4">
                     <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">

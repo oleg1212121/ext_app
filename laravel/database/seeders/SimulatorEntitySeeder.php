@@ -2,8 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\EnEntity;
-use App\Models\RuEntity;
+use App\Models\Entity;
+use App\Models\Language;
+use App\Models\Work;
 use Illuminate\Database\Seeder;
 
 class SimulatorEntitySeeder extends Seeder
@@ -23,6 +24,12 @@ class SimulatorEntitySeeder extends Seeder
 
     public const FILE_PATH_PREFIX = 'texts/simulator/';
 
+    /**
+     * Simulator texts are English originals with Russian translations; used as
+     * the works' original language when seeding.
+     */
+    public const ORIGINAL_LANGUAGE_CODE = 'en';
+
     public function run(): void
     {
         $directory = public_path('texts/simulator');
@@ -31,6 +38,15 @@ class SimulatorEntitySeeder extends Seeder
             return;
         }
 
+        $originalLanguage = Language::query()
+            ->where('code', self::ORIGINAL_LANGUAGE_CODE)
+            ->first();
+
+        if ($originalLanguage === null) {
+            return;
+        }
+
+        $languageIds = Language::query()->whereIn('code', ['en', 'ru'])->pluck('id', 'code');
         $files = glob($directory.'/*.txt') ?: [];
 
         foreach ($files as $file) {
@@ -44,33 +60,41 @@ class SimulatorEntitySeeder extends Seeder
             $filePath = self::FILE_PATH_PREFIX.$filename;
             $isRestricted = in_array($filename, self::RESTRICTED_FILES, true);
 
-            EnEntity::query()->updateOrCreate(
-                ['name' => self::enEntityName($basename)],
-                [
-                    'description' => "English sentences from {$filename}.",
-                    'file_path' => $filePath,
-                    'is_restricted' => $isRestricted,
-                ],
+            $work = Work::query()->firstOrCreate(
+                ['title' => self::workTitle($basename)],
+                ['original_language_id' => $originalLanguage->id],
             );
 
-            RuEntity::query()->updateOrCreate(
-                ['name' => self::ruEntityName($basename)],
-                [
-                    'description' => "Russian sentences from {$filename}.",
-                    'file_path' => $filePath,
-                    'is_restricted' => $isRestricted,
-                ],
-            );
+            foreach (['en', 'ru'] as $code) {
+                $languageId = $languageIds[$code] ?? null;
+
+                if ($languageId === null) {
+                    continue;
+                }
+
+                Entity::query()->updateOrCreate(
+                    [
+                        'work_id' => $work->id,
+                        'language_id' => $languageId,
+                        'name' => self::entityName($basename, $code),
+                    ],
+                    [
+                        'description' => ucfirst($code === 'en' ? 'English' : 'Russian')." sentences from {$filename}.",
+                        'file_path' => $filePath,
+                        'is_restricted' => $isRestricted,
+                    ],
+                );
+            }
         }
     }
 
-    public static function enEntityName(string $basename): string
+    public static function workTitle(string $basename): string
     {
-        return "{$basename} (en)";
+        return str_replace('_', ' ', $basename);
     }
 
-    public static function ruEntityName(string $basename): string
+    public static function entityName(string $basename, string $languageCode): string
     {
-        return "{$basename} (ru)";
+        return "{$basename} ({$languageCode})";
     }
 }
