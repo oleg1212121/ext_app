@@ -10,10 +10,12 @@ use Filament\Actions;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class WordResource extends Resource
 {
@@ -35,6 +37,7 @@ class WordResource extends Resource
                     ->label('Language')
                     ->options(fn (): array => Language::query()->orderBy('sort_order')->pluck('name', 'id')->all())
                     ->searchable()
+                    ->live()
                     ->required(),
                 TextInput::make('word')
                     ->required()
@@ -46,7 +49,14 @@ class WordResource extends Resource
                     ->default(0),
                 Select::make('word_class_id')
                     ->label('Word class')
-                    ->relationship('wordClass', 'title')
+                    ->relationship(
+                        'wordClass',
+                        'title',
+                        modifyQueryUsing: fn (Builder $query, Get $get) => $query->when(
+                            $get('language_id'),
+                            fn (Builder $query, int $languageId) => $query->where('language_id', $languageId),
+                        ),
+                    )
                     ->searchable()
                     ->preload()
                     ->required(),
@@ -96,6 +106,7 @@ class WordResource extends Resource
     {
         return [
             RelationManagers\DefinitionsRelationManager::class,
+            RelationManagers\FormsRelationManager::class,
             RelationManagers\TranslationsRelationManager::class,
             RelationManagers\TranscriptionsRelationManager::class,
             RelationManagers\ExamplesRelationManager::class,

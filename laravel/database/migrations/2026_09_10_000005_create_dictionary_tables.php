@@ -110,17 +110,14 @@ return new class extends Migration
 
         Schema::create('pronunciations', function (Blueprint $table) {
             $table->id();
-            $table->string('path', 256)->comment('The path to the pronunciation of the word');
+            $table->string('path', 256)->comment('Path to the audio file with a pronunciation example of the word');
             $table->foreignId('word_id')->comment("The word's id. Foreign key.")
                 ->constrained('words')
                 ->cascadeOnDelete();
-            $table->foreignId('transcription_type_id')->comment('The transcription type id. Foreign key.')
-                ->constrained('transcription_types')
-                ->cascadeOnDelete();
             $table->timestamps();
-            $table->comment('Pronunciations for words');
+            $table->comment('Audio files with pronunciation examples for words');
 
-            $table->unique(['path', 'word_id', 'transcription_type_id'], 'uk_pronunciations_triple');
+            $table->unique(['path', 'word_id'], 'uk_pronunciations_path_word_id');
         });
 
         Schema::create('examples', function (Blueprint $table) {
@@ -159,17 +156,17 @@ return new class extends Migration
 
         Schema::create('word_translations', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('from_word_id')->comment('The source word. Foreign key.')
+            $table->foreignId('word_a_id')->comment('The a-side word of the pair. Foreign key.')
                 ->constrained('words')
                 ->cascadeOnDelete();
-            $table->foreignId('to_word_id')->comment('The target word. Foreign key.')
+            $table->foreignId('word_b_id')->comment('The b-side word of the pair. Foreign key.')
                 ->constrained('words')
                 ->cascadeOnDelete();
             $table->timestamps();
-            $table->comment('Directed word translations: one row per direction.');
+            $table->comment('Translation links: one row per word pair (canonical order: word_a_id < word_b_id).');
 
-            $table->unique(['from_word_id', 'to_word_id'], 'uk_word_translations_pair');
-            $table->index('to_word_id', 'idx_word_translations_to_word_id');
+            $table->unique(['word_a_id', 'word_b_id'], 'uk_word_translations_pair');
+            $table->index('word_b_id', 'idx_word_translations_word_b_id');
         });
     }
 

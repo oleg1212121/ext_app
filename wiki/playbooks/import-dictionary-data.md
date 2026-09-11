@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps into the unified language-key
 tags: [dictionary, import, wiktionary, kaikki]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-11T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -52,21 +52,26 @@ replaced the old mirrored per-language tables.
    type, slug as placeholder title) — nothing is skipped, and a brand-new
    language needs no seeders; curate the placeholder titles in `/admin`
    afterwards.
-5. Link words across languages through the stored translations:
+5. Link words across languages through the staged translations:
 
    ```bash
    docker exec ext_app_laravel php artisan wiktionary:link-translations
    ```
 
-   The command links **every ordered language pair** among languages that
-   have imported words, writing directed `word_translations` rows. Matching
-   strips Russian stress marks (e.g. `приве́т` → `привет`) when pairing into
-   Russian.
+   The command links **every language pair** among languages that have
+   imported words, writing one canonical `word_translations` row per pair
+   (`word_a_id < word_b_id`, ADR 0020). Matching strips Russian stress
+   marks (e.g. `приве́т` → `привет`) when pairing into Russian. Re-runs are
+   idempotent and never duplicate links created by hand in the admin.
 6. Verify in the Filament admin (`/admin`, group "Words"): the `Word`
-   resource with relation managers for definitions, pronunciations,
-   translations, etymologies, examples, transcriptions; the **Word class**
-   and **Transcription type** resources show (and let you edit) the
-   auto-created lookups.
+   resource with relation managers for definitions, forms, translations,
+   etymologies, examples, transcriptions, pronunciations; the **Word
+   class** and **Transcription type** resources show (and let you edit)
+   the auto-created lookups.
+7. Link what the command could not match by hand: on a word's edit page,
+   the **Translations** tab offers **Attach translation** (pick an existing
+   word in another language) and **Create word & link** (create the missing
+   target word and link it in one step). Links work from either word.
 
 # Notes
 

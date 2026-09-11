@@ -128,18 +128,19 @@ class LinkTranslationsCommand extends Command
                         continue;
                     }
 
-                    $linkKey = $fromWord->id.'|'.$toWordId;
-                    if (! isset($newLinks[$linkKey])
-                        && ! WordTranslation::query()->where('from_word_id', $fromWord->id)->where('to_word_id', $toWordId)->exists()) {
+                    [$wordAId, $wordBId] = WordTranslation::canonicalize($fromWord->id, $toWordId);
+
+                    $linkKey = $wordAId.'|'.$wordBId;
+                    if (! isset($newLinks[$linkKey]) && ! WordTranslation::isLinked($wordAId, $wordBId)) {
                         $newLinks[$linkKey] = [
-                            'from_word_id' => $fromWord->id,
-                            'to_word_id' => $toWordId,
+                            'word_a_id' => $wordAId,
+                            'word_b_id' => $wordBId,
                         ];
                         $stats['linked']++;
                     }
 
                     if (count($newLinks) >= self::BATCH_SIZE) {
-                        WordTranslation::upsert(array_values($newLinks), ['from_word_id', 'to_word_id']);
+                        WordTranslation::upsert(array_values($newLinks), ['word_a_id', 'word_b_id']);
                         $newLinks = [];
                     }
                 }
@@ -150,7 +151,7 @@ class LinkTranslationsCommand extends Command
         $this->newLine();
 
         if (! empty($newLinks)) {
-            WordTranslation::upsert(array_values($newLinks), ['from_word_id', 'to_word_id']);
+            WordTranslation::upsert(array_values($newLinks), ['word_a_id', 'word_b_id']);
         }
 
         return $stats;

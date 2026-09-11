@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -72,20 +73,53 @@ class Word extends Model
     }
 
     /**
-     * Words this word translates to (this word is the source).
+     * Pivot rows of this word's translation links where the word sits on the a-side.
      */
-    public function translations(): BelongsToMany
+    public function translationLinks(): HasMany
     {
-        return $this->belongsToMany(self::class, 'word_translations', 'from_word_id', 'to_word_id')
-            ->withTimestamps();
+        return $this->hasMany(WordTranslation::class, 'word_a_id');
     }
 
     /**
-     * Words that translate to this word (this word is the target).
+     * Pivot rows of this word's translation links where the word sits on the b-side.
      */
-    public function reverseTranslations(): BelongsToMany
+    public function translationLinksAsB(): HasMany
     {
-        return $this->belongsToMany(self::class, 'word_translations', 'to_word_id', 'from_word_id')
-            ->withTimestamps();
+        return $this->hasMany(WordTranslation::class, 'word_b_id');
+    }
+
+    /**
+     * Words linked to this word as translations — a link works from either side.
+     *
+     * @return Collection<int, Word>
+     */
+    public function translationWords(): Collection
+    {
+        $otherIds = WordTranslation::query()
+            ->where('word_a_id', $this->getKey())
+            ->pluck('word_b_id')
+            ->merge(
+                WordTranslation::query()
+                    ->where('word_b_id', $this->getKey())
+                    ->pluck('word_a_id'),
+            )
+            ->unique()
+            ->values();
+
+        return Word::query()->whereIn('id', $otherIds)->get();
+    }
+
+    /**
+     * Display label used by admin pickers: "word — Language (Word class)".
+     */
+    public function dictionaryLabel(): string
+    {
+        $label = $this->word.' — '.($this->language?->name ?? '?');
+
+        if ($this->wordClass?->title) {
+            $label .= " ({$this->wordClass->title})";
+        }
+
+        return $label;
     }
 }

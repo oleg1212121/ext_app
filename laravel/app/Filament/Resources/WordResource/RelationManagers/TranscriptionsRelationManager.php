@@ -9,6 +9,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class TranscriptionsRelationManager extends RelationManager
 {
@@ -23,7 +24,11 @@ class TranscriptionsRelationManager extends RelationManager
                     ->maxLength(100),
                 Select::make('transcription_type_id')
                     ->label('Type')
-                    ->relationship('transcriptionType', 'title')
+                    ->relationship(
+                        'transcriptionType',
+                        'title',
+                        modifyQueryUsing: fn (Builder $query, RelationManager $livewire) => $query->where('language_id', $livewire->getOwnerRecord()->language_id),
+                    )
                     ->searchable()
                     ->preload()
                     ->required(),
@@ -38,6 +43,9 @@ class TranscriptionsRelationManager extends RelationManager
                 TextColumn::make('transcription'),
                 TextColumn::make('transcriptionType.title')
                     ->label('Type'),
+            ])
+            ->headerActions([
+                Actions\CreateAction::make(),
             ])
             ->recordActions([
                 Actions\EditAction::make(),

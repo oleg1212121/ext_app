@@ -175,7 +175,7 @@ the admin panel. Nothing at runtime reads it yet.
 **Word**:
 A base-form word in exactly one Language, carrying its part of speech
 (**Word class**), definitions, forms, etymology, transcriptions,
-pronunciations, examples, and raw translation words awaiting linking.
+pronunciation audio, examples, and staged translations awaiting linking.
 _Avoid_: entry, lemma (implementation shorthand), vocabulary item (legacy
 crossword-domain term).
 
@@ -193,10 +193,25 @@ import with the slug as a placeholder title, curated afterwards.
 _Avoid_: notation, phoneme set.
 
 **Translation linking**:
-The step that resolves the raw translation words stored on each Word into
-directed `word_translations` rows between Words of different languages —
-run after import, for every ordered language pair.
+The step that resolves each Word's **Staged translations** into
+**Translation links** (one row per pair) between Words of different
+languages — run after import for every language pair, and continued by
+hand in the admin panel.
 _Avoid_: translation sync, matching.
+
+**Translation link**:
+An association between two **Words** in different Languages that translate
+each other, stored as one row per pair in `word_translations` and usable
+from either Word. A Word may carry many links; links connect different
+Languages only.
+_Avoid_: translation (also means a **Staged translation** or the general
+notion), relation, mapping, directed translation.
+
+**Staged translation**:
+A raw target-language word string the import recorded on a Word, awaiting
+**Translation linking** into **Translation links**. Working data of the
+pipeline, never shown to end users.
+_Avoid_: raw translation, pending translation, translation (overloaded).
 
 # Access Control Context
 

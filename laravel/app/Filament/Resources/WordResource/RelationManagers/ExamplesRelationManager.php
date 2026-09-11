@@ -30,6 +30,9 @@ class ExamplesRelationManager extends RelationManager
             ->columns([
                 TextColumn::make('example'),
             ])
+            ->headerActions([
+                Actions\CreateAction::make(),
+            ])
             ->recordActions([
                 Actions\EditAction::make(),
                 Actions\DeleteAction::make(),

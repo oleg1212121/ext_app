@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps into the unified language-keyed dic
 tags: [dictionary, import, wiktionary, kaikki]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-11T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
 sources:
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
@@ -25,8 +25,9 @@ The import pipeline that fills the [unified dictionary](
 (kaikki.org JSONL dumps). Since ADR
 [0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md) there
 is one language-keyed `words` table (+ satellites) per language instead of
-mirrored per-language tables, and a single directed `word_translations`
-pivot.
+mirrored per-language tables, and a single `word_translations` pivot —
+**one symmetric row per word pair** since ADR
+[0020](../../docs/adr/0020-symmetric-word-translations.md).
 
 # Components
 
@@ -42,8 +43,10 @@ pivot.
   during import.
 * `php artisan wiktionary:link-translations` — links words across languages
   through the stored translations into `word_translations` rows, covering
-  **every ordered language pair** among languages that have imported words
-  (stress-mark stripping applied when pairing into Russian).
+  **every language pair** among languages that have imported words (one
+  canonical row per pair, `word_a_id < word_b_id`; stress-mark stripping
+  applied when pairing into Russian). Re-runs are idempotent next to
+  manually created links.
 
 # Lookup auto-creation
 
@@ -59,9 +62,11 @@ placeholder titles in `/admin`. Import stats report the created lookups
 # Where it surfaces
 
 * Filament admin `/admin` (group "Words"): the per-language `WordResource`
-  with relation managers for definitions, pronunciations, translations,
-  etymologies, examples, transcriptions, plus **Word class** and
-  **Transcription type** resources for CRUD over the lookup tables.
+  with relation managers for definitions, forms, translations, etymologies,
+  examples, transcriptions, pronunciations, plus **Word class** and
+  **Transcription type** resources for CRUD over the lookup tables. The
+  **Translations** tab is the manual linking surface (attach / create word
+  & link / delete, different languages only).
 
 # Operating it
 

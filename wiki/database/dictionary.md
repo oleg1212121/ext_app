@@ -1,11 +1,11 @@
 ---
 type: Database Schema
 title: Unified Dictionary Tables
-description: One words table (+ satellites) keyed by language, per-language word classes and transcription types, and a single directed word_translations pivot.
+description: One words table (+ satellites) keyed by language, per-language word classes and transcription types, and a symmetric word_translations pivot (one row per pair).
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-11T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -23,9 +23,10 @@ sources:
 | `transcription_types` | Transcription kinds per language (ipa, enpr for English; МФА for Russian) |
 | `words` | A base-form word in one language: `language_id`, `word`, `l_word` (lowercase), `frequency`, `word_class_id`, raw Wiktionary `translations` JSON. Unique `(word, language_id, word_class_id)`; index `(l_word, word_class_id)` |
 | `forms` / `definitions` / `etymologies` / `examples` | Per-word satellites (unique `(form, word_id)` / `(example, word_id)`) |
-| `transcriptions` / `pronunciations` | Per-word + `transcription_type_id` (unique triples) |
+| `transcriptions` | Written phonetic notations per word + `transcription_type_id` (ipa, enpr, …; unique triple) |
+| `pronunciations` | Audio files with pronunciation examples per word (`path` on the public disk, unique `(path, word_id)`); uploaded via the admin |
 | `tags` / `word_tags` | Word tags (e.g. most-used) and the pivot |
-| `word_translations` | **One directed pivot for all language pairs**: `from_word_id`, `to_word_id`, unique `(from, to)`, index on `to_word_id`. Replaces the mirrored `en_ru_translations` / `ru_en_translations` |
+| `word_translations` | **One row per word pair** (symmetric, ADR 0020): `word_a_id`, `word_b_id` with canonical order `a < b` (entity-match convention), unique `(word_a_id, word_b_id)`, index on `word_b_id`. A link is usable from either word; links connect words of **different languages** only (enforced in the admin attach action). Supersedes the directed pivot of ADR 0018 |
 
 # Notes
 
@@ -34,9 +35,12 @@ sources:
   `TranscriptionTypeResource`) and the import/link commands.
 * `wiktionary:import {file} --lang= --target-lang=` fills `words` and
   satellites for one language (any code in the languages registry),
-  storing raw translations as JSON; `wiktionary:link-translations` then
-  resolves them into `word_translations` rows for **every ordered language
-  pair** (stress-mark stripping applied when the target is Russian).
+  storing staged translations as JSON; `wiktionary:link-translations` then
+  resolves them into `word_translations` rows for **every language pair**
+  (one canonical row per pair; stress-mark stripping applied when the
+  target is Russian). The admin **Translations** tab continues the linking
+  by hand: attach an existing word, or **Create word & link** for words
+  missing from the target language.
 * The import auto-creates missing per-language lookups: an unseen dump
   `pos` becomes a `word_classes` row and an unseen sound type a
   `transcription_types` row, both with the slug as placeholder `title` —

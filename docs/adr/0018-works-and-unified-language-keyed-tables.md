@@ -13,7 +13,8 @@ directed `word_translations(from_word_id, to_word_id)` pivot. Adding a
 language is now an `INSERT` into `languages` plus UI labels — no DDL, no new
 models, no new Filament resources.
 
-**Status**: accepted
+**Status**: accepted — the directed `word_translations` pivot clause is
+superseded by ADR 0020 (one row per pair)
 
 ## Considered Options
 

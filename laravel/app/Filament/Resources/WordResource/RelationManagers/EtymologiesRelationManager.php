@@ -30,6 +30,9 @@ class EtymologiesRelationManager extends RelationManager
             ->columns([
                 TextColumn::make('etymology'),
             ])
+            ->headerActions([
+                Actions\CreateAction::make(),
+            ])
             ->recordActions([
                 Actions\EditAction::make(),
                 Actions\DeleteAction::make(),

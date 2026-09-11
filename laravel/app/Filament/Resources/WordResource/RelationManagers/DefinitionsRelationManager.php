@@ -30,6 +30,9 @@ class DefinitionsRelationManager extends RelationManager
             ->columns([
                 TextColumn::make('definition'),
             ])
+            ->headerActions([
+                Actions\CreateAction::make(),
+            ])
             ->recordActions([
                 Actions\EditAction::make(),
                 Actions\DeleteAction::make(),

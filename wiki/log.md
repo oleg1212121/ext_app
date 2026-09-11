@@ -2,6 +2,37 @@
 
 ## 2026-09-11
 
+* **Pronunciations are audio, not notation.** `pronunciations` no longer
+  carries `transcription_type_id` — a pronunciation is an uploaded audio
+  file with a pronunciation example (`path` on the public disk, unique
+  `(path, word_id)`), managed through a FileUpload in the word admin
+  (files deleted alongside rows). Written phonetic notation stays in
+  `transcriptions` (+ `transcription_types`). Baseline migration edited,
+  dev table reshaped in place (one test row dropped). Updated
+  `wiki/database/dictionary.md`; CONTEXT.md Word term now says
+  "pronunciation audio".
+
+* **Symmetric word translations + full word admin CRUD (ADR 0020).**
+  `word_translations` is now **one row per word pair** (`word_a_id` /
+  `word_b_id`, canonical `a < b` like entity matches), superseding ADR
+  0018's directed pivot; `WordTranslation::link()/isLinked()/canonicalize()`
+  centralize the semantics and a `creating` hook canonicalizes every
+  writer. `wiktionary:link-translations` writes canonical rows idempotently
+  next to manual links. The Filament word edit page regained the Create
+  buttons lost in the schema cutover (definitions, transcriptions, examples,
+  etymologies, pronunciations), gained a **Forms** relation manager, and
+  its rebuilt **Translations** tab is the manual linking surface: attach an
+  existing word (different languages enforced, lazy search over millions of
+  rows), **Create word & link** for missing target words, delete. Word
+  class / transcription type selects now filter to the word's language.
+  One-off `words:canonicalize-translations` transitioned dev data (dedupe
+  mirrors + column rename). Tests: linker suite ported to canonical rows,
+  new `WordTranslationsRelationManagerTest` and `WordTranslationTest`.
+  Updated `wiki/database/dictionary.md`,
+  `wiki/domains/dictionary-import.md`,
+  `wiki/playbooks/import-dictionary-data.md`; CONTEXT.md Dictionary context
+  gained Translation link / Staged translation terms.
+
 * **Dictionary import: any-registry languages + self-bootstrapping lookups.**
   `wiktionary:import` no longer hardcodes `--lang/--target-lang` to en/ru —
   it validates against the languages registry (any code, `is_enabled`
