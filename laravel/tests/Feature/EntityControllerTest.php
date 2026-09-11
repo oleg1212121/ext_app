@@ -13,77 +13,25 @@ use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
-function approvedUser(): User
-{
-    return User::factory()->create(['is_approved' => true]);
+if (! function_exists('approvedUser')) {
+    function approvedUser(): User
+    {
+        return User::factory()->create(['is_approved' => true]);
+    }
 }
 
-function makeLanguage(string $code, bool $enabled = true): Language
-{
-    return Language::create([
-        'code' => $code,
-        'name' => ucfirst($code),
-        'native_name' => $code,
-        'is_enabled' => $enabled,
-        'sort_order' => $enabled ? 0 : 99,
-    ]);
+if (! function_exists('makeLanguage')) {
+    function makeLanguage(string $code, bool $enabled = true): Language
+    {
+        return Language::create([
+            'code' => $code,
+            'name' => ucfirst($code),
+            'native_name' => $code,
+            'is_enabled' => $enabled,
+            'sort_order' => $enabled ? 0 : 99,
+        ]);
+    }
 }
-
-test('guest is redirected from the entities index', function () {
-    $this->get('/entities')->assertRedirect();
-});
-
-test('unapproved user is redirected from the entities index', function () {
-    $user = User::factory()->create(['is_approved' => false]);
-
-    $this->actingAs($user)->get('/entities')->assertRedirect('/pending-approval');
-});
-
-test('picker lists enabled languages with readable entity counts', function () {
-    createLanguages();
-    createEntity('en', null, ['name' => 'Alpha']);
-    createEntity('en', null, ['name' => 'Beta']);
-    createEntity('ru', null, ['name' => 'Гамма']);
-    createEntity('ru', null, ['name' => 'Секрет', 'is_restricted' => true]);
-
-    $this->actingAs(approvedUser())
-        ->get('/entities')
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->component('Entities/Index')
-            ->has('languages', 2)
-            ->where('languages.0.code', 'en')
-            ->where('languages.0.entity_count', 2)
-            ->where('languages.1.code', 'ru')
-            ->where('languages.1.entity_count', 1));
-});
-
-test('picker counts a restricted entity only for granted users and admins', function () {
-    makeLanguage('en');
-    $user = approvedUser();
-    createEntity('en', null, ['name' => 'Open', 'is_restricted' => false]);
-    $granted = createEntity('en', null, ['name' => 'Granted', 'is_restricted' => true]);
-    $granted->grantedUsers()->attach($user->id);
-    createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
-
-    $assertCount = function (int $count) {
-        return fn ($page) => $page->where('languages.0.entity_count', $count);
-    };
-
-    $this->actingAs($user)
-        ->get('/entities')
-        ->assertInertia($assertCount(2));
-
-    $this->actingAs(approvedUser())
-        ->get('/entities')
-        ->assertInertia($assertCount(1));
-
-    $admin = User::factory()->create(['is_approved' => true, 'role' => 'admin']);
-
-    $this->actingAs($admin)
-        ->get('/entities')
-        ->assertInertia($assertCount(3));
-});
 
 test('edit page alignment count excludes matches with an unreadable other side', function () {
     makeLanguage('en');
@@ -102,37 +50,6 @@ test('edit page alignment count excludes matches with an unreadable other side',
         ->get("/entities/en/{$en->id}/edit")
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('alignmentCount', 1));
-});
-
-test('picker ignores disabled languages', function () {
-    makeLanguage('en');
-    makeLanguage('de', false);
-
-    $this->actingAs(approvedUser())
-        ->get('/entities')
-        ->assertInertia(fn ($page) => $page->has('languages', 1));
-});
-
-test('list page renders entities for a language', function () {
-    makeLanguage('en');
-    createEntity('en', null, ['name' => 'Alpha']);
-
-    $this->actingAs(approvedUser())
-        ->get('/entities/en')
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->component('Entities/List')
-            ->has('entities', 1)
-            ->where('entities.0.name', 'Alpha')
-            ->where('meta.total', 1));
-});
-
-test('list page 404s for a disabled language', function () {
-    makeLanguage('de', false);
-
-    $this->actingAs(approvedUser())
-        ->get('/entities/de')
-        ->assertNotFound();
 });
 
 test('create form renders', function () {
@@ -361,27 +278,4 @@ test('admin can read any restricted entity', function () {
     $this->actingAs($admin)
         ->get("/entities/en/{$entity->id}")
         ->assertOk();
-});
-
-test('restricted entity is hidden from the list unless granted', function () {
-    makeLanguage('en');
-    createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
-    createEntity('en', null, ['name' => 'Open', 'is_restricted' => false]);
-    $user = approvedUser();
-    $secret = Entity::query()->where('name', 'Secret')->firstOrFail();
-    $secret->grantedUsers()->attach($user->id);
-
-    $this->actingAs($user)
-        ->get('/entities/en')
-        ->assertInertia(fn ($page) => $page->has('entities', 2));
-});
-
-test('restricted entity is absent from the list without a grant', function () {
-    makeLanguage('en');
-    createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
-    createEntity('en', null, ['name' => 'Open', 'is_restricted' => false]);
-
-    $this->actingAs(approvedUser())
-        ->get('/entities/en')
-        ->assertInertia(fn ($page) => $page->has('entities', 1));
 });

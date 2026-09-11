@@ -3,14 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Classes\EntityAccessService;
+use App\Classes\EntityCreationService;
 use App\Classes\SparseOrderService;
-use App\Classes\TextSignatureService;
 use App\Http\Requests\ReorderEntitySentenceRequest;
 use App\Http\Requests\StoreEntityRequest;
 use App\Http\Requests\StoreEntitySentenceRequest;
 use App\Http\Requests\UpdateEntityRequest;
 use App\Http\Requests\UpdateEntitySentenceRequest;
-use App\Jobs\ProcessEntityFile;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
@@ -23,7 +22,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -31,74 +29,8 @@ class EntityController extends Controller
 {
     public function __construct(
         private readonly SparseOrderService $sparseOrder,
+        private readonly EntityCreationService $creation = new EntityCreationService,
     ) {}
-
-    public function index(): Response
-    {
-        $access = $this->access();
-        $user = auth()->user();
-
-        $languages = Language::query()
-            ->enabled()
-            ->orderBy('sort_order')
-            ->get()
-            ->map(function (Language $language) use ($access, $user): array {
-                return [
-                    'code' => $language->code,
-                    'name' => $language->name,
-                    'native_name' => $language->native_name,
-                    'entity_count' => $access->readableQuery($user, $language->id)->count(),
-                ];
-            });
-
-        return Inertia::render('Entities/Index', [
-            'languages' => $languages,
-        ]);
-    }
-
-    public function list(string $lang, Request $request): Response
-    {
-        $language = $this->resolveLanguage($lang);
-        $workId = $request->integer('work');
-
-        $entities = $this->access()
-            ->readableQuery(auth()->user(), $language->id)
-            ->with('work:id,title')
-            ->withCount('sentences')
-            ->when($workId > 0, fn (Builder $query): Builder => $query->where('work_id', $workId))
-            ->orderBy('name')
-            ->paginate(15);
-
-        return Inertia::render('Entities/List', [
-            'lang' => $lang,
-            'language' => [
-                'code' => $language->code,
-                'name' => $language->name,
-                'native_name' => $language->native_name,
-            ],
-            'works' => $this->worksForFilter(),
-            'work_filter' => $workId > 0 ? $workId : null,
-            'entities' => $entities->through(function (Entity $entity): array {
-                return [
-                    'id' => $entity->id,
-                    'name' => $entity->name,
-                    'label' => $entity->label,
-                    'work_id' => $entity->work_id,
-                    'work_title' => $entity->work?->title,
-                    'description' => $entity->description,
-                    'signature_status' => $this->signatureStatus($entity),
-                    'sentences_count' => $entity->sentences_count,
-                    'created_at' => $entity->created_at?->toISOString(),
-                ];
-            })->items(),
-            'meta' => [
-                'current_page' => $entities->currentPage(),
-                'last_page' => $entities->lastPage(),
-                'total' => $entities->total(),
-                'per_page' => $entities->perPage(),
-            ],
-        ]);
-    }
 
     public function create(string $lang): Response
     {
@@ -120,63 +52,30 @@ class EntityController extends Controller
     {
         $language = $this->resolveLanguage($lang);
 
-        $data = $request->validated();
-
         $work = $this->resolveWork($request, $language);
 
-        $filePath = null;
-        if ($request->hasFile('file')) {
-            $filePath = $request->file('file')->store("entities/{$lang}", 'local');
+        $result = $this->creation->create(
+            $request->user(),
+            $work,
+            $language,
+            $request->validated(),
+            $request->file('file'),
+        );
+
+        if ($result['status'] === 'upload_failed') {
+            return back()->withErrors([
+                'file' => 'We could not process the text right now. Please try again later.',
+            ]);
         }
 
-        if ($filePath !== null) {
-            $result = TextSignatureService::create()
-                ->findSimilarExisting(TextSignatureService::readFileFromLocalPath($filePath), $language);
-
-            if ($result['signature'] === null) {
-                Storage::disk('local')->delete($filePath);
-
-                return back()->withErrors([
-                    'file' => 'We could not process the text right now. Please try again later.',
-                ]);
-            }
-
-            if ($result['entity'] !== null) {
-                $this->access()->grant(
-                    $request->user(),
-                    $result['entity'],
-                    (float) $result['similarity'],
-                );
-
-                Storage::disk('local')->delete($filePath);
-
-                return redirect()->route('entities.show', [
-                    'lang' => $lang,
-                    'entity' => $result['entity']->getKey(),
-                ])->with('status', 'Your upload matched an existing text — access granted, no new entity created.');
-            }
-
-            $signature = $result['signature'];
+        if ($result['status'] === 'matched_existing') {
+            return redirect()->route('entities.show', [
+                'lang' => $lang,
+                'entity' => $result['entity']->getKey(),
+            ])->with('status', 'Your upload matched an existing text — access granted, no new entity created.');
         }
 
-        $entity = Entity::query()->create([
-            'work_id' => $work->id,
-            'language_id' => $language->id,
-            'name' => $data['name'],
-            'label' => $data['label'] ?? null,
-            'description' => $data['description'] ?? null,
-            'file_path' => $filePath,
-            'is_restricted' => true,
-            'signature' => isset($signature) ? json_encode($signature) : null,
-        ]);
-
-        $this->access()->grant($request->user(), $entity, null);
-
-        if ($filePath !== null) {
-            ProcessEntityFile::dispatch($entity->id, $filePath);
-        }
-
-        return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $entity->id]);
+        return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $result['entity']->id]);
     }
 
     public function show(string $lang, int $entityId): Response
@@ -217,7 +116,7 @@ class EntityController extends Controller
                 'work_title' => $entity->work?->title,
                 'description' => $entity->description,
                 'file_path' => $entity->file_path,
-                'signature_status' => $this->signatureStatus($entity),
+                'signature_status' => $entity->signatureStatus(),
                 'sentences_count' => $entity->sentences_count,
                 'created_at' => $entity->created_at?->toISOString(),
                 'updated_at' => $entity->updated_at?->toISOString(),
@@ -500,19 +399,6 @@ class EntityController extends Controller
         return new EntityAccessService;
     }
 
-    private function signatureStatus(Entity $entity): string
-    {
-        if ($entity->signature !== null) {
-            return 'generated';
-        }
-
-        if ($entity->file_path !== null) {
-            return 'pending';
-        }
-
-        return 'none';
-    }
-
     /**
      * @return array{code: string, name: string, native_name: ?string}
      */
@@ -535,14 +421,6 @@ class EntityController extends Controller
             ->get(['id', 'title'])
             ->map(fn (Work $work): array => ['id' => $work->id, 'title' => $work->title])
             ->all();
-    }
-
-    /**
-     * @return list<array{id: int, title: string}>
-     */
-    private function worksForFilter(): array
-    {
-        return $this->worksForSelect();
     }
 
     /**

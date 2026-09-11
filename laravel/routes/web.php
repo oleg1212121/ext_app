@@ -4,6 +4,7 @@ use App\Http\Controllers\AlignmentController;
 use App\Http\Controllers\AlignmentEditorController;
 use App\Http\Controllers\Bilinguals\SimulatorController;
 use App\Http\Controllers\EntityController;
+use App\Http\Controllers\LibraryController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
 use Illuminate\Support\Facades\Route;
@@ -47,10 +48,22 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->where('lang', '[a-z]{2}')
         ->name('reader.react.index');
 
-    Route::get('/entities', [EntityController::class, 'index'])->name('entities.index');
-    Route::get('/entities/{lang}', [EntityController::class, 'list'])
-        ->where('lang', '[a-z]{2}')
-        ->name('entities.list');
+    Route::get('/library', [LibraryController::class, 'index'])->name('library.index');
+    Route::get('/library/create', [LibraryController::class, 'createWork'])->name('library.create');
+    Route::post('/library', [LibraryController::class, 'storeWork'])->name('library.store');
+    Route::get('/library/{work}', [LibraryController::class, 'showWork'])
+        ->whereNumber('work')
+        ->name('library.show');
+    Route::get('/library/{work}/entities/create', [LibraryController::class, 'createEntity'])
+        ->whereNumber('work')
+        ->name('library.entities.create');
+    Route::post('/library/{work}/entities', [LibraryController::class, 'storeEntity'])
+        ->whereNumber('work')
+        ->name('library.entities.store');
+
+    // The language-first browse pages moved to the work-first Library
+    Route::redirect('/entities', '/library');
+    Route::redirect('/entities/{lang}', '/library')->where('lang', '[a-z]{2}');
     Route::get('/entities/{lang}/create', [EntityController::class, 'create'])
         ->where('lang', '[a-z]{2}')
         ->name('entities.create');

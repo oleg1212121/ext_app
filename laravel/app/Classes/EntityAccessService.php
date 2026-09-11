@@ -5,6 +5,7 @@ namespace App\Classes;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\User;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -94,11 +95,26 @@ class EntityAccessService
             return $query;
         }
 
-        return $query->where(function (Builder $query) use ($user): void {
+        return $query->where($this->readableConstraint($user));
+    }
+
+    /**
+     * Where-group scoping any entity query to what the user may read. Usable
+     * both on plain entity queries (readableQuery) and inside relation
+     * constraints such as withCount (e.g. the Library's per-work entity counts).
+     * A no-op for admins.
+     *
+     * @return Closure(Builder): Builder
+     */
+    public function readableConstraint(User $user): Closure
+    {
+        if ($user->isAdmin()) {
+            return fn (Builder $query): Builder => $query;
+        }
+
+        return fn (Builder $query): Builder => $query->where(function (Builder $query) use ($user): void {
             $query->where('is_restricted', false)
-                ->orWhereHas('grantedUsers', function (Builder $query) use ($user): void {
-                    $query->whereKey($user->getKey());
-                });
+                ->orWhereHas('grantedUsers', fn (Builder $query): Builder => $query->whereKey($user->getKey()));
         });
     }
 

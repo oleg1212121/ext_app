@@ -330,3 +330,24 @@ Any count of entities or entity matches shown to a user counts only what that
 user could actually open (Public entities plus their own grants; for matches,
 both sides readable). A global total leaks Restricted entities' existence.
 _Avoid_: total count, library size.
+
+# Library Context
+
+The domain of the user-facing browse surface for works and their texts — the
+`/library` section that replaced the language-first entities pages.
+
+## Language
+
+**Library**:
+The user-facing section (nav item, `/library`) where an approved user browses
+the **Work catalog** and, inside a work, the entities they can read.
+_Avoid_: entities page (the former language-first surface), Parallel Library
+(the Reader's former on-page subtitle).
+
+**Work catalog**:
+The complete set of **Works**, visible to every approved user regardless of
+entity access — including works with no entities yet. A Work carries no access
+semantics of its own; access control and counts live on its entities (see
+Readable count in the Entity Access Context). See ADR 0021.
+_Avoid_: available works (Available is the AI-provider term), my library,
+book collection.

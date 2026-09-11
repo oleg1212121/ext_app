@@ -2,6 +2,29 @@
 
 ## 2026-09-11
 
+* **Library replaces the language-first entities pages (ADR 0021).** The nav
+  entry is now **Library** (`/library`): a works grid with `?q=` search
+  (title/author), a dashed plus-card → create-work page, and per-work
+  **readable** entity counts (`EntityAccessService::readableConstraint`, new,
+  also used by `readableQuery`). Each work card opens
+  `/library/{work}`: work info, entity search (name/label), plus-card →
+  work-scoped entity creation (`/library/{work}/entities/create`, work fixed,
+  language select), and readable entity cards. Works are a **public catalog**
+  — every approved user sees every work, empty ones included; no schema
+  change, no creator tracking. The entity-creation pipeline moved from
+  `EntityController::store` into `App\Classes\EntityCreationService` (shared
+  by both create forms; match-found may resolve to another work's entity);
+  `signatureStatus()` moved onto the `Entity` model. Legacy `/entities` and
+  `/entities/{lang}` redirect to `/library` (the picker/list pages and
+  controller methods were deleted); `/entities/{lang}/...` create/show/edit/
+  sentence routes are untouched. Reader rebrand: "Parallel Library" subtitle
+  and library wordings dropped (just "Reader"). New shared
+  `Components/LinkPagination.jsx`. Tests: new `LibraryTest` (18 cases),
+  picker/list tests removed from `EntityControllerTest`. Updated
+  `wiki/domains/entities.md`, `wiki/index.md`; CONTEXT.md gained a Library
+  Context (Library, Work catalog); ADR 0021 records the public-catalog
+  decision.
+
 * **Pronunciations are audio, not notation.** `pronunciations` no longer
   carries `transcription_type_id` — a pronunciation is an uploaded audio
   file with a pronunciation example (`path` on the public disk, unique

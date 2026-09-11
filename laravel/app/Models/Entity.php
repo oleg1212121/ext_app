@@ -70,4 +70,21 @@ class Entity extends Model
             ->withPivot('similarity')
             ->withTimestamps();
     }
+
+    /**
+     * Display state of the entity's signature: generated, pending (file
+     * uploaded but not yet processed), or none.
+     */
+    public function signatureStatus(): string
+    {
+        if ($this->signature !== null) {
+            return 'generated';
+        }
+
+        if ($this->file_path !== null) {
+            return 'pending';
+        }
+
+        return 'none';
+    }
 }

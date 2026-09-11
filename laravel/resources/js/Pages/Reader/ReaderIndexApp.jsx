@@ -11,7 +11,6 @@ const LANGUAGE_GLYPH = {
     ru: 'RU',
 };
 
-const HAIRLINE = 'h-5 w-px bg-[var(--wbench-rule)] dark:bg-[var(--wbench-rule-night)]';
 const DOT = 'text-[var(--wbench-rule)] dark:text-[var(--wbench-rule-night)]';
 
 const tabClass = (isActive) => [
@@ -73,10 +72,6 @@ export default function ReaderIndexApp({lang = 'en', languages = [], entities = 
                     <span className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] whitespace-nowrap">
                         Reader <span className={DOT}>·</span> En&nbsp;↔&nbsp;Ru
                     </span>
-                    <span className={HAIRLINE} aria-hidden="true"/>
-                    <span className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] whitespace-nowrap">
-                        Parallel Library
-                    </span>
 
                     <nav
                         aria-label="Library language"
@@ -125,7 +120,7 @@ export default function ReaderIndexApp({lang = 'en', languages = [], entities = 
                     ) : entities.length === 0 ? (
                         <div className="py-20 text-center" role="status" aria-live="polite">
                             <p className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                No texts in this library
+                                No texts in this language
                             </p>
                             <p className="mt-3 max-w-md mx-auto font-[var(--wbench-serif)] text-lg leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                                 Switch the language above, or ask an editor to add texts.
@@ -134,7 +129,7 @@ export default function ReaderIndexApp({lang = 'en', languages = [], entities = 
                     ) : (
                         <>
                             <p className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Library <span className={DOT}>·</span> {entities.length} {entities.length === 1 ? 'text' : 'texts'}
+                                Texts <span className={DOT}>·</span> {entities.length}
                             </p>
 
                             <ul
