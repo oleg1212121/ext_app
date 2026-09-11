@@ -2,6 +2,21 @@
 
 ## 2026-09-11
 
+* **Dictionary import: any-registry languages + self-bootstrapping lookups.**
+  `wiktionary:import` no longer hardcodes `--lang/--target-lang` to en/ru —
+  it validates against the languages registry (any code, `is_enabled`
+  irrelevant) and lists available codes on failure. The parser
+  auto-creates missing per-language lookups instead of failing/skipping:
+  an unseen dump `pos` becomes a `word_classes` row, an unseen sound type
+  a `transcription_types` row (slug as placeholder `title`), so a new
+  language is INSERT + import with no seeders; the `words_skipped_pos`
+  stat/skip is gone (replaced by `lookups_created`). New Filament
+  resources `WordClassResource` + `TranscriptionTypeResource` (group
+  "Words") give admin CRUD over the lookup tables for curating the
+  placeholder titles. Updated `wiki/domains/dictionary-import.md`,
+  `wiki/database/dictionary.md`, `wiki/playbooks/import-dictionary-data.md`;
+  CONTEXT.md gained a Dictionary context (Word class, Transcription type).
+
 * **Entity/match visibility: counts now respect readability; same-language
   entity matches allowed (ADR 0019).** The `/entities` picker's per-language
   `entity_count` (`EntityController::index`) and the edit page's

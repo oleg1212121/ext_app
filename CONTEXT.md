@@ -164,6 +164,40 @@ The per-user configuration row (one per user) holding the user's preferences, cu
 The language a user is a native speaker of, chosen at registration and changeable from the profile page. References a **Language** in the catalog; defaults to English.
 _Avoid_: mother tongue, first language
 
+# Dictionary Context
+
+The domain of the Wiktionary-sourced dictionary — words per language with
+their linguistic satellites, populated by the import pipeline and curated in
+the admin panel. Nothing at runtime reads it yet.
+
+## Language
+
+**Word**:
+A base-form word in exactly one Language, carrying its part of speech
+(**Word class**), definitions, forms, etymology, transcriptions,
+pronunciations, examples, and raw translation words awaiting linking.
+_Avoid_: entry, lemma (implementation shorthand), vocabulary item (legacy
+crossword-domain term).
+
+**Word class**:
+The part-of-speech taxonomy entry a Word belongs to — per language, unique
+by `(language, slug)`. Seeded with curated titles for en/ru; the import
+auto-creates any unseen class with the slug as a placeholder title. A word
+whose part of speech cannot be determined gets the `unknown` class.
+_Avoid_: POS (dump-field jargon), category, speech part.
+
+**Transcription type**:
+The kind of phonetic notation a transcription is written in (e.g. IPA,
+enpr) — per language, unique by `(language, slug)`. Auto-created by the
+import with the slug as a placeholder title, curated afterwards.
+_Avoid_: notation, phoneme set.
+
+**Translation linking**:
+The step that resolves the raw translation words stored on each Word into
+directed `word_translations` rows between Words of different languages —
+run after import, for every ordered language pair.
+_Avoid_: translation sync, matching.
+
 # Access Control Context
 
 The domain of who may do what in the application — driven by a user's **Role**

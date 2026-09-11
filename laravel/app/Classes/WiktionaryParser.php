@@ -31,7 +31,7 @@ class WiktionaryParser
     private array $stats = [
         'lines_read' => 0,
         'words_imported' => 0,
-        'words_skipped_pos' => 0,
+        'lookups_created' => 0,
         'batches_flushed' => 0,
     ];
 
@@ -78,9 +78,7 @@ class WiktionaryParser
             $key = mb_strtolower($word).'|'.$pos;
 
             if (! isset($this->wordClassMap[$pos])) {
-                $this->stats['words_skipped_pos']++;
-
-                continue;
+                $this->ensureWordClass($pos);
             }
 
             if ($key === $currentKey) {
@@ -242,18 +240,41 @@ class WiktionaryParser
             ->pluck('id', 'slug')
             ->toArray();
 
-        if (empty($this->wordClassMap)) {
-            throw new \RuntimeException('No word classes found. Run the word class seeder first.');
-        }
-
         $this->transcriptionTypeMap = TranscriptionType::query()
             ->where('language_id', $this->languageId)
             ->pluck('id', 'slug')
             ->toArray();
 
-        if (empty($this->transcriptionTypeMap)) {
-            throw new \RuntimeException('No transcription types found. Run the transcription type seeder first.');
+        // flushBatch falls back to this class for records whose pos has no mapping.
+        $this->ensureWordClass('unknown');
+    }
+
+    private function ensureWordClass(string $slug): int
+    {
+        if (! isset($this->wordClassMap[$slug])) {
+            $class = WordClass::query()->firstOrCreate(
+                ['language_id' => $this->languageId, 'slug' => $slug],
+                ['title' => $slug],
+            );
+            $this->wordClassMap[$slug] = $class->id;
+            $this->stats['lookups_created']++;
         }
+
+        return $this->wordClassMap[$slug];
+    }
+
+    private function ensureTranscriptionType(string $slug): int
+    {
+        if (! isset($this->transcriptionTypeMap[$slug])) {
+            $type = TranscriptionType::query()->firstOrCreate(
+                ['language_id' => $this->languageId, 'slug' => $slug],
+                ['title' => $slug],
+            );
+            $this->transcriptionTypeMap[$slug] = $type->id;
+            $this->stats['lookups_created']++;
+        }
+
+        return $this->transcriptionTypeMap[$slug];
     }
 
     public function mergeRecord(array $existing, array $incoming): array
@@ -376,11 +397,7 @@ class WiktionaryParser
                 continue;
             }
             foreach ($record['sounds'] as $sound) {
-                $typeSlug = $sound['type'];
-                $typeId = $this->transcriptionTypeMap[$typeSlug] ?? null;
-                if ($typeId === null) {
-                    continue;
-                }
+                $typeId = $this->ensureTranscriptionType($sound['type']);
                 $rows[] = [
                     'transcription' => mb_substr($sound['value'], 0, 100),
                     'word_id' => $wordId,

@@ -5,7 +5,7 @@ description: One words table (+ satellites) keyed by language, per-language word
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-11T00:00:00Z }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -30,11 +30,17 @@ sources:
 # Notes
 
 * Nothing at runtime reads these tables yet — only Filament admin
-  (`WordResource` + relation managers) and the import/link commands.
+  (`WordResource` + relation managers, `WordClassResource`,
+  `TranscriptionTypeResource`) and the import/link commands.
 * `wiktionary:import {file} --lang= --target-lang=` fills `words` and
-  satellites for one language, storing raw translations as JSON;
-  `wiktionary:link-translations` then resolves them into `word_translations`
-  rows for **every ordered language pair** (stress-mark stripping applied
-  when the target is Russian).
+  satellites for one language (any code in the languages registry),
+  storing raw translations as JSON; `wiktionary:link-translations` then
+  resolves them into `word_translations` rows for **every ordered language
+  pair** (stress-mark stripping applied when the target is Russian).
+* The import auto-creates missing per-language lookups: an unseen dump
+  `pos` becomes a `word_classes` row and an unseen sound type a
+  `transcription_types` row, both with the slug as placeholder `title` —
+  nothing is skipped for a missing lookup, so a new language needs no
+  seeders. The seeders remain the source of curated en/ru titles.
 * The legacy 2025 vocabulary domain (`words` in the old shape, `books`,
   `book_word`, `saved_phrases`) was deleted with the 2026-09 rework.

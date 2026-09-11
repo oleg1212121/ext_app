@@ -3,6 +3,7 @@
 use App\Classes\WiktionaryParser;
 use App\Models\Definition;
 use App\Models\Form;
+use App\Models\Language;
 use App\Models\TranscriptionType;
 use App\Models\Word;
 use App\Models\WordClass;
@@ -50,7 +51,8 @@ it('imports a file and creates database records', function () {
     unlink($tmpFile);
 });
 
-it('skips lines with unsupported pos', function () {
+it('creates a word class for an unseen pos and imports the word', function () {
+    $enLanguageId = createLanguages()['en']->id;
     $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_test_');
     $lines = [
         json_encode(['word' => 'test', 'pos' => 'unsupported_pos', 'senses' => [['glosses' => ['A test']]]]),
@@ -60,8 +62,41 @@ it('skips lines with unsupported pos', function () {
     $parser = new WiktionaryParser('en', 'ru', 100);
     $stats = $parser->import($tmpFile);
 
-    expect($stats['words_skipped_pos'])->toBe(1);
-    expect(Word::count())->toBe(0);
+    expect($stats['words_imported'])->toBe(1);
+    $word = Word::where('word', 'test')->where('language_id', $enLanguageId)->first();
+    expect($word)->not->toBeNull();
+    expect($word->wordClass->slug)->toBe('unsupported_pos');
+    expect(Definition::count())->toBe(1);
+
+    $createdClass = WordClass::where('language_id', $enLanguageId)->where('slug', 'unsupported_pos')->first();
+    expect($createdClass)->not->toBeNull();
+    expect($createdClass->title)->toBe('unsupported_pos');
+
+    unlink($tmpFile);
+});
+
+it('bootstraps a fresh language with placeholder lookups', function () {
+    $de = Language::create(['code' => 'de', 'name' => 'German', 'is_enabled' => false, 'sort_order' => 5]);
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_test_');
+    $lines = [
+        json_encode(['word' => 'Hund', 'pos' => 'noun', 'sounds' => [['ipa' => '/hʊnt/']], 'senses' => [['glosses' => ['A dog']]]]),
+    ];
+    file_put_contents($tmpFile, implode("\n", $lines)."\n");
+
+    $parser = new WiktionaryParser('de', 'en', 100);
+    $stats = $parser->import($tmpFile);
+
+    expect($stats['words_imported'])->toBe(1);
+    expect($stats['lookups_created'])->toBe(3); // unknown + noun word classes, ipa transcription type
+
+    expect(WordClass::where('language_id', $de->id)->where('slug', 'unknown')->where('title', 'unknown')->exists())->toBeTrue();
+    expect(WordClass::where('language_id', $de->id)->where('slug', 'noun')->where('title', 'noun')->exists())->toBeTrue();
+    expect(TranscriptionType::where('language_id', $de->id)->where('slug', 'ipa')->where('title', 'ipa')->exists())->toBeTrue();
+
+    $word = Word::where('word', 'Hund')->where('language_id', $de->id)->first();
+    expect($word)->not->toBeNull();
+    expect($word->transcriptions)->toHaveCount(1);
+    expect($word->transcriptions->first()->transcription)->toBe('/hʊnt/');
 
     unlink($tmpFile);
 });

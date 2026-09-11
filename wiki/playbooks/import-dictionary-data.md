@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps into the unified language-key
 tags: [dictionary, import, wiktionary, kaikki]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-11T00:00:00Z }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -35,17 +35,24 @@ replaced the old mirrored per-language tables.
    `ru-wiktionary` extract) onto the host.
 2. Make it visible in the container (anything under `laravel/` is mounted;
    e.g. put it in `laravel/storage/app/`).
-3. Run the import:
+3. Ensure the language exists in the languages registry (Filament
+   `/admin` → Languages, or the seeder). `--lang`/`--target-lang` accept
+   any registry code; `is_enabled` is not required for import.
+4. Run the import:
 
    ```bash
    docker exec ext_app_laravel php artisan wiktionary:import storage/app/<file>.jsonl --lang=en --target-lang=ru
    ```
 
-   `--lang` (source language, currently `en` or `ru`) fills the unified
-   `words` table and its satellites for that language. Translations found in
-   the dump are **stored for later linking**, not resolved during import (per
-   the command description).
-4. Link words across languages through the stored translations:
+   `--lang` (source language) fills the unified `words` table and its
+   satellites for that language. Translations found in the dump are
+   **stored for later linking**, not resolved during import (per the
+   command description). Missing per-language lookups are **auto-created**
+   (unseen dump `pos` → word class, unseen sound type → transcription
+   type, slug as placeholder title) — nothing is skipped, and a brand-new
+   language needs no seeders; curate the placeholder titles in `/admin`
+   afterwards.
+5. Link words across languages through the stored translations:
 
    ```bash
    docker exec ext_app_laravel php artisan wiktionary:link-translations
@@ -55,9 +62,11 @@ replaced the old mirrored per-language tables.
    have imported words, writing directed `word_translations` rows. Matching
    strips Russian stress marks (e.g. `приве́т` → `привет`) when pairing into
    Russian.
-5. Verify in the Filament admin (`/admin`): the single `Word` resource with
-   relation managers for definitions, pronunciations, translations,
-   etymologies, examples, transcriptions.
+6. Verify in the Filament admin (`/admin`, group "Words"): the `Word`
+   resource with relation managers for definitions, pronunciations,
+   translations, etymologies, examples, transcriptions; the **Word class**
+   and **Transcription type** resources show (and let you edit) the
+   auto-created lookups.
 
 # Notes
 
