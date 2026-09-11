@@ -39,11 +39,12 @@ test('unapproved user is redirected from the entities index', function () {
     $this->actingAs($user)->get('/entities')->assertRedirect('/pending-approval');
 });
 
-test('picker lists enabled languages with entity counts', function () {
+test('picker lists enabled languages with readable entity counts', function () {
     createLanguages();
     createEntity('en', null, ['name' => 'Alpha']);
     createEntity('en', null, ['name' => 'Beta']);
     createEntity('ru', null, ['name' => 'Гамма']);
+    createEntity('ru', null, ['name' => 'Секрет', 'is_restricted' => true]);
 
     $this->actingAs(approvedUser())
         ->get('/entities')
@@ -55,6 +56,52 @@ test('picker lists enabled languages with entity counts', function () {
             ->where('languages.0.entity_count', 2)
             ->where('languages.1.code', 'ru')
             ->where('languages.1.entity_count', 1));
+});
+
+test('picker counts a restricted entity only for granted users and admins', function () {
+    makeLanguage('en');
+    $user = approvedUser();
+    createEntity('en', null, ['name' => 'Open', 'is_restricted' => false]);
+    $granted = createEntity('en', null, ['name' => 'Granted', 'is_restricted' => true]);
+    $granted->grantedUsers()->attach($user->id);
+    createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
+
+    $assertCount = function (int $count) {
+        return fn ($page) => $page->where('languages.0.entity_count', $count);
+    };
+
+    $this->actingAs($user)
+        ->get('/entities')
+        ->assertInertia($assertCount(2));
+
+    $this->actingAs(approvedUser())
+        ->get('/entities')
+        ->assertInertia($assertCount(1));
+
+    $admin = User::factory()->create(['is_approved' => true, 'role' => 'admin']);
+
+    $this->actingAs($admin)
+        ->get('/entities')
+        ->assertInertia($assertCount(3));
+});
+
+test('edit page alignment count excludes matches with an unreadable other side', function () {
+    makeLanguage('en');
+    makeLanguage('ru');
+    $work = createWork();
+    $user = approvedUser();
+
+    $en = createEntity('en', $work, ['name' => 'Open EN', 'is_restricted' => false]);
+    $ru = createEntity('ru', $work, ['name' => 'Open RU', 'is_restricted' => false]);
+    $secret = createEntity('ru', $work, ['name' => 'Secret RU', 'is_restricted' => true]);
+
+    createEntityMatch($en, $ru);
+    createEntityMatch($en, $secret);
+
+    $this->actingAs($user)
+        ->get("/entities/en/{$en->id}/edit")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('alignmentCount', 1));
 });
 
 test('picker ignores disabled languages', function () {

@@ -30,7 +30,7 @@ class ListEntityMatches extends ListRecords
                         ->searchable()
                         ->preload(),
                     Select::make('second_entity_id')
-                        ->label('Second Entity (same work, different language)')
+                        ->label('Second Entity (same work)')
                         ->required()
                         ->options(fn (): array => $this->eligibleEntityOptions())
                         ->searchable()
@@ -54,9 +54,9 @@ class ListEntityMatches extends ListRecords
                         Entity::query()->findOrFail((int) $data['second_entity_id']),
                     ];
 
-                    if ($first->work_id !== $second->work_id || $first->language_id === $second->language_id) {
+                    if ($first->work_id !== $second->work_id) {
                         Notification::make()
-                            ->title('Entities must be from the same work in different languages.')
+                            ->title('Entities must be from the same work.')
                             ->danger()
                             ->send();
 

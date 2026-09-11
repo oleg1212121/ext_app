@@ -159,6 +159,70 @@ test('entities from different works are rejected', function () {
     expect(EntityMatch::query()->count())->toBe(0);
 });
 
+test('a same-language entity pair can be matched', function () {
+    Bus::fake();
+    $user = User::factory()->create();
+    ['enEntity' => $enEntity] = createAlignablePair();
+
+    $answers = createEntity('en', $enEntity->work, [
+        'name' => 'Answer key',
+        'signature' => json_encode([0.9, 0.1]),
+    ]);
+
+    EntitySentence::create([
+        'entity_id' => $answers->id,
+        'sentence_type_id' => SentenceType::query()->where('name', 'Narration')->value('id'),
+        'content' => 'An answer.',
+        'order' => 1,
+    ]);
+
+    $response = $this->actingAs($user)->post(route('alignments.store'), [
+        'first_entity_id' => $enEntity->id,
+        'second_entity_id' => $answers->id,
+        'chunk_size' => 75,
+        'max_n' => 6,
+    ]);
+
+    $response->assertRedirect(route('alignments.index'));
+
+    $match = EntityMatch::query()
+        ->where('a_entity_id', min($enEntity->id, $answers->id))
+        ->where('b_entity_id', max($enEntity->id, $answers->id))
+        ->first();
+
+    expect($match)->not->toBeNull();
+
+    Bus::assertDispatched(AlignEntitySentences::class);
+});
+
+test('the creation page includes works with two same-language entities', function () {
+    $user = User::factory()->create();
+    ['enEntity' => $enEntity] = createAlignablePair();
+    $work = $enEntity->work;
+
+    $answers = createEntity('en', $work, [
+        'name' => 'Answer key',
+        'signature' => json_encode([0.9, 0.1]),
+    ]);
+
+    EntitySentence::create([
+        'entity_id' => $answers->id,
+        'sentence_type_id' => SentenceType::query()->where('name', 'Narration')->value('id'),
+        'content' => 'An answer.',
+        'order' => 1,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('alignments.create'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Alignments/Create')
+            ->has('works', 1)
+            ->where('works.0.entities.en.0.id', $answers->id)
+            ->where('works.0.entities.en.1.id', $enEntity->id)
+            ->where('works.0.entities.ru.0.id', fn ($value) => true));
+});
+
 test('cannot create a match involving an entity the user cannot read', function () {
     $user = User::factory()->create();
     ['ruEntity' => $ruEntity, 'enEntity' => $pairEn] = createAlignablePair();

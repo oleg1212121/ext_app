@@ -149,7 +149,7 @@ class EntityResource extends Resource
                             Placeholder::make('matches_info')
                                 ->label('')
                                 ->content($matches->isEmpty()
-                                    ? 'No matching entities of the same work in other languages found. Make sure both entities have signatures generated and share the work.'
+                                    ? 'No matching entities of the same work found. Make sure both entities have signatures generated and share the work.'
                                     : "Found {$matches->count()} match(es):\n".$matches->map(fn ($m) => sprintf(
                                         '%s (similarity: %.4f)',
                                         $m['entity']->name,

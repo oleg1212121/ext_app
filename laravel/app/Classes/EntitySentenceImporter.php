@@ -90,10 +90,6 @@ class EntitySentenceImporter
             throw new \RuntimeException('Both entities must belong to the same work.');
         }
 
-        if ($aEntity->language_id === $bEntity->language_id) {
-            throw new \RuntimeException('Both entities must be in different languages.');
-        }
-
         $pairs = $this->parsePairs($path);
 
         if ($pairs === []) {

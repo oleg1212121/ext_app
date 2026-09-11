@@ -5,7 +5,7 @@ description: End-to-end workflow for aligning two same-work entities (any langua
 tags: [alignment, embeddings, jobs, howto]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -74,10 +74,10 @@ sources:
    `/alignments` "+ Create new" React form (`alignments.create/store`) —
    pick a **work**, then `first_entity_id` + `second_entity_id` (there is no
    original-side choice; the original language lives on the work); the store
-   validates **same work + different languages** and canonicalizes the pair
+   validates **same work** (same-language pairs such as exercises and
+   answers are valid — ADR 0019) and canonicalizes the pair
    (lower entity id = a side) — or via the Filament `EntityMatchResource` /
-   `EntityResource` "Find Match" action (restricted to same-work
-   cross-language entities), an import command, or directly. Fresh entry
+   `EntityResource` "Find Match" action (same-work entities, any languages), an import command, or directly. Fresh entry
    points (Filament "new alignment" / "Find Match", the web create form, and
    the `alignments:resume` command) call
    `AlignEntitySentences::beginFromScratch($id)` — a shared

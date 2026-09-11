@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -32,9 +32,10 @@ sources:
 
 # Purpose
 
-Given an `EntityMatch` — two entities of the **same work in different
-languages** (stored canonically `a_entity_id < b_entity_id`; the original side
-is derived from the work, see below) — produce sentence-level correspondences:
+Given an `EntityMatch` — two distinct entities of the **same work** (usually
+different languages; same-language companions like exercises + answers are
+valid too — ADR 0019; stored canonically `a_entity_id < b_entity_id`; the
+original side is derived from the work, see below) — produce sentence-level correspondences:
 which a-side sentence(s) express which b-side sentence(s). The output powers
 the [Bilinguals Simulator](/domains/bilinguals-simulator.md) and
 [Reader](/domains/reader.md). Tables involved:
@@ -532,8 +533,15 @@ first-class pairs).
     signed (`signature` not null), and non-empty; only works with entities in
     ≥2 languages appear. There is no "original text" radio — the original
     language lives on the work. The form also carries the Filament-parity
-    `chunk_size` (25–100, default 75) + `max_n` (1–8, default 6). Store
-    validates **same work + different languages**, canonicalizes the pair
+    `chunk_size` (25–100, default 75) + `max_n` (1–8, default 6). **Inertia
+    pitfall:** `useForm.setData` with an object argument **replaces** the
+    whole form state (it does not merge), so multi-field change handlers
+    (work/entity selects, Entities\Create work-mode radios) must use the
+    functional form `setData((current) => ({...current, ...}))` — the
+    object form silently dropped `work_id`/`chunk_size`/`max_n`, which
+    emptied both entity selects the moment an entity was picked. Store
+    validates **same work** (same-language pairs such as exercises and
+    answers are valid — ADR 0019), canonicalizes the pair
     order (lower id = a side, so the `unique(a_entity_id, b_entity_id)`
     constraint covers both orders), creates the match (`status='pending'`),
     dispatches `AlignEntitySentences::beginFromScratch($id)`, and redirects

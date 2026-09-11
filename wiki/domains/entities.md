@@ -5,7 +5,7 @@ description: Inertia/React management area for creating and viewing language-key
 tags: [entities, works, inertia, react, languages]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -47,7 +47,7 @@ picker and every `{lang}` route are driven by `Language::enabled()`. See ADR 000
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `/entities` | `EntityController::index` | Picker: one card per enabled language (name, native name, entity count), named `entities.index` |
+| `/entities` | `EntityController::index` | Picker: one card per enabled language (name, native name, readable entity count — public + user-granted only), named `entities.index` |
 | `/entities/{lang}` | `EntityController::list` | Paginated list of that language's entities (work column + optional `?work={id}` filter), named `entities.list` |
 | `/entities/{lang}/create` | `EntityController::create` | Create form (work picker + inline "new work" fields), named `entities.create` |
 | `/entities/{lang}/{entity}` (POST) | `EntityController::store` | Creates the entity under the resolved work; stores an optional file and dispatches `ProcessEntityFile`, named `entities.store` |

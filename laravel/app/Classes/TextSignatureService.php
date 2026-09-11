@@ -196,8 +196,9 @@ class TextSignatureService
     }
 
     /**
-     * Entities in any other language whose signature is similar enough to the
-     * given entity's — candidates for the same work.
+     * Entities (in any language, including the entity's own — e.g. an
+     * exercises/answers pair) whose signature is similar enough to the given
+     * entity's — candidates for the same work.
      *
      * @return Collection<int, array{entity: Entity, similarity: float}>
      */
@@ -211,7 +212,7 @@ class TextSignatureService
         $similar = new Collection;
 
         foreach (Entity::query()
-            ->where('language_id', '!=', $entity->language_id)
+            ->where('id', '!=', $entity->id)
             ->whereNotNull('signature')
             ->with('language')
             ->select(['id', 'name', 'language_id', 'work_id', 'signature'])

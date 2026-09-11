@@ -5,7 +5,7 @@ description: Works grouping per-language entities, their sentences, and the mach
 tags: [database, schema, alignment, entities, works]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
@@ -26,7 +26,7 @@ sources:
 | `entities` | `Entity` | A text (book/story/file) in one language — the original or a translation of its work. Carries `work_id`, `language_id`, an optional translator/edition `label`, a BGE-M3 embedding `signature`, and `is_restricted` (default false) gating read access |
 | `sentence_types` | `SentenceType` | Classification for sentences |
 | `entity_sentences` | `EntitySentence` | Split sentences with **sparse order** values; unique `(entity_id, order)` |
-| `entity_matches` | `EntityMatch` | Pairing of two same-work entities in different languages ("same text, two languages"), stored canonically `a_entity_id < b_entity_id` |
+| `entity_matches` | `EntityMatch` | Pairing of two distinct same-work entities ("same text, two versions"; same-language companions like exercises + answers included), stored canonically `a_entity_id < b_entity_id` |
 | `meaning_matches` | `MeaningMatch` | Sentence-group level alignment result within a match |
 | `sentence_meaning_matches` | `SentenceMeaningMatch` | Per-sentence membership in a meaning match, with a `side` char(1) (`'a'`/`'b'`) naming which entity of the match the sentence belongs to |
 | `entity_user` | (pivot) | Access grants: which users may read a Restricted entity, with a nullable `similarity` (null = creator grant, non-null = Signature match grant) |
@@ -37,9 +37,10 @@ sources:
   original side of a match is *derived* (`EntityMatch::originalSide()`) by
   comparing each side's `language_id` to the work's `original_language_id` —
   `'a'`, `'b'`, or `null` when both sides are translations. Match creation
-  (Inertia + Filament) validates same work + different languages and
-  canonicalizes the pair order (ADR
-  [0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md)).
+  (Inertia + Filament) validates same work (distinct entities, any
+  languages) and canonicalizes the pair order (ADR
+  [0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md),
+  [0019](../../docs/adr/0019-same-language-entity-matches.md)).
 * **Every entity belongs to a work** (`work_id` NOT NULL). A work may hold
   several entities in the same language (competing translations) told apart
   by `entities.label`.

@@ -1,5 +1,36 @@
 # Directory Update Log
 
+## 2026-09-11
+
+* **Entity/match visibility: counts now respect readability; same-language
+  entity matches allowed (ADR 0019).** The `/entities` picker's per-language
+  `entity_count` (`EntityController::index`) and the edit page's
+  `alignmentCount` were raw totals that leaked the existence of Restricted
+  entities/matches; both now run through `EntityAccessService::readableQuery()`
+  / `readableMatchQuery()`. The "both entities must be in different languages"
+  guard was removed from `AlignmentController::store`, both Filament
+  `EntityMatchResource` pages, and the legacy `EntitySentenceImporter`;
+  `alignableWorks()` now lists works with ≥2 eligible entities (any
+  languages); the Alignments create form's second-entity select no longer
+  excludes the first entity's language; Filament "Find Match" candidates
+  (via `TextSignatureService::findCrossLanguage`, name now historical) include
+  same-language same-work candidates. Ownership stays grant-based per ADR 0013
+  (no `created_by` column). Updated `wiki/domains/sentence-alignment.md`,
+  `wiki/domains/entities.md`, `wiki/database/*`, `wiki/playbooks/run-alignment.md`,
+  `CONTEXT.md` (Entity match, Readable count); added ADR 0019.
+
+* **Fixed `/alignments/create` emptying both entity selects when an entity was
+  chosen.** Inertia `useForm.setData` with an object argument *replaces* the
+  whole form state instead of merging, so the object-form handlers in
+  `Alignments/Create.jsx` (work + first-entity selects) dropped
+  `work_id`/`chunk_size`/`max_n`; `work` then resolved to `undefined` and both
+  entity selects rendered zero options. Handlers now use the functional form
+  `setData((current) => ({...current, ...}))`; the same latent bug in the
+  `Entities/Create.jsx` work-mode radios was fixed too. Frontend assets
+  rebuilt. Reproduced/verified with an esbuild+jsdom harness driving the real
+  component against the real Inertia payload (no JS test infra exists yet —
+  noted as a gap). Updated `wiki/domains/sentence-alignment.md`.
+
 ## 2026-09-10 (works & unified schema rework)
 
 * **Works + unified language-keyed tables replaced the mirrored EN/RU schema

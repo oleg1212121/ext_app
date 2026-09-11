@@ -19,10 +19,9 @@ class CreateEntityMatch extends CreateRecord
         $second = Entity::query()->find((int) ($data['second_entity_id'] ?? 0));
 
         if ($first === null || $second === null
-            || $first->work_id !== $second->work_id
-            || $first->language_id === $second->language_id) {
+            || $first->work_id !== $second->work_id) {
             Notification::make()
-                ->title('Entities must be from the same work in different languages.')
+                ->title('Entities must be from the same work.')
                 ->danger()
                 ->send();
 

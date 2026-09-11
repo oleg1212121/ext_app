@@ -1,8 +1,10 @@
 # Sentence Alignment Context
 
-The domain of pairing the sentences of two same-work entities (two languages of
-one text) into meaning-equivalent groups (meaning matches), produced by the
-alignment pipeline and refined by humans in the Alignments editor.
+The domain of pairing the sentences of two same-work entities (two versions of
+one text — usually two languages, sometimes two same-language companions such
+as exercises and their answer key) into meaning-equivalent groups (meaning
+matches), produced by the alignment pipeline and refined by humans in the
+Alignments editor.
 
 ## Language
 
@@ -19,7 +21,7 @@ The two positions inside an entity match, stored canonically (the lower entity i
 _Avoid_: EN side / RU side (language-specific wording), left/right
 
 **Entity match**:
-The container pairing two entities of the same **Work** in different languages ("the same text, two languages"), held by its **A-side** and **B-side**.
+The container pairing two distinct entities of the same **Work** ("the same text, two versions"), held by its **A-side** and **B-side**. The two entities are usually in different languages, but a same-language pairing (exercises + answers) is equally valid. See ADR 0019.
 _Avoid_: match, alignment
 
 **Original text**:
@@ -273,3 +275,9 @@ user-visible concept).
 **Publish**:
 An admin action flipping a Restricted entity to Public. Existing Access
 grants remain as audit but are no longer enforced. _Avoid_: release, unlock.
+
+**Readable count**:
+Any count of entities or entity matches shown to a user counts only what that
+user could actually open (Public entities plus their own grants; for matches,
+both sides readable). A global total leaks Restricted entities' existence.
+_Avoid_: total count, library size.

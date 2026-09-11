@@ -35,16 +35,19 @@ class EntityController extends Controller
 
     public function index(): Response
     {
+        $access = $this->access();
+        $user = auth()->user();
+
         $languages = Language::query()
             ->enabled()
             ->orderBy('sort_order')
             ->get()
-            ->map(function (Language $language): array {
+            ->map(function (Language $language) use ($access, $user): array {
                 return [
                     'code' => $language->code,
                     'name' => $language->name,
                     'native_name' => $language->native_name,
-                    'entity_count' => Entity::query()->where('language_id', $language->id)->count(),
+                    'entity_count' => $access->readableQuery($user, $language->id)->count(),
                 ];
             });
 
@@ -644,7 +647,8 @@ class EntityController extends Controller
 
     private function alignmentCount(int $entityId): int
     {
-        return (int) EntityMatch::query()
+        return (int) $this->access()
+            ->readableMatchQuery(auth()->user())
             ->where(function (Builder $query) use ($entityId): void {
                 $query->where('a_entity_id', $entityId)
                     ->orWhere('b_entity_id', $entityId);

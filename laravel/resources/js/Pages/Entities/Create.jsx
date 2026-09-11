@@ -134,7 +134,7 @@ export default function Create({lang, language, works = [], languages = []}) {
                                     name="work_mode"
                                     value="existing"
                                     checked={data.work_mode === 'existing'}
-                                    onChange={() => setData({work_mode: 'existing', new_work_title: ''})}
+                                    onChange={() => setData((current) => ({...current, work_mode: 'existing', new_work_title: ''}))}
                                     disabled={works.length === 0}
                                 />
                                 Existing work
@@ -145,7 +145,7 @@ export default function Create({lang, language, works = [], languages = []}) {
                                     name="work_mode"
                                     value="new"
                                     checked={data.work_mode === 'new'}
-                                    onChange={() => setData({work_mode: 'new', work_id: null})}
+                                    onChange={() => setData((current) => ({...current, work_mode: 'new', work_id: null}))}
                                 />
                                 New work
                             </label>

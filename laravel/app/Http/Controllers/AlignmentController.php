@@ -78,11 +78,8 @@ class AlignmentController extends Controller
             ]);
         }
 
-        if ($firstEntity->language_id === $secondEntity->language_id) {
-            return back()->withErrors([
-                'second_entity_id' => 'Both entities must be in different languages.',
-            ]);
-        }
+        // Same-language pairs are valid (e.g. a book of exercises and its
+        // answer key); the a/b sides stay canonical by entity id.
 
         // Canonical pair order: the lower entity id is always the a side, so
         // the unique(a_entity_id, b_entity_id) constraint covers both orders.
@@ -136,7 +133,8 @@ class AlignmentController extends Controller
     }
 
     /**
-     * Works that have at least two eligible entities in distinct languages:
+     * Works that have at least two eligible entities (any languages — a
+     * same-language pair like exercises and answers is alignable too):
      * each work carries its eligible entities grouped by language code.
      *
      * @return list<array<string, mixed>>
@@ -170,7 +168,7 @@ class AlignmentController extends Controller
                     ];
                 }
 
-                if (count($byLanguage) < 2) {
+                if ($workEntities->count() < 2) {
                     return [];
                 }
 

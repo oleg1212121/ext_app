@@ -78,17 +78,17 @@ export default function Create({works = []}) {
 
     const languageLabel = (code) => code.toUpperCase();
 
-    const entityOptions = (excludeLanguageCode) => Object.entries(workEntities)
-        .filter(([code]) => code !== excludeLanguageCode)
+    const entityOptions = (excludeEntityId) => Object.entries(workEntities)
         .flatMap(([code, entities]) => entities.map((entity) => ({
             ...entity,
             languageCode: code,
             text: `[${languageLabel(code)}] ${entity.text}`,
-        })));
+        })))
+        .filter((entity) => String(entity.id) !== String(excludeEntityId));
 
     const firstEntity = entityOptions().find((entity) => String(entity.id) === String(data.first_entity_id));
     const firstOptions = entityOptions();
-    const secondOptions = entityOptions(firstEntity?.languageCode);
+    const secondOptions = entityOptions(data.first_entity_id);
 
     const submit = (e) => {
         e.preventDefault();
@@ -128,7 +128,7 @@ export default function Create({works = []}) {
                             <select
                                 id="work_id"
                                 value={data.work_id}
-                                onChange={(e) => setData({work_id: e.target.value, first_entity_id: '', second_entity_id: ''})}
+                                onChange={(e) => setData((current) => ({...current, work_id: e.target.value, first_entity_id: '', second_entity_id: ''}))}
                                 className={inputClass(errors.work_id)}
                             >
                                 {works.length === 0 ? (
@@ -140,7 +140,7 @@ export default function Create({works = []}) {
                                 )}
                             </select>
                             <p className="mt-1 text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Both entities must belong to the same work and be in different languages.
+                                Both entities must belong to the same work (same language is fine, e.g. exercises and answers).
                             </p>
                         </div>
 
@@ -149,7 +149,7 @@ export default function Create({works = []}) {
                             <select
                                 id="first_entity_id"
                                 value={data.first_entity_id}
-                                onChange={(e) => setData({first_entity_id: e.target.value, second_entity_id: ''})}
+                                onChange={(e) => setData((current) => ({...current, first_entity_id: e.target.value, second_entity_id: ''}))}
                                 className={inputClass(errors.first_entity_id)}
                             >
                                 <option value="" disabled>Select an entity…</option>
@@ -162,7 +162,7 @@ export default function Create({works = []}) {
 
                         <div>
                             <InputLabel htmlFor="second_entity_id">
-                                Second entity{firstEntity ? ` — different language than ${languageLabel(firstEntity.languageCode)}` : ''}
+                                Second entity{firstEntity ? ` — other than ${languageLabel(firstEntity.languageCode)} «${firstEntity.text}»` : ''}
                             </InputLabel>
                             <select
                                 id="second_entity_id"

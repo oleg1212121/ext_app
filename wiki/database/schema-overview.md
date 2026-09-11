@@ -5,7 +5,7 @@ description: The table domains — works/entities/alignment, unified dictionary,
 tags: [database, schema, postgres, users, settings]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
 sources:
   - id: migrations
     resource: laravel/database/migrations
@@ -54,7 +54,8 @@ native-language select on the `UserResource` create/edit forms. See the
 # How they relate
 
 * `works` group the per-language `entities`; `entity_matches` pair two
-  same-work entities in different languages (canonical `a_entity_id <
+  same-work entities (any languages — same-language companions like
+  exercises + answers included; canonical `a_entity_id <
   b_entity_id`). The work's `original_language_id` decides which side of a
   match is the original — there is no per-match original flag.
 * `word_translations` links dictionary words across languages at the word
