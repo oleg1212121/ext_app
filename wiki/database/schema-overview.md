@@ -5,7 +5,7 @@ description: The table domains — works/entities/alignment, unified dictionary,
 tags: [database, schema, postgres, users, settings]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-12T00:00:00Z }
 sources:
   - id: migrations
     resource: laravel/database/migrations
@@ -45,8 +45,9 @@ gone.
 `user_settings` (one row per user) holds per-user preferences, currently a single
 **native language** (`native_language_id` → `languages.id`, nullable, English by
 default). Created at registration; changeable from the profile page (Inertia
-`Profile/Edit`) and admin-managed via the Filament `UserSettingsResource`, plus a
-native-language select on the `UserResource` create/edit forms. See the
+`Profile/Edit`) and admin-managed via the native-language select on the
+`UserResource` create/edit forms (the former standalone
+`UserSettingsResource` was removed 2026-09-12). See the
 [Access Control domain](../domains/access-control.md) for the user, and the
 **User settings** / **Native language** glossary entries in
 [CONTEXT.md](../../CONTEXT.md#language-catalog-context).

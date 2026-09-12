@@ -1,5 +1,17 @@
 # Directory Update Log
 
+## 2026-09-12
+
+* **Standalone `UserSettingsResource` removed.** `/admin/user-settings` is
+  gone (resource, its List/Create/Edit pages, and
+  `tests/Feature/Filament/UserSettingsResourceTest.php` deleted); it
+  duplicated the native-language editing already available on the
+  `UserResource` create/edit forms (`settings_native_language_id` synced via
+  `settings()->updateOrCreate`). No schema change — `user_settings`,
+  `UserSettings` model, registration and profile flows unchanged. Admin
+  management of native language now lives solely on the user Edit form.
+  Updated `wiki/database/schema-overview.md`.
+
 ## 2026-09-11
 
 * **Library replaces the language-first entities pages (ADR 0021).** The nav
