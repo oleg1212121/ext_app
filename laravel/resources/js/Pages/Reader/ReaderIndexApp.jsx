@@ -1,10 +1,6 @@
 import {router} from '@inertiajs/react';
 import {useEffect, useState} from 'react';
-
-const LANGUAGE_LABELS = {
-    en: 'English',
-    ru: 'Russian',
-};
+import {useI18n} from '../../i18n';
 
 const LANGUAGE_GLYPH = {
     en: 'EN',
@@ -34,6 +30,7 @@ const Underline = ({isActive}) => (
 );
 
 export default function ReaderIndexApp({lang = 'en', languages = [], entities = []}) {
+    const {t} = useI18n();
     const [selectedEntityId, setSelectedEntityId] = useState(() => entities[0]?.id ?? null);
     const [navigating, setNavigating] = useState(false);
     const [pendingLang, setPendingLang] = useState(null);
@@ -63,18 +60,18 @@ export default function ReaderIndexApp({lang = 'en', languages = [], entities = 
         router.visit(`/reader-react/${lang}/${id}`);
     };
 
-    const pendingLabel = LANGUAGE_LABELS[pendingLang] ?? '';
+    const pendingLabel = pendingLang ? t(pendingLang === 'en' ? 'reader.english' : 'reader.russian') : '';
 
     return (
         <div className="flex-1 min-h-0 flex flex-col bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-sans)]">
             <header className="relative flex-none border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]">
                 <div className="flex flex-wrap items-center gap-3 px-4 sm:px-5 py-2">
                     <span className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] whitespace-nowrap">
-                        Reader <span className={DOT}>·</span> En&nbsp;↔&nbsp;Ru
+                        {t('reader.reader_heading')} <span className={DOT}>·</span> En&nbsp;↔&nbsp;Ru
                     </span>
 
                     <nav
-                        aria-label="Library language"
+                        aria-label={t('reader.library_language')}
                         className="ml-auto inline-flex items-end gap-0.5"
                     >
                         {languages.map((code) => {
@@ -108,7 +105,7 @@ export default function ReaderIndexApp({lang = 'en', languages = [], entities = 
                     {navigating ? (
                         <div role="status" aria-live="polite" className="py-24 flex flex-col items-center gap-4">
                             <span className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Loading {pendingLabel ? `· ${pendingLabel}` : ''}
+                                {t('reader.loading')}{pendingLabel ? ` · ${pendingLabel}` : ''}
                             </span>
                             <div className="relative w-40 h-[2px] overflow-hidden bg-[var(--wbench-rule)] dark:bg-[var(--wbench-rule-night)]">
                                 <span
@@ -120,16 +117,16 @@ export default function ReaderIndexApp({lang = 'en', languages = [], entities = 
                     ) : entities.length === 0 ? (
                         <div className="py-20 text-center" role="status" aria-live="polite">
                             <p className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                No texts in this language
+                                {t('reader.no_texts')}
                             </p>
                             <p className="mt-3 max-w-md mx-auto font-[var(--wbench-serif)] text-lg leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                                Switch the language above, or ask an editor to add texts.
+                                {t('reader.no_texts_hint')}
                             </p>
                         </div>
                     ) : (
                         <>
                             <p className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Texts <span className={DOT}>·</span> {entities.length}
+                                {t('reader.texts')} <span className={DOT}>·</span> {entities.length}
                             </p>
 
                             <ul
@@ -177,7 +174,7 @@ export default function ReaderIndexApp({lang = 'en', languages = [], entities = 
                             </ul>
 
                             <p className="mt-10 font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Open a text to read it <span className={DOT}>·</span> the translation appears across the gutter
+                                {t('reader.index_hint_open')} <span className={DOT}>·</span> {t('reader.index_hint_gutter')}
                             </p>
                         </>
                     )}

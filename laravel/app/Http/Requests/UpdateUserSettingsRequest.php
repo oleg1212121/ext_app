@@ -20,6 +20,11 @@ class UpdateUserSettingsRequest extends FormRequest
                 'integer',
                 Rule::exists('languages', 'id')->where('is_enabled', true),
             ],
+            'interface_language_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('languages', 'id')->where('is_interface_enabled', true),
+            ],
         ];
     }
 }

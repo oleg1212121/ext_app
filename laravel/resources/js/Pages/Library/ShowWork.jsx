@@ -1,6 +1,7 @@
 import {Link} from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx';
 import LinkPagination from '../../Components/LinkPagination.jsx';
+import {useI18n} from '../../i18n';
 
 const SIGNATURE_BADGE = {
     generated: 'text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] border-[var(--wbench-accent)]/40 dark:border-[var(--wbench-accent-night)]/40',
@@ -9,6 +10,7 @@ const SIGNATURE_BADGE = {
 };
 
 export default function ShowWork({work, entities = [], meta, q = ''}) {
+    const {t} = useI18n();
     const pageUrl = (page) => {
         const params = new URLSearchParams();
         if (q) params.set('q', q);
@@ -24,11 +26,11 @@ export default function ShowWork({work, entities = [], meta, q = ''}) {
                         href="/library"
                         className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                     >
-                        ← Library
+                        ← {t('library.library')}
                     </Link>
                     <div>
                         <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Library
+                            {t('library.library')}
                             {work.original_language ? ` · ${work.original_language.name}` : ''}
                         </p>
                         <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
@@ -39,7 +41,7 @@ export default function ShowWork({work, entities = [], meta, q = ''}) {
                         {work.author && <span>{work.author}</span>}
                         {work.original_language && (
                             <span className="font-mono text-[10px] uppercase tracking-[0.18em]">
-                                original · {work.original_language.name}
+                                {t('library.original')} · {work.original_language.name}
                             </span>
                         )}
                     </div>
@@ -51,20 +53,20 @@ export default function ShowWork({work, entities = [], meta, q = ''}) {
                 </header>
 
                 <form method="get" action={`/library/${work.id}`} className="flex items-center gap-2">
-                    <label htmlFor="entity-search" className="sr-only">Search entities</label>
+                    <label htmlFor="entity-search" className="sr-only">{t('library.search_entities')}</label>
                     <input
                         id="entity-search"
                         name="q"
                         type="search"
                         defaultValue={q}
-                        placeholder="Search by name or label…"
+                        placeholder={t('library.entities_search_placeholder')}
                         className="h-9 flex-1 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-3 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] placeholder:text-[var(--wbench-ink-soft)]/50 dark:placeholder:text-[var(--wbench-ink-soft-night)]/40 focus:outline-none focus:ring-2 focus:ring-[var(--wbench-accent)] dark:focus:ring-[var(--wbench-accent-night)] focus:border-transparent"
                     />
                     <button
                         type="submit"
                         className="inline-flex h-9 items-center border border-[var(--wbench-accent)] dark:border-[var(--wbench-accent-night)] px-4 font-sans text-sm text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] transition-colors hover:bg-[var(--wbench-accent)] hover:text-white dark:hover:bg-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-ink-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                     >
-                        Search
+                        {t('library.search')}
                     </button>
                 </form>
 
@@ -77,7 +79,7 @@ export default function ShowWork({work, entities = [], meta, q = ''}) {
                             +
                         </span>
                         <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] transition-colors group-hover:text-[var(--wbench-accent)] dark:group-hover:text-[var(--wbench-accent-night)]">
-                            Add entity
+                            {t('library.add_entity')}
                         </span>
                     </Link>
 
@@ -89,10 +91,10 @@ export default function ShowWork({work, entities = [], meta, q = ''}) {
                 {entities.length === 0 && q && (
                     <div className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 py-12 text-center">
                         <p className="font-serif text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            No entities match “{q}”.
+                            {t('library.no_entities_match', {q})}
                         </p>
                         <p className="mt-1 text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Entities you do not have access to are never listed.
+                            {t('library.no_entities_match_hint')}
                         </p>
                     </div>
                 )}
@@ -100,10 +102,10 @@ export default function ShowWork({work, entities = [], meta, q = ''}) {
                 {entities.length === 0 && !q && (
                     <div className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 py-12 text-center">
                         <p className="font-serif text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            No entities yet.
+                            {t('library.no_entities_yet')}
                         </p>
                         <p className="mt-1 text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Add the first text of this work, or come back once one is shared with you.
+                            {t('library.no_entities_yet_hint')}
                         </p>
                     </div>
                 )}
@@ -115,6 +117,7 @@ export default function ShowWork({work, entities = [], meta, q = ''}) {
 }
 
 function EntityCard({entity}) {
+    const {t} = useI18n();
     return (
         <Link
             href={`/entities/${entity.language?.code}/${entity.id}`}
@@ -125,7 +128,7 @@ function EntityCard({entity}) {
                     {entity.language?.name ?? '—'}
                 </span>
                 <span className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    {entity.sentences_count} {entity.sentences_count === 1 ? 'sentence' : 'sentences'}
+                    {entity.sentences_count} {entity.sentences_count === 1 ? t('library.sentence') : t('library.sentences')}
                 </span>
             </div>
             <h2 className="font-serif text-lg leading-snug tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] group-hover:text-[var(--wbench-accent)] dark:group-hover:text-[var(--wbench-accent-night)]">

@@ -1,9 +1,11 @@
 import Textarea from "../../../Components/Forms/Textarea.jsx";
+import {useI18n} from '../../../i18n';
 import React from "react";
 
 const DEFAULT_WORKPLACE_HEIGHT = 168;
 
 export default function Workplace(props) {
+    const {t} = useI18n();
     const [workplaceHeight, setWorkplaceHeight] = React.useState(DEFAULT_WORKPLACE_HEIGHT);
 
     const startDrag = (event) => {
@@ -37,11 +39,11 @@ export default function Workplace(props) {
                  style={{height: `${workplaceHeight}px`}}>
 
                 <div className="px-4 py-3">
-                    <Textarea ref={props.workplaceRef} label="Translation" value="" placeholder="Write your translation here, then ask the reader to grade it." className="resizeable_element"/>
+                    <Textarea ref={props.workplaceRef} label={t('bilinguals.translation')} value="" placeholder={t('bilinguals.translation_placeholder')} className="resizeable_element"/>
                 </div>
                 {props.showQuestion === true && (
                     <div className="px-4 pb-4 border-t border-[var(--wbench-rule)]/70 dark:border-[var(--wbench-rule-night)]/70 pt-3">
-                        <Textarea onChange={props.changeQuestion} ref={props.questionRef} label="Question" value={props.currentQuestion} placeholder="Question" className="resizeable_element" rows={3}/>
+                        <Textarea onChange={props.changeQuestion} ref={props.questionRef} label={t('bilinguals.question')} value={props.currentQuestion} placeholder={t('bilinguals.question_placeholder')} className="resizeable_element" rows={3}/>
                     </div>
                 )}
                 {props.canUseAi && props.showQuestion !== true && (
@@ -50,7 +52,7 @@ export default function Workplace(props) {
                         onClick={props.onToggleQuestion}
                         className="mx-4 mb-3 inline-flex items-center gap-1.5 font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-accent)] dark:hover:text-[var(--wbench-accent-night)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                     >
-                        <span aria-hidden="true">▾</span> Question
+                        <span aria-hidden="true">▾</span> {t('bilinguals.question')}
                     </button>
                 )}
             </div>

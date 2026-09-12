@@ -83,12 +83,12 @@ function createLanguages(): array
 {
     $en = Language::query()->updateOrCreate(
         ['code' => 'en'],
-        ['name' => 'English', 'is_enabled' => true, 'sort_order' => 0],
+        ['name' => 'English', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 0],
     );
 
     $ru = Language::query()->updateOrCreate(
         ['code' => 'ru'],
-        ['name' => 'Russian', 'is_enabled' => true, 'sort_order' => 1],
+        ['name' => 'Russian', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 1],
     );
 
     return ['en' => $en, 'ru' => $ru];

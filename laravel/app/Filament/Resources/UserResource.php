@@ -73,6 +73,19 @@ class UserResource extends Resource
                         ->all())
                     ->searchable()
                     ->preload(),
+                Select::make('settings_interface_language_id')
+                    ->label('Interface language')
+                    ->options(fn (): array => Language::query()
+                        ->interfaceEnabled()
+                        ->orderBy('sort_order')
+                        ->get()
+                        ->mapWithKeys(fn (Language $language) => [
+                            $language->id => $language->native_name ?? $language->name,
+                        ])
+                        ->all())
+                    ->searchable()
+                    ->hint('Empty = follows the native language')
+                    ->preload(),
             ]);
     }
 
@@ -110,6 +123,10 @@ class UserResource extends Resource
                     ->label('Native language')
                     ->placeholder('—')
                     ->searchable()
+                    ->sortable(),
+                TextColumn::make('settings.interfaceLanguage.native_name')
+                    ->label('Interface language')
+                    ->placeholder('follows native')
                     ->sortable(),
                 TextColumn::make('created_at')
                     ->dateTime()

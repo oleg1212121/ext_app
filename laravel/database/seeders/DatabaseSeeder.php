@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             LanguageSeeder::class,
+            UiStringSeeder::class,
             AiProviderSeeder::class,
             SentenceTypeSeeder::class,
             WordClassSeeder::class,

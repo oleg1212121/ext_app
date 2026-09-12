@@ -8,6 +8,7 @@ import Button from "../../Components/Forms/Button.jsx";
 import Workplace from "./Components/Workplace.jsx";
 import AI from "./Components/AI.jsx";
 import TextContent from "./Components/TextContent.jsx";
+import { useI18n } from '../../i18n';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
@@ -170,7 +171,7 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
     const json = await res.json();
     const code = json?.data?.code ?? res.status;
     if (!res.ok || code !== 200) {
-        const msg = json?.data?.data?.error ?? json?.message ?? `Request failed (${res.status})`;
+        const msg = json?.data?.data?.error ?? json?.message ?? t('bilinguals.request_failed', {status: res.status});
         throw new Error(msg);
     }
     const payload = json.data.data;
@@ -187,6 +188,7 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
 
 
 const Bilinguals = (props) => {
+    const { t } = useI18n();
     const aiModels = props.aiModels
     const canUseAi = props.canUseAi
     const textList = props.textList
@@ -239,7 +241,7 @@ const Bilinguals = (props) => {
         } catch (e) {
             setRows([]);
             setTextMeta(null);
-            setLoadError(e instanceof Error ? e.message : 'Failed to load text');
+            setLoadError(e instanceof Error ? e.message : t('bilinguals.failed_to_load_text'));
         } finally {
             setPending(false);
         }
@@ -312,7 +314,7 @@ const Bilinguals = (props) => {
 
             if (!res.ok) {
                 const json = await res.json().catch(() => null);
-                throw new Error(json?.data?.data?.error ?? json?.message ?? `Request failed (${res.status})`);
+                throw new Error(json?.data?.data?.error ?? json?.message ?? t('bilinguals.request_failed', {status: res.status}));
             }
 
             const reader = res.body.getReader();
@@ -356,7 +358,7 @@ const Bilinguals = (props) => {
             setAiAnswer(renderMarkdown(markdown));
         } catch (e) {
             if (markdown) setAiAnswer(renderMarkdown(markdown));
-            setAiError(e instanceof Error ? e.message : "Couldn't reach the model.");
+            setAiError(e instanceof Error ? e.message : t('bilinguals.couldnt_reach_model'));
         } finally {
             setPending(false);
         }
@@ -397,7 +399,7 @@ const Bilinguals = (props) => {
             <div className="flex-none border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]">
                 <div className="flex flex-1 flex-wrap items-center gap-3 px-4 sm:px-5 py-2">
                     <span className="font-[var(--wbench-mono)] text-[11px] tracking-[0.22em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] whitespace-nowrap">
-                        Bilinguals <span className="text-[var(--wbench-rule)] dark:text-[var(--wbench-rule-night)]">·</span> en&nbsp;↔&nbsp;ru
+                        {t('bilinguals.title')} <span className="text-[var(--wbench-rule)] dark:text-[var(--wbench-rule-night)]">·</span> en&nbsp;↔&nbsp;ru
                     </span>
                     <span className={HAIRLINE} aria-hidden="true"/>
                     {Object.keys(aiModels).length > 0 ? (
@@ -408,27 +410,27 @@ const Bilinguals = (props) => {
                             href="/profile"
                             className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
                         >
-                            Add an API key in your Profile to use the AI assistant.
+                            {t('bilinguals.add_api_key')}
                         </Link>
                     )}
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div className="flex items-center gap-2">
                         <Select value={currentText} onChange={(e) => setCurrentText(e.target.value)}
                                 items={textList}/>
-                        <Button color="green" onClick={() => handleLoadText()} type='button'>Load</Button>
+                                <Button color="green" onClick={() => handleLoadText()} type='button'>{t('bilinguals.load')}</Button>
                     </div>
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div className="flex items-center gap-1">
-                        <FontButton aria-label="Increase font size" onClick={() => changeFontSize('+')}>+</FontButton>
-                        <FontButton aria-label="Decrease font size" onClick={() => changeFontSize('-')}>−</FontButton>
+                        <FontButton aria-label={t('bilinguals.increase_font_size')} label={t('bilinguals.increase_font_size')} onClick={() => changeFontSize('+')}>+</FontButton>
+                        <FontButton aria-label={t('bilinguals.decrease_font_size')} label={t('bilinguals.decrease_font_size')} onClick={() => changeFontSize('-')}>−</FontButton>
                     </div>
                     <div className="ml-auto flex items-end gap-0.5 border-b border-transparent">
                         <button
                             type="button"
                             className={tabClass(showText)}
-                            aria-label="Text"
+                            aria-label={t('bilinguals.text')}
                             aria-pressed={showText}
-                            title="Text"
+                            title={t('bilinguals.text')}
                             onClick={() => setShowText(!showText)}
                         >
                             <svg className={panelToggleIconClass(showText)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -439,9 +441,9 @@ const Bilinguals = (props) => {
                         <button
                             type="button"
                             className={tabClass(showWorkplace)}
-                            aria-label="Workplace"
+                            aria-label={t('bilinguals.workplace')}
                             aria-pressed={showWorkplace}
-                            title="Workplace"
+                            title={t('bilinguals.workplace')}
                             onClick={() => setShowWorkplace(!showWorkplace)}
                         >
                             <svg className={panelToggleIconClass(showWorkplace)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -453,9 +455,9 @@ const Bilinguals = (props) => {
                             <button
                                 type="button"
                                 className={tabClass(showQuestion)}
-                                aria-label="Question"
+                                aria-label={t('bilinguals.question')}
                                 aria-pressed={showQuestion}
-                                title="Question"
+                                title={t('bilinguals.question')}
                                 onClick={() => setShowQuestion(!showQuestion)}
                             >
                                 <svg className={panelToggleIconClass(showQuestion)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -468,9 +470,9 @@ const Bilinguals = (props) => {
                             <button
                                 type="button"
                                 className={tabClass(showAI)}
-                                aria-label="AI"
+                                aria-label={t('bilinguals.ai')}
                                 aria-pressed={showAI}
-                                title="AI"
+                                title={t('bilinguals.ai')}
                                 onClick={() => setShowAI(!showAI)}
                             >
                                 <svg className={panelToggleIconClass(showAI)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -494,12 +496,12 @@ const Bilinguals = (props) => {
                                         <span className="text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">{textMeta.current_page}</span>
                                         <span className="mx-1 opacity-50">/</span>
                                         {textMeta.last_page}
-                                        <span className="ml-3 opacity-60">· {textMeta.total} rows</span>
+                                        <span className="ml-3 opacity-60">{t('bilinguals.rows_count', {total: textMeta.total})}</span>
                                     </span>
                                     <div className="flex items-center gap-2">
                                         <Button color="dark" size="xs" outline type="button"
                                                 disabled={textMeta.current_page <= 1 || pending}
-                                                onClick={() => fetchPage(textMeta.current_page - 1)}>Previous</Button>
+                                                onClick={() => fetchPage(textMeta.current_page - 1)}>{t('bilinguals.previous')}</Button>
                                         <input
                                             type="number"
                                             min={1}
@@ -513,12 +515,12 @@ const Bilinguals = (props) => {
                                                 }
                                             }}
                                             disabled={pending}
-                                            aria-label="Page number"
+                                            aria-label={t('bilinguals.page_number')}
                                             className="w-14 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 py-1 text-center font-[var(--wbench-mono)] text-xs text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
                                         />
                                         <Button color="dark" size="xs" outline type="button"
                                                 disabled={textMeta.current_page >= textMeta.last_page || pending}
-                                                onClick={() => fetchPage(textMeta.current_page + 1)}>Next</Button>
+                                                onClick={() => fetchPage(textMeta.current_page + 1)}>{t('bilinguals.next')}</Button>
                                     </div>
                                 </div>
                             )}

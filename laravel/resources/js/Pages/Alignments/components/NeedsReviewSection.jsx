@@ -1,10 +1,12 @@
 import Pagination from './Pagination.jsx';
+import {useI18n} from '../../../i18n';
 
 function targetPage(item, rowsPerPage) {
     return Math.max(Math.ceil(item.rank / rowsPerPage), 1);
 }
 
 export default function NeedsReviewSection({expanded, onToggle, items, meta, busy, rowsPerPage, onPageChange, onRowClick}) {
+    const {t} = useI18n();
     return (
         <section className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
             <button
@@ -14,7 +16,7 @@ export default function NeedsReviewSection({expanded, onToggle, items, meta, bus
                 aria-expanded={expanded}
             >
                 <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    Needs review
+                    {t('alignments.needs_review')}
                 </span>
                 <span className="font-mono text-[10px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                     {meta.total}
@@ -38,7 +40,7 @@ export default function NeedsReviewSection({expanded, onToggle, items, meta, bus
                                         #{item.rank}
                                         {item.one_sided && (
                                             <span className="ml-1.5 text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]">
-                                                1-sided
+                                                {t('alignments.one_sided')}
                                             </span>
                                         )}
                                     </span>
@@ -49,7 +51,7 @@ export default function NeedsReviewSection({expanded, onToggle, items, meta, bus
                                         {item.b_part || '—'}
                                     </span>
                                     <span className="font-mono text-[10px] tabular-nums text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                        {item.similarity !== null ? `sim ${Number(item.similarity).toFixed(4)}` : 'sim —'} · → p. {page}
+                                        {item.similarity !== null ? `${t('alignments.sim')} ${Number(item.similarity).toFixed(4)}` : `${t('alignments.sim')} —`} · {t('alignments.page_short', {page})}
                                     </span>
                                 </button>
                             );
@@ -57,7 +59,7 @@ export default function NeedsReviewSection({expanded, onToggle, items, meta, bus
 
                         {items.length === 0 && (
                             <p className="px-3 py-8 text-center font-serif text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Nothing needs review.
+                                {t('alignments.nothing_needs_review')}
                             </p>
                         )}
                     </div>

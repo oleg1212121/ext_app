@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react'
 import {useForm, Head, Link} from '@inertiajs/react'
 import Main from '../../Layouts/Main.jsx'
+import {useI18n} from '../../i18n'
 
 function SectionHeader({eyebrow, title, description, danger = false}) {
     return (
@@ -145,6 +146,7 @@ function SecondaryButton({children, onClick, type = 'button'}) {
 }
 
 function SavedMessage({show}) {
+    const { t } = useI18n()
     const [visible, setVisible] = useState(show)
 
     useEffect(() => {
@@ -159,7 +161,7 @@ function SavedMessage({show}) {
 
     return (
         <p className="font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
-            Saved.
+            {t('profile.saved')}
         </p>
     )
 }
@@ -193,6 +195,7 @@ function Modal({show, onClose, children}) {
 }
 
 function ProfileInformation({user}) {
+    const { t } = useI18n()
     const {data, setData, patch, processing, recentlySuccessful, errors} = useForm({
         name: user.name,
         email: user.email,
@@ -206,14 +209,14 @@ function ProfileInformation({user}) {
     return (
         <section>
             <SectionHeader
-                eyebrow="Section"
-                title="Profile Information"
-                description="Update your account's profile information and email address."
+                eyebrow={t('profile.section_eyebrow')}
+                title={t('profile.profile_information_title')}
+                description={t('profile.profile_information_description')}
             />
 
             <form onSubmit={submit} className="mt-8 space-y-6">
                 <div>
-                    <InputLabel htmlFor="name">Name</InputLabel>
+                    <InputLabel htmlFor="name">{t('profile.name')}</InputLabel>
                     <TextInput
                         id="name"
                         value={data.name}
@@ -227,7 +230,7 @@ function ProfileInformation({user}) {
                 </div>
 
                 <div>
-                    <InputLabel htmlFor="email">Email</InputLabel>
+                    <InputLabel htmlFor="email">{t('profile.email')}</InputLabel>
                     <TextInput
                         id="email"
                         type="email"
@@ -241,7 +244,7 @@ function ProfileInformation({user}) {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <PrimaryButton disabled={processing}>Save changes</PrimaryButton>
+                    <PrimaryButton disabled={processing}>{t('profile.save_changes')}</PrimaryButton>
                     <SavedMessage show={recentlySuccessful}/>
                 </div>
             </form>
@@ -249,9 +252,11 @@ function ProfileInformation({user}) {
     )
 }
 
-function Settings({nativeLanguageId, languages = []}) {
+function Settings({nativeLanguageId, interfaceLanguageId, languages = []}) {
+    const { t } = useI18n()
     const {data, setData, patch, processing, recentlySuccessful, errors} = useForm({
         native_language_id: nativeLanguageId ?? '',
+        interface_language_id: interfaceLanguageId ?? '',
     })
 
     const submit = (e) => {
@@ -259,17 +264,21 @@ function Settings({nativeLanguageId, languages = []}) {
         patch('/profile/settings')
     }
 
+    const interfaceLanguages = languages.filter((language) => language.is_interface_enabled)
+
+    const languageLabel = (language) => language.native_name ?? language.name
+
     return (
         <section>
             <SectionHeader
-                eyebrow="Section"
-                title="Settings"
-                description="Choose your native language. It is used to tailor your learning experience."
+                eyebrow={t('profile.section_eyebrow')}
+                title={t('profile.settings_title')}
+                description={t('profile.settings_description')}
             />
 
             <form onSubmit={submit} className="mt-8 space-y-6">
                 <div>
-                    <InputLabel htmlFor="native_language_id">Native Language</InputLabel>
+                    <InputLabel htmlFor="native_language_id">{t('profile.native_language')}</InputLabel>
                     <SelectInput
                         id="native_language_id"
                         value={data.native_language_id}
@@ -278,16 +287,33 @@ function Settings({nativeLanguageId, languages = []}) {
                     >
                         {languages.map((language) => (
                             <option key={language.id} value={language.id}>
-                                {language.name}
-                                {language.native_name ? ` (${language.native_name})` : ''}
+                                {languageLabel(language)}
                             </option>
                         ))}
                     </SelectInput>
                     <InputError messages={errors.native_language_id ? [errors.native_language_id] : []}/>
                 </div>
 
+                <div>
+                    <InputLabel htmlFor="interface_language_id">{t('profile.interface_language')}</InputLabel>
+                    <SelectInput
+                        id="interface_language_id"
+                        value={data.interface_language_id}
+                        onChange={(e) => setData('interface_language_id', e.target.value === '' ? null : Number(e.target.value))}
+                        error={errors.interface_language_id}
+                    >
+                        <option value="">{t('profile.follows_native_language')}</option>
+                        {interfaceLanguages.map((language) => (
+                            <option key={language.id} value={language.id}>
+                                {languageLabel(language)}
+                            </option>
+                        ))}
+                    </SelectInput>
+                    <InputError messages={errors.interface_language_id ? [errors.interface_language_id] : []}/>
+                </div>
+
                 <div className="flex items-center gap-4">
-                    <PrimaryButton disabled={processing}>Save changes</PrimaryButton>
+                    <PrimaryButton disabled={processing}>{t('profile.save_changes')}</PrimaryButton>
                     <SavedMessage show={recentlySuccessful}/>
                 </div>
             </form>
@@ -296,6 +322,7 @@ function Settings({nativeLanguageId, languages = []}) {
 }
 
 function UpdatePassword() {
+    const { t } = useI18n()
     const {data, setData, put, processing, recentlySuccessful, errors, reset} = useForm({
         current_password: '',
         password: '',
@@ -312,14 +339,14 @@ function UpdatePassword() {
     return (
         <section>
             <SectionHeader
-                eyebrow="Section"
-                title="Password"
-                description="Ensure your account is using a long, random password to stay secure."
+                eyebrow={t('profile.section_eyebrow')}
+                title={t('profile.password_title')}
+                description={t('profile.password_description')}
             />
 
             <form onSubmit={submit} className="mt-8 space-y-6">
                 <div>
-                    <InputLabel htmlFor="update_password_current_password">Current Password</InputLabel>
+                    <InputLabel htmlFor="update_password_current_password">{t('profile.current_password')}</InputLabel>
                     <TextInput
                         id="update_password_current_password"
                         type="password"
@@ -332,7 +359,7 @@ function UpdatePassword() {
                 </div>
 
                 <div>
-                    <InputLabel htmlFor="update_password_password">New Password</InputLabel>
+                    <InputLabel htmlFor="update_password_password">{t('profile.new_password')}</InputLabel>
                     <TextInput
                         id="update_password_password"
                         type="password"
@@ -345,7 +372,7 @@ function UpdatePassword() {
                 </div>
 
                 <div>
-                    <InputLabel htmlFor="update_password_password_confirmation">Confirm Password</InputLabel>
+                    <InputLabel htmlFor="update_password_password_confirmation">{t('profile.confirm_password')}</InputLabel>
                     <TextInput
                         id="update_password_password_confirmation"
                         type="password"
@@ -358,7 +385,7 @@ function UpdatePassword() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <PrimaryButton disabled={processing}>Save changes</PrimaryButton>
+                    <PrimaryButton disabled={processing}>{t('profile.save_changes')}</PrimaryButton>
                     <SavedMessage show={recentlySuccessful}/>
                 </div>
             </form>
@@ -367,6 +394,7 @@ function UpdatePassword() {
 }
 
 function DeleteAccount() {
+    const { t } = useI18n()
     const [showModal, setShowModal] = useState(false)
     const {data, setData, delete: destroy, processing, errors, reset} = useForm({
         password: '',
@@ -385,34 +413,34 @@ function DeleteAccount() {
     return (
         <section className="space-y-6">
             <SectionHeader
-                eyebrow="Danger zone"
-                title="Delete Account"
-                description="Once your account is deleted, all of its resources and data will be permanently deleted. Before deleting your account, please download any data or information that you wish to retain."
+                eyebrow={t('profile.danger_eyebrow')}
+                title={t('profile.delete_account_title')}
+                description={t('profile.delete_account_description')}
                 danger
             />
 
             <DangerButton onClick={() => setShowModal(true)}>
-                Delete Account
+                {t('profile.delete_account')}
             </DangerButton>
 
             <Modal show={showModal} onClose={() => setShowModal(false)}>
                 <form onSubmit={submit}>
                     <h2 className="font-serif text-xl sm:text-2xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
-                        Are you sure you want to delete your account?
+                        {t('profile.delete_account_confirm_title')}
                     </h2>
 
                     <p className="mt-2 max-w-md font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
-                        Once your account is deleted, all of its resources and data will be permanently deleted. Please enter your password to confirm you would like to permanently delete your account.
+                        {t('profile.delete_account_confirm_description')}
                     </p>
 
                     <div className="mt-6">
-                        <InputLabel htmlFor="password">Password</InputLabel>
+                        <InputLabel htmlFor="password">{t('profile.password')}</InputLabel>
                         <TextInput
                             id="password"
                             type="password"
                             value={data.password}
                             onChange={(e) => setData('password', e.target.value)}
-                            placeholder="Password"
+                            placeholder={t('profile.password')}
                             className="w-3/4"
                             error={errors.password}
                         />
@@ -421,10 +449,10 @@ function DeleteAccount() {
 
                     <div className="mt-6 flex justify-end gap-3">
                         <SecondaryButton onClick={() => setShowModal(false)}>
-                            Cancel
+                            {t('profile.cancel')}
                         </SecondaryButton>
                         <DangerButton type="submit" disabled={processing}>
-                            Delete Account
+                            {t('profile.delete_account')}
                         </DangerButton>
                     </div>
                 </form>
@@ -450,13 +478,14 @@ function TrashIcon() {
 }
 
 function RemoveKeyButton({onClick, disabled}) {
+    const { t } = useI18n()
     return (
         <button
             type="button"
             onClick={onClick}
             disabled={disabled}
-            aria-label="Remove key"
-            title="Remove key"
+            aria-label={t('profile.remove_key')}
+            title={t('profile.remove_key')}
             className={[
                 'inline-flex items-center justify-center rounded-sm p-2 transition-colors',
                 'text-[var(--color-ink-soft)]/70 dark:text-[var(--color-vellum-night)]/60',
@@ -472,6 +501,7 @@ function RemoveKeyButton({onClick, disabled}) {
 }
 
 function ProviderKeyRow({provider}) {
+    const { t } = useI18n()
     const {data, setData, post, processing, errors, reset, delete: destroy} = useForm({
         provider: provider.key,
         api_key: '',
@@ -497,7 +527,7 @@ function ProviderKeyRow({provider}) {
                     <p className="inline-flex flex-wrap items-center gap-x-2 rounded-sm bg-[var(--color-verdigris)]/10 px-2.5 py-1 font-serif italic text-sm text-[var(--color-verdigris)] dark:bg-[var(--color-verdigris-night)]/10 dark:text-[var(--color-verdigris-night)]">
                         <SaveIcon/>
                         <span>
-                            Current key: <code className="not-italic">{provider.masked_key}</code>
+                            {t('profile.current_key')} <code className="not-italic">{provider.masked_key}</code>
                         </span>
                     </p>
                     <RemoveKeyButton onClick={remove} disabled={processing}/>
@@ -515,7 +545,7 @@ function ProviderKeyRow({provider}) {
                     type="password"
                     value={data.api_key}
                     onChange={(e) => setData('api_key', e.target.value)}
-                    placeholder="Paste your API key"
+                    placeholder={t('profile.paste_api_key')}
                     autoComplete="off"
                     error={errors.api_key}
                 />
@@ -525,7 +555,7 @@ function ProviderKeyRow({provider}) {
                 <PrimaryButton disabled={processing || data.api_key === ''}>
                     <span className="flex items-center gap-2">
                         <SaveIcon/>
-                        Save
+                        {t('profile.save')}
                     </span>
                 </PrimaryButton>
             </div>
@@ -534,12 +564,13 @@ function ProviderKeyRow({provider}) {
 }
 
 function ApiKeys({providers = []}) {
+    const { t } = useI18n()
     return (
         <section>
             <SectionHeader
-                eyebrow="Section"
-                title="AI Provider API Keys"
-                description="Add your own API keys to use AI providers in the simulator. Keys are encrypted; only the first and last four characters are shown back to you for identification. Requests are billed to your own provider account."
+                eyebrow={t('profile.section_eyebrow')}
+                title={t('profile.api_keys_title')}
+                description={t('profile.api_keys_description')}
             />
 
             <div className="mt-8 space-y-6">
@@ -551,19 +582,20 @@ function ApiKeys({providers = []}) {
     )
 }
 
-function Edit({user, apiKeyProviders = [], nativeLanguageId = null, languages = []}) {
+function Edit({user, apiKeyProviders = [], nativeLanguageId = null, interfaceLanguageId = null, languages = []}) {
+    const { t } = useI18n()
     return (
         <>
-            <Head title="Profile"/>
+            <Head title={t('profile.profile_title')}/>
 
             <div className="py-10 sm:py-14 overflow-y-auto flex-1">
                 <div className="px-4 sm:px-6 lg:px-10 max-w-3xl mx-auto">
                     <div className="flex flex-col gap-1 mb-8">
                         <span className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-xs tracking-[0.22em] uppercase">
-                            Account
+                            {t('profile.account_eyebrow')}
                         </span>
                         <h1 className="font-serif text-2xl sm:text-3xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
-                            Profile
+                            {t('profile.profile_title')}
                         </h1>
                     </div>
 
@@ -576,7 +608,7 @@ function Edit({user, apiKeyProviders = [], nativeLanguageId = null, languages = 
 
                         <div className="border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] rounded-sm p-4 sm:p-8">
                             <div className="max-w-xl">
-                                <Settings nativeLanguageId={nativeLanguageId} languages={languages}/>
+                                <Settings nativeLanguageId={nativeLanguageId} interfaceLanguageId={interfaceLanguageId} languages={languages}/>
                             </div>
                         </div>
 

@@ -1,6 +1,7 @@
 import {Link, router, usePage} from '@inertiajs/react'
 import {useEffect, useMemo, useState} from 'react'
 import {DarkThemeToggle} from "flowbite-react";
+import {useI18n} from '../i18n'
 
 const tabClass = (isActive) => [
     'relative inline-flex items-center px-2 py-2 text-sm font-medium tracking-wide transition-colors duration-200',
@@ -24,6 +25,7 @@ const Underline = ({isActive}) => (
 
 export default function NavBar() {
     const {url, props} = usePage()
+    const {t} = useI18n()
 
     const auth = props?.auth ?? {}
     const user = auth?.user ?? null
@@ -64,13 +66,13 @@ export default function NavBar() {
     const navLinks = useMemo(() => {
         if (!isAuthenticated || !isApproved) return []
         return [
-            {href: '/bilinguals/en/ru/simulator', label: 'Bilinguals'},
-            {href: '/alignments', label: 'Alignments'},
-            {href: '/library', label: 'Library'},
-            {href: '/reader-react', label: 'Reader'},
-            ...(canAccessAdminPanel ? [{href: '/admin', label: 'Admin', external: true}] : []),
+            {href: '/bilinguals/en/ru/simulator', label: t('nav.bilinguals')},
+            {href: '/alignments', label: t('nav.alignments')},
+            {href: '/library', label: t('nav.library')},
+            {href: '/reader-react', label: t('nav.reader')},
+            ...(canAccessAdminPanel ? [{href: '/admin', label: t('nav.admin'), external: true}] : []),
         ]
-    }, [isAuthenticated, isApproved, canAccessAdminPanel])
+    }, [isAuthenticated, isApproved, canAccessAdminPanel, t])
 
     const isActive = (href) => {
         if (!url) return false
@@ -187,7 +189,7 @@ export default function NavBar() {
                                             role="menuitem"
                                             className="block px-4 py-2.5 text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:bg-[var(--color-vellum-deep)] dark:hover:bg-[var(--color-hairline-night)]/40 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors"
                                         >
-                                            Profile
+                                            {t('nav.profile')}
                                         </Link>
                                         <span className="block h-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]"/>
                                         <button
@@ -196,7 +198,7 @@ export default function NavBar() {
                                             onClick={() => router.post('/logout')}
                                             className="w-full text-left px-4 py-2.5 text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:bg-[var(--color-vellum-deep)] dark:hover:bg-[var(--color-hairline-night)]/40 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] transition-colors"
                                         >
-                                            Log out
+                                            {t('nav.log_out')}
                                         </button>
                                     </div>
                                 )}
@@ -207,14 +209,14 @@ export default function NavBar() {
                                     href="/login"
                                     className="text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors"
                                 >
-                                    Log in
+                                    {t('nav.log_in')}
                                 </a>
                                 {canRegister && (
                                     <a
                                         href="/register"
                                         className="text-sm font-medium text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)] hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors"
                                     >
-                                        Register
+                                        {t('nav.register')}
                                     </a>
                                 )}
                             </div>
@@ -226,7 +228,7 @@ export default function NavBar() {
                                 data-mobile-menu
                                 onClick={() => setMobileOpen((v) => !v)}
                                 className="md:hidden inline-flex items-center justify-center h-9 w-9 text-[var(--color-ink)] dark:text-[var(--color-vellum-night)] hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm"
-                                aria-label="Toggle menu"
+                                aria-label={t('nav.toggle_menu')}
                                 aria-expanded={mobileOpen}
                             >
                                 {mobileOpen ? (

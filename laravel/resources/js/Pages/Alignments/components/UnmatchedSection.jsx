@@ -3,8 +3,10 @@ import {useDndContext} from '@dnd-kit/core';
 import {SortableContext, verticalListSortingStrategy} from '@dnd-kit/sortable';
 import SentenceItem from './SentenceItem.jsx';
 import DropSlot from './DropSlot.jsx';
+import {useI18n} from '../../../i18n';
 
 function UnmatchedPool({side, sideLabel, containerKey, keys, lookup, meta, busy, editing, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onRemove, onPageChange}) {
+    const {t} = useI18n();
     const {active} = useDndContext();
     const sentences = keys.map((key) => lookup.get(key)).filter(Boolean);
     const activeIndex = active != null ? keys.indexOf(active.id) : -1;
@@ -45,7 +47,7 @@ function UnmatchedPool({side, sideLabel, containerKey, keys, lookup, meta, busy,
 
                 {sentences.length === 0 && (
                     <p className="px-1 pb-1 font-mono text-[10px] text-[var(--wbench-ink-soft)]/60 dark:text-[var(--wbench-ink-soft-night)]/60">
-                        none
+                        {t('alignments.none')}
                     </p>
                 )}
             </div>
@@ -55,7 +57,7 @@ function UnmatchedPool({side, sideLabel, containerKey, keys, lookup, meta, busy,
                     type="button"
                     onClick={() => onPageChange(side, meta.current_page - 1)}
                     disabled={meta.current_page <= 1 || busy}
-                    aria-label="Previous unmatched page"
+                    aria-label={t('alignments.prev_unmatched_page')}
                     className="inline-flex h-6 items-center px-1.5 font-mono text-[11px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                 >
                     ←
@@ -64,7 +66,7 @@ function UnmatchedPool({side, sideLabel, containerKey, keys, lookup, meta, busy,
                     type="button"
                     onClick={() => onPageChange(side, meta.current_page + 1)}
                     disabled={meta.current_page >= meta.last_page || busy}
-                    aria-label="Next unmatched page"
+                    aria-label={t('alignments.next_unmatched_page')}
                     className="inline-flex h-6 items-center px-1.5 font-mono text-[11px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                 >
                     →
@@ -75,6 +77,7 @@ function UnmatchedPool({side, sideLabel, containerKey, keys, lookup, meta, busy,
 }
 
 export default function UnmatchedSection({expanded, aKeys, bKeys, sideLabels, lookup, unmatchedA, unmatchedB, busy, editing, onToggle, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onRemove, onPageChange}) {
+    const {t} = useI18n();
     return (
         <section className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
             <button
@@ -84,7 +87,7 @@ export default function UnmatchedSection({expanded, aKeys, bKeys, sideLabels, lo
                 aria-expanded={expanded}
             >
                 <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    Unmatched
+                    {t('alignments.unmatched')}
                 </span>
                 <span className="font-mono text-[10px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                     EN {unmatchedA.meta.total} / RU {unmatchedB.meta.total}

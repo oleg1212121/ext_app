@@ -2,6 +2,19 @@
 
 ## 2026-09-12
 
+* **UI localization (DB-backed strings + interface language).** New
+  `ui_string_keys`/`ui_strings` tables are the Filament-editable source of
+  truth for interface text (ADR 0022): `UiStringLoader` overlays them onto
+  translator groups, `UiStrings::mapFor()` shares them to Inertia, and
+  `resources/js/i18n.jsx` provides `t()` for React pages. New
+  `languages.is_interface_enabled` flag and `user_settings.interface_language_id`
+  with resolution interface → native → `en`, guests `en`, admin panel stays
+  English (ADR 0023). New Filament `UiStringKeyResource` (Localization group,
+  side-by-side per-language editing); `LanguageResource` gained the interface
+  toggle; `UserResource`/Profile gained the interface-language select. All
+  user-facing pages swept into `database/seeders/ui-strings/*.php` partials
+  (EN+RU) upserted by `UiStringSeeder`. New concept `wiki/domains/localization.md`;
+  CONTEXT.md gained a Localization Context.
 * **Standalone `UserSettingsResource` removed.** `/admin/user-settings` is
   gone (resource, its List/Create/Edit pages, and
   `tests/Feature/Filament/UserSettingsResourceTest.php` deleted); it

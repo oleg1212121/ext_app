@@ -1,5 +1,6 @@
 import {useForm, Link} from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx';
+import {useI18n} from '../../i18n';
 
 function InputLabel({htmlFor, children}) {
     return (
@@ -84,6 +85,7 @@ function PrimaryButton({children, disabled = false, className = ''}) {
 }
 
 export default function Create({lang, language, works = [], languages = []}) {
+    const {t} = useI18n();
     const {data, setData, post, processing, errors} = useForm({
         name: '',
         label: '',
@@ -112,21 +114,21 @@ export default function Create({lang, language, works = [], languages = []}) {
                         href={`/entities/${lang}`}
                         className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                     >
-                        ← {language.name} entities
+                        ← {language.name} {t('entities.entities')}
                     </Link>
                     <div>
                         <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            New entity
+                            {t('entities.new_entity')}
                         </p>
                         <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            Create a {language.code} entity
+                            {t('entities.create_a_entity', {code: language.code})}
                         </h1>
                     </div>
                 </header>
 
                 <form onSubmit={submit} className="space-y-6">
                     <div>
-                        <InputLabel htmlFor="work_mode">Work</InputLabel>
+                        <InputLabel htmlFor="work_mode">{t('entities.work')}</InputLabel>
                         <div className="mt-1 flex flex-wrap gap-4">
                             <label className="inline-flex items-center gap-2 text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                                 <input
@@ -137,7 +139,7 @@ export default function Create({lang, language, works = [], languages = []}) {
                                     onChange={() => setData((current) => ({...current, work_mode: 'existing', new_work_title: ''}))}
                                     disabled={works.length === 0}
                                 />
-                                Existing work
+                                {t('entities.existing_work')}
                             </label>
                             <label className="inline-flex items-center gap-2 text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                                 <input
@@ -147,7 +149,7 @@ export default function Create({lang, language, works = [], languages = []}) {
                                     checked={data.work_mode === 'new'}
                                     onChange={() => setData((current) => ({...current, work_mode: 'new', work_id: null}))}
                                 />
-                                New work
+                                {t('entities.new_work')}
                             </label>
                         </div>
 
@@ -167,14 +169,14 @@ export default function Create({lang, language, works = [], languages = []}) {
                             <div className="mt-2 space-y-3">
                                 <TextInput
                                     id="new_work_title"
-                                    placeholder="Work title (e.g. War and Peace)"
+                                    placeholder={t('entities.work_title_placeholder')}
                                     value={data.new_work_title}
                                     onChange={(e) => setData('new_work_title', e.target.value)}
                                     error={errors.new_work_title || errors.work_id}
                                 />
                                 <TextInput
                                     id="new_work_author"
-                                    placeholder="Author (optional)"
+                                    placeholder={t('entities.author_optional')}
                                     value={data.new_work_author}
                                     onChange={(e) => setData('new_work_author', e.target.value)}
                                     error={errors.new_work_author}
@@ -185,10 +187,10 @@ export default function Create({lang, language, works = [], languages = []}) {
                                     onChange={(e) => setData('new_work_original_language_id', e.target.value)}
                                     className="mt-1 block w-full rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-3 py-2 text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]"
                                 >
-                                    <option value="">Original language — defaults to {language.name}</option>
+                                    <option value="">{t('entities.original_language_defaults', {name: language.name})}</option>
                                     {languages.map((item) => (
                                         <option key={item.id} value={item.id}>
-                                            {item.name}{item.code === language.code ? ' (this text)' : ''}
+                                            {item.name}{item.code === language.code ? t('entities.this_text') : ''}
                                         </option>
                                     ))}
                                 </select>
@@ -198,7 +200,7 @@ export default function Create({lang, language, works = [], languages = []}) {
                     </div>
 
                     <div>
-                        <InputLabel htmlFor="name">Name</InputLabel>
+                        <InputLabel htmlFor="name">{t('entities.name')}</InputLabel>
                         <TextInput
                             id="name"
                             value={data.name}
@@ -211,19 +213,19 @@ export default function Create({lang, language, works = [], languages = []}) {
                     </div>
 
                     <div>
-                        <InputLabel htmlFor="label">Translator / edition note</InputLabel>
+                        <InputLabel htmlFor="label">{t('entities.translator_edition_note')}</InputLabel>
                         <TextInput
                             id="label"
                             value={data.label}
                             onChange={(e) => setData('label', e.target.value)}
-                            placeholder="Optional — tells same-language entities of one work apart"
+                            placeholder={t('entities.label_placeholder')}
                             error={errors.label}
                         />
                         <InputError messages={errors.label ? [errors.label] : []}/>
                     </div>
 
                     <div>
-                        <InputLabel htmlFor="description">Description</InputLabel>
+                        <InputLabel htmlFor="description">{t('entities.description')}</InputLabel>
                         <TextArea
                             id="description"
                             rows={4}
@@ -235,7 +237,7 @@ export default function Create({lang, language, works = [], languages = []}) {
                     </div>
 
                     <div>
-                        <InputLabel htmlFor="file">Text file</InputLabel>
+                        <InputLabel htmlFor="file">{t('entities.text_file')}</InputLabel>
                         <input
                             id="file"
                             type="file"
@@ -244,18 +246,18 @@ export default function Create({lang, language, works = [], languages = []}) {
                             className="mt-1 block w-full text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] file:mr-3 file:rounded-sm file:border-0 file:bg-[var(--wbench-paper-deep)] dark:file:bg-[var(--wbench-paper-deep-night)] file:px-3 file:py-1 file:text-[var(--wbench-ink-soft)] dark:file:text-[var(--wbench-ink-soft-night)] file:cursor-pointer"
                         />
                         <p className="mt-1 text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Optional. A plain text (.txt) file. If provided, it is split into sentences and a signature is generated.
+                            {t('entities.text_file_hint')}
                         </p>
                         <InputError messages={errors.file ? [errors.file] : []}/>
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <PrimaryButton disabled={processing}>Create entity</PrimaryButton>
+                        <PrimaryButton disabled={processing}>{t('entities.create_entity')}</PrimaryButton>
                         <Link
                             href={`/entities/${lang}`}
                             className="font-sans text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                         >
-                            Cancel
+                            {t('entities.cancel')}
                         </Link>
                     </div>
                 </form>

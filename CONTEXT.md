@@ -158,11 +158,36 @@ A Language whose `is_enabled` flag is true. The flag is a stored value only; the
 _Avoid_: active language, available language
 
 **User settings**:
-The per-user configuration row (one per user) holding the user's preferences, currently the **Native language**. Stored in `user_settings`. _Avoid_: preferences, profile (the page, not the row).
+The per-user configuration row (one per user) holding the user's preferences, currently the **Native language** and the **Interface language**. Stored in `user_settings`. _Avoid_: preferences, profile (the page, not the row).
 
 **Native language**:
 The language a user is a native speaker of, chosen at registration and changeable from the profile page. References a **Language** in the catalog; defaults to English.
 _Avoid_: mother tongue, first language
+
+**Interface-enabled language**:
+A Language flagged `is_interface_enabled` — usable as the language the web UI renders in. Only interface-enabled languages appear in interface-language pickers.
+_Avoid_: supported language, active language
+
+# Localization Context
+
+The domain of the web UI's display language and the admin-curated interface text shown in it. Distinct from the Language Catalog (learning-content languages) and the Dictionary (word translations).
+
+## Language
+
+**Interface language**:
+The language the web UI renders in for a user; a User settings field that, when null, follows the **Native language**. Resolution falls back to English.
+_Avoid_: UI language, locale
+
+**UI string**:
+One piece of interface text, identified by a **UI string key**, with at most one value per interface-enabled language. Edited in the admin panel; missing values fall back to English. _Avoid_: translation, label
+
+**UI string key**:
+The dotted identifier of a **UI string** (e.g. `nav.library`); its first segment is its **string group**.
+_Avoid_: translation key
+
+**String group**:
+The first segment of a UI string key, naming the surface the string belongs to (e.g. `nav`, `profile`, `reader`).
+_Avoid_: namespace, category
 
 # Dictionary Context
 

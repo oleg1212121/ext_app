@@ -1,5 +1,6 @@
 import {Link, useForm, usePage} from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx';
+import {useI18n} from '../../i18n';
 
 function InputLabel({htmlFor, children}) {
     return (
@@ -64,6 +65,7 @@ function PrimaryButton({children, disabled = false}) {
 }
 
 export default function Create({works = []}) {
+    const {t} = useI18n();
     const {flash} = usePage().props;
     const {data, setData, post, processing, errors} = useForm({
         work_id: works[0]?.id ?? '',
@@ -105,14 +107,14 @@ export default function Create({works = []}) {
                         href="/alignments"
                         className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                     >
-                        ← Alignments
+                        {t('alignments.back')}
                     </Link>
                     <div>
                         <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            New entity match
+                            {t('alignments.new_entity_match')}
                         </p>
                         <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            Align two translations of a work
+                            {t('alignments.create_heading')}
                         </h1>
                     </div>
                 </header>
@@ -120,11 +122,11 @@ export default function Create({works = []}) {
                 <form onSubmit={submit} className="space-y-6">
                     <fieldset className="space-y-5 border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] p-5">
                         <legend className="px-1 font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Entities
+                            {t('alignments.entities')}
                         </legend>
 
                         <div>
-                            <InputLabel htmlFor="work_id">Work</InputLabel>
+                            <InputLabel htmlFor="work_id">{t('alignments.work')}</InputLabel>
                             <select
                                 id="work_id"
                                 value={data.work_id}
@@ -132,7 +134,7 @@ export default function Create({works = []}) {
                                 className={inputClass(errors.work_id)}
                             >
                                 {works.length === 0 ? (
-                                    <option value="">No works with alignable entities yet</option>
+                                    <option value="">{t('alignments.no_works')}</option>
                                 ) : (
                                     works.map((item) => (
                                         <option key={item.id} value={item.id}>{item.title}</option>
@@ -140,19 +142,19 @@ export default function Create({works = []}) {
                                 )}
                             </select>
                             <p className="mt-1 text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Both entities must belong to the same work (same language is fine, e.g. exercises and answers).
+                                {t('alignments.work_hint')}
                             </p>
                         </div>
 
                         <div>
-                            <InputLabel htmlFor="first_entity_id">First entity</InputLabel>
+                            <InputLabel htmlFor="first_entity_id">{t('alignments.first_entity')}</InputLabel>
                             <select
                                 id="first_entity_id"
                                 value={data.first_entity_id}
                                 onChange={(e) => setData((current) => ({...current, first_entity_id: e.target.value, second_entity_id: ''}))}
                                 className={inputClass(errors.first_entity_id)}
                             >
-                                <option value="" disabled>Select an entity…</option>
+                                <option value="" disabled>{t('alignments.select_entity')}</option>
                                 {firstOptions.map((entity) => (
                                     <option key={entity.id} value={entity.id}>{entity.text}</option>
                                 ))}
@@ -162,7 +164,7 @@ export default function Create({works = []}) {
 
                         <div>
                             <InputLabel htmlFor="second_entity_id">
-                                Second entity{firstEntity ? ` — other than ${languageLabel(firstEntity.languageCode)} «${firstEntity.text}»` : ''}
+                                {t('alignments.second_entity')}{firstEntity ? t('alignments.second_entity_suffix', {lang: languageLabel(firstEntity.languageCode), entity: firstEntity.text}) : ''}
                             </InputLabel>
                             <select
                                 id="second_entity_id"
@@ -170,7 +172,7 @@ export default function Create({works = []}) {
                                 onChange={(e) => setData('second_entity_id', e.target.value)}
                                 className={inputClass(errors.second_entity_id)}
                             >
-                                <option value="" disabled>Select an entity…</option>
+                                <option value="" disabled>{t('alignments.select_entity')}</option>
                                 {secondOptions.map((entity) => (
                                     <option key={entity.id} value={entity.id}>{entity.text}</option>
                                 ))}
@@ -181,7 +183,7 @@ export default function Create({works = []}) {
 
                     <div className="grid gap-5 sm:grid-cols-2">
                         <div>
-                            <InputLabel htmlFor="chunk_size">Chunk size</InputLabel>
+                            <InputLabel htmlFor="chunk_size">{t('alignments.chunk_size')}</InputLabel>
                             <NumberInput
                                 id="chunk_size"
                                 min={25}
@@ -191,13 +193,13 @@ export default function Create({works = []}) {
                                 error={errors.chunk_size}
                             />
                             <p className="mt-1 text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Sentences per chunk (25–100).
+                                {t('alignments.chunk_size_hint')}
                             </p>
                             <FieldError messages={errors.chunk_size ? [errors.chunk_size] : []}/>
                         </div>
 
                         <div>
-                            <InputLabel htmlFor="max_n">Max sentence span</InputLabel>
+                            <InputLabel htmlFor="max_n">{t('alignments.max_n')}</InputLabel>
                             <NumberInput
                                 id="max_n"
                                 min={1}
@@ -207,7 +209,7 @@ export default function Create({works = []}) {
                                 error={errors.max_n}
                             />
                             <p className="mt-1 text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Alignment window size (1–8).
+                                {t('alignments.max_n_hint')}
                             </p>
                             <FieldError messages={errors.max_n ? [errors.max_n] : []}/>
                         </div>
@@ -216,24 +218,24 @@ export default function Create({works = []}) {
                     {duplicateBlocked && (
                         <div className="border border-[var(--wbench-danger)]/40 bg-[var(--wbench-danger)]/5 px-4 py-3 text-sm">
                             <p className="text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                                A match for this entity pair already exists.
+                                {t('alignments.duplicate_match')}
                             </p>
                             <Link
                                 href={`/alignments/${flash.existing_match_id}`}
                                 className="mt-1 inline-block text-[var(--wbench-danger)] dark:text-[var(--wbench-danger-night)] underline"
                             >
-                                Open existing match →
+                                {t('alignments.open_existing_match')}
                             </Link>
                         </div>
                     )}
 
                     <div className="flex items-center gap-4">
-                        <PrimaryButton disabled={processing}>Create match</PrimaryButton>
+                        <PrimaryButton disabled={processing}>{t('alignments.create_match')}</PrimaryButton>
                         <Link
                             href="/alignments"
                             className="font-sans text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                         >
-                            Cancel
+                            {t('alignments.cancel')}
                         </Link>
                     </div>
                 </form>

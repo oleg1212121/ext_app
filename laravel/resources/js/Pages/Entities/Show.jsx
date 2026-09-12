@@ -1,5 +1,6 @@
 import {Link} from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx';
+import {useI18n} from '../../i18n';
 
 const SIGNATURE_BADGE = {
     generated: 'text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] border-[var(--wbench-accent)]/40 dark:border-[var(--wbench-accent-night)]/40',
@@ -37,6 +38,7 @@ const PageLink = ({disabled, href, children}) => {
 };
 
 export default function Show({lang, language, entity, entityMatches = [], sentences = [], sentences_meta, can_edit: canEdit = false}) {
+    const {t} = useI18n();
     const fileName = entity.file_path ? entity.file_path.split('/').pop() : null;
     const pageOffset = ((sentences_meta?.current_page ?? 1) - 1) * (sentences_meta?.per_page ?? 20);
 
@@ -48,12 +50,12 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                         href={`/entities/${lang}`}
                         className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                     >
-                        ← {language.name} entities
+                        ← {language.name} {t('entities.entities')}
                     </Link>
                     <div className="flex flex-wrap items-end justify-between gap-3">
                         <div>
                             <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                {entity.signature_status === 'generated' ? 'Signature generated' : entity.signature_status === 'pending' ? 'Signature pending' : 'No file'}
+                                {entity.signature_status === 'generated' ? t('entities.signature_generated') : entity.signature_status === 'pending' ? t('entities.signature_pending') : t('entities.no_file')}
                             </p>
                             <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                                 {entity.name}
@@ -69,14 +71,14 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                                 href={`/reader-react/${lang}/${entity.id}`}
                                 className="inline-flex h-9 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                             >
-                                Read
+                                {t('entities.read')}
                             </Link>
                             {canEdit && (
                                 <Link
                                     href={`/entities/${lang}/${entity.id}/edit`}
                                     className="inline-flex h-9 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                                 >
-                                    Edit
+                                    {t('entities.edit')}
                                 </Link>
                             )}
                             {entityMatches.map((match) => (
@@ -85,7 +87,7 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                                     href={`/alignments/${match.id}`}
                                     className="inline-flex h-9 items-center gap-2 border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                                 >
-                                    Open alignment
+                                    {t('entities.open_alignment')}
                                     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] ${MATCH_BADGE[match.status] ?? MATCH_BADGE.pending}`}>
                                         {match.status}
                                     </span>
@@ -98,7 +100,7 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                 <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-4">
                         <dt className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Description
+                            {t('entities.description')}
                         </dt>
                         <dd className="mt-1 text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                             {entity.description || '—'}
@@ -106,7 +108,7 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                     </div>
                     <div className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-4">
                         <dt className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Source file
+                            {t('entities.source_file')}
                         </dt>
                         <dd className="mt-1 font-mono text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                             {fileName ?? '—'}
@@ -114,7 +116,7 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                     </div>
                     <div className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-4">
                         <dt className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Signature
+                            {t('entities.signature')}
                         </dt>
                         <dd className="mt-1">
                             <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] ${SIGNATURE_BADGE[entity.signature_status] ?? SIGNATURE_BADGE.none}`}>
@@ -124,7 +126,7 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                     </div>
                     <div className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-4">
                         <dt className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Sentences
+                            {t('entities.sentences')}
                         </dt>
                         <dd className="mt-1 font-mono text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                             {entity.sentences_count}
@@ -135,15 +137,15 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                 <section className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
                     <div className="flex items-center justify-between border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-3">
                         <h2 className="font-serif text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            Sentences
+                            {t('entities.sentences')}
                         </h2>
                         <span className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            {sentences_meta?.total ?? sentences.length} total
+                            {sentences_meta?.total ?? sentences.length} {t('entities.total')}
                         </span>
                     </div>
                     {sentences.length === 0 ? (
                         <p className="px-5 py-12 text-center text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            No sentences yet. Upload a text file to generate them.
+                            {t('entities.no_sentences_hint')}
                         </p>
                     ) : (
                         <ol className="divide-y divide-[var(--wbench-rule)] dark:divide-[var(--wbench-rule-night)]">
@@ -169,15 +171,15 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                 </section>
 
                 {sentences_meta && sentences_meta.last_page > 1 && (
-                    <nav aria-label="Pagination" className="flex items-center justify-between border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
+                    <nav aria-label={t('entities.pagination')} className="flex items-center justify-between border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
                         <PageLink disabled={sentences_meta.current_page <= 1} href={`/entities/${lang}/${entity.id}?page=${sentences_meta.current_page - 1}`}>
-                            ← Prev
+                            {t('entities.prev')}
                         </PageLink>
                         <span className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                             {sentences_meta.current_page} / {sentences_meta.last_page}
                         </span>
                         <PageLink disabled={sentences_meta.current_page >= sentences_meta.last_page} href={`/entities/${lang}/${entity.id}?page=${sentences_meta.current_page + 1}`}>
-                            Next →
+                            {t('entities.next')}
                         </PageLink>
                     </nav>
                 )}

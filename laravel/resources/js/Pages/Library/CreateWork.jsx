@@ -1,5 +1,6 @@
 import {useForm, Link} from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx';
+import {useI18n} from '../../i18n';
 
 function InputLabel({htmlFor, children}) {
     return (
@@ -83,6 +84,7 @@ function PrimaryButton({children, disabled = false}) {
 }
 
 export default function CreateWork({languages = []}) {
+    const {t} = useI18n();
     const {data, setData, post, processing, errors} = useForm({
         title: '',
         author: '',
@@ -103,26 +105,26 @@ export default function CreateWork({languages = []}) {
                         href="/library"
                         className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                     >
-                        ← Library
+                        ← {t('library.library')}
                     </Link>
                     <div>
                         <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Library
+                            {t('library.library')}
                         </p>
                         <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            Add a work
+                            {t('library.add_a_work')}
                         </h1>
                     </div>
                 </header>
 
                 <form onSubmit={submit} className="space-y-6">
                     <div>
-                        <InputLabel htmlFor="title">Title</InputLabel>
+                        <InputLabel htmlFor="title">{t('library.title')}</InputLabel>
                         <TextInput
                             id="title"
                             value={data.title}
                             onChange={(e) => setData('title', e.target.value)}
-                            placeholder="Work title (e.g. War and Peace)"
+                            placeholder={t('library.work_title_placeholder')}
                             required
                             autoFocus
                             error={errors.title}
@@ -131,19 +133,19 @@ export default function CreateWork({languages = []}) {
                     </div>
 
                     <div>
-                        <InputLabel htmlFor="author">Author</InputLabel>
+                        <InputLabel htmlFor="author">{t('library.author')}</InputLabel>
                         <TextInput
                             id="author"
                             value={data.author}
                             onChange={(e) => setData('author', e.target.value)}
-                            placeholder="Optional"
+                            placeholder={t('library.optional')}
                             error={errors.author}
                         />
                         <InputError messages={errors.author ? [errors.author] : []}/>
                     </div>
 
                     <div>
-                        <InputLabel htmlFor="original_language_id">Original language</InputLabel>
+                        <InputLabel htmlFor="original_language_id">{t('library.original_language')}</InputLabel>
                         <select
                             id="original_language_id"
                             value={data.original_language_id}
@@ -159,7 +161,7 @@ export default function CreateWork({languages = []}) {
                                 'focus:outline-none focus:ring-2 focus:ring-[var(--wbench-accent)] dark:focus:ring-[var(--wbench-accent-night)] focus:border-transparent',
                             ].join(' ')}
                         >
-                            <option value="">Pick a language…</option>
+                            <option value="">{t('library.pick_a_language')}</option>
                             {languages.map((language) => (
                                 <option key={language.id} value={language.id}>
                                     {language.name}{language.native_name ? ` — ${language.native_name}` : ''}
@@ -167,13 +169,13 @@ export default function CreateWork({languages = []}) {
                             ))}
                         </select>
                         <p className="mt-1 text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            The language the work was written in.
+                            {t('library.original_language_hint')}
                         </p>
                         <InputError messages={errors.original_language_id ? [errors.original_language_id] : []}/>
                     </div>
 
                     <div>
-                        <InputLabel htmlFor="description">Description</InputLabel>
+                        <InputLabel htmlFor="description">{t('library.description')}</InputLabel>
                         <TextArea
                             id="description"
                             rows={4}
@@ -185,12 +187,12 @@ export default function CreateWork({languages = []}) {
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <PrimaryButton disabled={processing}>Create work</PrimaryButton>
+                        <PrimaryButton disabled={processing}>{t('library.create_work')}</PrimaryButton>
                         <Link
                             href="/library"
                             className="font-sans text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                         >
-                            Cancel
+                            {t('library.cancel')}
                         </Link>
                     </div>
                 </form>

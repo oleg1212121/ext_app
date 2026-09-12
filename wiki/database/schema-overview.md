@@ -31,7 +31,8 @@ is an `INSERT` into `languages` — never DDL (ADR
 | [Entities & alignment](entities-alignment.md) | `works`, `entities` (+ `language_id`), `entity_sentences`, `entity_matches` (a/b sides), `meaning_matches`, `sentence_meaning_matches` (side column), `entity_user` grants. Filled by the [alignment pipeline](/domains/sentence-alignment.md) |
 | [Dictionary](dictionary.md) | Unified `words` (+ `language_id`) with satellites, `word_classes`/`transcription_types` per language, one directed `word_translations` pivot. Filled by [Dictionary Import](/domains/dictionary-import.md) |
 | AI catalog | `ai_providers`, `ai_models`, `user_api_keys` (2026_09_10_000002) |
-| Users & settings | `users` (role/approval inline), `user_settings` (native language) |
+| Users & settings | `users` (role/approval inline), `user_settings` (native + interface language) |
+| [Localization](../domains/localization.md) | `ui_string_keys` (dotted key, group), `ui_strings` (one text per interface-enabled language); `languages.is_interface_enabled` gates pickers |
 
 Plus Laravel framework tables: `cache`, `jobs` (0001_01_01_*).
 
@@ -42,15 +43,28 @@ gone.
 
 # User settings
 
-`user_settings` (one row per user) holds per-user preferences, currently a single
-**native language** (`native_language_id` → `languages.id`, nullable, English by
-default). Created at registration; changeable from the profile page (Inertia
-`Profile/Edit`) and admin-managed via the native-language select on the
-`UserResource` create/edit forms (the former standalone
-`UserSettingsResource` was removed 2026-09-12). See the
+`user_settings` (one row per user) holds per-user preferences: the **native
+language** (`native_language_id` → `languages.id`, nullable, English by
+default) and the **interface language** (`interface_language_id`, nullable —
+null follows the native language; only `languages.is_interface_enabled`
+languages are valid). Created at registration; changeable from the profile page
+(Inertia `Profile/Edit`) and admin-managed via the language selects on the
+`UserResource` create/edit forms (the former standalone `UserSettingsResource`
+was removed 2026-09-12). The UI locale resolves interface → native → `en`
+(ADR 0023). See the
 [Access Control domain](../domains/access-control.md) for the user, and the
 **User settings** / **Native language** glossary entries in
 [CONTEXT.md](../../CONTEXT.md#language-catalog-context).
+
+# UI strings
+
+`ui_string_keys` (`key` unique dotted identifier, `group` = first segment,
+derived on save) + `ui_strings` (`ui_string_key_id`, `language_id`, `text`,
+unique pair) store interface text per interface-enabled language (ADR 0022).
+Filament `UiStringKeyResource` edits them side by side; `UiStringLoader`
+serves them to the translator and `UiStrings::mapFor()` to Inertia, both
+cache-backed and flushed by model observers. Seed content lives in
+`database/seeders/ui-strings/*.php`, upserted by `UiStringSeeder`.
 
 # How they relate
 

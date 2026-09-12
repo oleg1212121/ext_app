@@ -93,6 +93,24 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * The language the web UI renders in for this user: their interface
+     * language, falling back to their native language, then to English.
+     * Only interface-enabled languages qualify.
+     */
+    public function resolvedInterfaceLocale(): string
+    {
+        $settings = $this->settings()->with(['interfaceLanguage', 'nativeLanguage'])->first();
+
+        foreach ([$settings?->interfaceLanguage, $settings?->nativeLanguage] as $language) {
+            if ($language?->is_interface_enabled) {
+                return $language->code;
+            }
+        }
+
+        return 'en';
+    }
+
+    /**
      * Restricted entities this user may read via an access grant.
      */
     public function grantedEntities(): BelongsToMany

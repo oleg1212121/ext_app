@@ -17,6 +17,7 @@ import {
 import {CSS} from '@dnd-kit/utilities';
 import Main from '../../Layouts/Main.jsx';
 import Pagination from '../Alignments/components/Pagination.jsx';
+import {useI18n} from '../../i18n';
 
 const PER_PAGE_OPTIONS = [10, 25, 50, 100];
 
@@ -73,11 +74,13 @@ const GhostButton = ({children, disabled = false, onClick, title}) => (
     </button>
 );
 
-const DragHandle = ({attributes, listeners, dragging}) => (
+const DragHandle = ({attributes, listeners, dragging}) => {
+    const {t} = useI18n();
+    return (
     <button
         type="button"
-        aria-label="Drag to move"
-        title="Drag to move"
+        aria-label={t('entities.drag_to_move')}
+        title={t('entities.drag_to_move')}
         className={[
             'group/drag inline-flex w-5 shrink-0 cursor-grab items-center justify-center rounded-sm py-2',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]',
@@ -91,7 +94,8 @@ const DragHandle = ({attributes, listeners, dragging}) => (
             <span className="h-px w-3 bg-[var(--wbench-rule)] transition-colors group-hover/drag:bg-[var(--wbench-accent)] dark:bg-[var(--wbench-rule-night)] dark:group-hover/drag:bg-[var(--wbench-accent-night)]"/>
         </span>
     </button>
-);
+    );
+};
 
 const EditIcon = () => (
     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75">
@@ -130,7 +134,9 @@ const iconBtn = [
     'disabled:opacity-40 disabled:cursor-not-allowed',
 ].join(' ');
 
-const AddForm = ({draft, type, sentenceTypes, busy, submitLabel, onDraftChange, onTypeChange, onSubmit, onCancel}) => (
+const AddForm = ({draft, type, sentenceTypes, busy, submitLabel, onDraftChange, onTypeChange, onSubmit, onCancel}) => {
+    const {t} = useI18n();
+    return (
     <div className="space-y-2 border-t border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)] px-4 py-3">
         <textarea
             value={draft}
@@ -142,12 +148,12 @@ const AddForm = ({draft, type, sentenceTypes, busy, submitLabel, onDraftChange, 
             disabled={busy}
             rows={2}
             autoFocus
-            placeholder="Sentence text…"
+            placeholder={t('entities.sentence_text_placeholder')}
             className="min-w-0 w-full resize-none rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 py-1 font-serif text-[15px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] focus:outline-none focus:ring-1 focus:ring-[var(--wbench-accent)] dark:focus:ring-[var(--wbench-accent-night)]"
         />
         <div className="flex items-end gap-3">
             <div>
-                <InputLabel htmlFor="add-type-inline">Type</InputLabel>
+                <InputLabel htmlFor="add-type-inline">{t('entities.type')}</InputLabel>
                 <select
                     id="add-type-inline"
                     value={type}
@@ -156,18 +162,20 @@ const AddForm = ({draft, type, sentenceTypes, busy, submitLabel, onDraftChange, 
                     disabled={busy}
                     className={[fieldBase, 'w-auto'].join(' ')}
                 >
-                    <option value="" disabled>Select…</option>
+                    <option value="" disabled>{t('entities.select')}</option>
                     {sentenceTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
             </div>
             <PrimaryButton type="button" disabled={busy || !draft.trim() || !type} onClick={onSubmit}>{submitLabel}</PrimaryButton>
-            <GhostButton onClick={onCancel} disabled={busy}>Cancel</GhostButton>
+            <GhostButton onClick={onCancel} disabled={busy}>{t('entities.cancel')}</GhostButton>
         </div>
     </div>
-);
+    );
+};
 
 function SortableSentence({sentence, displayOrder, sentenceTypes, editingId, editDraft, editType, busyId, addingAfterId, addDraft, addType, onStartEdit, onChangeDraft, onChangeType, onCommitEdit, onCancelEdit, onDelete, onAddStart, onAddDraftChange, onAddTypeChange, onAddSubmit, onAddCancel}) {
     const {attributes, listeners, setNodeRef, transform, transition, isDragging} = useSortable({id: sentence.id});
+    const {t} = useI18n();
     const editing = editingId === sentence.id;
     const busy = busyId === sentence.id;
 
@@ -211,10 +219,10 @@ function SortableSentence({sentence, displayOrder, sentenceTypes, editingId, edi
                         >
                             {sentenceTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                         </select>
-                        <button type="button" onClick={() => onCommitEdit(sentence)} disabled={busy} aria-label="Save" title="Save (⌘+Enter)" className={`${iconBtn} text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]`}>
+                        <button type="button" onClick={() => onCommitEdit(sentence)} disabled={busy} aria-label={t('entities.save')} title={t('entities.save_cmd_enter')} className={`${iconBtn} text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]`}>
                             <CheckIcon/>
                         </button>
-                        <button type="button" onClick={onCancelEdit} disabled={busy} aria-label="Cancel" title="Cancel (Esc)" className={iconBtn}>
+                        <button type="button" onClick={onCancelEdit} disabled={busy} aria-label={t('entities.cancel')} title={t('entities.cancel_esc')} className={iconBtn}>
                             <XIcon/>
                         </button>
                     </div>
@@ -232,13 +240,13 @@ function SortableSentence({sentence, displayOrder, sentenceTypes, editingId, edi
                         )}
                     </div>
                     <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                        <button type="button" onClick={() => onStartEdit(sentence)} aria-label="Edit sentence" title="Edit" className={iconBtn}>
+                        <button type="button" onClick={() => onStartEdit(sentence)} aria-label={t('entities.edit_sentence')} title={t('entities.edit')} className={iconBtn}>
                             <EditIcon/>
                         </button>
-                        <button type="button" onClick={() => onAddStart(sentence)} aria-label="Add sentence below" title="Add sentence below" className={iconBtn}>
+                        <button type="button" onClick={() => onAddStart(sentence)} aria-label={t('entities.add_sentence_below')} title={t('entities.add_sentence_below')} className={iconBtn}>
                             <PlusIcon/>
                         </button>
-                        <button type="button" onClick={() => onDelete(sentence)} disabled={busy} aria-label="Delete sentence" title="Delete permanently" className={`${iconBtn} hover:text-[var(--wbench-danger)] dark:hover:text-[var(--wbench-danger-night)]`}>
+                        <button type="button" onClick={() => onDelete(sentence)} disabled={busy} aria-label={t('entities.delete_sentence')} title={t('entities.delete_permanently')} className={`${iconBtn} hover:text-[var(--wbench-danger)] dark:hover:text-[var(--wbench-danger-night)]`}>
                             <TrashIcon/>
                         </button>
                     </span>
@@ -249,6 +257,7 @@ function SortableSentence({sentence, displayOrder, sentenceTypes, editingId, edi
 }
 
 export default function Edit({lang, language, entity, sentenceTypes = [], alignmentCount, sentencesEndpoint}) {
+    const {t} = useI18n();
     const {data, setData, patch, processing, errors, reset} = useForm({
         name: entity.name ?? '',
         description: entity.description ?? '',
@@ -333,7 +342,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                 onCancelEdit();
             } else if (res.status === 422) {
                 const json = await res.json();
-                setAddError(json.errors?.content?.[0] || json.errors?.sentence_type_id?.[0] || 'Validation error.');
+                setAddError(json.errors?.content?.[0] || json.errors?.sentence_type_id?.[0] || t('entities.validation_error'));
             }
         } finally {
             setBusyId(null);
@@ -341,7 +350,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
     };
 
     const onDelete = async (sentence) => {
-        if (!confirm('Delete this sentence? This cascades into any alignment it belongs to.')) return;
+        if (!confirm(t('entities.delete_sentence_confirm'))) return;
         setBusyId(sentence.id);
         setAddError('');
         try {
@@ -456,7 +465,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                 setAddingFirst(false);
             } else if (res.status === 422) {
                 const json = await res.json();
-                setAddError(json.errors?.content?.[0] || json.errors?.sentence_type_id?.[0] || 'Validation error.');
+                setAddError(json.errors?.content?.[0] || json.errors?.sentence_type_id?.[0] || t('entities.validation_error'));
             }
         } finally {
             setBusyId(null);
@@ -473,11 +482,11 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                         href={`/entities/${lang}/${entity.id}`}
                         className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                     >
-                        ← Back to {entity.name}
+                        ← {t('entities.back_to', {name: entity.name})}
                     </Link>
                     <div>
                         <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Edit entity
+                            {t('entities.edit_entity')}
                         </p>
                         <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                             {entity.name}
@@ -487,7 +496,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
 
                 <form onSubmit={submitMetadata} className="space-y-5 border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] p-5">
                     <div>
-                        <InputLabel htmlFor="name">Name</InputLabel>
+                        <InputLabel htmlFor="name">{t('entities.name')}</InputLabel>
                         <input
                             id="name"
                             type="text"
@@ -499,7 +508,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                         <InputError messages={errors.name ? [errors.name] : []}/>
                     </div>
                     <div>
-                        <InputLabel htmlFor="description">Description</InputLabel>
+                        <InputLabel htmlFor="description">{t('entities.description')}</InputLabel>
                         <textarea
                             id="description"
                             rows={3}
@@ -510,9 +519,9 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                         <InputError messages={errors.description ? [errors.description] : []}/>
                     </div>
                     <div className="flex items-center gap-3">
-                        <PrimaryButton disabled={processing}>Save metadata</PrimaryButton>
+                        <PrimaryButton disabled={processing}>{t('entities.save_metadata')}</PrimaryButton>
                         <Link href={`/entities/${lang}/${entity.id}`} className="font-sans text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]">
-                            Cancel
+                            {t('entities.cancel')}
                         </Link>
                     </div>
                 </form>
@@ -520,11 +529,11 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                 <section className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
                     <div className="flex items-center justify-between border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-3">
                         <h2 className="font-serif text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            Sentences
+                            {t('entities.sentences')}
                         </h2>
                         {alignmentCount > 0 && (
                             <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Part of {alignmentCount} alignment{alignmentCount > 1 ? 's' : ''}
+                                {t('entities.part_of')} {alignmentCount} {alignmentCount > 1 ? t('entities.alignments') : t('entities.alignment')}
                             </span>
                         )}
                     </div>
@@ -533,19 +542,19 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
 
                     {loading ? (
                         <p className="px-5 py-12 text-center text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Loading sentences…
+                            {t('entities.loading_sentences')}
                         </p>
                     ) : sentences.length === 0 && !addingFirst ? (
                         <div className="px-5 py-12 text-center">
                             <p className="text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                No sentences yet.
+                                {t('entities.no_sentences_yet')}
                             </p>
                             <button
                                 type="button"
                                 onClick={onAddStartFirst}
                                 className="mt-3 inline-flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                             >
-                                <PlusIcon/> Add the first sentence
+                                <PlusIcon/> {t('entities.add_first_sentence')}
                             </button>
                         </div>
                     ) : (
@@ -583,7 +592,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                                                     type={addType}
                                                     sentenceTypes={sentenceTypes}
                                                     busy={addBusy}
-                                                    submitLabel="Insert below"
+                                                    submitLabel={t('entities.insert_below')}
                                                     onDraftChange={setAddContent}
                                                     onTypeChange={setAddType}
                                                     onSubmit={() => onAddSubmit(sentence.id)}
@@ -601,7 +610,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                                     type={addType}
                                     sentenceTypes={sentenceTypes}
                                     busy={addBusy}
-                                    submitLabel="Add sentence"
+                                    submitLabel={t('entities.add_sentence')}
                                     onDraftChange={setAddContent}
                                     onTypeChange={setAddType}
                                     onSubmit={() => onAddSubmit(null)}

@@ -15,6 +15,7 @@ import NeedsReviewSection from './components/NeedsReviewSection.jsx';
 import Pagination from './components/Pagination.jsx';
 import {alignmentsApi} from './components/api.js';
 import Main from '../../Layouts/Main.jsx';
+import {useI18n} from '../../i18n';
 
 const ROW_PER_PAGE_OPTIONS = [10, 25, 50, 100];
 
@@ -75,6 +76,7 @@ function buildLookup({rows, unmatchedA, unmatchedB, sentencesBefore}) {
 }
 
 export default function Show({match: initialMatch, rows: initialRows, rows_meta: initialRowsMeta, sentences_before: initialSentencesBefore, unmatched_a: initialUnmatchedA, unmatched_b: initialUnmatchedB, needs_review: initialNeedsReview}) {
+    const {t} = useI18n();
     const [data, setData] = useState(() => ({
         match: initialMatch,
         rows: initialRows,
@@ -647,13 +649,13 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                     <header className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] pb-4">
                         <div>
                             <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Alignments
+                                {t('alignments.title')}
                             </p>
                             <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                                 {match.a_entity_name || 'A'} ↔ {match.b_entity_name || 'B'}
                             </h1>
                             <p className="mt-1 font-mono text-[10px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                sim {match.entity_similarity !== null ? Number(match.entity_similarity).toFixed(4) : '—'} · {match.status} · {match.linked_count} linked / {match.confirmed_count} confirmed
+                                {t('alignments.sim')} {match.entity_similarity !== null ? Number(match.entity_similarity).toFixed(4) : '—'} · {match.status} · {t('alignments.linked_confirmed', {linked: match.linked_count, confirmed: match.confirmed_count})}
                                 {match.work_title ? ` · ${match.work_title}` : ''}
                             </p>
                         </div>
@@ -664,7 +666,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
                     {actionError && (
                         <p className="border border-[var(--wbench-danger)]/40 dark:border-[var(--wbench-danger-night)]/40 px-3 py-2 font-mono text-[11px] text-[var(--wbench-danger)] dark:text-[var(--wbench-danger-night)]">
-                            {actionError} — changes reverted
+                            {actionError} {t('alignments.changes_reverted')}
                         </p>
                     )}
 
@@ -672,7 +674,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                         {tableError && (
                             <div className="px-3 py-8 text-center">
                                 <p className="font-serif text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                                    Could not load pairs.
+                                    {t('alignments.load_error')}
                                 </p>
                                 <p className="mt-1 font-mono text-[11px] text-[var(--wbench-danger)] dark:text-[var(--wbench-danger-night)]">
                                     {tableError}
@@ -683,10 +685,10 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                         {!tableError && rows.length === 0 && (
                             <div className="px-3 py-12 text-center">
                                 <p className="font-serif text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                                    No pairs yet.
+                                    {t('alignments.no_pairs_yet')}
                                 </p>
                                 <p className="mt-1 text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                    Run the alignment pipeline or drag sentences from Unmatched into a new pair.
+                                    {t('alignments.no_pairs_hint')}
                                 </p>
                             </div>
                         )}

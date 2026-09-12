@@ -58,6 +58,8 @@ class HandleInertiaRequests extends Middleware
                 'error' => fn () => $request->session()->get('error'),
                 'existing_match_id' => fn () => $request->session()->get('existing_match_id'),
             ],
+            'locale' => fn () => app()->getLocale(),
+            'uiStrings' => fn () => \App\Support\UiStrings::mapFor(app()->getLocale()),
         ];
     }
 }
