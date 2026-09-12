@@ -1,12 +1,12 @@
 import Textarea from "../../../Components/Forms/Textarea.jsx";
 import {useI18n} from '../../../i18n';
-import React from "react";
-
-const DEFAULT_WORKPLACE_HEIGHT = 168;
 
 export default function Workplace(props) {
     const {t} = useI18n();
-    const [workplaceHeight, setWorkplaceHeight] = React.useState(DEFAULT_WORKPLACE_HEIGHT);
+    const workplaceHeight = props.height ?? 168;
+    const setWorkplaceHeight = (updater) => props.onHeightChange(
+        typeof updater === 'function' ? updater(workplaceHeight) : updater
+    );
 
     const startDrag = (event) => {
         event.preventDefault();

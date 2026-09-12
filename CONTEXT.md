@@ -158,7 +158,13 @@ A Language whose `is_enabled` flag is true. The flag is a stored value only; the
 _Avoid_: active language, available language
 
 **User settings**:
-The per-user configuration row (one per user) holding the user's preferences, currently the **Native language** and the **Interface language**. Stored in `user_settings`. _Avoid_: preferences, profile (the page, not the row).
+The per-user configuration row (one per user) holding the user's durable choices — the **Native language**, the **Interface language**, and **UI settings**. Stored in `user_settings`. _Avoid_: preferences, profile (the page, not the row).
+
+**UI settings**:
+The stable, user-chosen interface configuration inside User settings — simulator layout and panel visibility, font sizes, the selected AI model, the customized assessment question, and panel sizes. A sub-kind of User settings; changes follow the user across devices. See ADR 0024. _Avoid_: simulator cache, UI state (that includes Working state, which is not stored server-side).
+
+**Working state**:
+The per-device last position in the simulator — the current entity match, the page reached per alignment, and the last opened row with its revealed halves. Kept in the browser only, never stored server-side. See ADR 0024. _Avoid_: UI settings (durable, cross-device), session.
 
 **Native language**:
 The language a user is a native speaker of, chosen at registration and changeable from the profile page. References a **Language** in the catalog; defaults to English.

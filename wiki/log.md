@@ -1911,3 +1911,23 @@ did* **Change: AI Models admin enable/disable now fires without a confirmation
   running is refused with a warning instead of queuing a duplicate. `is_enabled`
   is preserved by the service's `updateOrCreate` (unchanged). Updated
   `wiki/domains/ai-providers.md`.
+
+## 2026-09-12 (UI settings persistence)
+
+* **Split persistence for simulator UI state (ADR 0024)**: stable settings
+  (font size, panel visibility, AI model, assessment question, AI panel
+  width, workplace height) now persist in `user_settings.ui_settings` (new
+  nullable JSONB column) — seeded into Inertia props by
+  `SimulatorController`/`ReaderController`, saved by a debounced (~800 ms)
+  PATCH to the new `ui-settings.update` route (`UiSettingsController`,
+  `UpdateUiSettingsRequest`, section-merged). Working state (current
+  alignment, page and last opened row per alignment, incl. revealed halves)
+  persists per device in localStorage (`ext_app.simulator.position.v1`);
+  the simulator auto-restores position on mount, Load restores a saved page,
+  and the last opened row re-checks + scrolls into view. Reader page font
+  size persists via the same mechanism. Row reveal checkboxes are now
+  controlled (`CheckboxInput` forwards rest props); header master EN/RU
+  toggles and `per_page` remain unpersisted. Updated
+  `wiki/domains/bilinguals-simulator.md` (routes + Persistence section),
+  `wiki/database/schema-overview.md` (ui_settings column), CONTEXT.md
+  (UI settings / Working state glossary).

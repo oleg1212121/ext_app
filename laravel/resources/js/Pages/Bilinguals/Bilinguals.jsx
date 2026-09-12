@@ -8,13 +8,12 @@ import Button from "../../Components/Forms/Button.jsx";
 import Workplace from "./Components/Workplace.jsx";
 import AI from "./Components/AI.jsx";
 import TextContent from "./Components/TextContent.jsx";
-import { useI18n } from '../../i18n';
-import { marked } from 'marked';
+import {useI18n} from '../../i18n';
+import {getCsrfToken} from '../../lib/http';
+import {loadPositions, savePositions} from '../../lib/simulatorPosition';
+import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
+import {marked} from 'marked';
 import DOMPurify from 'dompurify';
-
-function getCsrfToken() {
-    return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
-}
 
 marked.setOptions({breaks: true, gfm: true});
 
@@ -193,11 +192,20 @@ const Bilinguals = (props) => {
     const canUseAi = props.canUseAi
     const textList = props.textList
     const errors = props.errors
+
+    const initialPositions = loadPositions();
+    const savedTextExists = initialPositions.currentText != null
+        && textList.some((item) => String(item.id) === String(initialPositions.currentText));
+    const initialText = savedTextExists ? String(initialPositions.currentText) : props.currentText;
+    const initialSaved = savedTextExists
+        ? (initialPositions.alignments?.[String(initialPositions.currentText)] ?? null)
+        : null;
+
     let [showWorkplace, setShowWorkplace] = React.useState(props.showWorkplace)
     let [showQuestion, setShowQuestion] = React.useState(props.showQuestion)
     let [showText, setShowText] = React.useState(props.showText)
     let [showAI, setShowAI] = React.useState(props.showAI)
-    let [currentText, setCurrentText] = React.useState(props.currentText)
+    let [currentText, setCurrentText] = React.useState(initialText)
     let [currentModel, setCurrentModel] = React.useState(props.currentModel)
     let [currentQuestion, setCurrentQuestion] = React.useState(props.currentQuestion)
     const [pending, setPending] = React.useState(false);
@@ -210,9 +218,30 @@ const Bilinguals = (props) => {
 
     const [rows, setRows] = React.useState([]);
     const [textMeta, setTextMeta] = React.useState(null);
-    const [textPage, setTextPage] = React.useState(1);
+    const [textPage, setTextPage] = React.useState(initialSaved?.page ?? 1);
     const [loadError, setLoadError] = React.useState(null);
-    const [fontSize, setFontSize] = React.useState(DEFAULT_FONT_SIZE);
+    const [fontSize, setFontSize] = React.useState(props.fontSize ?? DEFAULT_FONT_SIZE);
+    const [aiPanelWidth, setAiPanelWidth] = React.useState(props.aiPanelWidth ?? 560);
+    const [workplaceHeight, setWorkplaceHeight] = React.useState(props.workplaceHeight ?? 168);
+    const [checkedRows, setCheckedRows] = React.useState(
+        () => initialSaved?.row
+            ? {[initialSaved.row.n]: {en: !!initialSaved.row.en, ru: !!initialSaved.row.ru}}
+            : {}
+    );
+    const pendingScrollRowRef = React.useRef(null);
+    const initialLoadDoneRef = React.useRef(false);
+
+    useUiSettingsAutosave('simulator', {
+        font_size: fontSize,
+        show_text: showText,
+        show_workplace: showWorkplace,
+        show_question: showQuestion,
+        show_ai: showAI,
+        model: currentModel,
+        question: currentQuestion,
+        ai_panel_width: aiPanelWidth,
+        workplace_height: workplaceHeight,
+    });
 
     const changeFontSize = (direction) => {
         setFontSize((prev) => {
@@ -227,6 +256,17 @@ const Bilinguals = (props) => {
         updateResizeableFontStyles(fontSize);
     }, [fontSize]);
 
+    const persistPage = React.useCallback((page) => {
+        const positions = loadPositions();
+        positions.currentText = String(currentText);
+        positions.alignments = {
+            ...(positions.alignments ?? {}),
+            [String(currentText)]: {...(positions.alignments?.[String(currentText)] ?? {}), page},
+        };
+        savePositions(positions);
+        return positions;
+    }, [currentText]);
+
     const fetchPage = React.useCallback(async (page) => {
         if (!currentText) {
             return;
@@ -238,6 +278,14 @@ const Bilinguals = (props) => {
             setRows(nextRows);
             setTextMeta(meta);
             setTextPage(meta.current_page ?? page);
+            const positions = persistPage(meta.current_page ?? page);
+            setCheckedRows({});
+            const saved = positions.alignments?.[String(currentText)]?.row;
+            const pageStart = ((meta.current_page ?? page) - 1) * (meta.per_page ?? DEFAULT_PER_PAGE);
+            if (saved && saved.n > pageStart && saved.n <= pageStart + (meta.per_page ?? DEFAULT_PER_PAGE)) {
+                setCheckedRows({[saved.n]: {en: !!saved.en, ru: !!saved.ru}});
+                pendingScrollRowRef.current = saved.n;
+            }
         } catch (e) {
             setRows([]);
             setTextMeta(null);
@@ -245,12 +293,64 @@ const Bilinguals = (props) => {
         } finally {
             setPending(false);
         }
-    }, [currentText]);
+    }, [currentText, persistPage]);
+
+    React.useEffect(() => {
+        if (rows.length > 0 && pendingScrollRowRef.current !== null) {
+            const el = document.getElementById(`simulator-row-${pendingScrollRowRef.current}`);
+            el?.scrollIntoView({block: 'center'});
+            pendingScrollRowRef.current = null;
+        }
+    }, [rows]);
+
+    React.useEffect(() => {
+        if (currentText && !initialLoadDoneRef.current) {
+            initialLoadDoneRef.current = true;
+            pendingScrollRowRef.current = initialSaved?.row?.n ?? null;
+            fetchPage(initialSaved?.page ?? 1);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleLoadText = React.useCallback(() => {
-        setTextPage(1);
-        return fetchPage(1);
-    }, [fetchPage]);
+        const saved = loadPositions().alignments?.[String(currentText)] ?? null;
+        const page = saved?.page ?? 1;
+        setTextPage(page);
+        if (saved?.row) {
+            setCheckedRows({[saved.row.n]: {en: !!saved.row.en, ru: !!saved.row.ru}});
+            pendingScrollRowRef.current = saved.row.n;
+        } else {
+            setCheckedRows({});
+        }
+        return fetchPage(page);
+    }, [fetchPage, currentText]);
+
+    const changeText = (event) => {
+        const value = event.target.value;
+        setCurrentText(value);
+        const positions = loadPositions();
+        positions.currentText = String(value);
+        savePositions(positions);
+    };
+
+    const onToggleRow = (n, side) => {
+        setCheckedRows((prev) => {
+            const rowState = {...(prev[n] ?? {en: false, ru: false}), [side]: !(prev[n]?.[side])};
+            const next = {...prev, [n]: rowState};
+            const open = rowState.en || rowState.ru;
+            const positions = loadPositions();
+            const key = String(currentText);
+            positions.alignments = {
+                ...(positions.alignments ?? {}),
+                [key]: {
+                    ...(positions.alignments?.[key] ?? {}),
+                    row: open ? {n, en: rowState.en, ru: rowState.ru} : null,
+                },
+            };
+            savePositions(positions);
+            return next;
+        });
+    };
 
     const goToPage = React.useCallback(() => {
         if (!textMeta || pending) {
@@ -415,7 +515,7 @@ const Bilinguals = (props) => {
                     )}
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div className="flex items-center gap-2">
-                        <Select value={currentText} onChange={(e) => setCurrentText(e.target.value)}
+                        <Select value={currentText} onChange={changeText}
                                 items={textList}/>
                                 <Button color="green" onClick={() => handleLoadText()} type='button'>{t('bilinguals.load')}</Button>
                     </div>
@@ -524,15 +624,15 @@ const Bilinguals = (props) => {
                                     </div>
                                 </div>
                             )}
-                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi}/>
+                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow}/>
                         </>
                     }
                     {showWorkplace === true &&
-                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)} canUseAi={canUseAi}/>
+                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)} canUseAi={canUseAi} height={workplaceHeight} onHeightChange={setWorkplaceHeight}/>
                     }
                 </div>
                 {showAI === true &&
-                    <AI aiAnswer={aiAnswer} pending={pending} aiError={aiError} onRetry={retryAsk}/>
+                    <AI aiAnswer={aiAnswer} pending={pending} aiError={aiError} onRetry={retryAsk} width={aiPanelWidth} onWidthChange={setAiPanelWidth}/>
                 }
             </div>
         </div>

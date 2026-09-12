@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-12T00:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -32,6 +32,7 @@ variants.
 | `/text` | POST | `SimulatorController::text` | Paginated aligned text content (JSON) |
 | `/ai/question` | POST | `SimulatorController::askAi` | Ask an AI model about the text (JSON), named `ai.question` |
 | `/ai/question/stream` | POST | `SimulatorController::askAiStreamed` | SSE-streamed variant, named `ai.question.stream` |
+| `/ui-settings` | PATCH | `UiSettingsController::update` | Debounced autosave of UI settings sections (`simulator` / `reader`), named `ui-settings.update` |
 
 # Key behavior
 
@@ -94,5 +95,33 @@ variants.
 
 React page `resources/js/Pages/Bilinguals/` (`Bilinguals.jsx` plus `AI/`,
 `TextContent/`, `Workplace/` sub-components). Props include `aiModels`
-(grouped by provider), `textList`, and `show*` feature flags
-(`showWorkplace`, `showQuestion`, `showText`, `showAI`).
+(grouped by provider), `textList`, `show*` feature flags
+(`showWorkplace`, `showQuestion`, `showText`, `showAI`), plus the saved UI
+settings seeds (`fontSize`, `aiPanelWidth`, `workplaceHeight`, and the
+`show*`/`currentModel`/`currentQuestion` props pre-merged with saved values).
+
+# Persistence
+
+Split by write frequency (ADR 0024):
+
+* **Stable settings → DB.** Font size, panel visibility, AI model, question,
+  AI panel width, workplace height live in `user_settings.ui_settings`
+  (JSONB, `simulator` section). Seeded into page props by
+  `SimulatorController::simulator()` (the saved model only if still in the
+  user's available list, else the cheapest default; `DEFAULT_QUESTION`
+  constant is the question fallback). The frontend writes back via the
+  `useUiSettingsAutosave` hook — one debounced (~800 ms) PATCH to
+  `/ui-settings` per change burst; the backend section-merges so a simulator
+  save never wipes the `reader` section (the Reader page persists its own
+  `font_size` the same way). Validation bounds mirror the client clamps
+  (`UpdateUiSettingsRequest`).
+* **Working state → localStorage, per device.** Key
+  `ext_app.simulator.position.v1` (`lib/simulatorPosition.js`): current
+  entity match plus, per alignment, the last page and the last opened row
+  (`{n, en, ru}` — global row number and which halves were revealed). On
+  mount the saved alignment auto-loads at its saved page; the saved row's
+  checkboxes are re-checked (controlled `checkedRows` state in
+  `TextContent.jsx`) and the row scrolls into view. Switching alignments and
+  pressing Load restores each alignment's own saved page instead of resetting
+  to page 1. The header EN/RU master reveal checkboxes stay uncontrolled and
+  are deliberately NOT persisted; `per_page` is not persisted either.

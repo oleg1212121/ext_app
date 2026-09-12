@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import ReaderRow from './ReaderRow.jsx';
 import {useI18n} from '../../i18n';
+import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 
 const MIN_FONT_SIZE = 16;
 const MAX_FONT_SIZE = 38;
@@ -53,9 +54,10 @@ const Divider = () => (
     <span aria-hidden="true" className="hidden sm:inline-block w-px h-5 bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]"/>
 );
 
-export default function ReaderApp({lang = 'en', entity, rows = []}) {
+export default function ReaderApp({lang = 'en', entity, rows = [], fontSize: savedFontSize}) {
     const {t} = useI18n();
-    const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+    const [fontSize, setFontSize] = useState(savedFontSize ?? DEFAULT_FONT_SIZE);
+    useUiSettingsAutosave('reader', {font_size: fontSize});
     const [showAll, setShowAll] = useState(false);
     const [sideBySide, setSideBySide] = useState(false);
     const [wideMode, setWideMode] = useState(false);

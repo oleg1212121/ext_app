@@ -45,13 +45,18 @@ gone.
 
 `user_settings` (one row per user) holds per-user preferences: the **native
 language** (`native_language_id` → `languages.id`, nullable, English by
-default) and the **interface language** (`interface_language_id`, nullable —
+default), the **interface language** (`interface_language_id`, nullable —
 null follows the native language; only `languages.is_interface_enabled`
-languages are valid). Created at registration; changeable from the profile page
+languages are valid), and **UI settings** (`ui_settings`, nullable JSONB —
+per-section blobs keyed `simulator` / `reader`: font sizes, panel visibility,
+selected AI model, customized assessment question, panel drag sizes). Created
+at registration; the language fields are changeable from the profile page
 (Inertia `Profile/Edit`) and admin-managed via the language selects on the
 `UserResource` create/edit forms (the former standalone `UserSettingsResource`
 was removed 2026-09-12). The UI locale resolves interface → native → `en`
-(ADR 0023). See the
+(ADR 0023); UI settings are seeded into Inertia props by
+`SimulatorController`/`ReaderController` and written back by a debounced PATCH
+to `/ui-settings` (ADR 0024). See the
 [Access Control domain](../domains/access-control.md) for the user, and the
 **User settings** / **Native language** glossary entries in
 [CONTEXT.md](../../CONTEXT.md#language-catalog-context).

@@ -21,6 +21,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SimulatorController extends Controller
 {
+    public const DEFAULT_QUESTION = 'Compare Russian original vs. my translation. Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; wrap the few most important weak-point phrases in ==double equals==; put improved versions in > blockquotes. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Assess grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version. 4. Give a couple of improved versions.';
+
     public function __construct(
         protected AIModelResolver $modelResolver,
         protected MeaningMatchPresenter $presenter,
@@ -43,18 +45,40 @@ class SimulatorController extends Controller
 
         $canUseAi = auth()->user()->canUseAi();
 
+        $saved = auth()->user()->settings?->ui_settings['simulator'] ?? [];
+
+        $availableModels = [];
+        foreach ($aiModels as $models) {
+            $availableModels = [...$availableModels, ...array_keys($models)];
+        }
+        if (isset($saved['model']) && in_array($saved['model'], $availableModels, true)) {
+            $currentModel = $saved['model'];
+        }
+
         return Inertia::render('Bilinguals/Bilinguals', [
             'aiModels' => $aiModels,
             'textList' => $textList,
-            'showWorkplace' => true,
-            'showQuestion' => false,
-            'showText' => true,
-            'showAI' => $canUseAi,
+            'showWorkplace' => (bool) ($saved['show_workplace'] ?? true),
+            'showQuestion' => (bool) ($saved['show_question'] ?? false),
+            'showText' => (bool) ($saved['show_text'] ?? true),
+            'showAI' => $canUseAi && (bool) ($saved['show_ai'] ?? true),
             'canUseAi' => $canUseAi,
             'currentModel' => $currentModel,
-            'currentQuestion' => 'Compare Russian original vs. my translation. Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; wrap the few most important weak-point phrases in ==double equals==; put improved versions in > blockquotes. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Assess grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version. 4. Give a couple of improved versions.',
+            'currentQuestion' => $saved['question'] ?? self::DEFAULT_QUESTION,
             'currentText' => $firstId !== null ? (string) $firstId : '',
+            'fontSize' => $this->clampInt($saved['font_size'] ?? null, 12, 48, 26),
+            'aiPanelWidth' => $this->clampInt($saved['ai_panel_width'] ?? null, 280, 1200, 560),
+            'workplaceHeight' => $this->clampInt($saved['workplace_height'] ?? null, 80, 800, 168),
         ]);
+    }
+
+    private function clampInt(mixed $value, int $min, int $max, int $default): int
+    {
+        if (! is_int($value) && ! is_string($value) || ! preg_match('/^-?\d+$/', (string) $value)) {
+            return $default;
+        }
+
+        return max($min, min($max, (int) $value));
     }
 
     /**

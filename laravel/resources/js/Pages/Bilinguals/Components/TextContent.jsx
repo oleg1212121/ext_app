@@ -71,7 +71,8 @@ export default function TextContent(props) {
                     const n = rowOffset + i + 1;
                     const nStr = n < 10 ? `0${n}` : String(n);
                     return (
-                    <tr key={rowOffset + i}
+                    <tr id={`simulator-row-${n}`}
+                        key={rowOffset + i}
                         className="simulator-row group relative transition-colors duration-150 hover:bg-[var(--wbench-paper-deep)]/60 dark:hover:bg-[var(--wbench-paper-deep-night)]/50 cursor-pointer">
                         <td className="px-4 py-2 align-top hide_en relative">
                             <span className="ribbon-mark absolute left-0 top-0 bottom-0" aria-hidden="true"/>
@@ -79,7 +80,7 @@ export default function TextContent(props) {
                         </td>
                         <td className="px-2 py-2 bilingual-control-cell">
                             <div className="bilingual-control-inner bilingual-control-resizeable">
-                                <CheckboxInput className="check_en cursor-pointer"/>
+                                <CheckboxInput className="check_en cursor-pointer" checked={!!(props.checkedRows?.[n]?.en)} onChange={() => props.onToggleRow(n, 'en')}/>
                             </div>
                         </td>
                         <td className="px-2 py-2 bilingual-control-cell">
@@ -89,7 +90,7 @@ export default function TextContent(props) {
                         </td>
                         <td className="px-2 py-2 bilingual-control-cell">
                             <div className="bilingual-control-inner bilingual-control-resizeable">
-                                <CheckboxInput className="check_ru cursor-pointer"/>
+                                <CheckboxInput className="check_ru cursor-pointer" checked={!!(props.checkedRows?.[n]?.ru)} onChange={() => props.onToggleRow(n, 'ru')}/>
                             </div>
                         </td>
                         <td className="px-4 py-2 align-top hide_ru">

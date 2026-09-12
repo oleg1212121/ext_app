@@ -1,11 +1,11 @@
 import {useI18n} from '../../../i18n';
-import React from "react";
-
-const DEFAULT_AI_PANEL_WIDTH = 560;
 
 export default function AI(props) {
     const {t} = useI18n();
-    const [panelWidth, setPanelWidth] = React.useState(DEFAULT_AI_PANEL_WIDTH);
+    const panelWidth = props.width ?? 560;
+    const setPanelWidth = (updater) => props.onWidthChange(
+        typeof updater === 'function' ? updater(panelWidth) : updater
+    );
 
     const startDrag = (event) => {
         event.preventDefault();

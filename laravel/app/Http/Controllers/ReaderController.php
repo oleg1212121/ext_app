@@ -49,7 +49,19 @@ class ReaderController extends Controller
                 'name' => $entity->name,
             ],
             'rows' => $rows,
+            'fontSize' => $this->savedReaderFontSize(),
         ]);
+    }
+
+    private function savedReaderFontSize(): int
+    {
+        $saved = auth()->user()->settings?->ui_settings['reader']['font_size'] ?? null;
+
+        if (! is_numeric($saved)) {
+            return 20;
+        }
+
+        return max(16, min(38, (int) $saved));
     }
 
     /**

@@ -11,7 +11,15 @@ class UserSettings extends Model
         'user_id',
         'native_language_id',
         'interface_language_id',
+        'ui_settings',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'ui_settings' => 'array',
+        ];
+    }
 
     public function user(): BelongsTo
     {
