@@ -1931,3 +1931,38 @@ did* **Change: AI Models admin enable/disable now fires without a confirmation
   `wiki/domains/bilinguals-simulator.md` (routes + Persistence section),
   `wiki/database/schema-overview.md` (ui_settings column), CONTEXT.md
   (UI settings / Working state glossary).
+
+## 2026-09-12 (crossword restoration)
+
+* **Restored the crossword on the new schema (ADR 0025)**: `GET /crossword`
+  (Inertia `Crossword/Crossword`, named `crossword`) + `POST
+  /crossword/generate|complete|word/know` (`CrosswordController`, Form
+  Requests). New tables `entity_words` (token-first per-entity word list
+  with counts, nullable dictionary `word_id` link) and `user_word`
+  (global per-user learning/solved/known progress), plus
+  `entities.words_indexed_at`; the puzzle generator
+  (`App\Classes\Crossword`, placement algorithm recovered verbatim from
+  the 2025 feature) selects up to 30 band words deterministically,
+  excluding the user's solved/known words. Supporting commands:
+  `crossword:index` / `crossword:link` (`EntityWordIndexer`,
+  `WordTokenizer` replacing the dead `Parser.php`) and
+  `words:import-frequency` (`rank,word` CSV → `words.frequency` ranks,
+  sample list in `database/frequency/en-sample.csv`). Frontend ported to
+  the recovered React page (`resources/js/Pages/Crossword/`) with i18n
+  `crossword.*` UI strings, nav link restored; ask-AI/word-action legacy
+  endpoints intentionally dropped; stale `public/js/crossword.js` +
+  `public/css/crossword.css` deleted. New wiki concept
+  `wiki/domains/crossword.md`; CONTEXT.md Crossword Context.
+
+* **Fix: crossword page rendered unstyled** — `resources/css/crossword.css`
+  (board grid, 50×40 cells, input/arrow/state colors, panel drag handle) was
+  orphaned after the blade-layout era: nothing imported it, so the restored
+  page drew unsized inline inputs with no grid. It is now imported from
+  `resources/css/app.css` and ships in the built bundle.
+* **Crossword solved-cell color** — `.green` now uses new `--wbench-solved`
+  (#a8cbb2 light / #2e5c3f dark) tokens instead of ink-black, per feedback:
+  empty cells stay grey, unsolved white, solved green.
+* **Crossword board colors** — empty cells softened to a low-contrast grey
+  (`--wbench-empty` #e6e4dd / #202020 night); numbered clue cells now
+  highlight by direction: across = orange (`--wbench-across`), down = sky
+  (`--wbench-down`), with the 2px leading edge carrying the direction color.

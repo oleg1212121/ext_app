@@ -3,6 +3,7 @@
 use App\Http\Controllers\AlignmentController;
 use App\Http\Controllers\AlignmentEditorController;
 use App\Http\Controllers\Bilinguals\SimulatorController;
+use App\Http\Controllers\CrosswordController;
 use App\Http\Controllers\EntityController;
 use App\Http\Controllers\LibraryController;
 use App\Http\Controllers\ProfileController;
@@ -48,6 +49,11 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::get('/reader-react/{lang}', [ReaderController::class, 'index'])
         ->where('lang', '[a-z]{2}')
         ->name('reader.react.index');
+
+    Route::get('/crossword', [CrosswordController::class, 'index'])->name('crossword');
+    Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');
+    Route::post('/crossword/complete', [CrosswordController::class, 'complete'])->name('crossword.complete');
+    Route::post('/crossword/word/know', [CrosswordController::class, 'know'])->name('crossword.know');
 
     Route::get('/library', [LibraryController::class, 'index'])->name('library.index');
     Route::get('/library/create', [LibraryController::class, 'createWork'])->name('library.create');

@@ -199,7 +199,7 @@ _Avoid_: namespace, category
 
 The domain of the Wiktionary-sourced dictionary — words per language with
 their linguistic satellites, populated by the import pipeline and curated in
-the admin panel. Nothing at runtime reads it yet.
+the admin panel.
 
 ## Language
 
@@ -382,3 +382,37 @@ semantics of its own; access control and counts live on its entities (see
 Readable count in the Entity Access Context). See ADR 0021.
 _Avoid_: available works (Available is the AI-provider term), my library,
 book collection.
+
+# Crossword Context
+
+The domain of crossword puzzles generated from a text's own vocabulary —
+the entity's word inventory, the frequency-band Level that selects puzzle
+words, and the player's per-word progress.
+
+## Language
+
+**Crossword**:
+A puzzle laid out from a fixed set of words selected for one Entity and
+Level. Deterministic: the same inputs always produce the same grid.
+_Avoid_: puzzle generator (the algorithm, not the artifact), quiz.
+
+**Entity word list**:
+The complete inventory of unique words in one Entity with an occurrence
+count for each, built by tokenizing the entity's sentences. Token-first —
+it exists before any dictionary link; the dictionary **Word** link fills
+in later (see ADR 0025).
+_Avoid_: book words (legacy crossword-domain term), index (implementation
+term), vocabulary (vague — the dictionary as a whole).
+
+**Level**:
+A global frequency-rank band (top 100, top 500, … top 1 000 000) used to
+select puzzle words. A word is eligible for a Level when its rank (lower =
+more common) is within the band's cutoff.
+_Avoid_: difficulty (implies curated ordering), CEFR level.
+
+**Word progress**:
+The player's status for one dictionary Word, global across all works:
+**learning** (selected in a generated puzzle), **solved** (its puzzle was
+completed), or **known** (marked by hand). Generation skips solved and
+known words, so completing puzzles advances down the Level band.
+_Avoid_: score, knowledge level.

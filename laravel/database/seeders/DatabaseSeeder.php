@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             SentenceTypeSeeder::class,
             WordClassSeeder::class,
             TranscriptionTypeSeeder::class,
+            CrosswordDevSeeder::class,
         ]);
     }
 }

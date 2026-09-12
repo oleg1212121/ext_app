@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "flowbite-react/plugin/tailwindcss";
+@import "./crossword.css";
 @source "../../.flowbite-react/class-list.json";
 
 @plugin "@tailwindcss/forms";
@@ -43,6 +44,10 @@
     --wbench-accent-ink: #15296F;
     --wbench-danger: #B1251C;
     --wbench-emphasis: #B0451E;
+    --wbench-solved: #A8CBB2;
+    --wbench-empty: #E6E4DD;
+    --wbench-across: #E09A3C;
+    --wbench-down: #6FA8DC;
 
     --wbench-paper-night: #111111;
     --wbench-paper-deep-night: #1A1A1A;
@@ -52,6 +57,10 @@
     --wbench-accent-night: #5A78FF;
     --wbench-danger-night: #E66B62;
     --wbench-emphasis-night: #E0664A;
+    --wbench-solved-night: #2E5C3F;
+    --wbench-empty-night: #202020;
+    --wbench-across-night: #D08A3A;
+    --wbench-down-night: #4D8FD1;
 }
 
 .gutter-cane {

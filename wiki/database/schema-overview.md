@@ -5,7 +5,7 @@ description: The table domains — works/entities/alignment, unified dictionary,
 tags: [database, schema, postgres, users, settings]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-12T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-12T18:08:33Z }
 sources:
   - id: migrations
     resource: laravel/database/migrations
@@ -30,6 +30,7 @@ is an `INSERT` into `languages` — never DDL (ADR
 |--------|--------|
 | [Entities & alignment](entities-alignment.md) | `works`, `entities` (+ `language_id`), `entity_sentences`, `entity_matches` (a/b sides), `meaning_matches`, `sentence_meaning_matches` (side column), `entity_user` grants. Filled by the [alignment pipeline](/domains/sentence-alignment.md) |
 | [Dictionary](dictionary.md) | Unified `words` (+ `language_id`) with satellites, `word_classes`/`transcription_types` per language, one directed `word_translations` pivot. Filled by [Dictionary Import](/domains/dictionary-import.md) |
+| [Crossword](../domains/crossword.md) | `entity_words` (token-first per-entity word list, nullable `word_id` link), `user_word` (per-user learning/solved/known progress), `entities.words_indexed_at` staleness marker, `words.frequency` ranks. See ADR [0025](../../docs/adr/0025-crossword-word-index-and-progress.md) |
 | AI catalog | `ai_providers`, `ai_models`, `user_api_keys` (2026_09_10_000002) |
 | Users & settings | `users` (role/approval inline), `user_settings` (native + interface language) |
 | [Localization](../domains/localization.md) | `ui_string_keys` (dotted key, group), `ui_strings` (one text per interface-enabled language); `languages.is_interface_enabled` gates pickers |

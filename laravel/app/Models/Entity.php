@@ -19,12 +19,14 @@ class Entity extends Model
         'signature',
         'file_path',
         'is_restricted',
+        'words_indexed_at',
     ];
 
     protected function casts(): array
     {
         return [
             'is_restricted' => 'boolean',
+            'words_indexed_at' => 'datetime',
         ];
     }
 
@@ -41,6 +43,11 @@ class Entity extends Model
     public function sentences(): HasMany
     {
         return $this->hasMany(EntitySentence::class);
+    }
+
+    public function entityWords(): HasMany
+    {
+        return $this->hasMany(EntityWord::class);
     }
 
     public function matchesAsA(): HasMany
