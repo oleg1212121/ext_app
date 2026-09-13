@@ -43,6 +43,9 @@ class WordTokenizer
 
     private function trimEdgePunctuation(string $surface): string
     {
-        return trim($surface, "'’-");
+        // PHP trim() strips BYTES, so the multi-byte ’ in the mask shears the
+        // final byte off words ending e.g. in р (0xD1 0x80) — invalid UTF-8
+        // that Postgres rejects. Edge trimming must be multibyte-safe.
+        return preg_replace("/\A['’-]+|['’-]+\z/u", '', $surface) ?? $surface;
     }
 }

@@ -2,6 +2,18 @@
 
 ## 2026-09-13
 
+* **Fix: tokenizer corrupted words ending in р (SQLSTATE 22021).**
+  `WordTokenizer::trimEdgePunctuation` used PHP's byte-wise `trim()` with
+  the multi-byte `’` in the mask; the mask byte 0x80 sheared the final
+  byte off any token whose last character ends in 0x80 (every Cyrillic
+  word ending in **р** — 0xD1 0x80 — e.g. "умер" → `уме\xD1`), producing
+  invalid UTF-8 that Postgres rejects. `EntityWordIndexer::index()`
+  therefore crashed with a whole-transaction rollback for affected
+  entities — surfaced by the Russian Book Thief upload and by the new
+  background refresh job. Fix: multibyte-safe edge-only
+  `preg_replace("/\A['’-]+|['’-]+\z/u")`. Regression tests in
+  `tests/Unit/WordTokenizerTest.php`; dev entities re-indexed and
+  re-linked after the fix.
 * **Crossword page: work-first picker, pruned right panel.** The header
   entity select became a work-grouped select (one `<optgroup>` per work,
   its readable entities as options, label appended when set) plus a global

@@ -87,7 +87,6 @@ class CrosswordController extends Controller
             ->where('entity_words.entity_id', $entity->id)
             ->whereNotNull('entity_words.word_id')
             ->join('words', 'words.id', '=', 'entity_words.word_id')
-            ->where('words.frequency', '>', 0)
             ->where('words.frequency', '<=', CrosswordLevel::cutoff($request->integer('level')))
             ->whereNotExists(function ($query) use ($user) {
                 $query->selectRaw(1)

@@ -29,6 +29,30 @@ it('keeps cyrillic tokens', function () {
     expect($words['улыбалась'])->toBe(['token' => 'улыбалась', 'count' => 1]);
 });
 
+it('keeps multibyte word endings valid utf-8', function () {
+    $tokenizer = new WordTokenizer;
+
+    // Words ending in р (0xD1 0x80) lose their final byte to the byte-wise
+    // trim mask and crash the Postgres insert with SQLSTATE 22021.
+    $words = $tokenizer->tokenize('Ампер умер.');
+
+    expect(array_keys($words))->toBe(['ампер', 'умер']);
+    foreach ($words as $key => $entry) {
+        expect(mb_check_encoding($key, 'UTF-8'))->toBeTrue();
+        expect(mb_check_encoding($entry['token'], 'UTF-8'))->toBeTrue();
+    }
+    expect($words['ампер']['token'])->toBe('Ампер');
+    expect($words['умер']['token'])->toBe('умер');
+});
+
+it('preserves curly apostrophes inside words', function () {
+    $tokenizer = new WordTokenizer;
+
+    $words = $tokenizer->tokenize('He said don’t twice.');
+
+    expect($words['don’t'])->toBe(['token' => 'don’t', 'count' => 1]);
+});
+
 it('keeps hyphenated and apostrophized words as one token', function () {
     $tokenizer = new WordTokenizer;
 
