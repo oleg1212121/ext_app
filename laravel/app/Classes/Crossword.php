@@ -30,7 +30,7 @@ class Crossword
 
     /**
      * Map of placed word string => dictionary word id, filled by the controller
-     * so the frontend can reference dictionary rows (complete/know endpoints).
+     * so the frontend can reference dictionary rows (the complete endpoint).
      */
     public $word_ids = [];
 
@@ -54,10 +54,6 @@ class Crossword
             }
             foreach ($translations as $translation) {
                 $this->dictionary[$word->word]['translations'][] = $translation->word;
-            }
-
-            foreach ($word->forms as $form) {
-                $this->dictionary[$word->word]['forms'][] = $form->form;
             }
         }
 

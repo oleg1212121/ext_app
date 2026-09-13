@@ -404,6 +404,13 @@ in later (see ADR 0025).
 _Avoid_: book words (legacy crossword-domain term), index (implementation
 term), vocabulary (vague — the dictionary as a whole).
 
+**Word list refresh**:
+The background operation that rebuilds an Entity's **Entity word list**
+and fills its dictionary **Word** links — a scheduled sweep dispatches one
+queued refresh per entity whose list is stale or has unlinked tokens. Until
+it completes, crossword generation reports the word list as still building.
+_Avoid_: reindex, rebuild, backfill.
+
 **Level**:
 A global frequency-rank band (top 100, top 500, … top 1 000 000) used to
 select puzzle words. A word is eligible for a Level when its rank (lower =

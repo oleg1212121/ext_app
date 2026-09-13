@@ -1,5 +1,45 @@
 # Directory Update Log
 
+## 2026-09-13
+
+* **Crossword page: work-first picker, pruned right panel.** The header
+  entity select became a work-grouped select (one `<optgroup>` per work,
+  its readable entities as options, label appended when set) plus a global
+  language-filter select ("All languages" default; filtering hides
+  non-matching entity options across all works and re-selects the first
+  visible entity when the pick is filtered out; default pick prefers the
+  first work's original-language entity). `CrosswordController::index`
+  now returns `works` (grouped, with `original_language_code`) +
+  `languages` instead of a flat entity list; the unused
+  `nativeLanguageId` prop was dropped. Right panel reduced to Definitions
+  and Translations tabs plus the unsolved-words modal: the Obsolete tab
+  (never had backend data), Forms tab, Image button (Google search), and
+  "I know this word" button are gone; `forms` removed from the
+  `dictionary` payload. `POST /crossword/word/know` + `KnowWordRequest`
+  deleted (the `known` word-progress status remains valid in `user_word`).
+  `crossword.*` UI strings updated (new `work`/`language`/`all_languages`,
+  removed tab/button strings, copy now says "work"); `UiStringSeeder`
+  re-run and the cached string map flushed.
+  `wiki/domains/crossword.md` updated; `CrosswordPageTest` covers the new
+  payload shape and drops the know-endpoint test.
+* **Background word-list refresh (index + link in the queue).** New
+  `crossword:refresh` sweep (scheduled every five minutes,
+  `withoutOverlapping`) picks entities that have sentences and either a
+  stale index or unlinked `entity_words` rows, and dispatches one
+  `RefreshEntityWords` queue job per entity (`ShouldBeUnique` by entity
+  id); the job re-indexes when stale and always runs the link pass
+  (ADR 0026). Linking logic extracted from `LinkEntityWordsCommand` into
+  `App\Classes\EntityWordLinker` (command + job share it; command output
+  unchanged). `POST /crossword/generate` no longer rebuilds inline — a
+  stale word list now returns 422 with the new seeded
+  `crossword.still_building` UI string, distinct from
+  `crossword.not_enough_words`. Dictionary/frequency imports reach
+  existing entities without manual `crossword:link` runs. New tests:
+  `RefreshEntityWordsCommandTest`, `RefreshEntityWordsJobTest`,
+  `LinkEntityWordsCommandTest`; `CrosswordPageTest` covers the
+  still-building response. `wiki/domains/crossword.md` rewritten;
+  CONTEXT.md Crossword Context gained "Word list refresh".
+
 ## 2026-09-12
 
 * **UI localization (DB-backed strings + interface language).** New

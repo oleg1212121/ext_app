@@ -29,7 +29,3 @@ export async function fetchCrossword(entityId, level) {
 export async function completeCrossword(wordIds) {
     await postJson('/crossword/complete', {word_ids: wordIds});
 }
-
-export async function knowWord(wordId) {
-    await postJson('/crossword/word/know', {word_id: wordId});
-}

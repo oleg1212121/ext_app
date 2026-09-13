@@ -53,7 +53,6 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::get('/crossword', [CrosswordController::class, 'index'])->name('crossword');
     Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');
     Route::post('/crossword/complete', [CrosswordController::class, 'complete'])->name('crossword.complete');
-    Route::post('/crossword/word/know', [CrosswordController::class, 'know'])->name('crossword.know');
 
     Route::get('/library', [LibraryController::class, 'index'])->name('library.index');
     Route::get('/library/create', [LibraryController::class, 'createWork'])->name('library.create');

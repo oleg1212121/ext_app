@@ -4,8 +4,8 @@ import RightPanel from './Components/RightPanel';
 import UnsolvedModal from './Components/UnsolvedModal';
 import {useCrossword} from './useCrossword';
 
-export default function CrosswordApp({entities = [], levels = []}) {
-    const crosswordState = useCrossword({entities, levels});
+export default function CrosswordApp({works = [], languages = [], levels = []}) {
+    const crosswordState = useCrossword({works, languages, levels});
 
     return (
         <div
@@ -20,7 +20,10 @@ export default function CrosswordApp({entities = [], levels = []}) {
             />
 
             <CrosswordHeader
-                entities={crosswordState.entities}
+                works={crosswordState.works}
+                languages={crosswordState.languages}
+                languageFilter={crosswordState.languageFilter}
+                setLanguageFilter={crosswordState.setLanguageFilter}
                 currentEntity={crosswordState.currentEntity}
                 setCurrentEntity={crosswordState.setCurrentEntity}
                 wordLevels={crosswordState.wordLevels}
@@ -48,11 +51,7 @@ export default function CrosswordApp({entities = [], levels = []}) {
                     currentTab={crosswordState.currentTab}
                     setCurrentTab={crosswordState.setCurrentTab}
                     definitions={crosswordState.definitions}
-                    obsolete={crosswordState.obsolete}
                     translations={crosswordState.translations}
-                    forms={crosswordState.forms}
-                    onCheckImage={crosswordState.handleCheckImage}
-                    onKnow={crosswordState.handleKnow}
                     onShowUnsolved={() => crosswordState.setShowUnsolvedModal(true)}
                     onStartDrag={crosswordState.startDragRightPanel}
                 />

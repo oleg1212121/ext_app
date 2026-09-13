@@ -8,7 +8,6 @@ use App\Classes\EntityAccessService;
 use App\Classes\EntityWordIndexer;
 use App\Http\Requests\CompleteCrosswordRequest;
 use App\Http\Requests\GenerateCrosswordRequest;
-use App\Http\Requests\KnowWordRequest;
 use App\Models\Entity;
 use App\Models\EntityWord;
 use App\Models\UserWord;
@@ -31,21 +30,41 @@ class CrosswordController extends Controller
         $user = $request->user();
 
         $entities = $this->access->readableQuery($user)
-            ->with(['work:id,title', 'language:id,code'])
+            ->with(['work:id,title,original_language_id', 'work.originalLanguage:id,code', 'language:id,code,name'])
             ->orderBy('work_id')
-            ->get(['id', 'work_id', 'language_id', 'name', 'label'])
-            ->map(fn (Entity $entity) => [
-                'id' => $entity->id,
-                'work_title' => $entity->work?->title,
-                'language_code' => $entity->language?->code,
-                'name' => $entity->name,
-                'label' => $entity->label,
-            ]);
+            ->get(['id', 'work_id', 'language_id', 'name', 'label']);
+
+        $works = $entities
+            ->groupBy('work_id')
+            ->map(fn ($workEntities) => [
+                'id' => $workEntities->first()->work->id,
+                'title' => $workEntities->first()->work->title,
+                'original_language_code' => $workEntities->first()->work->originalLanguage?->code,
+                'entities' => $workEntities
+                    ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+                    ->map(fn (Entity $entity) => [
+                        'id' => $entity->id,
+                        'name' => $entity->name,
+                        'label' => $entity->label,
+                        'language_code' => $entity->language?->code,
+                    ])
+                    ->values(),
+            ])
+            ->sortBy('title', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
+
+        $languages = $entities
+            ->map(fn (Entity $entity) => $entity->language)
+            ->filter()
+            ->unique('id')
+            ->sortBy('code')
+            ->map(fn ($language) => ['code' => $language->code, 'name' => $language->name])
+            ->values();
 
         return Inertia::render('Crossword/Crossword', [
-            'entities' => $entities,
+            'works' => $works,
+            'languages' => $languages,
             'levels' => CrosswordLevel::levels(),
-            'nativeLanguageId' => $user->nativeLanguage()?->id,
         ]);
     }
 
@@ -58,8 +77,10 @@ class CrosswordController extends Controller
             return response()->json(['message' => 'You cannot read this entity.'], 403);
         }
 
+        // The word list is built and linked in the background
+        // (crossword:refresh); generate never blocks on it.
         if ($indexer->isStale($entity)) {
-            $indexer->index($entity);
+            return response()->json(['message' => __('crossword.still_building')], 422);
         }
 
         $wordIds = EntityWord::query()
@@ -84,7 +105,7 @@ class CrosswordController extends Controller
             ->whereIn('id', $wordIds)
             ->orderBy('frequency')
             ->orderBy('id')
-            ->with(['definitions', 'forms'])
+            ->with('definitions')
             ->get();
 
         if ($words->count() < self::MIN_WORDS) {
@@ -114,18 +135,6 @@ class CrosswordController extends Controller
             ->whereIn('word_id', $request->array('word_ids'))
             ->where('status', UserWord::STATUS_LEARNING)
             ->update(['status' => UserWord::STATUS_SOLVED]);
-
-        return response()->json(['saved' => true]);
-    }
-
-    public function know(KnowWordRequest $request): JsonResponse
-    {
-        $user = $request->user();
-
-        UserWord::query()->updateOrCreate(
-            ['user_id' => $user->id, 'word_id' => $request->integer('word_id')],
-            ['status' => UserWord::STATUS_KNOWN],
-        );
 
         return response()->json(['saved' => true]);
     }

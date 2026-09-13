@@ -40,20 +40,14 @@ function DefinitionList({items, accent = 'text-[var(--wbench-ink)] dark:text-[va
     );
 }
 
-export default function TabContent({currentTab, definitions, obsolete, translations, forms}) {
+export default function TabContent({currentTab, definitions, translations}) {
     return (
         <div className="flex-1 overflow-auto">
             <TabPanel active={currentTab === 0}>
                 <DefinitionList items={definitions}/>
             </TabPanel>
             <TabPanel active={currentTab === 1}>
-                <DefinitionList items={obsolete}/>
-            </TabPanel>
-            <TabPanel active={currentTab === 2}>
                 <DefinitionList items={translations} accent="text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]"/>
-            </TabPanel>
-            <TabPanel active={currentTab === 3}>
-                <DefinitionList items={forms}/>
             </TabPanel>
         </div>
     );

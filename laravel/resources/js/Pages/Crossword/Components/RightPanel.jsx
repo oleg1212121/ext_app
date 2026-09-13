@@ -41,11 +41,7 @@ export default function RightPanel({
     currentTab,
     setCurrentTab,
     definitions,
-    obsolete,
     translations,
-    forms,
-    onCheckImage,
-    onKnow,
     onShowUnsolved,
     onStartDrag,
 }) {
@@ -53,9 +49,7 @@ export default function RightPanel({
 
     const tabs = [
         {id: 0, label: t('crossword.tab_definitions')},
-        {id: 1, label: t('crossword.tab_obsolete')},
-        {id: 2, label: t('crossword.tab_translations')},
-        {id: 3, label: t('crossword.tab_forms')},
+        {id: 1, label: t('crossword.tab_translations')},
     ];
 
     return (
@@ -91,18 +85,6 @@ export default function RightPanel({
 
                     <span className={HAIRLINE} aria-hidden="true"/>
 
-                    <GhostButton onClick={onCheckImage} title={t('crossword.image')}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                        </svg>
-                        {t('crossword.image')}
-                    </GhostButton>
-                    <GhostButton onClick={onKnow} title={t('crossword.know')}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/>
-                        </svg>
-                        {t('crossword.know')}
-                    </GhostButton>
                     <GhostButton onClick={onShowUnsolved} title={t('crossword.show_unsolved')}>
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"/>
@@ -113,9 +95,7 @@ export default function RightPanel({
                 <TabContent
                     currentTab={currentTab}
                     definitions={definitions}
-                    obsolete={obsolete}
                     translations={translations}
-                    forms={forms}
                 />
             </div>
         </>

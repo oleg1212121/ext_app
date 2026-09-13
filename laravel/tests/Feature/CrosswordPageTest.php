@@ -2,6 +2,7 @@
 
 use App\Models\Entity;
 use App\Models\EntitySentence;
+use App\Models\EntityWord;
 use App\Models\User;
 use App\Models\UserWord;
 use App\Models\Word;
@@ -52,8 +53,14 @@ it('renders the crossword page for approved users', function () {
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
             ->component('Crossword/Crossword')
-            ->has('entities', 1)
-            ->where('entities.0.id', $entity->id)
+            ->has('works', 1)
+            ->where('works.0.id', $entity->work_id)
+            ->where('works.0.title', 'Test Work')
+            ->where('works.0.original_language_code', 'en')
+            ->where('works.0.entities.0.id', $entity->id)
+            ->where('works.0.entities.0.language_code', 'en')
+            ->has('languages', 1)
+            ->where('languages.0.code', 'en')
             ->has('levels', 8));
 });
 
@@ -66,15 +73,52 @@ it('lists only readable entities on the page', function () {
         ->get(route('crossword'))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->where('entities.0.id', $public->id)
-            ->missing('entities.1'));
+            ->where('works.0.entities.0.id', $public->id)
+            ->missing('works.1'));
 
     DB::table('entity_user')->insert(['entity_id' => $restricted->id, 'user_id' => $user->id]);
 
     $this->actingAs($user)
         ->get(route('crossword'))
         ->assertSuccessful()
-        ->assertInertia(fn ($page) => $page->has('entities', 2));
+        ->assertInertia(fn ($page) => $page
+            ->has('works', 2)
+            ->where('works.1.entities.0.id', $restricted->id));
+});
+
+it('groups same-language entities of one work under a single work', function () {
+    $user = User::factory()->create();
+    $work = createWork();
+    createEntity('en', $work, ['name' => 'Alpha']);
+    $competing = createEntity('en', $work, ['name' => 'Beta', 'label' => 'Kahn translation']);
+
+    $this->actingAs($user)
+        ->get(route('crossword'))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->has('works', 1)
+            ->where('works.0.id', $work->id)
+            ->has('works.0.entities', 2)
+            ->where('works.0.entities.0.name', 'Alpha')
+            ->where('works.0.entities.1.id', $competing->id)
+            ->where('works.0.entities.1.label', 'Kahn translation'));
+});
+
+it('offers the languages of readable entities for filtering', function () {
+    $user = User::factory()->create();
+    $work = createWork();
+    createEntity('ru', $work);
+    createEntity('en', $work);
+
+    $this->actingAs($user)
+        ->get(route('crossword'))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->has('languages', 2)
+            ->where('languages.0.code', 'en')
+            ->where('languages.1.code', 'ru')
+            ->where('languages.1.name', 'Russian')
+            ->where('works.0.entities.0.language_code', 'en'));
 });
 
 it('generates a crossword for a readable entity', function () {
@@ -147,6 +191,21 @@ it('returns 422 when too few words are available', function () {
         ->assertStatus(422);
 });
 
+it('reports a stale word list as still building instead of building inline', function () {
+    $user = User::factory()->create();
+    $entity = seedCrosswordEntity();
+    createWord('en', 'cat', 'noun');
+
+    $this->actingAs($user)
+        ->post(route('crossword.generate'), ['entity_id' => $entity->id, 'level' => 0])
+        ->assertStatus(422)
+        ->assertJson(['message' => 'crossword.still_building']);
+
+    // The background job owns the rebuild — generate must not touch it.
+    expect(EntityWord::query()->where('entity_id', $entity->id)->count())->toBe(0)
+        ->and($entity->refresh()->words_indexed_at)->toBeNull();
+});
+
 it('marks learning words solved on completion', function () {
     $user = User::factory()->create();
     $word = createWord('en', 'complete', 'noun');
@@ -161,18 +220,6 @@ it('marks learning words solved on completion', function () {
 
     expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $word->id)->value('status'))->toBe('solved');
     expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $knownWord->id)->value('status'))->toBe('known');
-});
-
-it('marks a word known from the right panel', function () {
-    $user = User::factory()->create();
-    $word = createWord('en', 'perceive', 'verb');
-
-    $this->actingAs($user)
-        ->post(route('crossword.know'), ['word_id' => $word->id])
-        ->assertOk()
-        ->assertJson(['saved' => true]);
-
-    expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $word->id)->value('status'))->toBe('known');
 });
 
 it('validates generate input', function () {

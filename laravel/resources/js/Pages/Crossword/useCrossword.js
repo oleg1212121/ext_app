@@ -1,6 +1,6 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useI18n} from '../../i18n';
-import {completeCrossword, fetchCrossword, knowWord} from './api';
+import {completeCrossword, fetchCrossword} from './api';
 import {
     ALLOWED_KEYS,
     cellKey,
@@ -37,18 +37,29 @@ function cloneGrid(grid) {
     return grid.map((row) => row.map((cell) => ({...cell})));
 }
 
-export function useCrossword({entities: initialEntities = [], levels = []} = {}) {
+// Default to the first work, preferring its original-language entity so the
+// page opens on the source text rather than a random translation.
+function defaultEntityId(works) {
+    const first = works[0];
+    if (!first?.entities?.length) {
+        return '';
+    }
+
+    const original = first.entities.find((entity) => entity.language_code === first.original_language_code);
+    return (original ?? first.entities[0]).id;
+}
+
+export function useCrossword({works: initialWorks = [], languages = [], levels = []} = {}) {
     const {t} = useI18n();
     const [crossword, setCrossword] = useState(null);
-    const [entities] = useState(initialEntities);
-    const [currentEntity, setCurrentEntity] = useState(() => initialEntities[0]?.id ?? '');
+    const [works] = useState(initialWorks);
+    const [languageFilter, setLanguageFilter] = useState('');
+    const [currentEntity, setCurrentEntity] = useState(() => defaultEntityId(initialWorks));
     const [currentLevel, setCurrentLevel] = useState(DEFAULT_LEVEL);
     const [currentTab, setCurrentTab] = useState(0);
     const [showUnsolvedModal, setShowUnsolvedModal] = useState(false);
     const [definitions, setDefinitions] = useState([]);
-    const [obsolete, setObsolete] = useState([]);
     const [translations, setTranslations] = useState([]);
-    const [forms, setForms] = useState([]);
     const [currentWord, setCurrentWord] = useState('');
     const [solvedWords, setSolvedWords] = useState([]);
     const [vector, setVector] = useState(true);
@@ -80,6 +91,34 @@ export function useCrossword({entities: initialEntities = [], levels = []} = {})
         solvedWordsRef.current = solvedWords;
     }, [solvedWords]);
 
+    const worksWithEntities = useMemo(
+        () => works.filter((work) => work.entities?.length > 0),
+        [works],
+    );
+
+    // The language select filters entity options across all works; works left
+    // without matching entities disappear from the picker entirely.
+    const filteredWorks = useMemo(() => {
+        if (!languageFilter) {
+            return worksWithEntities;
+        }
+
+        return worksWithEntities
+            .map((work) => ({
+                ...work,
+                entities: work.entities.filter((entity) => entity.language_code === languageFilter),
+            }))
+            .filter((work) => work.entities.length > 0);
+    }, [worksWithEntities, languageFilter]);
+
+    // When the filter hides the selected entity, fall back to the first visible one.
+    useEffect(() => {
+        const visible = filteredWorks.some((work) => work.entities.some((entity) => entity.id === currentEntity));
+        if (!visible) {
+            setCurrentEntity(filteredWorks[0]?.entities[0]?.id ?? '');
+        }
+    }, [filteredWorks, currentEntity]);
+
     const focusCell = useCallback((y, x) => {
         const ref = inputRefs.current[cellKey(y, x)];
         ref?.focus();
@@ -96,9 +135,7 @@ export function useCrossword({entities: initialEntities = [], levels = []} = {})
         setCurrentTab(0);
         setShowUnsolvedModal(false);
         setDefinitions([]);
-        setObsolete([]);
         setTranslations([]);
-        setForms([]);
         setCellValues({});
         currentEmphasizedRef.current = [];
     }, []);
@@ -258,9 +295,7 @@ export function useCrossword({entities: initialEntities = [], levels = []} = {})
 
         const dictionary = crosswordRef.current.dictionary[word.value] ?? {};
         setDefinitions(dictionary.definitions ?? []);
-        setObsolete(dictionary.obsolete ?? []);
         setTranslations(dictionary.translations ?? []);
-        setForms(dictionary.forms ?? []);
 
         currentEmphasizedRef.current = [word];
         paintWord(word, 'blue');
@@ -432,25 +467,6 @@ export function useCrossword({entities: initialEntities = [], levels = []} = {})
             }));
     }, [crossword, solvedWords]);
 
-    const handleKnow = useCallback(async () => {
-        const wordId = crosswordRef.current?.word_ids?.[currentWord];
-        if (!wordId) {
-            return;
-        }
-
-        try {
-            await knowWord(wordId);
-        } catch (error) {
-            console.error('Error:', error);
-        }
-    }, [currentWord]);
-
-    const handleCheckImage = useCallback(() => {
-        const word = currentWord;
-        const url = 'https://www.google.com/search?q=' + word + '+meaning&udm=2';
-        window.open(url);
-    }, [currentWord]);
-
     const startDragRightPanel = useCallback((event) => {
         const startX = event.clientX;
         const startWidth = rightPanelWidth;
@@ -487,7 +503,10 @@ export function useCrossword({entities: initialEntities = [], levels = []} = {})
 
     return {
         crossword,
-        entities,
+        works: filteredWorks,
+        languages,
+        languageFilter,
+        setLanguageFilter,
         currentEntity,
         setCurrentEntity,
         currentLevel,
@@ -498,9 +517,7 @@ export function useCrossword({entities: initialEntities = [], levels = []} = {})
         showUnsolvedModal,
         setShowUnsolvedModal,
         definitions,
-        obsolete,
         translations,
-        forms,
         currentWord,
         solvedWords,
         rightPanelWidth,
@@ -514,8 +531,6 @@ export function useCrossword({entities: initialEntities = [], levels = []} = {})
         setAltBlock,
         unsetAltBlock,
         unsolvedList,
-        handleKnow,
-        handleCheckImage,
         registerInputRef,
     };
 }

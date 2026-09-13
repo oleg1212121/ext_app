@@ -12,11 +12,15 @@ const selectClass = [
 ].join(' ');
 
 function entityLabel(entity) {
-    return `${entity.name} (${entity.language_code})`;
+    const label = entity.label ? ` — ${entity.label}` : '';
+    return `${entity.name}${label} (${entity.language_code})`;
 }
 
 export default function CrosswordHeader({
-    entities,
+    works,
+    languages,
+    languageFilter,
+    setLanguageFilter,
     currentEntity,
     setCurrentEntity,
     wordLevels,
@@ -43,12 +47,28 @@ export default function CrosswordHeader({
                 <div className="flex flex-wrap items-center gap-2">
                     <select
                         className={selectClass}
+                        value={languageFilter}
+                        onChange={(e) => setLanguageFilter(e.target.value)}
+                        aria-label={t('crossword.language')}
+                    >
+                        <option value="">{t('crossword.all_languages')}</option>
+                        {languages.map((language) => (
+                            <option key={language.code} value={language.code}>{language.name}</option>
+                        ))}
+                    </select>
+
+                    <select
+                        className={selectClass}
                         value={currentEntity}
                         onChange={(e) => setCurrentEntity(Number(e.target.value))}
-                        aria-label={t('crossword.entity')}
+                        aria-label={t('crossword.work')}
                     >
-                        {entities.map((entity) => (
-                            <option key={entity.id} value={entity.id}>{entityLabel(entity)}</option>
+                        {works.map((work) => (
+                            <optgroup key={work.id} label={work.title}>
+                                {work.entities.map((entity) => (
+                                    <option key={entity.id} value={entity.id}>{entityLabel(entity)}</option>
+                                ))}
+                            </optgroup>
                         ))}
                     </select>
 
