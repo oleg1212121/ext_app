@@ -1,0 +1,18 @@
+[Unit]
+Description=ext-app Laravel queue worker (worker %i)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=alex
+Group=alex
+WorkingDirectory=/home/alex/projects/ext_app/laravel
+# Wait for migrations to be applied before consuming (mirrors the prod overlay).
+ExecStartPre=/bin/sh -c 'until php artisan migrate:status >/dev/null 2>&1; do sleep 2; done'
+ExecStart=/usr/bin/php artisan queue:work --tries=1 --timeout=620
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

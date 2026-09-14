@@ -1,0 +1,17 @@
+[Unit]
+Description=ext-app Laravel scheduler (schedule:work)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=alex
+Group=alex
+WorkingDirectory=/home/alex/projects/ext_app/laravel
+ExecStartPre=/bin/sh -c 'until php artisan migrate:status >/dev/null 2>&1; do sleep 2; done'
+ExecStart=/usr/bin/php artisan schedule:work
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Cloudflare Tunnel (cloudflared) for ext-app.abibook.xyz
+After=network.target
+Wants=network.target
+
+[Service]
+Type=notify
+User=alex
+Group=alex
+EnvironmentFile=/home/alex/projects/ext_app/docker-compose/cloudflare/.env
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
