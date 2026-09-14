@@ -85,6 +85,11 @@ test('pending approval page is accessible to unapproved users', function () {
 });
 
 test('pending approval page shows correct content', function () {
+    // The page renders seeded UI strings via __(); seed languages + strings.
+    $this->seed(\Database\Seeders\LanguageSeeder::class);
+    $this->seed(\Database\Seeders\UiStringSeeder::class);
+    \App\Support\UiStrings::flush();
+
     $user = User::factory()->unapproved()->create();
 
     $this->actingAs($user)

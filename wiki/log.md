@@ -1,5 +1,239 @@
 # Directory Update Log
 
+## 2026-09-13
+
+* **Feature: interactive dictionary words on the reader and bilinguals
+  simulator** ([Interactive words](domains/interactive-words.md), ADR
+  [0027](../docs/adr/0027-render-time-word-segmentation.md)). Dictionary
+  words in the text are now clickable (popup with definitions,
+  transcriptions, native-first translations, examples) and tinted by word
+  progress (unknown rose / in-progress amber / known plain), with "I know
+  this word" / "Remove mark" actions (`PATCH`/`DELETE /words/{word}/progress`,
+  `GET /words/{word}`). Design: word positions are **derived at render
+  time** — the server ships a per-entity word map (`EntityWordMap`,
+  `l_word => {w, s}`), the browser segments text via
+  `resources/js/lib/wordTokenizer.mjs` (PHP-parity enforced by
+  `tests/Unit/TokenizerParityTest.php`), and `WordText`/`WordPopup`
+  components are shared by reader and simulator. No occurrence/position
+  tables were added. Highlighting is gated per side (entity language ≠
+  native language) with persisted toggles `reader.highlight` and
+  `simulator.highlight_words`. Also: `EntityWordLinker` gained a forms
+  fallback pass (`entity_words.l_word` → `forms.l_word` → `words.id`,
+  exact matches win; new `idx_forms_l_word` index migration) — the first
+  dev run linked 2701 previously-unmatched EN tokens. New CONTEXT.md
+  terms: Interactive word, Word occurrence, Word map (Interactive Reading
+  Context).
+
+* **Fix: tokenizer corrupted words ending in р (SQLSTATE 22021).**
+  `WordTokenizer::trimEdgePunctuation` used PHP's byte-wise `trim()` with
+  the multi-byte `’` in the mask; the mask byte 0x80 sheared the final
+  byte off any token whose last character ends in 0x80 (every Cyrillic
+  word ending in **р** — 0xD1 0x80 — e.g. "умер" → `уме\xD1`), producing
+  invalid UTF-8 that Postgres rejects. `EntityWordIndexer::index()`
+  therefore crashed with a whole-transaction rollback for affected
+  entities — surfaced by the Russian Book Thief upload and by the new
+  background refresh job. Fix: multibyte-safe edge-only
+  `preg_replace("/\A['’-]+|['’-]+\z/u")`. Regression tests in
+  `tests/Unit/WordTokenizerTest.php`; dev entities re-indexed and
+  re-linked after the fix.
+* **Crossword page: work-first picker, pruned right panel.** The header
+  entity select became a work-grouped select (one `<optgroup>` per work,
+  its readable entities as options, label appended when set) plus a global
+  language-filter select ("All languages" default; filtering hides
+  non-matching entity options across all works and re-selects the first
+  visible entity when the pick is filtered out; default pick prefers the
+  first work's original-language entity). `CrosswordController::index`
+  now returns `works` (grouped, with `original_language_code`) +
+  `languages` instead of a flat entity list; the unused
+  `nativeLanguageId` prop was dropped. Right panel reduced to Definitions
+  and Translations tabs plus the unsolved-words modal: the Obsolete tab
+  (never had backend data), Forms tab, Image button (Google search), and
+  "I know this word" button are gone; `forms` removed from the
+  `dictionary` payload. `POST /crossword/word/know` + `KnowWordRequest`
+  deleted (the `known` word-progress status remains valid in `user_word`).
+  `crossword.*` UI strings updated (new `work`/`language`/`all_languages`,
+  removed tab/button strings, copy now says "work"); `UiStringSeeder`
+  re-run and the cached string map flushed.
+  `wiki/domains/crossword.md` updated; `CrosswordPageTest` covers the new
+  payload shape and drops the know-endpoint test.
+* **Background word-list refresh (index + link in the queue).** New
+  `crossword:refresh` sweep (scheduled every five minutes,
+  `withoutOverlapping`) picks entities that have sentences and either a
+  stale index or unlinked `entity_words` rows, and dispatches one
+  `RefreshEntityWords` queue job per entity (`ShouldBeUnique` by entity
+  id); the job re-indexes when stale and always runs the link pass
+  (ADR 0026). Linking logic extracted from `LinkEntityWordsCommand` into
+  `App\Classes\EntityWordLinker` (command + job share it; command output
+  unchanged). `POST /crossword/generate` no longer rebuilds inline — a
+  stale word list now returns 422 with the new seeded
+  `crossword.still_building` UI string, distinct from
+  `crossword.not_enough_words`. Dictionary/frequency imports reach
+  existing entities without manual `crossword:link` runs. New tests:
+  `RefreshEntityWordsCommandTest`, `RefreshEntityWordsJobTest`,
+  `LinkEntityWordsCommandTest`; `CrosswordPageTest` covers the
+  still-building response. `wiki/domains/crossword.md` rewritten;
+  CONTEXT.md Crossword Context gained "Word list refresh".
+
+## 2026-09-12
+
+* **UI localization (DB-backed strings + interface language).** New
+  `ui_string_keys`/`ui_strings` tables are the Filament-editable source of
+  truth for interface text (ADR 0022): `UiStringLoader` overlays them onto
+  translator groups, `UiStrings::mapFor()` shares them to Inertia, and
+  `resources/js/i18n.jsx` provides `t()` for React pages. New
+  `languages.is_interface_enabled` flag and `user_settings.interface_language_id`
+  with resolution interface → native → `en`, guests `en`, admin panel stays
+  English (ADR 0023). New Filament `UiStringKeyResource` (Localization group,
+  side-by-side per-language editing); `LanguageResource` gained the interface
+  toggle; `UserResource`/Profile gained the interface-language select. All
+  user-facing pages swept into `database/seeders/ui-strings/*.php` partials
+  (EN+RU) upserted by `UiStringSeeder`. New concept `wiki/domains/localization.md`;
+  CONTEXT.md gained a Localization Context.
+* **Standalone `UserSettingsResource` removed.** `/admin/user-settings` is
+  gone (resource, its List/Create/Edit pages, and
+  `tests/Feature/Filament/UserSettingsResourceTest.php` deleted); it
+  duplicated the native-language editing already available on the
+  `UserResource` create/edit forms (`settings_native_language_id` synced via
+  `settings()->updateOrCreate`). No schema change — `user_settings`,
+  `UserSettings` model, registration and profile flows unchanged. Admin
+  management of native language now lives solely on the user Edit form.
+  Updated `wiki/database/schema-overview.md`.
+
+## 2026-09-11
+
+* **Library replaces the language-first entities pages (ADR 0021).** The nav
+  entry is now **Library** (`/library`): a works grid with `?q=` search
+  (title/author), a dashed plus-card → create-work page, and per-work
+  **readable** entity counts (`EntityAccessService::readableConstraint`, new,
+  also used by `readableQuery`). Each work card opens
+  `/library/{work}`: work info, entity search (name/label), plus-card →
+  work-scoped entity creation (`/library/{work}/entities/create`, work fixed,
+  language select), and readable entity cards. Works are a **public catalog**
+  — every approved user sees every work, empty ones included; no schema
+  change, no creator tracking. The entity-creation pipeline moved from
+  `EntityController::store` into `App\Classes\EntityCreationService` (shared
+  by both create forms; match-found may resolve to another work's entity);
+  `signatureStatus()` moved onto the `Entity` model. Legacy `/entities` and
+  `/entities/{lang}` redirect to `/library` (the picker/list pages and
+  controller methods were deleted); `/entities/{lang}/...` create/show/edit/
+  sentence routes are untouched. Reader rebrand: "Parallel Library" subtitle
+  and library wordings dropped (just "Reader"). New shared
+  `Components/LinkPagination.jsx`. Tests: new `LibraryTest` (18 cases),
+  picker/list tests removed from `EntityControllerTest`. Updated
+  `wiki/domains/entities.md`, `wiki/index.md`; CONTEXT.md gained a Library
+  Context (Library, Work catalog); ADR 0021 records the public-catalog
+  decision.
+
+* **Pronunciations are audio, not notation.** `pronunciations` no longer
+  carries `transcription_type_id` — a pronunciation is an uploaded audio
+  file with a pronunciation example (`path` on the public disk, unique
+  `(path, word_id)`), managed through a FileUpload in the word admin
+  (files deleted alongside rows). Written phonetic notation stays in
+  `transcriptions` (+ `transcription_types`). Baseline migration edited,
+  dev table reshaped in place (one test row dropped). Updated
+  `wiki/database/dictionary.md`; CONTEXT.md Word term now says
+  "pronunciation audio".
+
+* **Symmetric word translations + full word admin CRUD (ADR 0020).**
+  `word_translations` is now **one row per word pair** (`word_a_id` /
+  `word_b_id`, canonical `a < b` like entity matches), superseding ADR
+  0018's directed pivot; `WordTranslation::link()/isLinked()/canonicalize()`
+  centralize the semantics and a `creating` hook canonicalizes every
+  writer. `wiktionary:link-translations` writes canonical rows idempotently
+  next to manual links. The Filament word edit page regained the Create
+  buttons lost in the schema cutover (definitions, transcriptions, examples,
+  etymologies, pronunciations), gained a **Forms** relation manager, and
+  its rebuilt **Translations** tab is the manual linking surface: attach an
+  existing word (different languages enforced, lazy search over millions of
+  rows), **Create word & link** for missing target words, delete. Word
+  class / transcription type selects now filter to the word's language.
+  One-off `words:canonicalize-translations` transitioned dev data (dedupe
+  mirrors + column rename). Tests: linker suite ported to canonical rows,
+  new `WordTranslationsRelationManagerTest` and `WordTranslationTest`.
+  Updated `wiki/database/dictionary.md`,
+  `wiki/domains/dictionary-import.md`,
+  `wiki/playbooks/import-dictionary-data.md`; CONTEXT.md Dictionary context
+  gained Translation link / Staged translation terms.
+
+* **Dictionary import: any-registry languages + self-bootstrapping lookups.**
+  `wiktionary:import` no longer hardcodes `--lang/--target-lang` to en/ru —
+  it validates against the languages registry (any code, `is_enabled`
+  irrelevant) and lists available codes on failure. The parser
+  auto-creates missing per-language lookups instead of failing/skipping:
+  an unseen dump `pos` becomes a `word_classes` row, an unseen sound type
+  a `transcription_types` row (slug as placeholder `title`), so a new
+  language is INSERT + import with no seeders; the `words_skipped_pos`
+  stat/skip is gone (replaced by `lookups_created`). New Filament
+  resources `WordClassResource` + `TranscriptionTypeResource` (group
+  "Words") give admin CRUD over the lookup tables for curating the
+  placeholder titles. Updated `wiki/domains/dictionary-import.md`,
+  `wiki/database/dictionary.md`, `wiki/playbooks/import-dictionary-data.md`;
+  CONTEXT.md gained a Dictionary context (Word class, Transcription type).
+
+* **Entity/match visibility: counts now respect readability; same-language
+  entity matches allowed (ADR 0019).** The `/entities` picker's per-language
+  `entity_count` (`EntityController::index`) and the edit page's
+  `alignmentCount` were raw totals that leaked the existence of Restricted
+  entities/matches; both now run through `EntityAccessService::readableQuery()`
+  / `readableMatchQuery()`. The "both entities must be in different languages"
+  guard was removed from `AlignmentController::store`, both Filament
+  `EntityMatchResource` pages, and the legacy `EntitySentenceImporter`;
+  `alignableWorks()` now lists works with ≥2 eligible entities (any
+  languages); the Alignments create form's second-entity select no longer
+  excludes the first entity's language; Filament "Find Match" candidates
+  (via `TextSignatureService::findCrossLanguage`, name now historical) include
+  same-language same-work candidates. Ownership stays grant-based per ADR 0013
+  (no `created_by` column). Updated `wiki/domains/sentence-alignment.md`,
+  `wiki/domains/entities.md`, `wiki/database/*`, `wiki/playbooks/run-alignment.md`,
+  `CONTEXT.md` (Entity match, Readable count); added ADR 0019.
+
+* **Fixed `/alignments/create` emptying both entity selects when an entity was
+  chosen.** Inertia `useForm.setData` with an object argument *replaces* the
+  whole form state instead of merging, so the object-form handlers in
+  `Alignments/Create.jsx` (work + first-entity selects) dropped
+  `work_id`/`chunk_size`/`max_n`; `work` then resolved to `undefined` and both
+  entity selects rendered zero options. Handlers now use the functional form
+  `setData((current) => ({...current, ...}))`; the same latent bug in the
+  `Entities/Create.jsx` work-mode radios was fixed too. Frontend assets
+  rebuilt. Reproduced/verified with an esbuild+jsdom harness driving the real
+  component against the real Inertia payload (no JS test infra exists yet —
+  noted as a gap). Updated `wiki/domains/sentence-alignment.md`.
+
+## 2026-09-10 (works & unified schema rework)
+
+* **Works + unified language-keyed tables replaced the mirrored EN/RU schema
+  (ADR 0018).** `works` (title/author/original_language_id) now group
+  per-language `entities` (+ `label` for same-language variants); every
+  mirrored `en_*`/`ru_*` table was unified with a `language_id` column
+  (entities/sentences/grants, words + satellites, word classes,
+  transcription types); the alignment chain became
+  `entity_matches` (canonical `a_entity_id < b_entity_id`) →
+  `meaning_matches` → one `sentence_meaning_matches` junction with a `side`
+  column; `is_original_en` is gone — the original side derives from the
+  work's original language, and translation↔translation pairs cover both
+  sides with skips/repairs. One directed `word_translations` pivot replaced
+  the two en_ru/ru_en pivots. Adding a language is an INSERT.
+* **Migrations squashed to a fresh 6-file baseline** (dev/prod data
+  disposable; prod rebuilds fresh at next deploy) and the legacy vocabulary
+  domain deleted outright: `words`/`books`/`book_word`/`saved_phrases`,
+  crossword (Livewire+React), word upvote/acknowledge/dismiss/ask-ai,
+  WordsSearch, Test.php/BilingualsController legacy endpoints, their
+  requests/models/Filament resources/views.
+* **App cutover**: single Entity/EntityMatch models; aligner job + Python
+  /align contract renamed to a/b (a_sentences/b_sentences, skip_a/skip_b);
+  editor stack/simulator/reader/commands/importers ported; match creation
+  validates same work + different languages. Filament: WorkResource (new),
+  merged EntityResource/EntityMatchResource/WordResource. Frontend: work
+  column+filter on entities, work picker on create, work-first alignment
+  create, a/b editor payloads with language-code labels.
+* **Docs**: ADR 0018 written; CONTEXT.md gained Work / A-side/B-side /
+  cover-both-sides terms and updated Entity/Original text/Access grant;
+  wiki database/domain/playbook concepts rewritten (dictionary concept
+  renamed, legacy-vocabulary/crossword/words-search retired); test fixture
+  helpers (createLanguages/createWork/createEntity/createEntityMatch) added
+  to tests/Pest.php; suite 460 green; phpunit.xml pins OPENROUTER_API_KEY
+  empty (a dev .env key was leaking into a unit test).
+
 ## 2026-09-10
 
 * **Entity detail page showed sparse order values as sentence numbers.**
@@ -1751,3 +1985,58 @@ did* **Change: AI Models admin enable/disable now fires without a confirmation
   running is refused with a warning instead of queuing a duplicate. `is_enabled`
   is preserved by the service's `updateOrCreate` (unchanged). Updated
   `wiki/domains/ai-providers.md`.
+
+## 2026-09-12 (UI settings persistence)
+
+* **Split persistence for simulator UI state (ADR 0024)**: stable settings
+  (font size, panel visibility, AI model, assessment question, AI panel
+  width, workplace height) now persist in `user_settings.ui_settings` (new
+  nullable JSONB column) — seeded into Inertia props by
+  `SimulatorController`/`ReaderController`, saved by a debounced (~800 ms)
+  PATCH to the new `ui-settings.update` route (`UiSettingsController`,
+  `UpdateUiSettingsRequest`, section-merged). Working state (current
+  alignment, page and last opened row per alignment, incl. revealed halves)
+  persists per device in localStorage (`ext_app.simulator.position.v1`);
+  the simulator auto-restores position on mount, Load restores a saved page,
+  and the last opened row re-checks + scrolls into view. Reader page font
+  size persists via the same mechanism. Row reveal checkboxes are now
+  controlled (`CheckboxInput` forwards rest props); header master EN/RU
+  toggles and `per_page` remain unpersisted. Updated
+  `wiki/domains/bilinguals-simulator.md` (routes + Persistence section),
+  `wiki/database/schema-overview.md` (ui_settings column), CONTEXT.md
+  (UI settings / Working state glossary).
+
+## 2026-09-12 (crossword restoration)
+
+* **Restored the crossword on the new schema (ADR 0025)**: `GET /crossword`
+  (Inertia `Crossword/Crossword`, named `crossword`) + `POST
+  /crossword/generate|complete|word/know` (`CrosswordController`, Form
+  Requests). New tables `entity_words` (token-first per-entity word list
+  with counts, nullable dictionary `word_id` link) and `user_word`
+  (global per-user learning/solved/known progress), plus
+  `entities.words_indexed_at`; the puzzle generator
+  (`App\Classes\Crossword`, placement algorithm recovered verbatim from
+  the 2025 feature) selects up to 30 band words deterministically,
+  excluding the user's solved/known words. Supporting commands:
+  `crossword:index` / `crossword:link` (`EntityWordIndexer`,
+  `WordTokenizer` replacing the dead `Parser.php`) and
+  `words:import-frequency` (`rank,word` CSV → `words.frequency` ranks,
+  sample list in `database/frequency/en-sample.csv`). Frontend ported to
+  the recovered React page (`resources/js/Pages/Crossword/`) with i18n
+  `crossword.*` UI strings, nav link restored; ask-AI/word-action legacy
+  endpoints intentionally dropped; stale `public/js/crossword.js` +
+  `public/css/crossword.css` deleted. New wiki concept
+  `wiki/domains/crossword.md`; CONTEXT.md Crossword Context.
+
+* **Fix: crossword page rendered unstyled** — `resources/css/crossword.css`
+  (board grid, 50×40 cells, input/arrow/state colors, panel drag handle) was
+  orphaned after the blade-layout era: nothing imported it, so the restored
+  page drew unsized inline inputs with no grid. It is now imported from
+  `resources/css/app.css` and ships in the built bundle.
+* **Crossword solved-cell color** — `.green` now uses new `--wbench-solved`
+  (#a8cbb2 light / #2e5c3f dark) tokens instead of ink-black, per feedback:
+  empty cells stay grey, unsolved white, solved green.
+* **Crossword board colors** — empty cells softened to a low-contrast grey
+  (`--wbench-empty` #e6e4dd / #202020 night); numbered clue cells now
+  highlight by direction: across = orange (`--wbench-across`), down = sky
+  (`--wbench-down`), with the 2px leading edge carrying the direction color.

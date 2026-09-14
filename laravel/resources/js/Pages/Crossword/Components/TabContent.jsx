@@ -1,3 +1,5 @@
+import {useI18n} from '../../../i18n';
+
 function TabPanel({active, children}) {
     if (!active) {
         return null;
@@ -7,14 +9,16 @@ function TabPanel({active, children}) {
 }
 
 function DefinitionList({items, accent = 'text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]'}) {
+    const {t} = useI18n();
+
     if (!items.length) {
         return (
             <div className="px-2 py-6 text-center">
                 <p className="font-[var(--font-wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] mb-2">
-                    Nothing here yet
+                    {t('crossword.nothing_here')}
                 </p>
                 <p className="font-[var(--font-wbench-serif)] text-base text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] leading-snug">
-                    Click a word on the grid to see its entries.
+                    {t('crossword.click_word')}
                 </p>
             </div>
         );
@@ -36,20 +40,14 @@ function DefinitionList({items, accent = 'text-[var(--wbench-ink)] dark:text-[va
     );
 }
 
-export default function TabContent({currentTab, definitions, obsolete, translations, forms}) {
+export default function TabContent({currentTab, definitions, translations}) {
     return (
         <div className="flex-1 overflow-auto">
             <TabPanel active={currentTab === 0}>
                 <DefinitionList items={definitions}/>
             </TabPanel>
             <TabPanel active={currentTab === 1}>
-                <DefinitionList items={obsolete}/>
-            </TabPanel>
-            <TabPanel active={currentTab === 2}>
                 <DefinitionList items={translations} accent="text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]"/>
-            </TabPanel>
-            <TabPanel active={currentTab === 3}>
-                <DefinitionList items={forms}/>
             </TabPanel>
         </div>
     );

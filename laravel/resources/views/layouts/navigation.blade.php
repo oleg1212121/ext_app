@@ -15,7 +15,7 @@
                     @if(Auth::user()->is_approved)
                     <div class="hidden md:flex items-end gap-1 border-b border-transparent">
                         <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                            {{ __('Dashboard') }}
+                            {{ __('nav.dashboard') }}
                         </x-nav-link>
                         <div x-data="{ open: false }" @mouseleave="open = false" class="relative">
                             <button
@@ -24,7 +24,7 @@
                                 class="relative inline-flex items-center px-2 py-2 text-sm font-medium tracking-wide transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm {{ request()->routeIs('crossword') ? 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]' : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]' }}"
                                 aria-haspopup="menu"
                                 :aria-expanded="open.toString()">
-                                {{ __('Puzzles') }}
+                                {{ __('nav.puzzles') }}
                                 <svg class="ml-0.5 h-3 w-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
                                 </svg>
@@ -43,22 +43,22 @@
                                 style="display: none;"
                                 role="menu">
                                 <x-nav-link :href="route('crossword')" :active="request()->routeIs('crossword')" class="block px-4 py-2.5 text-sm rounded-none">
-                                    {{ __('Crossword') }}
+                                    {{ __('nav.crossword') }}
                                 </x-nav-link>
                             </div>
                         </div>
                         <x-nav-link :href="route('reader')" :active="request()->routeIs('reader')">
-                            {{ __('Reader') }}
+                            {{ __('nav.reader') }}
                         </x-nav-link>
                         <x-nav-link :href="route('bilinguals.simulator')" :active="request()->routeIs('bilinguals.simulator')">
-                            {{ __('Bilinguals') }}
+                            {{ __('nav.bilinguals') }}
                         </x-nav-link>
                         <x-nav-link :href="route('alignments.index')" :active="request()->routeIs('alignments.*')">
-                            {{ __('Alignments') }}
+                            {{ __('nav.alignments') }}
                         </x-nav-link>
                         @if(Auth::user()->isAdmin())
                         <x-nav-link href="/admin">
-                            {{ __('Admin') }}
+                            {{ __('nav.admin') }}
                         </x-nav-link>
                         @endif
                     </div>
@@ -69,8 +69,8 @@
             <div class="flex items-center gap-3 sm:gap-4">
                 <button @click="darkMode = !darkMode"
                         class="p-2 rounded-sm text-[var(--color-ink)] dark:text-[var(--color-vellum-night)] hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] cursor-pointer"
-                        title="Toggle dark mode"
-                        aria-label="Toggle dark mode">
+                        title="{{ __('nav.toggle_dark_mode') }}"
+                        aria-label="{{ __('nav.toggle_dark_mode') }}">
                     <svg x-show="darkMode" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
                     </svg>
@@ -94,7 +94,7 @@
 
                         <x-slot name="content">
                             <x-dropdown-link :href="route('profile.edit')">
-                                {{ __('Profile') }}
+                                {{ __('nav.profile') }}
                             </x-dropdown-link>
 
                             <div class="block h-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]"></div>
@@ -104,7 +104,7 @@
                                 <x-dropdown-link :href="route('logout')"
                                         onclick="event.preventDefault();
                                                     this.closest('form').submit();">
-                                    {{ __('Log out') }}
+                                    {{ __('nav.log_out') }}
                                 </x-dropdown-link>
                             </form>
                         </x-slot>
@@ -112,11 +112,11 @@
                 @else
                     <div class="hidden sm:flex items-center gap-4">
                         <a href="{{ route('login') }}" class="text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors">
-                            {{ __('Log in') }}
+                            {{ __('nav.log_in') }}
                         </a>
                         @if (Route::has('register'))
                             <a href="{{ route('register') }}" class="text-sm font-medium text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)] hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors">
-                                {{ __('Register') }}
+                                {{ __('nav.register') }}
                             </a>
                         @endif
                     </div>
@@ -125,7 +125,7 @@
                 @auth
                     <button @click="open = ! open"
                             class="md:hidden inline-flex items-center justify-center h-9 w-9 text-[var(--color-ink)] dark:text-[var(--color-vellum-night)] hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm"
-                            aria-label="Toggle menu"
+                            aria-label="{{ __('nav.toggle_menu') }}"
                             :aria-expanded="open.toString()">
                         <svg x-show="!open" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
@@ -152,14 +152,14 @@
                 <ul role="list" class="px-4 sm:px-6 py-2 divide-y divide-[var(--color-hairline)] dark:divide-[var(--color-hairline-night)]">
                     <li>
                         <x-responsive-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                            {{ __('Dashboard') }}
+                            {{ __('nav.dashboard') }}
                         </x-responsive-nav-link>
                     </li>
                     <li x-data="{ expanded: {{ request()->routeIs('crossword') ? 'true' : 'false' }} }">
                         <button
                             @click="expanded = !expanded"
                             class="w-full flex items-center justify-between py-3 ps-3 pe-4 font-serif text-lg tracking-tight transition-colors {{ request()->routeIs('crossword') ? 'text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]' : 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]/80 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)]' }}">
-                            {{ __('Puzzles') }}
+                            {{ __('nav.puzzles') }}
                             <svg
                                 class="h-4 w-4 opacity-60 transition-transform duration-200"
                                 :class="expanded ? 'rotate-180' : ''"
@@ -173,30 +173,30 @@
                         <ul x-show="expanded" x-collapse class="pl-4 pb-1 divide-y divide-[var(--color-hairline)]/50 dark:divide-[var(--color-hairline-night)]/50">
                             <li>
                                 <x-responsive-nav-link :href="route('crossword')" :active="request()->routeIs('crossword')" class="ps-2">
-                                    {{ __('Crossword') }}
+                                    {{ __('nav.crossword') }}
                                 </x-responsive-nav-link>
                             </li>
                         </ul>
                     </li>
                     <li>
                         <x-responsive-nav-link :href="route('reader')" :active="request()->routeIs('reader')">
-                            {{ __('Reader') }}
+                            {{ __('nav.reader') }}
                         </x-responsive-nav-link>
                     </li>
                     <li>
                         <x-responsive-nav-link :href="route('bilinguals.simulator')" :active="request()->routeIs('bilinguals.simulator')">
-                            {{ __('Bilinguals') }}
+                            {{ __('nav.bilinguals') }}
                         </x-responsive-nav-link>
                     </li>
                     <li>
                         <x-responsive-nav-link :href="route('alignments.index')" :active="request()->routeIs('alignments.*')">
-                            {{ __('Alignments') }}
+                            {{ __('nav.alignments') }}
                         </x-responsive-nav-link>
                     </li>
                     @if(Auth::user()->isAdmin())
                     <li>
                         <x-responsive-nav-link href="/admin">
-                            {{ __('Admin') }}
+                            {{ __('nav.admin') }}
                         </x-responsive-nav-link>
                     </li>
                     @endif

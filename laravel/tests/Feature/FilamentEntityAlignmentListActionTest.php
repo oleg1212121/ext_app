@@ -1,93 +1,84 @@
 <?php
 
-use App\Filament\Resources\EnRuEntityMatchResource\Pages\ListEnRuEntityMatches;
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
+use App\Filament\Resources\EntityMatchResource\Pages\ListEntityMatches;
+use App\Models\Entity;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
 use App\Models\User;
+use App\Models\Work;
 use Illuminate\Support\Facades\Bus;
 use Livewire\Livewire;
 
-function createListActionEntity(string $lang, string $name): int
+function createListActionEntity(string $languageCode, Work $work, string $name): Entity
 {
-    if ($lang === 'en') {
-        $entity = EnEntity::create([
-            'name' => $name,
-            'signature' => json_encode([1.0, 0.0]),
-        ]);
-        EnEntitySentence::create([
-            'en_entity_id' => $entity->id,
-            'sentence_type_id' => null,
-            'content' => 'English.',
-            'order' => 1,
-        ]);
-
-        return $entity->id;
-    }
-
-    $entity = RuEntity::create([
+    $entity = createEntity($languageCode, $work, [
         'name' => $name,
         'signature' => json_encode([1.0, 0.0]),
     ]);
-    RuEntitySentence::create([
-        'ru_entity_id' => $entity->id,
+
+    EntitySentence::create([
+        'entity_id' => $entity->id,
         'sentence_type_id' => null,
-        'content' => 'Russian.',
+        'content' => 'Text.',
         'order' => 1,
     ]);
 
-    return $entity->id;
+    return $entity;
 }
 
-test('new alignment action persists the chosen original text language', function () {
+test('new alignment action persists the chosen pair in canonical side order', function () {
     Bus::fake();
 
     $user = User::factory()->create();
-    $enEntityId = createListActionEntity('en', 'En List Original');
-    $ruEntityId = createListActionEntity('ru', 'Ru List Translation');
+    $work = createWork();
+    $enEntity = createListActionEntity('en', $work, 'En List Original');
+    $ruEntity = createListActionEntity('ru', $work, 'Ru List Translation');
 
     Livewire::actingAs($user)
-        ->test(ListEnRuEntityMatches::class)
-        ->callAction('create', [
-            'en_entity_id' => $enEntityId,
-            'ru_entity_id' => $ruEntityId,
-            'is_original_en' => 0,
+        ->test(ListEntityMatches::class)
+        ->callAction('create', data: [
+            'first_entity_id' => $ruEntity->id,
+            'second_entity_id' => $enEntity->id,
         ]);
 
-    $this->assertDatabaseHas('en_ru_entity_matches', [
-        'en_entity_id' => $enEntityId,
-        'ru_entity_id' => $ruEntityId,
-        'is_original_en' => false,
+    // The EN entity was created first (lower id), so it is canonicalized to the a side.
+    $this->assertDatabaseHas('entity_matches', [
+        'a_entity_id' => $enEntity->id,
+        'b_entity_id' => $ruEntity->id,
     ]);
 });
 
-test('new alignment action defaults the original text to English', function () {
+test('new alignment action derives the original side from the work', function () {
     Bus::fake();
 
     $user = User::factory()->create();
-    $enEntityId = createListActionEntity('en', 'En List Default');
-    $ruEntityId = createListActionEntity('ru', 'Ru List Default');
+    $work = createWork(); // defaults to English as the original language
+    $enEntity = createListActionEntity('en', $work, 'En List Default');
+    $ruEntity = createListActionEntity('ru', $work, 'Ru List Default');
 
     Livewire::actingAs($user)
-        ->test(ListEnRuEntityMatches::class)
-        ->callAction('create', [
-            'en_entity_id' => $enEntityId,
-            'ru_entity_id' => $ruEntityId,
+        ->test(ListEntityMatches::class)
+        ->callAction('create', data: [
+            'first_entity_id' => $enEntity->id,
+            'second_entity_id' => $ruEntity->id,
         ]);
 
-    $this->assertDatabaseHas('en_ru_entity_matches', [
-        'en_entity_id' => $enEntityId,
-        'ru_entity_id' => $ruEntityId,
-        'is_original_en' => true,
-    ]);
+    $match = EntityMatch::query()
+        ->where('a_entity_id', $enEntity->id)
+        ->where('b_entity_id', $ruEntity->id)
+        ->first();
+
+    expect($match)->not->toBeNull()
+        ->and($match->originalSide())->toBe('a');
 });
 
-test('alignment list shows the original text column', function () {
+test('alignment list shows the pair and work columns', function () {
     $user = User::factory()->create();
 
     Livewire::actingAs($user)
-        ->test(ListEnRuEntityMatches::class)
+        ->test(ListEntityMatches::class)
         ->assertSuccessful()
-        ->assertSee('Original');
+        ->assertSee('A Entity')
+        ->assertSee('B Entity')
+        ->assertSee('Work');
 });

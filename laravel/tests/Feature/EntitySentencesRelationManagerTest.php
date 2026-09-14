@@ -1,18 +1,11 @@
 <?php
 
 use App\Classes\SparseOrderService;
-use App\Filament\Resources\EnEntityResource\Pages\EditEnEntity;
-use App\Filament\Resources\EnEntityResource\RelationManagers\SentencesRelationManager as EnSentencesRelationManager;
-use App\Filament\Resources\RuEntityResource\Pages\EditRuEntity;
-use App\Filament\Resources\RuEntityResource\RelationManagers\SentencesRelationManager as RuSentencesRelationManager;
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\EnSentenceMeaningMatch;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
-use App\Models\RuSentenceMeaningMatch;
+use App\Filament\Resources\EntityResource\Pages\EditEntity;
+use App\Filament\Resources\EntityResource\RelationManagers\SentencesRelationManager;
+use App\Models\EntitySentence;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
 use Filament\Actions\CreateAction;
@@ -29,69 +22,51 @@ beforeEach(function () {
     );
 });
 
-$englishConfig = [
-    'entityClass' => EnEntity::class,
-    'sentenceClass' => EnEntitySentence::class,
-    'relationManager' => EnSentencesRelationManager::class,
-    'editPage' => EditEnEntity::class,
-    'entityForeignKey' => 'en_entity_id',
-    'sentenceMeaningMatchClass' => EnSentenceMeaningMatch::class,
-    'sentenceMeaningMatchForeignKey' => 'en_entity_sentence_id',
-];
-
-$russianConfig = [
-    'entityClass' => RuEntity::class,
-    'sentenceClass' => RuEntitySentence::class,
-    'relationManager' => RuSentencesRelationManager::class,
-    'editPage' => EditRuEntity::class,
-    'entityForeignKey' => 'ru_entity_id',
-    'sentenceMeaningMatchClass' => RuSentenceMeaningMatch::class,
-    'sentenceMeaningMatchForeignKey' => 'ru_entity_sentence_id',
-];
-
+// The relation manager is shared by all languages now; the dataset still
+// exercises both an English and a Russian owner record.
 $languageConfigs = [
-    'english' => [$englishConfig],
-    'russian' => [$russianConfig],
+    'english' => 'en',
+    'russian' => 'ru',
 ];
 
-it('can render the sentences relation manager', function (array $config) {
-    $entity = $config['entityClass']::create(['name' => 'Test entity']);
+it('can render the sentences relation manager', function (string $languageCode) {
+    $entity = createEntity($languageCode, null, ['name' => 'Test entity']);
 
-    Livewire::test($config['relationManager'], [
+    Livewire::test(SentencesRelationManager::class, [
         'ownerRecord' => $entity,
-        'pageClass' => $config['editPage'],
+        'pageClass' => EditEntity::class,
     ])->assertSuccessful();
 })->with($languageConfigs);
 
-it('lists sentences ordered by order column', function (array $config) {
-    $entity = $config['entityClass']::create(['name' => 'Test entity']);
+it('lists sentences ordered by order column', function (string $languageCode) {
+    $entity = createEntity($languageCode, null, ['name' => 'Test entity']);
 
-    $second = $config['sentenceClass']::create([
-        $config['entityForeignKey'] => $entity->id,
+    $second = EntitySentence::create([
+        'entity_id' => $entity->id,
         'content' => 'Second sentence',
         'order' => 100,
     ]);
 
-    $first = $config['sentenceClass']::create([
-        $config['entityForeignKey'] => $entity->id,
+    $first = EntitySentence::create([
+        'entity_id' => $entity->id,
         'content' => 'First sentence',
         'order' => 50,
     ]);
 
-    Livewire::test($config['relationManager'], [
+    Livewire::test(SentencesRelationManager::class, [
         'ownerRecord' => $entity,
-        'pageClass' => $config['editPage'],
+        'pageClass' => EditEntity::class,
     ])
         ->assertCanSeeTableRecords([$first, $second], inOrder: true);
 })->with($languageConfigs);
 
-it('can create a sentence appended to the end', function (array $config) {
-    $entity = $config['entityClass']::create(['name' => 'Test entity']);
+it('can create a sentence appended to the end', function (string $languageCode) {
+    $entity = createEntity($languageCode, null, ['name' => 'Test entity']);
     $sentenceTypeId = SentenceType::where('name', 'sentence')->value('id');
 
-    Livewire::test($config['relationManager'], [
+    Livewire::test(SentencesRelationManager::class, [
         'ownerRecord' => $entity,
-        'pageClass' => $config['editPage'],
+        'pageClass' => EditEntity::class,
     ])
         ->callTableAction(CreateAction::class, data: [
             'content' => 'Appended sentence',
@@ -100,8 +75,8 @@ it('can create a sentence appended to the end', function (array $config) {
         ])
         ->assertHasNoTableActionErrors();
 
-    $sentence = $config['sentenceClass']::query()
-        ->where($config['entityForeignKey'], $entity->id)
+    $sentence = EntitySentence::query()
+        ->where('entity_id', $entity->id)
         ->where('content', 'Appended sentence')
         ->first();
 
@@ -111,25 +86,25 @@ it('can create a sentence appended to the end', function (array $config) {
         ->order->toBe(0);
 })->with($languageConfigs);
 
-it('can create a sentence between existing sentences using sparse order', function (array $config) {
-    $entity = $config['entityClass']::create(['name' => 'Test entity']);
+it('can create a sentence between existing sentences using sparse order', function (string $languageCode) {
+    $entity = createEntity($languageCode, null, ['name' => 'Test entity']);
     $sentenceTypeId = SentenceType::where('name', 'sentence')->value('id');
 
-    $first = $config['sentenceClass']::create([
-        $config['entityForeignKey'] => $entity->id,
+    $first = EntitySentence::create([
+        'entity_id' => $entity->id,
         'content' => 'First',
         'order' => 0,
     ]);
 
-    $second = $config['sentenceClass']::create([
-        $config['entityForeignKey'] => $entity->id,
+    $second = EntitySentence::create([
+        'entity_id' => $entity->id,
         'content' => 'Second',
         'order' => 1024,
     ]);
 
-    Livewire::test($config['relationManager'], [
+    Livewire::test(SentencesRelationManager::class, [
         'ownerRecord' => $entity,
-        'pageClass' => $config['editPage'],
+        'pageClass' => EditEntity::class,
     ])
         ->callTableAction(CreateAction::class, data: [
             'content' => 'Between',
@@ -138,8 +113,8 @@ it('can create a sentence between existing sentences using sparse order', functi
         ])
         ->assertHasNoTableActionErrors();
 
-    $newSentence = $config['sentenceClass']::query()
-        ->where($config['entityForeignKey'], $entity->id)
+    $newSentence = EntitySentence::query()
+        ->where('entity_id', $entity->id)
         ->where('content', 'Between')
         ->first();
 
@@ -149,34 +124,34 @@ it('can create a sentence between existing sentences using sparse order', functi
         ->order->toBeLessThan($second->order);
 })->with($languageConfigs);
 
-it('can edit a sentence and reorder it', function (array $config) {
-    $entity = $config['entityClass']::create(['name' => 'Test entity']);
+it('can edit a sentence and reorder it', function (string $languageCode) {
+    $entity = createEntity($languageCode, null, ['name' => 'Test entity']);
     $sentenceTypeId = SentenceType::where('name', 'sentence')->value('id');
 
-    $first = $config['sentenceClass']::create([
-        $config['entityForeignKey'] => $entity->id,
+    $first = EntitySentence::create([
+        'entity_id' => $entity->id,
         'content' => 'First',
         'order' => 0,
         'sentence_type_id' => $sentenceTypeId,
     ]);
 
-    $second = $config['sentenceClass']::create([
-        $config['entityForeignKey'] => $entity->id,
+    $second = EntitySentence::create([
+        'entity_id' => $entity->id,
         'content' => 'Second',
         'order' => 1024,
         'sentence_type_id' => $sentenceTypeId,
     ]);
 
-    $third = $config['sentenceClass']::create([
-        $config['entityForeignKey'] => $entity->id,
+    $third = EntitySentence::create([
+        'entity_id' => $entity->id,
         'content' => 'Third',
         'order' => 2048,
         'sentence_type_id' => $sentenceTypeId,
     ]);
 
-    Livewire::test($config['relationManager'], [
+    Livewire::test(SentencesRelationManager::class, [
         'ownerRecord' => $entity,
-        'pageClass' => $config['editPage'],
+        'pageClass' => EditEntity::class,
     ])
         ->callTableAction(EditAction::class, $third, data: [
             'content' => 'Third moved',
@@ -191,41 +166,42 @@ it('can edit a sentence and reorder it', function (array $config) {
         ->order->toBeLessThan($second->order);
 })->with($languageConfigs);
 
-it('deletes a sentence and removes empty meaning matches', function (array $config) {
-    $entity = $config['entityClass']::create(['name' => 'Test entity']);
+it('deletes a sentence and removes empty meaning matches', function (string $languageCode) {
+    $work = createWork();
+    $entity = createEntity($languageCode, $work, ['name' => 'Test entity']);
+    $otherLanguageCode = $languageCode === 'en' ? 'ru' : 'en';
+    $other = createEntity($otherLanguageCode, $work, ['name' => "Pair {$otherLanguageCode}"]);
 
-    $sentence = $config['sentenceClass']::create([
-        $config['entityForeignKey'] => $entity->id,
+    $sentence = EntitySentence::create([
+        'entity_id' => $entity->id,
         'content' => 'Aligned sentence',
         'order' => 0,
     ]);
 
-    $entityMatch = EnRuEntityMatch::create([
-        'en_entity_id' => $config['entityClass'] === EnEntity::class ? $entity->id : EnEntity::create(['name' => 'Pair EN'])->id,
-        'ru_entity_id' => $config['entityClass'] === RuEntity::class ? $entity->id : RuEntity::create(['name' => 'Pair RU'])->id,
+    $entityMatch = createEntityMatch($entity, $other, [
         'status' => 'completed',
         'linked_count' => 1,
     ]);
 
-    $meaningMatch = EnRuMeaningMatch::create([
-        'en_ru_entity_match_id' => $entityMatch->id,
+    $meaningMatch = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id,
         'order' => 0,
         'similarity' => 0.5,
     ]);
 
-    $config['sentenceMeaningMatchClass']::create([
-        $config['sentenceMeaningMatchForeignKey'] => $sentence->id,
-        'en_ru_meaning_match_id' => $meaningMatch->id,
-        'order' => 0,
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $sentence->id,
+        'meaning_match_id' => $meaningMatch->id,
+        'side' => $entity->id < $other->id ? 'a' : 'b',
     ]);
 
-    Livewire::test($config['relationManager'], [
+    Livewire::test(SentencesRelationManager::class, [
         'ownerRecord' => $entity,
-        'pageClass' => $config['editPage'],
+        'pageClass' => EditEntity::class,
     ])
         ->callTableAction(DeleteAction::class, $sentence);
 
-    expect($config['sentenceClass']::find($sentence->id))->toBeNull();
-    expect(EnRuMeaningMatch::find($meaningMatch->id))->toBeNull();
+    expect(EntitySentence::find($sentence->id))->toBeNull();
+    expect(MeaningMatch::find($meaningMatch->id))->toBeNull();
     expect($entityMatch->refresh()->linked_count)->toBe(0);
 })->with($languageConfigs);

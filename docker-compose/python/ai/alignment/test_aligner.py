@@ -115,10 +115,10 @@ def skips_an_unmatchable_sentence_instead_of_force_matching():
     result = aligner.align_lists(["Cat", "Extra"], ["Cat translation", "D"])
 
     assert result["matches"] == [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 1.0}
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0}
     ], f"unexpected matches: {result['matches']}"
-    assert result["unmatched_en"] == [1], result["unmatched_en"]
-    assert result["unmatched_ru"] == [1], result["unmatched_ru"]
+    assert result["unmatched_a"] == [1], result["unmatched_a"]
+    assert result["unmatched_b"] == [1], result["unmatched_b"]
 
     return "OK: unmatchable sentence is skipped, not force-matched"
 
@@ -148,8 +148,8 @@ def still_force_matches_when_skipping_is_disabled():
 
     assert len(result["matches"]) == 2, f"expected a force-matched pair, got {result['matches']}"
     assert result["matches"][1]["score"] < 0.55, "second match should be sub-threshold garbage"
-    assert result["unmatched_en"] == [], result["unmatched_en"]
-    assert result["unmatched_ru"] == [], result["unmatched_ru"]
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
 
     return "OK: with skips disabled the old garbage match returns (branch is the fix)"
 
@@ -175,8 +175,8 @@ def span_cap_rejects_oversized_edges():
     ).align_lists(["One"], ["Part1", "Part2"])
 
     assert capped["matches"] == [], f"1:2 should be rejected by the cap, got {capped['matches']}"
-    assert capped["unmatched_en"] == [0], capped["unmatched_en"]
-    assert capped["unmatched_ru"] == [0, 1], capped["unmatched_ru"]
+    assert capped["unmatched_a"] == [0], capped["unmatched_a"]
+    assert capped["unmatched_b"] == [0, 1], capped["unmatched_b"]
 
     uncapped = BilingualAligner(
         model=StubModel(vectors),
@@ -188,10 +188,10 @@ def span_cap_rejects_oversized_edges():
     ).align_lists(["One"], ["Part1", "Part2"])
 
     assert_same_matches(uncapped["matches"], [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 2, "score": 0.7492687106132507},
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 2, "score": 0.7492687106132507},
     ]), f"1:2 should match under the higher cap, got {uncapped['matches']}"
-    assert uncapped["unmatched_en"] == [], uncapped["unmatched_en"]
-    assert uncapped["unmatched_ru"] == [], uncapped["unmatched_ru"]
+    assert uncapped["unmatched_a"] == [], uncapped["unmatched_a"]
+    assert uncapped["unmatched_b"] == [], uncapped["unmatched_b"]
 
     return "OK: span cap rejects 1:2 at max_total_span=2, allows it at 3"
 
@@ -223,7 +223,7 @@ def embedding_cache_reuses_vectors_across_calls():
 def assert_same_matches(actual, expected):
     assert len(actual) == len(expected), f"{actual} != {expected}"
     for got, want in zip(actual, expected):
-        for key in ("en_start", "en_end", "ru_start", "ru_end"):
+        for key in ("a_start", "a_end", "b_start", "b_end"):
             assert got[key] == want[key], f"{key}: {got} != {want}"
         assert abs(got["score"] - want["score"]) < 1e-4, f"score: {got} != {want}"
 
@@ -274,9 +274,9 @@ def greedy_matches_dp_on_clean_list_with_far_fewer_encodes():
     ).align_lists(en, ru)
 
     expected = [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 1.0},
-        {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 2, "score": 1.0},
-        {"en_start": 2, "en_end": 3, "ru_start": 2, "ru_end": 3, "score": 1.0},
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0},
+        {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2, "score": 1.0},
+        {"a_start": 2, "a_end": 3, "b_start": 2, "b_end": 3, "score": 1.0},
     ]
 
     assert_same_matches(greedy["matches"], expected)
@@ -320,10 +320,10 @@ def greedy_resolves_a_1_to_2_match_via_lazy_window_expansion():
     result = aligner.align_lists(["Gamma"], ["Delta1", "Delta2"])
 
     assert_same_matches(result["matches"], [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 2, "score": 0.7492687106132507},
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 2, "score": 0.7492687106132507},
     ]), f"1:2 should match under the span cap, got {result['matches']}"
-    assert result["unmatched_en"] == [], result["unmatched_en"]
-    assert result["unmatched_ru"] == [], result["unmatched_ru"]
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
     # Only the 3 singles are embedded: the pooled window is aggregated from the
     # cached per-sentence vectors, never encoded as a joined text.
     assert model.encode_total == 3, f"expected 3 encoded singles, got {model.encode_total}"
@@ -352,10 +352,10 @@ def greedy_skips_an_unmatchable_sentence():
     result = aligner.align_lists(["Epsilon Cat", "Epsilon Extra"], ["Cat translation", "D"])
 
     assert result["matches"] == [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 1.0}
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0}
     ], f"unexpected greedy matches: {result['matches']}"
-    assert result["unmatched_en"] == [1], result["unmatched_en"]
-    assert result["unmatched_ru"] == [1], result["unmatched_ru"]
+    assert result["unmatched_a"] == [1], result["unmatched_a"]
+    assert result["unmatched_b"] == [1], result["unmatched_b"]
     # No expansions were needed: exactly the 4 singles.
     assert model.encode_total == 4, f"expected 4 encoded texts, got {model.encode_total}"
 
@@ -389,11 +389,11 @@ def greedy_anchors_then_resolves_a_gap_after_a_locked_pair():
     )
 
     assert_same_matches(result["matches"], [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 1.0},
-        {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 3, "score": 0.7492687106132507},
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0},
+        {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 3, "score": 0.7492687106132507},
     ]), f"unexpected greedy matches: {result['matches']}"
-    assert result["unmatched_en"] == [], result["unmatched_en"]
-    assert result["unmatched_ru"] == [], result["unmatched_ru"]
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
 
     return "OK: greedy locked the anchor then resolved the gap with a 1:2 window"
 
@@ -427,10 +427,10 @@ def greedy_merges_an_orphan_into_a_beating_pooled_window():
     result = aligner.align_lists(["Alpha One", "Alpha Two"], ["Beta One"])
 
     assert_same_matches(result["matches"], [
-        {"en_start": 0, "en_end": 2, "ru_start": 0, "ru_end": 1, "score": 0.7431547505135213},
+        {"a_start": 0, "a_end": 2, "b_start": 0, "b_end": 1, "score": 0.7431547505135213},
     ])
-    assert result["unmatched_en"] == [], result["unmatched_en"]
-    assert result["unmatched_ru"] == [], result["unmatched_ru"]
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
     # 3 singles (greedy); the pooled 2:1 window is aggregated from the cached
     # singles, so no joined window text is ever encoded.
     assert model.encode_total == 3, f"expected 3 encoded texts, got {model.encode_total}"
@@ -455,10 +455,10 @@ def greedy_merges_an_orphan_into_a_beating_pooled_window():
     ).align_lists(["Alpha One", "Alpha Two"], ["Beta One"])
 
     assert_same_matches(guarded["matches"], [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 0.8025723539051279},
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 0.8025723539051279},
     ])
-    assert guarded["unmatched_en"] == [1], guarded["unmatched_en"]
-    assert guarded["unmatched_ru"] == [], guarded["unmatched_ru"]
+    assert guarded["unmatched_a"] == [1], guarded["unmatched_a"]
+    assert guarded["unmatched_b"] == [], guarded["unmatched_b"]
 
     return "OK: single-sided orphan merged into the match when the pooled window clears the margin"
 
@@ -491,13 +491,13 @@ def greedy_ladder_widens_past_primary_for_a_4_window_match():
     result = aligner.align_lists(["Theta One"], ["Iota1", "Iota2", "Iota3", "Iota4"])
 
     assert len(result["matches"]) == 1, result["matches"]
-    assert result["matches"][0]["en_start"] == 0
-    assert result["matches"][0]["en_end"] == 1
-    assert result["matches"][0]["ru_start"] == 0
-    assert result["matches"][0]["ru_end"] == 4
+    assert result["matches"][0]["a_start"] == 0
+    assert result["matches"][0]["a_end"] == 1
+    assert result["matches"][0]["b_start"] == 0
+    assert result["matches"][0]["b_end"] == 4
     assert abs(result["matches"][0]["score"] - 0.70710678) < 1e-4, result["matches"]
-    assert result["unmatched_en"] == [], result["unmatched_en"]
-    assert result["unmatched_ru"] == [], result["unmatched_ru"]
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
     # Only the 5 singles are embedded: the 1:2/1:3/1:4 windows are aggregated
     # from the cached per-sentence vectors, never encoded as joined texts.
     assert model.encode_total == 5, f"expected 5 encoded texts, got {model.encode_total}"
@@ -527,10 +527,10 @@ def normalized_windows_resolve_the_whistler_pair():
     ).align_lists(["The whistler"], ["«СВИСТУН»"])
 
     assert result["matches"] == [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 1.0}
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0}
     ], f"normalized windows should match 1:1, got {result['matches']}"
-    assert result["unmatched_en"] == [], result["unmatched_en"]
-    assert result["unmatched_ru"] == [], result["unmatched_ru"]
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
 
     return "OK: normalized windows resolve the whistler pair as a confident 1:1"
 
@@ -569,8 +569,8 @@ def normalize_sentences_strips_punctuation_case_and_collapses_whitespace():
 
     assert len(result["matches"]) == 1, result["matches"]
     assert result["matches"][0]["score"] >= 0.68, result["matches"]
-    assert result["unmatched_en"] == [], result["unmatched_en"]
-    assert result["unmatched_ru"] == [], result["unmatched_ru"]
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
 
     return "OK: _normalize_sentences strips/casefolds/collapses; whistler pair scores >= 0.68 normalized"
 
@@ -603,13 +603,13 @@ def align_lists_raw_and_pre_normalized_input_are_identical():
     from_norm = aligner.align_lists(norm_en, norm_ru)
 
     assert_same_matches(from_raw["matches"], from_norm["matches"])
-    assert from_raw["unmatched_en"] == from_norm["unmatched_en"], (
-        from_raw["unmatched_en"],
-        from_norm["unmatched_en"],
+    assert from_raw["unmatched_a"] == from_norm["unmatched_a"], (
+        from_raw["unmatched_a"],
+        from_norm["unmatched_a"],
     )
-    assert from_raw["unmatched_ru"] == from_norm["unmatched_ru"], (
-        from_raw["unmatched_ru"],
-        from_norm["unmatched_ru"],
+    assert from_raw["unmatched_b"] == from_norm["unmatched_b"], (
+        from_raw["unmatched_b"],
+        from_norm["unmatched_b"],
     )
     # Raw and pre-normalized inputs hash to the same cache keys: the second
     # align adds zero encodes (only the 4 singles were ever embedded).
@@ -660,16 +660,16 @@ def prepass_anchors_lock_high_confidence_pairs_for_greedy_and_dp():
     ).align_lists(en, ru)
 
     expected = [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 1.0},
-        {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 2, "score": 1.0},
-        {"en_start": 2, "en_end": 3, "ru_start": 2, "ru_end": 3, "score": 0.85},
-        {"en_start": 3, "en_end": 4, "ru_start": 3, "ru_end": 4, "score": 1.0},
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0},
+        {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2, "score": 1.0},
+        {"a_start": 2, "a_end": 3, "b_start": 2, "b_end": 3, "score": 0.85},
+        {"a_start": 3, "a_end": 4, "b_start": 3, "b_end": 4, "score": 1.0},
     ]
     assert_same_matches(greedy["matches"], expected)
     assert_same_matches(dp["matches"], expected)
     assert greedy["matches"] == dp["matches"], "anchor set must be identical"
-    assert greedy["unmatched_en"] == [] and greedy["unmatched_ru"] == []
-    assert dp["unmatched_en"] == [] and dp["unmatched_ru"] == []
+    assert greedy["unmatched_a"] == [] and greedy["unmatched_b"] == []
+    assert dp["unmatched_a"] == [] and dp["unmatched_b"] == []
 
     return "OK: >= high_confidence pairs locked as identical anchors by greedy and dp"
 
@@ -709,19 +709,19 @@ def prepass_anchors_split_pools_so_no_match_crosses_in_document_order():
         result = aligner.align_lists(en, ru)
 
         assert_same_matches(result["matches"], [
-            {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 0.8},
-            {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 2, "score": 1.0},
-            {"en_start": 2, "en_end": 3, "ru_start": 2, "ru_end": 3, "score": 0.85},
+            {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 0.8},
+            {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2, "score": 1.0},
+            {"a_start": 2, "a_end": 3, "b_start": 2, "b_end": 3, "score": 0.85},
         ])
-        assert result["unmatched_en"] == [], result["unmatched_en"]
-        assert result["unmatched_ru"] == [], result["unmatched_ru"]
+        assert result["unmatched_a"] == [], result["unmatched_a"]
+        assert result["unmatched_b"] == [], result["unmatched_b"]
 
         # Anchors appear as matches in document order, each exactly at its cell.
         anchor_matches = [
-            (m["en_start"], m["ru_start"])
+            (m["a_start"], m["b_start"])
             for m in result["matches"]
-            if m["en_end"] - m["en_start"] == 1
-            and m["ru_end"] - m["ru_start"] == 1
+            if m["a_end"] - m["a_start"] == 1
+            and m["b_end"] - m["b_start"] == 1
             and abs(m["score"] - 1.0) < 1e-4
         ]
         assert anchor_matches == anchors, f"{algorithm}: {anchor_matches}"
@@ -729,9 +729,9 @@ def prepass_anchors_split_pools_so_no_match_crosses_in_document_order():
         # No non-anchor match contains the anchor cell (a crossing match would).
         for m in result["matches"]:
             contains_anchor = (
-                m["en_start"] <= 1 < m["en_end"] and m["ru_start"] <= 1 < m["ru_end"]
+                m["a_start"] <= 1 < m["a_end"] and m["b_start"] <= 1 < m["b_end"]
             )
-            is_anchor = m["en_start"] == 1 and m["ru_start"] == 1
+            is_anchor = m["a_start"] == 1 and m["b_start"] == 1
             assert contains_anchor == is_anchor, f"{algorithm}: {m} crosses an anchor"
 
     return "OK: pools stay between anchors, anchor order == document order (greedy and dp)"
@@ -811,8 +811,8 @@ def band_rejects_an_out_of_band_pair():
         ).align_lists(en, ru)
 
         assert tight["matches"] == [], f"{algorithm}: {tight['matches']}"
-        assert tight["unmatched_en"] == [0, 1, 2, 3], tight["unmatched_en"]
-        assert tight["unmatched_ru"] == [0], tight["unmatched_ru"]
+        assert tight["unmatched_a"] == [0, 1, 2, 3], tight["unmatched_a"]
+        assert tight["unmatched_b"] == [0], tight["unmatched_b"]
 
         wide = BilingualAligner(
             model=StubModel(dict(vectors)),
@@ -825,10 +825,10 @@ def band_rejects_an_out_of_band_pair():
 
         assert_same_matches(
             wide["matches"],
-            [{"en_start": 3, "en_end": 4, "ru_start": 0, "ru_end": 1, "score": 0.6}],
+            [{"a_start": 3, "a_end": 4, "b_start": 0, "b_end": 1, "score": 0.6}],
         ), f"{algorithm}: {wide['matches']}"
-        assert wide["unmatched_en"] == [0, 1, 2], wide["unmatched_en"]
-        assert wide["unmatched_ru"] == [], wide["unmatched_ru"]
+        assert wide["unmatched_a"] == [0, 1, 2], wide["unmatched_a"]
+        assert wide["unmatched_b"] == [], wide["unmatched_b"]
 
     return "OK: out-of-band pair rejected by a tight band, accepted by a wide one"
 
@@ -862,10 +862,10 @@ def band_allows_an_in_band_pair():
 
         assert_same_matches(
             result["matches"],
-            [{"en_start": 1, "en_end": 2, "ru_start": 0, "ru_end": 1, "score": 1.0}],
+            [{"a_start": 1, "a_end": 2, "b_start": 0, "b_end": 1, "score": 1.0}],
         ), f"{algorithm}: {result['matches']}"
-        assert result["unmatched_en"] == [0], result["unmatched_en"]
-        assert result["unmatched_ru"] == [], result["unmatched_ru"]
+        assert result["unmatched_a"] == [0], result["unmatched_a"]
+        assert result["unmatched_b"] == [], result["unmatched_b"]
 
     return "OK: in-band pair accepted at the band edge"
 
@@ -905,15 +905,15 @@ def band_recovery_across_a_divergent_region():
         ).align_lists(en, ru)
 
     expected = [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 1.0},
-        {"en_start": 3, "en_end": 4, "ru_start": 3, "ru_end": 4, "score": 1.0},
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0},
+        {"a_start": 3, "a_end": 4, "b_start": 3, "b_end": 4, "score": 1.0},
     ]
     assert_same_matches(results["dp"]["matches"], expected), results["dp"]["matches"]
     assert_same_matches(results["greedy"]["matches"], expected), results["greedy"]["matches"]
-    assert results["dp"]["unmatched_en"] == [1, 2], results["dp"]["unmatched_en"]
-    assert results["dp"]["unmatched_ru"] == [1, 2], results["dp"]["unmatched_ru"]
-    assert results["greedy"]["unmatched_en"] == [1, 2], results["greedy"]["unmatched_en"]
-    assert results["greedy"]["unmatched_ru"] == [1, 2], results["greedy"]["unmatched_ru"]
+    assert results["dp"]["unmatched_a"] == [1, 2], results["dp"]["unmatched_a"]
+    assert results["dp"]["unmatched_b"] == [1, 2], results["dp"]["unmatched_b"]
+    assert results["greedy"]["unmatched_a"] == [1, 2], results["greedy"]["unmatched_a"]
+    assert results["greedy"]["unmatched_b"] == [1, 2], results["greedy"]["unmatched_b"]
 
     return "OK: banded walk recovers to the far diagonal pair across a divergent middle"
 
@@ -946,8 +946,8 @@ def band_width_knob_controls_match_density():
     vectors = dict(singles)
     vectors.update(pooled_windows(en, ru, singles, 12))
 
-    both = [{"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 1.0}]
-    both.append({"en_start": 3, "en_end": 4, "ru_start": 1, "ru_end": 2, "score": 0.9})
+    both = [{"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0}]
+    both.append({"a_start": 3, "a_end": 4, "b_start": 1, "b_end": 2, "score": 0.9})
 
     for algorithm in ("dp", "greedy"):
         tight = BilingualAligner(
@@ -1031,8 +1031,8 @@ def banding_reduces_joined_window_embeddings_but_aggregate_only_embeds_singles()
         models.extend([tight_model, wide_model])
 
         assert tight_result["matches"] == [] and wide_result["matches"] == []
-        assert tight_result["unmatched_en"] == [0, 1, 2, 3, 4, 5]
-        assert tight_result["unmatched_ru"] == [0]
+        assert tight_result["unmatched_a"] == [0, 1, 2, 3, 4, 5]
+        assert tight_result["unmatched_b"] == [0]
 
         assert tight_model.encode_total == tight_total, (
             f"{window_embed} tight band should embed {tight_total} texts, "
@@ -1072,10 +1072,10 @@ def aggregate_ranks_the_correct_fusion_window_highest():
     result = aligner.align_lists(["Theta"], ["Eta1", "Eta2"])
 
     assert_same_matches(result["matches"], [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 2, "score": 0.70710678},
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 2, "score": 0.70710678},
     ]), f"aggregate should rank the fused 1:2 highest, got {result['matches']}"
-    assert result["unmatched_en"] == [], result["unmatched_en"]
-    assert result["unmatched_ru"] == [], result["unmatched_ru"]
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
 
     return "OK: aggregate ranks the correct multi-sentence window highest (1:2 fusion)"
 
@@ -1116,8 +1116,8 @@ def aggregate_weights_follow_sentence_lengths():
 
     assert len(result["matches"]) == 1, result["matches"]
     match = result["matches"][0]
-    assert (match["en_start"], match["en_end"]) == (0, 2), match
-    assert (match["ru_start"], match["ru_end"]) == (0, 1), match
+    assert (match["a_start"], match["a_end"]) == (0, 2), match
+    assert (match["b_start"], match["b_end"]) == (0, 1), match
     assert abs(match["score"] - 0.934902) < 1e-4, f"score {match['score']}"
     assert match["score"] > 0.9, "long sentence should dominate the pooled average"
 
@@ -1148,10 +1148,10 @@ def aggregate_caches_per_sentence_vectors():
     result = aligner.align_lists(["Alph", "Beta"], ["R_AB"])
 
     assert_same_matches(result["matches"], [
-        {"en_start": 0, "en_end": 2, "ru_start": 0, "ru_end": 1, "score": 0.70710678},
+        {"a_start": 0, "a_end": 2, "b_start": 0, "b_end": 1, "score": 0.70710678},
     ]), f"expected the pooled 2:1, got {result['matches']}"
-    assert result["unmatched_en"] == [], result["unmatched_en"]
-    assert result["unmatched_ru"] == [], result["unmatched_ru"]
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
     # 3 singles in 2 encode calls (en batch + ru single); the 2:1 window was
     # aggregated from cache, not re-encoded.
     assert model.encode_total == 3, f"expected 3 encoded singles, got {model.encode_total}"
@@ -1183,10 +1183,10 @@ def joined_mode_embeds_joined_window_texts():
     result = aligner.align_lists(["Alpha", "Beta"], ["R_AB"])
 
     assert_same_matches(result["matches"], [
-        {"en_start": 0, "en_end": 2, "ru_start": 0, "ru_end": 1, "score": 1.0},
+        {"a_start": 0, "a_end": 2, "b_start": 0, "b_end": 1, "score": 1.0},
     ]), f"expected the pooled 2:1, got {result['matches']}"
-    assert result["unmatched_en"] == [], result["unmatched_en"]
-    assert result["unmatched_ru"] == [], result["unmatched_ru"]
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
     # 3 singles + the joined 2:1 window text.
     assert model.encode_total == 4, f"expected 4 encoded texts, got {model.encode_total}"
 
@@ -1215,12 +1215,12 @@ def pins_are_emitted_verbatim_with_score_one():
         N("A Two'"): [0.4, 0.3, 0.5, 0, 0],
         N("Two' C"): [0, 0, 0.5, 0.5, 0],
     }
-    pin = {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 2}
+    pin = {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2}
 
     expected = [
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 0.8},
-        {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 2, "score": 1.0},
-        {"en_start": 2, "en_end": 3, "ru_start": 2, "ru_end": 3, "score": 0.85},
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 0.8},
+        {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2, "score": 1.0},
+        {"a_start": 2, "a_end": 3, "b_start": 2, "b_end": 3, "score": 0.85},
     ]
 
     for algorithm in ("greedy", "dp"):
@@ -1234,13 +1234,13 @@ def pins_are_emitted_verbatim_with_score_one():
         assert_same_matches(result["matches"], expected), (
             f"{algorithm}: {result['matches']}"
         )
-        assert result["unmatched_en"] == [], result["unmatched_en"]
-        assert result["unmatched_ru"] == [], result["unmatched_ru"]
+        assert result["unmatched_a"] == [], result["unmatched_a"]
+        assert result["unmatched_b"] == [], result["unmatched_b"]
 
         pin_matches = [
             m
             for m in result["matches"]
-            if (m["en_start"], m["en_end"], m["ru_start"], m["ru_end"]) == (1, 2, 1, 2)
+            if (m["a_start"], m["a_end"], m["b_start"], m["b_end"]) == (1, 2, 1, 2)
         ]
         assert len(pin_matches) == 1, f"{algorithm}: {pin_matches}"
         assert pin_matches[0]["score"] == 1.0, f"{algorithm}: {pin_matches[0]}"
@@ -1266,7 +1266,7 @@ def no_machine_match_overlaps_a_pin():
         N("Three"): [0, 0, 0, 0.85, 0.5268],
         N("C"): [0, 0, 0, 1, 0],
     }
-    pin = {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 3}
+    pin = {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 3}
 
     for algorithm in ("greedy", "dp"):
         aligner = BilingualAligner(
@@ -1282,7 +1282,7 @@ def no_machine_match_overlaps_a_pin():
         sim = util.cos_sim(en_embs, ru_embs).cpu().numpy()
 
         def _in_pin(i, j):
-            return pin["en_start"] <= i < pin["en_end"] and pin["ru_start"] <= j < pin["ru_end"]
+            return pin["a_start"] <= i < pin["a_end"] and pin["b_start"] <= j < pin["b_end"]
 
         without = aligner._prepass_anchors(sim, len(en), len(ru))
         assert any(
@@ -1295,21 +1295,21 @@ def no_machine_match_overlaps_a_pin():
 
         result = aligner.align_lists(en, ru, landmarks=[pin])
         assert_same_matches(result["matches"], [
-            {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1, "score": 0.8},
-            {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 3, "score": 1.0},
-            {"en_start": 2, "en_end": 3, "ru_start": 3, "ru_end": 4, "score": 0.85},
+            {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 0.8},
+            {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 3, "score": 1.0},
+            {"a_start": 2, "a_end": 3, "b_start": 3, "b_end": 4, "score": 0.85},
         ]), f"{algorithm}: {result['matches']}"
-        assert result["unmatched_en"] == [], result["unmatched_en"]
-        assert result["unmatched_ru"] == [], result["unmatched_ru"]
+        assert result["unmatched_a"] == [], result["unmatched_a"]
+        assert result["unmatched_b"] == [], result["unmatched_b"]
 
         for m in result["matches"]:
             overlap = (
-                m["en_start"] < pin["en_end"]
-                and pin["en_start"] < m["en_end"]
-                and m["ru_start"] < pin["ru_end"]
-                and pin["ru_start"] < m["ru_end"]
+                m["a_start"] < pin["a_end"]
+                and pin["a_start"] < m["a_end"]
+                and m["b_start"] < pin["b_end"]
+                and pin["b_start"] < m["b_end"]
             )
-            is_pin = (m["en_start"], m["en_end"], m["ru_start"], m["ru_end"]) == (1, 2, 1, 3)
+            is_pin = (m["a_start"], m["a_end"], m["b_start"], m["b_end"]) == (1, 2, 1, 3)
             assert overlap == is_pin, f"{algorithm}: {m} overlaps the pin"
 
     return "OK: no machine match overlaps a pin; prepass skips pinned cells"
@@ -1328,7 +1328,7 @@ def pinned_indices_are_excluded_from_unmatched():
             N("Two'"): [0, 1, 0],
         })
 
-    pin = {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 2}
+    pin = {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2}
 
     for algorithm in ("greedy", "dp"):
         result = BilingualAligner(
@@ -1339,12 +1339,12 @@ def pinned_indices_are_excluded_from_unmatched():
         ).align_lists(["One", "Two"], ["A", "Two'"], landmarks=[pin])
 
         assert_same_matches(result["matches"], [
-            {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 2, "score": 1.0},
+            {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2, "score": 1.0},
         ]), f"{algorithm}: {result['matches']}"
-        assert result["unmatched_en"] == [0], f"{algorithm}: {result['unmatched_en']}"
-        assert result["unmatched_ru"] == [0], f"{algorithm}: {result['unmatched_ru']}"
+        assert result["unmatched_a"] == [0], f"{algorithm}: {result['unmatched_a']}"
+        assert result["unmatched_b"] == [0], f"{algorithm}: {result['unmatched_b']}"
 
-    return "OK: pinned indices excluded from unmatched_en / unmatched_ru"
+    return "OK: pinned indices excluded from unmatched_a / unmatched_b"
 
 
 def invalid_pins_raise_value_error():
@@ -1372,30 +1372,30 @@ def invalid_pins_raise_value_error():
         raise AssertionError(f"expected ValueError for pins {pins}")
 
     # Out of range on either axis.
-    expect_value_error([{"en_start": 0, "en_end": 3, "ru_start": 0, "ru_end": 1}])
-    expect_value_error([{"en_start": -1, "en_end": 1, "ru_start": 0, "ru_end": 1}])
-    expect_value_error([{"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 5}])
+    expect_value_error([{"a_start": 0, "a_end": 3, "b_start": 0, "b_end": 1}])
+    expect_value_error([{"a_start": -1, "a_end": 1, "b_start": 0, "b_end": 1}])
+    expect_value_error([{"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 5}])
     # Zero-length spans on either axis.
-    expect_value_error([{"en_start": 1, "en_end": 1, "ru_start": 0, "ru_end": 1}])
-    expect_value_error([{"en_start": 0, "en_end": 1, "ru_start": 1, "ru_end": 1}])
+    expect_value_error([{"a_start": 1, "a_end": 1, "b_start": 0, "b_end": 1}])
+    expect_value_error([{"a_start": 0, "a_end": 1, "b_start": 1, "b_end": 1}])
     # Crossing pins: the later EN start has a smaller RU start.
     expect_value_error([
-        {"en_start": 0, "en_end": 1, "ru_start": 1, "ru_end": 2},
-        {"en_start": 1, "en_end": 2, "ru_start": 0, "ru_end": 1},
+        {"a_start": 0, "a_end": 1, "b_start": 1, "b_end": 2},
+        {"a_start": 1, "a_end": 2, "b_start": 0, "b_end": 1},
     ])
     # Overlapping pins (sharing sentences) are rejected too.
     expect_value_error([
-        {"en_start": 0, "en_end": 2, "ru_start": 0, "ru_end": 1},
-        {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 2},
+        {"a_start": 0, "a_end": 2, "b_start": 0, "b_end": 1},
+        {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2},
     ])
 
     # Adjacent valid pins are accepted.
     result = aligner.align_lists(en, ru, landmarks=[
-        {"en_start": 0, "en_end": 1, "ru_start": 0, "ru_end": 1},
-        {"en_start": 1, "en_end": 2, "ru_start": 1, "ru_end": 2},
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1},
+        {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2},
     ])
     assert len(result["matches"]) == 2, result["matches"]
-    assert result["unmatched_en"] == [] and result["unmatched_ru"] == []
+    assert result["unmatched_a"] == [] and result["unmatched_b"] == []
 
     return "OK: crossing / out-of-range / zero-length pins rejected; valid pins accepted"
 

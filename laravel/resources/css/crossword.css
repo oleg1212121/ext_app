@@ -1,6 +1,6 @@
 /* Crossword Workbench — wbench tokens: cold paper + ultramarine accent.
    One accent role on this surface: the currently-selected (active) word.
-   Solved cells read as ink-on-paper, quiet and inactive. */
+   Solved cells read as a soft green; empty cells stay grey, unsolved white. */
 
 /* Row edge — local subset of the global .ribbon-mark pattern,
    retinted to --wbench-accent so it does not touch the legacy
@@ -65,19 +65,23 @@
 }
 
 .empty {
-    background-color: var(--wbench-ink-soft);
+    background-color: var(--wbench-empty);
 }
 
 .dark .empty {
-    background-color: var(--wbench-rule-night);
+    background-color: var(--wbench-empty-night);
 }
 
-/* Arrow cells — the same paper-deep base, with a 2px accent edge on the
-   leading side. Direction (across/down) reads from layout, not from a
-   second hue — the accent has one job here: "a word starts at this cell". */
-.horizontal,
+/* Arrow cells — tinted by direction so the numbered clue cells read at a
+   glance: across = orange, down = sky. The 2px leading edge carries the
+   direction color at full strength. */
+.horizontal {
+    background-color: color-mix(in srgb, var(--wbench-across) 30%, var(--wbench-paper));
+    position: relative;
+}
+
 .vertical {
-    background-color: var(--wbench-paper-deep);
+    background-color: color-mix(in srgb, var(--wbench-down) 30%, var(--wbench-paper));
     position: relative;
 }
 
@@ -87,18 +91,31 @@
     position: absolute;
     inset: 0 auto 0 0;
     width: 2px;
-    background-color: var(--wbench-accent);
-    opacity: 0.7;
+    opacity: 0.9;
 }
 
-.dark .horizontal,
+.horizontal::before {
+    background-color: var(--wbench-across);
+}
+
+.vertical::before {
+    background-color: var(--wbench-down);
+}
+
+.dark .horizontal {
+    background-color: color-mix(in srgb, var(--wbench-across-night) 22%, var(--wbench-paper-night));
+}
+
 .dark .vertical {
-    background-color: var(--wbench-paper-deep-night);
+    background-color: color-mix(in srgb, var(--wbench-down-night) 22%, var(--wbench-paper-night));
 }
 
-.dark .horizontal::before,
+.dark .horizontal::before {
+    background-color: var(--wbench-across-night);
+}
+
 .dark .vertical::before {
-    background-color: var(--wbench-accent-night);
+    background-color: var(--wbench-down-night);
 }
 
 .input_symbol {
@@ -143,20 +160,19 @@
     border-color: color-mix(in srgb, var(--wbench-accent-night) 40%, var(--wbench-rule-night));
 }
 
-/* Solved — ink-on-paper, calm. Reads as "done / inactive", does not steal
-   the accent's role from the active word. */
+/* Solved — soft green: reads as "done", distinct from the active accent. */
 .green {
-    background-color: var(--wbench-ink);
-    border-color: var(--wbench-ink);
+    background-color: var(--wbench-solved);
+    border-color: color-mix(in srgb, var(--wbench-solved) 70%, var(--wbench-ink-soft));
 }
 
 .dark .green {
-    background-color: var(--wbench-ink-night);
-    border-color: var(--wbench-ink-night);
+    background-color: var(--wbench-solved-night);
+    border-color: color-mix(in srgb, var(--wbench-solved-night) 70%, var(--wbench-rule-night));
 }
 
 .green .input_symbol {
-    color: var(--wbench-paper);
+    color: var(--wbench-ink);
 }
 
 .dark .green .input_symbol {
@@ -164,7 +180,11 @@
 }
 
 .green .cell_text {
-    color: color-mix(in srgb, var(--wbench-paper) 70%, transparent);
+    color: color-mix(in srgb, var(--wbench-ink) 70%, transparent);
+}
+
+.dark .green .cell_text {
+    color: color-mix(in srgb, var(--wbench-paper-night) 70%, transparent);
 }
 
 /* Desisted / neutral */

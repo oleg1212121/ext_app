@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Form extends Model
 {
-    use HasFactory;
+    protected $fillable = ['word_id', 'form', 'l_word'];
 
-    public $table = 'forms';
+    public function word(): BelongsTo
+    {
+        return $this->belongsTo(Word::class);
+    }
 }

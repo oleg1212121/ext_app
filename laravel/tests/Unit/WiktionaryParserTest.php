@@ -1,6 +1,14 @@
 <?php
 
 use App\Classes\WiktionaryParser;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+uses(TestCase::class, RefreshDatabase::class);
+
+beforeEach(function () {
+    createLanguages();
+});
 
 it('parses a single valid JSONL line', function () {
     $parser = new WiktionaryParser('en', 'ru');
@@ -69,12 +77,12 @@ it('merges records for same word and pos', function () {
 it('uniqueByCompound removes duplicates', function () {
     $parser = new WiktionaryParser('en', 'ru');
     $rows = [
-        ['word' => 'cat', 'en_word_class_id' => 1],
-        ['word' => 'cat', 'en_word_class_id' => 1],
-        ['word' => 'dog', 'en_word_class_id' => 1],
+        ['word' => 'cat', 'word_class_id' => 1],
+        ['word' => 'cat', 'word_class_id' => 1],
+        ['word' => 'dog', 'word_class_id' => 1],
     ];
 
-    $parser->uniqueByCompound($rows, ['word', 'en_word_class_id']);
+    $parser->uniqueByCompound($rows, ['word', 'word_class_id']);
     expect($rows)->toHaveCount(2);
 });
 

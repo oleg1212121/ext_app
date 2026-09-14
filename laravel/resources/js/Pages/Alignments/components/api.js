@@ -47,8 +47,8 @@ export const alignmentsApi = {
         return request(`/alignments/${matchId}/rows?page=${page}&per_page=${perPage}`);
     },
 
-    unmatched(matchId, lang, page) {
-        return request(`/alignments/${matchId}/unmatched?lang=${lang}&page=${page}`);
+    unmatched(matchId, side, page) {
+        return request(`/alignments/${matchId}/unmatched?side=${side}&page=${page}`);
     },
 
     needsReview(matchId, page) {
@@ -70,31 +70,31 @@ export const alignmentsApi = {
         return request(`/alignments/${matchId}/rows/${rowId}/approve`, {method: 'POST'});
     },
 
-    addSentence(matchId, {lang, meaning_match_id, content}) {
+    addSentence(matchId, {side, meaning_match_id, content}) {
         return request(`/alignments/${matchId}/sentences`, {
             method: 'POST',
-            body: JSON.stringify({lang, meaning_match_id, content}),
+            body: JSON.stringify({side, meaning_match_id, content}),
         });
     },
 
-    updateSentence(matchId, sentenceId, {lang, content}) {
+    updateSentence(matchId, sentenceId, {side, content}) {
         return request(`/alignments/${matchId}/sentences/${sentenceId}`, {
             method: 'PATCH',
-            body: JSON.stringify({lang, content}),
+            body: JSON.stringify({side, content}),
         });
     },
 
-    unlinkSentence(matchId, sentenceId, lang) {
+    unlinkSentence(matchId, sentenceId, side) {
         return request(`/alignments/${matchId}/sentences/${sentenceId}`, {
             method: 'DELETE',
-            body: JSON.stringify({lang}),
+            body: JSON.stringify({side}),
         });
     },
 
-    destroyUnmatched(matchId, sentenceId, lang) {
+    destroyUnmatched(matchId, sentenceId, side) {
         return request(`/alignments/${matchId}/unmatched/${sentenceId}`, {
             method: 'DELETE',
-            body: JSON.stringify({lang}),
+            body: JSON.stringify({side}),
         });
     },
 

@@ -12,13 +12,8 @@ class SentenceType extends Model
 
     protected $fillable = ['name', 'description'];
 
-    public function enEntitySentences(): HasMany
+    public function entitySentences(): HasMany
     {
-        return $this->hasMany(EnEntitySentence::class, 'sentence_type_id');
-    }
-
-    public function ruEntitySentences(): HasMany
-    {
-        return $this->hasMany(RuEntitySentence::class, 'sentence_type_id');
+        return $this->hasMany(EntitySentence::class, 'sentence_type_id');
     }
 }

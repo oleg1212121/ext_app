@@ -2,10 +2,9 @@
 
 namespace App\Classes;
 
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\RuEntitySentence;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
+use App\Models\MeaningMatch;
 use Illuminate\Support\Str;
 
 class AlignmentEditorPresenter
@@ -17,69 +16,66 @@ class AlignmentEditorPresenter
     /**
      * @return array{
      *     meaning_rows: list<array<string, mixed>>,
-     *     unmatched_en: list<array<string, mixed>>,
-     *     unmatched_ru: list<array<string, mixed>>
+     *     unmatched_a: list<array<string, mixed>>,
+     *     unmatched_b: list<array<string, mixed>>
      * }
      */
-    public function toDraft(EnRuEntityMatch $entityMatch): array
+    public function toDraft(EntityMatch $entityMatch): array
     {
-        $entityMatch->load(['enEntity', 'ruEntity']);
+        $entityMatch->load(['aEntity', 'bEntity']);
 
         $meaningMatches = $this->meaningMatchPresenter
             ->meaningMatchesQuery($entityMatch)
             ->get();
 
-        $linkedEnIds = [];
-        $linkedRuIds = [];
+        $linkedAIds = [];
+        $linkedBIds = [];
 
         $meaningRows = [];
 
         foreach ($meaningMatches as $meaningMatch) {
-            $enSentences = $this->mapLinkedSentences($meaningMatch, 'en', $linkedEnIds);
-            $ruSentences = $this->mapLinkedSentences($meaningMatch, 'ru', $linkedRuIds);
+            $aSentences = $this->mapLinkedSentences($meaningMatch, 'a', $linkedAIds);
+            $bSentences = $this->mapLinkedSentences($meaningMatch, 'b', $linkedBIds);
 
             $meaningRows[] = [
                 'key' => 'mm-'.$meaningMatch->id,
                 'id' => $meaningMatch->id,
                 'order' => $meaningMatch->order,
-                'en_sentences' => $enSentences,
-                'ru_sentences' => $ruSentences,
+                'a_sentences' => $aSentences,
+                'b_sentences' => $bSentences,
             ];
         }
 
-        $unmatchedEn = $this->unmatchedSentences(
-            $entityMatch->enEntity->sentences()->orderBy('order')->get(),
-            $linkedEnIds,
+        $unmatchedA = $this->unmatchedSentences(
+            $entityMatch->aEntity->sentences()->orderBy('order')->get(),
+            $linkedAIds,
         );
 
-        $unmatchedRu = $this->unmatchedSentences(
-            $entityMatch->ruEntity->sentences()->orderBy('order')->get(),
-            $linkedRuIds,
+        $unmatchedB = $this->unmatchedSentences(
+            $entityMatch->bEntity->sentences()->orderBy('order')->get(),
+            $linkedBIds,
         );
 
         return [
             'meaning_rows' => $meaningRows,
-            'unmatched_en' => $unmatchedEn,
-            'unmatched_ru' => $unmatchedRu,
+            'unmatched_a' => $unmatchedA,
+            'unmatched_b' => $unmatchedB,
         ];
     }
 
     /**
+     * @param  'a'|'b'  $side
      * @param  list<int>  $linkedIds
      * @return list<array<string, mixed>>
      */
-    private function mapLinkedSentences(EnRuMeaningMatch $meaningMatch, string $lang, array &$linkedIds): array
+    private function mapLinkedSentences(MeaningMatch $meaningMatch, string $side, array &$linkedIds): array
     {
-        $matches = $lang === 'en'
-            ? $meaningMatch->enSentenceMatches
-            : $meaningMatch->ruSentenceMatches;
+        $matches = $meaningMatch->sentenceMeaningMatches->where('side', $side);
 
         $sentences = [];
 
         foreach ($matches as $match) {
-            $sentence = $lang === 'en'
-                ? $match->enEntitySentence
-                : $match->ruEntitySentence;
+            $sentence = $match->entitySentence;
 
             if ($sentence === null) {
                 continue;
@@ -103,7 +99,7 @@ class AlignmentEditorPresenter
     }
 
     /**
-     * @param  iterable<int, EnEntitySentence|RuEntitySentence>  $sentences
+     * @param  iterable<int, EntitySentence>  $sentences
      * @param  list<int>  $linkedIds
      * @return list<array<string, mixed>>
      */
@@ -155,8 +151,8 @@ class AlignmentEditorPresenter
             'key' => $key,
             'id' => null,
             'order' => $order,
-            'en_sentences' => [],
-            'ru_sentences' => [],
+            'a_sentences' => [],
+            'b_sentences' => [],
         ];
     }
 }

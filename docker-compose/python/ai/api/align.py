@@ -30,8 +30,8 @@ def align(req: AlignRequest, request: Request):
 
     try:
         result = aligner.align_lists(
-            req.en_sentences,
-            req.ru_sentences,
+            req.a_sentences,
+            req.b_sentences,
             [p.model_dump() for p in req.landmarks],
         )
     except ValueError as exc:

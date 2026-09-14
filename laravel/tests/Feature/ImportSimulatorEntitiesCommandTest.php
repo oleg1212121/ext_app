@@ -2,14 +2,11 @@
 
 use App\Classes\EntitySentenceImporter;
 use App\Classes\SparseOrderService;
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\EnSentenceMeaningMatch;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
-use App\Models\RuSentenceMeaningMatch;
+use App\Models\Entity;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use Database\Seeders\SimulatorEntitySeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -17,6 +14,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    createLanguages();
     SentenceType::create(['name' => 'sentence', 'description' => 'A standard sentence']);
 });
 
@@ -64,8 +62,7 @@ afterEach(function () {
         removeSimulatorFile($basename);
     }
 
-    EnEntity::query()->where('file_path', 'like', SimulatorEntitySeeder::FILE_PATH_PREFIX.'test_%')->delete();
-    RuEntity::query()->where('file_path', 'like', SimulatorEntitySeeder::FILE_PATH_PREFIX.'test_%')->delete();
+    Entity::query()->where('file_path', 'like', SimulatorEntitySeeder::FILE_PATH_PREFIX.'test_%')->delete();
 });
 
 it('seeds simulator entities for bilingual files and skips excluded files', function () {
@@ -73,22 +70,23 @@ it('seeds simulator entities for bilingual files and skips excluded files', func
 
     $this->seed(SimulatorEntitySeeder::class);
 
-    expect(EnEntity::query()->where('name', SimulatorEntitySeeder::enEntityName('test_batch_import'))->exists())->toBeTrue()
-        ->and(RuEntity::query()->where('name', SimulatorEntitySeeder::ruEntityName('test_batch_import'))->exists())->toBeTrue()
-        ->and(EnEntity::query()->where('name', SimulatorEntitySeeder::enEntityName('001_articles'))->exists())->toBeFalse()
-        ->and(RuEntity::query()->where('name', SimulatorEntitySeeder::ruEntityName('001_articles'))->exists())->toBeFalse();
+    expect(Entity::query()->where('name', SimulatorEntitySeeder::entityName('test_batch_import', 'en'))->exists())->toBeTrue()
+        ->and(Entity::query()->where('name', SimulatorEntitySeeder::entityName('test_batch_import', 'ru'))->exists())->toBeTrue()
+        ->and(Entity::query()->where('name', SimulatorEntitySeeder::entityName('001_articles', 'en'))->exists())->toBeFalse()
+        ->and(Entity::query()->where('name', SimulatorEntitySeeder::entityName('001_articles', 'ru'))->exists())->toBeFalse();
 });
 
 function createSimulatorEntities(string $basename): array
 {
     $filePath = SimulatorEntitySeeder::FILE_PATH_PREFIX.$basename.'.txt';
+    $work = createWork(['title' => SimulatorEntitySeeder::workTitle($basename)]);
 
-    $en = EnEntity::create([
-        'name' => SimulatorEntitySeeder::enEntityName($basename),
+    $en = createEntity('en', $work, [
+        'name' => SimulatorEntitySeeder::entityName($basename, 'en'),
         'file_path' => $filePath,
     ]);
-    $ru = RuEntity::create([
-        'name' => SimulatorEntitySeeder::ruEntityName($basename),
+    $ru = createEntity('ru', $work, [
+        'name' => SimulatorEntitySeeder::entityName($basename, 'ru'),
         'file_path' => $filePath,
     ]);
 
@@ -102,19 +100,19 @@ it('imports all simulator entities with entities:import-simulator --all', functi
     $this->artisan('entities:import-simulator', ['--all' => true])
         ->assertSuccessful();
 
-    $enEntity = EnEntity::query()->where('name', SimulatorEntitySeeder::enEntityName('test_batch_import'))->firstOrFail();
-    $ruEntity = RuEntity::query()->where('name', SimulatorEntitySeeder::ruEntityName('test_batch_import'))->firstOrFail();
+    $enEntity = Entity::query()->where('name', SimulatorEntitySeeder::entityName('test_batch_import', 'en'))->firstOrFail();
+    $ruEntity = Entity::query()->where('name', SimulatorEntitySeeder::entityName('test_batch_import', 'ru'))->firstOrFail();
 
-    expect(EnEntitySentence::where('en_entity_id', $enEntity->id)->count())->toBe(3)
-        ->and(RuEntitySentence::where('ru_entity_id', $ruEntity->id)->count())->toBe(3)
-        ->and(EnRuEntityMatch::query()
-            ->where('en_entity_id', $enEntity->id)
-            ->where('ru_entity_id', $ruEntity->id)
+    expect(EntitySentence::where('entity_id', $enEntity->id)->count())->toBe(3)
+        ->and(EntitySentence::where('entity_id', $ruEntity->id)->count())->toBe(3)
+        ->and(EntityMatch::query()
+            ->where('a_entity_id', $enEntity->id)
+            ->where('b_entity_id', $ruEntity->id)
             ->where('status', 'completed')
             ->exists())->toBeTrue()
-        ->and(EnRuMeaningMatch::count())->toBe(3)
-        ->and(EnSentenceMeaningMatch::count())->toBe(3)
-        ->and(RuSentenceMeaningMatch::count())->toBe(3);
+        ->and(MeaningMatch::count())->toBe(3)
+        ->and(SentenceMeaningMatch::where('side', 'a')->count())->toBe(3)
+        ->and(SentenceMeaningMatch::where('side', 'b')->count())->toBe(3);
 });
 
 it('imports one simulator entity with --file', function () {
@@ -124,9 +122,9 @@ it('imports one simulator entity with --file', function () {
     $this->artisan('entities:import-simulator', ['--file' => 'test_single_import'])
         ->assertSuccessful();
 
-    $enEntity = EnEntity::query()->where('name', SimulatorEntitySeeder::enEntityName('test_single_import'))->firstOrFail();
+    $enEntity = Entity::query()->where('name', SimulatorEntitySeeder::entityName('test_single_import', 'en'))->firstOrFail();
 
-    expect(EnEntitySentence::where('en_entity_id', $enEntity->id)->count())->toBe(2);
+    expect(EntitySentence::where('entity_id', $enEntity->id)->count())->toBe(2);
 });
 
 it('skips completed simulator imports with --skip-existing', function () {
@@ -135,12 +133,12 @@ it('skips completed simulator imports with --skip-existing', function () {
 
     $this->artisan('entities:import-simulator', ['--all' => true])->assertSuccessful();
 
-    EnEntitySentence::query()->delete();
+    EntitySentence::query()->delete();
 
     $this->artisan('entities:import-simulator', ['--all' => true, '--skip-existing' => true])
         ->assertSuccessful();
 
-    expect(EnEntitySentence::count())->toBe(0);
+    expect(EntitySentence::count())->toBe(0);
 });
 
 it('requires --all or --file for simulator import', function () {
@@ -149,9 +147,10 @@ it('requires --all or --file for simulator import', function () {
 });
 
 it('bulk importer produces the same database shape as per-row expectations', function () {
+    $work = createWork();
     [$en, $ru] = [
-        EnEntity::create(['name' => 'Bulk EN', 'file_path' => 'texts/simulator/bulk.txt']),
-        RuEntity::create(['name' => 'Bulk RU', 'file_path' => 'texts/simulator/bulk.txt']),
+        createEntity('en', $work, ['name' => 'Bulk EN', 'file_path' => 'texts/simulator/bulk.txt']),
+        createEntity('ru', $work, ['name' => 'Bulk RU', 'file_path' => 'texts/simulator/bulk.txt']),
     ];
 
     $path = simulatorDirectory().'/bulk-test.txt';
@@ -160,10 +159,10 @@ it('bulk importer produces the same database shape as per-row expectations', fun
     try {
         $result = app(EntitySentenceImporter::class)->import($en, $ru, $path);
 
-        $enSentences = EnEntitySentence::where('en_entity_id', $en->id)->orderBy('order')->get();
-        $ruSentences = RuEntitySentence::where('ru_entity_id', $ru->id)->orderBy('order')->get();
-        $meaningMatches = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $result->entityMatch->id)
+        $enSentences = EntitySentence::where('entity_id', $en->id)->orderBy('order')->get();
+        $ruSentences = EntitySentence::where('entity_id', $ru->id)->orderBy('order')->get();
+        $meaningMatches = MeaningMatch::query()
+            ->where('entity_match_id', $result->entityMatch->id)
             ->orderBy('order')
             ->get();
 
@@ -183,15 +182,17 @@ it('bulk importer produces the same database shape as per-row expectations', fun
             ->and($meaningMatches)->toHaveCount(4);
 
         foreach ($meaningMatches as $index => $meaningMatch) {
-            $enJunction = EnSentenceMeaningMatch::query()
-                ->where('en_ru_meaning_match_id', $meaningMatch->id)
+            $enJunction = SentenceMeaningMatch::query()
+                ->where('meaning_match_id', $meaningMatch->id)
+                ->where('side', 'a')
                 ->first();
-            $ruJunction = RuSentenceMeaningMatch::query()
-                ->where('en_ru_meaning_match_id', $meaningMatch->id)
+            $ruJunction = SentenceMeaningMatch::query()
+                ->where('meaning_match_id', $meaningMatch->id)
+                ->where('side', 'b')
                 ->first();
 
-            expect($enJunction?->en_entity_sentence_id)->toBe($enSentences[$index]->id)
-                ->and($ruJunction?->ru_entity_sentence_id)->toBe($ruSentences[$index]->id);
+            expect($enJunction?->entity_sentence_id)->toBe($enSentences[$index]->id)
+                ->and($ruJunction?->entity_sentence_id)->toBe($ruSentences[$index]->id);
         }
     } finally {
         @unlink($path);

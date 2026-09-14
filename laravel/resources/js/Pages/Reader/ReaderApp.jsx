@@ -1,5 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import ReaderRow from './ReaderRow.jsx';
+import {useI18n} from '../../i18n';
+import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 
 const MIN_FONT_SIZE = 16;
 const MAX_FONT_SIZE = 38;
@@ -52,8 +54,23 @@ const Divider = () => (
     <span aria-hidden="true" className="hidden sm:inline-block w-px h-5 bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]"/>
 );
 
-export default function ReaderApp({lang = 'en', entity, rows = []}) {
-    const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+export default function ReaderApp({
+    lang = 'en',
+    entity,
+    rows = [],
+    fontSize: savedFontSize,
+    highlight: savedHighlight = true,
+    wordMap: initialWordMap = {},
+    primaryHighlightable = false,
+    translationWordMap: initialTranslationWordMap = {},
+    translationHighlightable = false,
+}) {
+    const {t} = useI18n();
+    const [fontSize, setFontSize] = useState(savedFontSize ?? DEFAULT_FONT_SIZE);
+    const [highlight, setHighlight] = useState(savedHighlight);
+    useUiSettingsAutosave('reader', {font_size: fontSize, highlight});
+    const [wordMap, setWordMap] = useState(initialWordMap);
+    const [translationWordMap, setTranslationWordMap] = useState(initialTranslationWordMap);
     const [showAll, setShowAll] = useState(false);
     const [sideBySide, setSideBySide] = useState(false);
     const [wideMode, setWideMode] = useState(false);
@@ -101,6 +118,14 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
         });
     }, []);
 
+    // Word progress changed in a popup: recolor the same word everywhere (a
+    // token can appear in the primary text and its translation).
+    const handleWordProgress = useCallback((key, status) => {
+        const apply = (map) => (map[key] ? {...map, [key]: {...map[key], s: status}} : map);
+        setWordMap(apply);
+        setTranslationWordMap(apply);
+    }, []);
+
     const handlePickAudio = useCallback(() => {
         audioPickerRef.current?.click();
     }, []);
@@ -130,7 +155,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
         setAudioReady(true);
         setAudioPlaying(false);
         const fileName = file.name.length > 20 ? `${file.name.substring(0, 20)}…` : file.name;
-        setAudioStatus(`Loaded · ${fileName}`);
+        setAudioStatus(t('reader.audio_loaded', {name: fileName}));
     }, []);
 
     const handleAudioPlay = useCallback(async () => {
@@ -141,9 +166,9 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
         try {
             await audioRef.current.play();
             setAudioPlaying(true);
-            setAudioStatus('Playing');
+            setAudioStatus(t('reader.playing'));
         } catch (err) {
-            setAudioStatus(`Cannot play: ${err?.message || 'unknown error'}`);
+            setAudioStatus(t('reader.cannot_play', {reason: err?.message || t('reader.unknown_error')}));
         }
     }, []);
 
@@ -154,7 +179,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
 
         audioRef.current.pause();
         setAudioPlaying(false);
-        setAudioStatus('Paused');
+        setAudioStatus(t('reader.paused'));
     }, []);
 
     const handleAudioStop = useCallback(() => {
@@ -169,7 +194,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
             // ignore
         }
         setAudioPlaying(false);
-        setAudioStatus('Stopped');
+        setAudioStatus(t('reader.stopped'));
     }, []);
 
     useEffect(() => {
@@ -188,13 +213,13 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                 audioRef.current.play()
                     .then(() => {
                         setAudioPlaying(true);
-                        setAudioStatus('Playing');
+                        setAudioStatus(t('reader.playing'));
                     })
-                    .catch((err) => setAudioStatus(`Cannot play: ${err?.message || 'unknown error'}`));
+                    .catch((err) => setAudioStatus(t('reader.cannot_play', {reason: err?.message || t('reader.unknown_error')})));
             } else {
                 audioRef.current.pause();
                 setAudioPlaying(false);
-                setAudioStatus('Paused');
+                setAudioStatus(t('reader.paused'));
             }
         };
 
@@ -202,7 +227,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
         return () => document.removeEventListener('keydown', onKeyDown);
     }, []);
 
-    const entityTitle = entity?.name ?? 'Untitled';
+    const entityTitle = entity?.name ?? t('reader.untitled');
 
     return (
         <div
@@ -217,7 +242,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                         onClick={() => history.length > 1 ? history.back() : null}
                         className="font-sans text-xs tracking-wide text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm"
                     >
-                        ← Library
+                        {t('reader.back_to_library')}
                     </button>
 
                     <Divider/>
@@ -231,7 +256,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
 
                     <div className="ml-auto flex flex-wrap items-center gap-2 sm:gap-3">
                         <div className="flex items-center gap-0.5 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm">
-                            <IconButton label="Decrease text size" onClick={() => adjustFontSize(-FONT_STEP)}>
+                            <IconButton label={t('reader.decrease_text_size')} onClick={() => adjustFontSize(-FONT_STEP)}>
                                 −
                             </IconButton>
                             <span
@@ -241,7 +266,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                             >
                                 {fontSize}
                             </span>
-                            <IconButton label="Increase text size" onClick={() => adjustFontSize(FONT_STEP)}>
+                            <IconButton label={t('reader.increase_text_size')} onClick={() => adjustFontSize(FONT_STEP)}>
                                 +
                             </IconButton>
                         </div>
@@ -249,13 +274,16 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                         <Divider/>
 
                         <ToggleButton active={showAll} onClick={() => setShowAll((v) => !v)}>
-                            Show all
+                            {t('reader.show_all')}
+                        </ToggleButton>
+                        <ToggleButton active={highlight} onClick={() => setHighlight((v) => !v)}>
+                            {t('reader.highlights')}
                         </ToggleButton>
                         <ToggleButton active={sideBySide} onClick={() => setSideBySide((v) => !v)}>
-                            {sideBySide ? 'Stacked' : 'Side by side'}
+                            {sideBySide ? t('reader.stacked') : t('reader.side_by_side')}
                         </ToggleButton>
                         <ToggleButton active={wideMode} onClick={() => setWideMode((v) => !v)}>
-                            {wideMode ? 'Normal width' : 'Wide'}
+                            {wideMode ? t('reader.normal_width') : t('reader.wide')}
                         </ToggleButton>
 
                         <Divider/>
@@ -275,12 +303,12 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                                 onClick={handlePickAudio}
                                 className="px-2.5 h-8 font-sans text-xs tracking-wide rounded-sm border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:border-[var(--color-ink)] dark:hover:border-[var(--color-vellum-night)] hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
                             >
-                                Pick audio
+                                {t('reader.pick_audio')}
                             </button>
                             <div className="flex items-center gap-0.5 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm">
                                 <IconButton
                                     id="audioPlay"
-                                    label="Play"
+                                    label={t('reader.play')}
                                     disabled={!audioReady}
                                     onClick={handleAudioPlay}
                                 >
@@ -288,7 +316,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                                 </IconButton>
                                 <IconButton
                                     id="audioPause"
-                                    label="Pause"
+                                    label={t('reader.pause')}
                                     disabled={!audioReady}
                                     onClick={handleAudioPause}
                                 >
@@ -296,7 +324,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                                 </IconButton>
                                 <IconButton
                                     id="audioStop"
-                                    label="Stop"
+                                    label={t('reader.stop')}
                                     disabled={!audioReady}
                                     onClick={handleAudioStop}
                                 >
@@ -331,7 +359,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                 >
                     <div className="mb-10 text-center">
                         <span className="font-sans text-[10px] tracking-[0.24em] uppercase text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/50">
-                            Folio · {rows.length} {rows.length === 1 ? 'line' : 'lines'}
+                            {t('reader.folio')} · {rows.length} {rows.length === 1 ? t('reader.line') : t('reader.lines')}
                         </span>
                         <h2 className="mt-2 font-serif font-light text-3xl sm:text-4xl tracking-tight leading-tight">
                             {entityTitle}
@@ -351,12 +379,18 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                                 fontSize={fontSize}
                                 expanded={expandedRows.has(index)}
                                 onToggle={toggleRow}
+                                wordMap={wordMap}
+                                primaryHighlightable={primaryHighlightable}
+                                translationWordMap={translationWordMap}
+                                translationHighlightable={translationHighlightable}
+                                highlight={highlight}
+                                onWordProgress={handleWordProgress}
                             />
                         ))}
                     </ol>
 
                     <p className="mt-12 text-center font-sans text-xs tracking-wide text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/50">
-                        Tap a line to reveal its translation · Spacebar toggles audio playback
+                        {t('reader.hint')}
                     </p>
                 </div>
             </main>
@@ -367,7 +401,7 @@ export default function ReaderApp({lang = 'en', entity, rows = []}) {
                 className="hidden"
                 onEnded={() => {
                     setAudioPlaying(false);
-                    setAudioStatus('Ended');
+                    setAudioStatus(t('reader.ended'));
                 }}
             />
         </div>

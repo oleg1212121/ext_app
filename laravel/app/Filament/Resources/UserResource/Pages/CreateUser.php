@@ -11,11 +11,14 @@ class CreateUser extends CreateRecord
 
     protected $settingsNativeLanguageId;
 
+    protected $settingsInterfaceLanguageId;
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $this->settingsNativeLanguageId = $data['settings_native_language_id'] ?? null;
+        $this->settingsInterfaceLanguageId = $data['settings_interface_language_id'] ?? null;
 
-        unset($data['settings_native_language_id']);
+        unset($data['settings_native_language_id'], $data['settings_interface_language_id']);
 
         return $data;
     }
@@ -24,6 +27,7 @@ class CreateUser extends CreateRecord
     {
         $this->record->settings()->create([
             'native_language_id' => filled($this->settingsNativeLanguageId) ? $this->settingsNativeLanguageId : null,
+            'interface_language_id' => filled($this->settingsInterfaceLanguageId) ? $this->settingsInterfaceLanguageId : null,
         ]);
     }
 }

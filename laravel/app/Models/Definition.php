@@ -2,14 +2,15 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Definition extends Model
 {
-    use HasFactory;
+    protected $fillable = ['word_id', 'definition'];
 
-    public $table = 'definitions';
-
-    public $fillable = ['pos', 'word', 'definition'];
+    public function word(): BelongsTo
+    {
+        return $this->belongsTo(Word::class);
+    }
 }

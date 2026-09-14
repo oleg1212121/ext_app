@@ -57,9 +57,9 @@ class AlignmentEditorDraftStore
      * @param  array<string, mixed>  $draft
      * @return array{rows: list<array<string, mixed>>, total: int, last_page: int}
      */
-    public function paginateUnmatched(array $draft, string $lang, int $page, int $perPage): array
+    public function paginateUnmatched(array $draft, string $side, int $page, int $perPage): array
     {
-        $key = $lang === 'en' ? 'unmatched_en' : 'unmatched_ru';
+        $key = $side === 'a' ? 'unmatched_a' : 'unmatched_b';
         $rows = $draft[$key] ?? [];
         $total = count($rows);
         $lastPage = max(1, (int) ceil($total / $perPage));

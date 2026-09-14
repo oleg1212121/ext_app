@@ -1,4 +1,8 @@
+import {useI18n} from '../../../i18n';
+
 export default function UnsolvedModal({show, onClose, items, hasCrossword}) {
+    const {t} = useI18n();
+
     if (!show) {
         return null;
     }
@@ -13,23 +17,23 @@ export default function UnsolvedModal({show, onClose, items, hasCrossword}) {
             <div
                 role="dialog"
                 aria-modal="true"
-                aria-label="Unsolved words"
+                aria-label={t('crossword.unsolved')}
                 className="relative bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] rounded-sm w-full md:w-5/6 lg:w-3/4 max-h-[90vh] overflow-y-auto p-6 sm:p-8"
             >
                 <div className="flex justify-between items-start mb-6 pb-4 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
                     <div className="flex flex-col gap-1">
                         <span className="font-[var(--font-wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Crossword
+                            {t('crossword.title')}
                         </span>
                         <h2 className="font-[var(--font-wbench-serif)] text-2xl sm:text-3xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            Unsolved words
+                            {t('crossword.unsolved')}
                         </h2>
                     </div>
                     <button
                         type="button"
                         className="text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-accent)] dark:hover:text-[var(--wbench-accent-night)] transition-colors text-2xl leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                         onClick={onClose}
-                        aria-label="Close"
+                        aria-label={t('crossword.unsolved')}
                     >
                         ✕
                     </button>
@@ -37,7 +41,7 @@ export default function UnsolvedModal({show, onClose, items, hasCrossword}) {
 
                 <ol className="space-y-5 list-none">
                     {!hasCrossword && (
-                        <li className="font-[var(--font-wbench-serif)] italic text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">No crossword loaded.</li>
+                        <li className="font-[var(--font-wbench-serif)] italic text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">{t('crossword.no_crossword')}</li>
                     )}
                     {items.map((item) => (
                         <li key={item.word} className="group relative pl-5">
@@ -54,7 +58,7 @@ export default function UnsolvedModal({show, onClose, items, hasCrossword}) {
                         </li>
                     ))}
                     {hasCrossword && items.length === 0 && (
-                        <li className="font-[var(--font-wbench-serif)] italic text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]">All solved.</li>
+                        <li className="font-[var(--font-wbench-serif)] italic text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]">{t('crossword.all_solved')}</li>
                     )}
                 </ol>
             </div>

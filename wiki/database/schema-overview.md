@@ -1,11 +1,11 @@
 ---
 type: Database Schema
 title: Schema Overview
-description: The table domains — legacy vocabulary, EN/RU dictionary, entities & alignment, user settings — and how they relate.
+description: The table domains — works/entities/alignment, unified dictionary, AI catalog, user settings — and how they relate.
 tags: [database, schema, postgres, users, settings]
 status: stable
-stale_after: 2026-10-26
-generated: { by: agent/opencode, at: 2026-09-08T00:00:00Z }
+stale_after: 2026-12-10
+generated: { by: agent:zcode, at: 2026-09-12T18:08:33Z }
 sources:
   - id: migrations
     resource: laravel/database/migrations
@@ -18,38 +18,68 @@ sources:
 # Engine & access
 
 PostgreSQL (`ext_pgdb`, host port 54321). Dev DB `ext_app`, test DB
-`ext_app_test`. Migrations in `laravel/database/migrations/` (46 files) are the
-chronological source of truth; there is also a large legacy dump
-(`backup11.sql`, ~545 MB) at the repo root.
+`ext_app_test`. The migrations in `laravel/database/migrations/` are a
+**squashed fresh baseline** (2026-09: the 21 historical migrations were
+consolidated into 6; the pre-squash history lives in git). Adding a language
+is an `INSERT` into `languages` — never DDL (ADR
+[0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md)).
 
-# The three domains
+# The domains
 
-| Domain | Era | Tables | Detail |
-|--------|-----|--------|--------|
-| [Legacy vocabulary](legacy-vocabulary.md) | 2025_07–09 | `words`, `books`, `book_word`, `definitions`, `etymologies`, `transcriptions`, `translations`, `forms`, `saved_phrases` | Original generic dictionary; still referenced by legacy UI and `Word` model/Filament resource |
-| [EN/RU dictionary](en-ru-dictionary.md) | 2026_04 | mirrored `en_words`/`ru_words` + satellites, `tags` | Current dictionary, filled by [Dictionary Import](/domains/dictionary-import.md) |
-| [Entities & alignment](entities-alignment.md) | 2026_04–06 | `*_entities`, `*_entity_sentences`, `*_meaning_matches`, `en_ru_translations`/`ru_en_translations` | Texts and their alignment; filled by the [alignment pipeline](/domains/sentence-alignment.md) |
+| Domain | Detail |
+|--------|--------|
+| [Entities & alignment](entities-alignment.md) | `works`, `entities` (+ `language_id`), `entity_sentences`, `entity_matches` (a/b sides), `meaning_matches`, `sentence_meaning_matches` (side column), `entity_user` grants. Filled by the [alignment pipeline](/domains/sentence-alignment.md) |
+| [Dictionary](dictionary.md) | Unified `words` (+ `language_id`) with satellites, `word_classes`/`transcription_types` per language, one directed `word_translations` pivot. Filled by [Dictionary Import](/domains/dictionary-import.md) |
+| [Crossword](../domains/crossword.md) | `entity_words` (token-first per-entity word list, nullable `word_id` link), `user_word` (per-user learning/solved/known progress), `entities.words_indexed_at` staleness marker, `words.frequency` ranks. See ADR [0025](../../docs/adr/0025-crossword-word-index-and-progress.md). The same tables power [Interactive words](../domains/interactive-words.md) — no position/occurrence tables exist (ADR [0027](../../docs/adr/0027-render-time-word-segmentation.md)); `forms` carries the runtime-read `l_word` index |
+| AI catalog | `ai_providers`, `ai_models`, `user_api_keys` (2026_09_10_000002) |
+| Users & settings | `users` (role/approval inline), `user_settings` (native + interface language) |
+| [Localization](../domains/localization.md) | `ui_string_keys` (dotted key, group), `ui_strings` (one text per interface-enabled language); `languages.is_interface_enabled` gates pickers |
 
-Plus Laravel framework tables: `users`, `cache`, `jobs` (0001_01_01_*).
+Plus Laravel framework tables: `cache`, `jobs` (0001_01_01_*).
+
+The legacy vocabulary domain (`words`/`books`/`book_word`/`saved_phrases` +
+satellites, the 2025 crossword/word-interaction era) was **deleted** in the
+same rework — its routes, controllers, Filament resources and React pages are
+gone.
 
 # User settings
 
-`user_settings` (one row per user) holds per-user preferences, currently a single
-**native language** (`native_language_id` → `languages.id`, nullable, English by
-default). Created at registration; changeable from the profile page (Inertia
-`Profile/Edit`) and admin-managed via the Filament `UserSettingsResource`, plus a
-native-language select on the `UserResource` create/edit forms. See the
+`user_settings` (one row per user) holds per-user preferences: the **native
+language** (`native_language_id` → `languages.id`, nullable, English by
+default), the **interface language** (`interface_language_id`, nullable —
+null follows the native language; only `languages.is_interface_enabled`
+languages are valid), and **UI settings** (`ui_settings`, nullable JSONB —
+per-section blobs keyed `simulator` / `reader`: font sizes, panel visibility,
+selected AI model, customized assessment question, panel drag sizes). Created
+at registration; the language fields are changeable from the profile page
+(Inertia `Profile/Edit`) and admin-managed via the language selects on the
+`UserResource` create/edit forms (the former standalone `UserSettingsResource`
+was removed 2026-09-12). The UI locale resolves interface → native → `en`
+(ADR 0023); UI settings are seeded into Inertia props by
+`SimulatorController`/`ReaderController` and written back by a debounced PATCH
+to `/ui-settings` (ADR 0024). See the
 [Access Control domain](../domains/access-control.md) for the user, and the
 **User settings** / **Native language** glossary entries in
 [CONTEXT.md](../../CONTEXT.md#language-catalog-context).
 
+# UI strings
+
+`ui_string_keys` (`key` unique dotted identifier, `group` = first segment,
+derived on save) + `ui_strings` (`ui_string_key_id`, `language_id`, `text`,
+unique pair) store interface text per interface-enabled language (ADR 0022).
+Filament `UiStringKeyResource` edits them side by side; `UiStringLoader`
+serves them to the translator and `UiStrings::mapFor()` to Inertia, both
+cache-backed and flushed by model observers. Seed content lives in
+`database/seeders/ui-strings/*.php`, upserted by `UiStringSeeder`.
+
 # How they relate
 
-* Entities/sentences reference the languages' dictionary words at the UI layer
-  (dictionary lookups while reading), not via hard FK everywhere — check models
-  before assuming joins.
-* `en_ru_translations` / `ru_en_translations` bridge the dictionary and
-  alignment domains (word-level links vs sentence-level matches).
-* The legacy domain coexists with the EN/RU dictionary; when adding features,
-  prefer the EN/RU tables and confirm which domain a given controller/model
-  actually uses.
+* `works` group the per-language `entities`; `entity_matches` pair two
+  same-work entities (any languages — same-language companions like
+  exercises + answers included; canonical `a_entity_id <
+  b_entity_id`). The work's `original_language_id` decides which side of a
+  match is the original — there is no per-match original flag.
+* `word_translations` links dictionary words across languages at the word
+  level, independent of the sentence-level alignment domain.
+* All previously mirrored tables (`en_*`/`ru_*`) are unified with a
+  `language_id` column; cross-language joins are ordinary FKs.

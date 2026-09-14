@@ -10,7 +10,16 @@ class UserSettings extends Model
     protected $fillable = [
         'user_id',
         'native_language_id',
+        'interface_language_id',
+        'ui_settings',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'ui_settings' => 'array',
+        ];
+    }
 
     public function user(): BelongsTo
     {
@@ -20,5 +29,10 @@ class UserSettings extends Model
     public function nativeLanguage(): BelongsTo
     {
         return $this->belongsTo(Language::class, 'native_language_id');
+    }
+
+    public function interfaceLanguage(): BelongsTo
+    {
+        return $this->belongsTo(Language::class, 'interface_language_id');
     }
 }

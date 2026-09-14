@@ -1,5 +1,6 @@
 import {Link, usePage} from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx';
+import {useI18n} from '../../i18n';
 
 const STATUS_BADGE = {
     pending: 'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] bg-transparent border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]',
@@ -38,6 +39,7 @@ const PageLink = ({disabled, href, children, label}) => {
 };
 
 export default function Index({entityMatches, meta}) {
+    const {t} = useI18n();
     const {flash} = usePage().props;
     const {current_page, last_page} = meta;
 
@@ -47,21 +49,21 @@ export default function Index({entityMatches, meta}) {
                 <header className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] pb-4">
                     <div>
                         <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Alignments
+                            {t('alignments.title')}
                         </p>
                         <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            EN / RU semantic pairs
+                            {t('alignments.aligned_entity_pairs')}
                         </h1>
                     </div>
                     <div className="flex flex-col items-end gap-2">
                         <p className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            {meta.total} {meta.total === 1 ? 'pair' : 'pairs'}
+                            {meta.total} {meta.total === 1 ? t('alignments.pair') : t('alignments.pairs')}
                         </p>
                         <Link
                             href="/alignments/create"
                             className="inline-flex h-8 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-3 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                         >
-                            + Create new
+                            {t('alignments.create_new')}
                         </Link>
                     </div>
                 </header>
@@ -77,7 +79,7 @@ export default function Index({entityMatches, meta}) {
                         <table className="min-w-full border-collapse">
                             <thead>
                                 <tr className="border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]">
-                                    {['EN entity', 'RU entity', 'Similarity', 'Progress', 'EN sents', 'RU sents', 'Status', 'Created', 'Open'].map((header, index) => (
+                                    {[t('alignments.th_a_entity'), t('alignments.th_b_entity'), t('alignments.th_similarity'), t('alignments.th_progress'), t('alignments.th_a_sents'), t('alignments.th_b_sents'), t('alignments.th_status'), t('alignments.th_created'), t('alignments.th_open')].map((header, index) => (
                                         <th
                                             key={header}
                                             className={[
@@ -97,10 +99,10 @@ export default function Index({entityMatches, meta}) {
                                     <tr>
                                         <td colSpan={9} className="px-4 py-12 text-center">
                                             <p className="font-serif text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                                                No alignments yet.
+                                                {t('alignments.no_alignments_yet')}
                                             </p>
                                             <p className="mt-1 text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                                Run the alignment pipeline to produce a pair.
+                                                {t('alignments.no_alignments_hint')}
                                             </p>
                                         </td>
                                     </tr>
@@ -114,15 +116,15 @@ export default function Index({entityMatches, meta}) {
                     </div>
                 </div>
 
-                <nav aria-label="Pagination" className="flex items-center justify-between border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
-                    <PageLink disabled={current_page <= 1} href={`/alignments?page=${current_page - 1}`} label="Previous page">
-                        ← Prev
+                <nav aria-label={t('alignments.pagination')} className="flex items-center justify-between border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
+                    <PageLink disabled={current_page <= 1} href={`/alignments?page=${current_page - 1}`} label={t('alignments.previous_page')}>
+                        {t('alignments.prev')}
                     </PageLink>
                     <span className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                         {current_page} / {Math.max(last_page, 1)}
                     </span>
-                    <PageLink disabled={current_page >= last_page} href={`/alignments?page=${current_page + 1}`} label="Next page">
-                        Next →
+                    <PageLink disabled={current_page >= last_page} href={`/alignments?page=${current_page + 1}`} label={t('alignments.next_page')}>
+                        {t('alignments.next')}
                     </PageLink>
                 </nav>
             </div>
@@ -133,24 +135,25 @@ export default function Index({entityMatches, meta}) {
 Index.layout = (page) => <Main children={page}/>;
 
 function IndexRow({run}) {
+    const {t} = useI18n();
     const progress = Math.min((run.confirmed_count ?? 0) / Math.max(run.linked_count ?? 0, 1), 1);
 
     return (
         <tr className="group transition-colors hover:bg-[var(--wbench-paper-deep)] dark:hover:bg-[var(--wbench-paper-deep-night)]">
             <td className="px-4 py-2.5 align-top">
                 <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    EN
+                    {(run.a_language_code || 'a').toUpperCase()}
                 </span>
                 <p className="mt-0.5 font-serif text-[15px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                    {run.en_entity_name || '—'}
+                    {run.a_entity_name || '—'}
                 </p>
             </td>
             <td className="px-4 py-2.5 align-top">
                 <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    RU
+                    {(run.b_language_code || 'b').toUpperCase()}
                 </span>
                 <p className="mt-0.5 font-serif text-[15px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                    {run.ru_entity_name || '—'}
+                    {run.b_entity_name || '—'}
                 </p>
             </td>
             <td className={`px-4 py-2.5 align-top font-mono text-sm ${similarityClass(run.entity_similarity)}`}>
@@ -170,10 +173,10 @@ function IndexRow({run}) {
                 </div>
             </td>
             <td className="px-4 py-2.5 align-top font-mono text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                {run.en_total_sentences ?? '—'}
+                {run.a_total_sentences ?? '—'}
             </td>
             <td className="px-4 py-2.5 align-top font-mono text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                {run.ru_total_sentences ?? '—'}
+                {run.b_total_sentences ?? '—'}
             </td>
             <td className="px-4 py-2.5 align-top">
                 <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] ${STATUS_BADGE[run.status] ?? STATUS_BADGE.pending}`}>
@@ -188,7 +191,7 @@ function IndexRow({run}) {
                     href={`/alignments/${run.id}`}
                     className="inline-flex h-8 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-3 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                 >
-                    Open
+                    {t('alignments.th_open')}
                 </Link>
             </td>
         </tr>

@@ -1,40 +1,39 @@
 <?php
 
 use App\Jobs\AlignEntitySentences;
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
+use App\Models\Entity;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
 use App\Models\SentenceType;
 use App\Models\User;
 use Illuminate\Support\Facades\Bus;
 use Inertia\Testing\AssertableInertia as Assert;
 
 /**
- * @return array{enEntity: EnEntity, ruEntity: RuEntity}
+ * @return array{enEntity: Entity, ruEntity: Entity}
  */
 function createAlignablePair(): array
 {
     $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
 
-    $enEntity = EnEntity::create([
+    $enEntity = createEntity('en', $work, [
         'name' => 'English chapter',
         'signature' => json_encode([1.0, 0.0]),
     ]);
-    $ruEntity = RuEntity::create([
+    $ruEntity = createEntity('ru', $work, [
         'name' => 'Russian chapter',
         'signature' => json_encode([1.0, 0.0]),
     ]);
 
-    EnEntitySentence::create([
-        'en_entity_id' => $enEntity->id,
+    EntitySentence::create([
+        'entity_id' => $enEntity->id,
         'sentence_type_id' => $sentenceType->id,
         'content' => 'An English sentence.',
         'order' => 1,
     ]);
-    RuEntitySentence::create([
-        'ru_entity_id' => $ruEntity->id,
+    EntitySentence::create([
+        'entity_id' => $ruEntity->id,
         'sentence_type_id' => $sentenceType->id,
         'content' => 'Русское предложение.',
         'order' => 1,
@@ -47,16 +46,16 @@ test('guests are redirected from the create match page', function () {
     $this->get(route('alignments.create'))->assertRedirect(route('login'));
 });
 
-test('the creation page lists only alignable readable entities', function () {
+test('the creation page lists only alignable readable entities of shared works', function () {
     $user = User::factory()->create();
     ['enEntity' => $enEntity, 'ruEntity' => $ruEntity] = createAlignablePair();
 
     // Ineligible: no signature.
-    EnEntity::create(['name' => 'No signature']);
+    createEntity('en', null, ['name' => 'No signature']);
     // Ineligible: no sentences.
-    RuEntity::create(['name' => 'No sentences', 'signature' => json_encode([1.0, 0.0])]);
+    createEntity('ru', null, ['name' => 'No sentences', 'signature' => json_encode([1.0, 0.0])]);
     // Ineligible: restricted and not granted.
-    EnEntity::create([
+    createEntity('en', null, [
         'name' => 'Restricted EN',
         'signature' => json_encode([1.0, 0.0]),
         'is_restricted' => true,
@@ -67,12 +66,11 @@ test('the creation page lists only alignable readable entities', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Alignments/Create')
-            ->has('enEntities', 1)
-            ->where('enEntities.0.id', $enEntity->id)
-            ->where('enEntities.0.text', 'English chapter')
-            ->has('ruEntities', 1)
-            ->where('ruEntities.0.id', $ruEntity->id)
-            ->where('ruEntities.0.text', 'Russian chapter'));
+            ->has('works', 1)
+            ->where('works.0.entities.en.0.id', $enEntity->id)
+            ->where('works.0.entities.en.0.text', 'English chapter')
+            ->where('works.0.entities.ru.0.id', $ruEntity->id)
+            ->where('works.0.entities.ru.0.text', 'Russian chapter'));
 });
 
 test('creating a match stores the settings, starts the pipeline and redirects', function () {
@@ -81,9 +79,8 @@ test('creating a match stores the settings, starts the pipeline and redirects', 
     ['enEntity' => $enEntity, 'ruEntity' => $ruEntity] = createAlignablePair();
 
     $response = $this->actingAs($user)->post(route('alignments.store'), [
-        'en_entity_id' => $enEntity->id,
-        'ru_entity_id' => $ruEntity->id,
-        'is_original_en' => false,
+        'first_entity_id' => $enEntity->id,
+        'second_entity_id' => $ruEntity->id,
         'chunk_size' => 50,
         'max_n' => 4,
     ]);
@@ -91,13 +88,13 @@ test('creating a match stores the settings, starts the pipeline and redirects', 
     $response->assertRedirect(route('alignments.index'));
     $response->assertSessionHas('success');
 
-    $match = EnRuEntityMatch::query()
-        ->where('en_entity_id', $enEntity->id)
-        ->where('ru_entity_id', $ruEntity->id)
+    $match = EntityMatch::query()
+        ->where('a_entity_id', $enEntity->id)
+        ->where('b_entity_id', $ruEntity->id)
         ->first();
 
     expect($match)->not->toBeNull()
-        ->and($match->is_original_en)->toBeFalse()
+        ->and($match->originalSide())->toBe('a')
         ->and($match->max_n)->toBe(4)
         ->and($match->status)->toBe('aligning');
 
@@ -111,49 +108,127 @@ test('out-of-range chunk size and max_n are rejected', function () {
     $this->actingAs($user)
         ->from(route('alignments.create'))
         ->post(route('alignments.store'), [
-            'en_entity_id' => $enEntity->id,
-            'ru_entity_id' => $ruEntity->id,
-            'is_original_en' => true,
+            'first_entity_id' => $enEntity->id,
+            'second_entity_id' => $ruEntity->id,
             'chunk_size' => 20,
             'max_n' => 9,
         ])
         ->assertStatus(302)
         ->assertSessionHasErrors(['chunk_size', 'max_n']);
 
-    expect(EnRuEntityMatch::query()->count())->toBe(0);
+    expect(EntityMatch::query()->count())->toBe(0);
 });
 
 test('a duplicate entity pair is blocked with a link to the existing match', function () {
     $user = User::factory()->create();
     ['enEntity' => $enEntity, 'ruEntity' => $ruEntity] = createAlignablePair();
 
-    $existing = EnRuEntityMatch::create([
-        'en_entity_id' => $enEntity->id,
-        'ru_entity_id' => $ruEntity->id,
-        'status' => 'completed',
-    ]);
+    $existing = createEntityMatch($enEntity, $ruEntity, ['status' => 'completed']);
 
     $this->actingAs($user)
         ->from(route('alignments.create'))
         ->post(route('alignments.store'), [
-            'en_entity_id' => $enEntity->id,
-            'ru_entity_id' => $ruEntity->id,
-            'is_original_en' => true,
+            'first_entity_id' => $enEntity->id,
+            'second_entity_id' => $ruEntity->id,
             'chunk_size' => 75,
             'max_n' => 6,
         ])
         ->assertRedirect(route('alignments.create'))
-        ->assertSessionHasErrors('ru_entity_id')
+        ->assertSessionHasErrors('second_entity_id')
         ->assertSessionHas('existing_match_id', $existing->id);
 
-    expect(EnRuEntityMatch::query()->count())->toBe(1);
+    expect(EntityMatch::query()->count())->toBe(1);
+});
+
+test('entities from different works are rejected', function () {
+    $user = User::factory()->create();
+    $enEntity = createEntity('en', null, ['name' => 'English chapter']);
+    $ruEntity = createEntity('ru', null, ['name' => 'Russian chapter']);
+
+    $this->actingAs($user)
+        ->from(route('alignments.create'))
+        ->post(route('alignments.store'), [
+            'first_entity_id' => $enEntity->id,
+            'second_entity_id' => $ruEntity->id,
+            'chunk_size' => 75,
+            'max_n' => 6,
+        ])
+        ->assertRedirect(route('alignments.create'))
+        ->assertSessionHasErrors('second_entity_id');
+
+    expect(EntityMatch::query()->count())->toBe(0);
+});
+
+test('a same-language entity pair can be matched', function () {
+    Bus::fake();
+    $user = User::factory()->create();
+    ['enEntity' => $enEntity] = createAlignablePair();
+
+    $answers = createEntity('en', $enEntity->work, [
+        'name' => 'Answer key',
+        'signature' => json_encode([0.9, 0.1]),
+    ]);
+
+    EntitySentence::create([
+        'entity_id' => $answers->id,
+        'sentence_type_id' => SentenceType::query()->where('name', 'Narration')->value('id'),
+        'content' => 'An answer.',
+        'order' => 1,
+    ]);
+
+    $response = $this->actingAs($user)->post(route('alignments.store'), [
+        'first_entity_id' => $enEntity->id,
+        'second_entity_id' => $answers->id,
+        'chunk_size' => 75,
+        'max_n' => 6,
+    ]);
+
+    $response->assertRedirect(route('alignments.index'));
+
+    $match = EntityMatch::query()
+        ->where('a_entity_id', min($enEntity->id, $answers->id))
+        ->where('b_entity_id', max($enEntity->id, $answers->id))
+        ->first();
+
+    expect($match)->not->toBeNull();
+
+    Bus::assertDispatched(AlignEntitySentences::class);
+});
+
+test('the creation page includes works with two same-language entities', function () {
+    $user = User::factory()->create();
+    ['enEntity' => $enEntity] = createAlignablePair();
+    $work = $enEntity->work;
+
+    $answers = createEntity('en', $work, [
+        'name' => 'Answer key',
+        'signature' => json_encode([0.9, 0.1]),
+    ]);
+
+    EntitySentence::create([
+        'entity_id' => $answers->id,
+        'sentence_type_id' => SentenceType::query()->where('name', 'Narration')->value('id'),
+        'content' => 'An answer.',
+        'order' => 1,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('alignments.create'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Alignments/Create')
+            ->has('works', 1)
+            ->where('works.0.entities.en.0.id', $answers->id)
+            ->where('works.0.entities.en.1.id', $enEntity->id)
+            ->where('works.0.entities.ru.0.id', fn ($value) => true));
 });
 
 test('cannot create a match involving an entity the user cannot read', function () {
     $user = User::factory()->create();
-    ['ruEntity' => $ruEntity] = createAlignablePair();
+    ['ruEntity' => $ruEntity, 'enEntity' => $pairEn] = createAlignablePair();
+    $work = $pairEn->work;
 
-    $restricted = EnEntity::create([
+    $restricted = createEntity('en', $work, [
         'name' => 'Restricted EN',
         'signature' => json_encode([1.0, 0.0]),
         'is_restricted' => true,
@@ -161,13 +236,12 @@ test('cannot create a match involving an entity the user cannot read', function 
 
     $this->actingAs($user)
         ->post(route('alignments.store'), [
-            'en_entity_id' => $restricted->id,
-            'ru_entity_id' => $ruEntity->id,
-            'is_original_en' => true,
+            'first_entity_id' => $restricted->id,
+            'second_entity_id' => $ruEntity->id,
             'chunk_size' => 75,
             'max_n' => 6,
         ])
         ->assertForbidden();
 
-    expect(EnRuEntityMatch::query()->count())->toBe(0);
+    expect(EntityMatch::query()->count())->toBe(0);
 });

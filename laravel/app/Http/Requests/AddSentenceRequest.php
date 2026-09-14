@@ -19,12 +19,12 @@ class AddSentenceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'lang' => ['required', 'in:en,ru'],
+            'side' => ['required', 'in:a,b'],
             'meaning_match_id' => [
                 'required',
                 'integer',
-                Rule::exists('en_ru_meaning_matches', 'id')->where(
-                    'en_ru_entity_match_id',
+                Rule::exists('meaning_matches', 'id')->where(
+                    'entity_match_id',
                     $this->route('entityMatch')->id,
                 ),
             ],

@@ -50,11 +50,7 @@ needed, re-read the layout; an accent is a signal, not decoration.
 
 > The legacy `--color-vellum/*` token family (warm cream + vermilion) remains in
 > `app.css` for backward compatibility with other pages and Blade/Alpine views.
-> New Inertia/React pages should use `--wbench-*`, not `--color-*`. The crossword
-workbench (`/crossword-react/{lang}`) is now on `--wbench-*` too, with a local
-`.xword-edge` rule in `resources/css/crossword.css` that mirrors `.ribbon-mark`
-but is retinted to `--wbench-accent` so it does not touch the global
-vermilion `.ribbon-mark` shared with the simulator and Reader.
+> New Inertia/React pages should use `--wbench-*`, not `--color-*`.
 
 ## Type — three roles, each full Latin + Cyrillic
 

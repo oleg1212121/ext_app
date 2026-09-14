@@ -3,16 +3,15 @@
 namespace App\Console\Commands;
 
 use App\Classes\EntitySentenceImporter;
-use App\Models\EnEntity;
-use App\Models\RuEntity;
+use App\Models\Entity;
 use Illuminate\Console\Command;
 
 class ImportEntitySentencesCommand extends Command
 {
     protected $signature = 'entities:import-sentences
                             {file : Path to the bilingual text file}
-                            {en_entity_id : English entity ID}
-                            {ru_entity_id : Russian entity ID}';
+                            {first_entity_id : First entity ID}
+                            {second_entity_id : Second entity ID}';
 
     protected $description = 'Import bilingual sentence pairs and create meaning matches';
 
@@ -32,22 +31,22 @@ class ImportEntitySentencesCommand extends Command
             return self::FAILURE;
         }
 
-        $enEntity = EnEntity::query()->find($this->argument('en_entity_id'));
-        if ($enEntity === null) {
-            $this->error("English entity not found: {$this->argument('en_entity_id')}");
+        $firstEntity = Entity::query()->find($this->argument('first_entity_id'));
+        if ($firstEntity === null) {
+            $this->error("First entity not found: {$this->argument('first_entity_id')}");
 
             return self::FAILURE;
         }
 
-        $ruEntity = RuEntity::query()->find($this->argument('ru_entity_id'));
-        if ($ruEntity === null) {
-            $this->error("Russian entity not found: {$this->argument('ru_entity_id')}");
+        $secondEntity = Entity::query()->find($this->argument('second_entity_id'));
+        if ($secondEntity === null) {
+            $this->error("Second entity not found: {$this->argument('second_entity_id')}");
 
             return self::FAILURE;
         }
 
         try {
-            $result = $this->importer->import($enEntity, $ruEntity, $path);
+            $result = $this->importer->import($firstEntity, $secondEntity, $path);
         } catch (\RuntimeException $e) {
             $this->error($e->getMessage());
 
@@ -58,8 +57,8 @@ class ImportEntitySentencesCommand extends Command
         $this->table(['Metric', 'Value'], [
             ['Pairs imported', $result->pairCount],
             ['Entity match ID', $result->entityMatch->id],
-            ['EN entity ID', $result->enEntity->id],
-            ['RU entity ID', $result->ruEntity->id],
+            ['A entity ID', $result->aEntity->id],
+            ['B entity ID', $result->bEntity->id],
         ]);
 
         return self::SUCCESS;

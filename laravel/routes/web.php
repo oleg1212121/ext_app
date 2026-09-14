@@ -3,11 +3,13 @@
 use App\Http\Controllers\AlignmentController;
 use App\Http\Controllers\AlignmentEditorController;
 use App\Http\Controllers\Bilinguals\SimulatorController;
-use App\Http\Controllers\BilingualsController;
+use App\Http\Controllers\CrosswordController;
 use App\Http\Controllers\EntityController;
+use App\Http\Controllers\LibraryController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
-use App\Http\Controllers\Test;
+use App\Http\Controllers\UiSettingsController;
+use App\Http\Controllers\WordController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -40,26 +42,45 @@ Route::middleware(['auth', 'approved'])->group(function () {
         return Inertia::render('Dashboard');
     })->middleware('verified')->name('dashboard');
 
-    Route::get('/test', [Test::class, 'test']);
-    Route::get('/crossword', [Test::class, 'crossword'])->name('crossword');
-    Route::redirect('/crossword-react', '/crossword-react/en');
-    Route::get('/crossword-react/{lang}', [Test::class, 'crosswordReact'])
-        ->where('lang', 'en|ru')
-        ->name('crossword.react');
-    Route::get('/reader', [Test::class, 'reader'])->name('reader');
     Route::redirect('/reader-react', '/reader-react/en');
     Route::get('/reader-react/{lang}/{entityId}', [ReaderController::class, 'show'])
-        ->where('lang', 'en|ru')
+        ->where('lang', '[a-z]{2}')
         ->whereNumber('entityId')
         ->name('reader.react');
     Route::get('/reader-react/{lang}', [ReaderController::class, 'index'])
-        ->where('lang', 'en|ru')
+        ->where('lang', '[a-z]{2}')
         ->name('reader.react.index');
 
-    Route::get('/entities', [EntityController::class, 'index'])->name('entities.index');
-    Route::get('/entities/{lang}', [EntityController::class, 'list'])
-        ->where('lang', '[a-z]{2}')
-        ->name('entities.list');
+    Route::get('/crossword', [CrosswordController::class, 'index'])->name('crossword');
+    Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');
+    Route::post('/crossword/complete', [CrosswordController::class, 'complete'])->name('crossword.complete');
+
+    Route::get('/words/{word}', [WordController::class, 'show'])
+        ->whereNumber('word')
+        ->name('words.show');
+    Route::patch('/words/{word}/progress', [WordController::class, 'markKnown'])
+        ->whereNumber('word')
+        ->name('words.progress.update');
+    Route::delete('/words/{word}/progress', [WordController::class, 'resetProgress'])
+        ->whereNumber('word')
+        ->name('words.progress.reset');
+
+    Route::get('/library', [LibraryController::class, 'index'])->name('library.index');
+    Route::get('/library/create', [LibraryController::class, 'createWork'])->name('library.create');
+    Route::post('/library', [LibraryController::class, 'storeWork'])->name('library.store');
+    Route::get('/library/{work}', [LibraryController::class, 'showWork'])
+        ->whereNumber('work')
+        ->name('library.show');
+    Route::get('/library/{work}/entities/create', [LibraryController::class, 'createEntity'])
+        ->whereNumber('work')
+        ->name('library.entities.create');
+    Route::post('/library/{work}/entities', [LibraryController::class, 'storeEntity'])
+        ->whereNumber('work')
+        ->name('library.entities.store');
+
+    // The language-first browse pages moved to the work-first Library
+    Route::redirect('/entities', '/library');
+    Route::redirect('/entities/{lang}', '/library')->where('lang', '[a-z]{2}');
     Route::get('/entities/{lang}/create', [EntityController::class, 'create'])
         ->where('lang', '[a-z]{2}')
         ->name('entities.create');
@@ -117,16 +138,8 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::delete('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'unlinkSentence'])->whereNumber('sentence');
     Route::delete('/alignments/{entityMatch}/unmatched/{sentence}', [AlignmentEditorController::class, 'destroyUnmatched'])->whereNumber('sentence');
     Route::get('/bilinguals/en/ru/simulator', [SimulatorController::class, 'simulator'])->name('bilinguals.simulator');
-    Route::post('/get-crossword', [Test::class, 'getCrossword']);
-    Route::get('/get-texts', [Test::class, 'getTexts']);
-    Route::post('/word/upvote', [Test::class, 'upvote']);
-    Route::post('/word/acknowledge', [Test::class, 'acknowledge']);
-    Route::post('/word/dismiss', [Test::class, 'dismiss']);
-    Route::post('/word/ask-ai/', [Test::class, 'askAI']);
-    Route::post('/get-texts', [BilingualsController::class, 'getTexts']);
     Route::post('/text', [SimulatorController::class, 'text']);
     Route::post('/ai/question', [SimulatorController::class, 'askAi'])->name('ai.question')->middleware('throttle:20,1');
     Route::post('/ai/question/stream', [SimulatorController::class, 'askAiStreamed'])->name('ai.question.stream')->middleware('throttle:20,1');
-    Route::post('/dictionary/selection/save', [BilingualsController::class, 'selectionSave']);
-    Route::post('/dictionary/interactions/save', [BilingualsController::class, 'interactionsSave']);
+    Route::patch('/ui-settings', [UiSettingsController::class, 'update'])->name('ui-settings.update');
 });

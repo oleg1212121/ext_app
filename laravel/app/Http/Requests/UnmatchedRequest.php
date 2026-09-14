@@ -18,7 +18,7 @@ class UnmatchedRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'lang' => ['required', 'in:en,ru'],
+            'side' => ['required', 'in:a,b'],
             'page' => ['nullable', 'integer', 'min:1'],
         ];
     }

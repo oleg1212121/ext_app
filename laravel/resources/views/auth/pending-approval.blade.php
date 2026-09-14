@@ -11,11 +11,11 @@
                 </div>
 
                 <h1 class="font-serif text-2xl sm:text-3xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
-                    Account Pending Approval
+                    {{ __('pending.title') }}
                 </h1>
 
                 <p class="mt-4 font-sans text-sm leading-relaxed text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
-                    Your account is being reviewed by an administrator. You will have full access to the platform once your account is approved.
+                    {{ __('pending.description') }}
                 </p>
 
                 <div class="mt-8">
@@ -25,7 +25,7 @@
                             type="submit"
                             class="inline-flex items-center px-4 py-2 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm font-sans text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] hover:border-[var(--color-vermilion)] dark:hover:border-[var(--color-vermilion-night)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
                         >
-                            Log out
+                            {{ __('pending.log_out') }}
                         </button>
                     </form>
                 </div>

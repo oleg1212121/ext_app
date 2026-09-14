@@ -3,8 +3,7 @@
 namespace App\Jobs;
 
 use App\Classes\TextSignatureService;
-use App\Models\EnEntity;
-use App\Models\RuEntity;
+use App\Models\Entity;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -19,15 +18,9 @@ class GenerateEntitySignature implements ShouldQueue
 
     public int $tries = 5;
 
-    private const LANG_MODELS = [
-        'en' => EnEntity::class,
-        'ru' => RuEntity::class,
-    ];
-
     public function __construct(
         private readonly int $entityId,
         private readonly string $filePath,
-        private readonly string $lang,
     ) {}
 
     /**
@@ -42,15 +35,11 @@ class GenerateEntitySignature implements ShouldQueue
     {
         $service = TextSignatureService::create();
 
-        $modelClass = self::LANG_MODELS[$this->lang] ?? throw new \InvalidArgumentException(
-            "Unsupported language: {$this->lang}"
-        );
-
-        $entity = $modelClass::findOrFail($this->entityId);
+        $entity = Entity::with('language')->findOrFail($this->entityId);
 
         $content = TextSignatureService::readFileFromLocalPath($this->filePath);
 
-        $signature = $service->generateSignature($content);
+        $signature = $service->generateSignature($content, $entity->language->code);
 
         if ($signature === null) {
             throw new \RuntimeException(

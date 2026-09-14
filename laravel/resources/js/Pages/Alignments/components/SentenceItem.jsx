@@ -1,5 +1,6 @@
 import {useSortable} from '@dnd-kit/sortable';
 import {CSS} from '@dnd-kit/utilities';
+import {useI18n} from '../../../i18n';
 
 const iconBtn = [
     'inline-flex h-7 w-7 items-center justify-center rounded-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]',
@@ -8,11 +9,11 @@ const iconBtn = [
     'disabled:opacity-40 disabled:cursor-not-allowed',
 ].join(' ');
 
-const DragHandle = ({attributes, listeners, dragging}) => (
+const DragHandle = ({attributes, listeners, dragging, label}) => (
     <button
         type="button"
-        aria-label="Drag to move"
-        title="Drag to move"
+        aria-label={label}
+        title={label}
         className={[
             'group/drag inline-flex w-5 shrink-0 cursor-grab items-center justify-center rounded-sm py-2',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]',
@@ -60,7 +61,8 @@ const TrashIcon = () => (
 
 const DEFAULT_CONTENT = '';
 
-export default function SentenceItem({item, lang, editing, draft, busy, onStartEdit, onChangeDraft, onCommitEdit, onCancelEdit, onUnlink, onRemove}) {
+export default function SentenceItem({item, side, editing, draft, busy, onStartEdit, onChangeDraft, onCommitEdit, onCancelEdit, onUnlink, onRemove}) {
+    const {t} = useI18n();
     const {attributes, listeners, setNodeRef, transform, transition, isDragging} = useSortable({id: item.key});
 
     const style = {
@@ -82,7 +84,7 @@ export default function SentenceItem({item, lang, editing, draft, busy, onStartE
                     : 'hover:bg-[var(--wbench-paper-deep)] dark:hover:bg-[var(--wbench-paper-deep-night)]',
             ].join(' ')}
         >
-            <DragHandle attributes={attributes} listeners={listeners} dragging={isDragging}/>
+            <DragHandle attributes={attributes} listeners={listeners} dragging={isDragging} label={t('alignments.drag_to_move')}/>
 
             <span className="mt-1.5 w-9 shrink-0 text-right font-mono text-[10px] tabular-nums text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                 {item.display_order}
@@ -106,13 +108,13 @@ export default function SentenceItem({item, lang, editing, draft, busy, onStartE
                         disabled={busy}
                         rows={2}
                         autoFocus
-                        placeholder="Sentence text…"
+                        placeholder={t('alignments.sentence_placeholder')}
                         className="min-w-0 flex-1 resize-none rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 py-1 font-serif text-[15px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] focus:outline-none focus:ring-1 focus:ring-[var(--wbench-accent)] dark:focus:ring-[var(--wbench-accent-night)]"
                     />
-                    <button type="button" onClick={onCommitEdit} disabled={busy} aria-label="Save" title="Save (⌘+Enter)" className={`${iconBtn} text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]`}>
+                    <button type="button" onClick={onCommitEdit} disabled={busy} aria-label={t('alignments.save')} title={t('alignments.save_hint')} className={`${iconBtn} text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]`}>
                         <CheckIcon/>
                     </button>
-                    <button type="button" onClick={onCancelEdit} disabled={busy} aria-label="Cancel" title="Cancel (Esc)" className={iconBtn}>
+                    <button type="button" onClick={onCancelEdit} disabled={busy} aria-label={t('alignments.cancel')} title={t('alignments.cancel_hint')} className={iconBtn}>
                         <XIcon/>
                     </button>
                 </div>
@@ -124,16 +126,16 @@ export default function SentenceItem({item, lang, editing, draft, busy, onStartE
 
             {!editing && (
                 <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                    <button type="button" onClick={() => onStartEdit(item.key, lang)} aria-label="Edit sentence" title="Edit" className={iconBtn}>
+                    <button type="button" onClick={() => onStartEdit(item.key, side)} aria-label={t('alignments.edit_sentence')} title={t('alignments.edit')} className={iconBtn}>
                         <EditIcon/>
                     </button>
                     {showUnlink && (
-                        <button type="button" onClick={() => onUnlink(item)} aria-label="Unlink sentence" title="Unlink — move to unmatched" className={iconBtn}>
+                        <button type="button" onClick={() => onUnlink(item)} aria-label={t('alignments.unlink_sentence')} title={t('alignments.unlink_hint')} className={iconBtn}>
                             <UnlinkIcon/>
                         </button>
                     )}
                     {showRemove && (
-                        <button type="button" onClick={() => onRemove(item)} aria-label="Delete sentence" title="Delete permanently" className={`${iconBtn} hover:text-[var(--wbench-danger)] dark:hover:text-[var(--wbench-danger-night)]`}>
+                        <button type="button" onClick={() => onRemove(item)} aria-label={t('alignments.delete_sentence')} title={t('alignments.delete_permanently')} className={`${iconBtn} hover:text-[var(--wbench-danger)] dark:hover:text-[var(--wbench-danger-night)]`}>
                             <TrashIcon/>
                         </button>
                     )}

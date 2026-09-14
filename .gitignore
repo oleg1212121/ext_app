@@ -100,3 +100,4 @@ homepage-current.png
 actions-runner
 laravel/.env.testing
 errors.txt
+.zcode/plans/*

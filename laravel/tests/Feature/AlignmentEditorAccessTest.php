@@ -1,9 +1,6 @@
 <?php
 
-use App\Models\EnEntity;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\RuEntity;
+use App\Models\MeaningMatch;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -13,24 +10,21 @@ uses(RefreshDatabase::class);
 
 function restrictedEditorWorld(): array
 {
-    $en = EnEntity::create([
+    $work = createWork();
+    $en = createEntity('en', $work, [
         'name' => 'Restricted EN',
         'is_restricted' => true,
     ]);
 
-    $ru = RuEntity::create([
+    $ru = createEntity('ru', $work, [
         'name' => 'Restricted RU',
         'is_restricted' => true,
     ]);
 
-    $match = EnRuEntityMatch::create([
-        'en_entity_id' => $en->id,
-        'ru_entity_id' => $ru->id,
-        'status' => 'completed',
-    ]);
+    $match = createEntityMatch($en, $ru, ['status' => 'completed']);
 
-    $row = EnRuMeaningMatch::create([
-        'en_ru_entity_match_id' => $match->id,
+    $row = MeaningMatch::create([
+        'entity_match_id' => $match->id,
         'order' => 1,
         'similarity' => 0.42,
         'alignment_chunk' => 0,
@@ -51,12 +45,12 @@ test('non-granted user is forbidden from every editor read and mutation endpoint
     $response->assertForbidden();
 })->with([
     'rows' => fn (array $w) => ['getJson', "/alignments/{$w['match']->id}/rows?page=1&per_page=25", []],
-    'unmatched' => fn (array $w) => ['getJson', "/alignments/{$w['match']->id}/unmatched?lang=en&page=1", []],
+    'unmatched' => fn (array $w) => ['getJson', "/alignments/{$w['match']->id}/unmatched?side=a&page=1", []],
     'needs-review' => fn (array $w) => ['getJson', "/alignments/{$w['match']->id}/needs-review?page=1", []],
     'storeRow' => fn (array $w) => ['postJson', "/alignments/{$w['match']->id}/rows", ['after_row_id' => null]],
     'approveRow' => fn (array $w) => ['postJson', "/alignments/{$w['match']->id}/rows/{$w['row']->id}/approve", []],
     'storeSentence' => fn (array $w) => ['postJson', "/alignments/{$w['match']->id}/sentences", [
-        'lang' => 'en',
+        'side' => 'a',
         'meaning_match_id' => $w['row']->id,
         'content' => 'A new sentence.',
     ]],
@@ -77,7 +71,7 @@ test('granted user may read and mutate a restricted editor match after both-side
         ->assertOk();
 
     actingAs($user)
-        ->getJson("/alignments/{$world['match']->id}/unmatched?lang=en&page=1")
+        ->getJson("/alignments/{$world['match']->id}/unmatched?side=a&page=1")
         ->assertOk();
 
     actingAs($user)

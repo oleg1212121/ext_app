@@ -1,14 +1,3 @@
-export const WORD_LEVELS = [
-    {id: 0, name: 'Less 500 (A0)'},
-    {id: 1, name: 'Less 1000 (A1)'},
-    {id: 2, name: 'Less 3000 (A2)'},
-    {id: 3, name: 'Less 5000 (B1)'},
-    {id: 4, name: 'Less 8000 (B2)'},
-    {id: 5, name: 'Less 10000 (C1)'},
-    {id: 6, name: 'Less 20000 (C2)'},
-    {id: 7, name: 'Native'},
-];
-
 export const ALLOWED_KEYS = [
     '.',
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -20,7 +9,7 @@ export const ALLOWED_KEYS = [
 
 export const VECTORS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 
-export const DEFAULT_LEVEL = 7;
+export const DEFAULT_LEVEL = 0;
 
 export const MIN_PANEL_WIDTH = 280;
 
