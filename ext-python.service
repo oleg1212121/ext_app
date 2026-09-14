@@ -1,0 +1,17 @@
+[Unit]
+Description=Python ML API (FastAPI/uvicorn) for ext-app
+After=network.target
+
+[Service]
+Type=simple
+User=alex
+Group=alex
+WorkingDirectory=/home/alex/projects/ext_app/docker-compose/python
+EnvironmentFile=/home/alex/projects/ext_app/docker-compose/python/env/.env
+Environment=ENV_FILE=/home/alex/projects/ext_app/docker-compose/python/env/.env
+ExecStart=/home/alex/projects/ext_app/docker-compose/python/ai/ai_env/bin/uvicorn ai.main:app --host 127.0.0.1 --port 8000 --workers 2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
