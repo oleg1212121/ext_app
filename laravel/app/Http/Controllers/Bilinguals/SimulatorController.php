@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Bilinguals;
 
 use App\Classes\AIModelResolver;
 use App\Classes\EntityAccessService;
+use App\Classes\EntityWordMap;
 use App\Classes\MeaningMatchPresenter;
 use App\Exceptions\AiProviderException;
 use App\Http\Controllers\Controller;
@@ -69,6 +70,7 @@ class SimulatorController extends Controller
             'fontSize' => $this->clampInt($saved['font_size'] ?? null, 12, 48, 26),
             'aiPanelWidth' => $this->clampInt($saved['ai_panel_width'] ?? null, 280, 1200, 560),
             'workplaceHeight' => $this->clampInt($saved['workplace_height'] ?? null, 80, 800, 168),
+            'highlightWords' => (bool) ($saved['highlight_words'] ?? true),
         ]);
     }
 
@@ -145,7 +147,7 @@ class SimulatorController extends Controller
     }
 
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
+     * @return array{rows: list<array{0: string, 1: string}>, word_maps: array|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
      */
     private function textFromEntityMatch(int $entityMatchId, int $page, int $perPage): array
     {
@@ -170,6 +172,7 @@ class SimulatorController extends Controller
 
         return [
             'rows' => $this->presenter->toSimulatorRows($paginator->getCollection()),
+            'word_maps' => $this->wordMapsFor($match),
             'meta' => [
                 'current_page' => $paginator->currentPage(),
                 'per_page' => $paginator->perPage(),
@@ -181,12 +184,39 @@ class SimulatorController extends Controller
     }
 
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
+     * Interactive word maps and highlight eligibility for both sides of the
+     * match. Null when either entity is gone (legacy file mode has none).
+     *
+     * @return array{a: array, b: array}|null
+     */
+    private function wordMapsFor(EntityMatch $match): ?array
+    {
+        if ($match->aEntity === null || $match->bEntity === null) {
+            return null;
+        }
+
+        $userId = (int) auth()->id();
+        $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
+        $wordMap = new EntityWordMap;
+
+        return [
+            'a' => $wordMap->forEntity($match->aEntity, $userId),
+            'b' => $wordMap->forEntity($match->bEntity, $userId),
+            'highlightable' => [
+                'a' => $match->aEntity->language_id !== $nativeLanguageId,
+                'b' => $match->bEntity->language_id !== $nativeLanguageId,
+            ],
+        ];
+    }
+
+    /**
+     * @return array{rows: list<array{0: string, 1: string}>, word_maps: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
      */
     private function textFromFilename(string $filename, int $page, int $perPage): array
     {
         $result = [
             'rows' => [],
+            'word_maps' => null,
             'meta' => [
                 'current_page' => $page,
                 'per_page' => $perPage,

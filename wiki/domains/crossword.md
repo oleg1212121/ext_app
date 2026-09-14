@@ -82,7 +82,10 @@ without manual runs. Dev has no `schedule:work` — run
 2. **Link** — `EntityWordLinker` (shared by the background refresh and
    the `crossword:link` command) back-fills `entity_words.word_id` by
    matching `(language_id, l_word)` on dictionary words (noun-first class
-   priority). Idempotent: only touches `word_id IS NULL` rows.
+   priority), then a second pass resolves the still-unlinked tokens through
+   inflected **forms** (`forms.l_word`, same class priority) so oblique
+   cases and irregular forms get a dictionary link. Exact matches always
+   win. Idempotent: only touches `word_id IS NULL` rows.
 3. **Frequency** — `words:import-frequency {file} --lang=` upserts rank
    numbers onto `words.frequency` from `rank,word` CSVs
    (`database/frequency/`). Sample list committed for tests.

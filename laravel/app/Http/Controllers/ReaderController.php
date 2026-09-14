@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Classes\EntityAccessService;
+use App\Classes\EntityWordMap;
 use App\Classes\MeaningMatchPresenter;
 use App\Models\Entity;
 use App\Models\EntityMatch;
@@ -40,7 +41,11 @@ class ReaderController extends Controller
             abort(403);
         }
 
-        $rows = $this->buildRows($entity);
+        ['rows' => $rows, 'translationEntity' => $translationEntity] = $this->buildRows($entity);
+
+        $userId = (int) auth()->id();
+        $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
+        $wordMap = new EntityWordMap;
 
         return Inertia::render('ReaderReact', [
             'lang' => $lang,
@@ -50,6 +55,11 @@ class ReaderController extends Controller
             ],
             'rows' => $rows,
             'fontSize' => $this->savedReaderFontSize(),
+            'highlight' => $this->savedHighlight(),
+            'wordMap' => $wordMap->forEntity($entity, $userId),
+            'primaryHighlightable' => $entity->language_id !== $nativeLanguageId,
+            'translationWordMap' => $translationEntity !== null ? $wordMap->forEntity($translationEntity, $userId) : [],
+            'translationHighlightable' => $translationEntity !== null && $translationEntity->language_id !== $nativeLanguageId,
         ]);
     }
 
@@ -64,8 +74,13 @@ class ReaderController extends Controller
         return max(16, min(38, (int) $saved));
     }
 
+    private function savedHighlight(): bool
+    {
+        return (bool) (auth()->user()->settings?->ui_settings['reader']['highlight'] ?? true);
+    }
+
     /**
-     * @return list<array{0: string, 1: string}>
+     * @return array{rows: list<array{0: string, 1: string}>, translationEntity: Entity|null}
      */
     private function buildRows(Entity $entity): array
     {
@@ -78,14 +93,14 @@ class ReaderController extends Controller
             ->first();
 
         if ($entityMatch === null) {
-            return $this->singleLanguageRows($entity);
+            return ['rows' => $this->singleLanguageRows($entity), 'translationEntity' => null];
         }
 
         $readingSide = $entityMatch->a_entity_id === $entity->id ? 'a' : 'b';
         $otherEntity = $readingSide === 'a' ? $entityMatch->bEntity : $entityMatch->aEntity;
 
         if ($otherEntity === null || ! $this->access()->canRead(auth()->user(), $otherEntity)) {
-            return $this->singleLanguageRows($entity);
+            return ['rows' => $this->singleLanguageRows($entity), 'translationEntity' => null];
         }
 
         $meaningMatches = MeaningMatch::query()
@@ -96,7 +111,10 @@ class ReaderController extends Controller
 
         $bilingualRows = $this->presenter->toSimulatorRows($meaningMatches);
 
-        return $this->normalizeRowsForReadingSide($bilingualRows, $readingSide);
+        return [
+            'rows' => $this->normalizeRowsForReadingSide($bilingualRows, $readingSide),
+            'translationEntity' => $otherEntity,
+        ];
     }
 
     /**

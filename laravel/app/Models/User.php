@@ -85,6 +85,14 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * The user's word progress rows (learning/solved/known per word).
+     */
+    public function userWords(): HasMany
+    {
+        return $this->hasMany(UserWord::class);
+    }
+
+    /**
      * The language the user is a native speaker of, or null if unset.
      */
     public function nativeLanguage(): ?Language

@@ -1,6 +1,7 @@
 import "../../../../css/bilingual-table.css";
 import CheckboxInput from "../../../Components/Forms/CheckboxInput.jsx";
 import Button from "../../../Components/Forms/Button.jsx";
+import WordText from "../../../Components/WordText.jsx";
 import {useI18n} from '../../../i18n';
 import React from "react";
 
@@ -76,7 +77,14 @@ export default function TextContent(props) {
                         className="simulator-row group relative transition-colors duration-150 hover:bg-[var(--wbench-paper-deep)]/60 dark:hover:bg-[var(--wbench-paper-deep-night)]/50 cursor-pointer">
                         <td className="px-4 py-2 align-top hide_en relative">
                             <span className="ribbon-mark absolute left-0 top-0 bottom-0" aria-hidden="true"/>
-                            <span className="eng content resizeable_element block w-full break-words text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-serif)]">{row[0]}</span>
+                            <span className="eng content resizeable_element block w-full break-words text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-serif)]">
+                                <WordText
+                                    text={row[0]}
+                                    wordMap={props.wordMaps?.a ?? {}}
+                                    highlight={props.highlightWords && !!(props.wordMaps?.highlightable?.a)}
+                                    onWordProgress={props.onWordProgress}
+                                />
+                            </span>
                         </td>
                         <td className="px-2 py-2 bilingual-control-cell">
                             <div className="bilingual-control-inner bilingual-control-resizeable">
@@ -96,7 +104,12 @@ export default function TextContent(props) {
                         <td className="px-4 py-2 align-top hide_ru">
                             <div className="flex w-full flex-col gap-1.5">
                                 <span className="rus content resizeable_element block w-full break-words text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-serif)]">
-                                    {row[1]}
+                                    <WordText
+                                        text={row[1]}
+                                        wordMap={props.wordMaps?.b ?? {}}
+                                        highlight={props.highlightWords && !!(props.wordMaps?.highlightable?.b)}
+                                        onWordProgress={props.onWordProgress}
+                                    />
                                 </span>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                                     <Button onClick={() => props.focusOnWorkplace()} color='dark' size="xs" outline>{t('bilinguals.open')}</Button>

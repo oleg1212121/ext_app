@@ -176,6 +176,7 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
     const payload = json.data.data;
     return {
         rows: payload.rows ?? [],
+        wordMaps: payload.word_maps ?? null,
         meta: payload.meta ?? {
             current_page: page,
             per_page: perPage,
@@ -205,6 +206,7 @@ const Bilinguals = (props) => {
     let [showQuestion, setShowQuestion] = React.useState(props.showQuestion)
     let [showText, setShowText] = React.useState(props.showText)
     let [showAI, setShowAI] = React.useState(props.showAI)
+    let [highlightWords, setHighlightWords] = React.useState(props.highlightWords ?? true)
     let [currentText, setCurrentText] = React.useState(initialText)
     let [currentModel, setCurrentModel] = React.useState(props.currentModel)
     let [currentQuestion, setCurrentQuestion] = React.useState(props.currentQuestion)
@@ -217,6 +219,7 @@ const Bilinguals = (props) => {
     const pendingWorkplaceFocusRef = React.useRef(false);
 
     const [rows, setRows] = React.useState([]);
+    const [wordMaps, setWordMaps] = React.useState(null);
     const [textMeta, setTextMeta] = React.useState(null);
     const [textPage, setTextPage] = React.useState(initialSaved?.page ?? 1);
     const [loadError, setLoadError] = React.useState(null);
@@ -237,6 +240,7 @@ const Bilinguals = (props) => {
         show_workplace: showWorkplace,
         show_question: showQuestion,
         show_ai: showAI,
+        highlight_words: highlightWords,
         model: currentModel,
         question: currentQuestion,
         ai_panel_width: aiPanelWidth,
@@ -274,8 +278,9 @@ const Bilinguals = (props) => {
         setLoadError(null);
         setPending(true);
         try {
-            const {rows: nextRows, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
+            const {rows: nextRows, wordMaps: nextWordMaps, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
             setRows(nextRows);
+            setWordMaps(nextWordMaps);
             setTextMeta(meta);
             setTextPage(meta.current_page ?? page);
             const positions = persistPage(meta.current_page ?? page);
@@ -288,12 +293,24 @@ const Bilinguals = (props) => {
             }
         } catch (e) {
             setRows([]);
+            setWordMaps(null);
             setTextMeta(null);
             setLoadError(e instanceof Error ? e.message : t('bilinguals.failed_to_load_text'));
         } finally {
             setPending(false);
         }
     }, [currentText, persistPage]);
+
+    // Word progress changed in a popup: recolor the word on both sides.
+    const handleWordProgress = React.useCallback((key, status) => {
+        setWordMaps((maps) => {
+            if (!maps) {
+                return maps;
+            }
+            const apply = (side) => (maps[side]?.[key] ? {...maps[side], [key]: {...maps[side][key], s: status}} : maps[side]);
+            return {...maps, a: apply('a'), b: apply('b')};
+        });
+    }, []);
 
     React.useEffect(() => {
         if (rows.length > 0 && pendingScrollRowRef.current !== null) {
@@ -566,6 +583,19 @@ const Bilinguals = (props) => {
                                 <Underline isActive={showQuestion}/>
                             </button>
                         )}
+                        <button
+                            type="button"
+                            className={tabClass(highlightWords)}
+                            aria-label={t('bilinguals.highlight_words')}
+                            aria-pressed={highlightWords}
+                            title={t('bilinguals.highlight_words')}
+                            onClick={() => setHighlightWords(!highlightWords)}
+                        >
+                            <svg className={panelToggleIconClass(highlightWords)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m14.613 3.514 5.873 5.874a1 1 0 0 1 0 1.414l-7.172 7.172a1 1 0 0 1-.707.293H8.414a1 1 0 0 1-.707-.293L2.939 13.2a1 1 0 0 1 0-1.414L10.2 4.46a1 1 0 0 1 1.414 0Zm-2.6 11.5L19.5 7.5m-13 13H20"/>
+                            </svg>
+                            <Underline isActive={highlightWords}/>
+                        </button>
                         {canUseAi && (
                             <button
                                 type="button"
@@ -624,7 +654,7 @@ const Bilinguals = (props) => {
                                     </div>
                                 </div>
                             )}
-                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow}/>
+                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow} wordMaps={wordMaps} highlightWords={highlightWords} onWordProgress={handleWordProgress}/>
                         </>
                     }
                     {showWorkplace === true &&

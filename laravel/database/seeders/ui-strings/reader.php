@@ -36,4 +36,5 @@ return [
     'reader.texts' => ['en' => 'Texts', 'ru' => 'Тексты'],
     'reader.index_hint_open' => ['en' => 'Open a text to read it', 'ru' => 'Откройте текст, чтобы читать'],
     'reader.index_hint_gutter' => ['en' => 'the translation appears across the gutter', 'ru' => 'перевод появится напротив каждой строки'],
+    'reader.highlights' => ['en' => 'Highlights', 'ru' => 'Подсветка слов'],
 ];

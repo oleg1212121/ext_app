@@ -3,6 +3,7 @@
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
+use App\Models\EntityWord;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
@@ -207,4 +208,59 @@ test('entity without alignment returns single language rows', function () {
             ->has('rows', 1)
             ->where('rows.0.0', 'Standalone EN sentence.')
             ->where('rows.0.1', ''));
+});
+
+test('reader page includes the interactive word map with progress statuses', function () {
+    $user = User::factory()->create();
+    $entities = createAlignedReaderEntities();
+
+    $cat = createWord('en', 'cat', 'noun');
+    EntityWord::query()->create([
+        'entity_id' => $entities['en']->id,
+        'word_id' => $cat->id,
+        'l_word' => 'cat',
+        'token' => 'cat',
+        'count' => 1,
+    ]);
+    // Unlinked tokens must not appear in the map.
+    EntityWord::query()->create([
+        'entity_id' => $entities['en']->id,
+        'word_id' => null,
+        'l_word' => 'xylophone',
+        'token' => 'xylophone',
+        'count' => 1,
+    ]);
+    $known = createWord('en', 'sentence', 'noun');
+    EntityWord::query()->create([
+        'entity_id' => $entities['en']->id,
+        'word_id' => $known->id,
+        'l_word' => 'sentence',
+        'token' => 'sentence',
+        'count' => 1,
+    ]);
+    $user->userWords()->create(['word_id' => $known->id, 'status' => 'known']);
+
+    $ruWord = createWord('ru', 'первое', 'noun');
+    EntityWord::query()->create([
+        'entity_id' => $entities['ru']->id,
+        'word_id' => $ruWord->id,
+        'l_word' => 'первое',
+        'token' => 'Первое',
+        'count' => 1,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $entities['en']->id]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            ->where('wordMap.cat.w', $cat->id)
+            ->where('wordMap.cat.s', null)
+            ->where('wordMap.sentence.s', 'known')
+            ->where('translationWordMap.первое.w', $ruWord->id)
+            ->where('highlight', true)
+            // Factory users are native English speakers: the EN primary side
+            // is native (not highlightable), the RU translation side is.
+            ->where('primaryHighlightable', false)
+            ->where('translationHighlightable', true));
 });

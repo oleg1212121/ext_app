@@ -9,6 +9,7 @@ use App\Http\Controllers\LibraryController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\UiSettingsController;
+use App\Http\Controllers\WordController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -53,6 +54,16 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::get('/crossword', [CrosswordController::class, 'index'])->name('crossword');
     Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');
     Route::post('/crossword/complete', [CrosswordController::class, 'complete'])->name('crossword.complete');
+
+    Route::get('/words/{word}', [WordController::class, 'show'])
+        ->whereNumber('word')
+        ->name('words.show');
+    Route::patch('/words/{word}/progress', [WordController::class, 'markKnown'])
+        ->whereNumber('word')
+        ->name('words.progress.update');
+    Route::delete('/words/{word}/progress', [WordController::class, 'resetProgress'])
+        ->whereNumber('word')
+        ->name('words.progress.reset');
 
     Route::get('/library', [LibraryController::class, 'index'])->name('library.index');
     Route::get('/library/create', [LibraryController::class, 'createWork'])->name('library.create');

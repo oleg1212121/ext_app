@@ -4,8 +4,8 @@ title: Reader
 description: React reading interface for imported text entities in any enabled language, with bilingual rows from alignments.
 tags: [reader, inertia, react]
 status: stable
-stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
+stale_after: 2026-12-13
+generated: { by: agent:zcode, at: 2026-09-13T21:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -55,6 +55,19 @@ Reads are gated by `EntityAccessService` (see the [Entity Access](
 ../../CONTEXT.md#entity-access-context) context). The index lists only
 entities the caller may read (Public, or Restricted with an Access grant);
 `show` 403s on a Restricted entity without a grant.
+
+# Interactive words
+
+`show()` also ships the [interactive word](/domains/interactive-words.md)
+payload: `wordMap` for the reading entity and `translationWordMap` for the
+aligned counterpart entity (empty when rows are single-language), plus
+`highlight` (the saved `reader.highlight` setting) and the
+`primaryHighlightable` / `translationHighlightable` language flags (side
+language ≠ the user's native language). `ReaderRow` renders both row halves
+through the shared `WordText`/`WordPopup` components; the primary line is a
+`role="button"` div (not a `<button>`) so word buttons inside it stay valid
+HTML — activating the line itself still toggles the translation, word clicks
+stop propagation.
 
 ## Visual system per page
 

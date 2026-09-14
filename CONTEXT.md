@@ -423,3 +423,28 @@ The player's status for one dictionary Word, global across all works:
 completed), or **known** (marked by hand). Generation skips solved and
 known words, so completing puzzles advances down the Level band.
 _Avoid_: score, knowledge level.
+
+# Interactive Reading Context
+
+The domain of reading surfaces where the text itself is interactive — words
+looked up in the dictionary and tinted by the reader's **Word progress**.
+
+## Language
+
+**Interactive word**:
+A dictionary-linked token rendered as clickable text on a reading surface;
+clicking it opens a popup with the dictionary Word's definitions,
+transcriptions, translations and progress actions. Tokens without a
+dictionary link are never interactive.
+_Avoid_: clickable text, word link.
+
+**Word occurrence**:
+One place a token appears in an entity's text. Occurrences are derived from
+the sentence text at render time and are never stored (see ADR 0027).
+_Avoid_: word position (implementation detail), word hit.
+
+**Word map**:
+The per-entity lookup an interactive page carries — lowercase token to its
+dictionary Word id and the reader's Word progress — covering the entity's
+linked **Entity word list** entries only.
+_Avoid_: dictionary (the whole kaikki import), vocabulary.

@@ -54,10 +54,23 @@ const Divider = () => (
     <span aria-hidden="true" className="hidden sm:inline-block w-px h-5 bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)]"/>
 );
 
-export default function ReaderApp({lang = 'en', entity, rows = [], fontSize: savedFontSize}) {
+export default function ReaderApp({
+    lang = 'en',
+    entity,
+    rows = [],
+    fontSize: savedFontSize,
+    highlight: savedHighlight = true,
+    wordMap: initialWordMap = {},
+    primaryHighlightable = false,
+    translationWordMap: initialTranslationWordMap = {},
+    translationHighlightable = false,
+}) {
     const {t} = useI18n();
     const [fontSize, setFontSize] = useState(savedFontSize ?? DEFAULT_FONT_SIZE);
-    useUiSettingsAutosave('reader', {font_size: fontSize});
+    const [highlight, setHighlight] = useState(savedHighlight);
+    useUiSettingsAutosave('reader', {font_size: fontSize, highlight});
+    const [wordMap, setWordMap] = useState(initialWordMap);
+    const [translationWordMap, setTranslationWordMap] = useState(initialTranslationWordMap);
     const [showAll, setShowAll] = useState(false);
     const [sideBySide, setSideBySide] = useState(false);
     const [wideMode, setWideMode] = useState(false);
@@ -103,6 +116,14 @@ export default function ReaderApp({lang = 'en', entity, rows = [], fontSize: sav
             }
             return next;
         });
+    }, []);
+
+    // Word progress changed in a popup: recolor the same word everywhere (a
+    // token can appear in the primary text and its translation).
+    const handleWordProgress = useCallback((key, status) => {
+        const apply = (map) => (map[key] ? {...map, [key]: {...map[key], s: status}} : map);
+        setWordMap(apply);
+        setTranslationWordMap(apply);
     }, []);
 
     const handlePickAudio = useCallback(() => {
@@ -255,6 +276,9 @@ export default function ReaderApp({lang = 'en', entity, rows = [], fontSize: sav
                         <ToggleButton active={showAll} onClick={() => setShowAll((v) => !v)}>
                             {t('reader.show_all')}
                         </ToggleButton>
+                        <ToggleButton active={highlight} onClick={() => setHighlight((v) => !v)}>
+                            {t('reader.highlights')}
+                        </ToggleButton>
                         <ToggleButton active={sideBySide} onClick={() => setSideBySide((v) => !v)}>
                             {sideBySide ? t('reader.stacked') : t('reader.side_by_side')}
                         </ToggleButton>
@@ -355,6 +379,12 @@ export default function ReaderApp({lang = 'en', entity, rows = [], fontSize: sav
                                 fontSize={fontSize}
                                 expanded={expandedRows.has(index)}
                                 onToggle={toggleRow}
+                                wordMap={wordMap}
+                                primaryHighlightable={primaryHighlightable}
+                                translationWordMap={translationWordMap}
+                                translationHighlightable={translationHighlightable}
+                                highlight={highlight}
+                                onWordProgress={handleWordProgress}
                             />
                         ))}
                     </ol>

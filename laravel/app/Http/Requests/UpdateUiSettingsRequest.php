@@ -24,8 +24,10 @@ class UpdateUiSettingsRequest extends FormRequest
             'simulator.question' => ['nullable', 'string', 'max:8000'],
             'simulator.ai_panel_width' => ['integer', 'min:280', 'max:1200'],
             'simulator.workplace_height' => ['integer', 'min:80', 'max:800'],
+            'simulator.highlight_words' => ['boolean'],
             'reader' => ['nullable', 'array'],
             'reader.font_size' => ['integer', 'min:16', 'max:38'],
+            'reader.highlight' => ['boolean'],
         ];
     }
 }

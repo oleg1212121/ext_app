@@ -4,8 +4,10 @@ namespace App\Classes;
 
 use App\Models\Entity;
 use App\Models\EntityWord;
+use App\Models\Form;
 use App\Models\Word;
 use App\Models\WordClass;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 class EntityWordLinker
@@ -19,7 +21,9 @@ class EntityWordLinker
     private const BATCH_SIZE = 500;
 
     /**
-     * Fill word_id on the entity's unlinked words by (language, lowercase form).
+     * Fill word_id on the entity's unlinked words by (language, lowercase form),
+     * falling back to inflected forms (forms.l_word). Exact dictionary matches
+     * always win; the forms pass only sees the tokens the exact pass missed.
      * Idempotent: only touches word_id IS NULL rows, so re-running after a
      * dictionary import links the previously unmatched tokens.
      *
@@ -39,13 +43,8 @@ class EntityWordLinker
             ->select(['id', 'l_word'])
             ->chunkById(self::BATCH_SIZE, function ($words) use ($entity, $classPriority, &$linked, &$unmatched, &$updates): void {
                 foreach ($words as $entityWord) {
-                    $wordId = Word::query()
-                        ->where('language_id', $entity->language_id)
-                        ->where('l_word', $entityWord->l_word)
-                        ->get(['id', 'word_class_id'])
-                        ->sortBy(fn (Word $word): int => $classPriority[$word->word_class_id] ?? PHP_INT_MAX)
-                        ->first()
-                        ?->id;
+                    $wordId = $this->exactWordId($entity, $entityWord->l_word, $classPriority)
+                        ?? $this->formWordId($entity, $entityWord->l_word, $classPriority);
 
                     if ($wordId === null) {
                         $unmatched++;
@@ -68,6 +67,34 @@ class EntityWordLinker
         }
 
         return ['linked' => $linked, 'unmatched' => $unmatched];
+    }
+
+    private function exactWordId(Entity $entity, string $lWord, array $classPriority): ?int
+    {
+        return $this->bestWordId(
+            Word::query()
+                ->where('language_id', $entity->language_id)
+                ->where('l_word', $lWord),
+            $classPriority,
+        );
+    }
+
+    private function formWordId(Entity $entity, string $lWord, array $classPriority): ?int
+    {
+        return $this->bestWordId(
+            Word::query()
+                ->where('words.language_id', $entity->language_id)
+                ->whereIn('words.id', Form::query()->where('l_word', $lWord)->select('word_id')),
+            $classPriority,
+        );
+    }
+
+    private function bestWordId(Builder $query, array $classPriority): ?int
+    {
+        return $query->get(['id', 'word_class_id'])
+            ->sortBy(fn (Word $word): int => $classPriority[$word->word_class_id] ?? PHP_INT_MAX)
+            ->first()
+            ?->id;
     }
 
     /**

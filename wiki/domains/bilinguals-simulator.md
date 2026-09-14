@@ -4,8 +4,8 @@ title: Bilinguals Simulator
 description: Side-by-side bilingual reading trainer where users translate and get AI assessment of their translation.
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
-stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-12T00:00:00Z }
+stale_after: 2026-12-13
+generated: { by: agent:zcode, at: 2026-09-13T21:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -53,7 +53,12 @@ variants.
 * `text()` paginates (default 50/page, max 200) and serves an entity match by
   `entity_match_id` (the meaning matches shaped for the UI by
   `MeaningMatchPresenter`); a legacy `filename` mode still reads pre-aligned
-  file pairs from `public/texts/simulator/`.
+  file pairs from `public/texts/simulator/`. Entity-match responses also
+  carry `word_maps` (`{a, b, highlightable}` — the
+  [interactive word](/domains/interactive-words.md) maps for both sides;
+  `null` in filename mode), so `TextContent` renders both cells through the
+  shared `WordText`/`WordPopup` components with a
+  `simulator.highlight_words` toolbar toggle.
 * AI calls go through `AIModelResolver::ask()` with a `provider:model` string —
   see [AI Providers](/domains/ai-providers.md). Validation via
   `App\Http\Requests\AiQuestionRequest` / `BilingualsTextRequest`.

@@ -2,6 +2,28 @@
 
 ## 2026-09-13
 
+* **Feature: interactive dictionary words on the reader and bilinguals
+  simulator** ([Interactive words](domains/interactive-words.md), ADR
+  [0027](../docs/adr/0027-render-time-word-segmentation.md)). Dictionary
+  words in the text are now clickable (popup with definitions,
+  transcriptions, native-first translations, examples) and tinted by word
+  progress (unknown rose / in-progress amber / known plain), with "I know
+  this word" / "Remove mark" actions (`PATCH`/`DELETE /words/{word}/progress`,
+  `GET /words/{word}`). Design: word positions are **derived at render
+  time** — the server ships a per-entity word map (`EntityWordMap`,
+  `l_word => {w, s}`), the browser segments text via
+  `resources/js/lib/wordTokenizer.mjs` (PHP-parity enforced by
+  `tests/Unit/TokenizerParityTest.php`), and `WordText`/`WordPopup`
+  components are shared by reader and simulator. No occurrence/position
+  tables were added. Highlighting is gated per side (entity language ≠
+  native language) with persisted toggles `reader.highlight` and
+  `simulator.highlight_words`. Also: `EntityWordLinker` gained a forms
+  fallback pass (`entity_words.l_word` → `forms.l_word` → `words.id`,
+  exact matches win; new `idx_forms_l_word` index migration) — the first
+  dev run linked 2701 previously-unmatched EN tokens. New CONTEXT.md
+  terms: Interactive word, Word occurrence, Word map (Interactive Reading
+  Context).
+
 * **Fix: tokenizer corrupted words ending in р (SQLSTATE 22021).**
   `WordTokenizer::trimEdgePunctuation` used PHP's byte-wise `trim()` with
   the multi-byte `’` in the mask; the mask byte 0x80 sheared the final

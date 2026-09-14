@@ -1,8 +1,28 @@
 import Main from '../Layouts/Main.jsx';
 import ReaderApp from './Reader/ReaderApp.jsx';
 
-const ReaderReact = ({lang = 'en', entity, rows = []}) => (
-    <ReaderApp lang={lang} entity={entity} rows={rows}/>
+const ReaderReact = ({
+    lang = 'en',
+    entity,
+    rows = [],
+    fontSize,
+    highlight,
+    wordMap,
+    primaryHighlightable,
+    translationWordMap,
+    translationHighlightable,
+}) => (
+    <ReaderApp
+        lang={lang}
+        entity={entity}
+        rows={rows}
+        fontSize={fontSize}
+        highlight={highlight}
+        wordMap={wordMap}
+        primaryHighlightable={primaryHighlightable}
+        translationWordMap={translationWordMap}
+        translationHighlightable={translationHighlightable}
+    />
 );
 
 ReaderReact.layout = (page) => <Main>{page}</Main>;
