@@ -2,8 +2,8 @@
 
 namespace App\Classes;
 
-use App\Models\EnEntity;
-use App\Models\RuEntity;
+use App\Models\Entity;
+use App\Models\Language;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -23,11 +23,6 @@ class TextSignatureService
     private const SIGNATURE_TAIL_CHARS = 10_000;
 
     private const SIGNATURE_SAMPLE_SEPARATOR = "\n\n…\n\n";
-
-    private const LANG_MODELS = [
-        'en' => EnEntity::class,
-        'ru' => RuEntity::class,
-    ];
 
     public function __construct(
         private readonly string $apiUrl,
@@ -57,7 +52,7 @@ class TextSignatureService
         return $content;
     }
 
-    public function generateSignature(string $text): ?array
+    public function generateSignature(string $text, string $languageCode = 'en'): ?array
     {
         $textForEmbed = $this->textSampleForSignatureEmbedding($text);
 
@@ -70,6 +65,7 @@ class TextSignatureService
             )
             ->post("{$this->apiUrl}/embed", [
                 'text' => $textForEmbed,
+                'language' => $languageCode,
             ]);
 
         if (! $response->successful()) {
@@ -108,7 +104,7 @@ class TextSignatureService
      * Whether another entity in the same language already has a similar-enough signature.
      * Buffers rows and uses the python service for batched cosine similarity, with a PHP fallback.
      */
-    public function hasSimilar(mixed $entity, ?string $lang = null): bool
+    public function hasSimilar(Entity $entity): bool
     {
         $signature = json_decode($entity->signature, true);
         if (! is_array($signature)) {
@@ -120,12 +116,11 @@ class TextSignatureService
             return false;
         }
 
-        $lang ??= $entity instanceof EnEntity ? 'en' : 'ru';
-        $modelClass = self::LANG_MODELS[$lang];
         $batchSize = max(1, (int) config('services.python.has_similar_batch_size', 200));
         $buffer = [];
 
-        foreach ($modelClass::query()
+        foreach (Entity::query()
+            ->where('language_id', $entity->language_id)
             ->whereNotNull('signature')
             ->where('id', '!=', $entity->id)
             ->orderBy('id')
@@ -200,22 +195,27 @@ class TextSignatureService
         return false;
     }
 
-    public function findCrossLanguage(mixed $entity): Collection
+    /**
+     * Entities (in any language, including the entity's own — e.g. an
+     * exercises/answers pair) whose signature is similar enough to the given
+     * entity's — candidates for the same work.
+     *
+     * @return Collection<int, array{entity: Entity, similarity: float}>
+     */
+    public function findCrossLanguage(Entity $entity): Collection
     {
         $signature = json_decode($entity->signature, true);
         if (! is_array($signature)) {
             return new Collection;
         }
 
-        $isEnglish = $entity instanceof EnEntity;
-        $otherLang = $isEnglish ? 'ru' : 'en';
-        $modelClass = self::LANG_MODELS[$otherLang];
-
         $similar = new Collection;
 
-        foreach ($modelClass::query()
+        foreach (Entity::query()
+            ->where('id', '!=', $entity->id)
             ->whereNotNull('signature')
-            ->select(['id', 'name', 'signature'])
+            ->with('language')
+            ->select(['id', 'name', 'language_id', 'work_id', 'signature'])
             ->cursor() as $other) {
             $otherSignature = json_decode($other->signature, true);
             if (! is_array($otherSignature)) {
@@ -247,17 +247,17 @@ class TextSignatureService
      * The caller uses `signature` to persist the embedding on a newly created
      * entity and `entity` to instead link the uploader to the existing one.
      *
-     * @return array{entity: EnEntity|RuEntity|null, similarity: float, signature: array|null}
+     * @return array{entity: Entity|null, similarity: float, signature: array|null}
      */
-    public function findSimilarExisting(string $text, string $lang): array
+    public function findSimilarExisting(string $text, Language $language): array
     {
-        $signature = $this->generateSignature($text);
+        $signature = $this->generateSignature($text, $language->code);
 
         if ($signature === null) {
             return ['entity' => null, 'similarity' => 0.0, 'signature' => null];
         }
 
-        $match = $this->bestSimilarExisting($signature, $lang);
+        $match = $this->bestSimilarExisting($signature, $language->id);
 
         return [
             'entity' => $match['entity'] ?? null,
@@ -270,40 +270,38 @@ class TextSignatureService
      * Find the most similar existing entity to an already-persisted entity (used
      * by the defense-in-depth duplicate resolver in ProcessEntityFile).
      *
-     * @return array{entity: EnEntity|RuEntity, similarity: float}|null
+     * @return array{entity: Entity, similarity: float}|null
      */
-    public function findSimilarToEntity(EnEntity|RuEntity $entity): ?array
+    public function findSimilarToEntity(Entity $entity): ?array
     {
         $signature = json_decode($entity->signature, true);
         if (! is_array($signature)) {
             return null;
         }
 
-        $lang = $entity instanceof EnEntity ? 'en' : 'ru';
-
-        return $this->bestSimilarExisting($signature, $lang, $entity->getKey());
+        return $this->bestSimilarExisting($signature, $entity->language_id, $entity->getKey());
     }
 
     /**
      * Scan same-language entities with a signature for the closest match at or
      * above the similarity threshold, excluding a given entity id.
      *
-     * @return array{entity: EnEntity|RuEntity, similarity: float}|null
+     * @return array{entity: Entity, similarity: float}|null
      */
-    private function bestSimilarExisting(array $signature, string $lang, ?int $excludeId = null): ?array
+    private function bestSimilarExisting(array $signature, int $languageId, ?int $excludeId = null): ?array
     {
         $dim = count($signature);
         if ($dim === 0) {
             return null;
         }
 
-        $modelClass = self::LANG_MODELS[$lang];
         $batchSize = max(1, (int) config('services.python.has_similar_batch_size', 200));
 
         $candidates = [];
         $best = null;
 
-        foreach ($modelClass::query()
+        foreach (Entity::query()
+            ->where('language_id', $languageId)
             ->whereNotNull('signature')
             ->where('id', '!=', $excludeId ?? 0)
             ->select(['id', 'name', 'signature'])
@@ -339,8 +337,8 @@ class TextSignatureService
     }
 
     /**
-     * @param  list<array{entity: EnEntity|RuEntity, signature: list<float|int>}>  $candidates
-     * @return array{entity: EnEntity|RuEntity, similarity: float}|null
+     * @param  list<array{entity: Entity, signature: list<float|int>}>  $candidates
+     * @return array{entity: Entity, similarity: float}|null
      */
     private function bestMatchInBatch(array $query, array $candidates): ?array
     {

@@ -3,13 +3,14 @@
 namespace App\Console\Commands;
 
 use App\Classes\WiktionaryParser;
+use App\Models\Language;
 use Illuminate\Console\Command;
 
 class ImportWiktionaryCommand extends Command
 {
     protected $signature = 'wiktionary:import {file}
-                            {--lang=en : Source language (en, ru)}
-                            {--target-lang=ru : Target language for translations}
+                            {--lang=en : Source language code from the languages registry}
+                            {--target-lang=ru : Target language code for translations}
                             {--batch-size=500 : Number of records per DB flush}';
 
     protected $description = 'Import a Kaikki Wiktionary JSONL dump file into the database. Translations are stored for later linking via wiktionary:link-translations';
@@ -27,15 +28,21 @@ class ImportWiktionaryCommand extends Command
             return self::FAILURE;
         }
 
-        $supportedLangs = ['en', 'ru'];
-        if (! in_array($lang, $supportedLangs)) {
-            $this->error("Unsupported source language: {$lang}. Supported: ".implode(', ', $supportedLangs));
+        $registryCodes = Language::query()->orderBy('sort_order')->pluck('code')->all();
+        if ($registryCodes === []) {
+            $this->error('No languages in the registry. Seed languages first.');
 
             return self::FAILURE;
         }
 
-        if (! in_array($targetLang, $supportedLangs)) {
-            $this->error("Unsupported target language: {$targetLang}. Supported: ".implode(', ', $supportedLangs));
+        if (! in_array($lang, $registryCodes, true)) {
+            $this->error("Unknown source language: {$lang}. Available: ".implode(', ', $registryCodes));
+
+            return self::FAILURE;
+        }
+
+        if (! in_array($targetLang, $registryCodes, true)) {
+            $this->error("Unknown target language: {$targetLang}. Available: ".implode(', ', $registryCodes));
 
             return self::FAILURE;
         }
@@ -67,7 +74,7 @@ class ImportWiktionaryCommand extends Command
         $this->table(['Metric', 'Count'], [
             ['Lines read', $stats['lines_read']],
             ['Words imported', $stats['words_imported']],
-            ['Words skipped (unknown POS)', $stats['words_skipped_pos']],
+            ['Lookups created', $stats['lookups_created']],
             ['Batches flushed', $stats['batches_flushed']],
         ]);
 

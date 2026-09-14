@@ -47,10 +47,10 @@ class SplitResponse(BaseModel):
 
 
 class AlignMatch(BaseModel):
-    en_start: int
-    en_end: int
-    ru_start: int
-    ru_end: int
+    a_start: int
+    a_end: int
+    b_start: int
+    b_end: int
     score: float
 
 
@@ -58,15 +58,15 @@ class AlignLandmark(BaseModel):
     """A hard landmark pin: a human-made committed match (score is always 1.0),
     given as index spans into the submitted sentence lists."""
 
-    en_start: int
-    en_end: int
-    ru_start: int
-    ru_end: int
+    a_start: int
+    a_end: int
+    b_start: int
+    b_end: int
 
 
 class AlignRequest(BaseModel):
-    en_sentences: list[str] = Field(..., max_length=config.ALIGN_MAX_SENTENCES)
-    ru_sentences: list[str] = Field(..., max_length=config.ALIGN_MAX_SENTENCES)
+    a_sentences: list[str] = Field(..., max_length=config.ALIGN_MAX_SENTENCES)
+    b_sentences: list[str] = Field(..., max_length=config.ALIGN_MAX_SENTENCES)
     # default_factory is evaluated per request, so edits to .env apply without restart.
     max_window: int = Field(default_factory=config.align_default_window, ge=1, le=config.ALIGN_MAX_WINDOW)
     similarity_threshold: float = Field(default_factory=config.align_default_threshold, ge=0.0, le=1.0)
@@ -90,5 +90,5 @@ class AlignRequest(BaseModel):
 
 class AlignResponse(BaseModel):
     matches: list[AlignMatch]
-    unmatched_en: list[int]
-    unmatched_ru: list[int]
+    unmatched_a: list[int]
+    unmatched_b: list[int]

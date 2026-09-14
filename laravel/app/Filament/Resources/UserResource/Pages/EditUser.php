@@ -12,6 +12,8 @@ class EditUser extends EditRecord
 
     protected $settingsNativeLanguageId;
 
+    protected $settingsInterfaceLanguageId;
+
     protected function getHeaderActions(): array
     {
         return [
@@ -23,6 +25,7 @@ class EditUser extends EditRecord
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $data['settings_native_language_id'] = $this->record->settings?->native_language_id;
+        $data['settings_interface_language_id'] = $this->record->settings?->interface_language_id;
 
         return $data;
     }
@@ -30,8 +33,9 @@ class EditUser extends EditRecord
     protected function mutateFormDataBeforeSave(array $data): array
     {
         $this->settingsNativeLanguageId = $data['settings_native_language_id'] ?? null;
+        $this->settingsInterfaceLanguageId = $data['settings_interface_language_id'] ?? null;
 
-        unset($data['settings_native_language_id']);
+        unset($data['settings_native_language_id'], $data['settings_interface_language_id']);
 
         return $data;
     }
@@ -40,7 +44,10 @@ class EditUser extends EditRecord
     {
         $this->record->settings()->updateOrCreate(
             ['user_id' => $this->record->id],
-            ['native_language_id' => filled($this->settingsNativeLanguageId) ? $this->settingsNativeLanguageId : null],
+            [
+                'native_language_id' => filled($this->settingsNativeLanguageId) ? $this->settingsNativeLanguageId : null,
+                'interface_language_id' => filled($this->settingsInterfaceLanguageId) ? $this->settingsInterfaceLanguageId : null,
+            ],
         );
     }
 }

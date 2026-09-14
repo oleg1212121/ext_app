@@ -14,6 +14,8 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name')->comment('User name');
+            $table->string('role')->default('user')->comment('Authorization role: user|admin');
+            $table->boolean('is_approved')->default(false)->comment('Whether the user passed the approval gate');
             $table->string('email')->unique()->comment('User email address');
             $table->timestamp('email_verified_at')->nullable()->comment('Email verification timestamp');
             $table->string('password')->comment('Hashed password');

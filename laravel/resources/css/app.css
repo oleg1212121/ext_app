@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "flowbite-react/plugin/tailwindcss";
+@import "./crossword.css";
 @source "../../.flowbite-react/class-list.json";
 
 @plugin "@tailwindcss/forms";
@@ -43,6 +44,10 @@
     --wbench-accent-ink: #15296F;
     --wbench-danger: #B1251C;
     --wbench-emphasis: #B0451E;
+    --wbench-solved: #A8CBB2;
+    --wbench-empty: #E6E4DD;
+    --wbench-across: #E09A3C;
+    --wbench-down: #6FA8DC;
 
     --wbench-paper-night: #111111;
     --wbench-paper-deep-night: #1A1A1A;
@@ -52,6 +57,10 @@
     --wbench-accent-night: #5A78FF;
     --wbench-danger-night: #E66B62;
     --wbench-emphasis-night: #E0664A;
+    --wbench-solved-night: #2E5C3F;
+    --wbench-empty-night: #202020;
+    --wbench-across-night: #D08A3A;
+    --wbench-down-night: #4D8FD1;
 }
 
 .gutter-cane {
@@ -118,4 +127,53 @@
     .reader-row:hover .primary-line {
         transition: none;
     }
+}
+
+/* Interactive dictionary words (reader + bilinguals simulator). */
+:root {
+    --word-unknown-bg: rgba(225, 29, 72, 0.12);
+    --word-progress-bg: rgba(217, 119, 6, 0.16);
+}
+
+.dark {
+    --word-unknown-bg: rgba(244, 63, 94, 0.22);
+    --word-progress-bg: rgba(245, 158, 11, 0.24);
+}
+
+.word-token {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    text-align: inherit;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: background-color 150ms ease;
+}
+
+.word-token:hover,
+.word-token:focus-visible {
+    color: var(--color-vermilion);
+}
+
+.dark .word-token:hover,
+.dark .word-token:focus-visible {
+    color: var(--color-vermilion-night);
+}
+
+.word-token:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-vermilion);
+}
+
+.word-token.word-unknown {
+    background-color: var(--word-unknown-bg);
+}
+
+.word-token.word-progress {
+    background-color: var(--word-progress-bg);
 }

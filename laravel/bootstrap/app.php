@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
             '192.168.0.0/16',
         ]);
         $middleware->web(append: [
+            App\Http\Middleware\SetInterfaceLocale::class,
             HandleInertiaRequests::class,
         ]);
         $middleware->alias([

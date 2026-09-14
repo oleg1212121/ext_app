@@ -13,48 +13,19 @@ async function postJson(url, body) {
     });
 
     if (!res.ok) {
-        throw new Error(`Request failed (${res.status})`);
+        const message = await res.json().catch(() => null);
+        throw new Error(message?.message ?? `Request failed (${res.status})`);
     }
 
     return res;
 }
 
-export async function fetchTexts() {
-    const res = await fetch('/get-texts', {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-    });
-
-    if (!res.ok) {
-        throw new Error(`Request failed (${res.status})`);
-    }
-
-    const json = await res.json();
-    return json.data.texts;
-}
-
-export async function fetchCrossword(id, level) {
-    const res = await postJson('/get-crossword', {id, level});
+export async function fetchCrossword(entityId, level) {
+    const res = await postJson('/crossword/generate', {entity_id: entityId, level});
     const json = await res.json();
     return json.data.crossword;
 }
 
-export async function upvoteWord(word, book) {
-    await postJson('/word/upvote', {word, book});
-}
-
-export async function acknowledgeWord(word) {
-    await postJson('/word/acknowledge', {word});
-}
-
-export async function dismissWord(word) {
-    await postJson('/word/dismiss', {word});
-}
-
-export async function askAi(word) {
-    const res = await postJson('/word/ask-ai/', {word});
-    const json = await res.json();
-    return json.data.definitions ?? [];
+export async function completeCrossword(wordIds) {
+    await postJson('/crossword/complete', {word_ids: wordIds});
 }

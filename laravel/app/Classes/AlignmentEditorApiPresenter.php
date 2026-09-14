@@ -2,10 +2,9 @@
 
 namespace App\Classes;
 
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\EnSentenceMeaningMatch;
-use App\Models\RuSentenceMeaningMatch;
+use App\Models\EntityMatch;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -20,20 +19,26 @@ class AlignmentEditorApiPresenter
     /**
      * @return array<string, mixed>
      */
-    public function matchPayload(EnRuEntityMatch $entityMatch): array
+    public function matchPayload(EntityMatch $entityMatch): array
     {
         return [
             'id' => $entityMatch->id,
-            'en_entity_name' => $entityMatch->enEntity?->name ?? '',
-            'ru_entity_name' => $entityMatch->ruEntity?->name ?? '',
+            'a_entity_name' => $entityMatch->aEntity?->name ?? '',
+            'b_entity_name' => $entityMatch->bEntity?->name ?? '',
+            'a_language_code' => $entityMatch->aEntity?->language?->code ?? '',
+            'b_language_code' => $entityMatch->bEntity?->language?->code ?? '',
+            'work_title' => $entityMatch->aEntity?->work?->title ?? $entityMatch->bEntity?->work?->title ?? '',
+            'original_language_code' => $entityMatch->aEntity?->work?->originalLanguage?->code
+                ?? $entityMatch->bEntity?->work?->originalLanguage?->code
+                ?? null,
             'entity_similarity' => $entityMatch->entity_similarity !== null
                 ? round((float) $entityMatch->entity_similarity, 4)
                 : null,
             'status' => $entityMatch->status,
             'linked_count' => $entityMatch->linked_count,
             'confirmed_count' => $entityMatch->confirmed_count,
-            'en_total_sentences' => $entityMatch->en_total_sentences,
-            'ru_total_sentences' => $entityMatch->ru_total_sentences,
+            'a_total_sentences' => $entityMatch->a_total_sentences,
+            'b_total_sentences' => $entityMatch->b_total_sentences,
             'created_at' => $entityMatch->created_at?->toDateTimeString(),
         ];
     }
@@ -41,12 +46,9 @@ class AlignmentEditorApiPresenter
     /**
      * @return array<string, mixed>
      */
-    public function rowPayload(EnRuMeaningMatch $meaningMatch): array
+    public function rowPayload(MeaningMatch $meaningMatch): array
     {
-        $meaningMatch->loadMissing([
-            'enSentenceMatches.enEntitySentence',
-            'ruSentenceMatches.ruEntitySentence',
-        ]);
+        $meaningMatch->loadMissing(['sentenceMeaningMatches.entitySentence']);
 
         return [
             'key' => 'mm-'.$meaningMatch->id,
@@ -55,8 +57,8 @@ class AlignmentEditorApiPresenter
             'similarity' => $meaningMatch->similarity !== null
                 ? round((float) $meaningMatch->similarity, 4)
                 : null,
-            'en_sentences' => $this->linkedSentences($meaningMatch, 'en'),
-            'ru_sentences' => $this->linkedSentences($meaningMatch, 'ru'),
+            'a_sentences' => $this->linkedSentences($meaningMatch, 'a'),
+            'b_sentences' => $this->linkedSentences($meaningMatch, 'b'),
         ];
     }
 
@@ -65,20 +67,17 @@ class AlignmentEditorApiPresenter
      */
     public function rowsPayload(Collection $meaningMatches): array
     {
-        return $meaningMatches->map(fn (EnRuMeaningMatch $match) => $this->rowPayload($match))->values()->all();
+        return $meaningMatches->map(fn (MeaningMatch $match): array => $this->rowPayload($match))->values()->all();
     }
 
     /**
-     * @return array{rows: list<array<string, mixed>>, meta: array{current_page: int, last_page: int, total: int, per_page: int}, sentences_before: array{en: int, ru: int}}
+     * @return array{rows: list<array<string, mixed>>, meta: array{current_page: int, last_page: int, total: int, per_page: int}, sentences_before: array{a: int, b: int}}
      */
-    public function rowsPagePayload(EnRuEntityMatch $entityMatch, int $page = 1, int $perPage = 25): array
+    public function rowsPagePayload(EntityMatch $entityMatch, int $page = 1, int $perPage = 25): array
     {
-        $rows = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
-            ->with([
-                'enSentenceMatches.enEntitySentence',
-                'ruSentenceMatches.ruEntitySentence',
-            ])
+        $rows = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
+            ->with(['sentenceMeaningMatches.entitySentence'])
             ->orderBy('order')
             ->paginate($perPage, ['*'], 'page', $page);
 
@@ -95,58 +94,53 @@ class AlignmentEditorApiPresenter
     }
 
     /**
-     * Count linked EN and RU sentences belonging to meaning-matches on pages before the given page.
+     * Count linked a- and b-side sentences belonging to meaning-matches on pages before the given page.
      *
-     * @return array{en: int, ru: int}
+     * @return array{a: int, b: int}
      */
-    private function sentencesBeforePage(EnRuEntityMatch $entityMatch, int $page, int $perPage): array
+    private function sentencesBeforePage(EntityMatch $entityMatch, int $page, int $perPage): array
     {
         if ($page <= 1) {
-            return ['en' => 0, 'ru' => 0];
+            return ['a' => 0, 'b' => 0];
         }
 
-        $allIds = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
+        $previousIds = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
             ->orderBy('order')
-            ->pluck('id');
-
-        $previousIds = $allIds->slice(0, ($page - 1) * $perPage)->values();
+            ->pluck('id')
+            ->slice(0, ($page - 1) * $perPage)
+            ->values();
 
         if ($previousIds->isEmpty()) {
-            return ['en' => 0, 'ru' => 0];
+            return ['a' => 0, 'b' => 0];
         }
 
-        $enCount = EnSentenceMeaningMatch::query()
-            ->whereIn('en_ru_meaning_match_id', $previousIds)
-            ->count();
+        $junctions = SentenceMeaningMatch::query()
+            ->whereIn('meaning_match_id', $previousIds)
+            ->selectRaw('side, count(*) as total')
+            ->groupBy('side')
+            ->pluck('total', 'side');
 
-        $ruCount = RuSentenceMeaningMatch::query()
-            ->whereIn('en_ru_meaning_match_id', $previousIds)
-            ->count();
-
-        return ['en' => $enCount, 'ru' => $ruCount];
+        return [
+            'a' => (int) ($junctions['a'] ?? 0),
+            'b' => (int) ($junctions['b'] ?? 0),
+        ];
     }
 
     /**
+     * @param  'a'|'b'  $side
      * @return array{items: list<array<string, mixed>>, meta: array{current_page: int, last_page: int, total: int, per_page: int}}
      */
-    public function unmatchedPayload(EnRuEntityMatch $entityMatch, string $lang, int $page): array
+    public function unmatchedPayload(EntityMatch $entityMatch, string $side, int $page): array
     {
-        $entity = $lang === 'en' ? $entityMatch->enEntity : $entityMatch->ruEntity;
+        $entity = $side === 'a' ? $entityMatch->aEntity : $entityMatch->bEntity;
 
-        $linkedIds = $lang === 'en'
-            ? EnRuMeaningMatch::query()
-                ->where('en_ru_entity_match_id', $entityMatch->id)
-                ->with('enSentenceMatches')
-                ->get()
-                ->flatMap->enSentenceMatches
-                ->pluck('en_entity_sentence_id')
-            : EnRuMeaningMatch::query()
-                ->where('en_ru_entity_match_id', $entityMatch->id)
-                ->with('ruSentenceMatches')
-                ->get()
-                ->flatMap->ruSentenceMatches
-                ->pluck('ru_entity_sentence_id');
+        $linkedIds = SentenceMeaningMatch::query()
+            ->whereIn('meaning_match_id', MeaningMatch::query()
+                ->where('entity_match_id', $entityMatch->id)
+                ->select('id'))
+            ->where('side', $side)
+            ->pluck('entity_sentence_id');
 
         $linkedSet = $linkedIds->flip();
 
@@ -161,7 +155,7 @@ class AlignmentEditorApiPresenter
             ->offset(($page - 1) * self::UNMATCHED_PER_PAGE)
             ->limit(self::UNMATCHED_PER_PAGE)
             ->get()
-            ->map(fn ($sentence) => $this->sentencePayload($sentence->id, $sentence->content, $sentence->order, $lang))
+            ->map(fn ($sentence): array => $this->sentencePayload($sentence->id, $sentence->content, $sentence->order, $side))
             ->values()
             ->all();
 
@@ -179,20 +173,17 @@ class AlignmentEditorApiPresenter
     }
 
     /**
+     * @param  'a'|'b'  $side
      * @return list<array<string, mixed>>
      */
-    private function linkedSentences(EnRuMeaningMatch $meaningMatch, string $lang): array
+    private function linkedSentences(MeaningMatch $meaningMatch, string $side): array
     {
-        $matches = $lang === 'en'
-            ? $meaningMatch->enSentenceMatches
-            : $meaningMatch->ruSentenceMatches;
+        $matches = $meaningMatch->sentenceMeaningMatches->where('side', $side);
 
         $sentences = [];
 
         foreach ($matches as $match) {
-            $sentence = $lang === 'en'
-                ? $match->enEntitySentence
-                : $match->ruEntitySentence;
+            $sentence = $match->entitySentence;
 
             if ($sentence === null) {
                 continue;
@@ -210,12 +201,12 @@ class AlignmentEditorApiPresenter
         $result = [];
 
         foreach ($sentences as $entry) {
-            $match = $entry['match'];
-            $sentence = $lang === 'en'
-                ? $match->enEntitySentence
-                : $match->ruEntitySentence;
-
-            $result[] = $this->sentencePayload($sentence->id, $sentence->content, $sentence->order, $lang);
+            $result[] = $this->sentencePayload(
+                $entry['match']->entitySentence->id,
+                $entry['match']->entitySentence->content,
+                $entry['match']->entitySentence->order,
+                $side,
+            );
         }
 
         return $result;
@@ -224,28 +215,25 @@ class AlignmentEditorApiPresenter
     /**
      * @return array{items: list<array<string, mixed>>, meta: array{current_page: int, last_page: int, total: int, per_page: int}}
      */
-    public function needsReviewPagePayload(EnRuEntityMatch $entityMatch, int $page = 1): array
+    public function needsReviewPagePayload(EntityMatch $entityMatch, int $page = 1): array
     {
-        $rows = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
+        $rows = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
             ->where(function ($query) {
                 $query
                     ->where(function ($oneSided) {
                         $oneSided
-                            ->whereHas('enSentenceMatches')
-                            ->whereDoesntHave('ruSentenceMatches');
+                            ->whereHas('sentenceMeaningMatches', fn ($q) => $q->where('side', 'a'))
+                            ->whereDoesntHave('sentenceMeaningMatches', fn ($q) => $q->where('side', 'b'));
                     })
                     ->orWhere(function ($oneSided) {
                         $oneSided
-                            ->whereDoesntHave('enSentenceMatches')
-                            ->whereHas('ruSentenceMatches');
+                            ->whereDoesntHave('sentenceMeaningMatches', fn ($q) => $q->where('side', 'a'))
+                            ->whereHas('sentenceMeaningMatches', fn ($q) => $q->where('side', 'b'));
                     })
                     ->orWhere('similarity', '<', self::LOW_SIMILARITY_THRESHOLD);
             })
-            ->with([
-                'enSentenceMatches.enEntitySentence',
-                'ruSentenceMatches.ruEntitySentence',
-            ])
+            ->with(['sentenceMeaningMatches.entitySentence'])
             ->orderBy('order')
             ->paginate(self::NEEDS_REVIEW_PER_PAGE, ['*'], 'page', $page);
 
@@ -263,7 +251,7 @@ class AlignmentEditorApiPresenter
     /**
      * @return list<array<string, mixed>>
      */
-    private function needsReviewItems(EnRuEntityMatch $entityMatch, Collection $meaningMatches): array
+    private function needsReviewItems(EntityMatch $entityMatch, Collection $meaningMatches): array
     {
         if ($meaningMatches->isEmpty()) {
             return [];
@@ -272,9 +260,9 @@ class AlignmentEditorApiPresenter
         $ranks = $this->ranksByRowId($entityMatch, $meaningMatches->pluck('id')->all());
 
         return $meaningMatches
-            ->map(function (EnRuMeaningMatch $meaningMatch) use ($ranks): array {
-                $enSentences = $this->linkedSentences($meaningMatch, 'en');
-                $ruSentences = $this->linkedSentences($meaningMatch, 'ru');
+            ->map(function (MeaningMatch $meaningMatch) use ($ranks): array {
+                $aSentences = $this->linkedSentences($meaningMatch, 'a');
+                $bSentences = $this->linkedSentences($meaningMatch, 'b');
 
                 return [
                     'key' => 'mm-'.$meaningMatch->id,
@@ -283,9 +271,9 @@ class AlignmentEditorApiPresenter
                     'similarity' => $meaningMatch->similarity !== null
                         ? round((float) $meaningMatch->similarity, 4)
                         : null,
-                    'en_part' => $this->partContent($enSentences),
-                    'ru_part' => $this->partContent($ruSentences),
-                    'one_sided' => ($enSentences !== [] && $ruSentences === []) || ($enSentences === [] && $ruSentences !== []),
+                    'a_part' => $this->partContent($aSentences),
+                    'b_part' => $this->partContent($bSentences),
+                    'one_sided' => ($aSentences !== [] && $bSentences === []) || ($aSentences === [] && $bSentences !== []),
                     'rank' => (int) ($ranks[$meaningMatch->id] ?? 1),
                 ];
             })
@@ -297,10 +285,10 @@ class AlignmentEditorApiPresenter
      * @param  list<int>  $ids
      * @return array<int, int>
      */
-    private function ranksByRowId(EnRuEntityMatch $entityMatch, array $ids): array
+    private function ranksByRowId(EntityMatch $entityMatch, array $ids): array
     {
-        $subquery = DB::table('en_ru_meaning_matches')
-            ->where('en_ru_entity_match_id', $entityMatch->id)
+        $subquery = DB::table('meaning_matches')
+            ->where('entity_match_id', $entityMatch->id)
             ->select('id')
             ->selectRaw('ROW_NUMBER() OVER (ORDER BY "order") AS rn');
 
@@ -322,10 +310,10 @@ class AlignmentEditorApiPresenter
     /**
      * @return array<string, mixed>
      */
-    public function sentencePayload(int $id, string $content, int $order, string $lang): array
+    public function sentencePayload(int $id, string $content, int $order, string $side): array
     {
         return [
-            'key' => $lang.':s-'.$id,
+            'key' => $side.':s-'.$id,
             'id' => $id,
             'content' => $content,
             'order' => (int) $order,

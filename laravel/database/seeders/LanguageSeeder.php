@@ -19,6 +19,7 @@ class LanguageSeeder extends Seeder
                 'native_name' => 'English',
                 'is_enabled' => true,
                 'sort_order' => 0,
+                'is_interface_enabled' => true,
             ],
             [
                 'code' => 'ru',
@@ -26,9 +27,10 @@ class LanguageSeeder extends Seeder
                 'native_name' => 'Русский',
                 'is_enabled' => true,
                 'sort_order' => 1,
+                'is_interface_enabled' => true,
             ],
         ];
 
-        Language::upsert($languages, ['code'], ['name', 'native_name', 'is_enabled', 'sort_order']);
+        Language::upsert($languages, ['code'], ['name', 'native_name', 'is_enabled', 'sort_order', 'is_interface_enabled']);
     }
 }

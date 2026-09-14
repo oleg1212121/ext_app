@@ -4,13 +4,14 @@ namespace App\Http\Controllers\Bilinguals;
 
 use App\Classes\AIModelResolver;
 use App\Classes\EntityAccessService;
+use App\Classes\EntityWordMap;
 use App\Classes\MeaningMatchPresenter;
 use App\Exceptions\AiProviderException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AiQuestionRequest;
 use App\Http\Requests\BilingualsTextRequest;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
+use App\Models\EntityMatch;
+use App\Models\MeaningMatch;
 use Exception;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
@@ -21,6 +22,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SimulatorController extends Controller
 {
+    public const DEFAULT_QUESTION = 'Compare Russian original vs. my translation. Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; wrap the few most important weak-point phrases in ==double equals==; put improved versions in > blockquotes. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Assess grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version. 4. Give a couple of improved versions.';
+
     public function __construct(
         protected AIModelResolver $modelResolver,
         protected MeaningMatchPresenter $presenter,
@@ -43,18 +46,41 @@ class SimulatorController extends Controller
 
         $canUseAi = auth()->user()->canUseAi();
 
+        $saved = auth()->user()->settings?->ui_settings['simulator'] ?? [];
+
+        $availableModels = [];
+        foreach ($aiModels as $models) {
+            $availableModels = [...$availableModels, ...array_keys($models)];
+        }
+        if (isset($saved['model']) && in_array($saved['model'], $availableModels, true)) {
+            $currentModel = $saved['model'];
+        }
+
         return Inertia::render('Bilinguals/Bilinguals', [
             'aiModels' => $aiModels,
             'textList' => $textList,
-            'showWorkplace' => true,
-            'showQuestion' => false,
-            'showText' => true,
-            'showAI' => $canUseAi,
+            'showWorkplace' => (bool) ($saved['show_workplace'] ?? true),
+            'showQuestion' => (bool) ($saved['show_question'] ?? false),
+            'showText' => (bool) ($saved['show_text'] ?? true),
+            'showAI' => $canUseAi && (bool) ($saved['show_ai'] ?? true),
             'canUseAi' => $canUseAi,
             'currentModel' => $currentModel,
-            'currentQuestion' => 'Compare Russian original vs. my translation. Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; wrap the few most important weak-point phrases in ==double equals==; put improved versions in > blockquotes. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Assess grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version. 4. Give a couple of improved versions.',
+            'currentQuestion' => $saved['question'] ?? self::DEFAULT_QUESTION,
             'currentText' => $firstId !== null ? (string) $firstId : '',
+            'fontSize' => $this->clampInt($saved['font_size'] ?? null, 12, 48, 26),
+            'aiPanelWidth' => $this->clampInt($saved['ai_panel_width'] ?? null, 280, 1200, 560),
+            'workplaceHeight' => $this->clampInt($saved['workplace_height'] ?? null, 80, 800, 168),
+            'highlightWords' => (bool) ($saved['highlight_words'] ?? true),
         ]);
+    }
+
+    private function clampInt(mixed $value, int $min, int $max, int $default): int
+    {
+        if (! is_int($value) && ! is_string($value) || ! preg_match('/^-?\d+$/', (string) $value)) {
+            return $default;
+        }
+
+        return max($min, min($max, (int) $value));
     }
 
     /**
@@ -65,15 +91,17 @@ class SimulatorController extends Controller
         try {
             $matches = $this->access()
                 ->readableMatchQuery(auth()->user())
-                ->with(['enEntity', 'ruEntity'])
+                ->with(['aEntity.language', 'bEntity.language'])
                 ->latest('id')
                 ->get();
 
             $result = [];
             foreach ($matches as $match) {
-                $enName = $match->enEntity->name ?? __('English');
-                $ruName = $match->ruEntity->name ?? __('Russian');
-                $result[] = ['id' => $match->id, 'text' => "{$enName} / {$ruName}"];
+                $aName = $match->aEntity->name
+                    ?? strtoupper($match->aEntity->language?->code ?? 'A');
+                $bName = $match->bEntity->name
+                    ?? strtoupper($match->bEntity->language?->code ?? 'B');
+                $result[] = ['id' => $match->id, 'text' => "{$aName} / {$bName}"];
             }
 
             return $result;
@@ -90,9 +118,9 @@ class SimulatorController extends Controller
         $page = max(1, (int) ($validated['page'] ?? 1));
         $perPage = min(200, max(1, (int) ($validated['per_page'] ?? 50)));
 
-        if (! empty($validated['en_ru_entity_match_id'])) {
+        if (! empty($validated['entity_match_id'])) {
             $result = $this->textFromEntityMatch(
-                (int) $validated['en_ru_entity_match_id'],
+                (int) $validated['entity_match_id'],
                 $page,
                 $perPage
             );
@@ -119,12 +147,12 @@ class SimulatorController extends Controller
     }
 
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
+     * @return array{rows: list<array{0: string, 1: string}>, word_maps: array|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
      */
     private function textFromEntityMatch(int $entityMatchId, int $page, int $perPage): array
     {
-        $match = EnRuEntityMatch::query()
-            ->with(['enEntity', 'ruEntity'])
+        $match = EntityMatch::query()
+            ->with(['aEntity.language', 'bEntity.language'])
             ->find($entityMatchId);
 
         if ($match === null) {
@@ -135,18 +163,16 @@ class SimulatorController extends Controller
             return ['error' => 'You do not have access to this text.', 'code' => 403];
         }
 
-        /** @var LengthAwarePaginator<int, EnRuMeaningMatch> $paginator */
-        $paginator = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatchId)
-            ->with([
-                'enSentenceMatches.enEntitySentence',
-                'ruSentenceMatches.ruEntitySentence',
-            ])
+        /** @var LengthAwarePaginator<int, MeaningMatch> $paginator */
+        $paginator = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatchId)
+            ->with(['sentenceMeaningMatches.entitySentence'])
             ->orderBy('order')
             ->paginate(perPage: $perPage, columns: ['*'], pageName: 'page', page: $page);
 
         return [
             'rows' => $this->presenter->toSimulatorRows($paginator->getCollection()),
+            'word_maps' => $this->wordMapsFor($match),
             'meta' => [
                 'current_page' => $paginator->currentPage(),
                 'per_page' => $paginator->perPage(),
@@ -158,12 +184,39 @@ class SimulatorController extends Controller
     }
 
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
+     * Interactive word maps and highlight eligibility for both sides of the
+     * match. Null when either entity is gone (legacy file mode has none).
+     *
+     * @return array{a: array, b: array}|null
+     */
+    private function wordMapsFor(EntityMatch $match): ?array
+    {
+        if ($match->aEntity === null || $match->bEntity === null) {
+            return null;
+        }
+
+        $userId = (int) auth()->id();
+        $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
+        $wordMap = new EntityWordMap;
+
+        return [
+            'a' => $wordMap->forEntity($match->aEntity, $userId),
+            'b' => $wordMap->forEntity($match->bEntity, $userId),
+            'highlightable' => [
+                'a' => $match->aEntity->language_id !== $nativeLanguageId,
+                'b' => $match->bEntity->language_id !== $nativeLanguageId,
+            ],
+        ];
+    }
+
+    /**
+     * @return array{rows: list<array{0: string, 1: string}>, word_maps: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
      */
     private function textFromFilename(string $filename, int $page, int $perPage): array
     {
         $result = [
             'rows' => [],
+            'word_maps' => null,
             'meta' => [
                 'current_page' => $page,
                 'per_page' => $perPage,

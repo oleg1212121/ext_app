@@ -18,12 +18,12 @@ sources:
 
 | Stack | Where | Used for |
 |-------|-------|----------|
-| **Inertia + React 19 (JSX)** | `resources/js/Pages/` | **Primary.** All new pages. Bilinguals simulator, Reader, React crossword, Dashboard, Welcome, auth pages |
-| **Livewire 4** | `app/Livewire/`, `resources/views/livewire/` | Legacy only: the `Crossword` component (`WordsSearch` was removed) |
+| **Inertia + React 19 (JSX)** | `resources/js/Pages/` | **Primary.** All new pages. Bilinguals simulator, Reader, Entities/Alignments, Dashboard, Welcome, auth pages |
+| **Livewire 4** | `app/Livewire/`, `resources/views/livewire/` | Filament admin pages and the Filament alignment editor |
 | **Alpine.js 3** | loaded globally in `resources/js/app.jsx` | Lightweight interactivity in Blade |
 
 **Rule: new pages are Inertia/React (JSX).** Do not add new Livewire
-components; Livewire is kept only for the `Crossword` legacy.
+components; Livewire remains only inside Filament.
 
 UI kit: `flowbite-react` components (see `resources/js/Pages/` for usage).
 
@@ -61,4 +61,3 @@ mode use `dark:` utilities.
 * Controllers return `Inertia::render('Page/Name', [...props])`.
 * POST endpoints consumed by React return `JsonResponse`, not Inertia
   redirects (see `SimulatorController::text()`, `askAi()`).
-* The React crossword has its own API layer (`resources/js/Pages/Crossword/api.js`).

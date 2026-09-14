@@ -1,5 +1,6 @@
 import {Link, useForm, usePage} from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx';
+import {useI18n} from '../../i18n';
 
 function InputLabel({htmlFor, children}) {
     return (
@@ -45,45 +46,6 @@ function NumberInput({id, value, onChange, error, ...props}) {
     );
 }
 
-function EntitySelect({id, label, value, onChange, items, error, emptyText}) {
-    return (
-        <div>
-            <InputLabel htmlFor={id}>{label}</InputLabel>
-            <select
-                id={id}
-                value={value}
-                onChange={onChange}
-                className={inputClass(error)}
-            >
-                {items.length === 0 ? (
-                    <option value="">{emptyText}</option>
-                ) : (
-                    <>
-                        <option value="" disabled>Select an entity…</option>
-                        {items.map((item) => (
-                            <option key={item.id} value={item.id}>
-                                {item.text}
-                            </option>
-                        ))}
-                    </>
-                )}
-            </select>
-            <FieldError messages={error ? [error] : []}/>
-        </div>
-    );
-}
-
-function CreateEntityLink({href, children}) {
-    return (
-        <Link
-            href={href}
-            className="mt-2 inline-block text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
-        >
-            {children}
-        </Link>
-    );
-}
-
 function PrimaryButton({children, disabled = false}) {
     return (
         <button
@@ -102,22 +64,40 @@ function PrimaryButton({children, disabled = false}) {
     );
 }
 
-export default function Create({enEntities, ruEntities}) {
+export default function Create({works = []}) {
+    const {t} = useI18n();
     const {flash} = usePage().props;
     const {data, setData, post, processing, errors} = useForm({
-        en_entity_id: '',
-        ru_entity_id: '',
-        is_original_en: true,
+        work_id: works[0]?.id ?? '',
+        first_entity_id: '',
+        second_entity_id: '',
         chunk_size: 75,
         max_n: 6,
     });
+
+    const work = works.find((item) => String(item.id) === String(data.work_id));
+    const workEntities = work?.entities ?? {};
+
+    const languageLabel = (code) => code.toUpperCase();
+
+    const entityOptions = (excludeEntityId) => Object.entries(workEntities)
+        .flatMap(([code, entities]) => entities.map((entity) => ({
+            ...entity,
+            languageCode: code,
+            text: `[${languageLabel(code)}] ${entity.text}`,
+        })))
+        .filter((entity) => String(entity.id) !== String(excludeEntityId));
+
+    const firstEntity = entityOptions().find((entity) => String(entity.id) === String(data.first_entity_id));
+    const firstOptions = entityOptions();
+    const secondOptions = entityOptions(data.first_entity_id);
 
     const submit = (e) => {
         e.preventDefault();
         post('/alignments', {preserveScroll: true});
     };
 
-    const duplicateBlocked = Boolean(errors.ru_entity_id) && Boolean(flash?.existing_match_id);
+    const duplicateBlocked = Boolean(errors.second_entity_id) && Boolean(flash?.existing_match_id);
 
     return (
         <div className="flex-1 min-h-0 overflow-y-auto bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)]">
@@ -127,14 +107,14 @@ export default function Create({enEntities, ruEntities}) {
                         href="/alignments"
                         className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                     >
-                        ← Alignments
+                        {t('alignments.back')}
                     </Link>
                     <div>
                         <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            New entity match
+                            {t('alignments.new_entity_match')}
                         </p>
                         <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            Align an EN / RU pair
+                            {t('alignments.create_heading')}
                         </h1>
                     </div>
                 </header>
@@ -142,70 +122,68 @@ export default function Create({enEntities, ruEntities}) {
                 <form onSubmit={submit} className="space-y-6">
                     <fieldset className="space-y-5 border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] p-5">
                         <legend className="px-1 font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            Entities
+                            {t('alignments.entities')}
                         </legend>
 
                         <div>
-                            <EntitySelect
-                                id="en_entity_id"
-                                label="English entity"
-                                value={data.en_entity_id}
-                                onChange={(e) => setData('en_entity_id', e.target.value)}
-                                items={enEntities}
-                                error={errors.en_entity_id}
-                                emptyText="No alignable EN entities yet"
-                            />
-                            <CreateEntityLink href="/entities/en/create">
-                                + Create a new EN entity
-                            </CreateEntityLink>
+                            <InputLabel htmlFor="work_id">{t('alignments.work')}</InputLabel>
+                            <select
+                                id="work_id"
+                                value={data.work_id}
+                                onChange={(e) => setData((current) => ({...current, work_id: e.target.value, first_entity_id: '', second_entity_id: ''}))}
+                                className={inputClass(errors.work_id)}
+                            >
+                                {works.length === 0 ? (
+                                    <option value="">{t('alignments.no_works')}</option>
+                                ) : (
+                                    works.map((item) => (
+                                        <option key={item.id} value={item.id}>{item.title}</option>
+                                    ))
+                                )}
+                            </select>
+                            <p className="mt-1 text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                {t('alignments.work_hint')}
+                            </p>
                         </div>
 
                         <div>
-                            <EntitySelect
-                                id="ru_entity_id"
-                                label="Russian entity"
-                                value={data.ru_entity_id}
-                                onChange={(e) => setData('ru_entity_id', e.target.value)}
-                                items={ruEntities}
-                                error={duplicateBlocked ? null : errors.ru_entity_id}
-                                emptyText="No alignable RU entities yet"
-                            />
-                            <CreateEntityLink href="/entities/ru/create">
-                                + Create a new RU entity
-                            </CreateEntityLink>
-                        </div>
-
-                        <div>
-                            <span className="block text-sm font-medium text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                                Original text
-                            </span>
-                            <div className="mt-2 flex gap-6">
-                                {[
-                                    {value: true, label: 'EN is the original text'},
-                                    {value: false, label: 'RU is the original text'},
-                                ].map((option) => (
-                                    <label
-                                        key={String(option.value)}
-                                        className="flex items-center gap-2 text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]"
-                                    >
-                                        <input
-                                            type="radio"
-                                            name="is_original_en"
-                                            checked={data.is_original_en === option.value}
-                                            onChange={() => setData('is_original_en', option.value)}
-                                            className="h-4 w-4 accent-[var(--wbench-accent)]"
-                                        />
-                                        {option.label}
-                                    </label>
+                            <InputLabel htmlFor="first_entity_id">{t('alignments.first_entity')}</InputLabel>
+                            <select
+                                id="first_entity_id"
+                                value={data.first_entity_id}
+                                onChange={(e) => setData((current) => ({...current, first_entity_id: e.target.value, second_entity_id: ''}))}
+                                className={inputClass(errors.first_entity_id)}
+                            >
+                                <option value="" disabled>{t('alignments.select_entity')}</option>
+                                {firstOptions.map((entity) => (
+                                    <option key={entity.id} value={entity.id}>{entity.text}</option>
                                 ))}
-                            </div>
-                            <FieldError messages={errors.is_original_en ? [errors.is_original_en] : []}/>
+                            </select>
+                            <FieldError messages={errors.first_entity_id ? [errors.first_entity_id] : []}/>
+                        </div>
+
+                        <div>
+                            <InputLabel htmlFor="second_entity_id">
+                                {t('alignments.second_entity')}{firstEntity ? t('alignments.second_entity_suffix', {lang: languageLabel(firstEntity.languageCode), entity: firstEntity.text}) : ''}
+                            </InputLabel>
+                            <select
+                                id="second_entity_id"
+                                value={data.second_entity_id}
+                                onChange={(e) => setData('second_entity_id', e.target.value)}
+                                className={inputClass(errors.second_entity_id)}
+                            >
+                                <option value="" disabled>{t('alignments.select_entity')}</option>
+                                {secondOptions.map((entity) => (
+                                    <option key={entity.id} value={entity.id}>{entity.text}</option>
+                                ))}
+                            </select>
+                            <FieldError messages={duplicateBlocked ? null : (errors.second_entity_id ? [errors.second_entity_id] : [])}/>
                         </div>
                     </fieldset>
 
                     <div className="grid gap-5 sm:grid-cols-2">
                         <div>
-                            <InputLabel htmlFor="chunk_size">Chunk size</InputLabel>
+                            <InputLabel htmlFor="chunk_size">{t('alignments.chunk_size')}</InputLabel>
                             <NumberInput
                                 id="chunk_size"
                                 min={25}
@@ -215,13 +193,13 @@ export default function Create({enEntities, ruEntities}) {
                                 error={errors.chunk_size}
                             />
                             <p className="mt-1 text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Sentences per chunk (25–100).
+                                {t('alignments.chunk_size_hint')}
                             </p>
                             <FieldError messages={errors.chunk_size ? [errors.chunk_size] : []}/>
                         </div>
 
                         <div>
-                            <InputLabel htmlFor="max_n">Max sentence span</InputLabel>
+                            <InputLabel htmlFor="max_n">{t('alignments.max_n')}</InputLabel>
                             <NumberInput
                                 id="max_n"
                                 min={1}
@@ -231,7 +209,7 @@ export default function Create({enEntities, ruEntities}) {
                                 error={errors.max_n}
                             />
                             <p className="mt-1 text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                Alignment window size (1–8).
+                                {t('alignments.max_n_hint')}
                             </p>
                             <FieldError messages={errors.max_n ? [errors.max_n] : []}/>
                         </div>
@@ -240,24 +218,24 @@ export default function Create({enEntities, ruEntities}) {
                     {duplicateBlocked && (
                         <div className="border border-[var(--wbench-danger)]/40 bg-[var(--wbench-danger)]/5 px-4 py-3 text-sm">
                             <p className="text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                                A match for this entity pair already exists.
+                                {t('alignments.duplicate_match')}
                             </p>
                             <Link
                                 href={`/alignments/${flash.existing_match_id}`}
                                 className="mt-1 inline-block text-[var(--wbench-danger)] dark:text-[var(--wbench-danger-night)] underline"
                             >
-                                Open existing match →
+                                {t('alignments.open_existing_match')}
                             </Link>
                         </div>
                     )}
 
                     <div className="flex items-center gap-4">
-                        <PrimaryButton disabled={processing}>Create match</PrimaryButton>
+                        <PrimaryButton disabled={processing}>{t('alignments.create_match')}</PrimaryButton>
                         <Link
                             href="/alignments"
                             className="font-sans text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                         >
-                            Cancel
+                            {t('alignments.cancel')}
                         </Link>
                     </div>
                 </form>

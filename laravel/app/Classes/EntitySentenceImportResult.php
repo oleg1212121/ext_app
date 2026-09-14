@@ -2,16 +2,15 @@
 
 namespace App\Classes;
 
-use App\Models\EnEntity;
-use App\Models\EnRuEntityMatch;
-use App\Models\RuEntity;
+use App\Models\Entity;
+use App\Models\EntityMatch;
 
 class EntitySentenceImportResult
 {
     public function __construct(
-        public EnRuEntityMatch $entityMatch,
-        public EnEntity $enEntity,
-        public RuEntity $ruEntity,
+        public EntityMatch $entityMatch,
+        public Entity $aEntity,
+        public Entity $bEntity,
         public int $pairCount,
     ) {}
 }

@@ -2,12 +2,10 @@
 
 namespace App\Classes;
 
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\EnSentenceMeaningMatch;
-use App\Models\RuEntitySentence;
-use App\Models\RuSentenceMeaningMatch;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use Illuminate\Support\Facades\DB;
 
@@ -16,70 +14,65 @@ class AlignmentEditorPersister
     /**
      * @param  array{
      *     meaning_rows: list<array<string, mixed>>,
-     *     unmatched_en: list<array<string, mixed>>,
-     *     unmatched_ru: list<array<string, mixed>>
+     *     unmatched_a: list<array<string, mixed>>,
+     *     unmatched_b: list<array<string, mixed>>
      * }  $draft
      */
-    public function persist(EnRuEntityMatch $entityMatch, array $draft): void
+    public function persist(EntityMatch $entityMatch, array $draft): void
     {
         DB::transaction(function () use ($entityMatch, $draft): void {
-            $entityMatch->load(['enEntity', 'ruEntity']);
+            $entityMatch->load(['aEntity', 'bEntity']);
 
             $sentenceTypeId = SentenceType::query()->where('name', 'sentence')->value('id');
 
-            $enIdMap = $this->syncSentences(
-
-                entityId: $entityMatch->en_entity_id,
-                lang: 'en',
+            $aIdMap = $this->syncSentences(
+                entityId: $entityMatch->a_entity_id,
+                side: 'a',
                 meaningRows: $draft['meaning_rows'],
-                unmatched: $draft['unmatched_en'],
+                unmatched: $draft['unmatched_a'],
                 sentenceTypeId: $sentenceTypeId,
             );
 
-            $ruIdMap = $this->syncSentences(
-                entityId: $entityMatch->ru_entity_id,
-                lang: 'ru',
+            $bIdMap = $this->syncSentences(
+                entityId: $entityMatch->b_entity_id,
+                side: 'b',
                 meaningRows: $draft['meaning_rows'],
-                unmatched: $draft['unmatched_ru'],
+                unmatched: $draft['unmatched_b'],
                 sentenceTypeId: $sentenceTypeId,
             );
 
-            $this->syncMeaningMatches($entityMatch, $draft['meaning_rows'], $enIdMap, $ruIdMap);
+            $this->syncMeaningMatches($entityMatch, $draft['meaning_rows'], $aIdMap, $bIdMap);
 
-            $enCount = EnEntitySentence::query()
-                ->where('en_entity_id', $entityMatch->en_entity_id)
-                ->count();
+            $aCount = EntitySentence::query()->where('entity_id', $entityMatch->a_entity_id)->count();
+            $bCount = EntitySentence::query()->where('entity_id', $entityMatch->b_entity_id)->count();
 
-            $ruCount = RuEntitySentence::query()
-                ->where('ru_entity_id', $entityMatch->ru_entity_id)
-                ->count();
-
-            $linkedCount = EnRuMeaningMatch::query()
-                ->where('en_ru_entity_match_id', $entityMatch->id)
+            $linkedCount = MeaningMatch::query()
+                ->where('entity_match_id', $entityMatch->id)
                 ->count();
 
             $entityMatch->update([
                 'status' => 'completed',
-                'en_total_sentences' => $enCount,
-                'ru_total_sentences' => $ruCount,
+                'a_total_sentences' => $aCount,
+                'b_total_sentences' => $bCount,
                 'linked_count' => $linkedCount,
             ]);
         });
     }
 
     /**
+     * @param  'a'|'b'  $side
      * @param  list<array<string, mixed>>  $meaningRows
      * @param  list<array<string, mixed>>  $unmatched
      * @return array<string, int>
      */
     private function syncSentences(
         int $entityId,
-        string $lang,
+        string $side,
         array $meaningRows,
         array $unmatched,
         ?int $sentenceTypeId,
     ): array {
-        $sideKey = $lang === 'en' ? 'en_sentences' : 'ru_sentences';
+        $sideKey = $side === 'a' ? 'a_sentences' : 'b_sentences';
         $allSentences = [];
 
         foreach ($meaningRows as $row) {
@@ -105,9 +98,7 @@ class AlignmentEditorPersister
         $idMap = [];
         $keptDbIds = [];
 
-        $existing = $lang === 'en'
-            ? EnEntitySentence::query()->where('en_entity_id', $entityId)->get()->keyBy('id')
-            : RuEntitySentence::query()->where('ru_entity_id', $entityId)->get()->keyBy('id');
+        $existing = EntitySentence::query()->where('entity_id', $entityId)->get()->keyBy('id');
 
         $updates = [];
         $creates = [];
@@ -127,7 +118,7 @@ class AlignmentEditorPersister
                 if ($model->content !== $content || $model->order !== $order) {
                     $updates[] = [
                         'id' => $sentence['id'],
-                        $lang === 'en' ? 'en_entity_id' : 'ru_entity_id' => $entityId,
+                        'entity_id' => $entityId,
                         'sentence_type_id' => $sentenceTypeId,
                         'content' => $content,
                         'order' => $order,
@@ -154,73 +145,51 @@ class AlignmentEditorPersister
             // may be another row's current order, so a single upsert would
             // violate the (entity_id, order) unique index mid-statement.
             foreach ($updates as $update) {
-                $modelClass = $lang === 'en' ? EnEntitySentence::class : RuEntitySentence::class;
-                $modelClass::query()
+                EntitySentence::query()
                     ->whereKey($update['id'])
                     ->update(['order' => -$update['id'] - 1_000_000_000]);
             }
 
             foreach (array_chunk($updates, 1000) as $chunk) {
-                if ($lang === 'en') {
-                    EnEntitySentence::upsert($chunk, ['id'], ['content', 'order']);
-                } else {
-                    RuEntitySentence::upsert($chunk, ['id'], ['content', 'order']);
-                }
+                EntitySentence::upsert($chunk, ['id'], ['content', 'order']);
             }
         }
 
         foreach ($creates as $create) {
-            $attributes = $create['attributes'];
-
-            if ($lang === 'en') {
-                $model = EnEntitySentence::query()->create([
-                    'en_entity_id' => $entityId,
-                    ...$attributes,
-                ]);
-            } else {
-                $model = RuEntitySentence::query()->create([
-                    'ru_entity_id' => $entityId,
-                    ...$attributes,
-                ]);
-            }
+            $model = EntitySentence::query()->create([
+                'entity_id' => $entityId,
+                ...$create['attributes'],
+            ]);
 
             $idMap[$create['key']] = $model->id;
             $keptDbIds[] = $model->id;
         }
 
-        if ($lang === 'en') {
-            EnEntitySentence::query()
-                ->where('en_entity_id', $entityId)
-                ->when($keptDbIds !== [], fn ($query) => $query->whereNotIn('id', $keptDbIds))
-                ->when($keptDbIds === [], fn ($query) => $query)
-                ->delete();
-        } else {
-            RuEntitySentence::query()
-                ->where('ru_entity_id', $entityId)
-                ->when($keptDbIds !== [], fn ($query) => $query->whereNotIn('id', $keptDbIds))
-                ->when($keptDbIds === [], fn ($query) => $query)
-                ->delete();
-        }
+        EntitySentence::query()
+            ->where('entity_id', $entityId)
+            ->when($keptDbIds !== [], fn ($query) => $query->whereNotIn('id', $keptDbIds))
+            ->when($keptDbIds === [], fn ($query) => $query)
+            ->delete();
 
         return $idMap;
     }
 
     /**
      * @param  list<array<string, mixed>>  $meaningRows
-     * @param  array<string, int>  $enIdMap
-     * @param  array<string, int>  $ruIdMap
+     * @param  array<string, int>  $aIdMap
+     * @param  array<string, int>  $bIdMap
      */
     private function syncMeaningMatches(
-        EnRuEntityMatch $entityMatch,
+        EntityMatch $entityMatch,
         array $meaningRows,
-        array $enIdMap,
-        array $ruIdMap,
+        array $aIdMap,
+        array $bIdMap,
     ): void {
         $sortedRows = $meaningRows;
         usort($sortedRows, fn (array $a, array $b): int => $a['order'] <=> $b['order']);
 
-        $existingMeaningMatches = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
+        $existingMeaningMatches = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
             ->get()
             ->keyBy('id');
 
@@ -228,8 +197,7 @@ class AlignmentEditorPersister
 
         if (! empty($existingMeaningMatchIds)) {
             foreach (array_chunk($existingMeaningMatchIds, 1000) as $chunk) {
-                EnSentenceMeaningMatch::query()->whereIn('en_ru_meaning_match_id', $chunk)->delete();
-                RuSentenceMeaningMatch::query()->whereIn('en_ru_meaning_match_id', $chunk)->delete();
+                SentenceMeaningMatch::query()->whereIn('meaning_match_id', $chunk)->delete();
             }
         }
 
@@ -238,8 +206,8 @@ class AlignmentEditorPersister
         $newRows = [];
 
         foreach ($sortedRows as $index => $row) {
-            $enSentenceIds = $this->resolveSentenceIds($row['en_sentences'], $enIdMap);
-            $ruSentenceIds = $this->resolveSentenceIds($row['ru_sentences'], $ruIdMap);
+            $aSentenceIds = $this->resolveSentenceIds($row['a_sentences'], $aIdMap);
+            $bSentenceIds = $this->resolveSentenceIds($row['b_sentences'], $bIdMap);
             $order = (int) ($row['order'] ?? app(SparseOrderService::class)->initial($index));
 
             if ($row['id'] !== null && $existingMeaningMatches->has($row['id'])) {
@@ -249,7 +217,7 @@ class AlignmentEditorPersister
                 if ($model->order !== $order || $model->similarity != 1.0) {
                     $meaningUpdates[] = [
                         'id' => $meaningId,
-                        'en_ru_entity_match_id' => $entityMatch->id,
+                        'entity_match_id' => $entityMatch->id,
                         'order' => $order,
                         'similarity' => 1.0,
                         'alignment_chunk' => $model->alignment_chunk ?? 0,
@@ -260,15 +228,15 @@ class AlignmentEditorPersister
                 $newRows[] = [
                     'is_new' => false,
                     'meaning_id' => $meaningId,
-                    'en_sentences' => $enSentenceIds,
-                    'ru_sentences' => $ruSentenceIds,
+                    'a_sentences' => $aSentenceIds,
+                    'b_sentences' => $bSentenceIds,
                 ];
             } else {
                 $newRows[] = [
                     'is_new' => true,
                     'order' => $order,
-                    'en_sentences' => $enSentenceIds,
-                    'ru_sentences' => $ruSentenceIds,
+                    'a_sentences' => $aSentenceIds,
+                    'b_sentences' => $bSentenceIds,
                 ];
             }
         }
@@ -276,7 +244,7 @@ class AlignmentEditorPersister
         $toDelete = array_diff($existingMeaningMatchIds, $keptMeaningIds);
         if (! empty($toDelete)) {
             foreach (array_chunk($toDelete, 1000) as $chunk) {
-                EnRuMeaningMatch::query()->whereIn('id', $chunk)->delete();
+                MeaningMatch::query()->whereIn('id', $chunk)->delete();
             }
         }
 
@@ -285,7 +253,7 @@ class AlignmentEditorPersister
             $tempUpdates = array_map(function ($update) {
                 return [
                     'id' => $update['id'],
-                    'en_ru_entity_match_id' => $update['en_ru_entity_match_id'],
+                    'entity_match_id' => $update['entity_match_id'],
                     'order' => -($update['id']),
                     'similarity' => $update['similarity'],
                     'alignment_chunk' => $update['alignment_chunk'],
@@ -293,22 +261,21 @@ class AlignmentEditorPersister
             }, $meaningUpdates);
 
             foreach (array_chunk($tempUpdates, 1000) as $chunk) {
-                EnRuMeaningMatch::upsert($chunk, ['id'], ['order']);
+                MeaningMatch::upsert($chunk, ['id'], ['order']);
             }
 
             foreach (array_chunk($meaningUpdates, 1000) as $chunk) {
-                EnRuMeaningMatch::upsert($chunk, ['id'], ['order', 'similarity']);
+                MeaningMatch::upsert($chunk, ['id'], ['order', 'similarity']);
             }
         }
 
-        $enJunctionInserts = [];
-        $ruJunctionInserts = [];
+        $junctionInserts = [];
         $now = now()->toDateTimeString();
 
         foreach ($newRows as $row) {
             if ($row['is_new']) {
-                $meaningMatch = EnRuMeaningMatch::query()->create([
-                    'en_ru_entity_match_id' => $entityMatch->id,
+                $meaningMatch = MeaningMatch::query()->create([
+                    'entity_match_id' => $entityMatch->id,
                     'order' => $row['order'],
                     'similarity' => 1.0,
                     'alignment_chunk' => -1,
@@ -318,34 +285,30 @@ class AlignmentEditorPersister
                 $meaningId = $row['meaning_id'];
             }
 
-            foreach ($row['en_sentences'] as $sentenceId) {
-                $enJunctionInserts[] = [
-                    'en_entity_sentence_id' => $sentenceId,
-                    'en_ru_meaning_match_id' => $meaningId,
+            foreach ($row['a_sentences'] as $sentenceId) {
+                $junctionInserts[] = [
+                    'entity_sentence_id' => $sentenceId,
+                    'meaning_match_id' => $meaningId,
+                    'side' => 'a',
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
             }
 
-            foreach ($row['ru_sentences'] as $sentenceId) {
-                $ruJunctionInserts[] = [
-                    'ru_entity_sentence_id' => $sentenceId,
-                    'en_ru_meaning_match_id' => $meaningId,
+            foreach ($row['b_sentences'] as $sentenceId) {
+                $junctionInserts[] = [
+                    'entity_sentence_id' => $sentenceId,
+                    'meaning_match_id' => $meaningId,
+                    'side' => 'b',
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
             }
         }
 
-        if (! empty($enJunctionInserts)) {
-            foreach (array_chunk($enJunctionInserts, 2000) as $chunk) {
-                EnSentenceMeaningMatch::insert($chunk);
-            }
-        }
-
-        if (! empty($ruJunctionInserts)) {
-            foreach (array_chunk($ruJunctionInserts, 2000) as $chunk) {
-                RuSentenceMeaningMatch::insert($chunk);
+        if (! empty($junctionInserts)) {
+            foreach (array_chunk($junctionInserts, 2000) as $chunk) {
+                SentenceMeaningMatch::insert($chunk);
             }
         }
     }

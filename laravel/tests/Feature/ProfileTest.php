@@ -84,6 +84,49 @@ test('user settings rejects a disabled native language', function () {
     expect($user->settings->refresh()->native_language_id)->toBe($originalNativeLanguageId);
 });
 
+test('user settings can set and clear the interface language', function () {
+    $user = User::factory()->create();
+    $interface = Language::create([
+        'code' => 'de',
+        'name' => 'German',
+        'is_enabled' => true,
+        'is_interface_enabled' => true,
+        'sort_order' => 2,
+    ]);
+
+    $this
+        ->actingAs($user)
+        ->patch('/profile/settings', ['interface_language_id' => $interface->id])
+        ->assertSessionHasNoErrors();
+
+    expect($user->settings->refresh()->interface_language_id)->toBe($interface->id);
+
+    $this
+        ->actingAs($user)
+        ->patch('/profile/settings', ['interface_language_id' => null])
+        ->assertSessionHasNoErrors();
+
+    expect($user->settings->refresh()->interface_language_id)->toBeNull();
+});
+
+test('user settings rejects a language that is not interface-enabled', function () {
+    $user = User::factory()->create();
+    $contentOnly = Language::create([
+        'code' => 'fr',
+        'name' => 'French',
+        'is_enabled' => true,
+        'is_interface_enabled' => false,
+        'sort_order' => 2,
+    ]);
+
+    $this
+        ->actingAs($user)
+        ->patch('/profile/settings', ['interface_language_id' => $contentOnly->id])
+        ->assertSessionHasErrors('interface_language_id');
+
+    expect($user->settings->refresh()->interface_language_id)->toBeNull();
+});
+
 test('user can delete their account', function () {
     $user = User::factory()->create();
 

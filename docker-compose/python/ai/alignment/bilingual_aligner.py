@@ -61,7 +61,7 @@ def _window_text(sentences: list[str], start: int, step: int) -> str:
 def _validate_pins(pins: list[dict], n: int, m: int) -> None:
     """Reject landmark pins that cannot be honored as hard commits.
 
-    Each pin is `{en_start, en_end, ru_start, ru_end}` — indices into the
+    Each pin is `{a_start, a_end, b_start, b_end}` — indices into the
     submitted sentence lists. Raises ValueError when a pin is zero-length,
     out of the lists' bounds, or crosses/overlaps another pin (pins must be
     pairwise disjoint in both axes, so the sub-pool boundary union stays
@@ -71,26 +71,26 @@ def _validate_pins(pins: list[dict], n: int, m: int) -> None:
     if not pins:
         return
     for pin in pins:
-        en_start, en_end = pin["en_start"], pin["en_end"]
-        ru_start, ru_end = pin["ru_start"], pin["ru_end"]
-        if en_end <= en_start or ru_end <= ru_start:
+        a_start, a_end = pin["a_start"], pin["a_end"]
+        b_start, b_end = pin["b_start"], pin["b_end"]
+        if a_end <= a_start or b_end <= b_start:
             raise ValueError(f"landmark pin span must be non-empty: {pin}")
-        if en_start < 0 or ru_start < 0 or en_end > n or ru_end > m:
+        if a_start < 0 or b_start < 0 or a_end > n or b_end > m:
             raise ValueError(
-                f"landmark pin out of range for {n} EN x {m} RU sentences: {pin}"
+                f"landmark pin out of range for {n} x {m} sentences: {pin}"
             )
-    ordered = sorted(pins, key=lambda p: (p["en_start"], p["ru_start"]))
+    ordered = sorted(pins, key=lambda p: (p["a_start"], p["b_start"]))
     for prev, curr in zip(ordered, ordered[1:]):
-        if curr["en_start"] < prev["en_end"] or curr["ru_start"] < prev["ru_end"]:
+        if curr["a_start"] < prev["a_end"] or curr["b_start"] < prev["b_end"]:
             raise ValueError(f"landmark pins cross or overlap: {prev} vs {curr}")
 
 
 def _cell_in_pin(cell: tuple[int, int], pins: list[dict]) -> bool:
     """True when the 1:1 cell (i, j) sits inside any pin's rectangle
-    `range(en_start, en_end) x range(ru_start, ru_end)`."""
+    `range(a_start, a_end) x range(b_start, b_end)`."""
     i, j = cell
     for pin in pins:
-        if pin["en_start"] <= i < pin["en_end"] and pin["ru_start"] <= j < pin["ru_end"]:
+        if pin["a_start"] <= i < pin["a_end"] and pin["b_start"] <= j < pin["b_end"]:
             return True
     return False
 
@@ -235,7 +235,7 @@ class BilingualAligner:
         inside any pin), and both algorithms align each resulting sub-pool in
         isolation. Pins and prepass anchors form the sub-pool boundaries
         (see `_align_with_anchors`), so machine output never crosses or
-        overlaps a pin. Returns the full `{matches, unmatched_en, unmatched_ru}`
+        overlaps a pin. Returns the full `{matches, unmatched_a, unmatched_b}`
         dict; match entries carry the internal diagnostic fields
         (en_text/ru_text/en_step/ru_step) alongside the public spans.
         """
@@ -272,19 +272,19 @@ class BilingualAligner:
         matched_en: set[int] = set()
         matched_ru: set[int] = set()
         for match in matches:
-            matched_en.update(range(match["en_start"], match["en_end"]))
-            matched_ru.update(range(match["ru_start"], match["ru_end"]))
+            matched_en.update(range(match["a_start"], match["a_end"]))
+            matched_ru.update(range(match["b_start"], match["b_end"]))
 
         return {
             "matches": matches,
-            "unmatched_en": [i for i in range(len(en_raw)) if i not in matched_en],
-            "unmatched_ru": [i for i in range(len(ru_raw)) if i not in matched_ru],
+            "unmatched_a": [i for i in range(len(en_raw)) if i not in matched_en],
+            "unmatched_b": [i for i in range(len(ru_raw)) if i not in matched_ru],
         }
 
     def align_lists(
         self,
-        en_sentences: list[str],
-        ru_sentences: list[str],
+        a_sentences: list[str],
+        b_sentences: list[str],
         landmarks: list[dict] | None = None,
     ) -> dict:
         """Align two in-memory sentence lists and return structured matches.
@@ -297,34 +297,34 @@ class BilingualAligner:
         of in a low-similarity meaning match.
 
         `landmarks` is a list of hard pins — human-made committed matches
-        `{en_start, en_end, ru_start, ru_end}` (indices into the submitted
+        `{a_start, a_end, b_start, b_end}` (indices into the submitted
         lists). Each is emitted verbatim with score 1.0 and splits the chunk
         into sub-pools that the machine never crosses or overlaps. Invalid
         pins (zero-length, out of range, crossing/overlapping) raise
         ValueError.
         """
-        result = self._align_pair(en_sentences, ru_sentences, landmarks)
+        result = self._align_pair(a_sentences, b_sentences, landmarks)
         return {
             "matches": [
                 {
-                    "en_start": m["en_start"],
-                    "en_end": m["en_end"],
-                    "ru_start": m["ru_start"],
-                    "ru_end": m["ru_end"],
+                    "a_start": m["a_start"],
+                    "a_end": m["a_end"],
+                    "b_start": m["b_start"],
+                    "b_end": m["b_end"],
                     "score": m["score"],
                 }
                 for m in result["matches"]
             ],
-            "unmatched_en": result["unmatched_en"],
-            "unmatched_ru": result["unmatched_ru"],
+            "unmatched_a": result["unmatched_a"],
+            "unmatched_b": result["unmatched_b"],
         }
 
     def process(self, en_path, ru_path, output_path):
         en_all = self._read_sentences(en_path)
         ru_all = self._read_sentences(ru_path)
 
-        logger.info("EN sentences: %d", len(en_all))
-        logger.info("RU sentences: %d", len(ru_all))
+        logger.info("A sentences: %d", len(en_all))
+        logger.info("B sentences: %d", len(ru_all))
 
         en_offset = 0
         ru_offset = 0
@@ -363,14 +363,14 @@ class BilingualAligner:
                 committed = matches
 
             last = committed[-1]
-            new_en_offset = en_offset + last["en_end"]
-            new_ru_offset = ru_offset + last["ru_end"]
+            new_en_offset = en_offset + last["a_end"]
+            new_ru_offset = ru_offset + last["b_end"]
 
             for match in committed:
-                match["en_start"] += en_offset
-                match["en_end"] += en_offset
-                match["ru_start"] += ru_offset
-                match["ru_end"] += ru_offset
+                match["a_start"] += en_offset
+                match["a_end"] += en_offset
+                match["b_start"] += ru_offset
+                match["b_end"] += ru_offset
 
             all_matches.extend(committed)
 
@@ -381,15 +381,15 @@ class BilingualAligner:
             en_offset = new_en_offset
             ru_offset = new_ru_offset
 
-        unmatched_ru = []
+        unmatched_b = []
         if ru_offset < len(ru_all):
-            unmatched_ru = [(i, ru_all[i]) for i in range(ru_offset, len(ru_all))]
+            unmatched_b = [(i, ru_all[i]) for i in range(ru_offset, len(ru_all))]
 
-        unmatched_en = []
+        unmatched_a = []
         if en_offset < len(en_all):
-            unmatched_en = [(i, en_all[i]) for i in range(en_offset, len(en_all))]
+            unmatched_a = [(i, en_all[i]) for i in range(en_offset, len(en_all))]
 
-        self._write_results(all_matches, unmatched_ru, unmatched_en, output_path)
+        self._write_results(all_matches, unmatched_b, unmatched_a, output_path)
 
     def _trim_to_last_anchor(self, matches):
         # The DP forces full coverage of both chunks, so matches near the chunk
@@ -627,16 +627,16 @@ class BilingualAligner:
         Only these starts' windows are embedded by the per-pool DP, so windows
         whose start cell is off the diagonal never reach the model.
         """
-        en_starts: set[int] = set()
-        ru_starts: set[int] = set()
+        a_starts: set[int] = set()
+        b_starts: set[int] = set()
         for i in range(n):
             for j in range(m):
                 if self._band_allowed(i, j, k, band):
-                    en_starts.add(i)
-                    ru_starts.add(j)
-        return en_starts, ru_starts
+                    a_starts.add(i)
+                    b_starts.add(j)
+        return a_starts, b_starts
 
-    def _align_pool(self, en_sentences, ru_sentences, i0, i1, j0, j1):
+    def _align_pool(self, a_sentences, b_sentences, i0, i1, j0, j1):
         """Align the sub-pool EN[i0:i1] x RU[j0:j1] in isolation.
 
         The chosen algorithm runs on the slice only (the greedy mode's internal
@@ -647,19 +647,19 @@ class BilingualAligner:
             return []
 
         if self.algorithm == "greedy":
-            pool = self._align_chunk_greedy(en_sentences[i0:i1], ru_sentences[j0:j1])
+            pool = self._align_chunk_greedy(a_sentences[i0:i1], b_sentences[j0:j1])
         else:
-            pool = self._align_chunk(en_sentences[i0:i1], ru_sentences[j0:j1])
+            pool = self._align_chunk(a_sentences[i0:i1], b_sentences[j0:j1])
 
         for match in pool:
-            match["en_start"] += i0
-            match["en_end"] += i0
-            match["ru_start"] += j0
-            match["ru_end"] += j0
+            match["a_start"] += i0
+            match["a_end"] += i0
+            match["b_start"] += j0
+            match["b_end"] += j0
 
         return pool
 
-    def _align_with_anchors(self, en_sentences, ru_sentences, sim, anchors, pins=None):
+    def _align_with_anchors(self, a_sentences, b_sentences, sim, anchors, pins=None):
         """Split the chunk at the union of landmark pins and prepass anchors
         and align each sub-pool in isolation, emitting the boundaries as
         committed matches.
@@ -675,8 +675,8 @@ class BilingualAligner:
         concatenated in strict document order: pool matches, then the
         boundary, then the next pool.
         """
-        n = len(en_sentences)
-        m = len(ru_sentences)
+        n = len(a_sentences)
+        m = len(b_sentences)
         pins = pins or []
 
         def _align_box(i0, i1, j0, j1, box_anchors):
@@ -686,15 +686,15 @@ class BilingualAligner:
             cursor_i, cursor_j = i0, j0
             for ai, aj in box_anchors:
                 matches.extend(
-                    self._align_pool(en_sentences, ru_sentences, cursor_i, ai, cursor_j, aj)
+                    self._align_pool(a_sentences, b_sentences, cursor_i, ai, cursor_j, aj)
                 )
                 matches.append(
-                    self._match(en_sentences, ru_sentences, ai, aj, 1, 1, float(sim[ai, aj]))
+                    self._match(a_sentences, b_sentences, ai, aj, 1, 1, float(sim[ai, aj]))
                 )
                 cursor_i = ai + 1
                 cursor_j = aj + 1
             matches.extend(
-                self._align_pool(en_sentences, ru_sentences, cursor_i, i1, cursor_j, j1)
+                self._align_pool(a_sentences, b_sentences, cursor_i, i1, cursor_j, j1)
             )
             return matches
 
@@ -706,29 +706,29 @@ class BilingualAligner:
             in_gap = [
                 (ai, aj)
                 for ai, aj in anchors
-                if i0 <= ai < pin["en_start"] and j0 <= aj < pin["ru_start"]
+                if i0 <= ai < pin["a_start"] and j0 <= aj < pin["b_start"]
             ]
-            matches.extend(_align_box(i0, pin["en_start"], j0, pin["ru_start"], in_gap))
+            matches.extend(_align_box(i0, pin["a_start"], j0, pin["b_start"], in_gap))
             matches.append(
                 self._match(
-                    en_sentences,
-                    ru_sentences,
-                    pin["en_start"],
-                    pin["ru_start"],
-                    pin["en_end"] - pin["en_start"],
-                    pin["ru_end"] - pin["ru_start"],
+                    a_sentences,
+                    b_sentences,
+                    pin["a_start"],
+                    pin["b_start"],
+                    pin["a_end"] - pin["a_start"],
+                    pin["b_end"] - pin["b_start"],
                     1.0,
                 )
             )
-            i0 = pin["en_end"]
-            j0 = pin["ru_end"]
+            i0 = pin["a_end"]
+            j0 = pin["b_end"]
 
         in_tail = [(ai, aj) for ai, aj in anchors if i0 <= ai < n and j0 <= aj < m]
         matches.extend(_align_box(i0, n, j0, m, in_tail))
 
         return matches
 
-    def _align_chunk_greedy(self, en_sentences, ru_sentences):
+    def _align_chunk_greedy(self, a_sentences, b_sentences):
         """Anchor-first greedy alignment.
 
         Embeds each sentence exactly once per side, locks confident 1:1
@@ -744,8 +744,8 @@ class BilingualAligner:
         prepass anchor split; its internal anchor_threshold anchors still apply
         inside the slice, banded like every other per-pool match edge.
         """
-        n = len(en_sentences)
-        m = len(ru_sentences)
+        n = len(a_sentences)
+        m = len(b_sentences)
 
         if n == 0 or m == 0:
             return []
@@ -753,8 +753,8 @@ class BilingualAligner:
         k = n / m
         band = self._resolve_band()
 
-        _, en_embs = self._generate_sentence_embeddings(en_sentences)
-        _, ru_embs = self._generate_sentence_embeddings(ru_sentences)
+        _, en_embs = self._generate_sentence_embeddings(a_sentences)
+        _, ru_embs = self._generate_sentence_embeddings(b_sentences)
 
         sim = util.cos_sim(en_embs, ru_embs).cpu().numpy()
 
@@ -765,20 +765,20 @@ class BilingualAligner:
         for ai, aj in self._find_anchors(sim, n, m, self.anchor_threshold, k, band):
             matches.extend(
                 self._align_gap(
-                    en_sentences, ru_sentences, sim, cursor_i, ai, cursor_j, aj, k, band
+                    a_sentences, b_sentences, sim, cursor_i, ai, cursor_j, aj, k, band
                 )
             )
-            matches.append(self._match(en_sentences, ru_sentences, ai, aj, 1, 1, float(sim[ai, aj])))
+            matches.append(self._match(a_sentences, b_sentences, ai, aj, 1, 1, float(sim[ai, aj])))
             cursor_i = ai + 1
             cursor_j = aj + 1
 
         matches.extend(
-            self._align_gap(en_sentences, ru_sentences, sim, cursor_i, n, cursor_j, m, k, band)
+            self._align_gap(a_sentences, b_sentences, sim, cursor_i, n, cursor_j, m, k, band)
         )
 
-        return self._merge_orphans(matches, en_sentences, ru_sentences)
+        return self._merge_orphans(matches, a_sentences, b_sentences)
 
-    def _align_gap(self, en_sentences, ru_sentences, sim, i0, i1, j0, j1, k, band):
+    def _align_gap(self, a_sentences, b_sentences, sim, i0, i1, j0, j1, k, band):
         """Greedily align the sub-slices EN[i0:i1] x RU[j0:j1] (a gap between
         anchors). Never crosses the gap bounds, so anchor pairs stay intact.
         Window combos and skip decisions are confined to the diagonal band.
@@ -788,11 +788,11 @@ class BilingualAligner:
         j = j0
 
         while i < i1 and j < j1:
-            best = self._best_window_pair(en_sentences, ru_sentences, i, i1, j, j1, k, band)
+            best = self._best_window_pair(a_sentences, b_sentences, i, i1, j, j1, k, band)
 
             if best is not None:
                 en_step, ru_step, score = best
-                matches.append(self._match(en_sentences, ru_sentences, i, j, en_step, ru_step, score))
+                matches.append(self._match(a_sentences, b_sentences, i, j, en_step, ru_step, score))
                 i += en_step
                 j += ru_step
                 continue
@@ -804,7 +804,7 @@ class BilingualAligner:
 
         return matches
 
-    def _best_window_pair(self, en_sentences, ru_sentences, i, i1, j, j1, k, band):
+    def _best_window_pair(self, a_sentences, b_sentences, i, i1, j, j1, k, band):
         """Best multi-sentence window pair starting at the cursor, or None.
 
         Ladder search confined to the diagonal band: only (en_step, ru_step)
@@ -838,8 +838,8 @@ class BilingualAligner:
         if not en_steps or not ru_steps:
             return None
 
-        _, en_embs = self._embed_windows(en_sentences, [(i, s) for s in en_steps])
-        _, ru_embs = self._embed_windows(ru_sentences, [(j, s) for s in ru_steps])
+        _, en_embs = self._embed_windows(a_sentences, [(i, s) for s in en_steps])
+        _, ru_embs = self._embed_windows(b_sentences, [(j, s) for s in ru_steps])
 
         sim_block = util.cos_sim(en_embs, ru_embs).cpu().numpy()
 
@@ -907,7 +907,7 @@ class BilingualAligner:
 
         return best_en < best_ru
 
-    def _merge_orphans(self, matches, en_sentences, ru_sentences):
+    def _merge_orphans(self, matches, a_sentences, b_sentences):
         """Fold single-sided orphan runs into the preceding match (greedy only).
 
         The anchor-first pass can lock a 1:1 that is really the head of a
@@ -926,14 +926,14 @@ class BilingualAligner:
         if not matches:
             return matches
 
-        n = len(en_sentences)
-        m = len(ru_sentences)
+        n = len(a_sentences)
+        m = len(b_sentences)
         merged = []
 
         for idx, match in enumerate(matches):
             next_match = matches[idx + 1] if idx + 1 < len(matches) else None
-            gap_en = (next_match["en_start"] if next_match else n) - match["en_end"]
-            gap_ru = (next_match["ru_start"] if next_match else m) - match["ru_end"]
+            gap_en = (next_match["a_start"] if next_match else n) - match["a_end"]
+            gap_ru = (next_match["b_start"] if next_match else m) - match["b_end"]
 
             if gap_en > 0 and gap_ru == 0:
                 side = "en"
@@ -943,8 +943,8 @@ class BilingualAligner:
                 merged.append(match)
                 continue
 
-            en_step = match["en_end"] - match["en_start"]
-            ru_step = match["ru_end"] - match["ru_start"]
+            en_step = match["a_end"] - match["a_start"]
+            ru_step = match["b_end"] - match["b_start"]
 
             # Extending one side of the window is bounded by the orphan run
             # itself and by the window growth ceilings.
@@ -961,17 +961,17 @@ class BilingualAligner:
             en_windows, ru_windows = [], []
             if side == "en":
                 en_windows = [
-                    (match["en_start"], en_step + ext) for ext in range(1, max_ext + 1)
+                    (match["a_start"], en_step + ext) for ext in range(1, max_ext + 1)
                 ]
-                ru_windows = [(match["ru_start"], ru_step)]
+                ru_windows = [(match["b_start"], ru_step)]
             else:
-                en_windows = [(match["en_start"], en_step)]
+                en_windows = [(match["a_start"], en_step)]
                 ru_windows = [
-                    (match["ru_start"], ru_step + ext) for ext in range(1, max_ext + 1)
+                    (match["b_start"], ru_step + ext) for ext in range(1, max_ext + 1)
                 ]
 
-            _, en_embs = self._embed_windows(en_sentences, en_windows)
-            _, ru_embs = self._embed_windows(ru_sentences, ru_windows)
+            _, en_embs = self._embed_windows(a_sentences, en_windows)
+            _, ru_embs = self._embed_windows(b_sentences, ru_windows)
             sim_block = util.cos_sim(en_embs, ru_embs).cpu().numpy()
 
             best_ext, best_score = 0, -float("inf")
@@ -986,10 +986,10 @@ class BilingualAligner:
                 if side == "en":
                     merged.append(
                         self._match(
-                            en_sentences,
-                            ru_sentences,
-                            match["en_start"],
-                            match["ru_start"],
+                            a_sentences,
+                            b_sentences,
+                            match["a_start"],
+                            match["b_start"],
                             en_step + best_ext,
                             ru_step,
                             best_score,
@@ -998,10 +998,10 @@ class BilingualAligner:
                 else:
                     merged.append(
                         self._match(
-                            en_sentences,
-                            ru_sentences,
-                            match["en_start"],
-                            match["ru_start"],
+                            a_sentences,
+                            b_sentences,
+                            match["a_start"],
+                            match["b_start"],
                             en_step,
                             ru_step + best_ext,
                             best_score,
@@ -1012,25 +1012,25 @@ class BilingualAligner:
 
         return merged
 
-    def _match(self, en_sentences, ru_sentences, i, j, en_step, ru_step, score):
+    def _match(self, a_sentences, b_sentences, i, j, en_step, ru_step, score):
         # en_text/ru_text are diagnostic only (align_lists drops them; the PHP
         # side persists the raw stored sentences) — show the normalized form
         # that was actually embedded and scored.
         return {
-            "en_start": i,
-            "en_end": i + en_step,
-            "ru_start": j,
-            "ru_end": j + ru_step,
-            "en_text": _window_text(en_sentences, i, en_step),
-            "ru_text": _window_text(ru_sentences, j, ru_step),
+            "a_start": i,
+            "a_end": i + en_step,
+            "b_start": j,
+            "b_end": j + ru_step,
+            "en_text": _window_text(a_sentences, i, en_step),
+            "ru_text": _window_text(b_sentences, j, ru_step),
             "score": score,
             "en_step": en_step,
             "ru_step": ru_step,
         }
 
-    def _align_chunk(self, en_sentences, ru_sentences):
-        n = len(en_sentences)
-        m = len(ru_sentences)
+    def _align_chunk(self, a_sentences, b_sentences):
+        n = len(a_sentences)
+        m = len(b_sentences)
 
         if n == 0 or m == 0:
             return []
@@ -1040,10 +1040,10 @@ class BilingualAligner:
         # reach the model, and off-band match edges are skipped below.
         k = n / m
         band = self._resolve_band()
-        en_starts, ru_starts = self._in_band_starts(n, m, k, band)
+        a_starts, b_starts = self._in_band_starts(n, m, k, band)
 
-        en_index, en_embs = self._generate_window_embeddings(en_sentences, en_starts)
-        ru_index, ru_embs = self._generate_window_embeddings(ru_sentences, ru_starts)
+        en_index, en_embs = self._generate_window_embeddings(a_sentences, a_starts)
+        ru_index, ru_embs = self._generate_window_embeddings(b_sentences, b_starts)
 
         # One big similarity matrix instead of per-pair cos_sim calls in the DP loop
         sim = util.cos_sim(en_embs, ru_embs).cpu().numpy()
@@ -1128,12 +1128,12 @@ class BilingualAligner:
             else:
                 alignment.append(
                     {
-                        "en_start": prev_i,
-                        "en_end": curr_i,
-                        "ru_start": prev_j,
-                        "ru_end": curr_j,
-                        "en_text": " ".join(en_sentences[prev_i:curr_i]),
-                        "ru_text": " ".join(ru_sentences[prev_j:curr_j]),
+                        "a_start": prev_i,
+                        "a_end": curr_i,
+                        "b_start": prev_j,
+                        "b_end": curr_j,
+                        "en_text": " ".join(a_sentences[prev_i:curr_i]),
+                        "ru_text": " ".join(b_sentences[prev_j:curr_j]),
                         "score": float(sim[en_index[(prev_i, en_step)], ru_index[(prev_j, ru_step)]]),
                         "en_step": en_step,
                         "ru_step": ru_step,
@@ -1146,7 +1146,7 @@ class BilingualAligner:
 
         return alignment
 
-    def _write_results(self, matches, unmatched_ru, unmatched_en, output_path):
+    def _write_results(self, matches, unmatched_b, unmatched_a, output_path):
         with open(output_path, "w", encoding="utf-8") as f:
             for idx, match in enumerate(matches, 1):
                 flag = ""
@@ -1160,23 +1160,23 @@ class BilingualAligner:
                     f"{flag} ---\n"
                 )
                 f.write(
-                    f"EN [{match['en_start'] + 1}-{match['en_end']}]: "
+                    f"EN [{match['a_start'] + 1}-{match['a_end']}]: "
                     f"\"{match['en_text']}\"\n"
                 )
                 f.write(
-                    f"RU [{match['ru_start'] + 1}-{match['ru_end']}]: "
+                    f"RU [{match['b_start'] + 1}-{match['b_end']}]: "
                     f"\"{match['ru_text']}\"\n"
                 )
                 f.write("\n")
 
-            if unmatched_ru:
+            if unmatched_b:
                 f.write("--- Unmatched RU sentences ---\n")
-                for idx, sent in unmatched_ru:
+                for idx, sent in unmatched_b:
                     f.write(f"RU [{idx + 1}]: \"{sent}\"\n")
                 f.write("\n")
 
-            if unmatched_en:
+            if unmatched_a:
                 f.write("--- Unmatched EN sentences ---\n")
-                for idx, sent in unmatched_en:
+                for idx, sent in unmatched_a:
                     f.write(f"EN [{idx + 1}]: \"{sent}\"\n")
                 f.write("\n")

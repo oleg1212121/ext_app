@@ -44,6 +44,9 @@ class LanguageResource extends Resource
                 Toggle::make('is_enabled')
                     ->label('Enabled')
                     ->default(true),
+                Toggle::make('is_interface_enabled')
+                    ->label('Interface language')
+                    ->helperText('Usable as the language the web UI renders in'),
                 TextInput::make('sort_order')
                     ->numeric()
                     ->default(0),
@@ -67,6 +70,12 @@ class LanguageResource extends Resource
                     ->label('Enabled')
                     ->badge()
                     ->color(fn (bool $state): string => $state ? 'success' : 'warning')
+                    ->formatStateUsing(fn (bool $state): string => $state ? 'Yes' : 'No')
+                    ->sortable(),
+                TextColumn::make('is_interface_enabled')
+                    ->label('Interface')
+                    ->badge()
+                    ->color(fn (bool $state): string => $state ? 'success' : 'gray')
                     ->formatStateUsing(fn (bool $state): string => $state ? 'Yes' : 'No')
                     ->sortable(),
                 TextColumn::make('sort_order')

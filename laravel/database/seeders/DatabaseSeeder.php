@@ -14,16 +14,12 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             LanguageSeeder::class,
+            UiStringSeeder::class,
             AiProviderSeeder::class,
             SentenceTypeSeeder::class,
-            // EnEntitySeeder::class,
-            // RuEntitySeeder::class,
-            // EnEntitySentenceSeeder::class,
-            // RuEntitySentenceSeeder::class,
-            // EnRuEntityMatchSeeder::class,
-            // EnRuMeaningMatchSeeder::class,
-            // EnSentenceMeaningMatchSeeder::class,
-            // RuSentenceMeaningMatchSeeder::class,
+            WordClassSeeder::class,
+            TranscriptionTypeSeeder::class,
+            CrosswordDevSeeder::class,
         ]);
     }
 }

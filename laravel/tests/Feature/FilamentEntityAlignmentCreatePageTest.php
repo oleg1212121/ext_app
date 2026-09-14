@@ -1,8 +1,6 @@
 <?php
 
-use App\Filament\Resources\EnRuEntityMatchResource\Pages\CreateEnRuEntityMatch;
-use App\Models\EnEntity;
-use App\Models\RuEntity;
+use App\Filament\Resources\EntityMatchResource\Pages\CreateEntityMatch;
 use App\Models\User;
 use Illuminate\Support\Facades\Bus;
 use Livewire\Livewire;
@@ -10,7 +8,8 @@ use Livewire\Livewire;
 test('filament alignment create page lists entities without signature or sentences', function () {
     $user = User::factory()->create();
 
-    $entity = EnEntity::create([
+    $work = createWork();
+    $entity = createEntity('en', $work, [
         'name' => 'Freshly Created English Entity',
         'description' => null,
         'signature' => null,
@@ -18,53 +17,60 @@ test('filament alignment create page lists entities without signature or sentenc
     ]);
 
     Livewire::actingAs($user)
-        ->test(CreateEnRuEntityMatch::class)
+        ->test(CreateEntityMatch::class)
         ->assertSuccessful()
         ->assertSee($entity->name, false)
-        ->assertSee('Original Text');
+        ->assertSee('First Entity')
+        ->assertSee('Second Entity');
 });
 
-test('creating an alignment persists the chosen original text language', function () {
+test('creating an alignment persists the chosen pair and settings', function () {
     Bus::fake();
 
     $user = User::factory()->create();
-    $enEntity = EnEntity::create(['name' => 'En Original']);
-    $ruEntity = RuEntity::create(['name' => 'Ru Translation']);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'En Original']);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Ru Translation']);
 
     Livewire::actingAs($user)
-        ->test(CreateEnRuEntityMatch::class)
+        ->test(CreateEntityMatch::class)
         ->fillForm([
-            'en_entity_id' => $enEntity->id,
-            'ru_entity_id' => $ruEntity->id,
-            'is_original_en' => 0,
+            'first_entity_id' => $ruEntity->id,
+            'second_entity_id' => $enEntity->id,
+            'chunk_size' => 50,
+            'max_n' => 4,
         ])
         ->call('create');
 
-    $this->assertDatabaseHas('en_ru_entity_matches', [
-        'en_entity_id' => $enEntity->id,
-        'ru_entity_id' => $ruEntity->id,
-        'is_original_en' => false,
+    // The EN entity was created first (lower id), so it is canonicalized to the a side.
+    $this->assertDatabaseHas('entity_matches', [
+        'a_entity_id' => $enEntity->id,
+        'b_entity_id' => $ruEntity->id,
+        'chunk_size' => 50,
+        'max_n' => 4,
     ]);
 });
 
-test('creating an alignment defaults the original text to English', function () {
+test('creating an alignment defaults chunk size and max span', function () {
     Bus::fake();
 
     $user = User::factory()->create();
-    $enEntity = EnEntity::create(['name' => 'En Default']);
-    $ruEntity = RuEntity::create(['name' => 'Ru Default']);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'En Default']);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Ru Default']);
 
     Livewire::actingAs($user)
-        ->test(CreateEnRuEntityMatch::class)
+        ->test(CreateEntityMatch::class)
         ->fillForm([
-            'en_entity_id' => $enEntity->id,
-            'ru_entity_id' => $ruEntity->id,
+            'first_entity_id' => $enEntity->id,
+            'second_entity_id' => $ruEntity->id,
         ])
         ->call('create');
 
-    $this->assertDatabaseHas('en_ru_entity_matches', [
-        'en_entity_id' => $enEntity->id,
-        'ru_entity_id' => $ruEntity->id,
-        'is_original_en' => true,
+    $this->assertDatabaseHas('entity_matches', [
+        'a_entity_id' => $enEntity->id,
+        'b_entity_id' => $ruEntity->id,
+        'chunk_size' => 75,
+        'max_n' => 6,
     ]);
 });

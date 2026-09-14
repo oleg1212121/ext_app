@@ -1,14 +1,10 @@
 <?php
 
 use App\Classes\SparseOrderService;
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
-use App\Models\EnSentenceMeaningMatch;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
-use App\Models\RuSentenceMeaningMatch;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -20,8 +16,9 @@ beforeEach(function () {
 
 function createImportEntities(): array
 {
-    $en = EnEntity::create(['name' => 'Test Book (en)']);
-    $ru = RuEntity::create(['name' => 'Test Book (ru)']);
+    $work = createWork();
+    $en = createEntity('en', $work, ['name' => 'Test Book (en)']);
+    $ru = createEntity('ru', $work, ['name' => 'Test Book (ru)']);
 
     return [$en, $ru];
 }
@@ -52,17 +49,17 @@ it('imports bilingual pairs with meaning matches', function () {
     try {
         $this->artisan('entities:import-sentences', [
             'file' => $path,
-            'en_entity_id' => $en->id,
-            'ru_entity_id' => $ru->id,
+            'first_entity_id' => $en->id,
+            'second_entity_id' => $ru->id,
         ])->assertSuccessful();
 
-        expect(EnEntitySentence::where('en_entity_id', $en->id)->count())->toBe(3)
-            ->and(RuEntitySentence::where('ru_entity_id', $ru->id)->count())->toBe(3)
-            ->and(EnRuMeaningMatch::count())->toBe(3)
-            ->and(EnSentenceMeaningMatch::count())->toBe(3)
-            ->and(RuSentenceMeaningMatch::count())->toBe(3);
+        expect(EntitySentence::where('entity_id', $en->id)->count())->toBe(3)
+            ->and(EntitySentence::where('entity_id', $ru->id)->count())->toBe(3)
+            ->and(MeaningMatch::count())->toBe(3)
+            ->and(SentenceMeaningMatch::where('side', 'a')->count())->toBe(3)
+            ->and(SentenceMeaningMatch::where('side', 'b')->count())->toBe(3);
 
-        $enSentences = EnEntitySentence::where('en_entity_id', $en->id)->orderBy('order')->get();
+        $enSentences = EntitySentence::where('entity_id', $en->id)->orderBy('order')->get();
         expect($enSentences->pluck('content')->all())->toBe([
             'Sentence 1 EN.',
             'Sentence 2 EN.',
@@ -73,24 +70,24 @@ it('imports bilingual pairs with meaning matches', function () {
             SparseOrderService::STRIDE * 2,
         ]);
 
-        $ruSentences = RuEntitySentence::where('ru_entity_id', $ru->id)->orderBy('order')->get();
+        $ruSentences = EntitySentence::where('entity_id', $ru->id)->orderBy('order')->get();
         expect($ruSentences->pluck('content')->all())->toBe([
             'Sentence 1 RU.',
             'Sentence 2 RU.',
             'Sentence 3 RU.',
         ]);
 
-        $entityMatch = EnRuEntityMatch::query()
-            ->where('en_entity_id', $en->id)
-            ->where('ru_entity_id', $ru->id)
+        $entityMatch = EntityMatch::query()
+            ->where('a_entity_id', $en->id)
+            ->where('b_entity_id', $ru->id)
             ->first();
 
         expect($entityMatch)->not->toBeNull()
             ->and($entityMatch->status)->toBe('completed')
             ->and($entityMatch->linked_count)->toBe(3);
 
-        $meaningMatches = EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
+        $meaningMatches = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
             ->orderBy('order')
             ->get();
 
@@ -102,15 +99,17 @@ it('imports bilingual pairs with meaning matches', function () {
             ]);
 
         foreach ($meaningMatches as $index => $meaningMatch) {
-            $enJunction = EnSentenceMeaningMatch::query()
-                ->where('en_ru_meaning_match_id', $meaningMatch->id)
+            $enJunction = SentenceMeaningMatch::query()
+                ->where('meaning_match_id', $meaningMatch->id)
+                ->where('side', 'a')
                 ->first();
-            $ruJunction = RuSentenceMeaningMatch::query()
-                ->where('en_ru_meaning_match_id', $meaningMatch->id)
+            $ruJunction = SentenceMeaningMatch::query()
+                ->where('meaning_match_id', $meaningMatch->id)
+                ->where('side', 'b')
                 ->first();
 
-            expect($enJunction?->en_entity_sentence_id)->toBe($enSentences[$index]->id)
-                ->and($ruJunction?->ru_entity_sentence_id)->toBe($ruSentences[$index]->id);
+            expect($enJunction?->entity_sentence_id)->toBe($enSentences[$index]->id)
+                ->and($ruJunction?->entity_sentence_id)->toBe($ruSentences[$index]->id);
         }
     } finally {
         @unlink($path);
@@ -122,17 +121,17 @@ it('creates entity match when none exists', function () {
     $path = writeTempTextFile("Only EN.\n\nOnly RU.\n");
 
     try {
-        expect(EnRuEntityMatch::count())->toBe(0);
+        expect(EntityMatch::count())->toBe(0);
 
         $this->artisan('entities:import-sentences', [
             'file' => $path,
-            'en_entity_id' => $en->id,
-            'ru_entity_id' => $ru->id,
+            'first_entity_id' => $en->id,
+            'second_entity_id' => $ru->id,
         ])->assertSuccessful();
 
-        expect(EnRuEntityMatch::query()
-            ->where('en_entity_id', $en->id)
-            ->where('ru_entity_id', $ru->id)
+        expect(EntityMatch::query()
+            ->where('a_entity_id', $en->id)
+            ->where('b_entity_id', $ru->id)
             ->exists())->toBeTrue();
     } finally {
         @unlink($path);
@@ -143,39 +142,39 @@ it('replaces existing sentences and meaning matches on re-import', function () {
     [$en, $ru] = createImportEntities();
     $sentenceTypeId = SentenceType::first()->id;
 
-    $enSentence = EnEntitySentence::create([
-        'en_entity_id' => $en->id,
+    $enSentence = EntitySentence::create([
+        'entity_id' => $en->id,
         'sentence_type_id' => $sentenceTypeId,
         'content' => 'Old EN.',
         'order' => 1,
     ]);
-    $ruSentence = RuEntitySentence::create([
-        'ru_entity_id' => $ru->id,
+    $ruSentence = EntitySentence::create([
+        'entity_id' => $ru->id,
         'sentence_type_id' => $sentenceTypeId,
         'content' => 'Old RU.',
         'order' => 1,
     ]);
 
-    $entityMatch = EnRuEntityMatch::create([
-        'en_entity_id' => $en->id,
-        'ru_entity_id' => $ru->id,
+    $entityMatch = createEntityMatch($en, $ru, [
         'status' => 'completed',
     ]);
 
-    $meaningMatch = EnRuMeaningMatch::create([
-        'en_ru_entity_match_id' => $entityMatch->id,
+    $meaningMatch = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id,
         'order' => 0,
         'similarity' => 0.5,
         'alignment_chunk' => 0,
     ]);
 
-    EnSentenceMeaningMatch::create([
-        'en_entity_sentence_id' => $enSentence->id,
-        'en_ru_meaning_match_id' => $meaningMatch->id,
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $enSentence->id,
+        'meaning_match_id' => $meaningMatch->id,
+        'side' => 'a',
     ]);
-    RuSentenceMeaningMatch::create([
-        'ru_entity_sentence_id' => $ruSentence->id,
-        'en_ru_meaning_match_id' => $meaningMatch->id,
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $ruSentence->id,
+        'meaning_match_id' => $meaningMatch->id,
+        'side' => 'b',
     ]);
 
     $path = writeTempTextFile("New EN.\n\nNew RU.\n");
@@ -183,16 +182,15 @@ it('replaces existing sentences and meaning matches on re-import', function () {
     try {
         $this->artisan('entities:import-sentences', [
             'file' => $path,
-            'en_entity_id' => $en->id,
-            'ru_entity_id' => $ru->id,
+            'first_entity_id' => $en->id,
+            'second_entity_id' => $ru->id,
         ])->assertSuccessful();
 
-        expect(EnEntitySentence::where('en_entity_id', $en->id)->count())->toBe(1)
-            ->and(EnEntitySentence::where('en_entity_id', $en->id)->value('content'))->toBe('New EN.')
-            ->and(RuEntitySentence::where('ru_entity_id', $ru->id)->value('content'))->toBe('New RU.')
-            ->and(EnRuMeaningMatch::where('en_ru_entity_match_id', $entityMatch->id)->count())->toBe(1)
-            ->and(EnSentenceMeaningMatch::count())->toBe(1)
-            ->and(RuSentenceMeaningMatch::count())->toBe(1);
+        expect(EntitySentence::where('entity_id', $en->id)->count())->toBe(1)
+            ->and(EntitySentence::where('entity_id', $en->id)->value('content'))->toBe('New EN.')
+            ->and(EntitySentence::where('entity_id', $ru->id)->value('content'))->toBe('New RU.')
+            ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(1)
+            ->and(SentenceMeaningMatch::count())->toBe(2);
     } finally {
         @unlink($path);
     }
@@ -205,8 +203,8 @@ it('fails when entity id is missing', function () {
     try {
         $this->artisan('entities:import-sentences', [
             'file' => $path,
-            'en_entity_id' => 99999,
-            'ru_entity_id' => $ru->id,
+            'first_entity_id' => 99999,
+            'second_entity_id' => $ru->id,
         ])->assertFailed();
     } finally {
         @unlink($path);
@@ -220,12 +218,11 @@ it('fails on malformed file with extra non-empty line between pair', function ()
     try {
         $this->artisan('entities:import-sentences', [
             'file' => $path,
-            'en_entity_id' => $en->id,
-            'ru_entity_id' => $ru->id,
+            'first_entity_id' => $en->id,
+            'second_entity_id' => $ru->id,
         ])->assertFailed();
 
-        expect(EnEntitySentence::count())->toBe(0)
-            ->and(RuEntitySentence::count())->toBe(0);
+        expect(EntitySentence::count())->toBe(0);
     } finally {
         @unlink($path);
     }
@@ -240,12 +237,12 @@ it('imports cyrillic text with utf-8 characters that previously broke preg_split
     try {
         $this->artisan('entities:import-sentences', [
             'file' => $path,
-            'en_entity_id' => $en->id,
-            'ru_entity_id' => $ru->id,
+            'first_entity_id' => $en->id,
+            'second_entity_id' => $ru->id,
         ])->assertSuccessful();
 
-        expect(EnEntitySentence::where('en_entity_id', $en->id)->value('content'))->toBe('I am cheerful.')
-            ->and(RuEntitySentence::where('ru_entity_id', $ru->id)->value('content'))
+        expect(EntitySentence::where('entity_id', $en->id)->value('content'))->toBe('I am cheerful.')
+            ->and(EntitySentence::where('entity_id', $ru->id)->value('content'))
             ->toBe('Ни капли не кривлю душой: я стараюсь подходить к этой теме легко.');
     } finally {
         @unlink($path);
@@ -259,14 +256,14 @@ it('skips whitespace-only separator lines', function () {
     try {
         $this->artisan('entities:import-sentences', [
             'file' => $path,
-            'en_entity_id' => $en->id,
-            'ru_entity_id' => $ru->id,
+            'first_entity_id' => $en->id,
+            'second_entity_id' => $ru->id,
         ])->assertSuccessful();
 
-        expect(EnEntitySentence::where('en_entity_id', $en->id)->count())->toBe(1)
-            ->and(RuEntitySentence::where('ru_entity_id', $ru->id)->count())->toBe(1)
-            ->and(EnEntitySentence::where('en_entity_id', $en->id)->value('content'))->toBe('EN.')
-            ->and(RuEntitySentence::where('ru_entity_id', $ru->id)->value('content'))->toBe('RU.');
+        expect(EntitySentence::where('entity_id', $en->id)->count())->toBe(1)
+            ->and(EntitySentence::where('entity_id', $ru->id)->count())->toBe(1)
+            ->and(EntitySentence::where('entity_id', $en->id)->value('content'))->toBe('EN.')
+            ->and(EntitySentence::where('entity_id', $ru->id)->value('content'))->toBe('RU.');
     } finally {
         @unlink($path);
     }
@@ -279,8 +276,8 @@ it('fails on malformed file with missing russian sentence', function () {
     try {
         $this->artisan('entities:import-sentences', [
             'file' => $path,
-            'en_entity_id' => $en->id,
-            'ru_entity_id' => $ru->id,
+            'first_entity_id' => $en->id,
+            'second_entity_id' => $ru->id,
         ])->assertFailed();
     } finally {
         @unlink($path);

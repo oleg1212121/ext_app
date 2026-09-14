@@ -43,6 +43,7 @@ class ProfileController extends Controller
                 'id' => $language->id,
                 'name' => $language->name,
                 'native_name' => $language->native_name,
+                'is_interface_enabled' => $language->is_interface_enabled,
             ])
             ->all();
 
@@ -50,6 +51,7 @@ class ProfileController extends Controller
             'user' => $request->user(),
             'apiKeyProviders' => $apiKeyProviders,
             'nativeLanguageId' => $request->user()->settings?->native_language_id,
+            'interfaceLanguageId' => $request->user()->settings?->interface_language_id,
             'languages' => $languages,
         ]);
     }
@@ -71,7 +73,7 @@ class ProfileController extends Controller
     }
 
     /**
-     * Update the user's settings (native language).
+     * Update the user's settings (native + interface language).
      */
     public function updateSettings(UpdateUserSettingsRequest $request): RedirectResponse
     {
@@ -79,7 +81,10 @@ class ProfileController extends Controller
 
         $user->settings()->updateOrCreate(
             ['user_id' => $user->id],
-            ['native_language_id' => $request->validated('native_language_id')],
+            [
+                'native_language_id' => $request->validated('native_language_id'),
+                'interface_language_id' => $request->validated('interface_language_id'),
+            ],
         );
 
         return Redirect::route('profile.edit')->with('status', 'settings-updated');

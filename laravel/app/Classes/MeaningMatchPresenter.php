@@ -2,15 +2,20 @@
 
 namespace App\Classes;
 
-use App\Models\EnRuEntityMatch;
-use App\Models\EnRuMeaningMatch;
+use App\Models\EntityMatch;
+use App\Models\MeaningMatch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class MeaningMatchPresenter
 {
     /**
-     * @param  Collection<int, EnRuMeaningMatch>  $meaningMatches
+     * Row per meaning match as [aText, bText] pairs: index 0 is the match's
+     * a side, index 1 the b side, with each side's sentences joined in
+     * document order. Consumers label the columns from the match's entity
+     * languages and flip the pair when reading from the b side.
+     *
+     * @param  Collection<int, MeaningMatch>  $meaningMatches
      * @return list<array{0: string, 1: string}>
      */
     public function toSimulatorRows(Collection $meaningMatches): array
@@ -18,34 +23,31 @@ class MeaningMatchPresenter
         $rows = [];
 
         foreach ($meaningMatches as $meaningMatch) {
-            $enText = $meaningMatch->enSentenceMatches
-                ->map(fn ($match) => [
-                    'order' => $match->enEntitySentence?->order ?? 0,
-                    'content' => $match->enEntitySentence?->content ?? '',
-                ])
-                ->sortBy('order')
-                ->pluck('content')
-                ->filter()
-                ->implode("\n");
-
-            $ruText = $meaningMatch->ruSentenceMatches
-                ->map(fn ($match) => [
-                    'order' => $match->ruEntitySentence?->order ?? 0,
-                    'content' => $match->ruEntitySentence?->content ?? '',
-                ])
-                ->sortBy('order')
-                ->pluck('content')
-                ->filter()
-                ->implode("\n");
-
-            $rows[] = [$enText, $ruText];
+            $rows[] = [
+                $this->sideText($meaningMatch, 'a'),
+                $this->sideText($meaningMatch, 'b'),
+            ];
         }
 
         return $rows;
     }
 
+    private function sideText(MeaningMatch $meaningMatch, string $side): string
+    {
+        return $meaningMatch->sentenceMeaningMatches
+            ->where('side', $side)
+            ->map(fn ($match) => [
+                'order' => $match->entitySentence?->order ?? 0,
+                'content' => $match->entitySentence?->content ?? '',
+            ])
+            ->sortBy('order')
+            ->pluck('content')
+            ->filter()
+            ->implode("\n");
+    }
+
     /**
-     * @param  Collection<int, EnRuMeaningMatch>  $meaningMatches
+     * @param  Collection<int, MeaningMatch>  $meaningMatches
      * @return list<array<string, mixed>>
      */
     public function toDisplayRows(Collection $meaningMatches): array
@@ -54,32 +56,15 @@ class MeaningMatchPresenter
         $colorIndex = 0;
 
         foreach ($meaningMatches as $meaningMatch) {
-            $enItems = $meaningMatch->enSentenceMatches
-                ->map(fn ($match) => [
-                    'order' => $match->enEntitySentence?->order ?? 0,
-                    'content' => $match->enEntitySentence?->content ?? '',
-                ])
-                ->sortBy('order')
-                ->filter(fn (array $item) => $item['content'] !== '')
-                ->values()
-                ->all();
+            $aItems = $this->sideItems($meaningMatch, 'a');
+            $bItems = $this->sideItems($meaningMatch, 'b');
 
-            $ruItems = $meaningMatch->ruSentenceMatches
-                ->map(fn ($match) => [
-                    'order' => $match->ruEntitySentence?->order ?? 0,
-                    'content' => $match->ruEntitySentence?->content ?? '',
-                ])
-                ->sortBy('order')
-                ->filter(fn (array $item) => $item['content'] !== '')
-                ->values()
-                ->all();
-
-            if ($enItems !== [] && $ruItems !== []) {
+            if ($aItems !== [] && $bItems !== []) {
                 $rows[] = [
                     'id' => $meaningMatch->id,
                     'type' => 'match',
-                    'en' => $enItems,
-                    'ru' => $ruItems,
+                    'a' => $aItems,
+                    'b' => $bItems,
                     'similarity' => round((float) $meaningMatch->similarity, 4),
                     'color_index' => $colorIndex % 6,
                 ];
@@ -88,11 +73,11 @@ class MeaningMatchPresenter
                 continue;
             }
 
-            if ($enItems !== []) {
+            if ($aItems !== []) {
                 $rows[] = [
-                    'type' => 'skip_en',
-                    'en' => $enItems,
-                    'ru' => [],
+                    'type' => 'skip_a',
+                    'a' => $aItems,
+                    'b' => [],
                     'similarity' => null,
                     'color_index' => -1,
                 ];
@@ -100,11 +85,11 @@ class MeaningMatchPresenter
                 continue;
             }
 
-            if ($ruItems !== []) {
+            if ($bItems !== []) {
                 $rows[] = [
-                    'type' => 'skip_ru',
-                    'en' => [],
-                    'ru' => $ruItems,
+                    'type' => 'skip_b',
+                    'a' => [],
+                    'b' => $bItems,
                     'similarity' => null,
                     'color_index' => -1,
                 ];
@@ -114,14 +99,28 @@ class MeaningMatchPresenter
         return $rows;
     }
 
-    public function meaningMatchesQuery(EnRuEntityMatch $entityMatch): Builder
+    /**
+     * @return list<array{order: int, content: string}>
+     */
+    private function sideItems(MeaningMatch $meaningMatch, string $side): array
     {
-        return EnRuMeaningMatch::query()
-            ->where('en_ru_entity_match_id', $entityMatch->id)
-            ->with([
-                'enSentenceMatches.enEntitySentence',
-                'ruSentenceMatches.ruEntitySentence',
+        return $meaningMatch->sentenceMeaningMatches
+            ->where('side', $side)
+            ->map(fn ($match) => [
+                'order' => $match->entitySentence?->order ?? 0,
+                'content' => $match->entitySentence?->content ?? '',
             ])
+            ->sortBy('order')
+            ->filter(fn (array $item): bool => $item['content'] !== '')
+            ->values()
+            ->all();
+    }
+
+    public function meaningMatchesQuery(EntityMatch $entityMatch): Builder
+    {
+        return MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
+            ->with(['sentenceMeaningMatches.entitySentence'])
             ->orderBy('order');
     }
 }

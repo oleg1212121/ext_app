@@ -28,7 +28,13 @@ class Crossword
 
     public $removed = [];
 
-    public function __construct($words)
+    /**
+     * Map of placed word string => dictionary word id, filled by the controller
+     * so the frontend can reference dictionary rows (the complete endpoint).
+     */
+    public $word_ids = [];
+
+    public function __construct($words, ?int $nativeLanguageId = null)
     {
         foreach ($words as $word) {
             if (strlen($word->word) < 2) {
@@ -36,33 +42,19 @@ class Crossword
             }
             $this->words[] = $word->word;
             $this->dictionary[$word->word] = ['definitions' => [], 'translations' => []];
-            foreach ($word->modernDefinitions as $definition) {
-                $def = str_ireplace($word->word, '****', $definition->definition);
-                if ($definition->is_obsolete) {
-                    $this->dictionary[$word->word]['obsolete'][] = '('.$definition->pos.') '.$def;
-                } else {
-                    $this->dictionary[$word->word]['definitions'][] = '('.$definition->pos.') '.$def;
-                }
-            }
-            foreach ($word->translations as $translation) {
-                $this->dictionary[$word->word]['translations'][] = '('.$translation->pos.') '.$translation->translation;
+            foreach ($word->definitions as $definition) {
+                $this->dictionary[$word->word]['definitions'][] = str_ireplace($word->word, '****', $definition->definition);
             }
 
-            foreach ($word->forms as $form) {
-                $this->dictionary[$word->word]['forms'][] = $form->form;
+            $translations = $word->translationWords();
+            if ($nativeLanguageId !== null) {
+                $translations = $translations->sortByDesc(
+                    fn ($translation) => (int) $translation->language_id === $nativeLanguageId,
+                )->values();
             }
-            // if(
-            //     count($this->dictionary[$word->word]['definitions']) == 0 &&
-            //     count($this->dictionary[$word->word]['translations']) == 0
-            // ){
-            //     array_pop($this->words);
-            //     unset($this->dictionary[$word->word]);
-            // } else {
-            //     shuffle($this->dictionary[$word->word]['definitions']);
-            //     shuffle($this->dictionary[$word->word]['translations']);
-            // }
-            // shuffle($this->dictionary[$word->word]['definitions']);
-            // shuffle($this->dictionary[$word->word]['translations']);
+            foreach ($translations as $translation) {
+                $this->dictionary[$word->word]['translations'][] = $translation->word;
+            }
         }
 
     }

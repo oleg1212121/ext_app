@@ -1,105 +1,106 @@
 <?php
 
-use App\Models\EnRuTranslation;
-use App\Models\EnWord;
-use App\Models\EnWordClass;
-use App\Models\RuEnTranslation;
-use App\Models\RuWord;
-use App\Models\RuWordClass;
+use App\Models\Word;
+use App\Models\WordTranslation;
 
 beforeEach(function () {
-    EnWordClass::create(['slug' => 'noun', 'title' => 'Noun', 'description' => 'Test noun']);
-    EnWordClass::create(['slug' => 'verb', 'title' => 'Verb', 'description' => 'Test verb']);
-    EnWordClass::create(['slug' => 'unknown', 'title' => 'Unknown', 'description' => 'Unknown POS']);
-    RuWordClass::create(['slug' => 'noun', 'title' => 'Существительное', 'description' => 'Тест']);
-    RuWordClass::create(['slug' => 'verb', 'title' => 'Глагол', 'description' => 'Тест']);
-    RuWordClass::create(['slug' => 'unknown', 'title' => 'Неизвестно', 'description' => 'Тест']);
+    createWordClasses();
 });
 
 it('links EN to RU words via stored translations', function () {
-    $nounClassId = EnWordClass::where('slug', 'noun')->first()->id;
-    $ruNounClassId = RuWordClass::where('slug', 'noun')->first()->id;
-
-    EnWord::create(['word' => 'cat', 'l_word' => 'cat', 'en_word_class_id' => $nounClassId, 'translations' => ['кошка']]);
-    RuWord::create(['word' => 'кошка', 'l_word' => 'кошка', 'ru_word_class_id' => $ruNounClassId]);
+    $enWord = createWord('en', 'cat', 'noun', ['translations' => ['кошка']]);
+    $ruWord = createWord('ru', 'кошка', 'noun');
 
     $this->artisan('wiktionary:link-translations')
         ->assertExitCode(0);
 
-    expect(EnRuTranslation::count())->toBe(1);
-    expect(RuEnTranslation::count())->toBe(0);
+    expect(WordTranslation::count())->toBe(1)
+        ->and(WordTranslation::where('word_a_id', min($enWord->id, $ruWord->id))->where('word_b_id', max($enWord->id, $ruWord->id))->exists())->toBeTrue();
 });
 
 it('strips stress marks when matching RU words', function () {
-    $nounClassId = EnWordClass::where('slug', 'noun')->first()->id;
-    $ruNounClassId = RuWordClass::where('slug', 'noun')->first()->id;
-
     // EN word has translation with stress mark (combining acute accent U+0301)
-    EnWord::create(['word' => 'house', 'l_word' => 'house', 'en_word_class_id' => $nounClassId, 'translations' => ["до\xCC\x81м"]]);
+    createWord('en', 'house', 'noun', ['translations' => ["до\xCC\x81м"]]);
     // RU word is stored without stress mark
-    RuWord::create(['word' => 'дом', 'l_word' => 'дом', 'ru_word_class_id' => $ruNounClassId]);
+    createWord('ru', 'дом', 'noun');
 
     $this->artisan('wiktionary:link-translations')
         ->assertExitCode(0);
 
-    expect(EnRuTranslation::count())->toBe(1);
+    expect(WordTranslation::count())->toBe(1);
 });
 
 it('matches by same POS only', function () {
-    $nounClassId = EnWordClass::where('slug', 'noun')->first()->id;
-    $verbClassId = EnWordClass::where('slug', 'verb')->first()->id;
-    $ruNounClassId = RuWordClass::where('slug', 'noun')->first()->id;
-    $ruVerbClassId = RuWordClass::where('slug', 'verb')->first()->id;
-
     // EN noun 'run' translates to RU noun 'бег'
-    EnWord::create(['word' => 'run', 'l_word' => 'run', 'en_word_class_id' => $nounClassId, 'translations' => ['бег']]);
+    $enWord = createWord('en', 'run', 'noun', ['translations' => ['бег']]);
     // RU noun 'бег' exists
-    RuWord::create(['word' => 'бег', 'l_word' => 'бег', 'ru_word_class_id' => $ruNounClassId]);
+    $noun = createWord('ru', 'бег', 'noun');
     // RU verb 'бежать' also exists
-    RuWord::create(['word' => 'бежать', 'l_word' => 'бежать', 'ru_word_class_id' => $ruVerbClassId]);
+    createWord('ru', 'бежать', 'verb');
 
     $this->artisan('wiktionary:link-translations')
         ->assertExitCode(0);
 
-    $link = EnRuTranslation::first();
-    expect($link->ru_word_id)->toBe(RuWord::where('word', 'бег')->first()->id);
+    expect(WordTranslation::count())->toBe(1)
+        ->and($enWord->translationWords()->pluck('id'))->toContain($noun->id)
+        ->and($enWord->translationWords()->pluck('id'))->not->toContain(
+            Word::query()->where('word', 'бежать')->value('id'),
+        );
 });
 
 it('skips unmatched translations', function () {
-    $nounClassId = EnWordClass::where('slug', 'noun')->first()->id;
-
-    EnWord::create(['word' => 'test', 'l_word' => 'test', 'en_word_class_id' => $nounClassId, 'translations' => ['несуществующееслово']]);
+    createWord('en', 'test', 'noun', ['translations' => ['несуществующееслово']]);
+    createWord('ru', 'слово', 'noun');
 
     $this->artisan('wiktionary:link-translations')
         ->assertExitCode(0);
 
-    expect(EnRuTranslation::count())->toBe(0);
+    expect(WordTranslation::count())->toBe(0);
 });
 
 it('links RU to EN words via stored translations', function () {
-    $nounClassId = EnWordClass::where('slug', 'noun')->first()->id;
-    $ruNounClassId = RuWordClass::where('slug', 'noun')->first()->id;
-
-    EnWord::create(['word' => 'cat', 'l_word' => 'cat', 'en_word_class_id' => $nounClassId]);
-    RuWord::create(['word' => 'кошка', 'l_word' => 'кошка', 'ru_word_class_id' => $ruNounClassId, 'translations' => ['cat']]);
+    $enWord = createWord('en', 'cat', 'noun');
+    $ruWord = createWord('ru', 'кошка', 'noun', ['translations' => ['cat']]);
 
     $this->artisan('wiktionary:link-translations')
         ->assertExitCode(0);
 
-    expect(RuEnTranslation::count())->toBe(1);
-    expect(EnRuTranslation::count())->toBe(0);
+    expect(WordTranslation::count())->toBe(1)
+        ->and(WordTranslation::where('word_a_id', min($enWord->id, $ruWord->id))->where('word_b_id', max($enWord->id, $ruWord->id))->exists())->toBeTrue();
 });
 
-it('creates both directions when both have translations', function () {
-    $nounClassId = EnWordClass::where('slug', 'noun')->first()->id;
-    $ruNounClassId = RuWordClass::where('slug', 'noun')->first()->id;
-
-    EnWord::create(['word' => 'cat', 'l_word' => 'cat', 'en_word_class_id' => $nounClassId, 'translations' => ['кошка']]);
-    RuWord::create(['word' => 'кошка', 'l_word' => 'кошка', 'ru_word_class_id' => $ruNounClassId, 'translations' => ['cat']]);
+it('creates a single canonical row when both words stage each other', function () {
+    $enWord = createWord('en', 'cat', 'noun', ['translations' => ['кошка']]);
+    $ruWord = createWord('ru', 'кошка', 'noun', ['translations' => ['cat']]);
 
     $this->artisan('wiktionary:link-translations')
         ->assertExitCode(0);
 
-    expect(EnRuTranslation::count())->toBe(1);
-    expect(RuEnTranslation::count())->toBe(1);
+    expect(WordTranslation::count())->toBe(1)
+        ->and(WordTranslation::where('word_a_id', min($enWord->id, $ruWord->id))->where('word_b_id', max($enWord->id, $ruWord->id))->exists())->toBeTrue();
+});
+
+it('is idempotent on re-run and never duplicates manual links', function () {
+    $enWord = createWord('en', 'cat', 'noun', ['translations' => ['кошка']]);
+    $ruWord = createWord('ru', 'кошка', 'noun');
+
+    // A manual link created before the run — same pair the linker would find.
+    WordTranslation::link($enWord->id, $ruWord->id);
+
+    $this->artisan('wiktionary:link-translations')->assertExitCode(0);
+    $this->artisan('wiktionary:link-translations')->assertExitCode(0);
+
+    expect(WordTranslation::count())->toBe(1);
+});
+
+it('links symmetrically from the manual helper regardless of argument order', function () {
+    $enWord = createWord('en', 'cat', 'noun');
+    $ruWord = createWord('ru', 'кошка', 'noun');
+
+    $link = WordTranslation::link($ruWord->id, $enWord->id);
+
+    expect($link->wasRecentlyCreated)->toBeTrue()
+        ->and($link->word_a_id)->toBe(min($enWord->id, $ruWord->id))
+        ->and($link->word_b_id)->toBe(max($enWord->id, $ruWord->id))
+        ->and(WordTranslation::count())->toBe(1);
 });

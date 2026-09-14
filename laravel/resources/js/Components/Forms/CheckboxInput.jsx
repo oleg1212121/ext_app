@@ -1,10 +1,11 @@
 import {Checkbox as FlowbiteCheckbox} from "flowbite-react";
 
-export default function CheckboxInput({label, id, className, children}) {
+export default function CheckboxInput({label, id, className, children, ...rest}) {
     return (
         <>
             <FlowbiteCheckbox
                 id={id}
+                {...rest}
                 className={[
                     'cursor-pointer rounded-sm',
                     'border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]',

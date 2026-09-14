@@ -4,8 +4,8 @@ import RightPanel from './Components/RightPanel';
 import UnsolvedModal from './Components/UnsolvedModal';
 import {useCrossword} from './useCrossword';
 
-export default function CrosswordApp({lang = 'en', texts = []}) {
-    const crosswordState = useCrossword({lang, texts});
+export default function CrosswordApp({works = [], languages = [], levels = []}) {
+    const crosswordState = useCrossword({works, languages, levels});
 
     return (
         <div
@@ -20,10 +20,12 @@ export default function CrosswordApp({lang = 'en', texts = []}) {
             />
 
             <CrosswordHeader
-                lang={lang}
-                texts={crosswordState.texts}
-                currentText={crosswordState.currentText}
-                setCurrentText={crosswordState.setCurrentText}
+                works={crosswordState.works}
+                languages={crosswordState.languages}
+                languageFilter={crosswordState.languageFilter}
+                setLanguageFilter={crosswordState.setLanguageFilter}
+                currentEntity={crosswordState.currentEntity}
+                setCurrentEntity={crosswordState.setCurrentEntity}
                 wordLevels={crosswordState.wordLevels}
                 currentLevel={crosswordState.currentLevel}
                 setCurrentLevel={crosswordState.setCurrentLevel}
@@ -49,13 +51,7 @@ export default function CrosswordApp({lang = 'en', texts = []}) {
                     currentTab={crosswordState.currentTab}
                     setCurrentTab={crosswordState.setCurrentTab}
                     definitions={crosswordState.definitions}
-                    obsolete={crosswordState.obsolete}
                     translations={crosswordState.translations}
-                    forms={crosswordState.forms}
-                    onCheckImage={crosswordState.handleCheckImage}
-                    onAskAi={crosswordState.handleAskAi}
-                    onAcknowledge={crosswordState.handleAcknowledge}
-                    onDismiss={crosswordState.handleDismiss}
                     onShowUnsolved={() => crosswordState.setShowUnsolvedModal(true)}
                     onStartDrag={crosswordState.startDragRightPanel}
                 />

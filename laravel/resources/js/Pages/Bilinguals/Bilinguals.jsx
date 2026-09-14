@@ -8,12 +8,12 @@ import Button from "../../Components/Forms/Button.jsx";
 import Workplace from "./Components/Workplace.jsx";
 import AI from "./Components/AI.jsx";
 import TextContent from "./Components/TextContent.jsx";
-import { marked } from 'marked';
+import {useI18n} from '../../i18n';
+import {getCsrfToken} from '../../lib/http';
+import {loadPositions, savePositions} from '../../lib/simulatorPosition';
+import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
+import {marked} from 'marked';
 import DOMPurify from 'dompurify';
-
-function getCsrfToken() {
-    return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
-}
 
 marked.setOptions({breaks: true, gfm: true});
 
@@ -156,7 +156,7 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
     const token = getCsrfToken();
     const isAlignmentRunId = /^\d+$/.test(String(filename ?? ''));
     const body = isAlignmentRunId
-        ? {en_ru_entity_match_id: parseInt(String(filename), 10), page, per_page: perPage}
+        ? {entity_match_id: parseInt(String(filename), 10), page, per_page: perPage}
         : {filename, page, per_page: perPage};
     const res = await fetch('/text', {
         method: 'POST',
@@ -170,12 +170,13 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
     const json = await res.json();
     const code = json?.data?.code ?? res.status;
     if (!res.ok || code !== 200) {
-        const msg = json?.data?.data?.error ?? json?.message ?? `Request failed (${res.status})`;
+        const msg = json?.data?.data?.error ?? json?.message ?? t('bilinguals.request_failed', {status: res.status});
         throw new Error(msg);
     }
     const payload = json.data.data;
     return {
         rows: payload.rows ?? [],
+        wordMaps: payload.word_maps ?? null,
         meta: payload.meta ?? {
             current_page: page,
             per_page: perPage,
@@ -187,15 +188,26 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
 
 
 const Bilinguals = (props) => {
+    const { t } = useI18n();
     const aiModels = props.aiModels
     const canUseAi = props.canUseAi
     const textList = props.textList
     const errors = props.errors
+
+    const initialPositions = loadPositions();
+    const savedTextExists = initialPositions.currentText != null
+        && textList.some((item) => String(item.id) === String(initialPositions.currentText));
+    const initialText = savedTextExists ? String(initialPositions.currentText) : props.currentText;
+    const initialSaved = savedTextExists
+        ? (initialPositions.alignments?.[String(initialPositions.currentText)] ?? null)
+        : null;
+
     let [showWorkplace, setShowWorkplace] = React.useState(props.showWorkplace)
     let [showQuestion, setShowQuestion] = React.useState(props.showQuestion)
     let [showText, setShowText] = React.useState(props.showText)
     let [showAI, setShowAI] = React.useState(props.showAI)
-    let [currentText, setCurrentText] = React.useState(props.currentText)
+    let [highlightWords, setHighlightWords] = React.useState(props.highlightWords ?? true)
+    let [currentText, setCurrentText] = React.useState(initialText)
     let [currentModel, setCurrentModel] = React.useState(props.currentModel)
     let [currentQuestion, setCurrentQuestion] = React.useState(props.currentQuestion)
     const [pending, setPending] = React.useState(false);
@@ -207,10 +219,33 @@ const Bilinguals = (props) => {
     const pendingWorkplaceFocusRef = React.useRef(false);
 
     const [rows, setRows] = React.useState([]);
+    const [wordMaps, setWordMaps] = React.useState(null);
     const [textMeta, setTextMeta] = React.useState(null);
-    const [textPage, setTextPage] = React.useState(1);
+    const [textPage, setTextPage] = React.useState(initialSaved?.page ?? 1);
     const [loadError, setLoadError] = React.useState(null);
-    const [fontSize, setFontSize] = React.useState(DEFAULT_FONT_SIZE);
+    const [fontSize, setFontSize] = React.useState(props.fontSize ?? DEFAULT_FONT_SIZE);
+    const [aiPanelWidth, setAiPanelWidth] = React.useState(props.aiPanelWidth ?? 560);
+    const [workplaceHeight, setWorkplaceHeight] = React.useState(props.workplaceHeight ?? 168);
+    const [checkedRows, setCheckedRows] = React.useState(
+        () => initialSaved?.row
+            ? {[initialSaved.row.n]: {en: !!initialSaved.row.en, ru: !!initialSaved.row.ru}}
+            : {}
+    );
+    const pendingScrollRowRef = React.useRef(null);
+    const initialLoadDoneRef = React.useRef(false);
+
+    useUiSettingsAutosave('simulator', {
+        font_size: fontSize,
+        show_text: showText,
+        show_workplace: showWorkplace,
+        show_question: showQuestion,
+        show_ai: showAI,
+        highlight_words: highlightWords,
+        model: currentModel,
+        question: currentQuestion,
+        ai_panel_width: aiPanelWidth,
+        workplace_height: workplaceHeight,
+    });
 
     const changeFontSize = (direction) => {
         setFontSize((prev) => {
@@ -225,6 +260,17 @@ const Bilinguals = (props) => {
         updateResizeableFontStyles(fontSize);
     }, [fontSize]);
 
+    const persistPage = React.useCallback((page) => {
+        const positions = loadPositions();
+        positions.currentText = String(currentText);
+        positions.alignments = {
+            ...(positions.alignments ?? {}),
+            [String(currentText)]: {...(positions.alignments?.[String(currentText)] ?? {}), page},
+        };
+        savePositions(positions);
+        return positions;
+    }, [currentText]);
+
     const fetchPage = React.useCallback(async (page) => {
         if (!currentText) {
             return;
@@ -232,23 +278,96 @@ const Bilinguals = (props) => {
         setLoadError(null);
         setPending(true);
         try {
-            const {rows: nextRows, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
+            const {rows: nextRows, wordMaps: nextWordMaps, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
             setRows(nextRows);
+            setWordMaps(nextWordMaps);
             setTextMeta(meta);
             setTextPage(meta.current_page ?? page);
+            const positions = persistPage(meta.current_page ?? page);
+            setCheckedRows({});
+            const saved = positions.alignments?.[String(currentText)]?.row;
+            const pageStart = ((meta.current_page ?? page) - 1) * (meta.per_page ?? DEFAULT_PER_PAGE);
+            if (saved && saved.n > pageStart && saved.n <= pageStart + (meta.per_page ?? DEFAULT_PER_PAGE)) {
+                setCheckedRows({[saved.n]: {en: !!saved.en, ru: !!saved.ru}});
+                pendingScrollRowRef.current = saved.n;
+            }
         } catch (e) {
             setRows([]);
+            setWordMaps(null);
             setTextMeta(null);
-            setLoadError(e instanceof Error ? e.message : 'Failed to load text');
+            setLoadError(e instanceof Error ? e.message : t('bilinguals.failed_to_load_text'));
         } finally {
             setPending(false);
         }
-    }, [currentText]);
+    }, [currentText, persistPage]);
+
+    // Word progress changed in a popup: recolor the word on both sides.
+    const handleWordProgress = React.useCallback((key, status) => {
+        setWordMaps((maps) => {
+            if (!maps) {
+                return maps;
+            }
+            const apply = (side) => (maps[side]?.[key] ? {...maps[side], [key]: {...maps[side][key], s: status}} : maps[side]);
+            return {...maps, a: apply('a'), b: apply('b')};
+        });
+    }, []);
+
+    React.useEffect(() => {
+        if (rows.length > 0 && pendingScrollRowRef.current !== null) {
+            const el = document.getElementById(`simulator-row-${pendingScrollRowRef.current}`);
+            el?.scrollIntoView({block: 'center'});
+            pendingScrollRowRef.current = null;
+        }
+    }, [rows]);
+
+    React.useEffect(() => {
+        if (currentText && !initialLoadDoneRef.current) {
+            initialLoadDoneRef.current = true;
+            pendingScrollRowRef.current = initialSaved?.row?.n ?? null;
+            fetchPage(initialSaved?.page ?? 1);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleLoadText = React.useCallback(() => {
-        setTextPage(1);
-        return fetchPage(1);
-    }, [fetchPage]);
+        const saved = loadPositions().alignments?.[String(currentText)] ?? null;
+        const page = saved?.page ?? 1;
+        setTextPage(page);
+        if (saved?.row) {
+            setCheckedRows({[saved.row.n]: {en: !!saved.row.en, ru: !!saved.row.ru}});
+            pendingScrollRowRef.current = saved.row.n;
+        } else {
+            setCheckedRows({});
+        }
+        return fetchPage(page);
+    }, [fetchPage, currentText]);
+
+    const changeText = (event) => {
+        const value = event.target.value;
+        setCurrentText(value);
+        const positions = loadPositions();
+        positions.currentText = String(value);
+        savePositions(positions);
+    };
+
+    const onToggleRow = (n, side) => {
+        setCheckedRows((prev) => {
+            const rowState = {...(prev[n] ?? {en: false, ru: false}), [side]: !(prev[n]?.[side])};
+            const next = {...prev, [n]: rowState};
+            const open = rowState.en || rowState.ru;
+            const positions = loadPositions();
+            const key = String(currentText);
+            positions.alignments = {
+                ...(positions.alignments ?? {}),
+                [key]: {
+                    ...(positions.alignments?.[key] ?? {}),
+                    row: open ? {n, en: rowState.en, ru: rowState.ru} : null,
+                },
+            };
+            savePositions(positions);
+            return next;
+        });
+    };
 
     const goToPage = React.useCallback(() => {
         if (!textMeta || pending) {
@@ -312,7 +431,7 @@ const Bilinguals = (props) => {
 
             if (!res.ok) {
                 const json = await res.json().catch(() => null);
-                throw new Error(json?.data?.data?.error ?? json?.message ?? `Request failed (${res.status})`);
+                throw new Error(json?.data?.data?.error ?? json?.message ?? t('bilinguals.request_failed', {status: res.status}));
             }
 
             const reader = res.body.getReader();
@@ -356,7 +475,7 @@ const Bilinguals = (props) => {
             setAiAnswer(renderMarkdown(markdown));
         } catch (e) {
             if (markdown) setAiAnswer(renderMarkdown(markdown));
-            setAiError(e instanceof Error ? e.message : "Couldn't reach the model.");
+            setAiError(e instanceof Error ? e.message : t('bilinguals.couldnt_reach_model'));
         } finally {
             setPending(false);
         }
@@ -397,7 +516,7 @@ const Bilinguals = (props) => {
             <div className="flex-none border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]">
                 <div className="flex flex-1 flex-wrap items-center gap-3 px-4 sm:px-5 py-2">
                     <span className="font-[var(--wbench-mono)] text-[11px] tracking-[0.22em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] whitespace-nowrap">
-                        Bilinguals <span className="text-[var(--wbench-rule)] dark:text-[var(--wbench-rule-night)]">·</span> en&nbsp;↔&nbsp;ru
+                        {t('bilinguals.title')} <span className="text-[var(--wbench-rule)] dark:text-[var(--wbench-rule-night)]">·</span> en&nbsp;↔&nbsp;ru
                     </span>
                     <span className={HAIRLINE} aria-hidden="true"/>
                     {Object.keys(aiModels).length > 0 ? (
@@ -408,27 +527,27 @@ const Bilinguals = (props) => {
                             href="/profile"
                             className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
                         >
-                            Add an API key in your Profile to use the AI assistant.
+                            {t('bilinguals.add_api_key')}
                         </Link>
                     )}
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div className="flex items-center gap-2">
-                        <Select value={currentText} onChange={(e) => setCurrentText(e.target.value)}
+                        <Select value={currentText} onChange={changeText}
                                 items={textList}/>
-                        <Button color="green" onClick={() => handleLoadText()} type='button'>Load</Button>
+                                <Button color="green" onClick={() => handleLoadText()} type='button'>{t('bilinguals.load')}</Button>
                     </div>
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div className="flex items-center gap-1">
-                        <FontButton aria-label="Increase font size" onClick={() => changeFontSize('+')}>+</FontButton>
-                        <FontButton aria-label="Decrease font size" onClick={() => changeFontSize('-')}>−</FontButton>
+                        <FontButton aria-label={t('bilinguals.increase_font_size')} label={t('bilinguals.increase_font_size')} onClick={() => changeFontSize('+')}>+</FontButton>
+                        <FontButton aria-label={t('bilinguals.decrease_font_size')} label={t('bilinguals.decrease_font_size')} onClick={() => changeFontSize('-')}>−</FontButton>
                     </div>
                     <div className="ml-auto flex items-end gap-0.5 border-b border-transparent">
                         <button
                             type="button"
                             className={tabClass(showText)}
-                            aria-label="Text"
+                            aria-label={t('bilinguals.text')}
                             aria-pressed={showText}
-                            title="Text"
+                            title={t('bilinguals.text')}
                             onClick={() => setShowText(!showText)}
                         >
                             <svg className={panelToggleIconClass(showText)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -439,9 +558,9 @@ const Bilinguals = (props) => {
                         <button
                             type="button"
                             className={tabClass(showWorkplace)}
-                            aria-label="Workplace"
+                            aria-label={t('bilinguals.workplace')}
                             aria-pressed={showWorkplace}
-                            title="Workplace"
+                            title={t('bilinguals.workplace')}
                             onClick={() => setShowWorkplace(!showWorkplace)}
                         >
                             <svg className={panelToggleIconClass(showWorkplace)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -453,9 +572,9 @@ const Bilinguals = (props) => {
                             <button
                                 type="button"
                                 className={tabClass(showQuestion)}
-                                aria-label="Question"
+                                aria-label={t('bilinguals.question')}
                                 aria-pressed={showQuestion}
-                                title="Question"
+                                title={t('bilinguals.question')}
                                 onClick={() => setShowQuestion(!showQuestion)}
                             >
                                 <svg className={panelToggleIconClass(showQuestion)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -464,13 +583,26 @@ const Bilinguals = (props) => {
                                 <Underline isActive={showQuestion}/>
                             </button>
                         )}
+                        <button
+                            type="button"
+                            className={tabClass(highlightWords)}
+                            aria-label={t('bilinguals.highlight_words')}
+                            aria-pressed={highlightWords}
+                            title={t('bilinguals.highlight_words')}
+                            onClick={() => setHighlightWords(!highlightWords)}
+                        >
+                            <svg className={panelToggleIconClass(highlightWords)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m14.613 3.514 5.873 5.874a1 1 0 0 1 0 1.414l-7.172 7.172a1 1 0 0 1-.707.293H8.414a1 1 0 0 1-.707-.293L2.939 13.2a1 1 0 0 1 0-1.414L10.2 4.46a1 1 0 0 1 1.414 0Zm-2.6 11.5L19.5 7.5m-13 13H20"/>
+                            </svg>
+                            <Underline isActive={highlightWords}/>
+                        </button>
                         {canUseAi && (
                             <button
                                 type="button"
                                 className={tabClass(showAI)}
-                                aria-label="AI"
+                                aria-label={t('bilinguals.ai')}
                                 aria-pressed={showAI}
-                                title="AI"
+                                title={t('bilinguals.ai')}
                                 onClick={() => setShowAI(!showAI)}
                             >
                                 <svg className={panelToggleIconClass(showAI)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -494,12 +626,12 @@ const Bilinguals = (props) => {
                                         <span className="text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">{textMeta.current_page}</span>
                                         <span className="mx-1 opacity-50">/</span>
                                         {textMeta.last_page}
-                                        <span className="ml-3 opacity-60">· {textMeta.total} rows</span>
+                                        <span className="ml-3 opacity-60">{t('bilinguals.rows_count', {total: textMeta.total})}</span>
                                     </span>
                                     <div className="flex items-center gap-2">
                                         <Button color="dark" size="xs" outline type="button"
                                                 disabled={textMeta.current_page <= 1 || pending}
-                                                onClick={() => fetchPage(textMeta.current_page - 1)}>Previous</Button>
+                                                onClick={() => fetchPage(textMeta.current_page - 1)}>{t('bilinguals.previous')}</Button>
                                         <input
                                             type="number"
                                             min={1}
@@ -513,24 +645,24 @@ const Bilinguals = (props) => {
                                                 }
                                             }}
                                             disabled={pending}
-                                            aria-label="Page number"
+                                            aria-label={t('bilinguals.page_number')}
                                             className="w-14 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 py-1 text-center font-[var(--wbench-mono)] text-xs text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
                                         />
                                         <Button color="dark" size="xs" outline type="button"
                                                 disabled={textMeta.current_page >= textMeta.last_page || pending}
-                                                onClick={() => fetchPage(textMeta.current_page + 1)}>Next</Button>
+                                                onClick={() => fetchPage(textMeta.current_page + 1)}>{t('bilinguals.next')}</Button>
                                     </div>
                                 </div>
                             )}
-                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi}/>
+                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow} wordMaps={wordMaps} highlightWords={highlightWords} onWordProgress={handleWordProgress}/>
                         </>
                     }
                     {showWorkplace === true &&
-                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)} canUseAi={canUseAi}/>
+                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)} canUseAi={canUseAi} height={workplaceHeight} onHeightChange={setWorkplaceHeight}/>
                     }
                 </div>
                 {showAI === true &&
-                    <AI aiAnswer={aiAnswer} pending={pending} aiError={aiError} onRetry={retryAsk}/>
+                    <AI aiAnswer={aiAnswer} pending={pending} aiError={aiError} onRetry={retryAsk} width={aiPanelWidth} onWidthChange={setAiPanelWidth}/>
                 }
             </div>
         </div>

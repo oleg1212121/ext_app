@@ -1,10 +1,11 @@
 ---
 type: Playbook
 title: Importing Dictionary Data
-description: How to import Kaikki/Wiktionary dumps into the EN/RU dictionary tables and link translations.
+description: How to import Kaikki/Wiktionary dumps into the unified language-keyed dictionary tables and link translations.
 tags: [dictionary, import, wiktionary, kaikki]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-08-16T15:35:00Z }
+stale_after: 2026-12-10
+generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -13,20 +14,20 @@ sources:
     resource: laravel/app/Console/Commands/LinkTranslationsCommand.php
     title: wiktionary:link-translations command
   - id: kaikki
-    resource: laravel/app/Classes/KaikkiParser.php
-    title: Kaikki JSONL parser
-  - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
-    title: Wiktionary parser
+    title: Kaikki/Wiktionary JSONL parser
 ---
 
 # Overview
 
 Dictionary content comes from [kaikki.org](https://kaikki.org) machine-readable
 Wiktionary dumps (JSONL, one JSON object per line). Import is a two-phase
-process: parse dumps into the mirrored EN/RU tables, then link translations
-between them. Target tables are described in
-[EN/RU Dictionary](/database/en-ru-dictionary.md).
+process: parse dumps into the unified language-keyed tables, then link
+translations between them. Target tables are described in
+[Unified Dictionary](/database/dictionary.md) — one `words` table keyed by
+`language_id` (ADR
+[0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md))
+replaced the old mirrored per-language tables.
 
 # Steps
 
@@ -34,30 +35,49 @@ between them. Target tables are described in
    `ru-wiktionary` extract) onto the host.
 2. Make it visible in the container (anything under `laravel/` is mounted;
    e.g. put it in `laravel/storage/app/`).
-3. Run the import:
+3. Ensure the language exists in the languages registry (Filament
+   `/admin` → Languages, or the seeder). `--lang`/`--target-lang` accept
+   any registry code; `is_enabled` is not required for import.
+4. Run the import:
 
    ```bash
-   docker exec ext_app_laravel php artisan wiktionary:import storage/app/<file>.jsonl
+   docker exec ext_app_laravel php artisan wiktionary:import storage/app/<file>.jsonl --lang=en --target-lang=ru
    ```
 
-   Translations found in the dump are **stored for later linking**, not
-   resolved during import (per the command description).
-4. Link EN↔RU words through the stored translations:
+   `--lang` (source language) fills the unified `words` table and its
+   satellites for that language. Translations found in the dump are
+   **stored for later linking**, not resolved during import (per the
+   command description). Missing per-language lookups are **auto-created**
+   (unseen dump `pos` → word class, unseen sound type → transcription
+   type, slug as placeholder title) — nothing is skipped, and a brand-new
+   language needs no seeders; curate the placeholder titles in `/admin`
+   afterwards.
+5. Link words across languages through the staged translations:
 
    ```bash
    docker exec ext_app_laravel php artisan wiktionary:link-translations
    ```
 
-   Matching strips Russian stress marks (e.g. `приве́т` → `привет`) when
-   pairing words.
-5. Verify in the Filament admin (`/admin`): `EnWord` / `RuWord` resources with
-   relation managers for definitions, pronunciations, translations,
-   etymologies, examples, transcriptions.
+   The command links **every language pair** among languages that have
+   imported words, writing one canonical `word_translations` row per pair
+   (`word_a_id < word_b_id`, ADR 0020). Matching strips Russian stress
+   marks (e.g. `приве́т` → `привет`) when pairing into Russian. Re-runs are
+   idempotent and never duplicate links created by hand in the admin.
+6. Verify in the Filament admin (`/admin`, group "Words"): the `Word`
+   resource with relation managers for definitions, forms, translations,
+   etymologies, examples, transcriptions, pronunciations; the **Word
+   class** and **Transcription type** resources show (and let you edit)
+   the auto-created lookups.
+7. Link what the command could not match by hand: on a word's edit page,
+   the **Translations** tab offers **Attach translation** (pick an existing
+   word in another language) and **Create word & link** (create the missing
+   target word and link it in one step). Links work from either word.
 
 # Notes
 
-* Parsers: `App\Classes\KaikkiParser` (primary) and `WiktionaryParser`, behind
-  `App\Classes\Parser`. Read `ImportWiktionaryCommand` for the exact CLI
+* Parser: `App\Classes\WiktionaryParser` (reads the kaikki.org JSONL format
+  directly — the former separate `KaikkiParser` was folded into it). Read
+  `ImportWiktionaryCommand` for the exact CLI
   signature/options before running large files.
 * Dumps are large; imports are long-running — prefer running via
   `docker exec -d` or in a separate shell, and watch memory.

@@ -1,21 +1,19 @@
 <?php
 
 use App\Jobs\AlignEntitySentences;
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\EnRuEntityMatch;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
+use App\Models\EntityMatch;
+use App\Models\EntitySentence;
 use Illuminate\Support\Facades\Bus;
 
-function createVerifiablePair(string $enName = 'En', string $ruName = 'Ru'): EnRuEntityMatch
+function createVerifiablePair(string $enName = 'En', string $ruName = 'Ru'): EntityMatch
 {
-    $enEntity = EnEntity::create(['name' => $enName, 'signature' => json_encode([1.0, 0.0])]);
-    $ruEntity = RuEntity::create(['name' => $ruName, 'signature' => json_encode([1.0, 0.0])]);
-    EnEntitySentence::create(['en_entity_id' => $enEntity->id, 'content' => 'En 1.', 'order' => 1]);
-    RuEntitySentence::create(['ru_entity_id' => $ruEntity->id, 'content' => 'Ru 1.', 'order' => 1]);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => $enName, 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => $ruName, 'signature' => json_encode([1.0, 0.0])]);
+    EntitySentence::create(['entity_id' => $enEntity->id, 'content' => 'En 1.', 'order' => 1]);
+    EntitySentence::create(['entity_id' => $ruEntity->id, 'content' => 'Ru 1.', 'order' => 1]);
 
-    return EnRuEntityMatch::create(['en_entity_id' => $enEntity->id, 'ru_entity_id' => $ruEntity->id, 'status' => 'pending']);
+    return createEntityMatch($enEntity, $ruEntity, ['status' => 'pending']);
 }
 
 it('picks pending entity matches and dispatches alignment starts', function () {
@@ -59,13 +57,14 @@ it('respects the limit option', function () {
 it('marks verify-failed entity matches as failed and does not dispatch', function () {
     Bus::fake();
 
-    $enEntity = EnEntity::create(['name' => 'En', 'signature' => json_encode([1.0, 0.0])]);
-    $ruEntity = RuEntity::create(['name' => 'Ru', 'signature' => json_encode([0.0, 1.0])]);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'En', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Ru', 'signature' => json_encode([0.0, 1.0])]);
 
-    EnEntitySentence::create(['en_entity_id' => $enEntity->id, 'content' => 'En 1.', 'order' => 1]);
-    RuEntitySentence::create(['ru_entity_id' => $ruEntity->id, 'content' => 'Ru 1.', 'order' => 1]);
+    EntitySentence::create(['entity_id' => $enEntity->id, 'content' => 'En 1.', 'order' => 1]);
+    EntitySentence::create(['entity_id' => $ruEntity->id, 'content' => 'Ru 1.', 'order' => 1]);
 
-    $entityMatch = EnRuEntityMatch::create(['en_entity_id' => $enEntity->id, 'ru_entity_id' => $ruEntity->id, 'status' => 'pending']);
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, ['status' => 'pending']);
 
     $this->artisan('alignments:resume')->assertSuccessful();
 
@@ -84,7 +83,7 @@ it('does nothing in dry-run mode', function () {
 
     $this->artisan('alignments:resume --dry-run')
         ->assertSuccessful()
-        ->expectsOutput("Would resume entity match #{$entityMatch->id} (en_entity_id={$entityMatch->en_entity_id}, ru_entity_id={$entityMatch->ru_entity_id})");
+        ->expectsOutput("Would resume entity match #{$entityMatch->id} (a_entity_id={$entityMatch->a_entity_id}, b_entity_id={$entityMatch->b_entity_id})");
 
     $entityMatch->refresh();
 

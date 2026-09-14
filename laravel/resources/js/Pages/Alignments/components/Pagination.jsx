@@ -1,4 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
+import {useI18n} from '../../../i18n';
 
 function pageItems(current, last) {
     const pages = new Set([1, last]);
@@ -25,6 +26,7 @@ function pageItems(current, last) {
 }
 
 function PerPageSelect({perPageOptions, perPage, busy, onPerPage}) {
+    const {t} = useI18n();
     const [open, setOpen] = useState(false);
     const rootRef = useRef(null);
 
@@ -71,7 +73,7 @@ function PerPageSelect({perPageOptions, perPage, busy, onPerPage}) {
             </button>
 
             {open && (
-                <div role="listbox" aria-label="Rows per page" className="absolute right-0 top-full z-10 mt-1 min-w-14 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] py-0.5 shadow-sm">
+                <div role="listbox" aria-label={t('alignments.rows_per_page')} className="absolute right-0 top-full z-10 mt-1 min-w-14 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] py-0.5 shadow-sm">
                     {perPageOptions.map((n) => (
                         <button
                             key={n}
@@ -100,6 +102,7 @@ function PerPageSelect({perPageOptions, perPage, busy, onPerPage}) {
 }
 
 export default function Pagination({meta, onPage, onPerPage, perPageOptions, busy}) {
+    const {t} = useI18n();
     const {current_page, last_page, total, per_page} = meta;
 
     const pageBtn = (disabled) => [
@@ -123,7 +126,7 @@ export default function Pagination({meta, onPage, onPerPage, perPageOptions, bus
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)] px-3 py-1.5">
             <div className="flex items-center gap-0.5">
                 <button type="button" disabled={busy || current_page <= 1} onClick={() => onPage(current_page - 1)} className={pageBtn(busy || current_page <= 1)}>
-                    ← Prev
+                    {t('alignments.prev')}
                 </button>
 
                 {pageItems(current_page, Math.max(last_page, 1)).map((item, index) => (
@@ -136,7 +139,7 @@ export default function Pagination({meta, onPage, onPerPage, perPageOptions, bus
                             key={item}
                             type="button"
                             aria-current={item === current_page ? 'page' : undefined}
-                            aria-label={`Go to page ${item}`}
+                            aria-label={t('alignments.go_to_page', {page: item})}
                             disabled={busy || item === current_page}
                             onClick={() => onPage(item)}
                             className={pageNumberBtn(item, busy || item === current_page)}
@@ -147,19 +150,19 @@ export default function Pagination({meta, onPage, onPerPage, perPageOptions, bus
                 ))}
 
                 <button type="button" disabled={busy || current_page >= last_page} onClick={() => onPage(current_page + 1)} className={pageBtn(busy || current_page >= last_page)}>
-                    Next →
+                    {t('alignments.next')}
                 </button>
             </div>
 
             {onPerPage && (
                 <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    Per page
+                    {t('alignments.per_page')}
                     <PerPageSelect perPageOptions={perPageOptions} perPage={per_page} busy={busy} onPerPage={onPerPage} />
                 </label>
             )}
 
             <span className="font-mono text-[11px] tabular-nums text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                {total} {total === 1 ? 'row' : 'rows'}
+                {total} {total === 1 ? t('alignments.row') : t('alignments.rows')}
             </span>
         </div>
     );

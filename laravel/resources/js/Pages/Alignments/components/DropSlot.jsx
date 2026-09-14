@@ -1,7 +1,9 @@
 import {useDndContext, useDroppable} from '@dnd-kit/core';
+import {useI18n} from '../../../i18n';
 
 export default function DropSlot({slotId, standalone, inert}) {
     const {active} = useDndContext();
+    const {t} = useI18n();
     const {setNodeRef, isOver} = useDroppable({id: slotId});
 
     const dragging = active != null;
@@ -22,7 +24,7 @@ export default function DropSlot({slotId, standalone, inert}) {
         >
             {highlighted && (
                 <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]">
-                    {standalone ? 'drop here' : 'drop'}
+                    {standalone ? t('alignments.drop_here') : t('alignments.drop')}
                 </span>
             )}
         </div>

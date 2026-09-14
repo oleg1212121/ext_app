@@ -13,3 +13,7 @@ Schedule::command('entity-orders:rebalance')->daily();
 Schedule::command('alignments:resume')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+Schedule::command('crossword:refresh')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

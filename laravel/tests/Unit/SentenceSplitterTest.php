@@ -3,8 +3,6 @@
 use App\Classes\SentenceSplitter;
 use App\Classes\SparseOrderService;
 use App\Jobs\SplitEntityFileSentences;
-use App\Models\EnEntity;
-use App\Models\RuEntity;
 use App\Models\SentenceType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -69,9 +67,9 @@ it('assigns sparse document orders (0, 1024, 2048, ...) to inserted sentences', 
     $filePath = 'entities/'.uniqid('sparse_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = EnEntity::query()->create(['name' => 'Sparse', 'file_path' => $filePath]);
+    $entity = createEntity('en', null, ['name' => 'Sparse', 'file_path' => $filePath]);
 
-    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, 'en', $text);
+    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, $text);
 
     expect($entity->sentences()->orderBy('order')->pluck('order')->all())
         ->toEqual([0, 1024, 2048]);
@@ -86,12 +84,12 @@ it('streams file sentences with the same output as in-memory splitting', functio
     $filePath = 'entities/'.uniqid('stream_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $streamedEntity = EnEntity::query()->create(['name' => 'Streamed', 'file_path' => $filePath]);
-    $memoryEntity = EnEntity::query()->create(['name' => 'Memory', 'file_path' => $filePath]);
+    $streamedEntity = createEntity('en', null, ['name' => 'Streamed', 'file_path' => $filePath]);
+    $memoryEntity = createEntity('en', null, ['name' => 'Memory', 'file_path' => $filePath]);
 
     $splitter = new SentenceSplitter(new SparseOrderService);
-    $streamedStats = $splitter->process($streamedEntity->id, $filePath, 'en');
-    $memoryStats = $splitter->process($memoryEntity->id, $filePath, 'en', $text);
+    $streamedStats = $splitter->process($streamedEntity->id, $filePath);
+    $memoryStats = $splitter->process($memoryEntity->id, $filePath, $text);
 
     $streamed = $streamedEntity->sentences()->orderBy('order')->pluck('content')->all();
     $inMemory = $memoryEntity->sentences()->orderBy('order')->pluck('content')->all();
@@ -110,9 +108,9 @@ it('keeps a sentence crossing chunk boundaries intact', function () {
     $filePath = 'entities/'.uniqid('boundary_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = EnEntity::query()->create(['name' => 'Boundary', 'file_path' => $filePath]);
+    $entity = createEntity('en', null, ['name' => 'Boundary', 'file_path' => $filePath]);
 
-    $stats = (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, 'en');
+    $stats = (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath);
 
     expect($entity->sentences()->orderBy('order')->pluck('content')->all())
         ->toEqual([
@@ -152,9 +150,9 @@ it('keeps a multi-byte utf-8 character crossing chunk boundaries intact', functi
     $filePath = 'entities/'.uniqid('utf8_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = EnEntity::query()->create(['name' => 'Utf8', 'file_path' => $filePath]);
+    $entity = createEntity('ru', null, ['name' => 'Utf8', 'file_path' => $filePath]);
 
-    $stats = (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, 'en');
+    $stats = (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath);
 
     expect($entity->sentences()->orderBy('order')->pluck('content')->all())
         ->toEqual(['АБВ.', 'ГДЕ.'])
@@ -170,9 +168,9 @@ it('requests finalization only for the trailing remainder', function () {
     $filePath = 'entities/'.uniqid('finalize_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = EnEntity::query()->create(['name' => 'Finalize', 'file_path' => $filePath]);
+    $entity = createEntity('en', null, ['name' => 'Finalize', 'file_path' => $filePath]);
 
-    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, 'en');
+    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath);
 
     Http::assertSent(function (Request $request): bool {
         return ($request->data()['finalize'] ?? null) === false;
@@ -200,9 +198,9 @@ it('maps python sentence types to sentence type ids', function () {
     $filePath = 'entities/'.uniqid('types_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = EnEntity::query()->create(['name' => 'Types', 'file_path' => $filePath]);
+    $entity = createEntity('en', null, ['name' => 'Types', 'file_path' => $filePath]);
 
-    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, 'en', $text);
+    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, $text);
 
     $sentences = $entity->sentences()
         ->with('sentenceType')
@@ -233,9 +231,9 @@ it('stores russian sentences on the russian entity', function () {
     $filePath = 'entities/'.uniqid('ru_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = RuEntity::query()->create(['name' => 'Russian', 'file_path' => $filePath]);
+    $entity = createEntity('ru', null, ['name' => 'Russian', 'file_path' => $filePath]);
 
-    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, 'ru', $text);
+    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, $text);
 
     expect($entity->sentences()->orderBy('order')->pluck('content')->all())
         ->toEqual(['Первое предложение.', 'Второе предложение.']);
@@ -258,10 +256,10 @@ it('inserts large streamed files in order while keeping the split job payload sm
     $filePath = 'entities/'.uniqid('large_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = EnEntity::query()->create(['name' => 'Large', 'file_path' => $filePath]);
+    $entity = createEntity('en', null, ['name' => 'Large', 'file_path' => $filePath]);
 
-    $stats = (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, 'en');
-    $payload = serialize(new SplitEntityFileSentences($entity->id, $filePath, 'en'));
+    $stats = (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath);
+    $payload = serialize(new SplitEntityFileSentences($entity->id, $filePath));
 
     expect($stats['sentences'])->toBe(750)
         ->and($stats['batches'])->toBe(2)
@@ -279,9 +277,9 @@ it('throws when the python split service responds with an error', function () {
     $filePath = 'entities/'.uniqid('error_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = EnEntity::query()->create(['name' => 'Error', 'file_path' => $filePath]);
+    $entity = createEntity('en', null, ['name' => 'Error', 'file_path' => $filePath]);
 
-    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, 'en', $text);
+    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, $text);
 })->throws(RuntimeException::class, 'Python split service error');
 
 it('decodes html numeric character references before splitting', function () {
@@ -305,9 +303,9 @@ it('decodes html numeric character references before splitting', function () {
     $filePath = 'entities/'.uniqid('html_', true).'.txt';
     Storage::disk('local')->put($filePath, $text);
 
-    $entity = EnEntity::query()->create(['name' => 'HtmlEntities', 'file_path' => $filePath]);
+    $entity = createEntity('en', null, ['name' => 'HtmlEntities', 'file_path' => $filePath]);
 
-    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, 'en', $text);
+    (new SentenceSplitter(new SparseOrderService))->process($entity->id, $filePath, $text);
 
     expect($entity->sentences()->pluck('content')->first())
         ->toContain('ü')

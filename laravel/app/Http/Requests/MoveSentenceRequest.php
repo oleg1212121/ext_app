@@ -19,13 +19,13 @@ class MoveSentenceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'lang' => ['required', 'in:en,ru'],
+            'side' => ['required', 'in:a,b'],
             'sentence_id' => ['required', 'integer'],
             'to_row_id' => [
                 'nullable',
                 'integer',
-                Rule::exists('en_ru_meaning_matches', 'id')->where(
-                    'en_ru_entity_match_id',
+                Rule::exists('meaning_matches', 'id')->where(
+                    'entity_match_id',
                     $this->route('entityMatch')->id,
                 ),
             ],

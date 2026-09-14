@@ -17,21 +17,21 @@ class BilingualsTextRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        if ($this->has('en_ru_entity_match_id') && $this->input('en_ru_entity_match_id') === '') {
-            $this->merge(['en_ru_entity_match_id' => null]);
+        if ($this->has('entity_match_id') && $this->input('entity_match_id') === '') {
+            $this->merge(['entity_match_id' => null]);
         }
     }
 
     /**
-     * Get the validation rules that apply to the request.
+     * Get the validation rules that apply to this request.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
         return [
-            'en_ru_entity_match_id' => ['sometimes', 'nullable', 'integer', 'exists:en_ru_entity_matches,id'],
-            'filename' => ['required_without:en_ru_entity_match_id', 'string', 'max:500'],
+            'entity_match_id' => ['sometimes', 'nullable', 'integer', 'exists:entity_matches,id'],
+            'filename' => ['required_without:entity_match_id', 'string', 'max:500'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
         ];
@@ -44,7 +44,7 @@ class BilingualsTextRequest extends FormRequest
     {
         return [
             'filename.required_without' => 'Provide a text filename or choose an entity match.',
-            'en_ru_entity_match_id.exists' => 'The selected entity match was not found.',
+            'entity_match_id.exists' => 'The selected entity match was not found.',
         ];
     }
 }

@@ -1,11 +1,6 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
-import {
-    acknowledgeWord,
-    askAi,
-    dismissWord,
-    fetchCrossword,
-    upvoteWord,
-} from './api';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useI18n} from '../../i18n';
+import {completeCrossword, fetchCrossword} from './api';
 import {
     ALLOWED_KEYS,
     cellKey,
@@ -14,7 +9,6 @@ import {
     getMaxPanelWidth,
     MIN_PANEL_WIDTH,
     VECTORS,
-    WORD_LEVELS,
 } from './constants';
 
 function parseCoords(y, x) {
@@ -43,17 +37,29 @@ function cloneGrid(grid) {
     return grid.map((row) => row.map((cell) => ({...cell})));
 }
 
-export function useCrossword({lang = 'en', texts: initialTexts = []} = {}) {
+// Default to the first work, preferring its original-language entity so the
+// page opens on the source text rather than a random translation.
+function defaultEntityId(works) {
+    const first = works[0];
+    if (!first?.entities?.length) {
+        return '';
+    }
+
+    const original = first.entities.find((entity) => entity.language_code === first.original_language_code);
+    return (original ?? first.entities[0]).id;
+}
+
+export function useCrossword({works: initialWorks = [], languages = [], levels = []} = {}) {
+    const {t} = useI18n();
     const [crossword, setCrossword] = useState(null);
-    const [texts, setTexts] = useState(initialTexts);
-    const [currentText, setCurrentText] = useState(() => initialTexts[0]?.id ?? '');
+    const [works] = useState(initialWorks);
+    const [languageFilter, setLanguageFilter] = useState('');
+    const [currentEntity, setCurrentEntity] = useState(() => defaultEntityId(initialWorks));
     const [currentLevel, setCurrentLevel] = useState(DEFAULT_LEVEL);
     const [currentTab, setCurrentTab] = useState(0);
     const [showUnsolvedModal, setShowUnsolvedModal] = useState(false);
     const [definitions, setDefinitions] = useState([]);
-    const [obsolete, setObsolete] = useState([]);
     const [translations, setTranslations] = useState([]);
-    const [forms, setForms] = useState([]);
     const [currentWord, setCurrentWord] = useState('');
     const [solvedWords, setSolvedWords] = useState([]);
     const [vector, setVector] = useState(true);
@@ -66,7 +72,6 @@ export function useCrossword({lang = 'en', texts: initialTexts = []} = {}) {
     const crosswordRef = useRef(null);
     const cellValuesRef = useRef({});
     const solvedWordsRef = useRef([]);
-    const currentTextRef = useRef('');
     const inputRefs = useRef({});
     const currentEmphasizedRef = useRef([]);
 
@@ -86,9 +91,33 @@ export function useCrossword({lang = 'en', texts: initialTexts = []} = {}) {
         solvedWordsRef.current = solvedWords;
     }, [solvedWords]);
 
+    const worksWithEntities = useMemo(
+        () => works.filter((work) => work.entities?.length > 0),
+        [works],
+    );
+
+    // The language select filters entity options across all works; works left
+    // without matching entities disappear from the picker entirely.
+    const filteredWorks = useMemo(() => {
+        if (!languageFilter) {
+            return worksWithEntities;
+        }
+
+        return worksWithEntities
+            .map((work) => ({
+                ...work,
+                entities: work.entities.filter((entity) => entity.language_code === languageFilter),
+            }))
+            .filter((work) => work.entities.length > 0);
+    }, [worksWithEntities, languageFilter]);
+
+    // When the filter hides the selected entity, fall back to the first visible one.
     useEffect(() => {
-        currentTextRef.current = currentText;
-    }, [currentText]);
+        const visible = filteredWorks.some((work) => work.entities.some((entity) => entity.id === currentEntity));
+        if (!visible) {
+            setCurrentEntity(filteredWorks[0]?.entities[0]?.id ?? '');
+        }
+    }, [filteredWorks, currentEntity]);
 
     const focusCell = useCallback((y, x) => {
         const ref = inputRefs.current[cellKey(y, x)];
@@ -106,23 +135,22 @@ export function useCrossword({lang = 'en', texts: initialTexts = []} = {}) {
         setCurrentTab(0);
         setShowUnsolvedModal(false);
         setDefinitions([]);
-        setObsolete([]);
         setTranslations([]);
-        setForms([]);
         setCellValues({});
         currentEmphasizedRef.current = [];
     }, []);
 
-    useEffect(() => {
-        setTexts(initialTexts);
-        setCurrentText(initialTexts[0]?.id ?? '');
-    }, [lang, initialTexts]);
+    const wordLevels = levels.map((level) => ({id: level, name: t(`crossword.level_${level}`)}));
 
     const getCrossword = useCallback(async () => {
         refreshData();
 
+        if (!currentEntity) {
+            return;
+        }
+
         try {
-            const data = await fetchCrossword(currentText, currentLevel);
+            const data = await fetchCrossword(currentEntity, currentLevel);
             if (data.used?.length > 1) {
                 setCrossword(data);
                 setCellValues(buildCellValues(data.newGrid));
@@ -132,7 +160,7 @@ export function useCrossword({lang = 'en', texts: initialTexts = []} = {}) {
             console.error('Error:', error);
             setIsError(true);
         }
-    }, [currentText, currentLevel, refreshData]);
+    }, [currentEntity, currentLevel, refreshData]);
 
     const paintWord = useCallback((word, color, changeable = true) => {
         const colors = ['green', 'white', 'grey', 'blue'];
@@ -222,12 +250,26 @@ export function useCrossword({lang = 'en', texts: initialTexts = []} = {}) {
 
         if (isCorrect) {
             paintWord(word, 'green', false);
-            upvoteWord(word.value, currentTextRef.current).catch((error) => {
-                console.error('Error:', error);
-            });
             setSolvedWords((prev) => [...prev, word.value]);
         }
     }, [findWord, paintWord]);
+
+    // When every placed word is solved, persist the solved words server-side.
+    useEffect(() => {
+        const placedCount = crossword?.words?.length ?? 0;
+        if (placedCount === 0 || solvedWords.length < placedCount) {
+            return;
+        }
+
+        const wordIds = Object.values(crossword?.word_ids ?? {});
+        if (wordIds.length === 0) {
+            return;
+        }
+
+        completeCrossword(wordIds).catch((error) => {
+            console.error('Error:', error);
+        });
+    }, [crossword, solvedWords]);
 
     const applySelectedCell = useCallback((y, x) => {
         const grid = crosswordRef.current?.newGrid;
@@ -253,9 +295,7 @@ export function useCrossword({lang = 'en', texts: initialTexts = []} = {}) {
 
         const dictionary = crosswordRef.current.dictionary[word.value] ?? {};
         setDefinitions(dictionary.definitions ?? []);
-        setObsolete(dictionary.obsolete ?? []);
         setTranslations(dictionary.translations ?? []);
-        setForms(dictionary.forms ?? []);
 
         currentEmphasizedRef.current = [word];
         paintWord(word, 'blue');
@@ -427,68 +467,6 @@ export function useCrossword({lang = 'en', texts: initialTexts = []} = {}) {
             }));
     }, [crossword, solvedWords]);
 
-    const handleAcknowledge = useCallback(async () => {
-        if (!currentWord) {
-            return;
-        }
-
-        try {
-            await acknowledgeWord(currentWord);
-        } catch (error) {
-            console.error('Error:', error);
-        }
-    }, [currentWord]);
-
-    const handleDismiss = useCallback(async () => {
-        if (!currentWord) {
-            return;
-        }
-
-        try {
-            await dismissWord(currentWord);
-        } catch (error) {
-            console.error('Error:', error);
-        }
-    }, [currentWord]);
-
-    const handleAskAi = useCallback(async () => {
-        const word = currentWord || '';
-        if (!word) {
-            console.warn('No current word selected');
-            return;
-        }
-
-        try {
-            const newDefinitions = await askAi(word);
-            if (newDefinitions.length > 0) {
-                setCrossword((prev) => {
-                    if (!prev?.dictionary?.[word]) {
-                        return prev;
-                    }
-
-                    const dictionary = {...prev.dictionary};
-                    dictionary[word] = {
-                        ...dictionary[word],
-                        definitions: [...(dictionary[word].definitions ?? []), ...newDefinitions],
-                    };
-
-                    return {...prev, dictionary};
-                });
-                setDefinitions((prev) => [...prev, ...newDefinitions]);
-            }
-            setCurrentTab(0);
-        } catch (error) {
-            console.error('Error:', error);
-            setIsError(true);
-        }
-    }, [currentWord]);
-
-    const handleCheckImage = useCallback(() => {
-        const word = currentWord;
-        const url = 'https://www.google.com/search?q=' + word + '+meaning&udm=2';
-        window.open(url);
-    }, [currentWord]);
-
     const startDragRightPanel = useCallback((event) => {
         const startX = event.clientX;
         const startWidth = rightPanelWidth;
@@ -525,20 +503,21 @@ export function useCrossword({lang = 'en', texts: initialTexts = []} = {}) {
 
     return {
         crossword,
-        texts,
-        currentText,
-        setCurrentText,
+        works: filteredWorks,
+        languages,
+        languageFilter,
+        setLanguageFilter,
+        currentEntity,
+        setCurrentEntity,
         currentLevel,
         setCurrentLevel,
-        wordLevels: WORD_LEVELS,
+        wordLevels,
         currentTab,
         setCurrentTab,
         showUnsolvedModal,
         setShowUnsolvedModal,
         definitions,
-        obsolete,
         translations,
-        forms,
         currentWord,
         solvedWords,
         rightPanelWidth,
@@ -552,10 +531,6 @@ export function useCrossword({lang = 'en', texts: initialTexts = []} = {}) {
         setAltBlock,
         unsetAltBlock,
         unsolvedList,
-        handleAcknowledge,
-        handleDismiss,
-        handleAskAi,
-        handleCheckImage,
         registerInputRef,
     };
 }

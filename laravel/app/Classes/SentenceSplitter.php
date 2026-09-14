@@ -2,10 +2,8 @@
 
 namespace App\Classes;
 
-use App\Models\EnEntity;
-use App\Models\EnEntitySentence;
-use App\Models\RuEntity;
-use App\Models\RuEntitySentence;
+use App\Models\Entity;
+use App\Models\EntitySentence;
 use App\Models\SentenceType;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -24,37 +22,22 @@ class SentenceSplitter
 
     private const RETRY_DELAYS_MS = [500, 1_500, 3_000];
 
-    private const LANG_CONFIG = [
-        'en' => [
-            'entity_model' => EnEntity::class,
-            'sentence_model' => EnEntitySentence::class,
-            'entity_fk' => 'en_entity_id',
-        ],
-        'ru' => [
-            'entity_model' => RuEntity::class,
-            'sentence_model' => RuEntitySentence::class,
-            'entity_fk' => 'ru_entity_id',
-        ],
-    ];
-
     private array $sentenceTypeMap = [];
 
-    public function process(int $entityId, string $filePath, string $lang, ?string $fileContent = null): array
+    public function process(int $entityId, string $filePath, ?string $fileContent = null): array
     {
-        $config = self::LANG_CONFIG[$lang] ?? throw new \InvalidArgumentException("Unsupported language: {$lang}");
-
-        $entityModel = $config['entity_model'];
-        $entity = $entityModel::findOrFail($entityId);
+        $entity = Entity::with('language')->findOrFail($entityId);
+        $lang = $entity->language->code;
 
         $this->loadSentenceTypeMap();
 
         $entity->sentences()->delete();
 
         if ($fileContent !== null) {
-            return $this->insertSentences($entityId, $fileContent, $lang, $config);
+            return $this->insertSentences($entityId, $fileContent, $lang);
         }
 
-        return $this->insertSentencesFromFile($entityId, $filePath, $lang, $config);
+        return $this->insertSentencesFromFile($entityId, $filePath, $lang);
     }
 
     private function loadSentenceTypeMap(): void
@@ -66,11 +49,8 @@ class SentenceSplitter
         }
     }
 
-    private function insertSentences(int $entityId, string $content, string $lang, array $config): array
+    private function insertSentences(int $entityId, string $content, string $lang): array
     {
-        $sentenceModel = $config['sentence_model'];
-        $entityFk = $config['entity_fk'];
-
         $defaultTypeId = $this->sentenceTypeMap['sentence'];
         $batch = [];
         $order = 0;
@@ -79,23 +59,21 @@ class SentenceSplitter
         $result = $this->splitViaPython($content, $lang, true);
 
         foreach ($result['sentences'] as $sentence) {
-            $this->appendSentenceToBatch($sentence, $entityId, $entityFk, $defaultTypeId, $batch, $order);
+            $this->appendSentenceToBatch($sentence, $entityId, $defaultTypeId, $batch, $order);
 
             if (count($batch) >= self::BATCH_SIZE) {
-                $this->flushBatch($sentenceModel, $batch, $stats);
+                $this->flushBatch($batch, $stats);
             }
         }
 
-        $this->flushBatch($sentenceModel, $batch, $stats);
+        $this->flushBatch($batch, $stats);
         $stats['sentences'] = $order;
 
         return $stats;
     }
 
-    private function insertSentencesFromFile(int $entityId, string $filePath, string $lang, array $config): array
+    private function insertSentencesFromFile(int $entityId, string $filePath, string $lang): array
     {
-        $sentenceModel = $config['sentence_model'];
-        $entityFk = $config['entity_fk'];
         $defaultTypeId = $this->sentenceTypeMap['sentence'];
         $chunkSize = max(1, (int) config('services.python.sentence_split_chunk_bytes', self::DEFAULT_CHUNK_SIZE));
 
@@ -146,10 +124,10 @@ class SentenceSplitter
                 $remainder = $result['remainder'];
 
                 foreach ($result['sentences'] as $sentence) {
-                    $this->appendSentenceToBatch($sentence, $entityId, $entityFk, $defaultTypeId, $batch, $order);
+                    $this->appendSentenceToBatch($sentence, $entityId, $defaultTypeId, $batch, $order);
 
                     if (count($batch) >= self::BATCH_SIZE) {
-                        $this->flushBatch($sentenceModel, $batch, $stats);
+                        $this->flushBatch($batch, $stats);
                     }
                 }
             }
@@ -160,15 +138,15 @@ class SentenceSplitter
                 $result = $this->splitViaPython($remainder, $lang, true);
 
                 foreach ($result['sentences'] as $sentence) {
-                    $this->appendSentenceToBatch($sentence, $entityId, $entityFk, $defaultTypeId, $batch, $order);
+                    $this->appendSentenceToBatch($sentence, $entityId, $defaultTypeId, $batch, $order);
 
                     if (count($batch) >= self::BATCH_SIZE) {
-                        $this->flushBatch($sentenceModel, $batch, $stats);
+                        $this->flushBatch($batch, $stats);
                     }
                 }
             }
 
-            $this->flushBatch($sentenceModel, $batch, $stats);
+            $this->flushBatch($batch, $stats);
             $stats['sentences'] = $order;
         } finally {
             fclose($handle);
@@ -247,12 +225,12 @@ class SentenceSplitter
     /**
      * @param  array{content: string, type: string}  $sentence
      */
-    private function appendSentenceToBatch(array $sentence, int $entityId, string $entityFk, int $defaultTypeId, array &$batch, int &$order): void
+    private function appendSentenceToBatch(array $sentence, int $entityId, int $defaultTypeId, array &$batch, int &$order): void
     {
         $typeId = $this->sentenceTypeMap[$sentence['type']] ?? $defaultTypeId;
 
         $batch[] = [
-            $entityFk => $entityId,
+            'entity_id' => $entityId,
             'sentence_type_id' => $typeId,
             'content' => $sentence['content'],
             'order' => $this->sparseOrder->initial($order),
@@ -263,13 +241,13 @@ class SentenceSplitter
         $order++;
     }
 
-    private function flushBatch(string $sentenceModel, array &$batch, array &$stats): void
+    private function flushBatch(array &$batch, array &$stats): void
     {
         if ($batch === []) {
             return;
         }
 
-        DB::transaction(fn () => $sentenceModel::insert($batch));
+        DB::transaction(fn () => EntitySentence::insert($batch));
 
         $stats['batches']++;
         $batch = [];

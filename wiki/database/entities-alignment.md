@@ -1,21 +1,18 @@
 ---
 type: Database Schema
-title: Entities & Alignment Tables
-description: Bilingual texts, their sentences, and the machine/human alignment between them (2026_04–06 migrations).
-tags: [database, schema, alignment, entities]
+title: Works, Entities & Alignment Tables
+description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations).
+tags: [database, schema, alignment, entities, works]
 status: stable
-stale_after: 2026-10-26
-generated: { by: agent:zcode, at: 2026-09-10T00:00:00Z }
+stale_after: 2026-12-10
+generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
 sources:
    - id: migrations
-     resource: laravel/database/migrations
-     title: 2026_04–08 entity/alignment migrations (incl. add_is_original_en_to_en_ru_entity_matches)
-   - id: unique-order-migration
-     resource: laravel/database/migrations/2026_09_09_000000_make_entity_sentence_orders_unique.php
-     title: Unique (entity_id, order) indexes + duplicate repair pass
-   - id: access-migration
-     resource: laravel/database/migrations/2026_08_25_070508_add_entity_access_control.php
-     title: is_restricted column + en_entity_user / ru_entity_user pivots
+     resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
+     title: works + unified entities/sentences/grants creation
+   - id: alignment-migration
+     resource: laravel/database/migrations/2026_09_10_000004_create_alignment_tables.php
+     title: entity_matches + meaning_matches + sentence_meaning_matches (side column)
    - id: align-service
      resource: laravel/app/Classes/SentenceAlignmentService.php
      title: Writer of meaning matches
@@ -25,86 +22,76 @@ sources:
 
 | Table | Model | Role |
 |-------|-------|------|
-| `en_entities` / `ru_entities` | `EnEntity` / `RuEntity` | A text (book/story/file) in one language; carries a BGE-M3 embedding `signature` (1024-dim) and an `is_restricted` boolean (default false) gating read access |
+| `works` | `Work` | The abstract book: title, author, description, `original_language_id` → languages. Groups every language version of one text |
+| `entities` | `Entity` | A text (book/story/file) in one language — the original or a translation of its work. Carries `work_id`, `language_id`, an optional translator/edition `label`, a BGE-M3 embedding `signature`, and `is_restricted` (default false) gating read access |
 | `sentence_types` | `SentenceType` | Classification for sentences |
-| `en_entity_sentences` / `ru_entity_sentences` | `EnEntitySentence` / `RuEntitySentence` | Split sentences with **sparse order** values |
-| `en_ru_entity_matches` | `EnRuEntityMatch` | Pairing of one EN entity with one RU entity ("same text, two languages") |
-| `en_ru_meaning_matches` | `EnRuMeaningMatch` | Sentence-group level alignment result within a match |
-| `en_sentence_meaning_matches` / `ru_sentence_meaning_matches` | `EnSentenceMeaningMatch` / `RuSentenceMeaningMatch` | Per-sentence membership in a meaning match, per side |
-| `en_ru_translations` / `ru_en_translations` | `EnRuTranslation` / `RuEnTranslation` | Word-level translation links (see [EN/RU Dictionary](en-ru-dictionary.md)) |
-| `en_entity_user` / `ru_entity_user` | (pivot) | Access grants: which users may read a Restricted entity, with a nullable `similarity` (null = creator grant, non-null = Signature match grant) |
+| `entity_sentences` | `EntitySentence` | Split sentences with **sparse order** values; unique `(entity_id, order)` |
+| `entity_matches` | `EntityMatch` | Pairing of two distinct same-work entities ("same text, two versions"; same-language companions like exercises + answers included), stored canonically `a_entity_id < b_entity_id` |
+| `meaning_matches` | `MeaningMatch` | Sentence-group level alignment result within a match |
+| `sentence_meaning_matches` | `SentenceMeaningMatch` | Per-sentence membership in a meaning match, with a `side` char(1) (`'a'`/`'b'`) naming which entity of the match the sentence belongs to |
+| `entity_user` | (pivot) | Access grants: which users may read a Restricted entity, with a nullable `similarity` (null = creator grant, non-null = Signature match grant) |
 
 # Invariants & notes
 
+* **Language-neutral by construction.** No `en_`/`ru_` tables remain; the
+  original side of a match is *derived* (`EntityMatch::originalSide()`) by
+  comparing each side's `language_id` to the work's `original_language_id` —
+  `'a'`, `'b'`, or `null` when both sides are translations. Match creation
+  (Inertia + Filament) validates same work (distinct entities, any
+  languages) and canonicalizes the pair order (ADR
+  [0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md),
+  [0019](../../docs/adr/0019-same-language-entity-matches.md)).
+* **Every entity belongs to a work** (`work_id` NOT NULL). A work may hold
+  several entities in the same language (competing translations) told apart
+  by `entities.label`.
+* **Cover both sides**: when neither side of a match is the work's original
+  language, the aligner's skip rows and finalize repairs cover BOTH sides —
+  the original-completeness invariant generalizes to translation↔translation
+  pairs.
 * **Sparse ordering**: sentence and match order columns hold sparse values
-  (stride 1024) maintained by `SparseOrderService`; the columns are signed
-  `bigint` from creation (day-one migrations — the earlier claim about a
-  `widen_sparse_order_columns` migration was wrong; no such migration
-  exists). **Every creation path emits sparse values from birth** — the
-  split pipeline (`SentenceSplitter`, via `SparseOrderService::initial`),
-  the console importer (`EntitySentenceImporter`), the entity *Sentences*
-  tab (`EntityController::storeSentence`), and the Filament relation
-  managers — so a later insert/reorder usually writes only the moved row
-  (midpoint between neighbours). Dense legacy lists are repaired by
-  `entity-orders:rebalance` (runs daily; see
-  [Sentence Alignment](/domains/sentence-alignment.md)).
-  Both `EntityController` (entity *Sentences* tab)
-  and `AlignmentEditorController` shift the whole sparse result up whenever a
-  rebalance would push the minimum order negative (mirroring the alignment
-  editor's guard), so `*.order` never carries negative values and the
-  sequential display numbers stay 0/1-based.
-* **Sentence orders are unique per entity**: since the
-  2026_09 `make_entity_sentence_orders_unique` migration,
-  `(en_entity_id, order)` / `(ru_entity_id, order)` carry **unique indexes**
-  (repair pass renumbered duplicate-affected lists positionally first). Every
-  sentence-order write is therefore two-phase: changed rows are parked at
-  unique negatives (`-(id + 1e9)`) before the final orders are written, so a
-  rebalance never trips the index mid-write
-  (`SparseOrderService::orderForInsertAfter`,
+  (stride 1024) maintained by `SparseOrderService`; every creation path emits
+  sparse values from birth (the split pipeline, the console importer, the
+  entity *Sentences* tab, the Filament relation managers). Dense lists are
+  repaired by `entity-orders:rebalance`. Both `EntityController` and
+  `AlignmentEditorController` shift the whole sparse result up whenever a
+  rebalance would push the minimum order negative.
+* **Sentence orders are unique per entity**: `(entity_id, order)` carries a
+  unique index; every sentence-order write is two-phase (changed rows parked
+  at unique negatives `-(id + 1e9)` before finals) —
+  `SparseOrderService::orderForInsertAfter`,
   `AlignmentEditorPersister::syncSentences`,
   `EntityController::persistSentenceOrders`,
-  `AlignmentEditorController::placeSideSentence`).
-* **Document order is the single source of truth**: `en_entity_sentences.order` is
-  the sentence's **document order** — its position in the original text. It is
-  immutable in the alignment editor (only the *Sentences* tab, import,
-  `entity-orders:rebalance`, and — since ADR
-  [0015](../../docs/adr/0015-granted-users-edit-entities-and-sentences.md) — the
-  entities frontend's drag-to-reorder change it). The junction tables
-  (`en_sentence_meaning_matches` / `ru_sentence_meaning_matches`) are pure
-  association tables with no `order` column. Within-row display order is
-  determined by each sentence's document order.
-* **Landmarks**: `en_ru_meaning_matches.alignment_chunk = -1` marks
-  human-made rows (always `similarity = 1.0`); machine rows carry a monotonic
-  per-run chunk id (never `-1`). Machine rows with
-  `similarity >= LANDMARK_THRESHOLD` (0.90) are promoted to auto-landmarks on
-  re-align. Both tiers survive Re-align and act as pool boundaries; "Run from
-  scratch" deletes both (see [Sentence Alignment](/domains/sentence-alignment.md)).
-* **Admin editing**: both `EnEntityResource` and `RuEntityResource` expose a
-  *Sentences* relation manager on the entity edit page. It supports creating,
-  editing, deleting, and reordering sentences while preserving sparse order.
-* **Deletion cleanup**: deleting a sentence cascades to its per-side meaning
-  matches; if a meaning match is left without sentences on either side, the
-  match is deleted and the parent `EnRuEntityMatch.linked_count` is updated.
-* **Single-sided meaning matches**: the aligner keeps unmatched *original-text*
-  sentences visible by junctioning them into a meaning match with only one
-  side junctioned (`similarity 0.0`, next machine `alignment_chunk` id). The
-  completion gate `AlignEntitySentences::finalize()` enforces the
-  original-completeness invariant — original sentences are never unmatched —
-  and creates these rows positionally via `SparseOrderService`
-  (see [Sentence Alignment](/domains/sentence-alignment.md)). The editor's
-  **Needs review** section surfaces these (one-sided, any similarity) plus
-  two-sided rows with `similarity < 0.55`.
-* **Original text**: `EnRuEntityMatch.is_original_en` (boolean, default `true`)
-  records which side is the original text — the language the text was authored
-  in, the other side being a translation of it. Metadata only; set on the
-  admin create form and read-only in the table. See `CONTEXT.md` "Original text".
-* `EnRuEntityMatch` is what the simulator's text dropdown lists — joining
-  `enEntity` / `ruEntity` for display names.
-* **Read access is Restricted by default.** Every new Entity is `is_restricted =
-  true`; admin publishes it (`is_restricted = false`) to make it readable by all
-  approved users. Restricted entities are readable only by admin and users with a
-  row in `en_entity_user` / `ru_entity_user` (see the [Entity Access](
-  ../../CONTEXT.md#entity-access-context) context and ADR 0013). A Signature match at
-  upload time links the uploader to the existing Entity instead of creating a
-  duplicate. Reading an `EnRuEntityMatch` requires grants on **both** sides (ADR
-  0014).
+  `AlignmentEditorController::placeSideSentence`.
+* **Document order is the single source of truth**: `entity_sentences.order`
+  is the sentence's position in its text. The junction table is a pure
+  association table (no `order` column); within-row display order is each
+  sentence's document order. Drag-to-reorder renumbers document order so the
+  sentence sorts exactly where it was dropped (see ADR
+  [0016](../../docs/adr/0016-drop-position-wins-alignment-editor.md)).
+* **Landmarks**: `meaning_matches.alignment_chunk = -1` marks human-made rows
+  (always `similarity = 1.0`); machine rows carry a monotonic per-run chunk
+  id. Machine rows with `similarity >= 0.90` are auto-landmarks. Both tiers
+  survive Re-align and act as pool boundaries; "Run from scratch" deletes
+  both.
+* **Admin editing**: `EntityResource` (one resource, language select +
+  work select with inline create) exposes a *Sentences* relation manager
+  supporting create/edit/delete/reorder with sparse order preservation.
+  `WorkResource` manages works.
+* **Deletion cleanup**: deleting a sentence cascades to its junctions; a
+  meaning match left with no junctions is deleted and the parent
+  `EntityMatch.linked_count` is updated (`EntitySentence::booted()`).
+* **Single-sided meaning matches**: the aligner keeps unmatched
+  original-side sentences visible via one-sided junctions (`similarity 0.0`,
+  next machine chunk id); the completion gate
+  `AlignEntitySentences::finalize()` enforces original completeness (both
+  sides when neither is the original). The editor's **Needs review** section
+  surfaces one-sided rows (any similarity) plus two-sided rows below 0.55.
+* `EntityMatch` is what the simulator's text dropdown lists — joining
+  `aEntity` / `bEntity` for display names.
+* **Read access is Restricted by default** (ADR
+  [0013](../../docs/adr/0013-default-restricted-uploads-and-per-entity-grants.md)):
+  every new Entity is `is_restricted = true`; admin publishes to make it
+  readable by all approved users. Grants are **per entity** (`entity_user`)
+  and deliberately do NOT cascade to the entity's other translations.
+  Reading an entity match requires grants on **both** sides (ADR
+  [0014](../../docs/adr/0014-per-entity-grants-require-both-sides-for-simulator.md)).

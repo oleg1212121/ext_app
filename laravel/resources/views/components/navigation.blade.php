@@ -13,16 +13,16 @@
                 @auth
                     <div class="flex space-x-6 ml-8">
                         <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                            {{ __('Dashboard') }}
+                            {{ __('nav.dashboard') }}
                         </x-nav-link>
                         <x-nav-link :href="route('crossword')" :active="request()->routeIs('crossword')">
-                            {{ __('Crossword') }}
+                            {{ __('nav.crossword') }}
                         </x-nav-link>
                         <x-nav-link :href="route('reader')" :active="request()->routeIs('reader')">
-                            {{ __('Reader') }}
+                            {{ __('nav.reader') }}
                         </x-nav-link>
                         <x-nav-link :href="route('bilinguals.simulator')" :active="request()->routeIs('bilinguals.simulator')">
-                            {{ __('Bilinguals') }}
+                            {{ __('nav.bilinguals') }}
                         </x-nav-link>
                     </div>
                 @endauth
@@ -31,7 +31,7 @@
             <!-- Settings Dropdown -->
             <div class="flex items-center gap-4">
                 <!-- Theme Toggle -->
-                <button @click="darkMode = !darkMode" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 transition hover:cursor-pointer" title="Toggle dark mode">
+                <button @click="darkMode = !darkMode" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 transition hover:cursor-pointer" title="{{ __('nav.toggle_dark_mode') }}">
                     <!-- Sun Icon (shown in dark mode) -->
                     <svg x-show="darkMode" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -55,7 +55,7 @@
 
                         <x-slot name="content">
                             <x-dropdown-link :href="route('profile.edit')">
-                                {{ __('Profile') }}
+                                {{ __('nav.profile') }}
                             </x-dropdown-link>
 
                             <form method="POST" action="{{ route('logout') }}">
@@ -63,7 +63,7 @@
                                 <x-dropdown-link :href="route('logout')"
                                         onclick="event.preventDefault();
                                                     this.closest('form').submit();">
-                                    {{ __('Log Out') }}
+                                    {{ __('nav.log_out') }}
                                 </x-dropdown-link>
                             </form>
                         </x-slot>
@@ -71,11 +71,11 @@
                 @else
                     <div class="flex items-center space-x-4">
                         <a href="{{ route('login') }}" class="text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
-                            {{ __('Log in') }}
+                            {{ __('nav.log_in') }}
                         </a>
                         @if (Route::has('register'))
                             <a href="{{ route('register') }}" class="text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
-                                {{ __('Register') }}
+                                {{ __('nav.register') }}
                             </a>
                         @endif
                     </div>

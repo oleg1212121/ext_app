@@ -1,28 +1,41 @@
 # Sentence Alignment Context
 
-The domain of pairing EN and RU sentences of the same text into meaning-equivalent
-groups (meaning matches), produced by the alignment pipeline and refined by
-humans in the Alignments editor.
+The domain of pairing the sentences of two same-work entities (two versions of
+one text — usually two languages, sometimes two same-language companions such
+as exercises and their answer key) into meaning-equivalent groups (meaning
+matches), produced by the alignment pipeline and refined by humans in the
+Alignments editor.
 
 ## Language
 
+**Work**:
+The abstract book that entities translate: one row grouping every language version of the same text. Carries the title, author, and the **original language** the book was written in. An Entity always belongs to exactly one Work; a Work may hold several entities in the same language (competing translations, editions), told apart by their label.
+_Avoid_: book (a legacy crossword-domain term), parent entity (Entity already means the per-language text), title
+
 **Entity**:
-A text in exactly one Language, carrying a name, description, an uploaded text file, a signature, and an ordered list of sentences. Concretely an `EnEntity` or a `RuEntity`. An Entity does not span languages; a cross-language pair is an Entity match, not a single Entity.
+A text in exactly one Language — the original or a translation of its **Work** — carrying a name, label, description, an uploaded text file, a signature, and an ordered list of sentences. An Entity does not span languages; a cross-language pairing is an Entity match, not a single Entity.
 _Avoid_: text, document, article
 
+**A-side / B-side**:
+The two positions inside an entity match, stored canonically (the lower entity id is the A-side). The Python aligner's lists, the junction's `side` column, and the editor payloads all speak in sides; displays label them with each side's language. Sides are positional, not semantic — the original text can sit on either side.
+_Avoid_: EN side / RU side (language-specific wording), left/right
+
 **Entity match**:
-The container pairing one EN entity with one RU entity ("the same text, two languages").
+The container pairing two distinct entities of the same **Work** ("the same text, two versions"), held by its **A-side** and **B-side**. The two entities are usually in different languages, but a same-language pairing (exercises + answers) is equally valid. See ADR 0019.
 _Avoid_: match, alignment
 
 **Original text**:
-The language the paired text was authored in; the counterpart in the entity match
-is a translation of it. A text-level property of the entity match.
+The language the book was authored in — a property of the **Work**, not of a
+pairing. For an entity match, the original side is whichever side's entity is in
+that language, or neither when both are translations of a third language. Not
+storable per match; derived whenever needed.
 _Avoid_: source text, prior text
 
 **Original completeness**:
 The invariant, enforced when an alignment run completes, that every sentence of the
-original text is junctioned into a meaning match (in original order). Only
-translation-side sentences may be unmatched.
+original-side entity is junctioned into a meaning match (in original order). When
+neither side is the original language (translation-pair), the invariant holds for
+BOTH sides — cover both sides.
 _Avoid_: no-unmatched guarantee
 
 **Meaning match**:
@@ -82,7 +95,7 @@ The number of meaning matches in an entity match (empty ones included).
 **Resume**:
 Advance an alignment that has stopped before reaching the end of the text.
 Triggered manually (Re-run) or automatically (the `alignments:resume` command).
-The cursor — the EN/RU sentence offsets where the next chunk starts — is the
+The cursor — the per-side sentence offsets where the next chunk starts — is the
 only state a resume reads, so a stopped run can continue without wiping
 already-aligned chunks. _Avoid_: restart, retry.
 
@@ -102,7 +115,7 @@ across rows, or to/from the unmatched pool. The drop position wins: the
 sentence's document order is renumbered (sparse, clamped by the nearest
 sentences outside the destination row's span) so it sorts exactly where it was
 dropped and the global numbering stays monotonic with row order. A drop into a
-row empty on that language side lands between the closest populated rows.
+row empty on that side lands between the closest populated rows.
 _Avoid_: relink (misses the renumbering)
 
 **Create meaning match / delete meaning match**:
@@ -145,11 +158,91 @@ A Language whose `is_enabled` flag is true. The flag is a stored value only; the
 _Avoid_: active language, available language
 
 **User settings**:
-The per-user configuration row (one per user) holding the user's preferences, currently the **Native language**. Stored in `user_settings`. _Avoid_: preferences, profile (the page, not the row).
+The per-user configuration row (one per user) holding the user's durable choices — the **Native language**, the **Interface language**, and **UI settings**. Stored in `user_settings`. _Avoid_: preferences, profile (the page, not the row).
+
+**UI settings**:
+The stable, user-chosen interface configuration inside User settings — simulator layout and panel visibility, font sizes, the selected AI model, the customized assessment question, and panel sizes. A sub-kind of User settings; changes follow the user across devices. See ADR 0024. _Avoid_: simulator cache, UI state (that includes Working state, which is not stored server-side).
+
+**Working state**:
+The per-device last position in the simulator — the current entity match, the page reached per alignment, and the last opened row with its revealed halves. Kept in the browser only, never stored server-side. See ADR 0024. _Avoid_: UI settings (durable, cross-device), session.
 
 **Native language**:
 The language a user is a native speaker of, chosen at registration and changeable from the profile page. References a **Language** in the catalog; defaults to English.
 _Avoid_: mother tongue, first language
+
+**Interface-enabled language**:
+A Language flagged `is_interface_enabled` — usable as the language the web UI renders in. Only interface-enabled languages appear in interface-language pickers.
+_Avoid_: supported language, active language
+
+# Localization Context
+
+The domain of the web UI's display language and the admin-curated interface text shown in it. Distinct from the Language Catalog (learning-content languages) and the Dictionary (word translations).
+
+## Language
+
+**Interface language**:
+The language the web UI renders in for a user; a User settings field that, when null, follows the **Native language**. Resolution falls back to English.
+_Avoid_: UI language, locale
+
+**UI string**:
+One piece of interface text, identified by a **UI string key**, with at most one value per interface-enabled language. Edited in the admin panel; missing values fall back to English. _Avoid_: translation, label
+
+**UI string key**:
+The dotted identifier of a **UI string** (e.g. `nav.library`); its first segment is its **string group**.
+_Avoid_: translation key
+
+**String group**:
+The first segment of a UI string key, naming the surface the string belongs to (e.g. `nav`, `profile`, `reader`).
+_Avoid_: namespace, category
+
+# Dictionary Context
+
+The domain of the Wiktionary-sourced dictionary — words per language with
+their linguistic satellites, populated by the import pipeline and curated in
+the admin panel.
+
+## Language
+
+**Word**:
+A base-form word in exactly one Language, carrying its part of speech
+(**Word class**), definitions, forms, etymology, transcriptions,
+pronunciation audio, examples, and staged translations awaiting linking.
+_Avoid_: entry, lemma (implementation shorthand), vocabulary item (legacy
+crossword-domain term).
+
+**Word class**:
+The part-of-speech taxonomy entry a Word belongs to — per language, unique
+by `(language, slug)`. Seeded with curated titles for en/ru; the import
+auto-creates any unseen class with the slug as a placeholder title. A word
+whose part of speech cannot be determined gets the `unknown` class.
+_Avoid_: POS (dump-field jargon), category, speech part.
+
+**Transcription type**:
+The kind of phonetic notation a transcription is written in (e.g. IPA,
+enpr) — per language, unique by `(language, slug)`. Auto-created by the
+import with the slug as a placeholder title, curated afterwards.
+_Avoid_: notation, phoneme set.
+
+**Translation linking**:
+The step that resolves each Word's **Staged translations** into
+**Translation links** (one row per pair) between Words of different
+languages — run after import for every language pair, and continued by
+hand in the admin panel.
+_Avoid_: translation sync, matching.
+
+**Translation link**:
+An association between two **Words** in different Languages that translate
+each other, stored as one row per pair in `word_translations` and usable
+from either Word. A Word may carry many links; links connect different
+Languages only.
+_Avoid_: translation (also means a **Staged translation** or the general
+notion), relation, mapping, directed translation.
+
+**Staged translation**:
+A raw target-language word string the import recorded on a Word, awaiting
+**Translation linking** into **Translation links**. Working data of the
+pipeline, never shown to end users.
+_Avoid_: raw translation, pending translation, translation (overloaded).
 
 # Access Control Context
 
@@ -232,7 +325,7 @@ term with a specific meaning).
 
 **Access grant**:
 A recorded stake for a specific user in a specific Restricted entity, stored
-in the `en_entity_user` / `ru_entity_user` pivot (with a nullable
+in the `entity_user` pivot (with a nullable
 `similarity`). Carries both read and edit permission on the entity (and its
 sentences) until the entity is published. _Avoid_: link (too generic),
 license (legal), permission (overlaps Role).
@@ -243,7 +336,7 @@ frontend. A Restricted entity is editable by admin and grantees; a Public
 entity is editable by any approved user. The rule mirrors read —
 `EntityAccessService::canEdit` is structurally identical to `canRead`.
 Sentence mutations (insert / update / delete / reorder) flip every
-`EnRuEntityMatch` involving the entity to `status = 'pending'`. Deleting a
+entity match involving the entity to `status = 'pending'`. Deleting a
 junctioned sentence cascades (junctions removed, emptied meaning matches
 deleted, `linked_count` updated) — a deliberate divergence from the alignment
 editor's unlink-before-delete rule. See ADR 0015.
@@ -262,3 +355,96 @@ user-visible concept).
 **Publish**:
 An admin action flipping a Restricted entity to Public. Existing Access
 grants remain as audit but are no longer enforced. _Avoid_: release, unlock.
+
+**Readable count**:
+Any count of entities or entity matches shown to a user counts only what that
+user could actually open (Public entities plus their own grants; for matches,
+both sides readable). A global total leaks Restricted entities' existence.
+_Avoid_: total count, library size.
+
+# Library Context
+
+The domain of the user-facing browse surface for works and their texts — the
+`/library` section that replaced the language-first entities pages.
+
+## Language
+
+**Library**:
+The user-facing section (nav item, `/library`) where an approved user browses
+the **Work catalog** and, inside a work, the entities they can read.
+_Avoid_: entities page (the former language-first surface), Parallel Library
+(the Reader's former on-page subtitle).
+
+**Work catalog**:
+The complete set of **Works**, visible to every approved user regardless of
+entity access — including works with no entities yet. A Work carries no access
+semantics of its own; access control and counts live on its entities (see
+Readable count in the Entity Access Context). See ADR 0021.
+_Avoid_: available works (Available is the AI-provider term), my library,
+book collection.
+
+# Crossword Context
+
+The domain of crossword puzzles generated from a text's own vocabulary —
+the entity's word inventory, the frequency-band Level that selects puzzle
+words, and the player's per-word progress.
+
+## Language
+
+**Crossword**:
+A puzzle laid out from a fixed set of words selected for one Entity and
+Level. Deterministic: the same inputs always produce the same grid.
+_Avoid_: puzzle generator (the algorithm, not the artifact), quiz.
+
+**Entity word list**:
+The complete inventory of unique words in one Entity with an occurrence
+count for each, built by tokenizing the entity's sentences. Token-first —
+it exists before any dictionary link; the dictionary **Word** link fills
+in later (see ADR 0025).
+_Avoid_: book words (legacy crossword-domain term), index (implementation
+term), vocabulary (vague — the dictionary as a whole).
+
+**Word list refresh**:
+The background operation that rebuilds an Entity's **Entity word list**
+and fills its dictionary **Word** links — a scheduled sweep dispatches one
+queued refresh per entity whose list is stale or has unlinked tokens. Until
+it completes, crossword generation reports the word list as still building.
+_Avoid_: reindex, rebuild, backfill.
+
+**Level**:
+A global frequency-rank band (top 100, top 500, … top 1 000 000) used to
+select puzzle words. A word is eligible for a Level when its rank (lower =
+more common) is within the band's cutoff.
+_Avoid_: difficulty (implies curated ordering), CEFR level.
+
+**Word progress**:
+The player's status for one dictionary Word, global across all works:
+**learning** (selected in a generated puzzle), **solved** (its puzzle was
+completed), or **known** (marked by hand). Generation skips solved and
+known words, so completing puzzles advances down the Level band.
+_Avoid_: score, knowledge level.
+
+# Interactive Reading Context
+
+The domain of reading surfaces where the text itself is interactive — words
+looked up in the dictionary and tinted by the reader's **Word progress**.
+
+## Language
+
+**Interactive word**:
+A dictionary-linked token rendered as clickable text on a reading surface;
+clicking it opens a popup with the dictionary Word's definitions,
+transcriptions, translations and progress actions. Tokens without a
+dictionary link are never interactive.
+_Avoid_: clickable text, word link.
+
+**Word occurrence**:
+One place a token appears in an entity's text. Occurrences are derived from
+the sentence text at render time and are never stored (see ADR 0027).
+_Avoid_: word position (implementation detail), word hit.
+
+**Word map**:
+The per-entity lookup an interactive page carries — lowercase token to its
+dictionary Word id and the reader's Word progress — covering the entity's
+linked **Entity word list** entries only.
+_Avoid_: dictionary (the whole kaikki import), vocabulary.

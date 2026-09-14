@@ -85,6 +85,14 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * The user's word progress rows (learning/solved/known per word).
+     */
+    public function userWords(): HasMany
+    {
+        return $this->hasMany(UserWord::class);
+    }
+
+    /**
      * The language the user is a native speaker of, or null if unset.
      */
     public function nativeLanguage(): ?Language
@@ -93,21 +101,29 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Restricted English entities this user may read via an access grant.
+     * The language the web UI renders in for this user: their interface
+     * language, falling back to their native language, then to English.
+     * Only interface-enabled languages qualify.
      */
-    public function grantedEnEntities(): BelongsToMany
+    public function resolvedInterfaceLocale(): string
     {
-        return $this->belongsToMany(EnEntity::class, 'en_entity_user')
-            ->withPivot('similarity')
-            ->withTimestamps();
+        $settings = $this->settings()->with(['interfaceLanguage', 'nativeLanguage'])->first();
+
+        foreach ([$settings?->interfaceLanguage, $settings?->nativeLanguage] as $language) {
+            if ($language?->is_interface_enabled) {
+                return $language->code;
+            }
+        }
+
+        return 'en';
     }
 
     /**
-     * Restricted Russian entities this user may read via an access grant.
+     * Restricted entities this user may read via an access grant.
      */
-    public function grantedRuEntities(): BelongsToMany
+    public function grantedEntities(): BelongsToMany
     {
-        return $this->belongsToMany(RuEntity::class, 'ru_entity_user')
+        return $this->belongsToMany(Entity::class, 'entity_user')
             ->withPivot('similarity')
             ->withTimestamps();
     }
