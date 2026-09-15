@@ -417,17 +417,26 @@ select puzzle words. A word is eligible for a Level when its rank (lower =
 more common) is within the band's cutoff.
 _Avoid_: difficulty (implies curated ordering), CEFR level.
 
-**Word progress**:
-The player's status for one dictionary Word, global across all works:
-**learning** (selected in a generated puzzle), **solved** (its puzzle was
-completed), or **known** (marked by hand). Generation skips solved and
-known words, so completing puzzles advances down the Level band.
-_Avoid_: score, knowledge level.
+**Word familiarity**:
+The reader's exposure score for one dictionary Word, global across all
+works: 0–100, where 100 means the word is known and no row means never
+touched. Reads add +1, lookups subtract 2, completed crosswords add 5.
+_Avoid_: status, progress, level, score.
+
+**Read event**:
+One counted exposure of a word through a revealed sentence pair. Credited
+once per sentence pair, ever.
+_Avoid_: view, hit, impression.
+
+**Lookup event**:
+One counted dictionary-popup open of a word within a sentence pair — a
+signal the reader did not know it. Credited once per sentence pair, ever.
+_Avoid_: click (the mechanical action), search.
 
 # Interactive Reading Context
 
 The domain of reading surfaces where the text itself is interactive — words
-looked up in the dictionary and tinted by the reader's **Word progress**.
+looked up in the dictionary and tinted by the reader's **Word familiarity**.
 
 ## Language
 
@@ -445,6 +454,6 @@ _Avoid_: word position (implementation detail), word hit.
 
 **Word map**:
 The per-entity lookup an interactive page carries — lowercase token to its
-dictionary Word id and the reader's Word progress — covering the entity's
-linked **Entity word list** entries only.
+dictionary Word id and the reader's **Word familiarity** — covering the
+entity's linked **Entity word list** entries only.
 _Avoid_: dictionary (the whole kaikki import), vocabulary.

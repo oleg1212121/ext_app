@@ -150,7 +150,9 @@ test('authenticated users can view reader react page with english primary rows',
             ->where('entity.name', 'Test EN Entity')
             ->has('rows', 1)
             ->where('rows.0.0', 'First EN sentence.')
-            ->where('rows.0.1', 'First RU sentence.'));
+            ->where('rows.0.1', 'First RU sentence.')
+            ->has('rowKeys', 1)
+            ->where('rowKeys.0', 'mm:'.MeaningMatch::query()->where('entity_match_id', $entities['entityMatch']->id)->value('id')));
 });
 
 test('authenticated users can view reader react page with russian primary rows', function () {
@@ -167,7 +169,10 @@ test('authenticated users can view reader react page with russian primary rows',
             ->where('entity.name', 'Test RU Entity')
             ->has('rows', 1)
             ->where('rows.0.0', 'First RU sentence.')
-            ->where('rows.0.1', 'First EN sentence.'));
+            ->where('rows.0.1', 'First EN sentence.')
+            // Row keys follow the rows, whatever side is being read.
+            ->has('rowKeys', 1)
+            ->where('rowKeys.0', 'mm:'.MeaningMatch::query()->where('entity_match_id', $entities['entityMatch']->id)->value('id')));
 });
 
 test('unsupported reader react language returns not found', function () {
@@ -207,10 +212,13 @@ test('entity without alignment returns single language rows', function () {
             ->where('lang', 'en')
             ->has('rows', 1)
             ->where('rows.0.0', 'Standalone EN sentence.')
-            ->where('rows.0.1', ''));
+            ->where('rows.0.1', '')
+            // Unaligned rows are keyed by their entity sentence.
+            ->has('rowKeys', 1)
+            ->where('rowKeys.0', 'es:'.EntitySentence::query()->where('entity_id', $en->id)->value('id')));
 });
 
-test('reader page includes the interactive word map with progress statuses', function () {
+test('reader page includes the interactive word map with familiarity values', function () {
     $user = User::factory()->create();
     $entities = createAlignedReaderEntities();
 
@@ -238,7 +246,7 @@ test('reader page includes the interactive word map with progress statuses', fun
         'token' => 'sentence',
         'count' => 1,
     ]);
-    $user->userWords()->create(['word_id' => $known->id, 'status' => 'known']);
+    $user->userWords()->create(['word_id' => $known->id, 'familiarity' => 100]);
 
     $ruWord = createWord('ru', 'первое', 'noun');
     EntityWord::query()->create([
@@ -256,7 +264,7 @@ test('reader page includes the interactive word map with progress statuses', fun
             ->component('ReaderReact')
             ->where('wordMap.cat.w', $cat->id)
             ->where('wordMap.cat.s', null)
-            ->where('wordMap.sentence.s', 'known')
+            ->where('wordMap.sentence.s', 100)
             ->where('translationWordMap.первое.w', $ruWord->id)
             ->where('highlight', true)
             // Factory users are native English speakers: the EN primary side

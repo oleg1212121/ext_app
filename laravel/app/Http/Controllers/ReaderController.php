@@ -7,6 +7,7 @@ use App\Classes\EntityWordMap;
 use App\Classes\MeaningMatchPresenter;
 use App\Models\Entity;
 use App\Models\EntityMatch;
+use App\Models\EntitySentence;
 use App\Models\Language;
 use App\Models\MeaningMatch;
 use Inertia\Inertia;
@@ -41,7 +42,7 @@ class ReaderController extends Controller
             abort(403);
         }
 
-        ['rows' => $rows, 'translationEntity' => $translationEntity] = $this->buildRows($entity);
+        ['rows' => $rows, 'rowKeys' => $rowKeys, 'translationEntity' => $translationEntity] = $this->buildRows($entity);
 
         $userId = (int) auth()->id();
         $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
@@ -54,6 +55,7 @@ class ReaderController extends Controller
                 'name' => $entity->name,
             ],
             'rows' => $rows,
+            'rowKeys' => $rowKeys,
             'fontSize' => $this->savedReaderFontSize(),
             'highlight' => $this->savedHighlight(),
             'wordMap' => $wordMap->forEntity($entity, $userId),
@@ -80,7 +82,7 @@ class ReaderController extends Controller
     }
 
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, translationEntity: Entity|null}
+     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, translationEntity: Entity|null}
      */
     private function buildRows(Entity $entity): array
     {
@@ -93,14 +95,14 @@ class ReaderController extends Controller
             ->first();
 
         if ($entityMatch === null) {
-            return ['rows' => $this->singleLanguageRows($entity), 'translationEntity' => null];
+            return $this->singleLanguageRows($entity);
         }
 
         $readingSide = $entityMatch->a_entity_id === $entity->id ? 'a' : 'b';
         $otherEntity = $readingSide === 'a' ? $entityMatch->bEntity : $entityMatch->aEntity;
 
         if ($otherEntity === null || ! $this->access()->canRead(auth()->user(), $otherEntity)) {
-            return ['rows' => $this->singleLanguageRows($entity), 'translationEntity' => null];
+            return $this->singleLanguageRows($entity);
         }
 
         $meaningMatches = MeaningMatch::query()
@@ -111,22 +113,36 @@ class ReaderController extends Controller
 
         $bilingualRows = $this->presenter->toSimulatorRows($meaningMatches);
 
+        // Row keys stay in meaning-match order — normalizeRowsForReadingSide
+        // only flips the text columns, never the keys.
         return [
             'rows' => $this->normalizeRowsForReadingSide($bilingualRows, $readingSide),
+            'rowKeys' => $this->presenter->toSimulatorRowKeys($meaningMatches),
             'translationEntity' => $otherEntity,
         ];
     }
 
     /**
-     * @return list<array{0: string, 1: string}>
+     * Rows of the bare entity keyed by their entity sentences, with no
+     * translation side.
+     *
+     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, translationEntity: null}
      */
     private function singleLanguageRows(Entity $entity): array
     {
-        return $entity->sentences()
+        $sentences = $entity->sentences()
             ->orderBy('order')
-            ->pluck('content')
-            ->map(fn (string $content): array => [$content, ''])
-            ->all();
+            ->get(['id', 'content']);
+
+        return [
+            'rows' => $sentences
+                ->map(fn (EntitySentence $sentence): array => [$sentence->content, ''])
+                ->all(),
+            'rowKeys' => $sentences
+                ->map(fn (EntitySentence $sentence): string => 'es:'.$sentence->id)
+                ->all(),
+            'translationEntity' => null,
+        ];
     }
 
     /**

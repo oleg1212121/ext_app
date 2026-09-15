@@ -15,7 +15,7 @@ class UpdateWordProgressRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['required', 'string', 'in:'.UserWord::STATUS_KNOWN],
+            'familiarity' => ['required', 'integer', 'min:'.UserWord::FAMILIARITY_MIN, 'max:'.UserWord::FAMILIARITY_MAX],
         ];
     }
 }

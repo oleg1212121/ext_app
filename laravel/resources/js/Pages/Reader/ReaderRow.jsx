@@ -5,6 +5,7 @@ export default function ReaderRow({
     index,
     primary,
     translation,
+    rowKey,
     showAll,
     sideBySide,
     fontSize,
@@ -80,6 +81,7 @@ export default function ReaderRow({
                         text={primary}
                         wordMap={wordMap}
                         highlight={highlight && primaryHighlightable}
+                        rowKey={rowKey}
                         onWordProgress={onWordProgress}
                         className="whitespace-pre-line"
                     />
@@ -114,6 +116,7 @@ export default function ReaderRow({
                                 text={translation}
                                 wordMap={translationWordMap}
                                 highlight={highlight && translationHighlightable}
+                                rowKey={rowKey}
                                 onWordProgress={onWordProgress}
                             />
                         </div>

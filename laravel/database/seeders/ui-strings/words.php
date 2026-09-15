@@ -9,4 +9,5 @@ return [
     'word.examples' => ['en' => 'Examples', 'ru' => 'Примеры'],
     'word.i_know_this' => ['en' => 'I know this word', 'ru' => 'Я знаю это слово'],
     'word.remove_mark' => ['en' => 'Remove mark', 'ru' => 'Снять отметку'],
+    'word.familiarity' => ['en' => 'Familiarity: :value/:max', 'ru' => 'Знакомость: :value/:max'],
 ];

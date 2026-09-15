@@ -2,6 +2,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {useI18n} from '../i18n';
 import {getCsrfToken} from '../lib/http';
+import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
 
 const POPUP_MARGIN = 8;
 const POPUP_WIDTH = 340;
@@ -21,7 +22,7 @@ function popupStyle(rect) {
  * Word popup shown next to a clicked word: dictionary details fetched lazily
  * from GET /words/{id} plus the word progress actions.
  */
-export default function WordPopup({wordId, surface, status, rect, onClose, onProgress}) {
+export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress}) {
     const {t} = useI18n();
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
@@ -96,13 +97,13 @@ export default function WordPopup({wordId, surface, status, rect, onClose, onPro
                 Accept: 'application/json',
                 ...(getCsrfToken() ? {'X-CSRF-TOKEN': getCsrfToken()} : {}),
             },
-            body: method === 'PATCH' ? JSON.stringify({status: 'known'}) : undefined,
+            body: method === 'PATCH' ? JSON.stringify({familiarity: FAMILIARITY_MAX}) : undefined,
         })
             .then(async (res) => {
                 if (!res.ok) {
                     throw new Error(`${res.status}`);
                 }
-                onProgress(surface, action === 'known' ? 'known' : null);
+                onProgress(surface, action === 'known' ? FAMILIARITY_MAX : null);
             })
             .catch(() => setBusy(false));
     };
@@ -127,6 +128,10 @@ export default function WordPopup({wordId, surface, status, rect, onClose, onPro
                             <span className="text-[11px] uppercase tracking-wider opacity-60">{data.word_class}</span>
                         )}
                     </div>
+
+                    <p className="mt-0.5 text-[11px] tabular-nums opacity-60">
+                        {t('word.familiarity', {value: familiarity ?? 0, max: FAMILIARITY_MAX})}
+                    </p>
 
                     {data.is_form && (
                         <p className="mt-1 text-xs italic opacity-70">
@@ -168,7 +173,7 @@ export default function WordPopup({wordId, surface, status, rect, onClose, onPro
                     )}
 
                     <div className="mt-3 flex gap-2">
-                        {status !== 'known' && (
+                        {familiarity !== FAMILIARITY_MAX && (
                             <button
                                 type="button"
                                 disabled={busy}
@@ -178,7 +183,7 @@ export default function WordPopup({wordId, surface, status, rect, onClose, onPro
                                 {t('word.i_know_this')}
                             </button>
                         )}
-                        {status != null && (
+                        {familiarity != null && (
                             <button
                                 type="button"
                                 disabled={busy}

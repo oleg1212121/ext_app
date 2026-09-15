@@ -1,13 +1,17 @@
 import React, {useCallback, useMemo, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {segmentText} from '../lib/wordTokenizer.mjs';
+import {FAMILIARITY_MAX, FAMILIARITY_STRONG_AT, recordWordEvents} from '../lib/wordFamiliarity';
 import WordPopup from './WordPopup.jsx';
 
-function tierClass(status, highlight) {
-    if (!highlight || status === 'known') {
+function tierClass(familiarity, highlight) {
+    if (!highlight || (familiarity ?? 0) >= FAMILIARITY_MAX) {
         return 'word-token';
     }
-    if (status === 'learning' || status === 'solved') {
+    if (familiarity >= FAMILIARITY_STRONG_AT) {
+        return 'word-token word-progress-strong';
+    }
+    if (familiarity >= 1) {
         return 'word-token word-progress';
     }
 
@@ -16,11 +20,14 @@ function tierClass(status, highlight) {
 
 /**
  * Renders text split into interactive dictionary words. Only tokens present
- * in the word map ({l_word: {w: wordId, s: status|null}}) become clickable;
- * everything else is plain text. Highlight = knowledge tinting, gated by the
- * caller (setting + language eligibility).
+ * in the word map ({l_word: {w: wordId, s: familiarity|null}}) become
+ * clickable; everything else is plain text. Highlight = knowledge tinting,
+ * gated by the caller (setting + language eligibility).
+ *
+ * rowKey (optional) scopes this sentence for familiarity bookkeeping: the
+ * first popup lookup of a word within the row costs -2, credited once.
  */
-export default function WordText({text, wordMap = {}, highlight = true, onWordProgress, className}) {
+export default function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className}) {
     const segments = useMemo(() => segmentText(text ?? ''), [text]);
     const [popup, setPopup] = useState(null);
 
@@ -33,14 +40,26 @@ export default function WordText({text, wordMap = {}, highlight = true, onWordPr
         setPopup({
             wordId: entry.w,
             surface: segment.key,
-            status: entry.s,
+            familiarity: entry.s,
             rect: event.currentTarget.getBoundingClientRect(),
         });
-    }, [wordMap]);
+        if (rowKey) {
+            recordWordEvents([{row_key: rowKey, kind: 'lookup', word_ids: [entry.w]}])
+                .then((familiarity) => {
+                    if (familiarity[entry.w] === undefined) {
+                        return;
+                    }
+                    setPopup((current) => current?.wordId === entry.w
+                        ? {...current, familiarity: familiarity[entry.w]}
+                        : current);
+                    onWordProgress?.(segment.key, familiarity[entry.w]);
+                });
+        }
+    }, [wordMap, rowKey, onWordProgress]);
 
-    const handleProgress = useCallback((key, status) => {
+    const handleProgress = useCallback((key, familiarity) => {
         setPopup(null);
-        onWordProgress?.(key, status);
+        onWordProgress?.(key, familiarity);
     }, [onWordProgress]);
 
     return (
@@ -63,7 +82,7 @@ export default function WordText({text, wordMap = {}, highlight = true, onWordPr
                 <WordPopup
                     wordId={popup.wordId}
                     surface={popup.surface}
-                    status={popup.status}
+                    familiarity={popup.familiarity}
                     rect={popup.rect}
                     onClose={() => setPopup(null)}
                     onProgress={handleProgress}

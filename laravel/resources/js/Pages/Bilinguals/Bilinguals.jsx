@@ -12,6 +12,7 @@ import {useI18n} from '../../i18n';
 import {getCsrfToken} from '../../lib/http';
 import {loadPositions, savePositions} from '../../lib/simulatorPosition';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
+import {patchWordMap, recordWordEvents, rowWordIds} from '../../lib/wordFamiliarity';
 import {marked} from 'marked';
 import DOMPurify from 'dompurify';
 
@@ -176,6 +177,7 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
     const payload = json.data.data;
     return {
         rows: payload.rows ?? [],
+        rowKeys: payload.row_keys ?? null,
         wordMaps: payload.word_maps ?? null,
         meta: payload.meta ?? {
             current_page: page,
@@ -219,7 +221,9 @@ const Bilinguals = (props) => {
     const pendingWorkplaceFocusRef = React.useRef(false);
 
     const [rows, setRows] = React.useState([]);
+    const [rowKeys, setRowKeys] = React.useState(null);
     const [wordMaps, setWordMaps] = React.useState(null);
+    const [allEn, setAllEn] = React.useState(false);
     const [textMeta, setTextMeta] = React.useState(null);
     const [textPage, setTextPage] = React.useState(initialSaved?.page ?? 1);
     const [loadError, setLoadError] = React.useState(null);
@@ -278,9 +282,11 @@ const Bilinguals = (props) => {
         setLoadError(null);
         setPending(true);
         try {
-            const {rows: nextRows, wordMaps: nextWordMaps, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
+            const {rows: nextRows, rowKeys: nextRowKeys, wordMaps: nextWordMaps, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
             setRows(nextRows);
+            setRowKeys(nextRowKeys);
             setWordMaps(nextWordMaps);
+            setAllEn(false);
             setTextMeta(meta);
             setTextPage(meta.current_page ?? page);
             const positions = persistPage(meta.current_page ?? page);
@@ -293,7 +299,9 @@ const Bilinguals = (props) => {
             }
         } catch (e) {
             setRows([]);
+            setRowKeys(null);
             setWordMaps(null);
+            setAllEn(false);
             setTextMeta(null);
             setLoadError(e instanceof Error ? e.message : t('bilinguals.failed_to_load_text'));
         } finally {
@@ -351,6 +359,9 @@ const Bilinguals = (props) => {
     };
 
     const onToggleRow = (n, side) => {
+        if (side === 'en' && !checkedRows[n]?.en) {
+            creditRead(n);
+        }
         setCheckedRows((prev) => {
             const rowState = {...(prev[n] ?? {en: false, ru: false}), [side]: !(prev[n]?.[side])};
             const next = {...prev, [n]: rowState};
@@ -388,6 +399,55 @@ const Bilinguals = (props) => {
     const rowOffset = textMeta
         ? ((textMeta.current_page - 1) * textMeta.per_page)
         : 0;
+
+    // Apply {wordId: familiarity} results from the familiarity API: recolor
+    // every occurrence of the touched words on both sides.
+    const applyFamiliarity = React.useCallback((familiarity) => {
+        if (!familiarity || Object.keys(familiarity).length === 0) {
+            return;
+        }
+        setWordMaps((maps) => (maps
+            ? {a: patchWordMap(maps.a, familiarity), b: patchWordMap(maps.b, familiarity)}
+            : maps));
+    }, []);
+
+    // Revealing a row's EN sentence credits its dictionary words a read
+    // (+1, deduplicated per sentence pair server-side).
+    const creditRead = React.useCallback((n) => {
+        if (!wordMaps?.highlightable?.a || !rowKeys) {
+            return;
+        }
+        const index = n - 1 - rowOffset;
+        if (index < 0 || index >= rows.length || !rowKeys[index]) {
+            return;
+        }
+        const wordIds = rowWordIds(rows[index][0], wordMaps.a ?? {});
+        if (wordIds.length === 0) {
+            return;
+        }
+        recordWordEvents([{row_key: rowKeys[index], kind: 'read', word_ids: wordIds}])
+            .then(applyFamiliarity);
+    }, [wordMaps, rowKeys, rows, rowOffset, applyFamiliarity]);
+
+    // Master EN checkbox: reveal the whole column and credit every loaded
+    // row's words in one batched request.
+    const toggleAllEn = (checked) => {
+        setAllEn(checked);
+        if (!checked || !wordMaps?.highlightable?.a || !rowKeys) {
+            return;
+        }
+        const events = [];
+        rows.forEach((row, index) => {
+            const wordIds = rowWordIds(row[0], wordMaps.a ?? {});
+            if (rowKeys[index] && wordIds.length > 0) {
+                events.push({row_key: rowKeys[index], kind: 'read', word_ids: wordIds});
+            }
+        });
+        if (events.length === 0) {
+            return;
+        }
+        recordWordEvents(events).then(applyFamiliarity);
+    };
 
     const focusOnWorkplace = () => {
         if (workplaceRef.current) {
@@ -654,7 +714,7 @@ const Bilinguals = (props) => {
                                     </div>
                                 </div>
                             )}
-                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow} wordMaps={wordMaps} highlightWords={highlightWords} onWordProgress={handleWordProgress}/>
+                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow} wordMaps={wordMaps} highlightWords={highlightWords} onWordProgress={handleWordProgress} rowKeys={rowKeys} allEn={allEn} onToggleAllEn={toggleAllEn}/>
                         </>
                     }
                     {showWorkplace === true &&

@@ -58,6 +58,7 @@ export default function ReaderApp({
     lang = 'en',
     entity,
     rows = [],
+    rowKeys = [],
     fontSize: savedFontSize,
     highlight: savedHighlight = true,
     wordMap: initialWordMap = {},
@@ -374,6 +375,7 @@ export default function ReaderApp({
                                 index={index}
                                 primary={primary}
                                 translation={translation}
+                                rowKey={rowKeys[index]}
                                 showAll={showAll}
                                 sideBySide={sideBySide}
                                 fontSize={fontSize}

@@ -53,7 +53,7 @@ export default function TextContent(props) {
                     <th className="px-4 py-2 text-left">
                         <div className="flex items-center gap-2">
                             <span className="font-[var(--wbench-serif)] italic normal-case tracking-normal text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">{t('bilinguals.english')}</span>
-                            <CheckboxInput id='all_en'/>
+                            <CheckboxInput id='all_en' checked={!!props.allEn} onChange={(event) => props.onToggleAllEn?.(event.target.checked)}/>
                         </div>
                     </th>
                     <th className="px-2 py-2 text-center text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]">EN</th>
@@ -82,6 +82,7 @@ export default function TextContent(props) {
                                     text={row[0]}
                                     wordMap={props.wordMaps?.a ?? {}}
                                     highlight={props.highlightWords && !!(props.wordMaps?.highlightable?.a)}
+                                    rowKey={props.rowKeys?.[i]}
                                     onWordProgress={props.onWordProgress}
                                 />
                             </span>
@@ -108,6 +109,7 @@ export default function TextContent(props) {
                                         text={row[1]}
                                         wordMap={props.wordMaps?.b ?? {}}
                                         highlight={props.highlightWords && !!(props.wordMaps?.highlightable?.b)}
+                                        rowKey={props.rowKeys?.[i]}
                                         onWordProgress={props.onWordProgress}
                                     />
                                 </span>

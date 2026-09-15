@@ -58,12 +58,14 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::get('/words/{word}', [WordController::class, 'show'])
         ->whereNumber('word')
         ->name('words.show');
-    Route::patch('/words/{word}/progress', [WordController::class, 'markKnown'])
+    Route::patch('/words/{word}/progress', [WordController::class, 'setFamiliarity'])
         ->whereNumber('word')
         ->name('words.progress.update');
     Route::delete('/words/{word}/progress', [WordController::class, 'resetProgress'])
         ->whereNumber('word')
         ->name('words.progress.reset');
+    Route::post('/word-events', [WordController::class, 'recordEvents'])
+        ->name('word.events.store');
 
     Route::get('/library', [LibraryController::class, 'index'])->name('library.index');
     Route::get('/library/create', [LibraryController::class, 'createWork'])->name('library.create');

@@ -32,6 +32,22 @@ class MeaningMatchPresenter
         return $rows;
     }
 
+    /**
+     * Row keys matching toSimulatorRows one-to-one (same order, same count):
+     * row i of toSimulatorRows belongs to row key i — the client uses them
+     * to scope familiarity events to a sentence pair.
+     *
+     * @param  Collection<int, MeaningMatch>  $meaningMatches
+     * @return list<string>
+     */
+    public function toSimulatorRowKeys(Collection $meaningMatches): array
+    {
+        return $meaningMatches
+            ->map(fn (MeaningMatch $meaningMatch): string => 'mm:'.$meaningMatch->id)
+            ->values()
+            ->all();
+    }
+
     private function sideText(MeaningMatch $meaningMatch, string $side): string
     {
         return $meaningMatch->sentenceMeaningMatches
