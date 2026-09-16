@@ -105,3 +105,50 @@ it('throws on missing file', function () {
     $parser = new WiktionaryParser('en', 'ru');
     $parser->import('/nonexistent/file.jsonl');
 })->throws(InvalidArgumentException::class);
+
+it('reads gzipped jsonl files transparently', function () {
+    $enLanguageId = createLanguages()['en']->id;
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_gz_').'.jsonl.gz';
+    $lines = [
+        json_encode(['word' => 'cat', 'pos' => 'noun', 'senses' => [['glosses' => ['A small domesticated feline']]]]),
+        json_encode(['word' => 'dog', 'pos' => 'noun', 'senses' => [['glosses' => ['A domesticated canine']]]]),
+    ];
+    file_put_contents($tmpFile, gzencode(implode("\n", $lines)."\n"));
+
+    $parser = new WiktionaryParser('en', 'ru', 100);
+    $stats = $parser->import($tmpFile);
+
+    expect($stats['lines_read'])->toBe(2);
+    expect($stats['words_imported'])->toBe(2);
+    expect(Word::where('word', 'cat')->where('language_id', $enLanguageId)->count())->toBe(1);
+    expect(Word::where('word', 'dog')->where('language_id', $enLanguageId)->count())->toBe(1);
+
+    unlink($tmpFile);
+});
+
+it('stages translations for multiple target languages', function () {
+    $enLanguageId = createLanguages()['en']->id;
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_multi_');
+    $lines = [
+        json_encode(['word' => 'cat', 'pos' => 'noun', 'translations' => [
+            ['code' => 'ru', 'word' => 'кошка'],
+            ['code' => 'de', 'word' => 'Katze'],
+            ['code' => 'fr', 'word' => 'chat'],
+        ]]),
+    ];
+    file_put_contents($tmpFile, implode("\n", $lines)."\n");
+
+    $parser = new WiktionaryParser('en', ['ru', 'de'], 100);
+    $stats = $parser->import($tmpFile);
+
+    expect($stats['words_imported'])->toBe(1);
+
+    $cat = Word::where('word', 'cat')->where('language_id', $enLanguageId)->first();
+    expect($cat->translations)->toBeArray();
+    expect($cat->translations)->toContain('кошка');
+    expect($cat->translations)->toContain('Katze');
+    expect($cat->translations)->not->toContain('chat');
+    expect($cat->translations)->toHaveCount(2);
+
+    unlink($tmpFile);
+});

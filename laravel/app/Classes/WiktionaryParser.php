@@ -18,7 +18,8 @@ class WiktionaryParser
 {
     private string $lang;
 
-    private string $targetLang;
+    /** @var list<string> */
+    private array $targetLangs;
 
     private int $batchSize;
 
@@ -35,10 +36,19 @@ class WiktionaryParser
         'batches_flushed' => 0,
     ];
 
-    public function __construct(string $lang = 'en', string $targetLang = 'ru', int $batchSize = 500)
+    public function __construct(string $lang, string|array $targetLang = 'ru', int $batchSize = 500)
     {
         $this->lang = $lang;
-        $this->targetLang = $targetLang;
+
+        $targets = is_string($targetLang) ? [$targetLang] : array_values($targetLang);
+        if ($targets === []) {
+            throw new \InvalidArgumentException('At least one target language is required.');
+        }
+        if (in_array($lang, $targets, true)) {
+            throw new \InvalidArgumentException('Target languages must differ from the source language.');
+        }
+        $this->targetLangs = $targets;
+
         $this->batchSize = $batchSize;
 
         $language = Language::query()->where('code', $lang)->first();
@@ -129,7 +139,10 @@ class WiktionaryParser
 
     public function parseFile(string $path): \Generator
     {
-        $handle = fopen($path, 'r');
+        // Transparent gzip streaming: the wrapper decompresses on the fly,
+        // so fgets() still yields one JSON object per line.
+        $source = str_ends_with(strtolower($path), '.gz') ? 'compress.zlib://'.$path : $path;
+        $handle = fopen($source, 'r');
         if ($handle === false) {
             throw new \RuntimeException("Cannot open file: {$path}");
         }
@@ -219,13 +232,13 @@ class WiktionaryParser
         $translations = [];
         foreach ($line->senses ?? [] as $sense) {
             foreach ($sense->translations ?? [] as $translation) {
-                if (($translation->code ?? null) === $this->targetLang && ($translation->word ?? null) !== null && trim($translation->word) !== '') {
+                if (in_array($translation->code ?? null, $this->targetLangs, true) && ($translation->word ?? null) !== null && trim($translation->word) !== '') {
                     $translations[] = $translation->word;
                 }
             }
         }
         foreach ($line->translations ?? [] as $translation) {
-            if (($translation->code ?? null) === $this->targetLang && ($translation->word ?? null) !== null && trim($translation->word) !== '') {
+            if (in_array($translation->code ?? null, $this->targetLangs, true) && ($translation->word ?? null) !== null && trim($translation->word) !== '') {
                 $translations[] = $translation->word;
             }
         }
