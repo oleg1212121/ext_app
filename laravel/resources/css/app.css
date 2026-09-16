@@ -133,11 +133,13 @@
 :root {
     --word-unknown-bg: rgba(225, 29, 72, 0.12);
     --word-progress-bg: rgba(217, 119, 6, 0.16);
+    --word-progress-strong-bg: rgba(217, 119, 6, 0.07);
 }
 
 .dark {
     --word-unknown-bg: rgba(244, 63, 94, 0.22);
     --word-progress-bg: rgba(245, 158, 11, 0.24);
+    --word-progress-strong-bg: rgba(245, 158, 11, 0.10);
 }
 
 .word-token {
@@ -176,4 +178,8 @@
 
 .word-token.word-progress {
     background-color: var(--word-progress-bg);
+}
+
+.word-token.word-progress-strong {
+    background-color: var(--word-progress-strong-bg);
 }

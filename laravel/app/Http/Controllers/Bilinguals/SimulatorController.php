@@ -147,7 +147,7 @@ class SimulatorController extends Controller
     }
 
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, word_maps: array|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
+     * @return array{rows: list<array{0: string, 1: string}>, row_keys: list<string>|null, word_maps: array|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
      */
     private function textFromEntityMatch(int $entityMatchId, int $page, int $perPage): array
     {
@@ -172,6 +172,7 @@ class SimulatorController extends Controller
 
         return [
             'rows' => $this->presenter->toSimulatorRows($paginator->getCollection()),
+            'row_keys' => $this->presenter->toSimulatorRowKeys($paginator->getCollection()),
             'word_maps' => $this->wordMapsFor($match),
             'meta' => [
                 'current_page' => $paginator->currentPage(),
@@ -210,12 +211,13 @@ class SimulatorController extends Controller
     }
 
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, word_maps: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
+     * @return array{rows: list<array{0: string, 1: string}>, row_keys: null, word_maps: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
      */
     private function textFromFilename(string $filename, int $page, int $perPage): array
     {
         $result = [
             'rows' => [],
+            'row_keys' => null,
             'word_maps' => null,
             'meta' => [
                 'current_page' => $page,

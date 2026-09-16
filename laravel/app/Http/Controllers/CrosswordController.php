@@ -6,6 +6,7 @@ use App\Classes\Crossword;
 use App\Classes\CrosswordLevel;
 use App\Classes\EntityAccessService;
 use App\Classes\EntityWordIndexer;
+use App\Classes\WordFamiliarityService;
 use App\Http\Requests\CompleteCrosswordRequest;
 use App\Http\Requests\GenerateCrosswordRequest;
 use App\Models\Entity;
@@ -23,7 +24,10 @@ class CrosswordController extends Controller
 
     private const MIN_WORDS = 3;
 
-    public function __construct(private readonly EntityAccessService $access) {}
+    public function __construct(
+        private readonly EntityAccessService $access,
+        private readonly WordFamiliarityService $familiarity,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -93,7 +97,7 @@ class CrosswordController extends Controller
                     ->from('user_word')
                     ->whereColumn('user_word.word_id', 'words.id')
                     ->where('user_word.user_id', $user->id)
-                    ->whereIn('user_word.status', [UserWord::STATUS_SOLVED, UserWord::STATUS_KNOWN]);
+                    ->where('user_word.familiarity', '>=', UserWord::FAMILIARITY_MAX);
             })
             ->orderBy('words.frequency')
             ->orderBy('words.id')
@@ -114,7 +118,7 @@ class CrosswordController extends Controller
         foreach ($words as $word) {
             UserWord::query()->firstOrCreate(
                 ['user_id' => $user->id, 'word_id' => $word->id],
-                ['status' => UserWord::STATUS_LEARNING],
+                ['familiarity' => UserWord::FAMILIARITY_MIN],
             );
         }
 
@@ -129,11 +133,14 @@ class CrosswordController extends Controller
     {
         $user = $request->user();
 
-        UserWord::query()
-            ->where('user_id', $user->id)
-            ->whereIn('word_id', $request->array('word_ids'))
-            ->where('status', UserWord::STATUS_LEARNING)
-            ->update(['status' => UserWord::STATUS_SOLVED]);
+        // Only words the user already has a row for earn the bonus — a
+        // completed puzzle credits the words it was generated from, which
+        // generate seeded.
+        $this->familiarity->applyDeltas(
+            (int) $user->id,
+            array_fill_keys($request->array('word_ids'), UserWord::CROSSWORD_BONUS),
+            onlyExisting: true,
+        );
 
         return response()->json(['saved' => true]);
     }

@@ -1,5 +1,31 @@
 # Directory Update Log
 
+## 2026-09-14
+
+* **Feature: numeric word familiarity (0–100) replaces the ternary word
+  status** ([Interactive words](domains/interactive-words.md), ADR
+  [0028](../docs/adr/0028-numeric-word-familiarity.md)). `user_word.status`
+  (`learning/solved/known`) became `user_word.familiarity` (integer 0–100,
+  100 = known; migration maps old `known` → 100, everything else → 0). New
+  exposure signals: **read** +1 when a sentence pair is revealed on the
+  bilinguals simulator (row EN checkbox or the now-controlled `all_en`
+  header checkbox, which batches one request per loaded page), **lookup**
+  −2 on the first word-popup open within a sentence pair on both simulator
+  and reader. Events are deduplicated server-side by the new
+  `user_word_event` ledger (unique user × word × `row_key` × kind;
+  `row_key` = `mm:{meaningMatchId}` / `es:{entitySentenceId}`, shipped
+  one-to-one with rows as `row_keys` (simulator `POST /text`) / `rowKeys`
+  (reader)); row keys are validated against existing rows. New endpoint
+  `POST /word-events` (`WordFamiliarityService`), `PATCH
+  /words/{word}/progress` now takes `familiarity: 0-100`
+  (`WordController::setFamiliarity`). Crossword: `complete` awards +5 per
+  puzzle word (existing rows only, clamped), `generate` excludes only
+  familiarity ≥ 100 and seeds 0-marker rows. Tinting moved to four bands
+  (0 rose / 1–19 amber / 20–99 faint amber / ≥ 100 plain — new
+  `.word-progress-strong`); the popup shows "Familiarity: N/100". New
+  CONTEXT.md terms: Word familiarity, Read event, Lookup event (Word
+  progress retired).
+
 ## 2026-09-13
 
 * **Feature: interactive dictionary words on the reader and bilinguals
