@@ -10,7 +10,7 @@ class ImportWiktionaryCommand extends Command
 {
     protected $signature = 'wiktionary:import {file}
                             {--lang=en : Source language code from the languages registry}
-                            {--target-lang=ru : Target language code for translations}
+                            {--target-lang=ru : Comma-separated target language codes for staged translations}
                             {--batch-size=500 : Number of records per DB flush}';
 
     protected $description = 'Import a Kaikki Wiktionary JSONL dump file into the database. Translations are stored for later linking via wiktionary:link-translations';
@@ -19,8 +19,12 @@ class ImportWiktionaryCommand extends Command
     {
         $file = $this->argument('file');
         $lang = $this->option('lang');
-        $targetLang = $this->option('target-lang');
         $batchSize = (int) $this->option('batch-size');
+
+        $targetLangs = array_values(array_filter(array_map(
+            fn (string $code) => trim($code),
+            explode(',', (string) $this->option('target-lang')),
+        )));
 
         if (! file_exists($file)) {
             $this->error("File not found: {$file}");
@@ -41,23 +45,25 @@ class ImportWiktionaryCommand extends Command
             return self::FAILURE;
         }
 
-        if (! in_array($targetLang, $registryCodes, true)) {
-            $this->error("Unknown target language: {$targetLang}. Available: ".implode(', ', $registryCodes));
+        foreach ($targetLangs as $targetLang) {
+            if (! in_array($targetLang, $registryCodes, true)) {
+                $this->error("Unknown target language: {$targetLang}. Available: ".implode(', ', $registryCodes));
 
-            return self::FAILURE;
-        }
+                return self::FAILURE;
+            }
 
-        if ($lang === $targetLang) {
-            $this->error('Source language and target language must be different.');
+            if ($targetLang === $lang) {
+                $this->error('Source language and target language must be different.');
 
-            return self::FAILURE;
+                return self::FAILURE;
+            }
         }
 
         $this->info("Importing Wiktionary data from: {$file}");
-        $this->info("Source language: {$lang}, Target language: {$targetLang}, Batch size: {$batchSize}");
+        $this->info('Source language: '.$lang.', Target languages: '.implode(', ', $targetLangs).", Batch size: {$batchSize}");
 
         try {
-            $parser = new WiktionaryParser($lang, $targetLang, $batchSize);
+            $parser = new WiktionaryParser($lang, $targetLangs, $batchSize);
             $stats = $parser->import($file, $this->output);
         } catch (\InvalidArgumentException $e) {
             $this->error($e->getMessage());

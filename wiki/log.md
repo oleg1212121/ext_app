@@ -1,5 +1,41 @@
 # Directory Update Log
 
+## 2026-09-16
+
+* **Feature: import en+ru from the monolithic kaikki raw dump**
+  ([Dictionary import](domains/dictionary-import.md),
+  [Playbook](playbooks/import-dictionary-data.md), ADR
+  [0029](../docs/adr/0029-import-raw-dump-via-per-language-extraction.md)).
+  New `wiktionary:import-raw {file} --langs=en,ru` orchestrates:
+  `RawWiktextractExtractor` streams the mixed-language
+  `raw-wiktextract-data.jsonl.gz` (2.7GB, ~2400 Wiktionary languages on one
+  line each) once with flat memory — substring pre-filter skips
+  `json_decode` for non-wanted languages, the decoded **top-level**
+  `lang_code` decides (nested occurrences in translations/templates are
+  false positives; line 1 of the dump alone contains a nested ru needle in
+  its 552 translations) — and writes raw-line **language extracts** next to
+  the dump (`<base>.<code>.jsonl`, `--skip-extract` to reuse,
+  `--extract-only` to stop there, `--max-lines` for smoke runs); then each
+  language imports through the existing `WiktionaryParser` path with
+  **symmetric** translation staging (every imported language stages every
+  other; `--target-langs` overrides); then `wiktionary:link-translations`
+  runs automatically (`--no-link` to skip). `--fresh --force` wipes the
+  selected languages' dictionary data first (FK cascades take satellites,
+  links and `user_word` familiarity; `entity_words.word_id` reset → re-run
+  `crossword:link`); re-imports without it upsert and text-dedupe but never
+  delete. `WiktionaryParser` reads `.jsonl.gz` transparently
+  (`compress.zlib://`) and accepts a target-language **list**; the merge
+  key stays `word|pos` **without language**, so mixed-language input must
+  never be fed to it directly (the extract step exists for that reason).
+  `wiktionary:import --target-lang` now takes comma-separated codes. New
+  migration indexes `definitions.word_id` / `etymologies.word_id`
+  (`insertNewOnly`'s per-batch `whereIn` would full-scan multi-million-row
+  tables). Import-raw sets `memory_limit=1G` + `set_time_limit(0)` (single
+  decoded lines can spike past the 128M CLI default) and heartbeats every
+  100k lines to console + log for detached runs. Smoke-verified against the
+  real gz on the testing DB (20k lines → 4064 en words, 18,404
+  definitions). New CONTEXT.md terms: Raw dump, Language extract.
+
 ## 2026-09-14
 
 * **Feature: numeric word familiarity (0–100) replaces the ternary word

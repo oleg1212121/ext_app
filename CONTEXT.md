@@ -244,6 +244,20 @@ A raw target-language word string the import recorded on a Word, awaiting
 pipeline, never shown to end users.
 _Avoid_: raw translation, pending translation, translation (overloaded).
 
+**Raw dump**:
+The monolithic kaikki.org extract of the entire English Wiktionary — one
+JSON object per line, mixing the entries of every language in one file,
+each entry carrying its language. Source material for **Language
+extracts**; never imported directly.
+_Avoid_: kaikki file (ambiguous — per-language dumps also exist), full dump.
+
+**Language extract**:
+The per-language file filtered from a **Raw dump** — raw lines of exactly
+one language, safe to feed the single-language import. Working data of the
+pipeline, kept next to the dump and overwritten on each extraction.
+_Avoid_: split file, per-language dump (that's the kaikki.org pre-split
+download).
+
 # Access Control Context
 
 The domain of who may do what in the application — driven by a user's **Role**
