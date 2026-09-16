@@ -135,8 +135,8 @@ it('generates a crossword for a readable entity', function () {
     expect(count($payload['words']))->toBeGreaterThan(0);
     expect($payload['dictionary'])->toHaveKey('ran');
 
-    // Selected words become learning for the user.
-    expect(UserWord::query()->where('user_id', $user->id)->where('status', 'learning')->count())->toBeGreaterThan(0);
+    // Selected words get a familiarity-0 marker row for the user.
+    expect(UserWord::query()->where('user_id', $user->id)->where('familiarity', 0)->count())->toBeGreaterThan(0);
 });
 
 it('forbids generating for a restricted entity without a grant', function () {
@@ -166,7 +166,7 @@ it('respects the level band cutoff', function () {
     expect($dictionary)->not->toHaveKey('uncommon');
 });
 
-it('excludes solved and known words from generation', function () {
+it('excludes fully known words but keeps in-progress words in generation', function () {
     $user = User::factory()->create();
     $entity = seedCrosswordEntity();
     $words = seedDictionary(['the', 'cat', 'sat', 'dog', 'ran']);
@@ -175,9 +175,16 @@ it('excludes solved and known words from generation', function () {
         ->post(route('crossword.generate'), ['entity_id' => $entity->id, 'level' => 0])
         ->assertOk();
 
-    UserWord::query()->where('user_id', $user->id)->update(['status' => 'solved']);
+    // In-progress words (below the known threshold) stay eligible.
+    UserWord::query()->where('user_id', $user->id)->update(['familiarity' => 50]);
 
-    $response = $this->actingAs($user)
+    $this->actingAs($user)
+        ->post(route('crossword.generate'), ['entity_id' => $entity->id, 'level' => 0])
+        ->assertOk();
+
+    UserWord::query()->where('user_id', $user->id)->update(['familiarity' => 100]);
+
+    $this->actingAs($user)
         ->post(route('crossword.generate'), ['entity_id' => $entity->id, 'level' => 0])
         ->assertStatus(422);
 });
@@ -206,20 +213,34 @@ it('reports a stale word list as still building instead of building inline', fun
         ->and($entity->refresh()->words_indexed_at)->toBeNull();
 });
 
-it('marks learning words solved on completion', function () {
+it('awards a crossword completion bonus that clamps at the known threshold', function () {
     $user = User::factory()->create();
     $word = createWord('en', 'complete', 'noun');
-    UserWord::query()->create(['user_id' => $user->id, 'word_id' => $word->id, 'status' => 'learning']);
+    UserWord::query()->create(['user_id' => $user->id, 'word_id' => $word->id, 'familiarity' => 0]);
     $knownWord = createWord('en', 'known', 'noun');
-    UserWord::query()->create(['user_id' => $user->id, 'word_id' => $knownWord->id, 'status' => 'known']);
+    UserWord::query()->create(['user_id' => $user->id, 'word_id' => $knownWord->id, 'familiarity' => 100]);
+    $unknownWord = createWord('en', 'unknown', 'noun');
 
     $this->actingAs($user)
-        ->post(route('crossword.complete'), ['word_ids' => [$word->id, $knownWord->id]])
+        ->post(route('crossword.complete'), ['word_ids' => [$word->id, $knownWord->id, $unknownWord->id]])
         ->assertOk()
         ->assertJson(['saved' => true]);
 
-    expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $word->id)->value('status'))->toBe('solved');
-    expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $knownWord->id)->value('status'))->toBe('known');
+    expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $word->id)->value('familiarity'))->toBe(5);
+    expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $knownWord->id)->value('familiarity'))->toBe(100);
+    expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $unknownWord->id)->exists())->toBeFalse();
+});
+
+it('awards the completion bonus only once per completion call', function () {
+    $user = User::factory()->create();
+    $word = createWord('en', 'complete', 'noun');
+    UserWord::query()->create(['user_id' => $user->id, 'word_id' => $word->id, 'familiarity' => 98]);
+
+    $this->actingAs($user)
+        ->post(route('crossword.complete'), ['word_ids' => [$word->id]])
+        ->assertOk();
+
+    expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $word->id)->value('familiarity'))->toBe(100);
 });
 
 it('validates generate input', function () {

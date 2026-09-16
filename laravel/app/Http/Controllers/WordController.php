@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\WordFamiliarityService;
+use App\Http\Requests\RecordWordEventsRequest;
 use App\Http\Requests\UpdateWordProgressRequest;
 use App\Models\Transcription;
 use App\Models\UserWord;
@@ -14,6 +16,8 @@ use Illuminate\Support\Collection;
 class WordController extends Controller
 {
     private const TRANSLATION_LIMIT = 100;
+
+    public function __construct(private readonly WordFamiliarityService $familiarity) {}
 
     /**
      * Dictionary details for the word popup: definitions, transcriptions,
@@ -55,20 +59,20 @@ class WordController extends Controller
     }
 
     /**
-     * "I know this word" — mark the word known for the current user.
+     * Manual familiarity set from the popup ("I know this word" = 100).
      */
-    public function markKnown(UpdateWordProgressRequest $request, Word $word): JsonResponse
+    public function setFamiliarity(UpdateWordProgressRequest $request, Word $word): JsonResponse
     {
         UserWord::query()->updateOrCreate(
             ['user_id' => $request->user()->id, 'word_id' => $word->id],
-            ['status' => UserWord::STATUS_KNOWN],
+            ['familiarity' => $request->integer('familiarity')],
         );
 
-        return response()->json(['data' => ['status' => UserWord::STATUS_KNOWN]]);
+        return response()->json(['data' => ['familiarity' => $request->integer('familiarity')]]);
     }
 
     /**
-     * Remove the user's progress mark; the word goes back to unknown.
+     * Remove the user's progress row; the word goes back to untouched.
      */
     public function resetProgress(Request $request, Word $word): JsonResponse
     {
@@ -77,7 +81,21 @@ class WordController extends Controller
             ->where('word_id', $word->id)
             ->delete();
 
-        return response()->json(['data' => ['status' => null]]);
+        return response()->json(['data' => ['familiarity' => null]]);
+    }
+
+    /**
+     * Record read/lookup events (ledger-deduplicated) and return the
+     * resulting familiarity per touched word.
+     */
+    public function recordEvents(RecordWordEventsRequest $request): JsonResponse
+    {
+        $familiarity = $this->familiarity->applyEvents(
+            (int) $request->user()->id,
+            $request->validated('events'),
+        );
+
+        return response()->json(['data' => ['familiarity' => $familiarity]]);
     }
 
     /**

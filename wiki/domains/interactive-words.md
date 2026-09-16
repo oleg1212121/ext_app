@@ -1,15 +1,18 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with knowledge tinting on the reader and bilinguals simulator — render-time segmentation, lazy word popups, word progress actions.
+description: Dictionary-linked clickable words with familiarity tinting on the reader and bilinguals simulator — render-time segmentation, lazy word popups, read/lookup familiarity events.
 tags: [reader, bilinguals, dictionary, words, react, inertia]
 status: stable
-stale_after: 2026-12-13
-generated: { by: agent:zcode, at: 2026-09-13T21:00:00Z }
+stale_after: 2026-12-14
+generated: { by: agent:zcode, at: 2026-09-14T12:00:00Z }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
-    title: WordController (word details + progress)
+    title: WordController (word details + familiarity + events)
+  - id: familiarity-service
+    resource: laravel/app/Classes/WordFamiliarityService.php
+    title: WordFamiliarityService (ledger-deduplicated deltas)
   - id: word-map
     resource: laravel/app/Classes/EntityWordMap.php
     title: EntityWordMap (per-entity word map)
@@ -19,12 +22,15 @@ sources:
   - id: word-popup
     resource: laravel/resources/js/Components/WordPopup.jsx
     title: WordPopup (lazy detail popup)
+  - id: familiarity-lib
+    resource: laravel/resources/js/lib/wordFamiliarity.js
+    title: Browser familiarity helpers (event POST, word ids, map patching)
   - id: tokenizer
     resource: laravel/resources/js/lib/wordTokenizer.mjs
     title: Browser tokenizer (port of App\Classes\WordTokenizer)
   - id: adr
-    resource: docs/adr/0027-render-time-word-segmentation.md
-    title: ADR 0027 (render-time word segmentation)
+    resource: docs/adr/0028-numeric-word-familiarity.md
+    title: ADR 0028 (numeric word familiarity)
 ---
 
 # What it does
@@ -33,17 +39,20 @@ Makes words in a text interactive on both reading surfaces: tokens that link
 to a dictionary **Word** render as clickable buttons that open a popup with
 definitions, transcriptions, translations (native language first) and word
 progress actions; their background is tinted by the reader's **Word
-progress** (unknown → rose, learning/solved → amber, known → no tint). All
-of this is derived at render time — **no word positions are stored anywhere**
-(ADR 0027).
+familiarity** (0 or no row → rose, 1–19 → amber, 20–99 → faint amber, ≥ 100
+→ no tint). Revealing a sentence pair on the simulator credits its words a
+read (+1); opening a word's popup costs a lookup (−2), once per word per
+sentence pair on both surfaces. All segmentation is derived at render time —
+**no word positions are stored anywhere** (ADR 0027); exposure events are
+ledgered instead (ADR 0028).
 
 # How it works
 
 1. **Server ships a word map, not markup.** Row text travels as plain
    strings; the page payload carries a compact per-entity map
-   `{l_word: {w: word id, s: status|null}}` built by `EntityWordMap`
-   (dictionary-linked `entity_words` left-joined to the user's `user_word`
-   rows). Unlinked tokens are absent → plain text.
+   `{l_word: {w: word id, s: familiarity 0-100|null}}` built by
+   `EntityWordMap` (dictionary-linked `entity_words` left-joined to the
+   user's `user_word` rows). Unlinked tokens are absent → plain text.
 2. **The browser segments the text.** `WordText` runs
    `lib/wordTokenizer.mjs` — a JS port of the PHP `WordTokenizer` regex —
    over each row and renders tokens found in the map as word buttons.
@@ -52,12 +61,38 @@ of this is derived at render time — **no word positions are stored anywhere**
 3. **Popup details are lazy.** Clicking a word fetches
    `GET /words/{word}?surface={l_word}` — `is_form` is true when the surface
    differs from the word's `l_word` (an inflected form resolved by the
-   linker's forms pass), shown as "«surface» — form of «lemma»".
-4. **Progress actions.** `PATCH /words/{word}/progress` (`status: known`)
-   and `DELETE /words/{word}/progress` implement "I know this word" / "Remove
-   mark" — the route ADR 0025 anticipated; the crossword remains a second
-   writer of the same `user_word` rows. The popup reports the change up to
-   the page, which recolors the word in every rendered row.
+   linker's forms pass), shown as "«surface» — form of «lemma»". When the
+   surrounding `WordText` has a `rowKey` (see below), the click also fires a
+   **lookup event**.
+4. **Progress actions.** `PATCH /words/{word}/progress`
+   (`familiarity: 0-100`) and `DELETE /words/{word}/progress` implement "I
+   know this word" (sets 100) / "Remove mark" (deletes the row). The popup
+   reports the change up to the page, which recolors the word in every
+   rendered row, and shows the current score ("Familiarity: 12/100").
+
+# Familiarity events (ADR 0028)
+
+* `POST /word-events` (`RecordWordEventsRequest`) takes up to 200 events
+  `{row_key, kind: read|lookup, word_ids}`. The
+  `WordFamiliarityService` inserts each fresh (user, word, row_key, kind)
+  into the `user_word_event` ledger (unique — repeat requests are no-ops),
+  applies +1 per fresh read / −2 per fresh lookup clamped to 0–100, and
+  responds `{data: {familiarity: {wordId: value}}}` covering every
+  referenced word so the client can recolor without a refetch.
+* `row_key` scopes one sentence pair: `mm:{meaningMatchId}` (aligned rows)
+  or `es:{entitySentenceId}` (unaligned reader rows). The payloads carry
+  them one-to-one with the rows — `row_keys` in the simulator's `POST /text`
+  response (`null` in legacy filename mode), `rowKeys` on the reader page —
+  and the request validates the referenced rows exist.
+* **Reads** fire only on the bilinguals simulator (checking a row's EN
+  checkbox, or the `all_en` header checkbox which batches the whole loaded
+  page into one request), crediting the learning-language side's words.
+  **Lookups** fire on both surfaces, on the first popup open of a word
+  within a row. The browser fires events best-effort
+  (`lib/wordFamiliarity.js`) — failures never block reading.
+* Schema: `user_word.familiarity` (unsigned tinyint, default 0) +
+  `user_word_event` ledger; see
+  [schema-overview](/database/schema-overview.md).
 
 # Highlighting rules
 
@@ -67,24 +102,26 @@ of this is derived at render time — **no word positions are stored anywhere**
 * Each surface has a persisted toggle: `reader.highlight` and
   `simulator.highlight_words` in `user_settings.ui_settings`
   (`UpdateUiSettingsRequest`), default on. Tint classes (`.word-unknown`,
-  `.word-progress`) and the `.word-token` affordance live in
-  `resources/css/app.css` with day/night variants.
+  `.word-progress`, `.word-progress-strong`) and the `.word-token`
+  affordance live in `resources/css/app.css` with day/night variants.
 
 # Routes
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
 | `GET /words/{word}` | `WordController::show` | Word popup payload: lemma, class, `is_form`, transcriptions, definitions, native-first translations (cap 100), examples |
-| `PATCH /words/{word}/progress` | `WordController::markKnown` | `UpdateWordProgressRequest` (`status` must be `known`); upsert `user_word` |
-| `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to unknown) |
+| `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |
+| `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to untouched) |
+| `POST /word-events` | `WordController::recordEvents` | Ledger-deduplicated read/lookup events; returns resulting familiarity per word |
 
 # Consuming surfaces
 
 * **Reader** (`/reader-react/{lang}/{entityId}`): props `wordMap`,
-  `translationWordMap`, `highlight`, `primaryHighlightable`,
+  `translationWordMap`, `rowKeys`, `highlight`, `primaryHighlightable`,
   `translationHighlightable`; `ReaderRow` renders both row halves through
   `WordText` (the primary line is a `role="button"` div so word buttons stay
-  valid HTML inside it).
+  valid HTML inside it). Lookup events only — no read crediting.
 * **Bilinguals simulator** (`POST /text`): response gains `word_maps`
-  (`{a, b, highlightable}`; `null` in legacy filename mode); `TextContent`
-  renders both cells through `WordText`.
+  (`{a, b, highlightable}`; `null` in legacy filename mode) and `row_keys`
+  (aligned with `rows`); `TextContent` renders both cells through `WordText`
+  and fires read events from the row/column checkboxes.

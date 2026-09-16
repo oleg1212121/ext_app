@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Crossword
-description: Deterministic crossword puzzles generated from an entity's word list, with frequency-band levels, dictionary-backed definitions/translations, and per-user word progress.
+description: Deterministic crossword puzzles generated from an entity's word list, with frequency-band levels, dictionary-backed definitions/translations, and per-user word familiarity.
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
-stale_after: 2026-12-13
-generated: { by: agent:zcode, at: 2026-09-13T17:30:00Z }
+stale_after: 2026-12-14
+generated: { by: agent:zcode, at: 2026-09-14T12:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/CrosswordController.php
@@ -45,10 +45,11 @@ crossword died with the legacy vocabulary domain — see ADR
 picks a readable [Entity](/database/entities-alignment.md) — grouped under
 its Work in the header select, with a language filter across works — and a
 word Level; the app builds the entity's word list, selects up to 30
-dictionary words from the level band not yet solved/known by the user, and
-lays them out with the deterministic placement algorithm. A right panel
-shows definitions and translations (native language first) for the selected
-word.
+dictionary words from the level band whose **Word familiarity** is below
+100 (fully known words are excluded), and lays them out with the
+deterministic placement algorithm. A right panel shows definitions and
+translations (native language first) for the selected word. Completing a
+puzzle awards +5 familiarity per puzzle word (ADR 0028).
 
 # Routes
 
@@ -56,7 +57,7 @@ word.
 |-------|---------|---------|
 | `GET /crossword` | `CrosswordController::index` | Inertia page (readable entities grouped by work + languages + levels), named `crossword` |
 | `POST /crossword/generate` | `CrosswordController::generate` | Build a puzzle for `entity_id` + `level`; 403 when the entity is not readable, 422 `crossword.still_building` when the word list is stale (built in the background), 422 `crossword.not_enough_words` when fewer than 3 band words exist |
-| `POST /crossword/complete` | `CrosswordController::complete` | Mark the puzzle's `learning` words `solved` |
+| `POST /crossword/complete` | `CrosswordController::complete` | Award +5 familiarity (clamped at 100) to the puzzle's words — only words that already have a `user_word` row (the ones generate seeded) |
 
 # Background word-list refresh
 
@@ -90,7 +91,9 @@ without manual runs. Dev has no `schedule:work` — run
    numbers onto `words.frequency` from `rank,word` CSVs
    (`database/frequency/`). Sample list committed for tests.
 4. **Select + lay out** — deterministic `ORDER BY frequency, id LIMIT 30`
-   excluding the user's solved/known words; `App\Classes\Crossword` places
+   excluding words the user already knows (`user_word.familiarity >= 100`);
+   generate seeds `familiarity = 0` marker rows for the selected words so
+   `complete` can award the bonus; `App\Classes\Crossword` places
    words on a virtual grid (same algorithm as the 2025 feature) and emits
    the typed-cell `newGrid` + `dictionary` JSON the React page consumes.
 

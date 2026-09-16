@@ -74,45 +74,53 @@ it('sorts translations native language first', function () {
         ->assertJsonPath('data.translations.0.language_code', 'ru');
 });
 
-it('marks a word known for the current user', function () {
+it('sets a word known (familiarity 100) for the current user', function () {
     $user = User::factory()->create();
     $word = createWordWithDetails();
 
     $this->actingAs($user)
-        ->patchJson(route('words.progress.update', ['word' => $word->id]), ['status' => 'known'])
+        ->patchJson(route('words.progress.update', ['word' => $word->id]), ['familiarity' => 100])
         ->assertOk()
-        ->assertJsonPath('data.status', 'known');
+        ->assertJsonPath('data.familiarity', 100);
 
     $this->assertDatabaseHas('user_word', [
         'user_id' => $user->id,
         'word_id' => $word->id,
-        'status' => 'known',
+        'familiarity' => 100,
     ]);
 });
 
-it('overwrites an existing progress mark when marking known', function () {
+it('overwrites an existing progress mark when setting familiarity', function () {
     $user = User::factory()->create();
     $word = createWordWithDetails();
-    $user->userWords()->create(['word_id' => $word->id, 'status' => 'learning']);
+    $user->userWords()->create(['word_id' => $word->id, 'familiarity' => 7]);
     expect($user->userWords()->count())->toBe(1);
     $this->actingAs($user)
-        ->patchJson(route('words.progress.update', ['word' => $word->id]), ['status' => 'known'])
+        ->patchJson(route('words.progress.update', ['word' => $word->id]), ['familiarity' => 100])
         ->assertOk();
 
     $this->assertDatabaseHas('user_word', [
         'user_id' => $user->id,
         'word_id' => $word->id,
-        'status' => 'known',
+        'familiarity' => 100,
     ]);
 });
 
-it('rejects an invalid progress status', function () {
+it('rejects an out-of-range familiarity value', function () {
     $user = User::factory()->create();
     $word = createWordWithDetails();
 
     $this->actingAs($user)
-        ->patchJson(route('words.progress.update', ['word' => $word->id]), ['status' => 'banana'])
-        ->assertJsonValidationErrors(['status']);
+        ->patchJson(route('words.progress.update', ['word' => $word->id]), ['familiarity' => 101])
+        ->assertJsonValidationErrors(['familiarity']);
+
+    $this->actingAs($user)
+        ->patchJson(route('words.progress.update', ['word' => $word->id]), ['familiarity' => -1])
+        ->assertJsonValidationErrors(['familiarity']);
+
+    $this->actingAs($user)
+        ->patchJson(route('words.progress.update', ['word' => $word->id]), ['familiarity' => 'banana'])
+        ->assertJsonValidationErrors(['familiarity']);
 
     $this->assertDatabaseMissing('user_word', ['user_id' => $user->id]);
 });
@@ -120,12 +128,12 @@ it('rejects an invalid progress status', function () {
 it('removes the progress mark', function () {
     $user = User::factory()->create();
     $word = createWordWithDetails();
-    $user->userWords()->create(['word_id' => $word->id, 'status' => 'known']);
+    $user->userWords()->create(['word_id' => $word->id, 'familiarity' => 100]);
 
     $this->actingAs($user)
         ->deleteJson(route('words.progress.reset', ['word' => $word->id]))
         ->assertOk()
-        ->assertJsonPath('data.status', null);
+        ->assertJsonPath('data.familiarity', null);
 
     $this->assertDatabaseMissing('user_word', [
         'user_id' => $user->id,
@@ -137,6 +145,7 @@ it('requires authentication', function () {
     $word = createWordWithDetails();
 
     $this->getJson(route('words.show', ['word' => $word->id]))->assertUnauthorized();
-    $this->patchJson(route('words.progress.update', ['word' => $word->id]), ['status' => 'known'])->assertUnauthorized();
+    $this->patchJson(route('words.progress.update', ['word' => $word->id]), ['familiarity' => 100])->assertUnauthorized();
     $this->deleteJson(route('words.progress.reset', ['word' => $word->id]))->assertUnauthorized();
+    $this->postJson(route('word.events.store'), ['events' => []])->assertUnauthorized();
 });

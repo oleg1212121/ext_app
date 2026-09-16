@@ -1,5 +1,67 @@
 # Directory Update Log
 
+## 2026-09-16
+
+* **Feature: import en+ru from the monolithic kaikki raw dump**
+  ([Dictionary import](domains/dictionary-import.md),
+  [Playbook](playbooks/import-dictionary-data.md), ADR
+  [0029](../docs/adr/0029-import-raw-dump-via-per-language-extraction.md)).
+  New `wiktionary:import-raw {file} --langs=en,ru` orchestrates:
+  `RawWiktextractExtractor` streams the mixed-language
+  `raw-wiktextract-data.jsonl.gz` (2.7GB, ~2400 Wiktionary languages on one
+  line each) once with flat memory — substring pre-filter skips
+  `json_decode` for non-wanted languages, the decoded **top-level**
+  `lang_code` decides (nested occurrences in translations/templates are
+  false positives; line 1 of the dump alone contains a nested ru needle in
+  its 552 translations) — and writes raw-line **language extracts** next to
+  the dump (`<base>.<code>.jsonl`, `--skip-extract` to reuse,
+  `--extract-only` to stop there, `--max-lines` for smoke runs); then each
+  language imports through the existing `WiktionaryParser` path with
+  **symmetric** translation staging (every imported language stages every
+  other; `--target-langs` overrides); then `wiktionary:link-translations`
+  runs automatically (`--no-link` to skip). `--fresh --force` wipes the
+  selected languages' dictionary data first (FK cascades take satellites,
+  links and `user_word` familiarity; `entity_words.word_id` reset → re-run
+  `crossword:link`); re-imports without it upsert and text-dedupe but never
+  delete. `WiktionaryParser` reads `.jsonl.gz` transparently
+  (`compress.zlib://`) and accepts a target-language **list**; the merge
+  key stays `word|pos` **without language**, so mixed-language input must
+  never be fed to it directly (the extract step exists for that reason).
+  `wiktionary:import --target-lang` now takes comma-separated codes. New
+  migration indexes `definitions.word_id` / `etymologies.word_id`
+  (`insertNewOnly`'s per-batch `whereIn` would full-scan multi-million-row
+  tables). Import-raw sets `memory_limit=1G` + `set_time_limit(0)` (single
+  decoded lines can spike past the 128M CLI default) and heartbeats every
+  100k lines to console + log for detached runs. Smoke-verified against the
+  real gz on the testing DB (20k lines → 4064 en words, 18,404
+  definitions). New CONTEXT.md terms: Raw dump, Language extract.
+
+## 2026-09-14
+
+* **Feature: numeric word familiarity (0–100) replaces the ternary word
+  status** ([Interactive words](domains/interactive-words.md), ADR
+  [0028](../docs/adr/0028-numeric-word-familiarity.md)). `user_word.status`
+  (`learning/solved/known`) became `user_word.familiarity` (integer 0–100,
+  100 = known; migration maps old `known` → 100, everything else → 0). New
+  exposure signals: **read** +1 when a sentence pair is revealed on the
+  bilinguals simulator (row EN checkbox or the now-controlled `all_en`
+  header checkbox, which batches one request per loaded page), **lookup**
+  −2 on the first word-popup open within a sentence pair on both simulator
+  and reader. Events are deduplicated server-side by the new
+  `user_word_event` ledger (unique user × word × `row_key` × kind;
+  `row_key` = `mm:{meaningMatchId}` / `es:{entitySentenceId}`, shipped
+  one-to-one with rows as `row_keys` (simulator `POST /text`) / `rowKeys`
+  (reader)); row keys are validated against existing rows. New endpoint
+  `POST /word-events` (`WordFamiliarityService`), `PATCH
+  /words/{word}/progress` now takes `familiarity: 0-100`
+  (`WordController::setFamiliarity`). Crossword: `complete` awards +5 per
+  puzzle word (existing rows only, clamped), `generate` excludes only
+  familiarity ≥ 100 and seeds 0-marker rows. Tinting moved to four bands
+  (0 rose / 1–19 amber / 20–99 faint amber / ≥ 100 plain — new
+  `.word-progress-strong`); the popup shows "Familiarity: N/100". New
+  CONTEXT.md terms: Word familiarity, Read event, Lookup event (Word
+  progress retired).
+
 ## 2026-09-13
 
 * **Feature: interactive dictionary words on the reader and bilinguals

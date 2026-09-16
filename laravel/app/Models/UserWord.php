@@ -9,16 +9,26 @@ class UserWord extends Model
 {
     protected $table = 'user_word';
 
-    public const STATUS_LEARNING = 'learning';
-    public const STATUS_SOLVED = 'solved';
-    public const STATUS_KNOWN = 'known';
+    public const FAMILIARITY_MAX = 100;
 
-    protected $fillable = ['user_id', 'word_id', 'status'];
+    public const FAMILIARITY_MIN = 0;
+
+    public const READ_STEP = 1;
+
+    public const LOOKUP_PENALTY = 2;
+
+    public const CROSSWORD_BONUS = 5;
+
+    public const KIND_READ = 'read';
+
+    public const KIND_LOOKUP = 'lookup';
+
+    protected $fillable = ['user_id', 'word_id', 'familiarity'];
 
     protected function casts(): array
     {
         return [
-            'status' => 'string',
+            'familiarity' => 'integer',
         ];
     }
 

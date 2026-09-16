@@ -4,8 +4,8 @@ title: Bilinguals Simulator
 description: Side-by-side bilingual reading trainer where users translate and get AI assessment of their translation.
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
-stale_after: 2026-12-13
-generated: { by: agent:zcode, at: 2026-09-13T21:00:00Z }
+stale_after: 2026-12-14
+generated: { by: agent:zcode, at: 2026-09-14T12:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -56,9 +56,18 @@ variants.
   file pairs from `public/texts/simulator/`. Entity-match responses also
   carry `word_maps` (`{a, b, highlightable}` — the
   [interactive word](/domains/interactive-words.md) maps for both sides;
+  `null` in filename mode) and `row_keys` (`mm:{meaningMatchId}` per row,
   `null` in filename mode), so `TextContent` renders both cells through the
   shared `WordText`/`WordPopup` components with a
   `simulator.highlight_words` toolbar toggle.
+* **Checking a row's EN checkbox credits a read** (+1 familiarity to the
+  EN side's dictionary words, ADR 0028): `onToggleRow` fires one
+  best-effort `POST /word-events` scoped to the row's `row_key`; the
+  response's familiarity values recolor the words on both sides. The `all_en`
+  header checkbox is a controlled React checkbox that reveals the whole
+  column and batches one read event per loaded row into a single request.
+  Only actual checkbox opens fire events — the localStorage restore paths
+  re-check boxes silently.
 * AI calls go through `AIModelResolver::ask()` with a `provider:model` string —
   see [AI Providers](/domains/ai-providers.md). Validation via
   `App\Http\Requests\AiQuestionRequest` / `BilingualsTextRequest`.
@@ -128,5 +137,6 @@ Split by write frequency (ADR 0024):
   checkboxes are re-checked (controlled `checkedRows` state in
   `TextContent.jsx`) and the row scrolls into view. Switching alignments and
   pressing Load restores each alignment's own saved page instead of resetting
-  to page 1. The header EN/RU master reveal checkboxes stay uncontrolled and
-  are deliberately NOT persisted; `per_page` is not persisted either.
+  to page 1. The header RU master checkbox stays uncontrolled; `all_en` is
+  controlled React state (`allEn`, reset on every page load) and is
+  deliberately NOT persisted; `per_page` is not persisted either.

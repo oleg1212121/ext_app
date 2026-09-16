@@ -149,3 +149,22 @@ it('extracts translations with stress marks preserved', function () {
     // Verify the translation contains the combining mark (U+0301)
     expect(preg_match('/\x{0301}/u', $translations[0]))->toBe(1);
 });
+
+it('accepts multiple target languages for staged translations', function () {
+    $parser = new WiktionaryParser('en', ['ru', 'de']);
+    $line = json_decode('{"word":"test","pos":"noun","translations":[{"code":"ru","word":"тест"},{"code":"de","word":"Test"},{"code":"fr","word":"essai"}]}');
+
+    $translations = $parser->extractTranslations($line);
+    expect($translations)->toContain('тест');
+    expect($translations)->toContain('Test');
+    expect($translations)->not->toContain('essai');
+    expect($translations)->toHaveCount(2);
+});
+
+it('rejects an empty target language list', function () {
+    new WiktionaryParser('en', []);
+})->throws(InvalidArgumentException::class);
+
+it('rejects the source language as a target', function () {
+    new WiktionaryParser('en', ['ru', 'en']);
+})->throws(InvalidArgumentException::class);

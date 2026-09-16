@@ -43,6 +43,35 @@ it('rejects source and target being the same language', function () {
     unlink($tmpFile);
 });
 
+it('accepts multiple comma-separated target languages', function () {
+    Language::query()->updateOrCreate(
+        ['code' => 'de'],
+        ['name' => 'German', 'is_enabled' => false, 'sort_order' => 5],
+    );
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_cmd_');
+    file_put_contents($tmpFile, json_encode(['word' => 'cat', 'pos' => 'noun'])."\n");
+
+    $this->artisan('wiktionary:import', ['file' => $tmpFile, '--lang' => 'en', '--target-lang' => 'ru,de'])
+        ->assertSuccessful();
+
+    expect(Word::where('word', 'cat')->count())->toBe(1);
+
+    unlink($tmpFile);
+});
+
+it('rejects one unknown language among multiple targets', function () {
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_cmd_');
+    file_put_contents($tmpFile, json_encode(['word' => 'cat', 'pos' => 'noun'])."\n");
+
+    $this->artisan('wiktionary:import', ['file' => $tmpFile, '--lang' => 'en', '--target-lang' => 'ru,xx'])
+        ->assertFailed();
+
+    expect(Word::count())->toBe(0);
+
+    unlink($tmpFile);
+});
+
 it('imports any language present in the registry without seeded lookups', function () {
     $de = Language::query()->updateOrCreate(
         ['code' => 'de'],

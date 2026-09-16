@@ -118,7 +118,9 @@ it('returns file-based rows when filename is provided without match id', functio
 
         $rows = $response->json('data.data.rows');
         expect($rows)->toHaveCount(1)
-            ->and($rows[0])->toBe(['Line EN one', 'Line RU one']);
+            ->and($rows[0])->toBe(['Line EN one', 'Line RU one'])
+            // Legacy filename mode has no word maps and no event row keys.
+            ->and($response->json('data.data.row_keys'))->toBeNull();
     } finally {
         if (is_file($path)) {
             unlink($path);
@@ -183,7 +185,7 @@ it('includes word maps for both sides of the match', function () {
         'token' => 'кот',
         'count' => 1,
     ]);
-    $user->userWords()->create(['word_id' => $ruCat->id, 'status' => 'learning']);
+    $user->userWords()->create(['word_id' => $ruCat->id, 'familiarity' => 3]);
 
     // Factory users are native English speakers: the EN side (a) is native,
     // so only the RU side (b) is highlightable.
@@ -196,7 +198,9 @@ it('includes word maps for both sides of the match', function () {
     $response->assertOk()
         ->assertJsonPath('data.data.word_maps.a.cat.w', $enCat->id)
         ->assertJsonPath('data.data.word_maps.a.cat.s', null)
-        ->assertJsonPath('data.data.word_maps.b.кот.s', 'learning')
+        ->assertJsonPath('data.data.word_maps.b.кот.s', 3)
         ->assertJsonPath('data.data.word_maps.highlightable.a', false)
-        ->assertJsonPath('data.data.word_maps.highlightable.b', true);
+        ->assertJsonPath('data.data.word_maps.highlightable.b', true)
+        // Row keys align one-to-one with rows, keyed by the meaning match.
+        ->assertJsonPath('data.data.row_keys.0', 'mm:'.$matchRow->id);
 });

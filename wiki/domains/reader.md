@@ -4,8 +4,8 @@ title: Reader
 description: React reading interface for imported text entities in any enabled language, with bilingual rows from alignments.
 tags: [reader, inertia, react]
 status: stable
-stale_after: 2026-12-13
-generated: { by: agent:zcode, at: 2026-09-13T21:00:00Z }
+stale_after: 2026-12-14
+generated: { by: agent:zcode, at: 2026-09-14T12:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -49,7 +49,10 @@ restricted counterpart (mirrors the simulator both-sides rule from ADR 0014).
 With a readable match the meaning matches are shaped into bilingual rows by
 `MeaningMatchPresenter::toSimulatorRows()` and normalized for the reading
 side: rows are `[a, b]` pairs, flipped when reading from the b side so the
-reading language always comes first.
+reading language always comes first. The payload also carries `rowKeys` —
+`mm:{meaningMatchId}` per bilingual row (never flipped by the side
+normalization) or `es:{entitySentenceId}` per single-language row — used to
+scope familiarity lookup events to a sentence pair (ADR 0028).
 
 Reads are gated by `EntityAccessService` (see the [Entity Access](
 ../../CONTEXT.md#entity-access-context) context). The index lists only
@@ -64,7 +67,9 @@ aligned counterpart entity (empty when rows are single-language), plus
 `highlight` (the saved `reader.highlight` setting) and the
 `primaryHighlightable` / `translationHighlightable` language flags (side
 language ≠ the user's native language). `ReaderRow` renders both row halves
-through the shared `WordText`/`WordPopup` components; the primary line is a
+through the shared `WordText`/`WordPopup` components (each gets the row's
+`rowKey`, so clicking a word fires a ledger-deduplicated **lookup** event —
+the reader never credits reads); the primary line is a
 `role="button"` div (not a `<button>`) so word buttons inside it stay valid
 HTML — activating the line itself still toggles the translation, word clicks
 stop propagation.
