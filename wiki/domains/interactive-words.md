@@ -1,11 +1,12 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity tinting on the reader and bilinguals simulator — render-time segmentation, lazy word popups, read/lookup familiarity events.
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — render-time segmentation, lazy word popups, read/lookup familiarity events.
 tags: [reader, bilinguals, dictionary, words, react, inertia]
 status: stable
 stale_after: 2026-12-14
-generated: { by: agent:zcode, at: 2026-09-14T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-17T11:50:00Z }
+verified: { by: human:zcode, at: 2026-09-17T12:00:00Z }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -37,10 +38,9 @@ sources:
 
 Makes words in a text interactive on both reading surfaces: tokens that link
 to a dictionary **Word** render as clickable buttons that open a popup with
-definitions, transcriptions, translations (native language first) and word
-progress actions; their background is tinted by the reader's **Word
-familiarity** (0 or no row → rose, 1–19 → amber, 20–99 → faint amber, ≥ 100
-→ no tint). Revealing a sentence pair on the simulator credits its words a
+definitions, transcriptions, translations (native language first) and word progress actions; their text is
+tinted by the reader's **Word familiarity** (0–19 or no row → rose, 20–59 →
+amber, 60–99 → verdigris, ≥ 100 → green). Revealing a sentence pair on the simulator credits its words a
 read (+1); opening a word's popup costs a lookup (−2), once per word per
 sentence pair on both surfaces. All segmentation is derived at render time —
 **no word positions are stored anywhere** (ADR 0027); exposure events are
@@ -102,8 +102,16 @@ ledgered instead (ADR 0028).
 * Each surface has a persisted toggle: `reader.highlight` and
   `simulator.highlight_words` in `user_settings.ui_settings`
   (`UpdateUiSettingsRequest`), default on. Tint classes (`.word-unknown`,
-  `.word-progress`, `.word-progress-strong`) and the `.word-token`
-  affordance live in `resources/css/app.css` with day/night variants.
+  `.word-progress`, `.word-progress-strong`) color the **text** (not the
+  background) via `--word-*` tokens with day/night variants, and the
+  `.word-token` affordance (hover vermilion) — all in `resources/css/app.css`.
+  Tier colors are declared after the hover rule so they win on hover over
+  tinted words; only unlinked (plain) words turn vermilion on hover.
+* **Familiarity patches must never reshape `word_maps`.** The simulator keeps
+  `highlightable` inside `wordMaps`; any update via `setWordMaps` must spread
+  the whole object (`{...maps, a: patchWordMap(...), b: patchWordMap(...)}`)
+  so `wordMaps.highlightable` survives — otherwise every word drops its tint
+  and read crediting silently stops (guarded by `highlightable.a`).
 
 # Routes
 

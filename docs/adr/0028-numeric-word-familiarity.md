@@ -47,9 +47,12 @@ no write path on reveal or lookup.
    ≥ 100 and still seeds marker rows at 0. The manual popup actions remain:
    "I know this word" sets 100, "Remove mark" deletes the row.
 
-5. **Tinting shows four graduated bands**: 0/no row = rose
-   (`.word-unknown`), 1–19 = amber (`.word-progress`), 20–99 = faint amber
-   (`.word-progress-strong`), ≥ 100 = no tint. The popup displays the raw
+5. **Tinting shows four graduated bands** (revised 2026-09-17): 0–19/no row =
+   rose (`.word-unknown`), 20–59 = amber (`.word-progress`), 60–99 = faint
+   amber (`.word-progress-strong`), ≥ 100 = green (`.word-known`). Previously
+   0 = unknown, 1–19 = progress, 20–99 = strong-progress, ≥ 100 = no tint;
+   the boundary shift makes low scores read strongly negative and ≥ 100
+   positive. The popup displays the raw
    score ("Familiarity: 12/100").
 
 6. **Migration**: existing `known` rows became 100; everything else
