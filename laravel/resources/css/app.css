@@ -131,15 +131,17 @@
 
 /* Interactive dictionary words (reader + bilinguals simulator). */
 :root {
-    --word-unknown-bg: rgba(225, 29, 72, 0.12);
-    --word-progress-bg: rgba(217, 119, 6, 0.16);
-    --word-progress-strong-bg: rgba(217, 119, 6, 0.07);
+    --word-unknown: var(--wbench-danger);
+    --word-progress: var(--wbench-across);
+    --word-progress-strong: var(--color-verdigris);
+    --word-known: #16a34a;
 }
 
 .dark {
-    --word-unknown-bg: rgba(244, 63, 94, 0.22);
-    --word-progress-bg: rgba(245, 158, 11, 0.24);
-    --word-progress-strong-bg: rgba(245, 158, 11, 0.10);
+    --word-unknown: var(--wbench-danger-night);
+    --word-progress: var(--wbench-across-night);
+    --word-progress-strong: var(--color-verdigris-night);
+    --word-known: #4ade80;
 }
 
 .word-token {
@@ -154,7 +156,7 @@
     text-align: inherit;
     cursor: pointer;
     border-radius: 2px;
-    transition: background-color 150ms ease;
+    transition: color 150ms ease;
 }
 
 .word-token:hover,
@@ -173,13 +175,17 @@
 }
 
 .word-token.word-unknown {
-    background-color: var(--word-unknown-bg);
+    color: var(--word-unknown);
 }
 
 .word-token.word-progress {
-    background-color: var(--word-progress-bg);
+    color: var(--word-progress);
 }
 
 .word-token.word-progress-strong {
-    background-color: var(--word-progress-strong-bg);
+    color: var(--word-progress-strong);
+}
+
+.word-token.word-known {
+    color: var(--word-known);
 }

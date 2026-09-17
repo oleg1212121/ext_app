@@ -407,7 +407,7 @@ const Bilinguals = (props) => {
             return;
         }
         setWordMaps((maps) => (maps
-            ? {a: patchWordMap(maps.a, familiarity), b: patchWordMap(maps.b, familiarity)}
+            ? {...maps, a: patchWordMap(maps.a, familiarity), b: patchWordMap(maps.b, familiarity)}
             : maps));
     }, []);
 

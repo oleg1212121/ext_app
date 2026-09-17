@@ -91,6 +91,10 @@ class CrosswordController extends Controller
             ->where('entity_words.entity_id', $entity->id)
             ->whereNotNull('entity_words.word_id')
             ->join('words', 'words.id', '=', 'entity_words.word_id')
+            ->leftJoin('user_word', function ($join) use ($user) {
+                $join->on('user_word.word_id', '=', 'words.id')
+                    ->where('user_word.user_id', $user->id);
+            })
             ->where('words.frequency', '<=', CrosswordLevel::cutoff($request->integer('level')))
             ->whereNotExists(function ($query) use ($user) {
                 $query->selectRaw(1)
@@ -99,6 +103,7 @@ class CrosswordController extends Controller
                     ->where('user_word.user_id', $user->id)
                     ->where('user_word.familiarity', '>=', UserWord::FAMILIARITY_MAX);
             })
+            ->orderByRaw('COALESCE(user_word.familiarity, 0)')
             ->orderBy('words.frequency')
             ->orderBy('words.id')
             ->limit(self::WORD_LIMIT)

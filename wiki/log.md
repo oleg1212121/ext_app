@@ -1,5 +1,32 @@
 # Directory Update Log
 
+## 2026-09-17
+
+* **Crossword word selection is now sorted by familiarity (least familiar
+  first).** `CrosswordController::generate` left-joins `user_word` and orders
+  `COALESCE(user_word.familiarity, 0)` ascending (frequency, id tiebreak)
+  before `LIMIT 30`, so words the user knows better stop crowding out
+  never-seen band words. See [Crossword](domains/crossword.md).
+
+* **Tinting bands shifted: 0–19 rose / 20–59 amber / 60–99 verdigris /
+  ≥ 100 green.** `FAMILIARITY_STRONG_AT` moved 20 → 60 and a new
+  `FAMILIARITY_PROGRESS_AT = 20` separates low-scoring words from the amber
+  band in `WordText#tierClass` (`resources/js/lib/wordFamiliarity.js`,
+  `resources/js/Components/WordText.jsx`). Previously 0 = rose, 1–19 =
+  amber, 20–99 = verdigris, ≥ 100 = plain. Class names and CSS tokens are
+  unchanged (still `.word-unknown` / `.word-progress` /
+  `.word-progress-strong` / `.word-known`); ADR 0028 decision #5 updated.
+
+* **Fix: simulator highlights vanished after opening a row.**
+  `applyFamiliarity` rebuilt `wordMaps` as `{a, b}` and dropped
+  `highlightable`, so `TextContent` computed `highlight=false` for every word
+  (all rows lost tier classes) and `creditRead`/`toggleAllEn` silently no-oped.
+  Now spreads the whole object (`{...maps, ...}`, same as
+  `handleWordProgress`). Also switched word familiarity tinting from
+  background to **text color** (`resources/css/app.css` `--word-*` tokens:
+  rose / amber / verdigris, day+night), declared after the hover rule so tint
+  is stable on hover. See [Interactive Words](domains/interactive-words.md).
+
 ## 2026-09-16
 
 * **Feature: import en+ru from the monolithic kaikki raw dump**

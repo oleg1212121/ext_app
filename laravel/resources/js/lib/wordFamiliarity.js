@@ -2,7 +2,8 @@ import {segmentText} from './wordTokenizer.mjs';
 import {getCsrfToken} from './http';
 
 export const FAMILIARITY_MAX = 100;
-export const FAMILIARITY_STRONG_AT = 20;
+export const FAMILIARITY_STRONG_AT = 60;
+export const FAMILIARITY_PROGRESS_AT = 20;
 
 /**
  * Best-effort familiarity event logging: read (+1) and lookup (-2) events,

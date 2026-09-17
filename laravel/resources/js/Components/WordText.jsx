@@ -1,20 +1,22 @@
 import React, {useCallback, useMemo, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {segmentText} from '../lib/wordTokenizer.mjs';
-import {FAMILIARITY_MAX, FAMILIARITY_STRONG_AT, recordWordEvents} from '../lib/wordFamiliarity';
+import {FAMILIARITY_MAX, FAMILIARITY_STRONG_AT, FAMILIARITY_PROGRESS_AT, recordWordEvents} from '../lib/wordFamiliarity';
 import WordPopup from './WordPopup.jsx';
 
 function tierClass(familiarity, highlight) {
-    if (!highlight || (familiarity ?? 0) >= FAMILIARITY_MAX) {
+    if (!highlight) {
         return 'word-token';
+    }
+    if ((familiarity ?? 0) >= FAMILIARITY_MAX) {
+        return 'word-token word-known';
     }
     if (familiarity >= FAMILIARITY_STRONG_AT) {
         return 'word-token word-progress-strong';
     }
-    if (familiarity >= 1) {
+    if (familiarity >= FAMILIARITY_PROGRESS_AT) {
         return 'word-token word-progress';
     }
-
     return 'word-token word-unknown';
 }
 
