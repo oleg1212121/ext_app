@@ -2,6 +2,33 @@
 
 ## 2026-09-17
 
+* **Fast-tests convention: bound data, fake HTTP, cap drain loops, TIA
+  first.** After slow full-suite runs, testing rules were codified in
+  [AGENTS.md](../AGENTS.md) (Conventions → Fast tests) and
+  [Running Tests](playbooks/running-tests.md) (new "Keeping tests fast"
+  section): seed only the rows assertions need, always `Http::fake()` paths
+  that can reach the Python service (sync queue + 600s timeouts make one
+  leaked call cost minutes), guard `while` drain loops with a convergence
+  assertion, pass/assert `per_page` on paginated endpoints, and default to
+  `composer run test:tia` instead of the full suite. Applied immediately:
+  `FilamentReAlignActionTest`, `AlignmentsResumeCommandTest` and
+  `AlignmentsCreateMatchTest` got file-level `Http::fake()` guards (they had
+  `Bus::fake()` only; one fixture tweak away from real `/embed/batch` calls).
+
+* **Fix: `composer run test:tia` never worked — coverage driver + OOM +
+  dead imports.** The script passed `-d extension=pcov.so` as *arguments to
+  the pest binary*, which never reach PHP; parallel runs go through the
+  paratest binary, whose workers inherit neither `-d` flags nor coverage, so
+  every run died with "No code coverage driver is available". `test:tia` now
+  loads the tracked `laravel/scripts/php-ini/tia.ini` via `PHP_INI_SCAN_DIR`
+  (pcov + `pcov.enabled=1` + `memory_limit=1G`; the memory line fixes the
+  graph merge OOM at the 128M CLI default), and the re-record command in
+  AGENTS.md/Running Tests uses the same form. Two no-op
+  `use InvalidArgumentException;` imports (PHP 8.4 warning → ErrorException
+  under the TIA file scan) were removed from `AiQuestionEndpointTest` and
+  `AiQuestionStreamEndpointTest`. Verified: fresh recording run 611 passed /
+  ~83s, replay 611 passed / 5.2s.
+
 * **Crossword word selection is now sorted by familiarity (least familiar
   first).** `CrosswordController::generate` left-joins `user_word` and orders
   `COALESCE(user_word.familiarity, 0)` ascending (frequency, id tiebreak)

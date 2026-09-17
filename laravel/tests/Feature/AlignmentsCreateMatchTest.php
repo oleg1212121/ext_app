@@ -7,7 +7,12 @@ use App\Models\EntitySentence;
 use App\Models\SentenceType;
 use App\Models\User;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
+
+// Guard: these tests stop at Bus::fake(), but anything that leaks an HTTP call
+// must hit a fake response instead of hanging on the Python service timeout.
+beforeEach(fn () => Http::fake());
 
 /**
  * @return array{enEntity: Entity, ruEntity: Entity}

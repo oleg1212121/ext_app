@@ -4,7 +4,6 @@ use App\Classes\AIModelResolver;
 use App\Exceptions\AiProviderException;
 use App\Models\User;
 use Illuminate\Testing\TestResponse;
-use InvalidArgumentException;
 
 /**
  * Capture the body of a StreamedResponse by running its callback

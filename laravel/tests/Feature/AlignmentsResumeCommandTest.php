@@ -4,6 +4,11 @@ use App\Jobs\AlignEntitySentences;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Http;
+
+// Guard: these tests stop at Bus::fake(), but anything that leaks an HTTP call
+// must hit a fake response instead of hanging on the Python service timeout.
+beforeEach(fn () => Http::fake());
 
 function createVerifiablePair(string $enName = 'En', string $ruName = 'Ru'): EntityMatch
 {

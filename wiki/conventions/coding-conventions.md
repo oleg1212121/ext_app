@@ -4,7 +4,7 @@ title: Coding Conventions
 description: Project-wide rules for code style, structure, testing, and agent behavior in this repository.
 tags: [conventions, style, testing]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-07-27T17:30:00Z }
+generated: { by: agent:zcode, at: 2026-09-17T23:40:00Z }
 verified: { by: human:alex, at: 2026-07-26T18:45:00Z }
 sources:
   - id: agents
@@ -55,6 +55,13 @@ sources:
   `assertSuccessful()` — not `assertStatus(403)`.
 * Test database is `ext_app_test` (from `phpunit.xml`) — never the dev DB.
 * Run the minimal set: `php artisan test --filter=testName` after a change.
+* Keep tests fast: minimal fixtures (a handful of rows per side), `Http::fake()`
+  on any path that can reach the Python service or an external API (sync queue
+  runs pre-dispatch code inline; Python timeouts reach 600s), guarded drain
+  loops with convergence assertions, and `per_page` passed/asserted on
+  paginated endpoints. Details: [Running Tests](/playbooks/running-tests.md).
+* Default to `composer run test:tia` after changes — it re-runs only tests
+  touched by changed files; the full suite is for pre-merge/CI verification.
 * Every change must be covered by a test that runs green; see
   [Running Tests](/playbooks/running-tests.md).
 
