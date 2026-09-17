@@ -2,6 +2,12 @@
 
 ## 2026-09-17
 
+* **Crossword word selection is now sorted by familiarity (least familiar
+  first).** `CrosswordController::generate` left-joins `user_word` and orders
+  `COALESCE(user_word.familiarity, 0)` ascending (frequency, id tiebreak)
+  before `LIMIT 30`, so words the user knows better stop crowding out
+  never-seen band words. See [Crossword](domains/crossword.md).
+
 * **Tinting bands shifted: 0–19 rose / 20–59 amber / 60–99 verdigris /
   ≥ 100 green.** `FAMILIARITY_STRONG_AT` moved 20 → 60 and a new
   `FAMILIARITY_PROGRESS_AT = 20` separates low-scoring words from the amber

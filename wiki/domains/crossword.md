@@ -5,7 +5,7 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2026-12-14
-generated: { by: agent:zcode, at: 2026-09-14T12:00:00Z }
+generated: { by: agent:openai/big-pickle, at: 2026-09-17T00:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/CrosswordController.php
@@ -90,12 +90,14 @@ without manual runs. Dev has no `schedule:work` — run
 3. **Frequency** — `words:import-frequency {file} --lang=` upserts rank
    numbers onto `words.frequency` from `rank,word` CSVs
    (`database/frequency/`). Sample list committed for tests.
-4. **Select + lay out** — deterministic `ORDER BY frequency, id LIMIT 30`
-   excluding words the user already knows (`user_word.familiarity >= 100`);
-   generate seeds `familiarity = 0` marker rows for the selected words so
-   `complete` can award the bonus; `App\Classes\Crossword` places
-   words on a virtual grid (same algorithm as the 2025 feature) and emits
-   the typed-cell `newGrid` + `dictionary` JSON the React page consumes.
+4. **Select + lay out** — `ORDER BY user_word.familiarity (0 = never seen
+   first), words.frequency, id LIMIT 30` so the least-familiar band words
+   are picked first, excluding words the user already knows
+   (`user_word.familiarity >= 100`); generate seeds `familiarity = 0`
+   marker rows for the selected words so `complete` can award the bonus;
+   `App\Classes\Crossword` places words on a virtual grid (same algorithm
+   as the 2025 feature) and emits the typed-cell `newGrid` + `dictionary`
+   JSON the React page consumes.
 
 # Frontend
 
