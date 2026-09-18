@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database.
 tags: [testing, pest]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-17T23:40:00Z }
+generated: { by: agent:zcode, at: 2026-09-18T00:00:00Z }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -204,6 +204,16 @@ the tests affected by your latest changes, replaying the rest from cache.
   from `/var/repo` so the project key matches across team members. The commit
   is created once (or after a container rebuild wipes `.git`) and is left
   untouched afterwards — user edits stay uncommitted so TIA can detect them.
+  **Host-side caveat**: the bind mount materialises this repo on the host as
+  `laravel/.git` too. It is an auto-generated artefact, not the real repo —
+  from inside `laravel/` git resolves to it (branch `master`, single commit
+  `TIA baseline commit` by `TIA Setup <tia@local>`), and its dirty-file list
+  includes phantom diffs against the stale baseline. Always run git from the
+  repo root; never `push`/`pull`/`clean`/`stash` from inside `laravel/` (its
+  `origin` points at the real GitHub remote). Deleting `laravel/.git` is safe
+  (all working files are tracked by the outer repo; nothing unique lives in
+  the artefact) — `test:tia` recreates it, followed by one `--fresh` graph
+  re-record.
 * **Storage**: `~/.pest/tia/<project-key>/` inside the container. Lost on
   `docker compose down` (container removal); `scripts/tia-setup.php` recreates
   the git context and `--tia --fresh` re-records the graph. CI baseline sharing

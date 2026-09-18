@@ -1,5 +1,110 @@
 # Directory Update Log
 
+## 2026-09-18 (fix: stray host-side `laravel/.git` removed)
+
+* **Nested TIA artefact repo removed from the host.** The container-local git
+  repo that `scripts/tia-setup.php` initialises at `/var/www` for the Pest TIA
+  engine materialises on the host at `laravel/.git` through the
+  `./laravel:/var/www` bind mount (first noticed after the 2026-09-17
+  `test:tia` run created its baseline commit there). It is not the real repo —
+  from inside `laravel/`, git resolved to a branch `master` with one generated
+  commit (`TIA baseline commit` by `TIA Setup <tia@local>`), showing the same
+  working-tree edits as the root repo plus phantom diffs against the stale
+  baseline. Deleted `laravel/.git` (nothing unique in it: no stashes, one
+  generated commit, fetched refs already present in the root repo; all working
+  files are tracked by the root repo). `test:tia` recreates the artefact on
+  the next run — followed by one `--fresh` graph re-record. Guidance added to
+  `wiki/playbooks/running-tests.md` ("Container-local git repo"): run git from
+  the repo root only; never `push`/`pull`/`clean`/`stash` from inside
+  `laravel/` (its `origin` points at the real GitHub remote).
+
+## 2026-09-18 (removed: refinement round)
+
+* **Second alignment round removed; back to a single LaBSE pass.** After the
+  arbitration redesign the round still scrambled live alignments in practice,
+  so the whole two-round machinery was reverted to the committed round-1
+  behavior: no auto-chained refinement, no `Refine (BGE-M3)` Filament action,
+  no `/align` `model`/`existing_matches`/objective fields, no
+  `refining`/`scored_by` columns (dropped; migrations deleted), no
+  `PYTHON_REFINE_*`/`PYTHON_LANDMARK_THRESHOLD` config, no calibration
+  scripts. Kept from the fix round: `resequenceMatchesByDocumentPosition` +
+  `alignments:resequence` (order = document position enforced on every
+  completion; covered by `ResequenceEntityMatchesTest`). Data cleanup: the
+  one mid-refinement match (#11) was completed directly, its queued job
+  deleted, its 360 scrambled rows resequenced; corpus-wide order-vs-position
+  descent count is 0. Landmark semantics are HEAD's again: human rows +
+  machine rows ≥ 0.90 survive Re-align.
+
+## 2026-09-18 (fix: refinement round could regress alignments)
+
+* **Refinement round redesigned to keep-or-replace arbitration; alignment
+  #10 repaired.** Running the new two-round pipeline on match #10 scrambled
+  the result after round 2. Investigation (read-only SQL + code audit) found
+  the pairings healthy (0 crossings, 0 junction-less) but the `order` column
+  destroyed: refinement assigned new rows `order = max(order) + stride`, so
+  all 1,294 replacement rows sorted after the 169 surviving landmark rows —
+  108k order-vs-position inversions, and every display surface sorts by
+  `order`. Three fixes: (1) replacement orders now spread BETWEEN the
+  bounding landmark rows, and `finalize()` resequences the whole match by
+  document position (new `SentenceAlignmentService::resequenceMatchesByDocumentPosition`
+  + `alignments:resequence` command; run on #10: 1,462 rows renumbered, 0
+  inversions / 0 crossings after); (2) the round no longer bulk-deletes
+  sub-bar rows up front — each region between landmarks is re-aligned with
+  `/align` `existing_matches` (python rescores the old spans with the same
+  model) and replaced only when `candidate_objective > existing_objective`
+  (identical formula: score² / -2.0 force-match / skip_penalty per uncovered
+  sentence; `ai/alignment/test_objective.py`); regions over
+  `PYTHON_REFINE_REGION_CAP` (60) keep their rows for human review;
+  (3) `PYTHON_REFINE_THRESHOLD` raised 0.45 → 0.60 (calibration showed
+  BGE-M3's genuine floor ≈0.57 — below 0.57 the DP's economics prefer
+  garbage matches over skips), and strong-model rows become landmarks at
+  `PYTHON_REFINE_LANDMARK_THRESHOLD` = 0.70 via
+  `meaning_matches.scored_by` (new column), so a Re-align can no longer
+  delete the refine round's verified output. Landmark clause got a
+  three-valued-logic fix (`whereNotNull('scored_by')` — `scored_by =
+  'refine'` is NULL for NULL rows, which made `whereNot(clause)` skip the
+  exact rows it had to delete). Tests: RefineEntityAlignmentTest rewritten
+  for arbitration (accept/reject/oversized/model-aware-landmarks/resequence),
+  new objective + Filament + unit coverage; full suite 623 passed. See
+  [Sentence Alignment](domains/sentence-alignment.md).
+
+## 2026-09-18
+
+* **Two-round alignment: fast LaBSE round 1 → BGE-M3 DP refinement of the
+  problem regions.** A fresh run stays on the fast aligner; when it drains,
+  `finalize()` chains a refinement round (`services.python.refine_alignment`,
+  default on) that keeps the landmark tiers (human rows + machine rows ≥
+  `PYTHON_LANDMARK_THRESHOLD`, 0.90) as pool boundaries, deletes the sub-bar
+  machine rows, and re-aligns the gaps via `/align` with per-request
+  overrides: `algorithm: "dp"` (n×m window DP),
+  `model: "signature"` (the strong `MODEL_PATH` BGE-M3 — new optional
+  `model` field on `/align`, served from the signature-model cache), and
+  `similarity_threshold` = `PYTHON_REFINE_THRESHOLD` (0.45). The round flag
+  lives on `entity_matches.refining` (new column) so self-dispatches,
+  retries, and test drain loops continue the correct round; refine windows
+  are capped at 40 sentences/side (`REFINE_CHUNK_CAP`) so huge landmark-free
+  gaps drain chunk-by-chunk. `beginRefinement()` is a no-op when nothing is
+  sub-bar or a side is empty, and `handle()` finalizes directly when
+  landmark bounds cover the whole span — removing a latent
+  infinite-dispatch loop. Filament gained a **Refine (BGE-M3)** action
+  alongside Re-align / Run from scratch. Round-1 model restored to LaBSE
+  (`ALIGN_MODEL_PATH=/app/models/labse`) and `ALIGN_DEFAULT_THRESHOLD` back
+  to 0.55 / anchor 0.6 (the live `.env` had drifted to bge_m3 + 0.4).
+  Thresholds are now calibratable from data:
+  `ai/alignment/calibration_pairs.txt` (curated equal-meaning pairs) +
+  `ai/alignment/calibrate.py --model aligner|signature` print the real-match
+  score distribution (min/p5/median) with suggested knob values (inspired by
+  lingtrain-aligner's chains→conflicts re-solve design). First measured run
+  (15 pairs): LaBSE min 0.68 / p5 0.76 / median 0.93 — the 0.55 round-1
+  threshold stays safely below the floor; BGE-M3 min 0.57 / p5 0.68 /
+  median 0.93 — cooler floor, so `PYTHON_REFINE_THRESHOLD=0.45` keeps a
+  margin (tighten toward 0.5–0.55 as the pair list grows). Tests:
+  `RefineEntityAlignmentTest` (chaining, overrides, chunked drain, no-op,
+  degenerate pools), Filament refine-action test, service payload unit
+  tests; five round-1 mechanics tests pin `refine_alignment=false`. See
+  [Sentence Alignment](domains/sentence-alignment.md) and
+  [Works, Entities & Alignment](database/entities-alignment.md).
+
 ## 2026-09-17
 
 * **Fast-tests convention: bound data, fake HTTP, cap drain loops, TIA
