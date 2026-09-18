@@ -3,7 +3,6 @@
 use App\Classes\AIModelResolver;
 use App\Exceptions\AiProviderException;
 use App\Models\User;
-use InvalidArgumentException;
 
 it('accepts an empty question without server error', function () {
     $user = User::factory()->create();

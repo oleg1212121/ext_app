@@ -103,13 +103,16 @@ docker exec ext_app_laravel php artisan test --testsuite=Unit
 docker exec ext_app_laravel php artisan test --testsuite=Feature
 
 # Run only tests affected by your changes (Pest TIA — uses PCOV coverage for the baseline)
-# First run records the baseline (~50s); subsequent runs replay cached results and re-run
+# First run records the graph (~80s); subsequent runs replay cached results and re-run
 # only tests touched by changed files. Comment-only edits trigger zero tests.
+# After a container rebuild the graph is gone: add --fresh to the pest command once.
 docker exec ext_app_laravel composer run test:tia
 
 # Force re-record the TIA graph after large refactors (slower run under PCOV)
-docker exec ext_app_laravel sh -c 'cd /var/www && php scripts/tia-setup.php && php -d extension=pcov.so -d pcov.enabled=1 vendor/bin/pest --parallel --tia --fresh'
+docker exec ext_app_laravel sh -c 'cd /var/www && PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/var/www/scripts/php-ini php vendor/bin/pest --parallel --tia --drop-databases --coverage --fresh'
 ```
+
+**Default to `composer run test:tia` after changes** — it re-runs only tests touched by your files; save the full `composer run test` for pre-merge/CI verification.
 
 Test database: `ext_app_test` (configured in phpunit.xml, not the default).
 
@@ -183,6 +186,7 @@ docker-compose/python/ai/ai_env/bin/pip install <package>  # only when needed
 - **Validation**: Use Form Request classes in `app/Http/Requests/`, never inline validation.
 - **Config**: Use `config()`, never `env()` outside config files.
 - **Testing**: Pest syntax. Use `assertForbidden`/`assertNotFound` instead of `assertStatus(4xx)`.
+- **Fast tests**: Keep test data minimal — only the rows that exercise the behavior (a handful per side; go bigger only when a scale boundary itself is the subject). Always `Http::fake()` in tests whose code path can reach the Python service or an external API: even with `Bus::fake()`, code before the dispatch can make real calls, and the Python service timeouts reach 600s. Cap drain/poll `while` loops with a small guard and assert convergence after the loop so a stall fails the test. Pass and assert `per_page`/limits on paginated endpoints. Details: `wiki/playbooks/running-tests.md`.
 - **Livewire events**: Use `$this->dispatch()`, not `emit`.
 - **Models**: Use `casts()` method, not `$casts` property.
 - **Eloquent**: Prefer `Model::query()` over `DB::`. Use eager loading.

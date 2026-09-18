@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database.
 tags: [testing, pest]
 status: stable
-generated: { by: human:opencode, at: 2026-09-04T16:35:00Z }
+generated: { by: agent:zcode, at: 2026-09-18T00:00:00Z }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -104,9 +104,10 @@ docker exec ext_app_laravel php artisan test --testsuite=Feature
 # by changed files. Comment-only/whitespace edits trigger zero tests.
 docker exec ext_app_laravel composer run test:tia
 
-# Force re-record the TIA graph after large refactors
-docker exec -e XDEBUG_MODE=coverage ext_app_laravel sh -c \
-  'cd /var/www && php scripts/tia-setup.php && php vendor/bin/pest --parallel --tia --fresh'
+# Force re-record the TIA graph after large refactors (~80s under PCOV;
+# also required once after a container rebuild, when the graph is gone and
+# `gh` cannot fetch the CI baseline unauthenticated)
+docker exec ext_app_laravel sh -c 'cd /var/www && PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/var/www/scripts/php-ini php vendor/bin/pest --parallel --tia --drop-databases --coverage --fresh'
 ```
 
 # Gotchas
@@ -142,6 +143,37 @@ docker exec -e XDEBUG_MODE=coverage ext_app_laravel sh -c \
   `public/build/manifest.json` (fresh clone, CI) fails ~40 feature tests
   with `ViteManifestNotFoundException`.
 
+# Keeping tests fast
+
+`RefreshDatabase` re-migrates per test, so every Feature test pays a fixed
+floor; what makes runs crawl is test-data volume and leaked network calls.
+Rules for any new or modified test:
+
+* **Bound the fixture.** Seed only the rows the assertions need — a handful
+  per side. Go bigger only when a scale boundary itself is the subject (e.g.
+  chunk-size seams), and then the smallest size that crosses it. Inline
+  `range()` seeding is the norm (factories barely exist); keep the counts
+  small.
+* **Fake every HTTP boundary.** Tests run with `QUEUE_CONNECTION=sync`, so
+  code executing *before* a dispatch runs inline: a test with only
+  `Bus::fake()` still makes real network calls if any pre-dispatch code
+  touches the Python service — and `SentenceAlignmentService` timeouts reach
+  600s with retries, i.e. minutes per leaked call. Add `Http::fake()`: a
+  file-level `beforeEach(fn () => Http::fake())` guard suffices when tests
+  only assert dispatches (see `FilamentReAlignActionTest.php`); stub explicit
+  responses when payloads matter (see `ChunkedEntityAlignmentTest.php`).
+* **Cap drain loops.** A `while` loop that re-runs a job until the match
+  leaves `aligning` needs a small guard (`$guard < 10`) *and* a convergence
+  assertion after the loop (`status === 'completed'`) so a stalled job fails
+  the test instead of silently burning iterations.
+* **Bound pagination in tests.** Pass `per_page`/`page` on paginated
+  endpoints and assert the returned `meta`; never write a test that assumes
+  an endpoint returns everything.
+* **Run TIA first.** After changes prefer `composer run test:tia` — it
+  re-runs only tests touched by changed files; the full `composer run test`
+  belongs to pre-merge/CI verification. Never run two test commands at once
+  (shared `ext_app_test`).
+
 # Pest TIA Engine
 
 [Pest 5 TIA](https://pestphp.com/docs/tia) (Test Impact Analysis) re-runs only
@@ -151,9 +183,20 @@ the tests affected by your latest changes, replaying the rest from cache.
   `filtered()` narrows PHPUnit to affected test files; `baselined()` opts in
   to fetching a shared baseline from CI when the local graph drifts.
 * **Coverage driver**: PCOV is installed but **disabled by default** (fast
-  normal CLI). The `test:tia` composer script enables it only for the baseline
-  run via `-d extension=pcov.so -d pcov.enabled=1 --coverage`, so all parallel
-  workers inherit coverage for the baseline recording only.
+  normal CLI; no `pcov.ini` in the container's conf.d). The `test:tia`
+  composer script loads it via
+  `PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/var/www/scripts/php-ini`
+  pointing at the tracked `scripts/php-ini/tia.ini` (pcov extension +
+  `pcov.enabled=1` + `memory_limit=1G`). The scan-dir route is required
+  because Pest runs parallel through the **paratest** binary: its worker
+  processes do not inherit `php -d` ini flags from the parent invocation —
+  only environment-propagated ini scanning reaches every worker. Plain `-d
+  extension=pcov.so` fails with "No code coverage driver is available", and
+  the graph merge OOMs at the CLI-default 128M limit without the memory
+  line.
+* **Baseline source**: `baselined()` first tries to fetch the shared CI
+  baseline through `gh`; with an unauthenticated `gh` in the container it
+  errors — record locally with `--fresh` instead (once per container; ~80s).
 * **Container-local git repo**: because `/var/www` (Laravel project) is bind-
   mounted separately from `/var/repo` (the git repo root), Pest sees no git
   context at `/var/www`. `scripts/tia-setup.php` initialises a container-local
@@ -161,6 +204,16 @@ the tests affected by your latest changes, replaying the rest from cache.
   from `/var/repo` so the project key matches across team members. The commit
   is created once (or after a container rebuild wipes `.git`) and is left
   untouched afterwards — user edits stay uncommitted so TIA can detect them.
+  **Host-side caveat**: the bind mount materialises this repo on the host as
+  `laravel/.git` too. It is an auto-generated artefact, not the real repo —
+  from inside `laravel/` git resolves to it (branch `master`, single commit
+  `TIA baseline commit` by `TIA Setup <tia@local>`), and its dirty-file list
+  includes phantom diffs against the stale baseline. Always run git from the
+  repo root; never `push`/`pull`/`clean`/`stash` from inside `laravel/` (its
+  `origin` points at the real GitHub remote). Deleting `laravel/.git` is safe
+  (all working files are tracked by the outer repo; nothing unique lives in
+  the artefact) — `test:tia` recreates it, followed by one `--fresh` graph
+  re-record.
 * **Storage**: `~/.pest/tia/<project-key>/` inside the container. Lost on
   `docker compose down` (container removal); `scripts/tia-setup.php` recreates
   the git context and `--tia --fresh` re-records the graph. CI baseline sharing

@@ -4,6 +4,7 @@ namespace App\Classes;
 
 use App\Models\Entity;
 use App\Models\EntityMatch;
+use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use Illuminate\Http\Client\ConnectionException;
@@ -144,6 +145,103 @@ class SentenceAlignmentService
         $adapted = $this->adaptMatches($matches, $aSentences, $bSentences);
 
         return [...$adapted, 'matches' => $matches];
+    }
+
+    /**
+     * Renumber an entity match's meaning matches 0, 1024, 2048... in document
+     * position order (each row sorts by its earliest junctioned sentence on
+     * either side; junction-less rows go last). Repairs the appended-after-max
+     * sequences that re-align rounds leave behind — every display surface
+     * sorts strictly by `order`, so a scrambled order column IS a scrambled
+     * alignment. Two-phase write (park at unique negatives first) respects
+     * the (entity_match_id, order) unique index.
+     *
+     * @return int The number of rows whose order changed
+     */
+    public function resequenceMatchesByDocumentPosition(EntityMatch $entityMatch): int
+    {
+        $positions = [];
+
+        foreach ([$entityMatch->a_entity_id, $entityMatch->b_entity_id] as $entityId) {
+            $sentenceIds = EntitySentence::query()
+                ->where('entity_id', $entityId)
+                ->orderBy('order')
+                ->orderBy('id')
+                ->pluck('id')
+                ->all();
+
+            foreach ($sentenceIds as $index => $sentenceId) {
+                $positions[$sentenceId] = $index;
+            }
+        }
+
+        $rows = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
+            ->with('sentenceMeaningMatches')
+            ->get(['id', 'order']);
+
+        $sortKeys = [];
+
+        foreach ($rows as $row) {
+            $posA = null;
+            $posB = null;
+
+            foreach ($row->sentenceMeaningMatches as $junction) {
+                $position = $positions[$junction->entity_sentence_id] ?? null;
+
+                if ($position === null) {
+                    continue;
+                }
+
+                if ($junction->side === 'a') {
+                    $posA = $posA === null ? $position : min($posA, $position);
+                } else {
+                    $posB = $posB === null ? $position : min($posB, $position);
+                }
+            }
+
+            $sortKeys[$row->id] = [
+                'primary' => $posA ?? $posB ?? PHP_INT_MAX,
+                'secondary' => $posB ?? $posA ?? PHP_INT_MAX,
+                'order' => (int) $row->order,
+            ];
+        }
+
+        uasort($sortKeys, fn (array $x, array $y): int => [$x['primary'], $x['secondary']]
+            <=> [$y['primary'], $y['secondary']]);
+
+        $changes = [];
+        $index = 0;
+
+        foreach ($sortKeys as $rowId => $sortKey) {
+            $newOrder = SparseOrderService::STRIDE * $index;
+
+            if ($sortKey['order'] !== $newOrder) {
+                $changes[] = ['id' => $rowId, 'order' => $newOrder];
+            }
+
+            $index++;
+        }
+
+        if ($changes === []) {
+            return 0;
+        }
+
+        DB::transaction(function () use ($changes): void {
+            foreach ($changes as $change) {
+                MeaningMatch::query()
+                    ->whereKey($change['id'])
+                    ->update(['order' => -($change['id'] + 1_000_000_000)]);
+            }
+
+            foreach ($changes as $change) {
+                MeaningMatch::query()
+                    ->whereKey($change['id'])
+                    ->update(['order' => $change['order']]);
+            }
+        });
+
+        return count($changes);
     }
 
     /**

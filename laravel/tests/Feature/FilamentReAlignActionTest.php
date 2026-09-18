@@ -9,7 +9,12 @@ use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
+
+// Guard: these tests stop at Bus::fake(), but anything that leaks an HTTP call
+// must hit a fake response instead of hanging on the Python service timeout.
+beforeEach(fn () => Http::fake());
 
 /**
  * The EN entity is created first, so it is the match's 'a' side and RU is 'b'.

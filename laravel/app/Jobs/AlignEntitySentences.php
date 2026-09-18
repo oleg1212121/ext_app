@@ -925,6 +925,23 @@ class AlignEntitySentences implements ShouldQueue
             }
         }
 
+        try {
+            $resequenced = SentenceAlignmentService::create()
+                ->resequenceMatchesByDocumentPosition($entityMatch);
+
+            if ($resequenced > 0) {
+                Log::info('Resequenced meaning matches by document position on completion', [
+                    'entity_match_id' => $entityMatch->id,
+                    'rows' => $resequenced,
+                ]);
+            }
+        } catch (Throwable $exception) {
+            Log::warning('Failed to resequence meaning matches on alignment completion', [
+                'entity_match_id' => $entityMatch->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+
         $entityMatch->update([
             'status' => 'completed',
             'error_message' => null,
