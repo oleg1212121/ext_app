@@ -5,19 +5,43 @@ import {getCsrfToken} from '../lib/http';
 import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
 
 const POPUP_MARGIN = 8;
-const POPUP_WIDTH = 460;
 const VIEWPORT_MARGIN = 12;
 const MIN_POPUP_HEIGHT = 160;
 const TRANSLATIONS_PREVIEW = 8;
+
+// Popup typography derives from the host page's font-size setting (ADR 0031):
+// the page passes the size it computed with popupFontSizeFor(); this default
+// only covers callers that don't (≈ today's look, slightly larger than the
+// original fixed 14px text).
+export const DEFAULT_POPUP_FONT_SIZE = 17;
+const POPUP_BASE_WIDTH = 560;
+
+/**
+ * Derive the popup font from a page's reading font size: proportional at
+ * POPUP_FONT_RATIO, floored so small reading fonts never shrink the popup
+ * below its original fixed size, capped so huge fonts stay readable.
+ */
+export function popupFontSizeFor(pageFontSize, {
+    ratio = 0.65,
+    min = 14,
+    max = 32,
+} = {}) {
+    return Math.min(max, Math.max(min, Math.round(pageFontSize * ratio)));
+}
 
 /**
  * Position the popover next to the clicked word, always inside the viewport:
  * it opens below the word unless there is more room above (then it flips up,
  * anchored to the word's top edge), and its height is capped to the larger
- * side so the footer actions stay reachable.
+ * side so the footer actions stay reachable. Width scales with the popup
+ * font (560px at the default 17px) so proportions hold as the user scales
+ * text from the page's +/- controls.
  */
-function popupStyle(rect) {
-    const width = Math.min(POPUP_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
+function popupStyle(rect, fontSize) {
+    const width = Math.min(
+        Math.round((POPUP_BASE_WIDTH * fontSize) / DEFAULT_POPUP_FONT_SIZE),
+        window.innerWidth - VIEWPORT_MARGIN * 2,
+    );
     const left = Math.min(
         Math.max(VIEWPORT_MARGIN, rect.left + window.scrollX),
         Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
@@ -49,7 +73,7 @@ function TranslationLine({translations}) {
     const visible = expanded ? translations : translations.slice(0, TRANSLATIONS_PREVIEW);
 
     return (
-        <p className="mt-2 text-[13px] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
+        <p className="mt-2 text-[0.929em] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
             {visible.map((translation) => translation.word).join(', ')}
             {translations.length > TRANSLATIONS_PREVIEW && !expanded && (
                 <button
@@ -68,8 +92,11 @@ function TranslationLine({translations}) {
  * Word popover shown next to a Ctrl-clicked word: one section per part of
  * speech under the headword (details fetched lazily from GET /words/{id}),
  * plus the word progress actions in a footer that never scrolls away.
+ * `fontSize` (px) is the popup's root font, derived by the host page from
+ * its reading font size (popupFontSizeFor); every inner text size is
+ * em-relative to it, and the width scales with it.
  */
-export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress}) {
+export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE}) {
     const {t} = useI18n();
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
@@ -160,13 +187,13 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             ref={ref}
             role="dialog"
             aria-label={data?.word ?? surface}
-            style={popupStyle(rect)}
-            className="word-popup absolute z-50 flex flex-col overflow-hidden rounded-md border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[#FDFBF5] dark:bg-[#1C1915] shadow-lg shadow-black/20 font-sans text-sm text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]"
+            style={{...popupStyle(rect, fontSize), fontSize: `${fontSize}px`}}
+            className="word-popup absolute z-50 flex flex-col overflow-hidden rounded-md border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[#FDFBF5] dark:bg-[#1C1915] shadow-lg shadow-black/20 font-sans text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]"
         >
             {(loading || error) && (
                 <div className="p-3.5">
-                    {loading && <p className="text-xs opacity-60">{t('word.loading')}</p>}
-                    {error && <p className="text-xs text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{error}</p>}
+                    {loading && <p className="text-[0.857em] opacity-60">{t('word.loading')}</p>}
+                    {error && <p className="text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{error}</p>}
                 </div>
             )}
 
@@ -174,18 +201,18 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                 <>
                     <div className="shrink-0 px-3.5 pb-1 pt-3">
                         <div className="flex items-baseline gap-2 flex-wrap">
-                            <span className="font-serif text-lg leading-tight">{data.word}</span>
+                            <span className="font-serif text-[1.286em] leading-tight">{data.word}</span>
                             {data.word_class && (
-                                <span className="text-[11px] uppercase tracking-wider opacity-60">{data.word_class}</span>
+                                <span className="text-[0.786em] uppercase tracking-wider opacity-60">{data.word_class}</span>
                             )}
                         </div>
 
-                        <p className="mt-0.5 text-[11px] tabular-nums opacity-60">
+                        <p className="mt-0.5 text-[0.786em] tabular-nums opacity-60">
                             {t('word.familiarity', {value: familiarity ?? 0, max: FAMILIARITY_MAX})}
                         </p>
 
                         {data.is_form && (
-                            <p className="mt-1 text-xs italic opacity-70">
+                            <p className="mt-1 text-[0.857em] italic opacity-70">
                                 «{surface}» — {t('word.form_of')} «{data.word}»
                             </p>
                         )}
@@ -200,29 +227,29 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                                     : undefined}
                             >
                                 {entry.word_class && (
-                                    <h3 className="text-[11px] uppercase tracking-wider opacity-60">{entry.word_class}</h3>
+                                    <h3 className="text-[0.786em] uppercase tracking-wider opacity-60">{entry.word_class}</h3>
                                 )}
 
                                 {entry.transcriptions?.length > 0 && (
-                                    <p className="mt-1 text-sm opacity-80">
+                                    <p className="mt-1 opacity-80">
                                         [{entry.transcriptions.map((item) => item.value).join(' · ')}]
                                     </p>
                                 )}
 
                                 {entry.definitions?.length > 0 ? (
-                                    <ol className="ml-4 mt-1.5 list-decimal space-y-1 text-[13px] leading-snug">
+                                    <ol className="ml-4 mt-1.5 list-decimal space-y-1 text-[0.929em] leading-snug">
                                         {entry.definitions.map((definition, definitionIndex) => (
                                             <li key={definitionIndex}>{definition}</li>
                                         ))}
                                     </ol>
                                 ) : (
-                                    <p className="mt-1.5 text-xs opacity-60">{t('word.no_definitions')}</p>
+                                    <p className="mt-1.5 text-[0.857em] opacity-60">{t('word.no_definitions')}</p>
                                 )}
 
                                 <TranslationLine translations={entry.translations ?? []} />
 
                                 {entry.examples?.length > 0 && (
-                                    <details className="mt-2 text-xs">
+                                    <details className="mt-2 text-[0.857em]">
                                         <summary className="cursor-pointer opacity-70">{t('word.examples')}</summary>
                                         <ul className="ml-4 mt-1 list-disc space-y-0.5 italic opacity-80">
                                             {entry.examples.map((example, exampleIndex) => (
@@ -234,9 +261,9 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
 
                                 {entry.etymologies?.length > 0 && (
                                     <div className="mt-2">
-                                        <p className="text-[11px] uppercase tracking-wider opacity-60">{t('word.etymology')}</p>
+                                        <p className="text-[0.786em] uppercase tracking-wider opacity-60">{t('word.etymology')}</p>
                                         {entry.etymologies.map((etymology, etymologyIndex) => (
-                                            <p key={etymologyIndex} className="mt-1 text-xs italic leading-snug opacity-75">
+                                            <p key={etymologyIndex} className="mt-1 text-[0.857em] italic leading-snug opacity-75">
                                                 {etymology}
                                             </p>
                                         ))}
@@ -253,7 +280,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                                     type="button"
                                     disabled={busy}
                                     onClick={() => changeProgress('known')}
-                                    className="rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-xs hover:bg-[var(--color-verdigris)]/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]"
+                                    className="rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]"
                                 >
                                     {t('word.i_know_this')}
                                 </button>
@@ -263,7 +290,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                                     type="button"
                                     disabled={busy}
                                     onClick={() => changeProgress('reset')}
-                                    className="rounded-sm border border-[var(--color-hairline)] px-2.5 py-1 text-xs opacity-80 hover:opacity-100 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-hairline-night)]"
+                                    className="rounded-sm border border-[var(--color-hairline)] px-2.5 py-1 text-[0.857em] opacity-80 hover:opacity-100 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-hairline-night)]"
                                 >
                                     {t('word.remove_mark')}
                                 </button>

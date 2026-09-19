@@ -4,8 +4,8 @@ title: Bilinguals Simulator
 description: Side-by-side bilingual reading trainer where users translate and get AI assessment of their translation.
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
-stale_after: 2026-12-14
-generated: { by: agent:zcode, at: 2026-09-14T12:00:00Z }
+stale_after: 2026-12-19
+generated: { by: agent:zcode, at: 2026-09-19T12:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -104,6 +104,13 @@ variants.
   soft gray shadow just below the glyphs
   (`text-shadow: 1px 1px 5px rgb(128 128 128 / 50%)`) instead of a background
   fill.
+* The same `+`/`−` buttons also drive the **word-popup typography** (ADR
+  0031): `popupFontSizeFor(font_size)` — 65% of the page font, floored at
+  14px, capped at 32px — flows `Bilinguals` → `TextContent` → `WordText` →
+  `WordPopup`, whose width scales with it (560px at the default 17px). The
+  dictionary words themselves are selectable `role="button"` spans, so a
+  plain double-click natively selects a word for browser extensions; the
+  popup stays Ctrl+click (ADR 0030).
 
 # Frontend
 

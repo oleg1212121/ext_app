@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups covering every part of speech of the headword, render-time segmentation, read/lookup familiarity events.
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups covering every part of speech of the headword (typography follows the host page's font setting, ADR 0031), render-time segmentation, read/lookup familiarity events.
 tags: [reader, bilinguals, dictionary, words, react, inertia]
 status: stable
 stale_after: 2026-12-19
-generated: { by: agent:zcode, at: 2026-09-19T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-19T12:00:00Z }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -31,6 +31,9 @@ sources:
   - id: adr
     resource: docs/adr/0028-numeric-word-familiarity.md
     title: ADR 0028 (numeric word familiarity)
+  - id: adr-popup-typography
+    resource: docs/adr/0031-popup-typography-follows-page-font.md
+    title: ADR 0031 (popup typography follows the host page's font setting)
 ---
 
 # What it does
@@ -40,8 +43,10 @@ to a dictionary **Word** open the **Word popup** on **Ctrl+click** — one
 section per part of speech recorded under the headword (language + `l_word`),
 each with its definitions, transcriptions, translations (native language
 first), examples and etymology, plus word progress actions pinned in a footer
-that never scrolls away. A plain click does nothing (ADR 0030). Their text is
-tinted by the reader's **Word familiarity** (0–19 or no row → rose, 20–59 →
+that never scrolls away. A plain click does nothing (ADR 0030), and a plain
+double-click natively selects the word so browser extensions (translators,
+dictionaries) can act on it. Their text is
+tinted by the reader's **Word familiarity** (0–19 → rose, 20–59 →
 amber, 60–99 → verdigris, ≥ 100 → green). Revealing a sentence pair on the
 simulator credits its words a read (+1); opening a word's popup costs a
 lookup (−2), once per word per sentence pair on both surfaces. All
@@ -57,9 +62,14 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    user's `user_word` rows). Unlinked tokens are absent → plain text.
 2. **The browser segments the text.** `WordText` runs
    `lib/wordTokenizer.mjs` — a JS port of the PHP `WordTokenizer` regex —
-   over each row and renders tokens found in the map as word buttons.
-   Parity is enforced by `tests/Unit/TokenizerParityTest.php` (PHP vs node
-   CLI on shared fixtures); a mismatch breaks coloring, not text.
+   over each row and renders tokens found in the map as **`role="button"`
+   spans**, not real `<button>` elements: Chromium treats button labels as
+   widget chrome, so a double-click on a real button never produces the
+   native text selection that browser extensions need. The spans keep the
+   button keyboard contract (focusable; Ctrl+Enter / Ctrl+Space open the
+   popup). Parity is enforced by `tests/Unit/TokenizerParityTest.php`
+   (PHP vs node CLI on shared fixtures); a mismatch breaks coloring, not
+   text.
 3. **Popup details are lazy, per headword.** Ctrl-clicking a word fetches
    `GET /words/{word}?surface={l_word}`. The endpoint returns **every** `words`
    row sharing the headword — the linked row first, siblings after in
@@ -71,7 +81,12 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    section per entry, translations capped at 8 with a "+N more…" expander.
    It always fits the viewport: it opens below the word, flips above it when
    there is more room above, its height is capped to the larger side, the
-   body scrolls internally. When the surrounding `WordText` has a `rowKey`
+   body scrolls internally. **Its typography follows the host page's
+   font-size setting** (ADR 0031): the page derives
+   `popupFontSizeFor(pageFont)` — 65% of the page font, floored at 14px,
+   capped at 32px — and the popup scales with it (width 560px at the default
+   17px, still viewport-clamped; inner text sizes em-relative). When the
+   surrounding `WordText` has a `rowKey`
    (see below), the click also fires a **lookup event**.
 4. **Progress actions.** `PATCH /words/{word}/progress`
    (`familiarity: 0-100`) and `DELETE /words/{word}/progress` implement "I
@@ -136,9 +151,12 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
 * **Reader** (`/reader-react/{lang}/{entityId}`): props `wordMap`,
   `translationWordMap`, `rowKeys`, `highlight`, `primaryHighlightable`,
   `translationHighlightable`; `ReaderRow` renders both row halves through
-  `WordText` (the primary line is a `role="button"` div so word buttons stay
-  valid HTML inside it). Lookup events only — no read crediting.
+  `WordText` (the primary line is a `role="button"` div so the word tokens —
+  themselves `role="button"` spans — stay valid HTML inside it) and derives
+  the popup font from its own `fontSize`. Lookup events only — no read
+  crediting.
 * **Bilinguals simulator** (`POST /text`): response gains `word_maps`
   (`{a, b, highlightable}`; `null` in legacy filename mode) and `row_keys`
   (aligned with `rows`); `TextContent` renders both cells through `WordText`
-  and fires read events from the row/column checkboxes.
+  (popup font derived from the simulator's `font_size`) and fires read
+  events from the row/column checkboxes.

@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import ReaderRow from './ReaderRow.jsx';
+import {popupFontSizeFor} from '../../Components/WordPopup.jsx';
 import {useI18n} from '../../i18n';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 
@@ -68,6 +69,8 @@ export default function ReaderApp({
 }) {
     const {t} = useI18n();
     const [fontSize, setFontSize] = useState(savedFontSize ?? DEFAULT_FONT_SIZE);
+    // Word-popup typography follows the page's font setting (ADR 0031).
+    const popupFontSize = popupFontSizeFor(fontSize);
     const [highlight, setHighlight] = useState(savedHighlight);
     useUiSettingsAutosave('reader', {font_size: fontSize, highlight});
     const [wordMap, setWordMap] = useState(initialWordMap);
@@ -379,6 +382,7 @@ export default function ReaderApp({
                                 showAll={showAll}
                                 sideBySide={sideBySide}
                                 fontSize={fontSize}
+                                popupFontSize={popupFontSize}
                                 expanded={expandedRows.has(index)}
                                 onToggle={toggleRow}
                                 wordMap={wordMap}

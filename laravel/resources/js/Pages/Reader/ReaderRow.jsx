@@ -9,6 +9,7 @@ export default function ReaderRow({
     showAll,
     sideBySide,
     fontSize,
+    popupFontSize,
     expanded,
     onToggle,
     wordMap,
@@ -84,6 +85,7 @@ export default function ReaderRow({
                         rowKey={rowKey}
                         onWordProgress={onWordProgress}
                         className="whitespace-pre-line"
+                        popupFontSize={popupFontSize}
                     />
                 </div>
 
@@ -118,6 +120,7 @@ export default function ReaderRow({
                                 highlight={highlight && translationHighlightable}
                                 rowKey={rowKey}
                                 onWordProgress={onWordProgress}
+                                popupFontSize={popupFontSize}
                             />
                         </div>
                     </div>
