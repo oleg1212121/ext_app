@@ -2335,3 +2335,14 @@ did* **Change: AI Models admin enable/disable now fires without a confirmation
   word-map page scoping; CONTEXT.md gains **Reading position** and
   generalizes **Working state** beyond the simulator;
   `wiki/domains/reader.md` updated.
+
+* **Same-day refinement + wiring fix** — the pager is now always visible
+  for any text with rows (not only multi-page ones) and gained a numeric
+  page picker (`reader.go_to_page` / `reader.page_of`; `page_indicator`
+  dropped). Bug: the `ReaderReact` Inertia page wrapper forwards an
+  explicit prop list to `ReaderApp` and had not been given
+  `meta`/`positionKey`, so the pager never rendered even though the
+  controller sent both — Feature tests assert server JSON and cannot see
+  client-side prop forwarding; a server-side render check of the wrapper
+  (React static render, `@inertiajs/react` stubbed) reproduced and then
+  proved the fix. Wrapper now forwards both props.
