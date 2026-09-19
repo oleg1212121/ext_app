@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\EntityWordLinker;
 use App\Classes\WordFamiliarityService;
 use App\Http\Requests\RecordWordEventsRequest;
 use App\Http\Requests\UpdateWordProgressRequest;
@@ -20,40 +21,50 @@ class WordController extends Controller
     public function __construct(private readonly WordFamiliarityService $familiarity) {}
 
     /**
-     * Dictionary details for the word popup: definitions, transcriptions,
-     * native-first translations and examples.
+     * Dictionary details for the word popup: every part of speech recorded
+     * under the headword (language + l_word) as its own entry — definitions,
+     * transcriptions, native-first translations, examples and etymologies.
+     * The linked word leads; siblings follow in class-priority order.
      */
     public function show(Request $request, Word $word): JsonResponse
     {
-        $word->load([
-            'wordClass:id,slug,title',
-            'language:id,code',
-            'definitions:id,word_id,definition',
-            'transcriptions:id,word_id,transcription,transcription_type_id',
-            'transcriptions.transcriptionType:id,slug,title',
-            'examples:id,word_id,example',
-        ]);
+        $headwords = Word::query()
+            ->where('language_id', $word->language_id)
+            ->where('l_word', $word->l_word)
+            ->with([
+                'wordClass:id,slug,title',
+                'language:id,code',
+                'definitions:id,word_id,definition',
+                'transcriptions:id,word_id,transcription,transcription_type_id',
+                'transcriptions.transcriptionType:id,slug,title',
+                'examples:id,word_id,example',
+                'etymologies:id,word_id,etymology',
+            ])
+            ->get();
+
+        $bound = $headwords->firstWhere('id', $word->id) ?? $word;
 
         $surface = mb_strtolower((string) $request->query('surface', ''));
-        $isForm = $surface !== '' && $surface !== $word->l_word;
+        $isForm = $surface !== '' && $surface !== $bound->l_word;
+
+        $entries = $headwords
+            ->sortBy(fn (Word $entry): array => [
+                $entry->id === $word->id ? 0 : 1,
+                EntityWordLinker::classPriority($entry->wordClass?->slug ?? ''),
+                $entry->wordClass?->title ?? '',
+            ])
+            ->values()
+            ->map(fn (Word $entry): array => $this->entry($entry, $request->user()))
+            ->all();
 
         return response()->json([
             'data' => [
-                'id' => $word->id,
-                'word' => $word->word,
-                'language_code' => $word->language?->code,
-                'word_class' => $word->wordClass?->title,
+                'id' => $bound->id,
+                'word' => $bound->word,
+                'language_code' => $bound->language?->code,
+                'word_class' => $bound->wordClass?->title,
                 'is_form' => $isForm,
-                'transcriptions' => $word->transcriptions
-                    ->map(fn (Transcription $transcription): array => [
-                        'value' => $transcription->transcription,
-                        'type' => $transcription->transcriptionType?->title,
-                    ])
-                    ->values()
-                    ->all(),
-                'definitions' => $word->definitions->pluck('definition')->all(),
-                'translations' => $this->translations($word, $request->user())->all(),
-                'examples' => $word->examples->pluck('example')->all(),
+                'entries' => $entries,
             ],
         ]);
     }
@@ -96,6 +107,30 @@ class WordController extends Controller
         );
 
         return response()->json(['data' => ['familiarity' => $familiarity]]);
+    }
+
+    /**
+     * One popup section: a single part of speech with all of its satellites.
+     *
+     * @return array{id: int, word_class: string|null, transcriptions: list<array{value: string, type: string|null}>, definitions: list<string>, translations: array, examples: list<string>, etymologies: list<string>}
+     */
+    private function entry(Word $word, Authenticatable $user): array
+    {
+        return [
+            'id' => $word->id,
+            'word_class' => $word->wordClass?->title,
+            'transcriptions' => $word->transcriptions
+                ->map(fn (Transcription $transcription): array => [
+                    'value' => $transcription->transcription,
+                    'type' => $transcription->transcriptionType?->title,
+                ])
+                ->values()
+                ->all(),
+            'definitions' => $word->definitions->pluck('definition')->all(),
+            'translations' => $this->translations($word, $user)->all(),
+            'examples' => $word->examples->pluck('example')->all(),
+            'etymologies' => $word->etymologies->pluck('etymology')->all(),
+        ];
     }
 
     /**

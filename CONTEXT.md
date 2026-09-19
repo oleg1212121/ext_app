@@ -456,10 +456,24 @@ looked up in the dictionary and tinted by the reader's **Word familiarity**.
 
 **Interactive word**:
 A dictionary-linked token rendered as clickable text on a reading surface;
-clicking it opens a popup with the dictionary Word's definitions,
-transcriptions, translations and progress actions. Tokens without a
-dictionary link are never interactive.
+Ctrl-clicking it opens the **Word popup** — a plain click does nothing.
+Tokens without a dictionary link are never interactive.
 _Avoid_: clickable text, word link.
+
+**Word popup**:
+The anchored popover a Ctrl-click on an Interactive word opens: one section
+per Word class under the **Headword** with its definitions, transcriptions,
+translations, examples and etymology, plus the progress actions. Sized to
+the viewport — it flips above the word when there is more room above and
+scrolls internally instead of running off-screen.
+_Avoid_: modal (it is anchored to the word, not centered), tooltip.
+
+**Headword**:
+The spelling that groups the dictionary Words of one language: one Word per
+part of speech may share it. The Word popup lists every Word under the
+Headword, one section per Word class.
+_Avoid_: lemma (implementation shorthand), entry (the popup section, not the
+spelling).
 
 **Word occurrence**:
 One place a token appears in an entity's text. Occurrences are derived from
