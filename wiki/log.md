@@ -1,5 +1,25 @@
 # Directory Update Log
 
+## 2026-09-19 (interactive words: Ctrl+click popups, full headword content)
+
+* **Word popup gesture + content reworked (ADR 0030).** `WordText` now opens
+  the popup on **Ctrl+click** only (plain click inert, still
+  `stopPropagation`'d so it can't toggle a reader row) on both surfaces.
+  `WordController::show` returns every `words` row sharing the headword
+  (language + `l_word`) — bound word first, siblings by the new public
+  `EntityWordLinker::classPriority()` — as `entries[]` carrying each part of
+  speech's own transcriptions, definitions, native-first translations
+  (cap 100), examples and etymologies; top-level `word`/`word_class`/`is_form`
+  stay. `WordPopup` is viewport-aware: opens below the word, flips above when
+  there is more room above, height capped to the viewport, body scrolls
+  internally, footer actions pinned; 460px wide; one section per entry with a
+  class heading and an 8-translation "+N more…" expander; new UI strings
+  `word.etymology`, `word.more_translations`. Hover affordance is an
+  **underline** (no color change) so the familiarity tint stays legible.
+  Glossary: Interactive word updated, Word popup + Headword added.
+  Concept: `wiki/domains/interactive-words.md` (human verification dropped —
+  content changed, re-verify after review).
+
 ## 2026-09-18 (fix: stray host-side `laravel/.git` removed)
 
 * **Nested TIA artefact repo removed from the host.** The container-local git

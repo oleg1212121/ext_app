@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Definition;
+use App\Models\Etymology;
 use App\Models\Language;
 use App\Models\Transcription;
 use App\Models\TranscriptionType;
@@ -18,6 +19,7 @@ function createWordWithDetails(): Word
     $ruLanguageId = Language::query()->where('code', 'ru')->value('id');
 
     Definition::query()->create(['word_id' => $word->id, 'definition' => 'Домашнее животное семейства кошачьих.']);
+    Etymology::query()->create(['word_id' => $word->id, 'etymology' => 'От праслав. *kotь.']);
     $ipa = TranscriptionType::query()->create(['language_id' => $ruLanguageId, 'slug' => 'ipa', 'title' => 'МФА']);
     Transcription::query()->create([
         'word_id' => $word->id,
@@ -39,9 +41,35 @@ it('returns dictionary details for a word', function () {
         ->assertJsonPath('data.language_code', 'ru')
         ->assertJsonPath('data.word_class', 'Существительное')
         ->assertJsonPath('data.is_form', false)
-        ->assertJsonPath('data.definitions.0', 'Домашнее животное семейства кошачьих.')
-        ->assertJsonPath('data.transcriptions.0.value', 'kot')
-        ->assertJsonPath('data.transcriptions.0.type', 'МФА');
+        ->assertJsonCount(1, 'data.entries')
+        ->assertJsonPath('data.entries.0.word_class', 'Существительное')
+        ->assertJsonPath('data.entries.0.definitions.0', 'Домашнее животное семейства кошачьих.')
+        ->assertJsonPath('data.entries.0.transcriptions.0.value', 'kot')
+        ->assertJsonPath('data.entries.0.transcriptions.0.type', 'МФА')
+        ->assertJsonPath('data.entries.0.etymologies.0', 'От праслав. *kotь.');
+});
+
+it('returns one entry per part of speech of the headword, linked word first', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $noun = createWord('en', 'bank', 'noun');
+    $verb = createWord('en', 'bank', 'verb');
+    Definition::query()->create(['word_id' => $noun->id, 'definition' => 'A financial institution.']);
+    Definition::query()->create(['word_id' => $verb->id, 'definition' => 'To rely on.']);
+
+    // The verb is the linked row: it must lead even though the noun outranks it.
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $verb->id]))
+        ->assertOk()
+        ->assertJsonPath('data.id', $verb->id)
+        ->assertJsonPath('data.word', 'bank')
+        ->assertJsonCount(2, 'data.entries')
+        ->assertJsonPath('data.entries.0.id', $verb->id)
+        ->assertJsonPath('data.entries.0.word_class', 'Verb')
+        ->assertJsonPath('data.entries.0.definitions.0', 'To rely on.')
+        ->assertJsonPath('data.entries.1.id', $noun->id)
+        ->assertJsonPath('data.entries.1.word_class', 'Noun')
+        ->assertJsonPath('data.entries.1.definitions.0', 'A financial institution.');
 });
 
 it('flags a surface form different from the dictionary lemma', function () {
@@ -70,8 +98,8 @@ it('sorts translations native language first', function () {
     $this->actingAs($user)
         ->getJson(route('words.show', ['word' => $enWord->id]))
         ->assertOk()
-        ->assertJsonPath('data.translations.0.word', 'кот')
-        ->assertJsonPath('data.translations.0.language_code', 'ru');
+        ->assertJsonPath('data.entries.0.translations.0.word', 'кот')
+        ->assertJsonPath('data.entries.0.translations.0.language_code', 'ru');
 });
 
 it('sets a word known (familiarity 100) for the current user', function () {

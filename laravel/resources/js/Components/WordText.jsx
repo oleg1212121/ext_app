@@ -23,8 +23,9 @@ function tierClass(familiarity, highlight) {
 /**
  * Renders text split into interactive dictionary words. Only tokens present
  * in the word map ({l_word: {w: wordId, s: familiarity|null}}) become
- * clickable; everything else is plain text. Highlight = knowledge tinting,
- * gated by the caller (setting + language eligibility).
+ * interactive; everything else is plain text. Ctrl+click opens the popup
+ * (plain clicks do nothing); highlight = knowledge tinting, gated by the
+ * caller (setting + language eligibility).
  *
  * rowKey (optional) scopes this sentence for familiarity bookkeeping: the
  * first popup lookup of a word within the row costs -2, credited once.
@@ -35,6 +36,9 @@ export default function WordText({text, wordMap = {}, highlight = true, rowKey, 
 
     const openPopup = useCallback((event, segment) => {
         event.stopPropagation();
+        if (!event.ctrlKey) {
+            return;
+        }
         const entry = wordMap[segment.key];
         if (!entry?.w) {
             return;

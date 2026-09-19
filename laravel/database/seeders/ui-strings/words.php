@@ -10,4 +10,6 @@ return [
     'word.i_know_this' => ['en' => 'I know this word', 'ru' => 'Я знаю это слово'],
     'word.remove_mark' => ['en' => 'Remove mark', 'ru' => 'Снять отметку'],
     'word.familiarity' => ['en' => 'Familiarity: :value/:max', 'ru' => 'Знакомость: :value/:max'],
+    'word.etymology' => ['en' => 'Etymology', 'ru' => 'Этимология'],
+    'word.more_translations' => ['en' => '+:count more…', 'ru' => 'ещё :count…'],
 ];

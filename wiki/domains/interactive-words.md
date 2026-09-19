@@ -1,12 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — render-time segmentation, lazy word popups, read/lookup familiarity events.
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups covering every part of speech of the headword, render-time segmentation, read/lookup familiarity events.
 tags: [reader, bilinguals, dictionary, words, react, inertia]
 status: stable
-stale_after: 2026-12-14
-generated: { by: agent:zcode, at: 2026-09-17T11:50:00Z }
-verified: { by: human:zcode, at: 2026-09-17T12:00:00Z }
+stale_after: 2026-12-19
+generated: { by: agent:zcode, at: 2026-09-19T00:00:00Z }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -37,14 +36,17 @@ sources:
 # What it does
 
 Makes words in a text interactive on both reading surfaces: tokens that link
-to a dictionary **Word** render as clickable buttons that open a popup with
-definitions, transcriptions, translations (native language first) and word progress actions; their text is
+to a dictionary **Word** open the **Word popup** on **Ctrl+click** — one
+section per part of speech recorded under the headword (language + `l_word`),
+each with its definitions, transcriptions, translations (native language
+first), examples and etymology, plus word progress actions pinned in a footer
+that never scrolls away. A plain click does nothing (ADR 0030). Their text is
 tinted by the reader's **Word familiarity** (0–19 or no row → rose, 20–59 →
-amber, 60–99 → verdigris, ≥ 100 → green). Revealing a sentence pair on the simulator credits its words a
-read (+1); opening a word's popup costs a lookup (−2), once per word per
-sentence pair on both surfaces. All segmentation is derived at render time —
-**no word positions are stored anywhere** (ADR 0027); exposure events are
-ledgered instead (ADR 0028).
+amber, 60–99 → verdigris, ≥ 100 → green). Revealing a sentence pair on the
+simulator credits its words a read (+1); opening a word's popup costs a
+lookup (−2), once per word per sentence pair on both surfaces. All
+segmentation is derived at render time — **no word positions are stored
+anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
 
 # How it works
 
@@ -58,12 +60,19 @@ ledgered instead (ADR 0028).
    over each row and renders tokens found in the map as word buttons.
    Parity is enforced by `tests/Unit/TokenizerParityTest.php` (PHP vs node
    CLI on shared fixtures); a mismatch breaks coloring, not text.
-3. **Popup details are lazy.** Clicking a word fetches
-   `GET /words/{word}?surface={l_word}` — `is_form` is true when the surface
-   differs from the word's `l_word` (an inflected form resolved by the
-   linker's forms pass), shown as "«surface» — form of «lemma»". When the
-   surrounding `WordText` has a `rowKey` (see below), the click also fires a
-   **lookup event**.
+3. **Popup details are lazy, per headword.** Ctrl-clicking a word fetches
+   `GET /words/{word}?surface={l_word}`. The endpoint returns **every** `words`
+   row sharing the headword — the linked row first, siblings after in
+   `EntityWordLinker::classPriority` order — as
+   `entries: [{id, word_class, transcriptions, definitions, translations,
+   examples, etymologies}]`. `is_form` is true when the surface differs from
+   the word's `l_word` (an inflected form resolved by the linker's forms
+   pass), shown as "«surface» — form of «lemma»". The popover renders one
+   section per entry, translations capped at 8 with a "+N more…" expander.
+   It always fits the viewport: it opens below the word, flips above it when
+   there is more room above, its height is capped to the larger side, the
+   body scrolls internally. When the surrounding `WordText` has a `rowKey`
+   (see below), the click also fires a **lookup event**.
 4. **Progress actions.** `PATCH /words/{word}/progress`
    (`familiarity: 0-100`) and `DELETE /words/{word}/progress` implement "I
    know this word" (sets 100) / "Remove mark" (deletes the row). The popup
@@ -103,10 +112,10 @@ ledgered instead (ADR 0028).
   `simulator.highlight_words` in `user_settings.ui_settings`
   (`UpdateUiSettingsRequest`), default on. Tint classes (`.word-unknown`,
   `.word-progress`, `.word-progress-strong`) color the **text** (not the
-  background) via `--word-*` tokens with day/night variants, and the
-  `.word-token` affordance (hover vermilion) — all in `resources/css/app.css`.
-  Tier colors are declared after the hover rule so they win on hover over
-  tinted words; only unlinked (plain) words turn vermilion on hover.
+  background) via `--word-*` tokens with day/night variants, all in
+  `resources/css/app.css`. The hover affordance is an **underline** (no color
+  change), so the tint stays legible; tier colors win on hover over tinted
+  words (ADR 0030).
 * **Familiarity patches must never reshape `word_maps`.** The simulator keeps
   `highlightable` inside `wordMaps`; any update via `setWordMaps` must spread
   the whole object (`{...maps, a: patchWordMap(...), b: patchWordMap(...)}`)
@@ -117,7 +126,7 @@ ledgered instead (ADR 0028).
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `GET /words/{word}` | `WordController::show` | Word popup payload: lemma, class, `is_form`, transcriptions, definitions, native-first translations (cap 100), examples |
+| `GET /words/{word}` | `WordController::show` | Word popup payload: headword + `entries` per part of speech (class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `is_form` |
 | `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |
 | `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to untouched) |
 | `POST /word-events` | `WordController::recordEvents` | Ledger-deduplicated read/lookup events; returns resulting familiarity per word |
