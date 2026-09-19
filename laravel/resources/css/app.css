@@ -161,12 +161,8 @@
 
 .word-token:hover,
 .word-token:focus-visible {
-    color: var(--color-vermilion);
-}
-
-.dark .word-token:hover,
-.dark .word-token:focus-visible {
-    color: var(--color-vermilion-night);
+    text-decoration: underline;
+    text-underline-offset: 2px;
 }
 
 .word-token:focus-visible {

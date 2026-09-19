@@ -21,6 +21,17 @@ class EntityWordLinker
     private const BATCH_SIZE = 500;
 
     /**
+     * Part-of-speech preference order of a class slug (lower = preferred).
+     * Shared by entity linking and the word popup's entry ordering.
+     */
+    public static function classPriority(string $slug): int
+    {
+        $priority = array_search($slug, self::CLASS_PRIORITY, true);
+
+        return $priority === false ? PHP_INT_MAX : $priority;
+    }
+
+    /**
      * Fill word_id on the entity's unlinked words by (language, lowercase form),
      * falling back to inflected forms (forms.l_word). Exact dictionary matches
      * always win; the forms pass only sees the tokens the exact pass missed.

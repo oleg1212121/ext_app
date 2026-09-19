@@ -8,6 +8,7 @@ import Button from "../../Components/Forms/Button.jsx";
 import Workplace from "./Components/Workplace.jsx";
 import AI from "./Components/AI.jsx";
 import TextContent from "./Components/TextContent.jsx";
+import {popupFontSizeFor} from "../../Components/WordPopup.jsx";
 import {useI18n} from '../../i18n';
 import {getCsrfToken} from '../../lib/http';
 import {loadPositions, savePositions} from '../../lib/simulatorPosition';
@@ -228,6 +229,8 @@ const Bilinguals = (props) => {
     const [textPage, setTextPage] = React.useState(initialSaved?.page ?? 1);
     const [loadError, setLoadError] = React.useState(null);
     const [fontSize, setFontSize] = React.useState(props.fontSize ?? DEFAULT_FONT_SIZE);
+    // Word-popup typography follows the page's font setting (ADR 0031).
+    const popupFontSize = popupFontSizeFor(fontSize);
     const [aiPanelWidth, setAiPanelWidth] = React.useState(props.aiPanelWidth ?? 560);
     const [workplaceHeight, setWorkplaceHeight] = React.useState(props.workplaceHeight ?? 168);
     const [checkedRows, setCheckedRows] = React.useState(
@@ -714,7 +717,7 @@ const Bilinguals = (props) => {
                                     </div>
                                 </div>
                             )}
-                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow} wordMaps={wordMaps} highlightWords={highlightWords} onWordProgress={handleWordProgress} rowKeys={rowKeys} allEn={allEn} onToggleAllEn={toggleAllEn}/>
+                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow} wordMaps={wordMaps} highlightWords={highlightWords} onWordProgress={handleWordProgress} rowKeys={rowKeys} allEn={allEn} onToggleAllEn={toggleAllEn} popupFontSize={popupFontSize}/>
                         </>
                     }
                     {showWorkplace === true &&

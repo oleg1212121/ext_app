@@ -84,6 +84,7 @@ export default function TextContent(props) {
                                     highlight={props.highlightWords && !!(props.wordMaps?.highlightable?.a)}
                                     rowKey={props.rowKeys?.[i]}
                                     onWordProgress={props.onWordProgress}
+                                    popupFontSize={props.popupFontSize}
                                 />
                             </span>
                         </td>
@@ -111,6 +112,7 @@ export default function TextContent(props) {
                                         highlight={props.highlightWords && !!(props.wordMaps?.highlightable?.b)}
                                         rowKey={props.rowKeys?.[i]}
                                         onWordProgress={props.onWordProgress}
+                                        popupFontSize={props.popupFontSize}
                                     />
                                 </span>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">

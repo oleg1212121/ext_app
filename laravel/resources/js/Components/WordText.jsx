@@ -23,18 +23,28 @@ function tierClass(familiarity, highlight) {
 /**
  * Renders text split into interactive dictionary words. Only tokens present
  * in the word map ({l_word: {w: wordId, s: familiarity|null}}) become
- * clickable; everything else is plain text. Highlight = knowledge tinting,
- * gated by the caller (setting + language eligibility).
+ * interactive; everything else is plain text. Ctrl+click opens the popup
+ * (plain clicks do nothing); highlight = knowledge tinting, gated by the
+ * caller (setting + language eligibility).
+ *
+ * Interactive tokens are role="button" spans, not real <button> elements:
+ * Chromium treats button labels as widget chrome, so a double-click would
+ * never produce a native text selection for browser extensions to read.
+ * They stay focusable with the same keyboard contract a button had
+ * (Ctrl+Enter/Ctrl+Space opens the popup).
  *
  * rowKey (optional) scopes this sentence for familiarity bookkeeping: the
  * first popup lookup of a word within the row costs -2, credited once.
  */
-export default function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className}) {
+export default function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize}) {
     const segments = useMemo(() => segmentText(text ?? ''), [text]);
     const [popup, setPopup] = useState(null);
 
     const openPopup = useCallback((event, segment) => {
         event.stopPropagation();
+        if (!event.ctrlKey) {
+            return;
+        }
         const entry = wordMap[segment.key];
         if (!entry?.w) {
             return;
@@ -68,14 +78,28 @@ export default function WordText({text, wordMap = {}, highlight = true, rowKey, 
         <span className={className}>
             {segments.map((segment, index) => (
                 wordMap[segment.key]?.w ? (
-                    <button
+                    <span
                         key={index}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         className={tierClass(wordMap[segment.key].s, highlight)}
                         onClick={(event) => openPopup(event, segment)}
+                        onKeyDown={(event) => {
+                            if (event.key !== 'Enter' && event.key !== ' ') {
+                                return;
+                            }
+                            // Mirror the <button> this replaced: Enter/Space
+                            // synthesized a click (swallowed by openPopup), and
+                            // only Ctrl+that click opened the popup.
+                            event.stopPropagation();
+                            if (event.ctrlKey) {
+                                event.preventDefault();
+                                openPopup(event, segment);
+                            }
+                        }}
                     >
                         {segment.text}
-                    </button>
+                    </span>
                 ) : (
                     <React.Fragment key={index}>{segment.text}</React.Fragment>
                 )
@@ -86,6 +110,7 @@ export default function WordText({text, wordMap = {}, highlight = true, rowKey, 
                     surface={popup.surface}
                     familiarity={popup.familiarity}
                     rect={popup.rect}
+                    fontSize={popupFontSize}
                     onClose={() => setPopup(null)}
                     onProgress={handleProgress}
                 />,

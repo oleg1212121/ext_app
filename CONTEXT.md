@@ -164,7 +164,7 @@ The per-user configuration row (one per user) holding the user's durable choices
 The stable, user-chosen interface configuration inside User settings — simulator layout and panel visibility, font sizes, the selected AI model, the customized assessment question, and panel sizes. A sub-kind of User settings; changes follow the user across devices. See ADR 0024. _Avoid_: simulator cache, UI state (that includes Working state, which is not stored server-side).
 
 **Working state**:
-The per-device last position in the simulator — the current entity match, the page reached per alignment, and the last opened row with its revealed halves. Kept in the browser only, never stored server-side. See ADR 0024. _Avoid_: UI settings (durable, cross-device), session.
+The per-device last position on a reading surface — in the simulator, the current entity match, the page reached per alignment, and the last opened row with its revealed halves; in the reader, the per-text **Reading position**. Kept in the browser only, never stored server-side. See ADR 0024 and ADR 0032. _Avoid_: UI settings (durable, cross-device), cache, session.
 
 **Native language**:
 The language a user is a native speaker of, chosen at registration and changeable from the profile page. References a **Language** in the catalog; defaults to English.
@@ -456,10 +456,24 @@ looked up in the dictionary and tinted by the reader's **Word familiarity**.
 
 **Interactive word**:
 A dictionary-linked token rendered as clickable text on a reading surface;
-clicking it opens a popup with the dictionary Word's definitions,
-transcriptions, translations and progress actions. Tokens without a
-dictionary link are never interactive.
+Ctrl-clicking it opens the **Word popup** — a plain click does nothing.
+Tokens without a dictionary link are never interactive.
 _Avoid_: clickable text, word link.
+
+**Word popup**:
+The anchored popover a Ctrl-click on an Interactive word opens: one section
+per Word class under the **Headword** with its definitions, transcriptions,
+translations, examples and etymology, plus the progress actions. Sized to
+the viewport — it flips above the word when there is more room above and
+scrolls internally instead of running off-screen.
+_Avoid_: modal (it is anchored to the word, not centered), tooltip.
+
+**Headword**:
+The spelling that groups the dictionary Words of one language: one Word per
+part of speech may share it. The Word popup lists every Word under the
+Headword, one section per Word class.
+_Avoid_: lemma (implementation shorthand), entry (the popup section, not the
+spelling).
 
 **Word occurrence**:
 One place a token appears in an entity's text. Occurrences are derived from
@@ -471,3 +485,9 @@ The per-entity lookup an interactive page carries — lowercase token to its
 dictionary Word id and the reader's **Word familiarity** — covering the
 entity's linked **Entity word list** entries only.
 _Avoid_: dictionary (the whole kaikki import), vocabulary.
+
+**Reading position**:
+The per-device last page reached in one text on a reading surface — a
+**Working state** kind, one entry per text in the browser's position store.
+Restored when the text is reopened; never stored server-side. See ADR 0032.
+_Avoid_: cache, bookmark, progress (that means Word familiarity here).
