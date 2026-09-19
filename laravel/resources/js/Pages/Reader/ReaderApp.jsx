@@ -90,6 +90,7 @@ export default function ReaderApp({
     const [audioStatus, setAudioStatus] = useState('');
     const [audioReady, setAudioReady] = useState(false);
     const [audioPlaying, setAudioPlaying] = useState(false);
+    const [pageInput, setPageInput] = useState('1');
 
     const rootRef = useRef(null);
     const contentRef = useRef(null);
@@ -271,6 +272,21 @@ export default function ReaderApp({
             preserveScroll: true,
         });
     }, [currentPage, lastPage, savePosition]);
+
+    // The page picker mirrors the page the reader is on; typed values commit
+    // on Enter or blur, clamped into range.
+    useEffect(() => {
+        setPageInput(String(currentPage));
+    }, [currentPage]);
+
+    const submitPageInput = () => {
+        const parsed = Number.parseInt(pageInput, 10);
+        const target = Number.isNaN(parsed) ? currentPage : Math.max(1, Math.min(lastPage, parsed));
+        setPageInput(String(target));
+        if (target !== currentPage) {
+            goToPage(target);
+        }
+    };
 
     const previousPageRef = useRef(currentPage);
     useEffect(() => {
@@ -488,7 +504,7 @@ export default function ReaderApp({
                 </div>
             </main>
 
-            {lastPage > 1 && (
+            {meta && totalRows > 0 && (
                 <nav
                     aria-label={t('reader.pages')}
                     className="flex-none border-t border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]"
@@ -501,11 +517,25 @@ export default function ReaderApp({
                         >
                             ‹
                         </IconButton>
-                        <span
-                            aria-live="polite"
-                            className="font-sans text-xs tabular-nums text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70"
-                        >
-                            {t('reader.page_indicator', {page: currentPage, last: lastPage})}
+                        <span className="flex items-center gap-1.5 font-sans text-xs tabular-nums text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
+                            <input
+                                id="readerPagePicker"
+                                type="number"
+                                min={1}
+                                max={lastPage}
+                                value={pageInput}
+                                aria-label={t('reader.go_to_page')}
+                                onChange={(event) => setPageInput(event.target.value)}
+                                onBlur={submitPageInput}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        event.currentTarget.blur();
+                                    }
+                                }}
+                                className="w-14 h-7 px-1 text-center bg-transparent border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <span aria-live="polite">{t('reader.page_of', {last: lastPage})}</span>
                         </span>
                         <IconButton
                             label={t('reader.next_page')}
