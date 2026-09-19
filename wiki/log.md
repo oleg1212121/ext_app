@@ -2307,3 +2307,42 @@ did* **Change: AI Models admin enable/disable now fires without a confirmation
   (`--wbench-empty` #e6e4dd / #202020 night); numbered clue cells now
   highlight by direction: across = orange (`--wbench-across`), down = sky
   (`--wbench-down`), with the 2px leading edge carrying the direction color.
+
+## 2026-09-19 (reader pagination + reading position)
+
+* **Reader: server-side pagination + per-device Reading position**
+  (ADR 0032) — `/reader-react/{lang}/{entityId}` now serves rows at a
+  fixed 50/page under `?page=N` (both meaning-match and single-language
+  sources; `ReaderController::paginateRows()` clamps the page into range,
+  `ReaderPageRequest` normalizes `?page` tolerantly — junk values resolve
+  to page 1, never a validation error). New flat `meta` prop
+  (`current_page`/`per_page`/`total`/`last_page`) and a `positionKey` prop
+  (`mm:{entityMatchId}` shared by both reading sides, `ent:{entityId}` for
+  single-language — deliberately not `es:`, that prefix names a sentence in
+  row-key vocabulary). **Word maps are page-scoped**:
+  `ReaderController::wordMapForRows()` keeps only tokens present in the
+  page's rows (same `WordTokenizer` that builds `l_word` keys), so the
+  payload scales with the page, not the text. `ReaderApp` gains a prev/next
+  pager (hidden for single-page texts), turns pages via Inertia partial
+  reloads (`only` paged props, `preserveState` — audio player survives),
+  and persists the Reading position per device in
+  `ext_app.reader.position.v1` (`lib/readingPosition.js`, the simulator's
+  ADR 0024 Working-state tier extended to the reader): written on every
+  turn, restored on open by history-replace to the clamped saved page when
+  the URL has no `?page`. UI strings `reader.pages` / `previous_page` /
+  `next_page` / `page_indicator` seeded. Tests: `ReaderReactPageTest`
+  covers pagination/meta, clamping, junk pages, both position keys, and
+  word-map page scoping; CONTEXT.md gains **Reading position** and
+  generalizes **Working state** beyond the simulator;
+  `wiki/domains/reader.md` updated.
+
+* **Same-day refinement + wiring fix** — the pager is now always visible
+  for any text with rows (not only multi-page ones) and gained a numeric
+  page picker (`reader.go_to_page` / `reader.page_of`; `page_indicator`
+  dropped). Bug: the `ReaderReact` Inertia page wrapper forwards an
+  explicit prop list to `ReaderApp` and had not been given
+  `meta`/`positionKey`, so the pager never rendered even though the
+  controller sent both — Feature tests assert server JSON and cannot see
+  client-side prop forwarding; a server-side render check of the wrapper
+  (React static render, `@inertiajs/react` stubbed) reproduced and then
+  proved the fix. Wrapper now forwards both props.

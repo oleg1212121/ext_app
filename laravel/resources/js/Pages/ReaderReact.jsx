@@ -6,6 +6,8 @@ const ReaderReact = ({
     entity,
     rows = [],
     rowKeys = [],
+    meta = null,
+    positionKey = null,
     fontSize,
     highlight,
     wordMap,
@@ -18,6 +20,8 @@ const ReaderReact = ({
         entity={entity}
         rows={rows}
         rowKeys={rowKeys}
+        meta={meta}
+        positionKey={positionKey}
         fontSize={fontSize}
         highlight={highlight}
         wordMap={wordMap}
