@@ -1,13 +1,19 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
+import {router} from '@inertiajs/react';
 import ReaderRow from './ReaderRow.jsx';
 import {popupFontSizeFor} from '../../Components/WordPopup.jsx';
 import {useI18n} from '../../i18n';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
+import {loadReadingPositions, saveReadingPositions} from '../../lib/readingPosition';
 
 const MIN_FONT_SIZE = 16;
 const MAX_FONT_SIZE = 38;
 const DEFAULT_FONT_SIZE = 20;
 const FONT_STEP = 2;
+
+// Props a page turn replaces; everything else (entity, fontSize, audio
+// state) survives the visit untouched.
+const PAGED_PROPS = ['rows', 'rowKeys', 'wordMap', 'translationWordMap', 'meta'];
 
 const LANG_GLYPH = {
     en: 'EN',
@@ -60,6 +66,8 @@ export default function ReaderApp({
     entity,
     rows = [],
     rowKeys = [],
+    meta = null,
+    positionKey = null,
     fontSize: savedFontSize,
     highlight: savedHighlight = true,
     wordMap: initialWordMap = {},
@@ -84,6 +92,7 @@ export default function ReaderApp({
     const [audioPlaying, setAudioPlaying] = useState(false);
 
     const rootRef = useRef(null);
+    const contentRef = useRef(null);
     const audioRef = useRef(null);
     const audioPickerRef = useRef(null);
     const audioObjectUrlRef = useRef(null);
@@ -231,6 +240,83 @@ export default function ReaderApp({
         return () => document.removeEventListener('keydown', onKeyDown);
     }, []);
 
+    const currentPage = meta?.current_page ?? 1;
+    const lastPage = meta?.last_page ?? 1;
+    const totalRows = meta?.total ?? rows.length;
+
+    const savePosition = useCallback((page) => {
+        if (!positionKey) {
+            return;
+        }
+        const positions = loadReadingPositions();
+        positions[positionKey] = page;
+        saveReadingPositions(positions);
+    }, [positionKey]);
+
+    // A page turn is an Inertia partial reload: the server ships only the
+    // page's rows, row keys and page-scoped word maps, and the component —
+    // audio player included — stays mounted. State mirroring those props
+    // must be resynced by hand: useState initializers don't re-run on a
+    // preserved-state visit.
+    const goToPage = useCallback((page) => {
+        const target = Math.max(1, Math.min(lastPage, page));
+        if (target === currentPage) {
+            return;
+        }
+
+        savePosition(target);
+        router.visit(`${window.location.pathname}?page=${target}`, {
+            only: PAGED_PROPS,
+            preserveState: true,
+            preserveScroll: true,
+        });
+    }, [currentPage, lastPage, savePosition]);
+
+    const previousPageRef = useRef(currentPage);
+    useEffect(() => {
+        if (previousPageRef.current === currentPage) {
+            return;
+        }
+        previousPageRef.current = currentPage;
+        setWordMap(initialWordMap);
+        setTranslationWordMap(initialTranslationWordMap);
+        setExpandedRows(new Set());
+        contentRef.current?.scrollTo({top: 0});
+    }, [currentPage, initialWordMap, initialTranslationWordMap]);
+
+    // Restore the text's saved Reading position once, when the URL doesn't
+    // already pin a page: jump history-replace to the clamped saved page
+    // (repairing the stored value if the text shrank under it). In-session
+    // Back to the bare URL skips this — a ref'd mount-only effect won't
+    // re-fire while Inertia keeps the component instance alive.
+    const restoredRef = useRef(false);
+    useEffect(() => {
+        if (restoredRef.current || !positionKey || lastPage <= 1) {
+            return;
+        }
+        restoredRef.current = true;
+
+        if (new URLSearchParams(window.location.search).has('page')) {
+            return;
+        }
+
+        const positions = loadReadingPositions();
+        const saved = Number.isInteger(positions[positionKey]) ? positions[positionKey] : 1;
+        const clamped = Math.max(1, Math.min(lastPage, saved));
+
+        if (saved !== clamped) {
+            savePosition(clamped);
+        }
+
+        if (clamped > 1) {
+            router.replace(`${window.location.pathname}?page=${clamped}`, {
+                only: PAGED_PROPS,
+                preserveState: true,
+                preserveScroll: true,
+            });
+        }
+    }, [positionKey, lastPage, savePosition]);
+
     const entityTitle = entity?.name ?? t('reader.untitled');
 
     return (
@@ -353,6 +439,7 @@ export default function ReaderApp({
 
             <main
                 id="contentContainer"
+                ref={contentRef}
                 className="flex-1 min-h-0 overflow-y-auto"
             >
                 <div
@@ -363,7 +450,7 @@ export default function ReaderApp({
                 >
                     <div className="mb-10 text-center">
                         <span className="font-sans text-[10px] tracking-[0.24em] uppercase text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/50">
-                            {t('reader.folio')} · {rows.length} {rows.length === 1 ? t('reader.line') : t('reader.lines')}
+                            {t('reader.folio')} · {totalRows} {totalRows === 1 ? t('reader.line') : t('reader.lines')}
                         </span>
                         <h2 className="mt-2 font-serif font-light text-3xl sm:text-4xl tracking-tight leading-tight">
                             {entityTitle}
@@ -400,6 +487,36 @@ export default function ReaderApp({
                     </p>
                 </div>
             </main>
+
+            {lastPage > 1 && (
+                <nav
+                    aria-label={t('reader.pages')}
+                    className="flex-none border-t border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]"
+                >
+                    <div className="py-2 flex items-center justify-center gap-2">
+                        <IconButton
+                            label={t('reader.previous_page')}
+                            disabled={currentPage <= 1}
+                            onClick={() => goToPage(currentPage - 1)}
+                        >
+                            ‹
+                        </IconButton>
+                        <span
+                            aria-live="polite"
+                            className="font-sans text-xs tabular-nums text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70"
+                        >
+                            {t('reader.page_indicator', {page: currentPage, last: lastPage})}
+                        </span>
+                        <IconButton
+                            label={t('reader.next_page')}
+                            disabled={currentPage >= lastPage}
+                            onClick={() => goToPage(currentPage + 1)}
+                        >
+                            ›
+                        </IconButton>
+                    </div>
+                </nav>
+            )}
 
             <audio
                 ref={audioRef}

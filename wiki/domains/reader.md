@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Reader
-description: React reading interface for imported text entities in any enabled language, with bilingual rows from alignments.
+description: React reading interface for imported text entities in any enabled language, with bilingual rows from alignments, server-side pagination, and a per-device reading position.
 tags: [reader, inertia, react]
 status: stable
-stale_after: 2026-12-14
-generated: { by: agent:zcode, at: 2026-09-14T12:00:00Z }
+stale_after: 2026-12-19
+generated: { by: agent:zcode, at: 2026-09-19T16:15:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -13,6 +13,12 @@ sources:
   - id: presenter
     resource: laravel/app/Classes/MeaningMatchPresenter.php
     title: MeaningMatchPresenter (bilingual row shaping)
+  - id: page-request
+    resource: laravel/app/Http/Requests/ReaderPageRequest.php
+    title: ReaderPageRequest (tolerant ?page normalization)
+  - id: position-store
+    resource: laravel/resources/js/lib/readingPosition.js
+    title: readingPosition.js (localStorage Reading position store)
   - id: routes
     resource: laravel/routes/web.php
     title: Routes
@@ -59,10 +65,40 @@ Reads are gated by `EntityAccessService` (see the [Entity Access](
 entities the caller may read (Public, or Restricted with an Access grant);
 `show` 403s on a Restricted entity without a grant.
 
+# Pagination
+
+Rows paginate server-side at a fixed **50 per page** under `?page=N`
+(ADR 0032): both row sources — meaning matches and single-language entity
+sentences — go through `ReaderController::paginateRows()`, which clamps the
+requested page into `[1, lastPage]` so stale bookmarks and junk values land
+on a valid page (`ReaderPageRequest` normalizes `?page` tolerantly rather
+than failing validation — it's a shareable URL, not a form field). The
+payload carries a flat `meta` prop (`current_page`, `per_page`, `total`,
+`last_page`) and the page's rows only. **Word maps are page-scoped too**:
+`wordMapForRows()` keeps only entries whose token occurs in the page's row
+texts (tokenized with the same `WordTokenizer` that built the `l_word`
+keys), so the payload no longer scales with the text's length.
+
+# Reading position
+
+The last page reached per text — the **Reading position** (a Working-state
+kind) — lives per device in localStorage (`ext_app.reader.position.v1`,
+`lib/readingPosition.js`), keyed by the server-provided `positionKey`:
+`mm:{entityMatchId}` for matched texts (both reading sides share one key —
+same rows) or `ent:{entityId}` for single-language ones (`es:` is
+deliberately excluded — that prefix names a single entity sentence in
+row-key vocabulary). `ReaderApp` writes it on every page turn and, on open
+when the URL has no `?page`, history-replaces to the saved page clamped to
+the current `meta.last_page` (repairing the stored value if the text
+shrank). Page turns are Inertia partial reloads (`only` the paged props,
+`preserveState`) so the component — and its audio player — stay mounted;
+the word-map state mirrors are resynced from props on page change.
+
 # Interactive words
 
 `show()` also ships the [interactive word](/domains/interactive-words.md)
-payload: `wordMap` for the reading entity and `translationWordMap` for the
+payload (scoped to the current page's rows): `wordMap` for the reading
+entity and `translationWordMap` for the
 aligned counterpart entity (empty when rows are single-language), plus
 `highlight` (the saved `reader.highlight` setting) and the
 `primaryHighlightable` / `translationHighlightable` language flags (side

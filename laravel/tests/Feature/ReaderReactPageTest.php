@@ -34,12 +34,12 @@ function createAlignedReaderEntities(): array
 
     $enSentence = EntitySentence::query()->create([
         'entity_id' => $en->id,
-        'content' => 'First EN sentence.',
+        'content' => 'First EN sentence about a cat.',
         'order' => 1,
     ]);
     $ruSentence = EntitySentence::query()->create([
         'entity_id' => $ru->id,
-        'content' => 'First RU sentence.',
+        'content' => 'Первое RU sentence.',
         'order' => 1,
     ]);
 
@@ -71,6 +71,66 @@ function createAlignedReaderEntities(): array
         'ru' => $ru,
         'entityMatch' => $entityMatch,
     ];
+}
+
+/**
+ * A text long enough to cross the reader's page boundary (50 rows per
+ * page): $count aligned meaning matches, row i saying "Row {i} sentence."
+ * on each side. Pagination is a scale boundary, so this is the one fixture
+ * allowed to go big.
+ *
+ * @return array{en: Entity, ru: Entity, entityMatch: EntityMatch}
+ */
+function createLongAlignedText(int $count): array
+{
+    $work = createWork();
+
+    $en = createEntity('en', $work, [
+        'name' => 'Long EN Entity',
+        'file_path' => 'texts/simulator/long_en.txt',
+    ]);
+    $ru = createEntity('ru', $work, [
+        'name' => 'Long RU Entity',
+        'file_path' => 'texts/simulator/long_ru.txt',
+    ]);
+
+    $entityMatch = createEntityMatch($en, $ru, [
+        'status' => 'completed',
+        'linked_count' => $count,
+    ]);
+
+    foreach (range(1, $count) as $i) {
+        $enSentence = EntitySentence::query()->create([
+            'entity_id' => $en->id,
+            'content' => "Row {$i} sentence.",
+            'order' => $i,
+        ]);
+        $ruSentence = EntitySentence::query()->create([
+            'entity_id' => $ru->id,
+            'content' => "Строка {$i} sentence.",
+            'order' => $i,
+        ]);
+
+        $meaningMatch = MeaningMatch::query()->create([
+            'entity_match_id' => $entityMatch->id,
+            'order' => $i - 1,
+            'similarity' => 1.0,
+            'alignment_chunk' => 0,
+        ]);
+
+        SentenceMeaningMatch::query()->create([
+            'entity_sentence_id' => $enSentence->id,
+            'meaning_match_id' => $meaningMatch->id,
+            'side' => 'a',
+        ]);
+        SentenceMeaningMatch::query()->create([
+            'entity_sentence_id' => $ruSentence->id,
+            'meaning_match_id' => $meaningMatch->id,
+            'side' => 'b',
+        ]);
+    }
+
+    return ['en' => $en, 'ru' => $ru, 'entityMatch' => $entityMatch];
 }
 
 test('guests are redirected from reader react page', function () {
@@ -149,8 +209,8 @@ test('authenticated users can view reader react page with english primary rows',
             ->where('entity.id', $entities['en']->id)
             ->where('entity.name', 'Test EN Entity')
             ->has('rows', 1)
-            ->where('rows.0.0', 'First EN sentence.')
-            ->where('rows.0.1', 'First RU sentence.')
+            ->where('rows.0.0', 'First EN sentence about a cat.')
+            ->where('rows.0.1', 'Первое RU sentence.')
             ->has('rowKeys', 1)
             ->where('rowKeys.0', 'mm:'.MeaningMatch::query()->where('entity_match_id', $entities['entityMatch']->id)->value('id')));
 });
@@ -168,8 +228,8 @@ test('authenticated users can view reader react page with russian primary rows',
             ->where('entity.id', $entities['ru']->id)
             ->where('entity.name', 'Test RU Entity')
             ->has('rows', 1)
-            ->where('rows.0.0', 'First RU sentence.')
-            ->where('rows.0.1', 'First EN sentence.')
+            ->where('rows.0.0', 'Первое RU sentence.')
+            ->where('rows.0.1', 'First EN sentence about a cat.')
             // Row keys follow the rows, whatever side is being read.
             ->has('rowKeys', 1)
             ->where('rowKeys.0', 'mm:'.MeaningMatch::query()->where('entity_match_id', $entities['entityMatch']->id)->value('id')));
@@ -271,4 +331,140 @@ test('reader page includes the interactive word map with familiarity values', fu
             // is native (not highlightable), the RU translation side is.
             ->where('primaryHighlightable', false)
             ->where('translationHighlightable', true));
+});
+
+test('reader react page paginates rows and reports meta', function () {
+    $user = User::factory()->create();
+    $text = createLongAlignedText(60);
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id, 'page' => 2]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            ->has('rows', 10)
+            ->where('rows.0.0', 'Row 51 sentence.')
+            ->has('rowKeys', 10)
+            ->where('meta.current_page', 2)
+            ->where('meta.per_page', 50)
+            ->where('meta.total', 60)
+            ->where('meta.last_page', 2)
+            ->where('positionKey', 'mm:'.$text['entityMatch']->id));
+});
+
+test('an out-of-range reader page clamps to the last page', function () {
+    $user = User::factory()->create();
+    $text = createLongAlignedText(60);
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id, 'page' => 99]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            ->has('rows', 10)
+            ->where('rows.0.0', 'Row 51 sentence.')
+            ->where('meta.current_page', 2)
+            ->where('meta.last_page', 2));
+});
+
+test('junk reader page values resolve to the first page', function () {
+    $user = User::factory()->create();
+    $text = createLongAlignedText(60);
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id, 'page' => 'abc']))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            ->has('rows', 50)
+            ->where('rows.0.0', 'Row 1 sentence.')
+            ->where('meta.current_page', 1));
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id, 'page' => 0]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            ->where('rows.0.0', 'Row 1 sentence.')
+            ->where('meta.current_page', 1));
+});
+
+test('both reading sides of a match share one position key', function () {
+    $user = User::factory()->create();
+    $text = createLongAlignedText(1);
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'ru', 'entityId' => $text['ru']->id]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            ->where('rows.0.0', 'Строка 1 sentence.')
+            ->where('meta.last_page', 1)
+            ->where('positionKey', 'mm:'.$text['entityMatch']->id));
+});
+
+test('a single language entity paginates with an entity position key', function () {
+    $user = User::factory()->create();
+    $en = createEntity('en', null, [
+        'name' => 'Long Single Entity',
+        'file_path' => 'texts/simulator/long_single.txt',
+    ]);
+
+    foreach (range(1, 55) as $i) {
+        EntitySentence::query()->create([
+            'entity_id' => $en->id,
+            'content' => "Line {$i}.",
+            'order' => $i,
+        ]);
+    }
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $en->id, 'page' => 2]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            ->has('rows', 5)
+            ->where('rows.0.0', 'Line 51.')
+            ->where('meta.total', 55)
+            ->where('meta.last_page', 2)
+            ->where('rowKeys.0', 'es:'.EntitySentence::query()
+                ->where('entity_id', $en->id)
+                ->where('order', 51)
+                ->value('id'))
+            ->where('positionKey', 'ent:'.$en->id));
+});
+
+test('the word map is scoped to the rows on the current page', function () {
+    $user = User::factory()->create();
+    $text = createLongAlignedText(55);
+
+    // 'orbit' exists in the entity's word list but only in a page-2 row.
+    $orbit = createWord('en', 'orbit', 'noun');
+    EntityWord::query()->create([
+        'entity_id' => $text['en']->id,
+        'word_id' => $orbit->id,
+        'l_word' => 'orbit',
+        'token' => 'orbit',
+        'count' => 1,
+    ]);
+    EntitySentence::query()
+        ->where('entity_id', $text['en']->id)
+        ->where('order', 55)
+        ->update(['content' => 'The orbit decays.']);
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            ->has('rows', 50)
+            ->missing('wordMap.orbit'));
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id, 'page' => 2]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            ->has('rows', 5)
+            ->where('wordMap.orbit.w', $orbit->id));
 });
