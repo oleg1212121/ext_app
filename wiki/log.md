@@ -1,5 +1,51 @@
 # Directory Update Log
 
+## 2026-09-20 (fix: `laravel/.git` phantom repo permanently masked from the host)
+
+* **The recurring stray `laravel/.git` can no longer reach the host.** The
+  TIA artefact repo (`scripts/tia-setup.php` git-inits `/var/www` for Pest
+  TIA) had reappeared on the host through the `./laravel:/var/www` bind mount
+  (deleted 2026-09-18, recreated 2026-09-19 by the next `test:tia`), making
+  git GUIs show two repositories — the real one on `dev` and a phantom on
+  `master` with diffs against its stale baseline. Fix: docker-compose `app`
+  service now mounts the named volume `tia-git` at `/var/www/.git`, so the
+  TIA repo lives only in the container volume. Container behavior unchanged
+  (TIA still sees `/var/www/.git`; the baseline commit now survives
+  `docker compose down`, only `down -v`/volume deletion resets it → one
+  `--fresh` re-record). Two knock-on fixes: `scripts/tia-setup.php` now
+  detects repo presence via `.git/HEAD` instead of `is_dir()` (the volume
+  mountpoint means the directory always exists), and a compose `post_start`
+  hook chowns the mountpoint to `alex` (fresh volumes are root-owned; git
+  runs as `alex`). The host may still show an *empty* root-owned
+  `laravel/.git` — Docker Desktop's mountpoint artifact, inert; a populated
+  one means the mask was reverted and can be deleted safely. Verified:
+  fresh `--fresh` TIA record passed, then `composer run test:tia` replayed
+  620 tests / 3024 assertions; host `laravel/.git` stayed empty; `git -C
+  laravel/` resolves to the outer repo on `dev`.
+* Updated [Running Tests](playbooks/running-tests.md) (host-side isolation
+  replaces the old host-side caveat; frontmatter bump). No route/model/
+  command changes (`wiki:sync` not required). **Deploy note:** the compose
+  change is a container-definition change — the next prod `./deploy.sh`
+  refuses until containers are recreated there and `./deploy.sh --stamp`
+  is run (the refusal prints the exact commands).
+
+## 2026-09-20 (puzzles nav dropdown)
+
+* **Navbar Crossword link became a Puzzles dropdown** (`NavBar.jsx`). The
+  flat `/crossword` nav entry is now a `nav.puzzles` parent ("Puzzles" /
+  "Головоломки" — the UI string already existed in the seeder; DB seeded
+  via `UiStringSeeder`) whose only child is Crossword. This activates the
+  dropdown machinery that was already committed in the React NavBar
+  (desktop dropdown + mobile accordion, `hasActiveChild` underlining) but
+  unused since the Blade-nav port. Routes and URLs unchanged — the parent
+  is not a link. No glossary term added (deliberate). Also corrected the
+  stale AGENTS.md claim that Livewire runs Crossword/WordsSearch in
+  `app/Livewire/` (that directory no longer exists; Livewire remains only
+  as a Filament dependency).
+* Updated [Crossword](domains/crossword.md) (entry-point note +
+  frontmatter bump). No route/model/command changes (`wiki:sync` not
+  required).
+
 ## 2026-09-19 (selectable word tokens + popup typography follows the page font)
 
 * **Interactive words are now selectable `role="button"` spans, not real

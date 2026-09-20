@@ -25,6 +25,17 @@ Docker Desktop **file sharing**. To stop the stack without losing data use
 `docker compose down` (no `-v`); to reclaim space safely use `docker system prune`
 (which does not touch volumes).
 
+**`laravel/.git` must never become a real git repo.** Pest TIA's
+container-local git repo lives in the `tia-git` Docker volume
+(`/var/www/.git` inside the container, masked out of the `./laravel` bind
+mount by docker-compose, with a `post_start` chown hook). On the host,
+`laravel/.git` is at most an *empty* root-owned Docker mountpoint artifact —
+if it ever contains a repo (branch `master`, commit "TIA baseline commit"),
+delete it: it is auto-generated, never real history, and git GUIs would show
+a phantom second repository. Always run git from the repo root, never from
+inside `laravel/`. Details: `wiki/playbooks/running-tests.md`
+("Container-local git repo").
+
 All Laravel/PHP/Composer/NPM commands must run inside the `ext_app_laravel` container.
 
 ```bash
@@ -137,15 +148,12 @@ PostgreSQL is exposed on host port `54321`.
 
 ## Architecture
 
-### Frontend: Hybrid Inertia/React + Livewire
+### Frontend: Inertia/React
 
-The app uses **two frontend approaches simultaneously**:
-
-- **Inertia/React (JSX)** — Primary UI. Pages in `resources/js/Pages/`. Uses `@inertiajs/react`, `flowbite-react`, React 19.
-- **Livewire** — Used for `Crossword` and `WordsSearch` components in `app/Livewire/`. Blade views in `resources/views/livewire/`.
+- **Inertia/React (JSX)** — The only page UI. Pages in `resources/js/Pages/`. Uses `@inertiajs/react`, `flowbite-react`, React 19. Crossword and the Bilinguals simulator are Inertia/React.
 - **Alpine.js** — Loaded globally in `resources/js/app.jsx` for lightweight interactivity.
 
-When adding new pages, prefer Inertia/React (JSX). Livewire is legacy for crossword/simulator.
+Livewire remains a dependency only because Filament requires it — there are no `app/Livewire/` components (the legacy Crossword/WordsSearch Livewire components were removed). All new pages use Inertia/React (JSX).
 
 ### Tailwind CSS 4
 

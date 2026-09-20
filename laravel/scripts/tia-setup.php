@@ -19,7 +19,11 @@
  *      uncommitted so TIA can detect them.
  *
  * This script is safe to run before every `composer test:tia` invocation.
- * It only does work the first time (or after a container rebuild wipes .git).
+ * It only does work the first time (or after the tia-git volume / .git dir
+ * is wiped). Note: docker-compose mounts an empty named volume at
+ * /var/www/.git (to keep the artefact off the host bind mount), so the
+ * directory ALWAYS exists in the container — validity is checked via
+ * .git/HEAD, not directory presence.
  */
 $projectRoot = realpath(__DIR__.'/..');
 $repoRoot = '/var/repo';
@@ -30,7 +34,7 @@ if (! is_dir($repoRoot)) {
     exit(1);
 }
 
-if (! is_dir($projectRoot.'/.git')) {
+if (! is_file($projectRoot.'/.git/HEAD')) {
     echo "[tia-setup] Initializing container-local git repo at {$projectRoot}\n";
 
     passthru("git -C {$projectRoot} init --quiet", $exit);

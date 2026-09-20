@@ -70,7 +70,7 @@ export default function NavBar() {
             {href: '/alignments', label: t('nav.alignments')},
             {href: '/library', label: t('nav.library')},
             {href: '/reader-react', label: t('nav.reader')},
-            {href: '/crossword', label: t('nav.crossword')},
+            {label: t('nav.puzzles'), children: [{href: '/crossword', label: t('nav.crossword')}]},
             ...(canAccessAdminPanel ? [{href: '/admin', label: t('nav.admin'), external: true}] : []),
         ]
     }, [isAuthenticated, isApproved, canAccessAdminPanel, t])

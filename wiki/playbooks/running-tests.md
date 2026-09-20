@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database.
 tags: [testing, pest]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-18T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-20T00:00:00Z }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -202,20 +202,28 @@ the tests affected by your latest changes, replaying the rest from cache.
   context at `/var/www`. `scripts/tia-setup.php` initialises a container-local
   git repo at `/var/www` with a single baseline commit, copying the remote URL
   from `/var/repo` so the project key matches across team members. The commit
-  is created once (or after a container rebuild wipes `.git`) and is left
-  untouched afterwards — user edits stay uncommitted so TIA can detect them.
-  **Host-side caveat**: the bind mount materialises this repo on the host as
-  `laravel/.git` too. It is an auto-generated artefact, not the real repo —
-  from inside `laravel/` git resolves to it (branch `master`, single commit
-  `TIA baseline commit` by `TIA Setup <tia@local>`), and its dirty-file list
-  includes phantom diffs against the stale baseline. Always run git from the
-  repo root; never `push`/`pull`/`clean`/`stash` from inside `laravel/` (its
-  `origin` points at the real GitHub remote). Deleting `laravel/.git` is safe
-  (all working files are tracked by the outer repo; nothing unique lives in
-  the artefact) — `test:tia` recreates it, followed by one `--fresh` graph
-  re-record.
+  is created once and is left untouched afterwards — user edits stay
+  uncommitted so TIA can detect them. Repo presence is detected via
+  `.git/HEAD` (not directory existence — see the volume mask below).
+  **Host-side isolation (2026-09-20)**: the compose `app` service mounts the
+  named volume `tia-git` at `/var/www/.git`, so the repo lives only in the
+  container volume and never materialises in the `./laravel` bind mount (it
+  used to appear on the host as `laravel/.git` — a phantom second repo on
+  branch `master` in git GUIs; it kept returning after every deletion because
+  `test:tia` re-created it). A `post_start` hook chowns the volume mountpoint
+  to `alex` (fresh docker volumes are root-owned; git runs as `alex`). The
+  host may still show an **empty** root-owned `laravel/.git` directory —
+  Docker Desktop's mountpoint artifact, inert: git inside `laravel/` resolves
+  to the outer repo. A *populated* `laravel/.git` means the volume mask was
+  reverted — delete it (nothing unique lives in it; `test:tia` re-creates the
+  repo in the volume). Regardless: always run git from the repo root, never
+  `push`/`pull`/`clean`/`stash` from inside `laravel/` — the container-side
+  repo's `origin` points at the real GitHub remote. Removing the volume only
+  resets the TIA baseline → one `--fresh` graph re-record on the next run.
 * **Storage**: `~/.pest/tia/<project-key>/` inside the container. Lost on
-  `docker compose down` (container removal); `scripts/tia-setup.php` recreates
-  the git context and `--tia --fresh` re-records the graph. CI baseline sharing
+  `docker compose down` (container removal); `scripts/tia-setup.php` re-creates
+  the git context (the `tia-git` volume with the baseline commit itself
+  survives `down` — only `down -v` / volume deletion wipes it) and
+  `--tia --fresh` re-records the graph. CI baseline sharing
   (`.github/workflows/tia-baseline.yml`) lets new checkouts download a
   pre-recorded baseline instead of paying the local recording cost.
