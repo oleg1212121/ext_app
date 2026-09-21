@@ -1,5 +1,22 @@
 # Directory Update Log
 
+## 2026-09-21 (welcome page branding: cat-and-book medallion + favicon set)
+
+* **Welcome page image.** `resources/js/Pages/Welcome.jsx` now shows the
+  cat-and-book illustration as a centered circular medallion (hairline
+  border + vellum/ink background matching the description cards) between
+  the "About" eyebrow and the four language cards. Source image:
+  `public/cat-and-book.png` (renamed from the double-extension
+  `cat-and-book.png.png`; losslessly re-optimized).
+* **Favicon set (first real favicon).** `resources/views/app.blade.php`
+  head gains `<link rel="icon">` (96×96 PNG) and
+  `<link rel="apple-touch-icon">` (180×180) tags; generated from the
+  same image into `public/favicon.png` / `public/apple-touch-icon.png`,
+  and the empty 0-byte skeleton `public/favicon.ico` was replaced with a
+  real 16/32/48 multi-size ICO. No matching concept described the
+  welcome page content before, so no concept body needed changes
+  (frontend architecture concept still accurate).
+
 ## 2026-09-20 (feature: exact-copy hashes, alignment reuse, uploader + approved lock)
 
 * **Exact-copy detection replaces similarity dedup (ADR 0033).** Entities
