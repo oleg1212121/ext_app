@@ -33,11 +33,15 @@ class SentenceSplitter
 
         $entity->sentences()->delete();
 
-        if ($fileContent !== null) {
-            return $this->insertSentences($entityId, $fileContent, $lang);
-        }
+        $stats = $fileContent !== null
+            ? $this->insertSentences($entityId, $fileContent, $lang)
+            : $this->insertSentencesFromFile($entityId, $filePath, $lang);
 
-        return $this->insertSentencesFromFile($entityId, $filePath, $lang);
+        // Bulk inserts bypass model events, so mark the sentence set changed
+        // explicitly — the entity's text hash is now stale.
+        $entity->touchSentences();
+
+        return $stats;
     }
 
     private function loadSentenceTypeMap(): void

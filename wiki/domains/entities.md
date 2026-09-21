@@ -2,10 +2,10 @@
 type: Feature
 title: Library & entities (management surface)
 description: Work-first Library browse surface (/library) plus the language-scoped entity create/detail/edit pages, driven by enabled languages.
-tags: [entities, works, library, inertia, react, languages]
+tags: [entities, works, library, inertia, react, languages, hash, clone]
 status: stable
-stale_after: 2026-12-11
-generated: { by: agent:zcode, at: 2026-09-11T17:00:00Z }
+stale_after: 2026-12-20
+generated: { by: agent:zcode, at: 2026-09-20T12:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -13,6 +13,12 @@ sources:
    - id: library
      resource: laravel/app/Http/Controllers/LibraryController.php
      title: LibraryController
+   - id: creation
+     resource: laravel/app/Classes/EntityCreationService.php
+     title: EntityCreationService
+   - id: hasher
+     resource: laravel/app/Classes/EntityTextHasher.php
+     title: EntityTextHasher
    - id: request
      resource: laravel/app/Http/Requests/StoreEntityRequest.php
      title: StoreEntityRequest
@@ -60,6 +66,7 @@ selects and every `{lang}` route are driven by `Language::enabled()`. See ADR
 | `/entities/{lang}/create` | `EntityController::create` | Language-first create form (work picker + inline "new work" fields), named `entities.create` |
 | `/entities/{lang}` (POST) | `EntityController::store` | Creates the entity under the resolved work via `EntityCreationService`; stores an optional file and dispatches `ProcessEntityFile`, named `entities.store` |
 | `/entities/{lang}/{entity}` (GET/PATCH) | `EntityController::show` / `update` | Detail page / metadata update, named `entities.show` / `entities.update` |
+| `/entities/{lang}/{entity}/approved` (PATCH) | `EntityController::updateApproved` | Flip the approval edit-lock (uploader or admin), named `entities.approved.update` |
 | `/entities/{lang}/{entity}/edit` | `EntityController::edit` | Combined edit page: metadata form + drag-and-drop sentence manager (ADR 0015), named `entities.edit` |
 | `/entities/{lang}/{entity}/sentences` (GET/POST) + `/reorder` + `/{sentence}` (PATCH/DELETE) | `EntityController::sentences*` | JSON sentence list + insert / reorder / update / delete, named `entities.sentences.*` |
 
@@ -91,7 +98,10 @@ uses `SparseOrderService::orderForInsertAfter` with `after_sentence_id = 0`
 sentinel for "at the beginning".
 
 **Access**: `EntityAccessService::canEdit` mirrors `canRead` — admin bypass;
-Restricted editable by grantees; Public editable by any approved user.
+Restricted editable by grantees; Public editable by any approved user —
+**except** an approved entity (`is_approved`), which is editable by admin only
+(ADR 0034); its sentence endpoints and the edit page 403 for everyone else,
+including the uploader, until approval is lifted.
 
 **Cascade delete**: deleting a junctioned sentence cascades — the sentence
 models' `deleting`/`deleted` hooks remove junctions, delete any meaning match
@@ -100,34 +110,66 @@ alignment editor's unlink-before-delete rule (422 if linked).
 
 **Match staleness**: every sentence mutation flips all `EntityMatch` rows
 involving the entity (either side) to `status = 'pending'`, surfacing the need
-to re-align. The entity `signature` is intentionally left stale.
+to re-align. The entity `signature` is intentionally left stale — but the
+**text hash** is not: every mutation also bumps `entities.sentences_updated_at`
+(model events for Eloquent writes; explicit touches at the bulk sites), which
+the `entities:refresh-text-hashes` scheduler uses to rehash (see below).
 
-# Creation pipeline
+# Creation pipeline (ADR 0033)
 
 Both entry points — the Library's work-scoped form (work fixed, language
 chosen) and the legacy language-first form (language fixed, existing-or-new
 work) — run `App\Classes\EntityCreationService::create()`. Entity fields are
-`name` (required), `label` (optional, distinguishes same-language variants of
-a work), `description` (optional), `file` (optional `.txt`), plus the language
-and the resolved work. The service stores the file to `entities/{lang}` on the
-`local` disk and runs a **synchronous** signature check
-(`TextSignatureService::findSimilarExisting`, same-language entities only):
+`name` (required), `label` (optional), `description` (optional), `file`
+(optional `.txt`), plus the language and the resolved work. The service stores
+the file to `entities/{lang}` on the `local` disk and hashes the raw bytes
+(`file_hash`, local sha256 — **no Python call is made synchronously and an
+upload never fails because of the embedding service**):
 
-- **Match found** (≥0.95 cosine against an existing Entity in the same
-  language — possibly of a *different* work): no new Entity is created. The
-  uploader receives an Access grant on the existing Entity (with the match
-  `similarity`), the uploaded file is deleted, and they are redirected to the
-  existing Entity. This is how a user "uploads" a copyrighted work that
-  already exists without creating a copy or infringing — they simply get
-  linked.
-- **No match:** a new Entity is created with `is_restricted = true`, the
-  generated signature is stored on it, the uploader receives a creator grant
-  (`similarity` null), and `ProcessEntityFile` is dispatched (entity id + file
-  path; the job reads the language from the entity) to split sentences.
-- **Embedding service unavailable:** the upload fails hard (user retries with
-  a file error); no Entity is created, the file is discarded, nothing leaks.
+- **Exact copy found** (same `file_hash` + language, source has sentences):
+  the uploader still gets their **own** Entity — their metadata and work,
+  `is_restricted = true`, `created_by` = uploader, creator grant — **cloned**
+  from the source: sentences (content, type, order), signature vector, word
+  statistics (`entity_words` + `words_indexed_at`), and the text hash are
+  copied verbatim. No split, no embed, no Python at all. Redirect carries a
+  "created from an exact copy" status. The clone is fully independent — no
+  foreign keys to the source; deleting either never touches the other.
+- **No exact copy:** the Entity is created (`created_by`, `file_hash`,
+  `sentences_updated_at = now`, signature still null) and `ProcessEntityFile`
+  is dispatched, which now just chains `SplitEntityFileSentences` →
+  `FinalizeEntityDerivations`: compute the text hash, then copy signature +
+  word statistics from a text-hash-equal source if one exists, else generate
+  the embedding signature in the background.
 
-The `signature` column is never user-entered on the front end.
+The `signature` column is never user-entered on the front end. Near-duplicate
+merging (the ≥0.95 grant/merge/delete flow of ADR 0013) is gone; the
+signature's remaining uses are cross-language candidate finding (Filament
+"Find Match") and the ≥0.70 pre-align verification gate.
+
+# Text hash maintenance
+
+`EntityTextHasher` computes `text_hash` = sha256 over sentence contents in
+`order`, each whitespace-normalized (case/punctuation preserved). Staleness:
+`text_hash IS NULL OR text_hashed_at < sentences_updated_at`. The
+`entities:refresh-text-hashes` command (scheduled every 5 min with
+`withoutOverlapping`, `--limit`/`--dry-run`) dispatches `ShouldBeUnique`
+`ComputeEntityTextHash` jobs that re-check staleness at run time. The
+alignment-copy lookup (`AlignmentCopyService`) recomputes synchronously when
+stale — a local sha256, not a service call. Equal text hashes ⇒ exact copies ⇒
+a completed alignment between one copy pair is reused for another (see
+[sentence alignment](/domains/sentence-alignment.md)).
+
+# Approval edit-lock (ADR 0034)
+
+`entities.is_approved` (default false) freezes content changes when true:
+metadata edits, sentence CRUD (all surfaces), alignment-editor mutations and
+re-aligns on matches involving the entity, `alignments:resume` pickup, and
+deletion (a model-level `deleting` guard throws for non-admins). Admins bypass
+everything (`Gate::before`); the **uploader** (`created_by`) and admins may
+flip the flag in both directions via `entities.approved.update` (Inertia
+toggle on the entity Show page; Filament toggle too). `created_by` is nullable
+(null = system/admin import) and `nullOnDelete` — a deleted uploader's
+entities survive, admin-only.
 
 # Access
 

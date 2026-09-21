@@ -4,8 +4,8 @@ title: Crossword
 description: Deterministic crossword puzzles generated from an entity's word list, with frequency-band levels, dictionary-backed definitions/translations, and per-user word familiarity.
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
-stale_after: 2026-12-14
-generated: { by: agent:openai/big-pickle, at: 2026-09-17T00:00:00Z }
+stale_after: 2026-12-20
+generated: { by: agent:zcode, at: 2026-09-20T00:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/CrosswordController.php
@@ -101,7 +101,9 @@ without manual runs. Dev has no `schedule:work` — run
 
 # Frontend
 
-Inertia pages under `resources/js/Pages/Crossword/` — `Crossword` (wrapper,
+Reached from the navbar's **Puzzles** dropdown (`nav.puzzles`), whose only
+entry is Crossword (`/crossword`) — grouping intended for future puzzle
+features. Inertia pages under `resources/js/Pages/Crossword/` — `Crossword` (wrapper,
 `Main` layout), `CrosswordApp`, `useCrossword` (state: cell values, arrow
 navigation, word checking, right-panel width, language filter), and
 `Components/` (grid, cells, header with language-filter / work-grouped

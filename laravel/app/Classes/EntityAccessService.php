@@ -40,13 +40,28 @@ class EntityAccessService
 
     /**
      * Who may edit an Entity (name, description) and its sentences in the
-     * entities frontend. Structurally identical to canRead: admin bypass;
-     * Public editable by any approved user; Restricted editable by grantees.
-     * See ADR 0015.
+     * entities frontend. Admin bypass; Public editable by any approved user;
+     * Restricted editable by grantees (ADR 0015). An Approved entity is
+     * edit-locked for everyone but admins — the creator must un-approve
+     * first (ADR 0034).
      */
     public function canEdit(User $user, Entity $entity): bool
     {
+        if ($entity->is_approved) {
+            return $user->isAdmin();
+        }
+
         return $this->canRead($user, $entity);
+    }
+
+    /**
+     * Who may flip an Entity's approval flag (in either direction): its
+     * uploader or an admin. While approved this is the only change the
+     * creator can still make to the entity.
+     */
+    public function canChangeApproval(User $user, Entity $entity): bool
+    {
+        return $user->isAdmin() || $entity->created_by === $user->getKey();
     }
 
     /**
@@ -60,6 +75,24 @@ class EntityAccessService
 
         return $this->canRead($user, $match->aEntity)
             && $this->canRead($user, $match->bEntity);
+    }
+
+    /**
+     * Who may mutate an alignment in the alignment editor: read access to
+     * both sides, and neither side Approved — an approved entity freezes
+     * every alignment it takes part in (ADR 0034). Admin bypass.
+     */
+    public function canEditMatch(User $user, EntityMatch $match): bool
+    {
+        if ($user->isAdmin()) {
+            return true;
+        }
+
+        if ($match->aEntity?->is_approved || $match->bEntity?->is_approved) {
+            return false;
+        }
+
+        return $this->canReadMatch($user, $match);
     }
 
     /**

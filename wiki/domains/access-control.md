@@ -4,8 +4,8 @@ title: Access Control
 description: Role- and approval-based authorization for users, the admin bypass, and the last-admin invariant.
 tags: [auth, authorization, roles, admin, approval]
 status: stable
-stale_after: 2026-10-23
-generated: { by: human:alex, at: 2026-09-07T00:00:00Z }
+stale_after: 2026-11-06
+generated: { by: agent/glm-5.3-flash, at: 2026-09-21T14:05:00Z }
 verified: { by: human:alex, at: 2026-09-07T00:00:00Z }
 sources:
    - id: app-provider
@@ -26,8 +26,11 @@ sources:
    - id: entity-access
      resource: laravel/app/Classes/EntityAccessService.php
      title: canRead / canReadMatch / grant / readable queries
+   - id: admin-panel-provider
+     resource: laravel/app/Providers/Filament/AdminPanelProvider.php
+     title: Panel config + TOPBAR_LOGO_AFTER welcome link
    - id: entity-models
-     resource: laravel/app/Models/EnEntity.php
+     resource: laravel/app/Models/Entity.php
      title: is_restricted flag + grantedUsers relation + en_entity_user pivot
 ---
 
@@ -67,7 +70,12 @@ mirrors the server-side checks instead of re-implementing them.
   rejected, and an admin may never remove their own admin access.
 - **Filament panel.** The panel is reachable only by an approved admin; the
   `accessAdminPanel` ability is the single source of truth for both the panel's
-  `canAccessPanel` contract and the frontend's admin link.
+  `canAccessPanel` contract and the frontend's admin link. The panel topbar
+  carries a **Welcome link back to the public app**: a
+  `PanelsRenderHook::TOPBAR_LOGO_AFTER` render hook in `AdminPanelProvider`
+  renders `resources/views/filament/topbar/welcome-link.blade.php`, a
+  `.fi-logo`-styled anchor to `url('/')` (the welcome route is a named-less
+  closure) that visually matches the brand text beside it.
 - **Panel user creation requires a password.** The `UserResource` create form
   exposes a required `password` (+ `password_confirmation`) field, so a user
   created through `/admin/users/create` always gets a hashed password (the

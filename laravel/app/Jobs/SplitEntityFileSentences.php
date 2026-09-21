@@ -49,5 +49,7 @@ class SplitEntityFileSentences implements ShouldQueue
                 'used_passthrough_content' => false,
             ]
         ));
+
+        FinalizeEntityDerivations::dispatch($this->entityId, $this->filePath);
     }
 }

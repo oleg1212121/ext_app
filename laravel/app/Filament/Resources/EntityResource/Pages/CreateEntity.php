@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\EntityResource\Pages;
 
+use App\Classes\EntityTextHasher;
 use App\Filament\Resources\EntityResource;
 use App\Jobs\ProcessEntityFile;
 use Filament\Resources\Pages\CreateRecord;
@@ -14,6 +15,13 @@ class CreateEntity extends CreateRecord
     {
         $data['file_path'] = $data['file'] ?? null;
         unset($data['file']);
+
+        $data['created_by'] = auth()->id();
+
+        if ($data['file_path'] !== null) {
+            $data['file_hash'] = EntityTextHasher::hashStoredFile((string) $data['file_path']);
+            $data['sentences_updated_at'] = now();
+        }
 
         return $data;
     }

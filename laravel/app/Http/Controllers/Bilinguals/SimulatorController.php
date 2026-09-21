@@ -9,9 +9,12 @@ use App\Classes\MeaningMatchPresenter;
 use App\Exceptions\AiProviderException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AiQuestionRequest;
+use App\Http\Requests\AiWordExplainRequest;
 use App\Http\Requests\BilingualsTextRequest;
 use App\Models\EntityMatch;
+use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
+use App\Models\Word;
 use Exception;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
@@ -364,6 +367,99 @@ class SimulatorController extends Controller
             'X-Accel-Buffering' => 'no',
             'Connection' => 'keep-alive',
         ]);
+    }
+
+    /**
+     * Explain a Ctrl-clicked word in its sentence context (the sentence
+     * before, the clicked sentence, the sentence after — by document order
+     * in the clicked side's entity). The client identifies the clicked
+     * sentence by its index within the row side's text, which joins the
+     * side's non-empty sentences in document order with newlines
+     * (MeaningMatchPresenter::sideText) — the same list is rebuilt here so
+     * the index lines up exactly.
+     */
+    public function explainWord(AiWordExplainRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+
+        /** @var MeaningMatch|null $meaningMatch */
+        $meaningMatch = MeaningMatch::query()
+            ->with(['entityMatch', 'sentenceMeaningMatches.entitySentence'])
+            ->find($validated['meaning_match_id']);
+
+        if ($meaningMatch === null || $meaningMatch->entityMatch === null) {
+            return $this->explainError('Entity match not found', 404);
+        }
+
+        if (! $this->access()->canReadMatch(auth()->user(), $meaningMatch->entityMatch)) {
+            return $this->explainError('You do not have access to this text.', 403);
+        }
+
+        $clicked = $meaningMatch->sentenceMeaningMatches
+            ->where('side', $validated['side'])
+            ->sortBy(fn ($junction) => $junction->entitySentence?->order ?? 0)
+            ->filter(fn ($junction) => ($junction->entitySentence?->content ?? '') !== '')
+            ->values()
+            ->get((int) $validated['sentence_index'])
+            ?->entitySentence;
+
+        if ($clicked === null) {
+            return $this->explainError('Sentence not found.', 404);
+        }
+
+        $previous = EntitySentence::query()
+            ->where('entity_id', $clicked->entity_id)
+            ->where('order', '<', $clicked->order)
+            ->orderByDesc('order')
+            ->first();
+        $next = EntitySentence::query()
+            ->where('entity_id', $clicked->entity_id)
+            ->where('order', '>', $clicked->order)
+            ->orderBy('order')
+            ->first();
+
+        $marked = preg_replace_callback(
+            '/(?<![\p{L}])'.preg_quote($validated['surface'], '/').'(?![\p{L}])/iu',
+            fn (array $matches) => '**'.$matches[0].'**',
+            $clicked->content,
+        ) ?? $clicked->content;
+
+        $word = Word::query()->find($validated['word_id']);
+        $headwordNote = $word !== null && mb_strtolower($word->word) !== mb_strtolower($validated['surface'])
+            ? ' (dictionary form: «'.$word->word.'»)'
+            : '';
+
+        $nativeName = auth()->user()->nativeLanguage()?->name ?? 'English';
+        $instruction = 'You are a dictionary assistant for a language learner. '
+            .'Explain the meaning of the word «'.$validated['surface'].'» as it is used in the sentence labelled "Sentence with the word", '
+            .'using the neighbouring sentences only as context. Reply in '.$nativeName.'. '
+            .'Be concise: 2 to 4 sentences. Name the sense that applies here and, when natural, give the closest '
+            .$nativeName.' equivalent word or phrase. Markdown formatting is allowed. Do not repeat the sentences back.';
+
+        $question = "Word to explain: «{$validated['surface']}»{$headwordNote}\n\n"
+            ."Sentence before:\n".($previous?->content ?? '(not available)')."\n\n"
+            ."Sentence with the word:\n{$marked}\n\n"
+            ."Sentence after:\n".($next?->content ?? '(not available)');
+
+        try {
+            $answer = $this->modelResolver->ask($validated['model'], $instruction, $question);
+        } catch (InvalidArgumentException) {
+            return $this->explainError('Invalid model selection.', 400);
+        } catch (AiProviderException $e) {
+            return $this->explainError($e->getMessage(), $e->getStatusCode());
+        }
+
+        return response()->json(['data' => ['answer' => $answer, 'code' => 200]], 200);
+    }
+
+    private function explainError(string $message, int $status): JsonResponse
+    {
+        return response()->json([
+            'data' => [
+                'data' => ['error' => $message],
+                'code' => $status,
+            ],
+        ], $status);
     }
 
     private function access(): EntityAccessService

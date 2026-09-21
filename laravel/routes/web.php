@@ -101,6 +101,10 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->where('lang', '[a-z]{2}')
         ->whereNumber('entity')
         ->name('entities.update');
+    Route::patch('/entities/{lang}/{entity}/approved', [EntityController::class, 'updateApproved'])
+        ->where('lang', '[a-z]{2}')
+        ->whereNumber('entity')
+        ->name('entities.approved.update');
     Route::get('/entities/{lang}/{entity}/sentences', [EntityController::class, 'sentences'])
         ->where('lang', '[a-z]{2}')
         ->whereNumber('entity')
@@ -143,5 +147,6 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::post('/text', [SimulatorController::class, 'text']);
     Route::post('/ai/question', [SimulatorController::class, 'askAi'])->name('ai.question')->middleware('throttle:20,1');
     Route::post('/ai/question/stream', [SimulatorController::class, 'askAiStreamed'])->name('ai.question.stream')->middleware('throttle:20,1');
+    Route::post('/ai/word-explain', [SimulatorController::class, 'explainWord'])->name('ai.word-explain')->middleware('throttle:20,1');
     Route::patch('/ui-settings', [UiSettingsController::class, 'update'])->name('ui-settings.update');
 });

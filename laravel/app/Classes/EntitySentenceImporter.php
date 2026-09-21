@@ -216,6 +216,10 @@ class EntitySentenceImporter
                 'completed_at' => $now,
             ]);
 
+            // Bulk writes bypass model events; mark both sentence sets changed.
+            Entity::touchSentencesFor($aEntity->id);
+            Entity::touchSentencesFor($bEntity->id);
+
             return $entityMatch;
         });
 

@@ -2,6 +2,7 @@
 
 namespace App\Classes;
 
+use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
@@ -170,6 +171,10 @@ class AlignmentEditorPersister
             ->when($keptDbIds !== [], fn ($query) => $query->whereNotIn('id', $keptDbIds))
             ->when($keptDbIds === [], fn ($query) => $query)
             ->delete();
+
+        // Upserts and the bulk delete bypass model events; mark the sentence
+        // set changed explicitly.
+        Entity::touchSentencesFor($entityId);
 
         return $idMap;
     }

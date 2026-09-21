@@ -72,6 +72,9 @@ class EntityResource extends Resource
                 Toggle::make('is_restricted')
                     ->label('Restricted (only admin and granted users can read)')
                     ->default(true),
+                Toggle::make('is_approved')
+                    ->label('Approved (entity and its alignments are edit-locked)')
+                    ->default(false),
                 TextInput::make('signature'),
                 FileUpload::make('file')
                     ->label('Text File')
@@ -101,6 +104,16 @@ class EntityResource extends Resource
                 IconColumn::make('is_restricted')
                     ->boolean()
                     ->label('Restricted'),
+                IconColumn::make('is_approved')
+                    ->boolean()
+                    ->label('Approved'),
+                TextColumn::make('uploader.name')
+                    ->label('Uploader'),
+                TextColumn::make('text_hash')
+                    ->label('Text hash')
+                    ->limit(12)
+                    ->copyable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('sentences_count')
                     ->counts('sentences')
                     ->label('Sentences'),
@@ -118,6 +131,11 @@ class EntityResource extends Resource
                     ->label('Restricted')
                     ->trueLabel('Restricted only')
                     ->falseLabel('Public only')
+                    ->native(false),
+                TernaryFilter::make('is_approved')
+                    ->label('Approved')
+                    ->trueLabel('Approved only')
+                    ->falseLabel('Not approved only')
                     ->native(false),
             ])
             ->recordActions([

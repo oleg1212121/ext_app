@@ -36,6 +36,16 @@ class EntitySentence extends Model
 
     protected static function booted(): void
     {
+        $touchParent = function (EntitySentence $sentence): void {
+            if ($sentence->entity_id !== null) {
+                Entity::touchSentencesFor($sentence->entity_id);
+            }
+        };
+
+        static::created($touchParent);
+        static::updated($touchParent);
+        static::deleted($touchParent);
+
         static::deleting(function (EntitySentence $sentence): void {
             $sentence->meaningMatchIdsBeforeDelete = $sentence->meaningJunctions()
                 ->pluck('meaning_match_id')

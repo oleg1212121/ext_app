@@ -5,7 +5,7 @@ description: End-to-end workflow for aligning two same-work entities (any langua
 tags: [alignment, embeddings, jobs, howto]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-13T12:30:00Z }
+generated: { by: agent:zcode, at: 2026-09-20T23:59:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -77,13 +77,20 @@ sources:
    validates **same work** (same-language pairs such as exercises and
    answers are valid — ADR 0019) and canonicalizes the pair
    (lower entity id = a side) — or via the Filament `EntityMatchResource` /
-   `EntityResource` "Find Match" action (same-work entities, any languages), an import command, or directly. Fresh entry
+   `EntityResource` "Find Match" action (same-work entities, any languages), an import command, or directly. Every creation entry
+   point first tries `AlignmentCopyService::copyFor()` (ADR 0033): a
+   completed match between **exact-copy** entities (equal `text_hash` +
+   language, either orientation) is cloned wholesale and the new match is
+   `completed` at creation — no pipeline run, no Python. Only when no
+   eligible source exists do the fresh entry
    points (Filament "new alignment" / "Find Match", the web create form, and
    the `alignments:resume` command) call
    `AlignEntitySentences::beginFromScratch($id)` — a shared
    static that verifies the pair, wipes any prior meaning matches, snapshots
     totals, resets the cursor, transitions to `aligning`, and dispatches the
-    first chunk. The Filament **Re-align** action instead calls the
+    first chunk. (Approved entities: `alignments:resume` skips their matches
+    — an approved entity freezes every alignment it takes part in, ADR 0034.)
+    The Filament **Re-align** action instead calls the
     landmark-aware `begin($id)`: it preserves human-made rows
     (`alignment_chunk = -1`) and high-confidence auto-landmarks
     (similarity ≥ 0.90) and only deletes lower-confidence machine rows, then

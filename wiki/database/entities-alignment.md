@@ -1,15 +1,18 @@
 ---
 type: Database Schema
 title: Works, Entities & Alignment Tables
-description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations).
-tags: [database, schema, alignment, entities, works]
+description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20).
+tags: [database, schema, alignment, entities, works, hash]
 status: stable
-stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
+stale_after: 2026-12-20
+generated: { by: agent:zcode, at: 2026-09-20T12:00:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
      title: works + unified entities/sentences/grants creation
+   - id: entity-columns
+     resource: laravel/database/migrations/2026_09_20_000001_add_entity_creator_flags_and_hashes.php
+     title: created_by / is_approved / file_hash / text_hash / staleness timestamps
    - id: alignment-migration
      resource: laravel/database/migrations/2026_09_10_000004_create_alignment_tables.php
      title: entity_matches + meaning_matches + sentence_meaning_matches (side column)
@@ -23,13 +26,13 @@ sources:
 | Table | Model | Role |
 |-------|-------|------|
 | `works` | `Work` | The abstract book: title, author, description, `original_language_id` → languages. Groups every language version of one text |
-| `entities` | `Entity` | A text (book/story/file) in one language — the original or a translation of its work. Carries `work_id`, `language_id`, an optional translator/edition `label`, a BGE-M3 embedding `signature`, and `is_restricted` (default false) gating read access |
+| `entities` | `Entity` | A text (book/story/file) in one language — the original or a translation of its work. Carries `work_id`, `language_id`, `created_by` (nullable uploader), an optional translator/edition `label`, a BGE-M3 embedding `signature`, `is_restricted` gating read access, `is_approved` (edit lock), `file_hash` (raw upload bytes) and `text_hash`/`text_hashed_at`/`sentences_updated_at` (exact-copy detection, ADR 0033) |
 | `sentence_types` | `SentenceType` | Classification for sentences |
 | `entity_sentences` | `EntitySentence` | Split sentences with **sparse order** values; unique `(entity_id, order)` |
 | `entity_matches` | `EntityMatch` | Pairing of two distinct same-work entities ("same text, two versions"; same-language companions like exercises + answers included), stored canonically `a_entity_id < b_entity_id` |
 | `meaning_matches` | `MeaningMatch` | Sentence-group level alignment result within a match |
 | `sentence_meaning_matches` | `SentenceMeaningMatch` | Per-sentence membership in a meaning match, with a `side` char(1) (`'a'`/`'b'`) naming which entity of the match the sentence belongs to |
-| `entity_user` | (pivot) | Access grants: which users may read a Restricted entity, with a nullable `similarity` (null = creator grant, non-null = Signature match grant) |
+| `entity_user` | (pivot) | Access grants: which users may read a Restricted entity, with a nullable `similarity` (null = creator grant; non-null = legacy Signature match grant — no longer produced, ADR 0033) |
 
 # Invariants & notes
 
@@ -72,7 +75,20 @@ sources:
   (always `similarity = 1.0`); machine rows carry a monotonic per-run chunk
   id. Machine rows with `similarity >= 0.90` are auto-landmarks. Both tiers
   survive Re-align and act as pool boundaries; "Run from scratch" deletes
-  both.
+  both. An **Alignment copy** (ADR 0033) clones rows with their landmark
+  markers verbatim.
+* **Exact-copy hashes** (ADR 0033): `text_hash` (indexed, not unique — copies
+  share it by design) is sha256 over whitespace-normalized sentence contents
+  in document order; `sentences_updated_at` is bumped by every sentence
+  mutation (Eloquent events + explicit touches at the bulk writers) and
+  `text_hashed_at < sentences_updated_at` means stale — the
+  `entities:refresh-text-hashes` scheduler rehashes. `file_hash` (raw upload
+  bytes) enables the no-split clone path at upload. Hashes never couple
+  entities: deleting an entity never touches its copies (no provenance FK).
+* **Uploader & edit lock** (ADR 0034): `created_by` nullable FK → users
+  (`nullOnDelete`; null = system import); `is_approved` freezes content edits
+  (metadata, sentences, matches involving the entity, deletion) for everyone
+  except admins; `alignments:resume` skips matches with an approved side.
 * **Admin editing**: `EntityResource` (one resource, language select +
   work select with inline create) exposes a *Sentences* relation manager
   supporting create/edit/delete/reorder with sparse order preservation.

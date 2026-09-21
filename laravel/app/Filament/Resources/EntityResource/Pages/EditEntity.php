@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\EntityResource\Pages;
 
+use App\Classes\EntityTextHasher;
 use App\Filament\Resources\EntityResource;
 use App\Jobs\ProcessEntityFile;
 use Filament\Actions;
@@ -15,6 +16,8 @@ class EditEntity extends EditRecord
     {
         if (isset($data['file']) && $data['file'] !== $this->record->file_path) {
             $data['file_path'] = $data['file'];
+            $data['file_hash'] = EntityTextHasher::hashStoredFile((string) $data['file']);
+            $data['sentences_updated_at'] = now();
         }
         unset($data['file']);
 

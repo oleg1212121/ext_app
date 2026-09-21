@@ -8,6 +8,7 @@ use App\Classes\SparseOrderService;
 use App\Http\Requests\ReorderEntitySentenceRequest;
 use App\Http\Requests\StoreEntityRequest;
 use App\Http\Requests\StoreEntitySentenceRequest;
+use App\Http\Requests\UpdateEntityApprovalRequest;
 use App\Http\Requests\UpdateEntityRequest;
 use App\Http\Requests\UpdateEntitySentenceRequest;
 use App\Models\Entity;
@@ -62,17 +63,9 @@ class EntityController extends Controller
             $request->file('file'),
         );
 
-        if ($result['status'] === 'upload_failed') {
-            return back()->withErrors([
-                'file' => 'We could not process the text right now. Please try again later.',
-            ]);
-        }
-
-        if ($result['status'] === 'matched_existing') {
-            return redirect()->route('entities.show', [
-                'lang' => $lang,
-                'entity' => $result['entity']->getKey(),
-            ])->with('status', 'Your upload matched an existing text — access granted, no new entity created.');
+        if ($result['status'] === 'created_from_copy') {
+            return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $result['entity']->id])
+                ->with('status', 'Your upload is an exact copy of an existing text — your own entity was created with sentences and word statistics precomputed.');
         }
 
         return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $result['entity']->id]);
@@ -117,12 +110,14 @@ class EntityController extends Controller
                 'description' => $entity->description,
                 'file_path' => $entity->file_path,
                 'signature_status' => $entity->signatureStatus(),
+                'is_approved' => $entity->is_approved,
                 'sentences_count' => $entity->sentences_count,
                 'created_at' => $entity->created_at?->toISOString(),
                 'updated_at' => $entity->updated_at?->toISOString(),
             ],
             'entityMatches' => $entityMatches,
             'can_edit' => $canEdit,
+            'can_change_approval' => $this->access()->canChangeApproval(auth()->user(), $entity),
             'sentences' => $sentences->through(function (object $sentence): array {
                 return [
                     'id' => $sentence->id,
@@ -168,6 +163,7 @@ class EntityController extends Controller
                 'work_title' => $entity->work?->title,
                 'description' => $entity->description,
                 'is_restricted' => $entity->is_restricted,
+                'is_approved' => $entity->is_approved,
                 'sentences_count' => $entity->sentences_count,
             ],
             'sentenceTypes' => $sentenceTypes->map(fn (SentenceType $type): array => [
@@ -175,6 +171,7 @@ class EntityController extends Controller
                 'name' => $type->name,
             ])->all(),
             'alignmentCount' => $alignmentCount,
+            'can_change_approval' => $this->access()->canChangeApproval(auth()->user(), $entity),
             'sentencesEndpoint' => route('entities.sentences', ['lang' => $lang, 'entity' => $entity->id]),
         ]);
     }
@@ -198,6 +195,31 @@ class EntityController extends Controller
 
         return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $entity->id])
             ->with('status', 'Entity updated.');
+    }
+
+    /**
+     * Flip the entity's approval lock. Allowed for the uploader and admins
+     * even while the entity is approved — this is the one change that stays
+     * possible under the lock (ADR 0034).
+     */
+    public function updateApproved(UpdateEntityApprovalRequest $request, string $lang, int $entityId): RedirectResponse
+    {
+        $language = $this->resolveLanguage($lang);
+
+        $entity = Entity::query()
+            ->where('language_id', $language->id)
+            ->findOrFail($entityId);
+
+        abort_unless($this->access()->canChangeApproval($request->user(), $entity), 403);
+
+        $entity->update(['is_approved' => (bool) $request->validated('is_approved')]);
+
+        $status = $entity->is_approved
+            ? 'Entity approved — editing is locked.'
+            : 'Approval removed — editing unlocked.';
+
+        return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $entity->id])
+            ->with('status', $status);
     }
 
     public function sentences(string $lang, int $entityId, Request $request): JsonResponse
@@ -354,6 +376,10 @@ class EntityController extends Controller
 
             $this->persistSentenceOrders($entity->id, $orders);
         });
+
+        // Reorder only rewrites order values in bulk (no model events), but
+        // the hash covers content in order — mark the sentence set changed.
+        $entity->touchSentences();
 
         $this->setMatchesPending($entity->id);
 

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\EntityMatchResource\Pages;
 
+use App\Classes\AlignmentCopyService;
 use App\Filament\Resources\EntityMatchResource;
 use App\Jobs\AlignEntitySentences;
 use App\Models\Entity;
@@ -48,6 +49,16 @@ class CreateEntityMatch extends CreateRecord
                 $existing->meaningMatches()->delete();
                 $existing->delete();
             });
+
+        if ((new AlignmentCopyService)->copyFor($this->record)) {
+            Notification::make()
+                ->title('Alignment copied')
+                ->body('An identical text pair already had a completed alignment — reused.')
+                ->success()
+                ->send();
+
+            return;
+        }
 
         AlignEntitySentences::beginFromScratch($this->record->id);
 

@@ -1,5 +1,164 @@
 # Directory Update Log
 
+## 2026-09-21 (feature: Context explanation tab in the simulator's word popup)
+
+* **`POST /ai/word-explain`** (`SimulatorController::explainWord`, named
+  `ai.word-explain`, throttled 20/min, validated by the new
+  `AiWordExplainRequest`): explains a Ctrl-clicked word in its sentence
+  context through `AIModelResolver::ask`. The client sends
+  `{meaning_match_id, side, sentence_index, word_id, surface, model}`; the
+  endpoint rebuilds the clicked side's sentence list exactly like
+  `MeaningMatchPresenter::sideText` (so the index is exact), takes the
+  clicked `EntitySentence` plus its before/after neighbours in the same
+  entity by document order, marks the surface with `**…**`, and prompts for
+  a 2–4-sense-focused explanation replied in the user's Native language.
+  Sync JSON with the standard `{data: {answer}}` /
+  `{data: {data: {error}, code}}` envelopes; `canReadMatch` gating.
+* **Tabbed word popup.** `WordPopup.jsx` gains an optional `explain`
+  payload — when `WordText` has a `rowKey`, a `side` (`"a"`/`"b"`, threaded
+  from `TextContent`) and the simulator's `currentModel` (passed as
+  `aiModel` from `Bilinguals.jsx`, gated on `canUseAi`), the popup shows a
+  tab strip: dictionary content on tab 1 (default), an "Explanation" tab 2
+  with a manual "Explain this word" button, loading/error states, and
+  rendered markdown. Answers memoize in a page-lifetime client map keyed by
+  `meaningMatch|side|sentenceIndex|surface|model` ("Ask again" drops the
+  memo); no server-side cache. Progress footer stays shared below both
+  tabs. The Reader passes none of the new props → popup unchanged there.
+* **`WordText` renders per-sentence spans.** The row text (a side's
+  non-empty sentences joined with `\n` in document order) now renders each
+  sentence in its own inline span (visually identical) so a Ctrl+click
+  knows its `sentence_index`; the popup explain payload parses the
+  meaning-match id out of the `mm:{id}` row key.
+* **`renderMarkdown` extracted** from `Bilinguals.jsx` into the shared
+  `resources/js/lib/markdown.js` (verbatim helper chain), reused by the
+  popup's explanation pane.
+* **UI strings** (`word.tab_dictionary`, `word.tab_explanation`,
+  `word.explain`, `word.explain_loading`, `word.explain_failed`,
+  `word.explain_again`) added to `ui-strings/words.php` (en/ru).
+* **Docs.** `CONTEXT.md`: Interactive Reading Context gains
+  **Context explanation**; **Word popup** updated for the tabs.
+  `wiki/domains/interactive-words.md`: new "Context explanation tab"
+  section, routes + sources. `wiki/domains/bilinguals-simulator.md`:
+  endpoint row + key-behavior bullet. Tests:
+  `tests/Feature/AiWordExplainEndpointTest.php` (7 cases, resolver mocked
+  at the container).
+
+## 2026-09-21 (welcome page branding: cat-and-book medallion + favicon set)
+
+* **Welcome page image.** `resources/js/Pages/Welcome.jsx` now shows the
+  cat-and-book illustration as a centered circular medallion (hairline
+  border + vellum/ink background matching the description cards) between
+  the "About" eyebrow and the four language cards. Source image:
+  `public/cat-and-book.png` (renamed from the double-extension
+  `cat-and-book.png.png`; losslessly re-optimized).
+* **Favicon set (first real favicon).** `resources/views/app.blade.php`
+  head gains `<link rel="icon">` (96×96 PNG) and
+  `<link rel="apple-touch-icon">` (180×180) tags; generated from the
+  same image into `public/favicon.png` / `public/apple-touch-icon.png`,
+  and the empty 0-byte skeleton `public/favicon.ico` was replaced with a
+  real 16/32/48 multi-size ICO. No matching concept described the
+  welcome page content before, so no concept body needed changes
+  (frontend architecture concept still accurate).
+* **Admin topbar Welcome link.** The Filament panel topbar gains a
+  "Welcome" link immediately right of the brand logo: a
+  `PanelsRenderHook::TOPBAR_LOGO_AFTER` render hook in
+  `AdminPanelProvider` renders the new
+  `resources/views/filament/topbar/welcome-link.blade.php` — a
+  `.fi-logo`-styled anchor to `url('/')` (the welcome route has no
+  name), so it matches the "Laravel" brand text in size/weight/color;
+  spacing is an inline margin so it survives stale asset builds.
+  `wiki/domains/access-control.md` "Filament panel" bullet extended;
+  first render hook used in the app.
+
+## 2026-09-20 (feature: exact-copy hashes, alignment reuse, uploader + approved lock)
+
+* **Exact-copy detection replaces similarity dedup (ADR 0033).** Entities
+  gain `file_hash` (raw upload bytes, computed at upload — no synchronous
+  Python call anymore; uploads survive embedding-service outages) and
+  `text_hash` (sha256 of whitespace-normalized sentence contents in order;
+  maintained by the new `entities:refresh-text-hashes` scheduler every 5 min
+  + `ComputeEntityTextHash` unique jobs, staleness via the new
+  `sentences_updated_at`/`text_hashed_at` pair — an explicit timestamp
+  because deletions are invisible to a `max(updated_at)` check). A
+  byte-identical upload clones the source entity (sentences, signature, word
+  statistics) for the uploader — their own restricted entity, zero Python
+  calls; a text-hash match after the split copies signature + word stats
+  (new `FinalizeEntityDerivations` job; `ProcessEntityFile` now just chains
+  the split). The near-dup merge/grant/delete flow (≥0.95 cosine) is removed
+  everywhere; the embedding signature survives only for cross-language
+  candidates (Filament Find Match) and the ≥0.70 verify gate.
+* **Alignment reuse.** New `AlignmentCopyService`, wired into all three
+  match-creation entry points (web controller, Filament create page, list
+  header action): when a completed match exists between exact-copy entities
+  (equal hashes + languages, either orientation), meaning matches and
+  junctions are cloned with a positional sentence mapping — the new match is
+  `completed` instantly, no half-hour pipeline. Source ranking: most
+  confirmed rows → linked_count → latest completed. Falls back to the
+  pipeline on any mismatch. No provenance column (copies are independent).
+* **Uploader + approved edit lock (ADR 0034).** `entities.created_by`
+  (nullable, nullOnDelete; null = system import; supersedes ADR 0013's
+  no-creator decision) and `entities.is_approved`: when true, metadata edits,
+  sentence CRUD, alignment-editor mutations, re-aligns, `alignments:resume`
+  pickup and deletion are blocked for everyone except admins (the uploader
+  included); only the flag stays flippable, by uploader and admins
+  (`PATCH /entities/{lang}/{entity}/approved` + Filament toggle). New
+  `EntityAccessService::canEditMatch` gates editor mutations (was
+  `canReadMatch`).
+* Updated concepts: [entities](domains/entities.md) (creation pipeline
+  rewritten, hash maintenance + approval sections), [sentence alignment](
+  domains/sentence-alignment.md) (stage 2 reworked, new stage 2b copy fast
+  path), [entities-alignment schema](database/entities-alignment.md) (new
+  columns + invariants). `wiki:sync` regenerated (new route, command, model
+  fillables). Tests: new suites `EntityTextHasherTest`, `AlignmentCopyTest`,
+  `EntityTextHashRefreshTest`, `EntityApprovalTest`; near-dup tests removed
+  from `TextSignatureServiceTest`/`EntityControllerTest`; TIA 639 passed.
+
+## 2026-09-20 (fix: `laravel/.git` phantom repo permanently masked from the host)
+
+* **The recurring stray `laravel/.git` can no longer reach the host.** The
+  TIA artefact repo (`scripts/tia-setup.php` git-inits `/var/www` for Pest
+  TIA) had reappeared on the host through the `./laravel:/var/www` bind mount
+  (deleted 2026-09-18, recreated 2026-09-19 by the next `test:tia`), making
+  git GUIs show two repositories — the real one on `dev` and a phantom on
+  `master` with diffs against its stale baseline. Fix: docker-compose `app`
+  service now mounts the named volume `tia-git` at `/var/www/.git`, so the
+  TIA repo lives only in the container volume. Container behavior unchanged
+  (TIA still sees `/var/www/.git`; the baseline commit now survives
+  `docker compose down`, only `down -v`/volume deletion resets it → one
+  `--fresh` re-record). Two knock-on fixes: `scripts/tia-setup.php` now
+  detects repo presence via `.git/HEAD` instead of `is_dir()` (the volume
+  mountpoint means the directory always exists), and a compose `post_start`
+  hook chowns the mountpoint to `alex` (fresh volumes are root-owned; git
+  runs as `alex`). The host may still show an *empty* root-owned
+  `laravel/.git` — Docker Desktop's mountpoint artifact, inert; a populated
+  one means the mask was reverted and can be deleted safely. Verified:
+  fresh `--fresh` TIA record passed, then `composer run test:tia` replayed
+  620 tests / 3024 assertions; host `laravel/.git` stayed empty; `git -C
+  laravel/` resolves to the outer repo on `dev`.
+* Updated [Running Tests](playbooks/running-tests.md) (host-side isolation
+  replaces the old host-side caveat; frontmatter bump). No route/model/
+  command changes (`wiki:sync` not required). **Deploy note:** the compose
+  change is a container-definition change — the next prod `./deploy.sh`
+  refuses until containers are recreated there and `./deploy.sh --stamp`
+  is run (the refusal prints the exact commands).
+
+## 2026-09-20 (puzzles nav dropdown)
+
+* **Navbar Crossword link became a Puzzles dropdown** (`NavBar.jsx`). The
+  flat `/crossword` nav entry is now a `nav.puzzles` parent ("Puzzles" /
+  "Головоломки" — the UI string already existed in the seeder; DB seeded
+  via `UiStringSeeder`) whose only child is Crossword. This activates the
+  dropdown machinery that was already committed in the React NavBar
+  (desktop dropdown + mobile accordion, `hasActiveChild` underlining) but
+  unused since the Blade-nav port. Routes and URLs unchanged — the parent
+  is not a link. No glossary term added (deliberate). Also corrected the
+  stale AGENTS.md claim that Livewire runs Crossword/WordsSearch in
+  `app/Livewire/` (that directory no longer exists; Livewire remains only
+  as a Filament dependency).
+* Updated [Crossword](domains/crossword.md) (entry-point note +
+  frontmatter bump). No route/model/command changes (`wiki:sync` not
+  required).
+
 ## 2026-09-19 (selectable word tokens + popup typography follows the page font)
 
 * **Interactive words are now selectable `role="button"` spans, not real

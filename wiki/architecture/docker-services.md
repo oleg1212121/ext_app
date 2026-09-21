@@ -4,7 +4,7 @@ title: Docker & Services
 description: Containers, ports, mounts, and the rule that all PHP/Composer/NPM commands run inside the app container.
 tags: [docker, infrastructure, devops]
 status: stable
-generated: { by: agent/opencode-go, at: 2026-08-31T16:45:00Z }
+generated: { by: agent:zcode, at: 2026-09-20T00:00:00Z }
 sources:
   - id: compose
     resource: docker-compose.yml
@@ -53,6 +53,7 @@ API at `http://ext_python:8000` (config `services.python.url`).
 |------|-----------|-----|
 | `./laravel` | `/var/www` | Application code |
 | `./` | `/var/repo` | Repo root, so `wiki:sync` / `wiki:validate` can read/write `wiki/` and verify `sources` paths |
+| named volume `tia-git` | `/var/www/.git` (in `app`) | Masks Pest TIA's container-local git repo out of the `./laravel` bind mount so it never appears on the host as `laravel/.git` (phantom second repo in git GUIs). A `post_start` hook chowns the mountpoint to `alex` (fresh volumes are root-owned). See [Running Tests](../playbooks/running-tests.md) |
 | `./docker-compose/postgres` | `/var/lib/postgresql` | DB data |
 | `./docker-compose/python/ai` | `/app/ai` | Live python source (mirror of the Laravel bind-mount pattern; `uvicorn --reload` picks up edits without rebuild) |
 | `./docker-compose/python/env` | `/app/env` (ro) | Live `.env` for `ext_python`; `config.py` re-reads `/app/env/.env` per request so threshold/window/model-path edits apply without recreate/restart. Also set via `env_file:` for import-time constants |

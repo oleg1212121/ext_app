@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\AlignmentCopyService;
 use App\Classes\AlignmentEditorApiPresenter;
 use App\Classes\EntityAccessService;
 use App\Http\Requests\StoreEntityMatchRequest;
@@ -19,6 +20,7 @@ class AlignmentController extends Controller
 {
     public function __construct(
         private readonly AlignmentEditorApiPresenter $presenter,
+        private readonly AlignmentCopyService $alignmentCopy = new AlignmentCopyService,
     ) {}
 
     private function access(): EntityAccessService
@@ -106,6 +108,13 @@ class AlignmentController extends Controller
             'max_n' => (int) $data['max_n'],
             'status' => 'pending',
         ]);
+
+        // An exact-copy pair reuses a completed alignment instead of running
+        // the (potentially half-hour) pipeline.
+        if ($this->alignmentCopy->copyFor($entityMatch)) {
+            return redirect()->route('alignments.index')
+                ->with('success', 'Entity match created — alignment copied from an identical text pair.');
+        }
 
         AlignEntitySentences::beginFromScratch($entityMatch->id);
 

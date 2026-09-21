@@ -25,7 +25,19 @@ services:
         source: ./
         target: /var/repo
         consistency: cached
+      # TIA git repo mask: scripts/tia-setup.php keeps a container-local git repo
+      # at /var/www/.git for Pest TIA. This named volume shadows that path out of
+      # the ./laravel bind mount so the repo never materialises on the host as
+      # laravel/.git (a phantom second repository in git GUIs). Deleting the
+      # volume only resets the TIA baseline; test:tia re-creates it.
+      - tia-git:/var/www/.git
       # - ./:/var/www
+    # Fresh docker volumes are root-owned; git in the container runs as `alex`.
+    # Fix the mountpoint owner on every start so a newly created tia-git volume
+    # is immediately usable by scripts/tia-setup.php (no-op once initialized).
+    post_start:
+      - command: ["chown", "alex:alex", "/var/www/.git"]
+        user: root
     networks:
       - ext_net
 
@@ -115,3 +127,6 @@ services:
 networks:
   ext_net:
     driver: bridge
+
+volumes:
+  tia-git:
