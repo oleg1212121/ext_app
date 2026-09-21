@@ -101,6 +101,10 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->where('lang', '[a-z]{2}')
         ->whereNumber('entity')
         ->name('entities.update');
+    Route::patch('/entities/{lang}/{entity}/approved', [EntityController::class, 'updateApproved'])
+        ->where('lang', '[a-z]{2}')
+        ->whereNumber('entity')
+        ->name('entities.approved.update');
     Route::get('/entities/{lang}/{entity}/sentences', [EntityController::class, 'sentences'])
         ->where('lang', '[a-z]{2}')
         ->whereNumber('entity')

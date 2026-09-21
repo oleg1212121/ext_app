@@ -1,5 +1,48 @@
 # Directory Update Log
 
+## 2026-09-20 (feature: exact-copy hashes, alignment reuse, uploader + approved lock)
+
+* **Exact-copy detection replaces similarity dedup (ADR 0033).** Entities
+  gain `file_hash` (raw upload bytes, computed at upload — no synchronous
+  Python call anymore; uploads survive embedding-service outages) and
+  `text_hash` (sha256 of whitespace-normalized sentence contents in order;
+  maintained by the new `entities:refresh-text-hashes` scheduler every 5 min
+  + `ComputeEntityTextHash` unique jobs, staleness via the new
+  `sentences_updated_at`/`text_hashed_at` pair — an explicit timestamp
+  because deletions are invisible to a `max(updated_at)` check). A
+  byte-identical upload clones the source entity (sentences, signature, word
+  statistics) for the uploader — their own restricted entity, zero Python
+  calls; a text-hash match after the split copies signature + word stats
+  (new `FinalizeEntityDerivations` job; `ProcessEntityFile` now just chains
+  the split). The near-dup merge/grant/delete flow (≥0.95 cosine) is removed
+  everywhere; the embedding signature survives only for cross-language
+  candidates (Filament Find Match) and the ≥0.70 verify gate.
+* **Alignment reuse.** New `AlignmentCopyService`, wired into all three
+  match-creation entry points (web controller, Filament create page, list
+  header action): when a completed match exists between exact-copy entities
+  (equal hashes + languages, either orientation), meaning matches and
+  junctions are cloned with a positional sentence mapping — the new match is
+  `completed` instantly, no half-hour pipeline. Source ranking: most
+  confirmed rows → linked_count → latest completed. Falls back to the
+  pipeline on any mismatch. No provenance column (copies are independent).
+* **Uploader + approved edit lock (ADR 0034).** `entities.created_by`
+  (nullable, nullOnDelete; null = system import; supersedes ADR 0013's
+  no-creator decision) and `entities.is_approved`: when true, metadata edits,
+  sentence CRUD, alignment-editor mutations, re-aligns, `alignments:resume`
+  pickup and deletion are blocked for everyone except admins (the uploader
+  included); only the flag stays flippable, by uploader and admins
+  (`PATCH /entities/{lang}/{entity}/approved` + Filament toggle). New
+  `EntityAccessService::canEditMatch` gates editor mutations (was
+  `canReadMatch`).
+* Updated concepts: [entities](domains/entities.md) (creation pipeline
+  rewritten, hash maintenance + approval sections), [sentence alignment](
+  domains/sentence-alignment.md) (stage 2 reworked, new stage 2b copy fast
+  path), [entities-alignment schema](database/entities-alignment.md) (new
+  columns + invariants). `wiki:sync` regenerated (new route, command, model
+  fillables). Tests: new suites `EntityTextHasherTest`, `AlignmentCopyTest`,
+  `EntityTextHashRefreshTest`, `EntityApprovalTest`; near-dup tests removed
+  from `TextSignatureServiceTest`/`EntityControllerTest`; TIA 639 passed.
+
 ## 2026-09-20 (fix: `laravel/.git` phantom repo permanently masked from the host)
 
 * **The recurring stray `laravel/.git` can no longer reach the host.** The

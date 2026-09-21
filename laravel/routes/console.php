@@ -17,3 +17,7 @@ Schedule::command('alignments:resume')
 Schedule::command('crossword:refresh')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+Schedule::command('entities:refresh-text-hashes')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

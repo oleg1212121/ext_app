@@ -1,5 +1,6 @@
 <?php
 
+use App\Classes\EntityTextHasher;
 use App\Jobs\ProcessEntityFile;
 use App\Models\Entity;
 use App\Models\Language;
@@ -175,32 +176,31 @@ test('show page 404s for an unknown entity', function () {
         ->assertNotFound();
 });
 
-test('store links the uploader to the existing entity when the text matches', function () {
+test('store clones derivations when the uploaded file is an exact copy', function () {
     Storage::fake('local');
     Queue::fake();
     makeLanguage('en');
 
+    $path = 'entities/en/original.txt';
+    Storage::disk('local')->put($path, "One. Two. Three.\nFour.");
     $existing = createEntity('en', null, [
         'name' => 'Original Text',
         'is_restricted' => true,
-        'file_path' => 'entities/en/original.txt',
+        'file_path' => $path,
+        'file_hash' => EntityTextHasher::hashStoredFile($path),
         'signature' => json_encode([0.9, 0.1, 0.2]),
     ]);
+    $existing->sentences()->createMany([
+        ['sentence_type_id' => null, 'content' => 'One.', 'order' => 1024],
+        ['sentence_type_id' => null, 'content' => 'Two.', 'order' => 2048],
+    ]);
+    $existing->entityWords()->create(['word_id' => null, 'l_word' => 'one', 'token' => 'one', 'count' => 1]);
 
-    Http::fake(function (Request $request) {
-        if (str_contains($request->url(), '/embed')) {
-            return Http::response(['vector' => [0.9, 0.1, 0.2]], 200);
-        }
-
-        if (str_contains($request->url(), '/cosine/batch')) {
-            return Http::response(['similarities' => [1.0]], 200);
-        }
-
-        return Http::response(['error' => 'unexpected'], 500);
-    });
+    // No python fake needed: the exact-copy path must not call any service.
+    Http::fake(fn () => Http::response(['error' => 'unexpected'], 500));
 
     $user = approvedUser();
-    $file = UploadedFile::fake()->create('text.txt', 20, 'text/plain');
+    $file = UploadedFile::fake()->createWithContent('text.txt', "One. Two. Three.\nFour.");
 
     $response = $this->actingAs($user)
         ->post('/entities/en', [
@@ -209,23 +209,34 @@ test('store links the uploader to the existing entity when the text matches', fu
             'file' => $file,
         ]);
 
-    expect(Entity::query()->where('name', 'Duplicate Upload')->exists())->toBeFalse();
-    expect($existing->grantedUsers()->whereKey($user->id)->exists())->toBeTrue();
-    expect($existing->grantedUsers()->whereKey($user->id)->first()->pivot->similarity)->toEqual(1.0);
-    Storage::disk('local')->assertMissing('entities/en/'.$file->hashName());
+    $clone = Entity::query()->where('name', 'Duplicate Upload')->first();
+    expect($clone)->not->toBeNull()
+        ->and($clone->created_by)->toBe($user->id)
+        ->and($clone->is_restricted)->toBeTrue()
+        ->and($clone->signature)->toBe($existing->signature)
+        ->and($clone->file_hash)->toBe($existing->file_hash)
+        ->and($clone->sentences()->count())->toBe(2)
+        ->and($clone->entityWords()->count())->toBe(1)
+        ->and($existing->sentences()->count())->toBe(2);
 
-    $response->assertRedirect("/entities/en/{$existing->id}")
+    // The uploader keeps access to their own clone.
+    expect($clone->grantedUsers()->whereKey($user->id)->exists())->toBeTrue();
+
+    Http::assertSentCount(0);
+    Queue::assertNotPushed(ProcessEntityFile::class);
+
+    $response->assertRedirect("/entities/en/{$clone->id}")
         ->assertSessionHas('status');
 });
 
-test('store fails hard when the embedding service is unavailable', function () {
+test('store survives an embedding-service outage and queues the pipeline', function () {
     Storage::fake('local');
     Queue::fake();
     makeLanguage('en');
 
     Http::fake(fn () => Http::response('bad gateway', 502));
 
-    $file = UploadedFile::fake()->create('text.txt', 20, 'text/plain');
+    $file = UploadedFile::fake()->createWithContent('text.txt', 'Some unique content.');
 
     $response = $this->actingAs(approvedUser())
         ->post('/entities/en', [
@@ -234,10 +245,14 @@ test('store fails hard when the embedding service is unavailable', function () {
             'file' => $file,
         ]);
 
-    expect(Entity::query()->where('name', 'No Service')->exists())->toBeFalse();
-    Queue::assertNotPushed(ProcessEntityFile::class);
+    $entity = Entity::query()->where('name', 'No Service')->first();
+    expect($entity)->not->toBeNull()
+        ->and($entity->signature)->toBeNull()
+        ->and($entity->file_hash)->not->toBeNull();
 
-    $response->assertRedirect();
+    Queue::assertPushed(ProcessEntityFile::class);
+
+    $response->assertRedirect("/entities/en/{$entity->id}");
 });
 
 test('user cannot read a restricted entity without a grant', function () {

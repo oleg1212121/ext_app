@@ -13,12 +13,18 @@ class Entity extends Model
     protected $fillable = [
         'work_id',
         'language_id',
+        'created_by',
         'name',
         'label',
         'description',
         'signature',
         'file_path',
+        'file_hash',
+        'text_hash',
+        'text_hashed_at',
+        'sentences_updated_at',
         'is_restricted',
+        'is_approved',
         'words_indexed_at',
     ];
 
@@ -26,8 +32,25 @@ class Entity extends Model
     {
         return [
             'is_restricted' => 'boolean',
+            'is_approved' => 'boolean',
+            'text_hashed_at' => 'datetime',
+            'sentences_updated_at' => 'datetime',
             'words_indexed_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (Entity $entity): void {
+            // Approved entities are edit-locked, deletion included. Admins
+            // (the only Filament delete surface) still pass; console/queue
+            // contexts have no authenticated user and are not blocked.
+            $user = auth()->user();
+
+            if ($entity->is_approved && $user !== null && ! $user->isAdmin()) {
+                throw new \RuntimeException('Approved entities cannot be deleted.');
+            }
+        });
     }
 
     public function work(): BelongsTo
@@ -38,6 +61,28 @@ class Entity extends Model
     public function language(): BelongsTo
     {
         return $this->belongsTo(Language::class);
+    }
+
+    public function uploader(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Mark the entity's sentence set as changed, making its text hash stale.
+     * Called from every sentence mutation path, including bulk writers that
+     * bypass Eloquent model events.
+     */
+    public function touchSentences(): void
+    {
+        static::touchSentencesFor($this->getKey());
+    }
+
+    public static function touchSentencesFor(int $entityId): void
+    {
+        static::query()
+            ->whereKey($entityId)
+            ->update(['sentences_updated_at' => now()]);
     }
 
     public function sentences(): HasMany

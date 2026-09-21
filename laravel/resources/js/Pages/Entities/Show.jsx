@@ -1,4 +1,4 @@
-import {Link} from '@inertiajs/react';
+import {Link, router} from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx';
 import {useI18n} from '../../i18n';
 
@@ -37,10 +37,18 @@ const PageLink = ({disabled, href, children}) => {
     );
 };
 
-export default function Show({lang, language, entity, entityMatches = [], sentences = [], sentences_meta, can_edit: canEdit = false}) {
+export default function Show({lang, language, entity, entityMatches = [], sentences = [], sentences_meta, can_edit: canEdit = false, can_change_approval: canChangeApproval = false}) {
     const {t} = useI18n();
     const fileName = entity.file_path ? entity.file_path.split('/').pop() : null;
     const pageOffset = ((sentences_meta?.current_page ?? 1) - 1) * (sentences_meta?.per_page ?? 20);
+
+    const toggleApproved = () => {
+        router.patch(
+            `/entities/${lang}/${entity.id}/approved`,
+            {is_approved: ! entity.is_approved},
+            {preserveScroll: true},
+        );
+    };
 
     return (
         <div className="flex-1 min-h-0 overflow-y-auto bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)]">
@@ -67,6 +75,23 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                             )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
+                            {entity.is_approved && (
+                                <span
+                                    title={t('entities.approved_hint')}
+                                    className="inline-flex h-9 items-center rounded-full border border-[var(--wbench-accent)]/40 dark:border-[var(--wbench-accent-night)]/40 px-4 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]"
+                                >
+                                    {t('entities.approved')}
+                                </span>
+                            )}
+                            {canChangeApproval && (
+                                <button
+                                    type="button"
+                                    onClick={toggleApproved}
+                                    className="inline-flex h-9 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
+                                >
+                                    {entity.is_approved ? t('entities.unapprove') : t('entities.approve')}
+                                </button>
+                            )}
                             <Link
                                 href={`/reader-react/${lang}/${entity.id}`}
                                 className="inline-flex h-9 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"

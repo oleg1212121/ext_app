@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\EntityMatchResource\Pages;
 
+use App\Classes\AlignmentCopyService;
 use App\Filament\Resources\EntityMatchResource;
 use App\Jobs\AlignEntitySentences;
 use App\Models\Entity;
@@ -81,6 +82,16 @@ class ListEntityMatches extends ListRecords
                         'max_n' => $data['max_n'] ?? 6,
                         'status' => 'pending',
                     ]);
+
+                    if ((new AlignmentCopyService)->copyFor($entityMatch)) {
+                        Notification::make()
+                            ->title('Alignment copied')
+                            ->body("An identical text pair already had a completed alignment — reused for pair #{$entityMatch->id}")
+                            ->success()
+                            ->send();
+
+                        return;
+                    }
 
                     AlignEntitySentences::beginFromScratch($entityMatch->id);
 

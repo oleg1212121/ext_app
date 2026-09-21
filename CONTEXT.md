@@ -99,6 +99,17 @@ The cursor — the per-side sentence offsets where the next chunk starts — is 
 only state a resume reads, so a stopped run can continue without wiping
 already-aligned chunks. _Avoid_: restart, retry.
 
+**Alignment copy**:
+Satisfying a newly created Entity match by cloning a completed alignment that
+already exists between an **Exact copy** of each side (same texts, same
+languages, either orientation) instead of running the alignment pipeline. Rows
+and junctions are cloned wholesale — the Nth sentence of a copy corresponds to
+the Nth sentence of its source — human-confirmed rows included; the new match
+is complete the moment it is created. No record of the source alignment is
+kept on the copy. Falls back to the pipeline when the texts do not line up.
+_Avoid_: alignment clone, cached alignment (it is copied, not memoized).
+See ADR 0033.
+
 **Add sentence**:
 Create a new sentence in an entity and link it to a meaning match.
 _Avoid_: insert sentence (the entities-frontend operation below — no junction).
@@ -321,21 +332,30 @@ _Avoid_: API URL, completion URL
 # Entity Access Context
 
 The domain of who may read an Entity or an Entity match, layered on top of the
-Access Control Context. Every upload defaults to a Restricted state; an admin
-publishes it to make it Public; a user who uploads text matching an existing
-Entity is granted access to that Entity instead of creating a duplicate.
+Access Control Context. Every upload defaults to a Restricted state and records
+its **Uploader**; an admin publishes it to make it Public; an upload that is an
+Exact copy of an existing Entity still creates the uploader their own Entity,
+cloned from the existing one (ADR 0033).
 
 ## Language
 
 **Restricted entity**:
 An Entity readable only by admin and explicitly granted users. The default
 state for every newly uploaded Entity. _Avoid_: copyrighted (legally imprecise
-— every original text is copyrighted by default), paid, premium, licensed.
+— every original text is copyrighted by default), paid, premium, licensed,
+private (the default-visibility state is Restricted; "private" reads as a
+separate third tier that does not exist).
 
 **Public entity**:
 An Entity any approved user may read. Set by an admin publishing a Restricted
 entity (`is_restricted = false`). _Avoid_: free, open, public-domain (a legal
 term with a specific meaning).
+
+**Uploader**:
+The user who created the Entity, recorded at creation (null for system/admin
+imports). The Uploader receives a **Creator grant** and may flip the entity's
+**Approved** flag. _Avoid_: owner (implies transferable property), creator
+(the Creator grant is the access artifact, not the person).
 
 **Access grant**:
 A recorded stake for a specific user in a specific Restricted entity, stored
@@ -348,27 +368,63 @@ license (legal), permission (overlaps Role).
 Who may edit an Entity (name, description) and its sentences in the entities
 frontend. A Restricted entity is editable by admin and grantees; a Public
 entity is editable by any approved user. The rule mirrors read —
-`EntityAccessService::canEdit` is structurally identical to `canRead`.
-Sentence mutations (insert / update / delete / reorder) flip every
-entity match involving the entity to `status = 'pending'`. Deleting a
-junctioned sentence cascades (junctions removed, emptied meaning matches
-deleted, `linked_count` updated) — a deliberate divergence from the alignment
-editor's unlink-before-delete rule. See ADR 0015.
+`EntityAccessService::canEdit` is structurally identical to `canRead` — except
+that an **Approved entity** is editable by admin only. Sentence mutations
+(insert / update / delete / reorder) flip every entity match involving the
+entity to `status = 'pending'`. Deleting a junctioned sentence cascades
+(junctions removed, emptied meaning matches deleted, `linked_count` updated)
+— a deliberate divergence from the alignment editor's unlink-before-delete
+rule. See ADR 0015 and ADR 0034.
 
 **Creator grant**:
 An Access grant with a null `similarity`, recording that the user's upload
-created the Entity (no prior Signature match existed). Distinct from a
-Signature match grant, whose `similarity` is the cosine score.
+created the Entity (no prior **Exact copy** existed). Distinct from a
+legacy Signature match grant, whose `similarity` is the cosine score.
+
+**Approved entity**:
+An Entity locked for content changes: its metadata, sentences, every entity
+match it takes part in, and its deletion are frozen for everyone except
+admins. The Uploader is locked out too — the only change that stays possible
+is flipping the approval off again, which the Uploader and admins may do in
+either direction. Distinct from an approved *User* (site-access approval).
+_Avoid_: locked entity, protected entity, published (Publish is the
+visibility flip).
+
+**Exact copy**:
+Two entities whose texts are identical sentence-for-sentence in the same
+language — same sentence contents in the same document order, whitespace
+differences aside, detected by comparing each text's **Text hash** (or, for
+byte-identical uploads, the **File hash**). Exact copies coexist as
+independent entities: an upload that is an Exact copy creates the uploader
+their own Entity cloned from the existing one (sentences, signature, word
+statistics) rather than being merged or rejected, and deleting either never
+touches the other. _Avoid_: duplicate (implies one should be removed),
+near-duplicate (the embedding-similarity notion; distinct).
+
+**Text hash**:
+A digest of an entity's sentence contents in document order, each sentence
+whitespace-normalized. Two entities with equal Text hashes are Exact copies;
+an **Alignment copy** between one exact-copy pair can be reused for another.
+Recomputed after every sentence mutation.
+
+**File hash**:
+A digest of the uploaded file's raw bytes, taken at upload time. Byte-identical
+uploads are Exact copies by definition, letting the upload skip even sentence
+splitting. Coarser than the Text hash: an edited text keeps its File hash
+while its Text hash changes.
 
 **Signature match**:
-The event of an uploaded text's Signature cosine-matching an existing Entity
-at ≥0.95. Instead of creating a duplicate, the uploader receives an Access
-grant on the existing Entity. _Avoid_: dedup (that is a side effect, not the
-user-visible concept).
+(Removed as an upload-time concept, ADR 0033.) Historically: a cosine
+similarity ≥ 0.95 between uploaded and existing signatures that granted
+access instead of creating an entity. The embedding **Signature** now serves
+only as a candidate finder — suggesting counterpart entities for an Entity
+match (and gating pair verification) — never as a duplicate detector.
+_Avoid_: dedup, similarity match.
 
 **Publish**:
 An admin action flipping a Restricted entity to Public. Existing Access
-grants remain as audit but are no longer enforced. _Avoid_: release, unlock.
+grants remain as audit but are no longer enforced. _Avoid_: release, unlock,
+approve (that is the Approved edit lock).
 
 **Readable count**:
 Any count of entities or entity matches shown to a user counts only what that

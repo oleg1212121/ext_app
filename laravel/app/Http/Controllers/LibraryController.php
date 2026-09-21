@@ -166,28 +166,22 @@ class LibraryController extends Controller
     }
 
     /**
-     * Map an EntityCreationService outcome to its redirect: back with a file
-     * error, the matched entity's page (with the access-granted status), or
-     * the freshly created entity's page. Mirrors EntityController::store.
+     * Map an EntityCreationService outcome to its redirect: the freshly
+     * created entity's page, with an extra status when the upload was an
+     * exact copy and the entity was cloned with precomputed derivations.
+     * Mirrors EntityController::store.
      *
-     * @param  array{status: string, entity: ?Entity, similarity: ?float}  $result
+     * @param  array{status: string, entity: Entity, source: ?Entity}  $result
      */
     private function redirectFromCreation(array $result, string $lang): RedirectResponse
     {
-        if ($result['status'] === 'upload_failed') {
-            return back()->withErrors([
-                'file' => 'We could not process the text right now. Please try again later.',
-            ]);
+        $redirect = redirect()->route('entities.show', ['lang' => $lang, 'entity' => $result['entity']->id]);
+
+        if ($result['status'] === 'created_from_copy') {
+            return $redirect->with('status', 'Your upload is an exact copy of an existing text — your own entity was created with sentences and word statistics precomputed.');
         }
 
-        if ($result['status'] === 'matched_existing') {
-            return redirect()->route('entities.show', [
-                'lang' => $lang,
-                'entity' => $result['entity']->getKey(),
-            ])->with('status', 'Your upload matched an existing text — access granted, no new entity created.');
-        }
-
-        return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $result['entity']->id]);
+        return $redirect;
     }
 
     /**
