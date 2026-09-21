@@ -615,8 +615,8 @@ const Bilinguals = (props) => {
                     </div>
                 </div>
             </div>
-            <Spinner errors={errors} pending={pending}/>
-            <div className="flex-1 min-h-0 flex gap-0 overflow-hidden">
+            <div className="relative flex-1 min-h-0 flex gap-0 overflow-hidden">
+                <Spinner errors={errors} pending={pending}/>
                 <div className="flex-1 min-h-0 flex flex-col bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] border-r border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] overflow-hidden">
                     {showText === true &&
                         <>
