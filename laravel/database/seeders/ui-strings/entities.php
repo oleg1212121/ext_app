@@ -58,4 +58,8 @@ return [
     'entities.pagination' => ['en' => 'Pagination', 'ru' => 'Разбивка на страницы'],
     'entities.prev' => ['en' => '← Prev', 'ru' => '← Назад'],
     'entities.next' => ['en' => 'Next →', 'ru' => 'Далее →'],
+    'entities.approved' => ['en' => 'Approved', 'ru' => 'Утверждено'],
+    'entities.approved_hint' => ['en' => 'Approved — the text and its alignments are locked for editing.', 'ru' => 'Утверждено — текст и его выравнивания защищены от редактирования.'],
+    'entities.approve' => ['en' => 'Approve', 'ru' => 'Утвердить'],
+    'entities.unapprove' => ['en' => 'Remove approval', 'ru' => 'Снять утверждение'],
 ];

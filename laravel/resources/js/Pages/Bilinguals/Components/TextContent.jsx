@@ -85,6 +85,8 @@ export default function TextContent(props) {
                                     rowKey={props.rowKeys?.[i]}
                                     onWordProgress={props.onWordProgress}
                                     popupFontSize={props.popupFontSize}
+                                    side="a"
+                                    aiModel={props.aiModel}
                                 />
                             </span>
                         </td>
@@ -113,6 +115,8 @@ export default function TextContent(props) {
                                         rowKey={props.rowKeys?.[i]}
                                         onWordProgress={props.onWordProgress}
                                         popupFontSize={props.popupFontSize}
+                                        side="b"
+                                        aiModel={props.aiModel}
                                     />
                                 </span>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">

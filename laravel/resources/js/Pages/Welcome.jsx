@@ -26,6 +26,15 @@ const Welcome = ({ lang = "en" }) => {
                     {t('welcome.about')}
                 </p>
 
+                {/* Cat-and-book medallion */}
+                <div className="mx-auto my-8 w-fit rounded-full border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink)] p-2">
+                    <img
+                        src="/cat-and-book.png"
+                        alt="A cat with a book"
+                        className="h-64 w-64 rounded-full object-cover sm:h-80 sm:w-80"
+                    />
+                </div>
+
                 {/* ── Section 1: Abibook ── */}
                 <Section>
                     <Card lang="en">

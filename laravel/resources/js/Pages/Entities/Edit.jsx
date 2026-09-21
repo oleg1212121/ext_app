@@ -491,6 +491,11 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                         <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                             {entity.name}
                         </h1>
+                        {entity.is_approved && (
+                            <p className="mt-2 inline-flex items-center rounded-full border border-[var(--wbench-accent)]/40 dark:border-[var(--wbench-accent-night)]/40 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]">
+                                {t('entities.approved_hint')}
+                            </p>
+                        )}
                     </div>
                 </header>
 

@@ -1,18 +1,24 @@
 ---
 type: Pipeline
 title: Sentence Alignment Pipeline
-description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor.
-tags: [alignment, embeddings, pipeline, jobs, filament]
+description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse.
+tags: [alignment, embeddings, pipeline, jobs, filament, hash]
 status: stable
-stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-11T12:00:00Z }
+stale_after: 2026-12-20
+generated: { by: agent:zcode, at: 2026-09-20T12:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
     title: /align HTTP client + meaning-match storage
+  - id: copy-service
+    resource: laravel/app/Classes/AlignmentCopyService.php
+    title: Alignment reuse for exact-copy entity pairs
   - id: signature-service
     resource: laravel/app/Classes/TextSignatureService.php
-    title: Text signatures / duplicate detection (/embed + /cosine/batch client)
+    title: Text signatures / cross-language candidates (/embed client)
+  - id: hasher
+    resource: laravel/app/Classes/EntityTextHasher.php
+    title: Exact-copy text hashing
   - id: splitter
     resource: laravel/app/Classes/SentenceSplitter.php
     title: Sentence splitting (/split streaming client)
@@ -100,11 +106,28 @@ first-class pairs).
    splitter over the exact production entity fixtures for both languages plus
    a curly-quote dialogue block; fails under either extreme behavior).
 2. **Sign** — `TextSignatureService` builds an embedding-based signature per
-   entity (`GenerateEntitySignature` job — `(entityId, filePath)`, language
-   code read from the entity) via `/embed` (**BGE-M3, 1024-dim**; the request
-   carries the entity's language code).
-   `verifyEntityPair()` rejects pairs whose cosine similarity < **0.70** before
-   alignment is attempted.
+   entity via `/embed` (**BGE-M3, 1024-dim**; the request carries the entity's
+   language code). Since ADR 0033 the signature is a **background derivation**
+   (`FinalizeEntityDerivations` after the split — copied from a text-hash-equal
+   entity when one exists), never a synchronous upload step; its only uses are
+   cross-language candidate finding (`findCrossLanguage`, the Filament "Find
+   Match" action) and `verifyEntityPair()`, which rejects pairs whose cosine
+   similarity < **0.70** before alignment is attempted. Duplicate detection is
+   the job of the local `EntityTextHasher` sha256 hashes, not the embedding.
+2b. **Copy (fast path)** — before any pipeline run, the three match-creation
+   entry points (`AlignmentController::store`, Filament
+   `CreateEntityMatch::afterCreate`, the ListEntityMatches header action) try
+   `AlignmentCopyService::copyFor()`: if a **completed** match exists between
+   entities whose `text_hash` and language equal the new pair's (either
+   orientation), its meaning matches and junctions are cloned with a
+   positional sentence mapping (Nth source sentence ↔ Nth copy sentence,
+   mirrored sides if the orientation flipped; human landmarks
+   `alignment_chunk = -1` preserved), the new match is `completed` at creation
+   and no Python call is made. Source selection: most human-confirmed rows
+   (`confirmed_count`), then `linked_count`, then latest `completed_at`. Any
+   structural mismatch (sentence counts, unmappable junction, pre-existing
+   rows) falls back to the pipeline. Stale hashes are recomputed
+   synchronously first — a local sha256. See ADR 0033.
 3. **Align** — `AlignEntitySentences::beginFromScratch($entityMatchId)` (the
     fresh-entry-point shared static) verifies the
     pair, snapshots counts, resets the cursor
@@ -706,8 +729,9 @@ first-class pairs).
   `http://ext_python:8000`) with retries at 500/1500/3000 ms; keys:
   `timeout`, `align_timeout`, `has_similar_batch_size`,
   `sentence_split_chunk_bytes`.
-* `TextSignatureService` also exposes `hasSimilar()` / `findCrossLanguage()`
-  for duplicate detection (`services.python.has_similar_batch_size`, 200).
+* `TextSignatureService` also exposes `findCrossLanguage()` for cross-language
+  alignment candidates. (`hasSimilar()` and the `/cosine/batch` dedup helpers
+  were removed with the near-dup merging flow, ADR 0033.)
 * Signatures from the old e5-small service are 384-dim and incompatible —
   regenerate: `UPDATE entities SET signature = NULL;`, then `php artisan
   entity:generate-signatures`. (Signature dimension is still 1024 — BGE-M3 —

@@ -21,6 +21,11 @@ class AlignmentsResumeCommand extends Command
 
         $matches = EntityMatch::query()
             ->where('status', 'pending')
+            // An approved entity freezes every alignment it takes part in
+            // (ADR 0034); its matches stay pending until an admin intervenes.
+            ->where(fn ($query) => $query
+                ->whereHas('aEntity', fn ($q) => $q->where('is_approved', false))
+                ->whereHas('bEntity', fn ($q) => $q->where('is_approved', false)))
             ->orderBy('id')
             ->limit($limit)
             ->get();

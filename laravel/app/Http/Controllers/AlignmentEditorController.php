@@ -37,7 +37,7 @@ class AlignmentEditorController extends Controller
 
     public function storeRow(EntityMatch $entityMatch, StoreMeaningMatchRequest $request): JsonResponse
     {
-        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+        abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $afterRowId = $request->validated('after_row_id');
 
@@ -75,7 +75,7 @@ class AlignmentEditorController extends Controller
 
     public function destroyRow(EntityMatch $entityMatch, MeaningMatch $meaningMatch): JsonResponse
     {
-        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+        abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         abort_unless($meaningMatch->entity_match_id === $entityMatch->id, 404);
 
@@ -104,7 +104,7 @@ class AlignmentEditorController extends Controller
 
     public function approveRow(EntityMatch $entityMatch, MeaningMatch $meaningMatch): JsonResponse
     {
-        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+        abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         abort_unless($meaningMatch->entity_match_id === $entityMatch->id, 404);
 
@@ -115,7 +115,7 @@ class AlignmentEditorController extends Controller
 
     public function storeSentence(EntityMatch $entityMatch, AddSentenceRequest $request): JsonResponse
     {
-        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+        abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $side = $request->validated('side');
         $content = trim((string) $request->validated('content'));
@@ -158,7 +158,7 @@ class AlignmentEditorController extends Controller
 
     public function updateSentence(EntityMatch $entityMatch, int $sentence, UpdateSentenceRequest $request): JsonResponse
     {
-        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+        abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $side = $request->validated('side');
         $content = trim((string) $request->validated('content'));
@@ -173,7 +173,7 @@ class AlignmentEditorController extends Controller
 
     public function unlinkSentence(EntityMatch $entityMatch, int $sentence, SentenceSideRequest $request): JsonResponse
     {
-        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+        abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $side = $request->validated('side');
 
@@ -196,7 +196,7 @@ class AlignmentEditorController extends Controller
 
     public function destroyUnmatched(EntityMatch $entityMatch, int $sentence, SentenceSideRequest $request): JsonResponse
     {
-        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+        abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $side = $request->validated('side');
 
@@ -220,7 +220,7 @@ class AlignmentEditorController extends Controller
 
     public function moveSentence(EntityMatch $entityMatch, MoveSentenceRequest $request): JsonResponse
     {
-        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+        abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $side = $request->validated('side');
         $sentenceId = (int) $request->validated('sentence_id');

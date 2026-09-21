@@ -4,8 +4,6 @@ use App\Classes\TextSignatureService;
 use App\Jobs\GenerateEntitySignature;
 use App\Jobs\ProcessEntityFile;
 use App\Jobs\SplitEntityFileSentences;
-use App\Models\Entity;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -93,153 +91,20 @@ it('sends short text unchanged to the python service', function () {
     });
 });
 
-it('detects similar entity via cosine batch endpoint', function () {
-    $v = [1.0, 0.0, 0.0];
-    $sig = json_encode($v);
-
-    createEntity('en', null, ['name' => 'first', 'file_path' => 'a', 'signature' => $sig]);
-    $other = createEntity('en', null, ['name' => 'second', 'file_path' => 'b', 'signature' => $sig]);
-
-    Http::fake(function (Request $request) {
-        if (str_contains($request->url(), '/cosine/batch')) {
-            return Http::response(['similarities' => [1.0]], 200);
-        }
-
-        return Http::response(['error' => 'not expected in this test'], 500);
-    });
-
-    $service = new TextSignatureService('http://ext_python:8000', 30);
-    $other->refresh();
-
-    expect($service->hasSimilar($other))->toBeTrue();
-});
-
-it('falls back to PHP cosine when the batch endpoint fails', function () {
-    $v = [0.6, 0.8, 0.0];
-    $sig = json_encode($v);
-
-    createEntity('en', null, ['name' => 'first', 'file_path' => 'a', 'signature' => $sig]);
-    $other = createEntity('en', null, ['name' => 'second', 'file_path' => 'b', 'signature' => $sig]);
-
-    Http::fake(fn () => Http::response('bad gateway', 502));
-
-    $service = new TextSignatureService('http://ext_python:8000', 30);
-    $other->refresh();
-
-    expect($service->hasSimilar($other))->toBeTrue();
-});
-
-it('dispatches sentence splitting when the file is not a duplicate', function () {
+it('dispatches sentence splitting without calling the python service', function () {
     config(['services.python.url' => 'http://ext_python:8000']);
 
     Bus::fake();
     $dir = 'entities/'.uniqid('e_', true).'.txt';
     Storage::disk('local')->put($dir, 'First sentence. Second here.');
 
-    Http::fake(function () {
-        return Http::response(['vector' => [0.1, 0.2, 0.3]], 200);
-    });
-
     $entity = createEntity('en', null, ['name' => 'Entity', 'file_path' => $dir]);
+
+    // The embedding service being down must not block the pipeline start.
+    Http::fake(fn () => Http::response('bad gateway', 502));
 
     (new ProcessEntityFile($entity->id, $dir))->handle();
 
     Bus::assertDispatched(SplitEntityFileSentences::class);
-});
-
-it('returns the existing entity when a near-duplicate exists', function () {
-    $signature = [0.9, 0.1, 0.2];
-    $existing = createEntity('en', null, [
-        'name' => 'original',
-        'file_path' => 'a',
-        'signature' => json_encode($signature),
-    ]);
-
-    Http::fake(function (Request $request) {
-        if (str_contains($request->url(), '/embed')) {
-            return Http::response(['vector' => [0.9, 0.1, 0.2]], 200);
-        }
-
-        if (str_contains($request->url(), '/cosine/batch')) {
-            return Http::response(['similarities' => [1.0]], 200);
-        }
-
-        return Http::response(['error' => 'unexpected'], 500);
-    });
-
-    $service = new TextSignatureService('http://ext_python:8000', 30);
-    $result = $service->findSimilarExisting('same text', createLanguages()['en']);
-
-    expect($result['entity'])->not->toBeNull()
-        ->and($result['entity']->id)->toBe($existing->id)
-        ->and($result['similarity'])->toBe(1.0)
-        ->and($result['signature'])->toBe([0.9, 0.1, 0.2]);
-});
-
-it('returns no entity and a signature when nothing is similar', function () {
-    createEntity('en', null, [
-        'name' => 'original',
-        'file_path' => 'a',
-        'signature' => json_encode([0.9, 0.1, 0.2]),
-    ]);
-
-    Http::fake(function (Request $request) {
-        if (str_contains($request->url(), '/embed')) {
-            return Http::response(['vector' => [0.3, 0.4, 0.5]], 200);
-        }
-
-        if (str_contains($request->url(), '/cosine/batch')) {
-            return Http::response(['similarities' => [0.0]], 200);
-        }
-
-        return Http::response(['error' => 'unexpected'], 500);
-    });
-
-    $service = new TextSignatureService('http://ext_python:8000', 30);
-    $result = $service->findSimilarExisting('different text', createLanguages()['en']);
-
-    expect($result['entity'])->toBeNull()
-        ->and($result['signature'])->toBe([0.3, 0.4, 0.5]);
-});
-
-it('reports a failed embedding as a null signature', function () {
-    Http::fake(fn () => Http::response('bad gateway', 502));
-
-    $service = new TextSignatureService('http://ext_python:8000', 30);
-    $result = $service->findSimilarExisting('text', createLanguages()['en']);
-
-    expect($result['signature'])->toBeNull()
-        ->and($result['entity'])->toBeNull();
-});
-
-it('migrates access grants onto the survivor when deleting a duplicate', function () {
-    Storage::fake('local');
-    config(['services.python.url' => 'http://ext_python:8000']);
-
-    $survivor = createEntity('en', null, [
-        'name' => 'survivor',
-        'file_path' => 's.txt',
-        'signature' => json_encode([0.9, 0.1, 0.2]),
-    ]);
-    $duplicate = createEntity('en', null, [
-        'name' => 'duplicate',
-        'file_path' => 'd.txt',
-        'signature' => json_encode([0.9, 0.1, 0.2]),
-    ]);
-    $user = User::factory()->create();
-    $duplicate->grantedUsers()->attach($user->id);
-    Storage::disk('local')->put('d.txt', 'duplicate content');
-
-    Http::fake(function (Request $request) {
-        if (str_contains($request->url(), '/cosine/batch')) {
-            return Http::response(['similarities' => [1.0]], 200);
-        }
-
-        return Http::response(['vector' => [1.0, 0.0, 0.0]], 200);
-    });
-
-    (new ProcessEntityFile($duplicate->id, $duplicate->file_path))->handle();
-
-    expect(Entity::query()->whereKey($duplicate->id)->exists())->toBeFalse();
-    expect($survivor->grantedUsers()->whereKey($user->id)->exists())->toBeTrue();
+    Http::assertSentCount(0);
 });

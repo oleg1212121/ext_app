@@ -1,15 +1,21 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups covering every part of speech of the headword (typography follows the host page's font setting, ADR 0031), render-time segmentation, read/lookup familiarity events.
-tags: [reader, bilinguals, dictionary, words, react, inertia]
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups covering every part of speech of the headword (typography follows the host page's font setting, ADR 0031), an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events.
+tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
-stale_after: 2026-12-19
-generated: { by: agent:zcode, at: 2026-09-19T12:00:00Z }
+stale_after: 2026-12-21
+generated: { by: agent:zcode, at: 2026-09-21T15:30:00Z }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
     title: WordController (word details + familiarity + events)
+  - id: word-explain-endpoint
+    resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
+    title: SimulatorController::explainWord (AI Context explanation)
+  - id: word-explain-request
+    resource: laravel/app/Http/Requests/AiWordExplainRequest.php
+    title: AiWordExplainRequest (explain payload validation)
   - id: familiarity-service
     resource: laravel/app/Classes/WordFamiliarityService.php
     title: WordFamiliarityService (ledger-deduplicated deltas)
@@ -21,7 +27,7 @@ sources:
     title: WordText (segmenting renderer)
   - id: word-popup
     resource: laravel/resources/js/Components/WordPopup.jsx
-    title: WordPopup (lazy detail popup)
+    title: WordPopup (tabbed lazy detail popup)
   - id: familiarity-lib
     resource: laravel/resources/js/lib/wordFamiliarity.js
     title: Browser familiarity helpers (event POST, word ids, map patching)
@@ -90,9 +96,50 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    (see below), the click also fires a **lookup event**.
 4. **Progress actions.** `PATCH /words/{word}/progress`
    (`familiarity: 0-100`) and `DELETE /words/{word}/progress` implement "I
-   know this word" (sets 100) / "Remove mark" (deletes the row). The popup
+   know this word" / "Remove mark" (deletes the row). The popup
    reports the change up to the page, which recolors the word in every
    rendered row, and shows the current score ("Familiarity: 12/100").
+
+# Context explanation tab (simulator only)
+
+When the surrounding `WordText` receives a `rowKey`, a `side` and the
+simulator's current AI model, the popup grows a tab strip: the dictionary
+content above stays on the first tab and a second tab ("Explanation")
+offers the **Context explanation** — an AI answer to "what does this word
+mean in this sentence?". The Reader passes none of those props, so its
+popup renders unchanged, tab-free.
+
+* **The request is manual.** The tab shows an "Explain this word" button;
+  pressing it POSTs `/ai/word-explain` (sync JSON, no streaming). Until
+  then nothing is spent; no auto-fetch on popup open.
+* **Sentence identity travels as an index.** The row text joins a side's
+  non-empty sentences in document order with `\n`
+  (`MeaningMatchPresenter::sideText`); `WordText` renders each sentence in
+  its own inline span (visually identical — the joins render as single
+  spaces) and remembers which sentence a Ctrl+click landed in. The payload
+  is `{meaning_match_id, side, sentence_index, word_id, surface, model}`;
+  the backend rebuilds the same sentence list, so the index resolves to the
+  exact clicked `EntitySentence`.
+* **Context assembly.** The endpoint takes the sentence before and the
+  sentence after the clicked one by document order in the same entity
+  (`entity_sentences.order` — neighbours may live in adjacent rows or off
+  the current page), marks the surface form inside the clicked sentence
+  with `**…**`, and prompts the model to name the sense that applies and
+  give the closest native-language equivalent in 2–4 sentences. The reply
+  language is the user's **Native language** setting, resolved server-side.
+* **Model and access.** The model is the simulator's currently picked
+  `provider:model` string (validated like `AiQuestionRequest`); the match
+  must pass `EntityAccessService::canReadMatch`. Errors reuse the
+  envelope `{data: {data: {error}, code}}`; the endpoint is throttled
+  20/min like the other AI routes.
+* **Client memo.** Answers are cached per popup instance in a page-lifetime
+  `Map` keyed by `meaningMatch|side|sentenceIndex|surface|model` — no
+  server-side cache, so re-opening the same word in the same sentence is
+  free within the page, and "Ask again" drops the memo and refetches.
+* Tests: `tests/Feature/AiWordExplainEndpointTest.php` (context assembly,
+  multi-sentence rows, access, validation, provider-error mapping,
+  throttle; `AIModelResolver` mocked at the container — provider calls are
+  raw cURL and invisible to `Http::fake`).
 
 # Familiarity events (ADR 0028)
 
@@ -142,6 +189,7 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
 | Route | Handler | Purpose |
 |-------|---------|---------|
 | `GET /words/{word}` | `WordController::show` | Word popup payload: headword + `entries` per part of speech (class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `is_form` |
+| `POST /ai/word-explain` | `SimulatorController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |
 | `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |
 | `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to untouched) |
 | `POST /word-events` | `WordController::recordEvents` | Ledger-deduplicated read/lookup events; returns resulting familiarity per word |
@@ -154,9 +202,11 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
   `WordText` (the primary line is a `role="button"` div so the word tokens —
   themselves `role="button"` spans — stay valid HTML inside it) and derives
   the popup font from its own `fontSize`. Lookup events only — no read
-  crediting.
+  crediting. No `side`/`aiModel` props → no tab strip in the popup.
 * **Bilinguals simulator** (`POST /text`): response gains `word_maps`
   (`{a, b, highlightable}`; `null` in legacy filename mode) and `row_keys`
   (aligned with `rows`); `TextContent` renders both cells through `WordText`
-  (popup font derived from the simulator's `font_size`) and fires read
-  events from the row/column checkboxes.
+  (`side="a"`/`side="b"` and `aiModel = canUseAi ? currentModel : null`
+  threaded through), fires read
+  events from the row/column checkboxes, and enables the popup's Context
+  explanation tab.
