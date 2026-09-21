@@ -12,4 +12,10 @@ return [
     'word.familiarity' => ['en' => 'Familiarity: :value/:max', 'ru' => 'Знакомость: :value/:max'],
     'word.etymology' => ['en' => 'Etymology', 'ru' => 'Этимология'],
     'word.more_translations' => ['en' => '+:count more…', 'ru' => 'ещё :count…'],
+    'word.tab_dictionary' => ['en' => 'Dictionary', 'ru' => 'Словарь'],
+    'word.tab_explanation' => ['en' => 'Explanation', 'ru' => 'Разбор'],
+    'word.explain' => ['en' => 'Explain this word', 'ru' => 'Объяснить слово'],
+    'word.explain_loading' => ['en' => 'Explaining…', 'ru' => 'Объясняю…'],
+    'word.explain_failed' => ['en' => 'Explanation failed (:status)', 'ru' => 'Не удалось объяснить (:status)'],
+    'word.explain_again' => ['en' => 'Ask again', 'ru' => 'Спросить ещё раз'],
 ];

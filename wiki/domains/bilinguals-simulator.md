@@ -4,8 +4,8 @@ title: Bilinguals Simulator
 description: Side-by-side bilingual reading trainer where users translate and get AI assessment of their translation.
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
-stale_after: 2026-12-19
-generated: { by: agent:zcode, at: 2026-09-19T12:00:00Z }
+stale_after: 2026-12-21
+generated: { by: agent:zcode, at: 2026-09-21T15:30:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -32,6 +32,7 @@ variants.
 | `/text` | POST | `SimulatorController::text` | Paginated aligned text content (JSON) |
 | `/ai/question` | POST | `SimulatorController::askAi` | Ask an AI model about the text (JSON), named `ai.question` |
 | `/ai/question/stream` | POST | `SimulatorController::askAiStreamed` | SSE-streamed variant, named `ai.question.stream` |
+| `/ai/word-explain` | POST | `SimulatorController::explainWord` | AI Context explanation of a Ctrl-clicked word in its sentence (JSON), named `ai.word-explain` |
 | `/ui-settings` | PATCH | `UiSettingsController::update` | Debounced autosave of UI settings sections (`simulator` / `reader`), named `ui-settings.update` |
 
 # Key behavior
@@ -70,11 +71,25 @@ variants.
   re-check boxes silently.
 * AI calls go through `AIModelResolver::ask()` with a `provider:model` string —
   see [AI Providers](/domains/ai-providers.md). Validation via
-  `App\Http\Requests\AiQuestionRequest` / `BilingualsTextRequest`.
+  `App\Http\Requests\AiQuestionRequest` / `AiWordExplainRequest` /
+  `BilingualsTextRequest`.
+* **Word-popup Context explanation** (`POST /ai/word-explain`, throttle
+  20/min): given the clicked meaning match, side, sentence index within the
+  row side, word id, surface and model, the endpoint rebuilds the side's
+  sentence list (the same join `MeaningMatchPresenter::sideText` used for
+  rendering, so the index is exact), takes the clicked `EntitySentence`
+  plus its before/after neighbours **in the same entity** by document
+  order, marks the surface with `**…**`, and asks the picked model for a
+  2–4-sentence explanation of the word's sense in that context, replied in
+  the user's **Native language**. Manual fire only (button on the popup's
+  second tab) — see
+  [interactive words](/domains/interactive-words.md).
 * Answers are rendered from markdown with the shared
   `AiProvider::markdownToHtml()`.
 * On the React page the streamed answer is rendered client-side by
-  `renderMarkdown()` in `Bilinguals.jsx`: arrow normalization (all `→`/LaTeX
+  `renderMarkdown()` — extracted to the shared `resources/js/lib/markdown.js`
+  module (also used by the word popup's Context explanation tab): arrow
+  normalization (all `→`/LaTeX
   arrow forms → `=>`) → `==highlight==` phrases swapped for `\u0001` sentinels
   (fenced/inline code slot-protected first) → `marked.parse` → four HTML
   passes over slot-protected HTML (`<pre>`/`<code>`/`<kbd>`/`<samp>` content

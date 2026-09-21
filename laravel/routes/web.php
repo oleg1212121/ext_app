@@ -147,5 +147,6 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::post('/text', [SimulatorController::class, 'text']);
     Route::post('/ai/question', [SimulatorController::class, 'askAi'])->name('ai.question')->middleware('throttle:20,1');
     Route::post('/ai/question/stream', [SimulatorController::class, 'askAiStreamed'])->name('ai.question.stream')->middleware('throttle:20,1');
+    Route::post('/ai/word-explain', [SimulatorController::class, 'explainWord'])->name('ai.word-explain')->middleware('throttle:20,1');
     Route::patch('/ui-settings', [UiSettingsController::class, 'update'])->name('ui-settings.update');
 });

@@ -2,12 +2,28 @@ import React, {useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {useI18n} from '../i18n';
 import {getCsrfToken} from '../lib/http';
+import {renderMarkdown} from '../lib/markdown';
 import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
 
 const POPUP_MARGIN = 8;
 const VIEWPORT_MARGIN = 12;
 const MIN_POPUP_HEIGHT = 160;
 const TRANSLATIONS_PREVIEW = 8;
+
+// Page-lifetime memo of context explanations, keyed by
+// meaningMatch|side|sentenceIndex|surface|model. Client-side only — the
+// server keeps no cache, so re-opening the same word in the same sentence
+// never re-spends tokens.
+const explainCache = new Map();
+
+const explainButtonClass = 'rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]';
+
+const tabButtonClass = (active) => [
+    '-mb-px border-b-2 py-1.5 text-[0.786em] uppercase tracking-wider transition-colors',
+    active
+        ? 'border-[var(--color-verdigris)] opacity-100 dark:border-[var(--color-verdigris-night)]'
+        : 'border-transparent opacity-60 hover:opacity-100',
+].join(' ');
 
 // Popup typography derives from the host page's font-size setting (ADR 0031):
 // the page passes the size it computed with popupFontSizeFor(); this default
@@ -89,20 +105,160 @@ function TranslationLine({translations}) {
 }
 
 /**
+ * The Word popup's second tab: a manual "Explain" that asks the AI what the
+ * word means in its sentence context (POST /ai/word-explain). The request
+ * fires only from the button; a hit in the page-lifetime explain cache
+ * renders instantly instead. `explainKey` also guards against stale
+ * responses landing after the popup has moved to another word.
+ */
+function ExplainPane({explain, explainKey}) {
+    const {t} = useI18n();
+    const [explanation, setExplanation] = useState(() => (
+        explainCache.has(explainKey)
+            ? {status: 'done', answer: explainCache.get(explainKey)}
+            : null
+    ));
+    const keyRef = useRef(explainKey);
+    keyRef.current = explainKey;
+
+    useEffect(() => {
+        setExplanation(explainCache.has(explainKey)
+            ? {status: 'done', answer: explainCache.get(explainKey)}
+            : null);
+    }, [explainKey]);
+
+    const request = () => {
+        setExplanation({status: 'loading'});
+        fetch('/ai/word-explain', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                ...(getCsrfToken() ? {'X-CSRF-TOKEN': getCsrfToken()} : {}),
+            },
+            body: JSON.stringify({
+                meaning_match_id: explain.meaningMatchId,
+                side: explain.side,
+                sentence_index: explain.sentenceIndex,
+                word_id: explain.wordId,
+                surface: explain.surface,
+                model: explain.model,
+            }),
+        })
+            .then(async (res) => {
+                const json = await res.json().catch(() => null);
+                if (!res.ok) {
+                    throw new Error(
+                        json?.data?.data?.error
+                            ?? json?.message
+                            ?? t('word.explain_failed', {status: res.status}),
+                    );
+                }
+
+                return json.data.answer;
+            })
+            .then((answer) => {
+                if (keyRef.current !== explainKey) {
+                    return;
+                }
+                explainCache.set(keyRef.current, answer);
+                setExplanation({status: 'done', answer});
+            })
+            .catch((e) => {
+                if (keyRef.current !== explainKey) {
+                    return;
+                }
+                setExplanation({
+                    status: 'error',
+                    message: e instanceof Error && e.message
+                        ? e.message
+                        : t('word.explain_failed', {status: '?'}),
+                });
+            });
+    };
+
+    const askAgain = () => {
+        explainCache.delete(keyRef.current);
+        request();
+    };
+
+    return (
+        <div className="px-3.5 pb-1">
+            {explanation === null && (
+                <div className="py-3">
+                    <button type="button" onClick={request} className={explainButtonClass}>
+                        {t('word.explain')}
+                    </button>
+                </div>
+            )}
+
+            {explanation?.status === 'loading' && (
+                <p className="py-3 text-[0.857em] opacity-60">{t('word.explain_loading')}</p>
+            )}
+
+            {explanation?.status === 'error' && (
+                <div className="py-3">
+                    <p className="text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{explanation.message}</p>
+                    <button type="button" onClick={request} className={`${explainButtonClass} mt-2`}>
+                        {t('word.explain')}
+                    </button>
+                </div>
+            )}
+
+            {explanation?.status === 'done' && (
+                <div className="py-2">
+                    {explanation.answer
+                        ? (
+                            <div
+                                className="space-y-2 text-[0.929em] leading-snug [&_li]:ml-4 [&_li]:list-disc [&_ol]:ml-4 [&_ol]:list-decimal [&_p]:mt-0 [&_ul]:ml-4 [&_ul]:list-disc"
+                                dangerouslySetInnerHTML={{__html: renderMarkdown(explanation.answer)}}
+                            />
+                        )
+                        : (
+                            <p className="text-[0.857em] opacity-60">{t('word.explain_failed', {status: 200})}</p>
+                        )}
+                    <button
+                        type="button"
+                        onClick={askAgain}
+                        className="mt-2 text-[0.786em] underline underline-offset-2 opacity-70 hover:opacity-100"
+                    >
+                        {t('word.explain_again')}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/**
  * Word popover shown next to a Ctrl-clicked word: one section per part of
  * speech under the headword (details fetched lazily from GET /words/{id}),
  * plus the word progress actions in a footer that never scrolls away.
  * `fontSize` (px) is the popup's root font, derived by the host page from
  * its reading font size (popupFontSizeFor); every inner text size is
  * em-relative to it, and the width scales with it.
+ *
+ * With an `explain` payload ({meaningMatchId, side, sentenceIndex, wordId,
+ * surface, model}) the popup grows a tab strip: the dictionary content stays
+ * on the first tab, and a second tab offers the manual AI context
+ * explanation. Without it (the Reader) the popup renders exactly as before.
  */
-export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE}) {
+export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain}) {
     const {t} = useI18n();
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
+    const [tab, setTab] = useState('dictionary');
     const ref = useRef(null);
+
+    const explainKey = explain
+        ? [explain.meaningMatchId, explain.side, explain.sentenceIndex, surface, explain.model].join('|')
+        : null;
+
+    useEffect(() => {
+        setTab('dictionary');
+    }, [wordId, explainKey]);
 
     useEffect(() => {
         let cancelled = false;
@@ -182,6 +338,10 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             .catch(() => setBusy(false));
     };
 
+    const explainProps = explain && explainKey
+        ? {...explain, wordId, surface}
+        : null;
+
     return createPortal(
         <div
             ref={ref}
@@ -218,60 +378,94 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                         )}
                     </div>
 
-                    <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-1">
-                        {data.entries?.map((entry, index) => (
-                            <section
-                                key={entry.id}
-                                className={index > 0
-                                    ? 'mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
-                                    : undefined}
+                    {explainProps && (
+                        <div
+                            role="tablist"
+                            className="flex shrink-0 gap-3 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]"
+                        >
+                            <button
+                                type="button"
+                                role="tab"
+                                aria-selected={tab === 'dictionary'}
+                                onClick={() => setTab('dictionary')}
+                                className={tabButtonClass(tab === 'dictionary')}
                             >
-                                {entry.word_class && (
-                                    <h3 className="text-[0.786em] uppercase tracking-wider opacity-60">{entry.word_class}</h3>
-                                )}
+                                {t('word.tab_dictionary')}
+                            </button>
+                            <button
+                                type="button"
+                                role="tab"
+                                aria-selected={tab === 'explanation'}
+                                onClick={() => setTab('explanation')}
+                                className={tabButtonClass(tab === 'explanation')}
+                            >
+                                {t('word.tab_explanation')}
+                            </button>
+                        </div>
+                    )}
 
-                                {entry.transcriptions?.length > 0 && (
-                                    <p className="mt-1 opacity-80">
-                                        [{entry.transcriptions.map((item) => item.value).join(' · ')}]
-                                    </p>
-                                )}
+                    {(!explainProps || tab === 'dictionary') && (
+                        <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-1">
+                            {data.entries?.map((entry, index) => (
+                                <section
+                                    key={entry.id}
+                                    className={index > 0
+                                        ? 'mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
+                                        : undefined}
+                                >
+                                    {entry.word_class && (
+                                        <h3 className="text-[0.786em] uppercase tracking-wider opacity-60">{entry.word_class}</h3>
+                                    )}
 
-                                {entry.definitions?.length > 0 ? (
-                                    <ol className="ml-4 mt-1.5 list-decimal space-y-1 text-[0.929em] leading-snug">
-                                        {entry.definitions.map((definition, definitionIndex) => (
-                                            <li key={definitionIndex}>{definition}</li>
-                                        ))}
-                                    </ol>
-                                ) : (
-                                    <p className="mt-1.5 text-[0.857em] opacity-60">{t('word.no_definitions')}</p>
-                                )}
+                                    {entry.transcriptions?.length > 0 && (
+                                        <p className="mt-1 opacity-80">
+                                            [{entry.transcriptions.map((item) => item.value).join(' · ')}]
+                                        </p>
+                                    )}
 
-                                <TranslationLine translations={entry.translations ?? []} />
-
-                                {entry.examples?.length > 0 && (
-                                    <details className="mt-2 text-[0.857em]">
-                                        <summary className="cursor-pointer opacity-70">{t('word.examples')}</summary>
-                                        <ul className="ml-4 mt-1 list-disc space-y-0.5 italic opacity-80">
-                                            {entry.examples.map((example, exampleIndex) => (
-                                                <li key={exampleIndex}>{example}</li>
+                                    {entry.definitions?.length > 0 ? (
+                                        <ol className="ml-4 mt-1.5 list-decimal space-y-1 text-[0.929em] leading-snug">
+                                            {entry.definitions.map((definition, definitionIndex) => (
+                                                <li key={definitionIndex}>{definition}</li>
                                             ))}
-                                        </ul>
-                                    </details>
-                                )}
+                                        </ol>
+                                    ) : (
+                                        <p className="mt-1.5 text-[0.857em] opacity-60">{t('word.no_definitions')}</p>
+                                    )}
 
-                                {entry.etymologies?.length > 0 && (
-                                    <div className="mt-2">
-                                        <p className="text-[0.786em] uppercase tracking-wider opacity-60">{t('word.etymology')}</p>
-                                        {entry.etymologies.map((etymology, etymologyIndex) => (
-                                            <p key={etymologyIndex} className="mt-1 text-[0.857em] italic leading-snug opacity-75">
-                                                {etymology}
-                                            </p>
-                                        ))}
-                                    </div>
-                                )}
-                            </section>
-                        ))}
-                    </div>
+                                    <TranslationLine translations={entry.translations ?? []} />
+
+                                    {entry.examples?.length > 0 && (
+                                        <details className="mt-2 text-[0.857em]">
+                                            <summary className="cursor-pointer opacity-70">{t('word.examples')}</summary>
+                                            <ul className="ml-4 mt-1 list-disc space-y-0.5 italic opacity-80">
+                                                {entry.examples.map((example, exampleIndex) => (
+                                                    <li key={exampleIndex}>{example}</li>
+                                                ))}
+                                            </ul>
+                                        </details>
+                                    )}
+
+                                    {entry.etymologies?.length > 0 && (
+                                        <div className="mt-2">
+                                            <p className="text-[0.786em] uppercase tracking-wider opacity-60">{t('word.etymology')}</p>
+                                            {entry.etymologies.map((etymology, etymologyIndex) => (
+                                                <p key={etymologyIndex} className="mt-1 text-[0.857em] italic leading-snug opacity-75">
+                                                    {etymology}
+                                                </p>
+                                            ))}
+                                        </div>
+                                    )}
+                                </section>
+                            ))}
+                        </div>
+                    )}
+
+                    {explainProps && tab === 'explanation' && (
+                        <div className="min-h-0 flex-1 overflow-y-auto pt-1">
+                            <ExplainPane explain={explainProps} explainKey={explainKey}/>
+                        </div>
+                    )}
 
                     <div className="mt-2 shrink-0 border-t border-[var(--color-hairline)] px-3.5 py-2.5 dark:border-[var(--color-hairline-night)]">
                         <div className="flex gap-2">

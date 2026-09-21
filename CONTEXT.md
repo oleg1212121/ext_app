@@ -519,10 +519,21 @@ _Avoid_: clickable text, word link.
 **Word popup**:
 The anchored popover a Ctrl-click on an Interactive word opens: one section
 per Word class under the **Headword** with its definitions, transcriptions,
-translations, examples and etymology, plus the progress actions. Sized to
-the viewport — it flips above the word when there is more room above and
-scrolls internally instead of running off-screen.
+translations, examples and etymology. On surfaces that provide AI context it
+is tabbed — the dictionary content on the first tab, the **Context
+explanation** on the second — with the progress actions in a footer shared
+by both tabs. Sized to the viewport — it flips above the word when there is
+more room above and scrolls internally instead of running off-screen.
 _Avoid_: modal (it is anchored to the word, not centered), tooltip.
+
+**Context explanation**:
+The AI explanation of an Interactive word as it is used in its sentence —
+built from the sentence before, the clicked sentence, and the sentence after
+(by document order in the same entity), requested manually from the Word
+popup's second tab and replied in the user's **Native language**. Distinct
+from a **Gloss** (the simulator's assessment answer) and from dictionary
+definitions (static imported content, no sentence context).
+_Avoid_: word gloss (collides with Gloss), AI answer, definition.
 
 **Headword**:
 The spelling that groups the dictionary Words of one language: one Word per

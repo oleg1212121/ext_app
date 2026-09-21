@@ -35,12 +35,22 @@ function tierClass(familiarity, highlight) {
  *
  * rowKey (optional) scopes this sentence for familiarity bookkeeping: the
  * first popup lookup of a word within the row costs -2, credited once.
+ *
+ * The text is one row side: its sentences joined with "\n" in document order
+ * (MeaningMatchPresenter::sideText). Each sentence renders in its own inline
+ * span — visually identical, but a click knows which sentence it hit. With
+ * rowKey, side and aiModel all present, WordPopup gets an `explain` payload;
+ * the backend rebuilds the same sentence list, so the index is exact.
  */
-export default function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize}) {
-    const segments = useMemo(() => segmentText(text ?? ''), [text]);
+export default function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, aiModel}) {
+    const sentences = useMemo(() => String(text ?? '').split('\n'), [text]);
+    const sentenceSegments = useMemo(
+        () => sentences.map((sentence) => segmentText(sentence)),
+        [sentences],
+    );
     const [popup, setPopup] = useState(null);
 
-    const openPopup = useCallback((event, segment) => {
+    const openPopup = useCallback((event, segment, sentenceIndex) => {
         event.stopPropagation();
         if (!event.ctrlKey) {
             return;
@@ -54,6 +64,7 @@ export default function WordText({text, wordMap = {}, highlight = true, rowKey, 
             surface: segment.key,
             familiarity: entry.s,
             rect: event.currentTarget.getBoundingClientRect(),
+            sentenceIndex,
         });
         if (rowKey) {
             recordWordEvents([{row_key: rowKey, kind: 'lookup', word_ids: [entry.w]}])
@@ -74,35 +85,49 @@ export default function WordText({text, wordMap = {}, highlight = true, rowKey, 
         onWordProgress?.(key, familiarity);
     }, [onWordProgress]);
 
+    const explain = popup && rowKey && side && aiModel ? {
+        meaningMatchId: Number(rowKey.slice(3)),
+        side,
+        sentenceIndex: popup.sentenceIndex,
+        model: aiModel,
+    } : undefined;
+
     return (
         <span className={className}>
-            {segments.map((segment, index) => (
-                wordMap[segment.key]?.w ? (
-                    <span
-                        key={index}
-                        role="button"
-                        tabIndex={0}
-                        className={tierClass(wordMap[segment.key].s, highlight)}
-                        onClick={(event) => openPopup(event, segment)}
-                        onKeyDown={(event) => {
-                            if (event.key !== 'Enter' && event.key !== ' ') {
-                                return;
-                            }
-                            // Mirror the <button> this replaced: Enter/Space
-                            // synthesized a click (swallowed by openPopup), and
-                            // only Ctrl+that click opened the popup.
-                            event.stopPropagation();
-                            if (event.ctrlKey) {
-                                event.preventDefault();
-                                openPopup(event, segment);
-                            }
-                        }}
-                    >
-                        {segment.text}
+            {sentenceSegments.map((segments, sentenceIndex) => (
+                <React.Fragment key={sentenceIndex}>
+                    {sentenceIndex > 0 && ' '}
+                    <span className="inline">
+                        {segments.map((segment, index) => (
+                            wordMap[segment.key]?.w ? (
+                                <span
+                                    key={index}
+                                    role="button"
+                                    tabIndex={0}
+                                    className={tierClass(wordMap[segment.key].s, highlight)}
+                                    onClick={(event) => openPopup(event, segment, sentenceIndex)}
+                                    onKeyDown={(event) => {
+                                        if (event.key !== 'Enter' && event.key !== ' ') {
+                                            return;
+                                        }
+                                        // Mirror the <button> this replaced: Enter/Space
+                                        // synthesized a click (swallowed by openPopup), and
+                                        // only Ctrl+that click opened the popup.
+                                        event.stopPropagation();
+                                        if (event.ctrlKey) {
+                                            event.preventDefault();
+                                            openPopup(event, segment, sentenceIndex);
+                                        }
+                                    }}
+                                >
+                                    {segment.text}
+                                </span>
+                            ) : (
+                                <React.Fragment key={index}>{segment.text}</React.Fragment>
+                            )
+                        ))}
                     </span>
-                ) : (
-                    <React.Fragment key={index}>{segment.text}</React.Fragment>
-                )
+                </React.Fragment>
             ))}
             {popup && createPortal(
                 <WordPopup
@@ -111,6 +136,7 @@ export default function WordText({text, wordMap = {}, highlight = true, rowKey, 
                     familiarity={popup.familiarity}
                     rect={popup.rect}
                     fontSize={popupFontSize}
+                    explain={explain}
                     onClose={() => setPopup(null)}
                     onProgress={handleProgress}
                 />,
