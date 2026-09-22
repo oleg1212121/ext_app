@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
+import {Link} from '@inertiajs/react';
 import {useI18n} from '../i18n';
 import {getCsrfToken} from '../lib/http';
 import {renderMarkdown} from '../lib/markdown';
@@ -11,7 +12,7 @@ const MIN_POPUP_HEIGHT = 160;
 const TRANSLATIONS_PREVIEW = 8;
 
 // Page-lifetime memo of context explanations, keyed by
-// meaningMatch|side|sentenceIndex|surface|model. Client-side only — the
+// rowKind|rowId|side|sentenceIndex|surface|modelKey. Client-side only — the
 // server keeps no cache, so re-opening the same word in the same sentence
 // never re-spends tokens.
 const explainCache = new Map();
@@ -106,10 +107,14 @@ function TranslationLine({translations}) {
 
 /**
  * The Word popup's second tab: a manual "Explain" that asks the AI what the
- * word means in its sentence context (POST /ai/word-explain). The request
- * fires only from the button; a hit in the page-lifetime explain cache
- * renders instantly instead. `explainKey` also guards against stale
- * responses landing after the popup has moved to another word.
+ * word means in its sentence context (POST /ai/word-explain). The model is
+ * the user's stored explanation preference — the server resolves it; the
+ * popup only carries `modelKey` to discriminate the client cache. When the
+ * user has not chosen an explanation model (modelKey null) the tab shows
+ * guidance instead of a request button. The request fires only from the
+ * button; a hit in the page-lifetime explain cache renders instantly
+ * instead. `explainKey` also guards against stale responses landing after
+ * the popup has moved to another word.
  */
 function ExplainPane({explain, explainKey}) {
     const {t} = useI18n();
@@ -129,6 +134,19 @@ function ExplainPane({explain, explainKey}) {
 
     const request = () => {
         setExplanation({status: 'loading'});
+        const body = explain.rowKind === 'es'
+            ? {
+                entity_sentence_id: explain.rowId,
+                word_id: explain.wordId,
+                surface: explain.surface,
+            }
+            : {
+                meaning_match_id: explain.rowId,
+                side: explain.side,
+                sentence_index: explain.sentenceIndex,
+                word_id: explain.wordId,
+                surface: explain.surface,
+            };
         fetch('/ai/word-explain', {
             method: 'POST',
             headers: {
@@ -136,14 +154,7 @@ function ExplainPane({explain, explainKey}) {
                 Accept: 'application/json',
                 ...(getCsrfToken() ? {'X-CSRF-TOKEN': getCsrfToken()} : {}),
             },
-            body: JSON.stringify({
-                meaning_match_id: explain.meaningMatchId,
-                side: explain.side,
-                sentence_index: explain.sentenceIndex,
-                word_id: explain.wordId,
-                surface: explain.surface,
-                model: explain.model,
-            }),
+            body: JSON.stringify(body),
         })
             .then(async (res) => {
                 const json = await res.json().catch(() => null);
@@ -184,7 +195,17 @@ function ExplainPane({explain, explainKey}) {
 
     return (
         <div className="px-3.5 pb-1">
-            {explanation === null && (
+            {explain.modelKey == null ? (
+                <div className="py-3">
+                    <p className="text-[0.857em] opacity-70">{t('word.explain_choose_model')}</p>
+                    <Link
+                        href="/profile?tab=ai"
+                        className="mt-2 inline-block text-[0.857em] text-[var(--color-verdigris)] underline underline-offset-2 hover:opacity-80 dark:text-[var(--color-verdigris-night)]"
+                    >
+                        {t('word.explain_go_to_settings')}
+                    </Link>
+                </div>
+            ) : explanation === null && (
                 <div className="py-3">
                     <button type="button" onClick={request} className={explainButtonClass}>
                         {t('word.explain')}
@@ -238,10 +259,13 @@ function ExplainPane({explain, explainKey}) {
  * its reading font size (popupFontSizeFor); every inner text size is
  * em-relative to it, and the width scales with it.
  *
- * With an `explain` payload ({meaningMatchId, side, sentenceIndex, wordId,
- * surface, model}) the popup grows a tab strip: the dictionary content stays
- * on the first tab, and a second tab offers the manual AI context
- * explanation. Without it (the Reader) the popup renders exactly as before.
+ * With an `explain` payload ({rowKind, rowId, side, sentenceIndex, modelKey})
+ * the popup grows a tab strip: the dictionary content stays on the first
+ * tab, and a second tab offers the manual AI context explanation. Without it
+ * the popup renders exactly as before. `modelKey` (the user's explanation
+ * model id) only discriminates the client cache and decides between the
+ * request button and choose-a-model guidance — the server resolves the
+ * actual model per user preference.
  */
 export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain}) {
     const {t} = useI18n();
@@ -253,7 +277,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     const ref = useRef(null);
 
     const explainKey = explain
-        ? [explain.meaningMatchId, explain.side, explain.sentenceIndex, surface, explain.model].join('|')
+        ? [explain.rowKind, explain.rowId, explain.side, explain.sentenceIndex, surface, explain.modelKey].join('|')
         : null;
 
     useEffect(() => {

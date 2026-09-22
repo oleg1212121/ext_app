@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\AiModel;
+use App\Models\AiProvider;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
@@ -8,6 +10,7 @@ use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
+use App\Models\UserApiKey;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -467,4 +470,65 @@ test('the word map is scoped to the rows on the current page', function () {
             ->component('ReaderReact')
             ->has('rows', 5)
             ->where('wordMap.orbit.w', $orbit->id));
+});
+
+test('reader page passes explanation gating and side props', function () {
+    $user = User::factory()->create();
+    $entities = createAlignedReaderEntities();
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $entities['en']->id]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            // Reading the EN side: primary is native, translation is not.
+            ->where('primaryExplainable', false)
+            ->where('translationExplainable', true)
+            ->where('primarySide', 'a')
+            // No API keys yet: AI explanations stay off.
+            ->where('explain.enabled', false)
+            ->where('explain.modelKey', null));
+});
+
+test('reader page carries the explanation model when the user can use AI', function () {
+    $user = User::factory()->create();
+    $entities = createAlignedReaderEntities();
+
+    $provider = AiProvider::factory()->enabled()->create(['key' => 'openrouter', 'name' => 'OpenRouter']);
+    $model = AiModel::factory()->enabled()->create(['ai_provider_id' => $provider->id, 'external_id' => 'explain', 'name' => 'Explain Model']);
+    UserApiKey::factory()->create(['user_id' => $user->id, 'ai_provider_id' => $provider->id]);
+    $user->settings()->updateOrCreate(['user_id' => $user->id], ['ai_model_id' => $model->id]);
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $entities['en']->id]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            ->where('explain.enabled', true)
+            ->where('explain.modelKey', $model->id));
+});
+
+test('a single language reader page has no primary side', function () {
+    $user = User::factory()->create();
+    $en = createEntity('en', null, [
+        'name' => 'Unaligned EN Entity',
+        'file_path' => 'texts/simulator/unaligned.txt',
+    ]);
+
+    EntitySentence::query()->create([
+        'entity_id' => $en->id,
+        'content' => 'Standalone EN sentence.',
+        'order' => 1,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $en->id]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('ReaderReact')
+            ->where('primarySide', null)
+            // The factory user is a native English speaker: the EN primary
+            // column is native, so it is not explainable.
+            ->where('primaryExplainable', false)
+            ->where('translationExplainable', false));
 });

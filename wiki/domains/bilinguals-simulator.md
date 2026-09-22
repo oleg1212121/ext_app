@@ -4,12 +4,15 @@ title: Bilinguals Simulator
 description: Side-by-side bilingual reading trainer where users translate and get AI assessment of their translation.
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
-stale_after: 2026-12-21
-generated: { by: agent:zcode, at: 2026-09-21T15:30:00Z }
+stale_after: 2027-01-22
+generated: { by: agent:zcode, at: 2026-09-22T16:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
     title: SimulatorController
+  - id: adr-preferences
+    resource: docs/adr/0035-per-user-ai-model-preferences.md
+    title: ADR 0035 — Per-user AI model preferences, resolved server-side
   - id: routes
     resource: laravel/routes/web.php
     title: Routes
@@ -37,12 +40,15 @@ variants.
 
 # Key behavior
 
-* The page loads with a **default model and a detailed default assessment
-  prompt**. The default model is computed by `AIModelResolver::firstModelKey()`
-  — the globally cheapest model **available to the signed-in user** (enabled
-  provider + a User key they stored), sorted by price and grouped by provider.
-  When the user has stored no keys the picker is empty and the page shows an
-  "Add an API key in your Profile" empty state instead of the model dropdown.
+* The page carries **no model picker** (ADR 0035): the answer model is a
+  per-user preference picked in the Profile's AI Models tab
+  (`user_settings.ai_model_id`, resolved server-side by
+  `AIModelResolver::resolveAnswerModel()`). The toolbar shows the effective
+  model's label as a link to `/profile?tab=ai`; with API keys stored but no
+  model chosen it shows "Choose an AI model" (asking is blocked with the same
+  guidance), and with no keys the "Add an API key in your Profile" empty
+  state. The default assessment prompt still comes from
+  `SimulatorController::DEFAULT_QUESTION`.
 * The text dropdown lists `EntityMatch` records as
   `"<a-side entity name> / <b-side entity name>"`.
 * **Read access is gated per Entity, not per match.** Both the dropdown and
@@ -55,8 +61,9 @@ variants.
   `entity_match_id` (the meaning matches shaped for the UI by
   `MeaningMatchPresenter`); a legacy `filename` mode still reads pre-aligned
   file pairs from `public/texts/simulator/`. Entity-match responses also
-  carry `word_maps` (`{a, b, highlightable}` — the
-  [interactive word](/domains/interactive-words.md) maps for both sides;
+  carry `word_maps` (`{a, b, highlightable, explainable}` — the
+  [interactive word](/domains/interactive-words.md) maps for both sides plus
+  the per-side explain-eligibility rule "column language ≠ native language";
   `null` in filename mode) and `row_keys` (`mm:{meaningMatchId}` per row,
   `null` in filename mode), so `TextContent` renders both cells through the
   shared `WordText`/`WordPopup` components with a
@@ -69,20 +76,22 @@ variants.
   column and batches one read event per loaded row into a single request.
   Only actual checkbox opens fire events — the localStorage restore paths
   re-check boxes silently.
-* AI calls go through `AIModelResolver::ask()` with a `provider:model` string —
-  see [AI Providers](/domains/ai-providers.md). Validation via
+* AI calls go through `AIModelResolver::ask()`; the model is the user's
+  stored answer model, resolved server-side — the client sends no model
+  field (ADR 0035) — see
+  [AI Providers](/domains/ai-providers.md). Validation via
   `App\Http\Requests\AiQuestionRequest` / `AiWordExplainRequest` /
   `BilingualsTextRequest`.
 * **Word-popup Context explanation** (`POST /ai/word-explain`, throttle
-  20/min): given the clicked meaning match, side, sentence index within the
-  row side, word id, surface and model, the endpoint rebuilds the side's
+  20/min): given the clicked meaning match, side, sentence index within
+  the row side, word id and surface, the endpoint rebuilds the side's
   sentence list (the same join `MeaningMatchPresenter::sideText` used for
   rendering, so the index is exact), takes the clicked `EntitySentence`
   plus its before/after neighbours **in the same entity** by document
-  order, marks the surface with `**…**`, and asks the picked model for a
-  2–4-sentence explanation of the word's sense in that context, replied in
-  the user's **Native language**. Manual fire only (button on the popup's
-  second tab) — see
+  order, marks the surface with `**…**`, and asks the user's resolved
+  **explanation model** for a 2–4-sentence explanation of the word's sense
+  in that context, replied in the user's **Native language**. Manual fire
+  only (button on the popup's second tab) — see
   [interactive words](/domains/interactive-words.md).
 * Answers are rendered from markdown with the shared
   `AiProvider::markdownToHtml()`.
@@ -130,27 +139,30 @@ variants.
 # Frontend
 
 React page `resources/js/Pages/Bilinguals/` (`Bilinguals.jsx` plus `AI/`,
-`TextContent/`, `Workplace/` sub-components). Props include `aiModels`
-(grouped by provider), `textList`, `show*` feature flags
+`TextContent/`, `Workplace/` sub-components). Props include `answerModel`
+(`{id, label}` or null — the resolved answer model shown in the toolbar),
+`explanationModelKey` (resolved explanation model id, only discriminates the
+word popup's client cache), `textList`, `show*` feature flags
 (`showWorkplace`, `showQuestion`, `showText`, `showAI`), plus the saved UI
 settings seeds (`fontSize`, `aiPanelWidth`, `workplaceHeight`, and the
-`show*`/`currentModel`/`currentQuestion` props pre-merged with saved values).
+`show*`/`currentQuestion` props pre-merged with saved values).
 
 # Persistence
 
 Split by write frequency (ADR 0024):
 
-* **Stable settings → DB.** Font size, panel visibility, AI model, question,
-  AI panel width, workplace height live in `user_settings.ui_settings`
-  (JSONB, `simulator` section). Seeded into page props by
-  `SimulatorController::simulator()` (the saved model only if still in the
-  user's available list, else the cheapest default; `DEFAULT_QUESTION`
-  constant is the question fallback). The frontend writes back via the
-  `useUiSettingsAutosave` hook — one debounced (~800 ms) PATCH to
-  `/ui-settings` per change burst; the backend section-merges so a simulator
-  save never wipes the `reader` section (the Reader page persists its own
-  `font_size` the same way). Validation bounds mirror the client clamps
-  (`UpdateUiSettingsRequest`).
+* **Stable settings → DB.** Font size, panel visibility, question, AI panel
+  width, workplace height live in `user_settings.ui_settings` (JSONB,
+  `simulator` section). **The model is not part of `ui_settings`** — it is a
+  typed `user_settings.ai_model_id` preference edited in the Profile
+  (ADR 0035; the legacy `simulator.model` key was backfilled into it and
+  removed). Seeded into page props by `SimulatorController::simulator()`
+  (`DEFAULT_QUESTION` constant is the question fallback). The frontend
+  writes back via the `useUiSettingsAutosave` hook — one debounced (~800 ms)
+  PATCH to `/ui-settings` per change burst; the backend section-merges so a
+  simulator save never wipes the `reader` section (the Reader page persists
+  its own `font_size` the same way). Validation bounds mirror the client
+  clamps (`UpdateUiSettingsRequest`).
 * **Working state → localStorage, per device.** Key
   `ext_app.simulator.position.v1` (`lib/simulatorPosition.js`): current
   entity match plus, per alignment, the last page and the last opened row

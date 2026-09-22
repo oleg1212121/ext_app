@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\AIModelResolver;
 use App\Classes\EntityAccessService;
 use App\Classes\EntityWordMap;
 use App\Classes\MeaningMatchPresenter;
@@ -26,6 +27,7 @@ class ReaderController extends Controller
 
     public function __construct(
         protected MeaningMatchPresenter $presenter,
+        protected AIModelResolver $modelResolver,
     ) {}
 
     public function index(string $lang): Response
@@ -51,7 +53,7 @@ class ReaderController extends Controller
             abort(403);
         }
 
-        ['rows' => $rows, 'rowKeys' => $rowKeys, 'translationEntity' => $translationEntity, 'meta' => $meta, 'positionKey' => $positionKey] = $this->buildRows($entity, $request->page());
+        ['rows' => $rows, 'rowKeys' => $rowKeys, 'translationEntity' => $translationEntity, 'meta' => $meta, 'positionKey' => $positionKey, 'readingSide' => $readingSide] = $this->buildRows($entity, $request->page());
 
         $userId = (int) auth()->id();
         $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
@@ -75,6 +77,16 @@ class ReaderController extends Controller
                 ? $this->wordMapForRows($wordMap->forEntity($translationEntity, $userId), $rows, 1)
                 : [],
             'translationHighlightable' => $translationEntity !== null && $translationEntity->language_id !== $nativeLanguageId,
+            // The AI explanation tab follows the same "not your native
+            // language" rule as highlighting; the model itself is the user's
+            // stored explanation preference, resolved server-side.
+            'primaryExplainable' => $entity->language_id !== $nativeLanguageId,
+            'translationExplainable' => $translationEntity !== null && $translationEntity->language_id !== $nativeLanguageId,
+            'primarySide' => $readingSide,
+            'explain' => [
+                'enabled' => auth()->user()->canUseAi(),
+                'modelKey' => $this->modelResolver->resolveExplanationModel()['id'] ?? null,
+            ],
         ]);
     }
 
@@ -97,7 +109,7 @@ class ReaderController extends Controller
     /**
      * @param  int  $page  Pre-clamped at the floor by ReaderPageRequest; the
      *                     ceiling is clamped in paginateRows.
-     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, translationEntity: Entity|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string}
+     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, translationEntity: Entity|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
      */
     private function buildRows(Entity $entity, int $page): array
     {
@@ -136,6 +148,7 @@ class ReaderController extends Controller
             'translationEntity' => $otherEntity,
             'meta' => $this->metaFor($paginator),
             'positionKey' => 'mm:'.$entityMatch->id,
+            'readingSide' => $readingSide,
         ];
     }
 
@@ -143,7 +156,7 @@ class ReaderController extends Controller
      * Rows of the bare entity keyed by their entity sentences, with no
      * translation side.
      *
-     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, translationEntity: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string}
+     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, translationEntity: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
      */
     private function singleLanguageRows(Entity $entity, int $page): array
     {
@@ -165,6 +178,7 @@ class ReaderController extends Controller
             // Deliberately not es: — that prefix names a single entity
             // sentence in row-key vocabulary; a position keys the whole text.
             'positionKey' => 'ent:'.$entity->id,
+            'readingSide' => null,
         ];
     }
 

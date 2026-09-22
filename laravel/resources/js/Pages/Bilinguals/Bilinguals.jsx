@@ -3,7 +3,6 @@ import { Link } from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx'
 import Spinner from '../../Components/Spinner.jsx'
 import Select from "../../Components/Forms/Select.jsx";
-import SelectGroup from "../../Components/Forms/SelectGroup.jsx";
 import Button from "../../Components/Forms/Button.jsx";
 import Workplace from "./Components/Workplace.jsx";
 import AI from "./Components/AI.jsx";
@@ -129,8 +128,8 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
 
 
 const Bilinguals = (props) => {
-    const { t } = useI18n();
-    const aiModels = props.aiModels
+    const { t } = useI18n()
+    const answerModel = props.answerModel
     const canUseAi = props.canUseAi
     const textList = props.textList
     const errors = props.errors
@@ -149,7 +148,6 @@ const Bilinguals = (props) => {
     let [showAI, setShowAI] = React.useState(props.showAI)
     let [highlightWords, setHighlightWords] = React.useState(props.highlightWords ?? true)
     let [currentText, setCurrentText] = React.useState(initialText)
-    let [currentModel, setCurrentModel] = React.useState(props.currentModel)
     let [currentQuestion, setCurrentQuestion] = React.useState(props.currentQuestion)
     const [pending, setPending] = React.useState(false);
     const [aiAnswer, setAiAnswer] = React.useState('');
@@ -186,7 +184,6 @@ const Bilinguals = (props) => {
         show_question: showQuestion,
         show_ai: showAI,
         highlight_words: highlightWords,
-        model: currentModel,
         question: currentQuestion,
         ai_panel_width: aiPanelWidth,
         workplace_height: workplaceHeight,
@@ -498,7 +495,6 @@ const Bilinguals = (props) => {
         const payload = {
             data: `${cellContent}\n${workplaceText}`,
             question: overrides.question ?? currentQuestion,
-            model: overrides.model ?? currentModel,
         };
 
         await streamAsk(payload);
@@ -508,7 +504,7 @@ const Bilinguals = (props) => {
         if (!lastAskPayload || pending) {
             return;
         }
-        const payload = {...lastAskPayload, ...(overrides.question ? {question: overrides.question} : {}), ...(overrides.model ? {model: overrides.model} : {})};
+        const payload = {...lastAskPayload, ...(overrides.question ? {question: overrides.question} : {})};
         await streamAsk(payload);
     };
 
@@ -520,9 +516,23 @@ const Bilinguals = (props) => {
                         {t('bilinguals.title')} <span className="text-[var(--wbench-rule)] dark:text-[var(--wbench-rule-night)]">·</span> en&nbsp;↔&nbsp;ru
                     </span>
                     <span className={HAIRLINE} aria-hidden="true"/>
-                    {Object.keys(aiModels).length > 0 ? (
-                        <SelectGroup value={currentModel} onChange={(e) => setCurrentModel(e.target.value)}
-                                     groups={aiModels}/>
+                    {canUseAi ? (
+                        answerModel ? (
+                            <Link
+                                href="/profile?tab=ai"
+                                className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
+                                title={t('bilinguals.change_model')}
+                            >
+                                {answerModel.label}
+                            </Link>
+                        ) : (
+                            <Link
+                                href="/profile?tab=ai"
+                                className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
+                            >
+                                {t('bilinguals.choose_model')}
+                            </Link>
+                        )
                     ) : (
                         <Link
                             href="/profile"
@@ -655,7 +665,7 @@ const Bilinguals = (props) => {
                                     </div>
                                 </div>
                             )}
-                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow} wordMaps={wordMaps} highlightWords={highlightWords} onWordProgress={handleWordProgress} rowKeys={rowKeys} allEn={allEn} onToggleAllEn={toggleAllEn} popupFontSize={popupFontSize} aiModel={canUseAi ? currentModel : null}/>
+                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow} wordMaps={wordMaps} highlightWords={highlightWords} onWordProgress={handleWordProgress} rowKeys={rowKeys} allEn={allEn} onToggleAllEn={toggleAllEn} popupFontSize={popupFontSize} explain={{enabled: canUseAi, modelKey: props.explanationModelKey}}/>
                         </>
                     }
                     {showWorkplace === true &&

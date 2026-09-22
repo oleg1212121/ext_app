@@ -11,7 +11,11 @@ it('rate-limits the AI question endpoint after 20 requests per minute', function
     $user = User::factory()->create();
 
     $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('isValidModel')->andReturn(true);
+    $mock->shouldReceive('resolveAnswerModel')->andReturn([
+        'id' => 7,
+        'key' => 'openrouter:google/gemini-3-flash-preview',
+        'label' => 'Gemini Flash',
+    ]);
     // Allow unlimited calls — the first 20 run the controller; the 21st is
     // blocked by the limiter before reaching the resolver.
     $mock->shouldReceive('ask')->andReturn('Test answer');
@@ -21,7 +25,6 @@ it('rate-limits the AI question endpoint after 20 requests per minute', function
     $payload = [
         'data' => "Russian line\nEnglish line",
         'question' => '',
-        'model' => 'openrouter:google/gemini-3-flash-preview',
     ];
 
     // First 20 requests succeed.

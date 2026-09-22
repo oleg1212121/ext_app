@@ -1,6 +1,10 @@
 <?php
 
+use App\Http\Controllers\Bilinguals\SimulatorController;
+use App\Models\AiModel;
+use App\Models\AiProvider;
 use App\Models\User;
+use App\Models\UserApiKey;
 use App\Models\UserSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -105,11 +109,17 @@ test('simulator page falls back to defaults when nothing is saved', function () 
             ->where('fontSize', 26)
             ->where('showText', true)
             ->where('showQuestion', false)
-            ->where('currentQuestion', App\Http\Controllers\Bilinguals\SimulatorController::DEFAULT_QUESTION));
+            ->where('currentQuestion', SimulatorController::DEFAULT_QUESTION));
 });
 
-test('simulator page ignores a saved model the user can no longer use', function () {
+test('simulator model choice no longer lives in ui settings', function () {
     $user = User::factory()->create();
+    $provider = AiProvider::factory()->enabled()->create(['key' => 'openrouter', 'name' => 'OpenRouter']);
+    AiModel::factory()->enabled()->create(['ai_provider_id' => $provider->id, 'external_id' => 'cheap', 'name' => 'Cheap', 'pricing_prompt' => '0', 'pricing_completion' => '0']);
+    UserApiKey::factory()->create(['user_id' => $user->id, 'ai_provider_id' => $provider->id]);
+
+    // Legacy leftover: the simulator picks its model from the user's
+    // ai_model_id preference now, never from ui_settings.simulator.model.
     withSavedUiSettings($user, [
         'simulator' => ['model' => 'openrouter:cheap'],
     ]);
@@ -117,22 +127,7 @@ test('simulator page ignores a saved model the user can no longer use', function
     $this->actingAs($user)
         ->get('/bilinguals/en/ru/simulator')
         ->assertOk()
-        ->assertInertia(fn ($page) => $page->where('currentModel', null));
-});
-
-test('simulator page uses the saved model while it is available', function () {
-    $user = User::factory()->create();
-    $provider = App\Models\AiProvider::factory()->enabled()->create(['key' => 'openrouter', 'name' => 'OpenRouter']);
-    App\Models\AiModel::factory()->enabled()->create(['ai_provider_id' => $provider->id, 'external_id' => 'cheap', 'name' => 'Cheap', 'pricing_prompt' => '0', 'pricing_completion' => '0']);
-    App\Models\UserApiKey::factory()->create(['user_id' => $user->id, 'ai_provider_id' => $provider->id]);
-    withSavedUiSettings($user, [
-        'simulator' => ['model' => 'openrouter:cheap'],
-    ]);
-
-    $this->actingAs($user)
-        ->get('/bilinguals/en/ru/simulator')
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page->where('currentModel', 'openrouter:cheap'));
+        ->assertInertia(fn ($page) => $page->where('answerModel', null));
 });
 
 test('reader page seeds font size from saved ui settings', function () {

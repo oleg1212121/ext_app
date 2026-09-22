@@ -34,40 +34,28 @@ class SimulatorController extends Controller
 
     public function simulator(): Response
     {
-        $aiModels = $this->modelResolver->getGroupedModels();
         $textList = $this->getEntityMatchTextList();
         $firstId = $textList[0]['id'] ?? null;
-
-        $currentModel = null;
-        foreach ($aiModels as $models) {
-            $keys = array_keys($models);
-            if (! empty($keys)) {
-                $currentModel = $keys[0];
-                break;
-            }
-        }
 
         $canUseAi = auth()->user()->canUseAi();
 
         $saved = auth()->user()->settings?->ui_settings['simulator'] ?? [];
 
-        $availableModels = [];
-        foreach ($aiModels as $models) {
-            $availableModels = [...$availableModels, ...array_keys($models)];
-        }
-        if (isset($saved['model']) && in_array($saved['model'], $availableModels, true)) {
-            $currentModel = $saved['model'];
-        }
+        // The model is a per-user preference picked in the profile; the page
+        // only shows which model is answering (or that none is chosen).
+        $answerModel = $this->modelResolver->resolveAnswerModel();
 
         return Inertia::render('Bilinguals/Bilinguals', [
-            'aiModels' => $aiModels,
             'textList' => $textList,
             'showWorkplace' => (bool) ($saved['show_workplace'] ?? true),
             'showQuestion' => (bool) ($saved['show_question'] ?? false),
             'showText' => (bool) ($saved['show_text'] ?? true),
             'showAI' => $canUseAi && (bool) ($saved['show_ai'] ?? true),
             'canUseAi' => $canUseAi,
-            'currentModel' => $currentModel,
+            'answerModel' => $answerModel !== null
+                ? ['id' => $answerModel['id'], 'label' => $answerModel['label']]
+                : null,
+            'explanationModelKey' => $this->modelResolver->resolveExplanationModel()['id'] ?? null,
             'currentQuestion' => $saved['question'] ?? self::DEFAULT_QUESTION,
             'currentText' => $firstId !== null ? (string) $firstId : '',
             'fontSize' => $this->clampInt($saved['font_size'] ?? null, 12, 48, 26),
@@ -210,6 +198,12 @@ class SimulatorController extends Controller
                 'a' => $match->aEntity->language_id !== $nativeLanguageId,
                 'b' => $match->bEntity->language_id !== $nativeLanguageId,
             ],
+            // The AI explanation tab is offered on exactly the sides whose
+            // language is not the user's native language.
+            'explainable' => [
+                'a' => $match->aEntity->language_id !== $nativeLanguageId,
+                'b' => $match->bEntity->language_id !== $nativeLanguageId,
+            ],
         ];
     }
 
@@ -292,10 +286,14 @@ class SimulatorController extends Controller
         $prompt = $request->validated('data') ?? '';
 
         $instruction = $request->validated('question') ?? '';
-        $modelString = $request->validated('model');
+        $model = $this->modelResolver->resolveAnswerModel();
+
+        if ($model === null) {
+            return $this->explainError('Choose an AI model in your profile settings.', 400);
+        }
 
         try {
-            $answer = $this->modelResolver->ask($modelString, $instruction, $prompt);
+            $answer = $this->modelResolver->ask($model['key'], $instruction, $prompt);
         } catch (InvalidArgumentException $e) {
             return response()->json([
                 'data' => [
@@ -332,13 +330,17 @@ class SimulatorController extends Controller
      * On error: `data: {"error": "..."}\n\n`.
      * On completion: `data: [DONE]\n\n`.
      */
-    public function askAiStreamed(AiQuestionRequest $request): StreamedResponse
+    public function askAiStreamed(AiQuestionRequest $request): StreamedResponse|JsonResponse
     {
         $prompt = $request->validated('data') ?? '';
         $instruction = $request->validated('question') ?? '';
-        $modelString = $request->validated('model');
+        $model = $this->modelResolver->resolveAnswerModel();
 
-        return response()->stream(function () use ($modelString, $instruction, $prompt): void {
+        if ($model === null) {
+            return $this->explainError('Choose an AI model in your profile settings.', 400);
+        }
+
+        return response()->stream(function () use ($model, $instruction, $prompt): void {
             $sendEvent = function (string $payload): void {
                 echo 'data: '.$payload."\n\n";
                 @ob_flush();
@@ -347,7 +349,7 @@ class SimulatorController extends Controller
 
             try {
                 $this->modelResolver->askStreamed(
-                    $modelString,
+                    $model['key'],
                     $instruction,
                     $prompt,
                     function (string $chunk) use ($sendEvent): void {
@@ -373,38 +375,60 @@ class SimulatorController extends Controller
      * Explain a Ctrl-clicked word in its sentence context (the sentence
      * before, the clicked sentence, the sentence after — by document order
      * in the clicked side's entity). The client identifies the clicked
-     * sentence by its index within the row side's text, which joins the
-     * side's non-empty sentences in document order with newlines
-     * (MeaningMatchPresenter::sideText) — the same list is rebuilt here so
-     * the index lines up exactly.
+     * sentence either by a meaning-match row key (bilingual rows: its index
+     * within the row side's text, which joins the side's non-empty sentences
+     * in document order with newlines — MeaningMatchPresenter::sideText —
+     * the same list is rebuilt here so the index lines up exactly) or by the
+     * entity sentence id directly (single-language reader rows).
      */
     public function explainWord(AiWordExplainRequest $request): JsonResponse
     {
         $validated = $request->validated();
 
-        /** @var MeaningMatch|null $meaningMatch */
-        $meaningMatch = MeaningMatch::query()
-            ->with(['entityMatch', 'sentenceMeaningMatches.entitySentence'])
-            ->find($validated['meaning_match_id']);
+        $model = $this->modelResolver->resolveExplanationModel();
 
-        if ($meaningMatch === null || $meaningMatch->entityMatch === null) {
-            return $this->explainError('Entity match not found', 404);
+        if ($model === null) {
+            return $this->explainError('Choose an AI model in your profile settings.', 400);
         }
 
-        if (! $this->access()->canReadMatch(auth()->user(), $meaningMatch->entityMatch)) {
-            return $this->explainError('You do not have access to this text.', 403);
-        }
+        if (! empty($validated['entity_sentence_id'])) {
+            /** @var EntitySentence|null $clicked */
+            $clicked = EntitySentence::query()
+                ->with('entity')
+                ->find($validated['entity_sentence_id']);
 
-        $clicked = $meaningMatch->sentenceMeaningMatches
-            ->where('side', $validated['side'])
-            ->sortBy(fn ($junction) => $junction->entitySentence?->order ?? 0)
-            ->filter(fn ($junction) => ($junction->entitySentence?->content ?? '') !== '')
-            ->values()
-            ->get((int) $validated['sentence_index'])
-            ?->entitySentence;
+            if ($clicked === null) {
+                return $this->explainError('Sentence not found.', 404);
+            }
 
-        if ($clicked === null) {
-            return $this->explainError('Sentence not found.', 404);
+            if (! $this->access()->canRead(auth()->user(), $clicked->entity)) {
+                return $this->explainError('You do not have access to this text.', 403);
+            }
+        } else {
+            /** @var MeaningMatch|null $meaningMatch */
+            $meaningMatch = MeaningMatch::query()
+                ->with(['entityMatch', 'sentenceMeaningMatches.entitySentence'])
+                ->find($validated['meaning_match_id']);
+
+            if ($meaningMatch === null || $meaningMatch->entityMatch === null) {
+                return $this->explainError('Entity match not found', 404);
+            }
+
+            if (! $this->access()->canReadMatch(auth()->user(), $meaningMatch->entityMatch)) {
+                return $this->explainError('You do not have access to this text.', 403);
+            }
+
+            $clicked = $meaningMatch->sentenceMeaningMatches
+                ->where('side', $validated['side'])
+                ->sortBy(fn ($junction) => $junction->entitySentence?->order ?? 0)
+                ->filter(fn ($junction) => ($junction->entitySentence?->content ?? '') !== '')
+                ->values()
+                ->get((int) $validated['sentence_index'])
+                ?->entitySentence;
+
+            if ($clicked === null) {
+                return $this->explainError('Sentence not found.', 404);
+            }
         }
 
         $previous = EntitySentence::query()
@@ -442,7 +466,7 @@ class SimulatorController extends Controller
             ."Sentence after:\n".($next?->content ?? '(not available)');
 
         try {
-            $answer = $this->modelResolver->ask($validated['model'], $instruction, $question);
+            $answer = $this->modelResolver->ask($model['key'], $instruction, $question);
         } catch (InvalidArgumentException) {
             return $this->explainError('Invalid model selection.', 400);
         } catch (AiProviderException $e) {

@@ -74,6 +74,10 @@ export default function ReaderApp({
     primaryHighlightable = false,
     translationWordMap: initialTranslationWordMap = {},
     translationHighlightable = false,
+    primaryExplainable = false,
+    translationExplainable = false,
+    primarySide = null,
+    explain = null,
 }) {
     const {t} = useI18n();
     const [fontSize, setFontSize] = useState(savedFontSize ?? DEFAULT_FONT_SIZE);
@@ -494,6 +498,10 @@ export default function ReaderApp({
                                 translationHighlightable={translationHighlightable}
                                 highlight={highlight}
                                 onWordProgress={handleWordProgress}
+                                primaryExplainable={primaryExplainable}
+                                translationExplainable={translationExplainable}
+                                primarySide={primarySide}
+                                explain={explain}
                             />
                         ))}
                     </ol>

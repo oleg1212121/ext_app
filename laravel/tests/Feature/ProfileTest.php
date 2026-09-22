@@ -63,7 +63,7 @@ test('user settings can update the native language', function () {
 
     $response
         ->assertSessionHasNoErrors()
-        ->assertRedirect('/profile');
+        ->assertRedirect('/profile?tab=preferences');
 
     expect($user->settings->refresh()->native_language_id)->toBe($russian->id);
 });
