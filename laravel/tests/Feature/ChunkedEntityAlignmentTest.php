@@ -555,6 +555,8 @@ it('drains the RU original tail as skip rows when RU is the original side and lo
 
     $entityMatch->refresh();
 
+    // No skip row is stored while the b cursor is parked; both unmatched RU
+    // originals are junctioned by the completion repair, one row each.
     expect($entityMatch->status)->toBe('completed')
         ->and($entityMatch->error_message)->toBeNull()
         ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(2)
@@ -1502,7 +1504,75 @@ it('does not roll back human-edit sentinel matches', function () {
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
 
-it('force-advances the cursor when a rolled-back commit cannot reach the stored offset', function () {
+it('force-advances the a cursor past a mid-pool stall while the b cursor stays', function () {
+    Http::fake(fn (Request $request) => Http::response([
+        'matches' => [
+            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+        ],
+        'unmatched_a' => [],
+        'unmatched_b' => [],
+    ]));
+
+    Bus::fake();
+
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    $enSentences = collect(range(1, 5))->map(fn (int $order): EntitySentence => EntitySentence::create([
+        'entity_id' => $enEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => "English {$order}.",
+        'order' => $order,
+    ]));
+    $ruSentences = collect(range(1, 5))->map(fn (int $order): EntitySentence => EntitySentence::create([
+        'entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => "Russian {$order}.",
+        'order' => $order,
+    ]));
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, [
+        'status' => 'aligning',
+        'chunk_size' => 2,
+        'max_n' => 1,
+        'a_total_sentences' => 5,
+        'b_total_sentences' => 5,
+        'a_last_sentence_offset' => 2,
+        'b_last_sentence_offset' => 2,
+    ]);
+
+    $seed = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id,
+        'order' => 0,
+        'similarity' => 0.8,
+        'alignment_chunk' => 0,
+    ]);
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $enSentences[1]->id,
+        'meaning_match_id' => $seed->id,
+        'side' => 'a',
+    ]);
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $ruSentences[1]->id,
+        'meaning_match_id' => $seed->id,
+        'side' => 'b',
+    ]);
+
+    (new AlignEntitySentences($entityMatch->id))->handle();
+
+    $entityMatch->refresh();
+
+    expect($entityMatch->status)->toBe('aligning')
+        ->and($entityMatch->a_last_sentence_offset)->toBe(3)
+        ->and($entityMatch->b_last_sentence_offset)->toBe(2)
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(1);
+
+    Bus::assertDispatched(AlignEntitySentences::class, 1);
+});
+
+it('advances the cursors to the window end when the last chunk stores trailing skips', function () {
     Http::fake(fn (Request $request) => Http::response([
         'matches' => [
             ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
@@ -1541,35 +1611,293 @@ it('force-advances the cursor when a rolled-back commit cannot reach the stored 
         'b_last_sentence_offset' => 2,
     ]);
 
-    foreach ([0, 1] as $index) {
-        $seed = MeaningMatch::create([
-            'entity_match_id' => $entityMatch->id,
-            'order' => $index,
-            'similarity' => 0.8,
-            'alignment_chunk' => 0,
-        ]);
-        SentenceMeaningMatch::create([
-            'entity_sentence_id' => $enSentences[$index]->id,
-            'meaning_match_id' => $seed->id,
-            'side' => 'a',
-        ]);
-        SentenceMeaningMatch::create([
-            'entity_sentence_id' => $ruSentences[$index]->id,
-            'meaning_match_id' => $seed->id,
-            'side' => 'b',
-        ]);
-    }
+    // The rolled-back prior match drags the window back to offset 1, so the
+    // last chunk's window is [1, 4): the committed pair covers sentence 1
+    // and trailing skips cover sentences 2 and 3 on both sides.
+    $seed = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id,
+        'order' => 0,
+        'similarity' => 0.8,
+        'alignment_chunk' => 0,
+    ]);
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $enSentences[1]->id,
+        'meaning_match_id' => $seed->id,
+        'side' => 'a',
+    ]);
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $ruSentences[1]->id,
+        'meaning_match_id' => $seed->id,
+        'side' => 'b',
+    ]);
 
     (new AlignEntitySentences($entityMatch->id))->handle();
 
     $entityMatch->refresh();
 
-    expect($entityMatch->status)->toBe('aligning')
-        ->and($entityMatch->a_last_sentence_offset)->toBe(3)
-        ->and($entityMatch->b_last_sentence_offset)->toBe(2)
-        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(7);
+    expect($entityMatch->status)->toBe('completed')
+        ->and($entityMatch->a_last_sentence_offset)->toBe(4)
+        ->and($entityMatch->b_last_sentence_offset)->toBe(4)
+        // 1 re-aligned pair + trailing skips for sentences 2 and 3 on both
+        // sides + the completion repair row for sentence 0, which the
+        // rollback dragged out of the window and no chunk re-covered.
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(6)
+        ->and($enSentences[3]->refresh()->meaningJunctions()->count())->toBe(1)
+        ->and($ruSentences[3]->refresh()->meaningJunctions()->count())->toBe(1);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
+it('does not junction the parked original-side head into a premature skip row', function () {
+    Http::fake(fn (Request $request) => Http::response([
+        'matches' => [],
+        'unmatched_a' => [],
+        'unmatched_b' => [],
+    ]));
+
+    Bus::fake();
+
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $languages = createLanguages();
+    $work = createWork(['original_language_id' => $languages['ru']->id]);
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    foreach (range(1, 3) as $order) {
+        EntitySentence::create([
+            'entity_id' => $enEntity->id,
+            'sentence_type_id' => $sentenceType->id,
+            'content' => "English {$order}.",
+            'order' => $order,
+        ]);
+    }
+
+    $ruSentence = EntitySentence::create([
+        'entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'Russian.',
+        'order' => 1,
+    ]);
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, [
+        'status' => 'aligning',
+        'chunk_size' => 1,
+        'max_n' => 1,
+        'a_total_sentences' => 3,
+        'b_total_sentences' => 1,
+        'a_last_sentence_offset' => 0,
+        'b_last_sentence_offset' => 0,
+    ]);
+
+    // RU is the original side and its head stays parked while the a cursor
+    // drains: no run may junction it into a skip row here — the parked head
+    // is re-fed into every window and finalize junctions it if unmatched.
+    (new AlignEntitySentences($entityMatch->id))->handle();
+    (new AlignEntitySentences($entityMatch->id))->handle();
+
+    $entityMatch->refresh();
+
+    expect($entityMatch->a_last_sentence_offset)->toBe(2)
+        ->and($entityMatch->b_last_sentence_offset)->toBe(0)
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(0)
+        ->and($ruSentence->refresh()->meaningJunctions()->count())->toBe(0);
+
+    (new AlignEntitySentences($entityMatch->id))->handle();
+
+    $entityMatch->refresh();
+
+    expect($entityMatch->status)->toBe('completed')
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(1)
+        ->and($ruSentence->refresh()->meaningJunctions()->count())->toBe(1);
+
+    Bus::assertDispatched(AlignEntitySentences::class, 2);
+});
+
+it('keeps meaning match order in document position while re-aligning around a landmark', function () {
+    Http::fake(fn (Request $request) => Http::response([
+        'matches' => [
+            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.5],
+        ],
+        'unmatched_a' => [],
+        'unmatched_b' => [],
+    ]));
+
+    Bus::fake();
+
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    $enSentences = collect(range(1, 3))->map(fn (int $order): EntitySentence => EntitySentence::create([
+        'entity_id' => $enEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => "English {$order}.",
+        'order' => $order,
+    ]));
+    $ruSentences = collect(range(1, 3))->map(fn (int $order): EntitySentence => EntitySentence::create([
+        'entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => "Russian {$order}.",
+        'order' => $order,
+    ]));
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, [
+        'status' => 'aligning',
+        'chunk_size' => 75,
+        'max_n' => 1,
+        'a_total_sentences' => 3,
+        'b_total_sentences' => 3,
+        'a_last_sentence_offset' => 0,
+        'b_last_sentence_offset' => 0,
+    ]);
+
+    // A landmark pins the second pair; persistSegment writes the re-aligned
+    // pool before it AFTER the landmark's order, so only a write-time
+    // resequence keeps the stored sequence in document order.
+    $landmark = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id,
+        'order' => 1024,
+        'similarity' => 0.95,
+        'alignment_chunk' => -1,
+    ]);
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $enSentences[1]->id,
+        'meaning_match_id' => $landmark->id,
+        'side' => 'a',
+    ]);
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $ruSentences[1]->id,
+        'meaning_match_id' => $landmark->id,
+        'side' => 'b',
+    ]);
+
+    (new AlignEntitySentences($entityMatch->id))->handle();
+
+    $rows = MeaningMatch::query()
+        ->where('entity_match_id', $entityMatch->id)
+        ->orderBy('order')
+        ->get();
+
+    $firstSideA = EntitySentence::find(
+        $rows[0]->sentenceMeaningMatches()->where('side', 'a')->first()->entity_sentence_id
+    );
+
+    expect($rows)->toHaveCount(2)
+        ->and($rows[0]->order)->toBe(0)
+        ->and($firstSideA->content)->toBe('English 1.', 'the pool before the landmark must sort before it')
+        ->and($entityMatch->refresh()->status)->toBe('aligning')
+        ->and($entityMatch->a_last_sentence_offset)->toBe(1)
+        ->and($entityMatch->b_last_sentence_offset)->toBe(1);
 
     Bus::assertDispatched(AlignEntitySentences::class, 1);
+});
+
+it('replaces stale machine rows covering the sentences of a re-stored window', function () {
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    $enSentence = EntitySentence::create([
+        'entity_id' => $enEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'English.',
+        'order' => 1,
+    ]);
+    $ruSentence = EntitySentence::create([
+        'entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'Russian.',
+        'order' => 1,
+    ]);
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, ['status' => 'aligning']);
+
+    // A re-fed window's stale row from an earlier chunk claims the same pair.
+    $stale = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id,
+        'order' => 0,
+        'similarity' => 0.3,
+        'alignment_chunk' => 5,
+    ]);
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $enSentence->id,
+        'meaning_match_id' => $stale->id,
+        'side' => 'a',
+    ]);
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $ruSentence->id,
+        'meaning_match_id' => $stale->id,
+        'side' => 'b',
+    ]);
+
+    SentenceAlignmentService::create()->storeAlignmentSegmentFromMatches(
+        $entityMatch,
+        6,
+        [['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.5]],
+        collect([$enSentence]),
+        collect([$ruSentence]),
+        true,
+    );
+
+    expect(MeaningMatch::query()->whereKey($stale->id)->exists())->toBeFalse()
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(1)
+        ->and($enSentence->refresh()->meaningJunctions()->count())->toBe(1)
+        ->and($ruSentence->refresh()->meaningJunctions()->count())->toBe(1);
+});
+
+it('lets a human row absorb a re-fed window duplicate and survives it', function () {
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    $enSentence = EntitySentence::create([
+        'entity_id' => $enEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'English.',
+        'order' => 1,
+    ]);
+    $ruSentence = EntitySentence::create([
+        'entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'Russian.',
+        'order' => 1,
+    ]);
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, ['status' => 'aligning']);
+
+    $landmark = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id,
+        'order' => 0,
+        'similarity' => 1.0,
+        'alignment_chunk' => -1,
+    ]);
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $enSentence->id,
+        'meaning_match_id' => $landmark->id,
+        'side' => 'a',
+    ]);
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $ruSentence->id,
+        'meaning_match_id' => $landmark->id,
+        'side' => 'b',
+    ]);
+
+    SentenceAlignmentService::create()->storeAlignmentSegmentFromMatches(
+        $entityMatch,
+        6,
+        [['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.5]],
+        collect([$enSentence]),
+        collect([$ruSentence]),
+        true,
+    );
+
+    expect(MeaningMatch::query()->whereKey($landmark->id)->exists())->toBeTrue()
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(1)
+        ->and($enSentence->refresh()->meaningJunctions()->count())->toBe(1)
+        ->and($ruSentence->refresh()->meaningJunctions()->count())->toBe(1);
 });
 
 it('passes landmarks and high confidence to the alignment endpoint', function () {

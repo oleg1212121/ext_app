@@ -5,7 +5,7 @@ description: End-to-end workflow for aligning two same-work entities (any langua
 tags: [alignment, embeddings, jobs, howto]
 status: stable
 stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-20T23:59:00Z }
+generated: { by: agent:zcode, at: 2026-09-22T16:00:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -163,6 +163,30 @@ sources:
    (`SparseOrderService`; language-agnostic — it scopes `entity_sentences`
    and `meaning_matches`, no `--lang`). Run it manually after large bulk
    edits.
+7. **Repair display order** — if a match shows sentences out of sequence in
+   the reader or the alignment editor (a scrambled `meaning_matches.order`;
+   see the order-preservation invariant in
+   [Sentence Alignment](/domains/sentence-alignment.md) — alignment itself
+   must never change sentence order), renumber one match back to document
+   position:
+
+   ```bash
+   docker exec ext_app_laravel php artisan alignments:resequence <entityMatchId>
+   ```
+
+   Idempotent: reports `0` changed rows when the order column already equals
+   document position. Every pipeline write path (chunk persist, finalize,
+   alignment copy) already runs the same resequencing, so a manual run is
+   only needed for rows written before the fix (Sep 2026) or after a manual
+   DB edit. The same command also **drops fully subsumed duplicate rows**
+   (one sentence junctioned into several machine rows — the signature of a
+   re-fed window), always resolving duplicates in favor of landmark/human
+   rows; legitimate n:m partial overlaps are left alone.
+
+   If the order is still wrong after a re-run of the alignment itself, check
+   the worker before suspecting the code: a queue worker started before a
+   fix keeps executing the old code until restarted (`composer run dev`
+   again, or `php artisan queue:restart`).
 
 # Failure handling
 

@@ -1,5 +1,120 @@
 # Directory Update Log
 
+## 2026-09-22 (fix: junction-uniqueness invariants — last-chunk cursors, premature skips, dedupe; stale-worker ops note)
+
+Follow-up to the order-invariant fix earlier today. Diagnostic on the fresh
+test alignment (entity match 15, 1566 rows) showed **zero duplicate
+junctions** and a walk whose shape matched the *old* comparator's output
+exactly (a b-only row sorted at the a-index equal to its b-index) — the
+fix on disk had simply never executed: the queue worker that ran the
+alignment predated the fix, and code loads once per worker process.
+Documented as an operations note in `wiki/domains/sentence-alignment.md`
+and `wiki/playbooks/run-alignment.md`: **restart the worker (`composer run
+dev` / `php artisan queue:restart`) after pulling alignment fixes.**
+
+Three latent re-feed holes closed while in there (none triggered by
+match 15, all defensive):
+
+* **Last-chunk cursor rule** (`AlignEntitySentences::alignPoolChunk`): when
+  a pool's final window commits, cursors now advance to the **window end**
+  (`aOffset + aSentences->count()`), matching what `isLastChunk` storage
+  covers (trailing skips up to the window end) — previously they stopped at
+  the last committed match, so the next invocation re-fed sentences that
+  already carried junctions.
+* **No premature skips for parked sides**: a no-progress chunk stores skip
+  rows only for sides whose cursor advances past the stored sentence
+  (`storeChunkSkips(..., $sides)`; `alignWholePool`'s no-committed path
+  passes only the a head). A parked side re-feeds its head into later
+  windows; a premature skip row there duplicated the junction when one of
+  those windows matched it. The parked original side is covered by
+  finalize's junction-less repair.
+* **Junction-uniqueness at write time** (`SentenceAlignmentService::
+  persistSegment`): machine rows below the landmark bar junctioning any
+  sentence of the incoming segment are deleted wholesale first — a re-fed
+  window now replaces stale coverage instead of duplicating it. The
+  landmark bar is now a shared const (`SentenceAlignmentService::
+  LANDMARK_THRESHOLD`, aliased by the job).
+* **Resequence dedupe**: `resequenceMatchesByDocumentPosition` drops fully
+  subsumed machine rows before the walk (a row whose every junction is held
+  by a higher-priority row — landmark/human over machine, then two-sided,
+  richer, more similar, earlier); partial n:m overlaps stay. Runs in the
+  same transaction as the renumber; also active in `alignments:resequence`.
+* Tests: last-chunk cursors (trailing skips → cursors at window end, no
+  duplicate junctions), mid-pool stall force-advance (rewritten to a
+  non-last-chunk shape), parked original-side head not junctioned into
+  premature skips, re-stored window replaces stale machine rows, human row
+  absorbs a duplicate and survives, resequence dedupe + partial-overlap
+  tolerance. `composer run test:tia`: 656 passed (3,263 assertions).
+
+## 2026-09-22 (fix: meaning-match order invariant — resequence side-mixing, copy fast path, atomic chunk writes)
+
+* **Reported symptom.** After aligning, meaning matches showed sentences out
+  of sequence: match #68's Russian sentence displayed position 67 while the
+  next match's displayed 65 — the per-sentence number is the sentence's rank
+  among its side's sentences while walking `meaning_matches.order`, so the
+  `order` column itself was scrambled.
+* **Root cause 1 — the Sep 18 resequence mixed side scales.**
+  `resequenceMatchesByDocumentPosition()` sorted every row by
+  `primary = posA ?? posB`, comparing **a-side document indexes against
+  b-side indexes** for single-b rows. A two-sided row anchored at a=41 whose
+  b partner is 67 sorts before a b-only row at b=65 (41 < 65), so the stored
+  sequence read RU 67 → RU 65. The resequence had been *re-scrambling*
+  alignments that `persistSegment()` had written in correct document order.
+  Fix: a-anchored rows (two-sided + a-only) sort by a position; each pending
+  b-only row is emitted immediately before the first anchored row whose b
+  position is larger (a-only rows carry no b information and never hold one
+  back); junction-less rows stay last. The rows query also gained
+  `orderBy('order')->orderBy('id')` (deterministic ties).
+* **Root cause 2 — the copy fast path propagated scrambled orders.**
+  `AlignmentCopyService::copyAlignment()` (added Sep 21, ADR 0033) cloned
+  `meaning_matches.order` verbatim from a completed source and skipped the
+  pipeline's finalize resequence entirely, immortalizing any pre-fix
+  scramble and spreading it through copies-of-copies. Fix: the copy
+  transaction now runs `resequenceMatchesByDocumentPosition($target)` after
+  the junction inserts — a copy either lands ordered or the transaction rolls
+  back and the caller falls back to the full pipeline.
+* **Write-time ordering.** `persistSegment()` had appended every new chunk
+  after `MAX(order)`, so during a landmark-aware re-align the replacement
+  rows for early-document pools sorted after the tail until finalize ran
+  (the same failure mode as the removed Sep 18 refinement round). Fix:
+  `persistSegment()` calls `resequenceMatchesByDocumentPosition()` inside
+  its transaction after every chunk/skip persist — mid-run (status
+  `aligning`) state is now already in document order; on a fresh left-to-right
+  run it is a no-op (orders are already dense strides).
+* **Atomic chunk writes (retry window closed).** Persisting a chunk's rows
+  and advancing `a/b_last_sentence_offset` happened in two separate
+  transactions — a crash between them re-aligned the same window under a
+  fresh `alignment_chunk` while the old rows survived, duplicating junctions
+  no resequence can undo. Fix: `persistOffsets()` takes the chunk writes as a
+  closure and commits rows + cursors in one `DB::transaction`
+  (`alignWholePool` now persists internally instead of returning offsets;
+  finalize/dispatch happen only after the commit).
+* **Invariant documented.** "Alignment never changes sentence order" is now
+  explicit: sentences keep the original order of the uploaded source text
+  file; `entity_sentences.order` is assigned once at split and only the
+  editor's drag renumbers it; `meaning_matches.order` must equal the
+  document-position sequence on both sides, enforced at every write path.
+  See the new "Order-preservation invariant" section in
+  [Sentence Alignment](domains/sentence-alignment.md) and the new invariant
+  bullet in [Entities & Alignment](database/entities-alignment.md);
+  [Running an Alignment](playbooks/run-alignment.md) documents
+  `alignments:resequence <id>` as the manual single-match repair.
+* **Data not repaired.** Existing scrambled rows are left in place by
+  decision; re-aligning a match (or running `alignments:resequence <id>`)
+  repairs it on demand.
+* Updated [Sentence Alignment](domains/sentence-alignment.md) (new
+  order-preservation invariant section; stage 2b copy + finalize notes),
+  [Entities & Alignment](database/entities-alignment.md) (order-preserving
+  pipeline invariant bullet),
+  [Running an Alignment](playbooks/run-alignment.md) (repair step 7).
+* Tests: `ResequenceEntityMatchesTest` — the reported regression
+  (b-only row must slot before the two-sided row whose b partner is later;
+  fails under the old comparator) + a full a-only/b-only/two-sided/
+  junction-less interleave sequence. `AlignmentCopyTest` — a reversed source
+  order column does not survive the copy. `ChunkedEntityAlignmentTest` — a
+  re-aligned pool before a landmark sorts before it while the match is still
+  `aligning`.
+
 ## 2026-09-21 (feature: Context explanation tab in the simulator's word popup)
 
 * **`POST /ai/word-explain`** (`SimulatorController::explainWord`, named
