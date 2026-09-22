@@ -10,6 +10,7 @@ use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 // Guard: anything that leaks an HTTP call must hit a fake response instead of
@@ -329,4 +330,49 @@ test('with no eligible completed source the full pipeline runs', function () {
         ->assertSessionHas('success', 'Entity match created — alignment started.');
 
     Bus::assertDispatched(AlignEntitySentences::class);
+});
+
+test('a scrambled source order column does not survive the copy', function () {
+    $work = createWork();
+    $en = hashedEntity('en', $work, 'EN original');
+    $ru = hashedEntity('ru', $work, 'RU original');
+
+    $source = completedSourceMatch($en, $ru);
+
+    // A pre-fix alignment could leave the source's order column destroyed
+    // (here: reversed). The copy must not inherit the scramble.
+    $rows = $source->meaningMatches()->orderBy('order')->get()->values();
+
+    DB::transaction(function () use ($rows): void {
+        foreach ($rows as $row) {
+            MeaningMatch::query()->whereKey($row->id)->update(['order' => -$row->id]);
+        }
+
+        foreach ($rows as $index => $row) {
+            MeaningMatch::query()->whereKey($row->id)->update(['order' => (3 - $index) * 1024]);
+        }
+    });
+
+    $enCopy = exactCopy($en, 'EN copy');
+    $ruCopy = exactCopy($ru, 'RU copy');
+
+    Bus::fake();
+
+    storeMatch($enCopy, $ruCopy)->assertRedirect(route('alignments.index'));
+
+    $newMatch = matchFor($enCopy, $ruCopy);
+
+    expect($newMatch->status)->toBe('completed');
+
+    $copied = $newMatch->meaningMatches()->orderBy('order')->get()->values();
+
+    expect($copied->pluck('order')->all())->toBe([0, 1024, 2048]);
+
+    foreach ($copied as $index => $row) {
+        $content = EntitySentence::find(
+            $row->sentenceMeaningMatches()->where('side', 'a')->first()->entity_sentence_id
+        )->content;
+
+        expect($content)->toBe(['First.', 'Second.', 'Third.'][$index]);
+    }
 });

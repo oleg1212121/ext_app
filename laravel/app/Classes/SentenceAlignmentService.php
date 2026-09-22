@@ -20,6 +20,13 @@ class SentenceAlignmentService
 
     private const RETRY_DELAYS_MS = [500, 1_500, 3_000];
 
+    /**
+     * Similarity at or above which an auto-aligned row is a landmark: pinned
+     * against re-alignment, never deleted by the pipeline. Mirrored by
+     * AlignEntitySentences::LANDMARK_THRESHOLD.
+     */
+    public const LANDMARK_THRESHOLD = 0.90;
+
     public function __construct(
         private readonly string $apiUrl,
         private readonly int $timeout,
@@ -149,14 +156,29 @@ class SentenceAlignmentService
 
     /**
      * Renumber an entity match's meaning matches 0, 1024, 2048... in document
-     * position order (each row sorts by its earliest junctioned sentence on
-     * either side; junction-less rows go last). Repairs the appended-after-max
+     * position order, so walking the rows by `order` reads each side's
+     * sentences in their original sequence. Repairs the appended-after-max
      * sequences that re-align rounds leave behind — every display surface
      * sorts strictly by `order`, so a scrambled order column IS a scrambled
      * alignment. Two-phase write (park at unique negatives first) respects
      * the (entity_match_id, order) unique index.
      *
-     * @return int The number of rows whose order changed
+     * Machine rows whose every junction is also held by a higher-priority row
+     * (one sentence junctioned into several rows — the signature of a re-fed
+     * window) are deleted first: two rows claiming the same sentence can
+     * never both sit in document order. Partial overlaps of multi-sentence
+     * rows are legitimate n:m matches and stay.
+     *
+     * Ordering rule: rows junctioned on side a (two-sided and a-only) sort by
+     * their a position; single-b rows have no a anchor, so they cannot share
+     * that comparator — mixing the two scales is what historically put a
+     * b-only row after a two-sided row whose b sentences came later. Instead,
+     * a-anchored rows are laid out first and each pending b-only row is
+     * emitted immediately before the first anchored row whose b position is
+     * larger (a-only rows give no b information and never hold one back).
+     * Junction-less rows go last by their stored order.
+     *
+     * @return int The number of rows deleted or whose order changed
      */
     public function resequenceMatchesByDocumentPosition(EntityMatch $entityMatch): int
     {
@@ -178,9 +200,19 @@ class SentenceAlignmentService
         $rows = MeaningMatch::query()
             ->where('entity_match_id', $entityMatch->id)
             ->with('sentenceMeaningMatches')
-            ->get(['id', 'order']);
+            ->orderBy('order')
+            ->orderBy('id')
+            ->get(['id', 'order', 'similarity', 'alignment_chunk']);
 
-        $sortKeys = [];
+        $victimIds = $this->subsumedDuplicateRowIds($rows);
+
+        if ($victimIds !== []) {
+            $rows = $rows->reject(fn ($row) => in_array($row->id, $victimIds))->values();
+        }
+
+        $anchored = [];
+        $bOnly = [];
+        $junctionless = [];
 
         foreach ($rows as $row) {
             $posA = null;
@@ -200,34 +232,71 @@ class SentenceAlignmentService
                 }
             }
 
-            $sortKeys[$row->id] = [
-                'primary' => $posA ?? $posB ?? PHP_INT_MAX,
-                'secondary' => $posB ?? $posA ?? PHP_INT_MAX,
+            $entry = [
+                'id' => $row->id,
                 'order' => (int) $row->order,
+                'posA' => $posA,
+                'posB' => $posB,
             ];
+
+            if ($posA !== null) {
+                $anchored[] = $entry;
+            } elseif ($posB !== null) {
+                $bOnly[] = $entry;
+            } else {
+                $junctionless[] = $entry;
+            }
         }
 
-        uasort($sortKeys, fn (array $x, array $y): int => [$x['primary'], $x['secondary']]
-            <=> [$y['primary'], $y['secondary']]);
+        usort($anchored, fn (array $x, array $y): int => [$x['posA'], $x['posB'] ?? PHP_INT_MAX, $x['order']]
+            <=> [$y['posA'], $y['posB'] ?? PHP_INT_MAX, $y['order']]);
+
+        usort($bOnly, fn (array $x, array $y): int => [$x['posB'], $x['order']] <=> [$y['posB'], $y['order']]);
+
+        $sequence = [];
+
+        foreach ($anchored as $entry) {
+            if ($entry['posB'] !== null) {
+                while ($bOnly !== [] && $bOnly[0]['posB'] < $entry['posB']) {
+                    $sequence[] = array_shift($bOnly);
+                }
+            }
+
+            $sequence[] = $entry;
+        }
+
+        foreach ($bOnly as $entry) {
+            $sequence[] = $entry;
+        }
+
+        foreach ($junctionless as $entry) {
+            $sequence[] = $entry;
+        }
 
         $changes = [];
         $index = 0;
 
-        foreach ($sortKeys as $rowId => $sortKey) {
+        foreach ($sequence as $entry) {
             $newOrder = SparseOrderService::STRIDE * $index;
 
-            if ($sortKey['order'] !== $newOrder) {
-                $changes[] = ['id' => $rowId, 'order' => $newOrder];
+            if ($entry['order'] !== $newOrder) {
+                $changes[] = ['id' => $entry['id'], 'order' => $newOrder];
             }
 
             $index++;
         }
 
-        if ($changes === []) {
+        if ($changes === [] && $victimIds === []) {
             return 0;
         }
 
-        DB::transaction(function () use ($changes): void {
+        DB::transaction(function () use ($changes, $victimIds): void {
+            // Junctions cascade via FK, so deleting a subsumed row removes
+            // exactly its duplicated sentence claims.
+            if ($victimIds !== []) {
+                MeaningMatch::query()->whereKey($victimIds)->delete();
+            }
+
             foreach ($changes as $change) {
                 MeaningMatch::query()
                     ->whereKey($change['id'])
@@ -241,7 +310,63 @@ class SentenceAlignmentService
             }
         });
 
-        return count($changes);
+        return count($changes) + count($victimIds);
+    }
+
+    /**
+     * Ids of machine rows whose every junction is also held by a
+     * higher-priority row of the same entity match — the
+     * one-sentence-junctioned-into-two-rows signature of a re-fed window.
+     * Priority: landmark/human rows (chunk -1 or at/above the landmark bar)
+     * over machine rows, then two-sided over one-sided, richer rows, higher
+     * similarity, lower order, lower id. Landmark and human rows are never
+     * victims; a row keeping at least one junction of its own stays (partial
+     * overlaps are legitimate n:m matches).
+     *
+     * @param  Collection<int, MeaningMatch>  $rows
+     * @return list<int>
+     */
+    private function subsumedDuplicateRowIds(Collection $rows): array
+    {
+        $priorities = [];
+
+        foreach ($rows as $row) {
+            $sides = $row->sentenceMeaningMatches->pluck('side');
+
+            $priorities[$row->id] = [
+                $row->alignment_chunk === -1
+                    || (float) $row->similarity >= self::LANDMARK_THRESHOLD ? 1 : 0,
+                $sides->contains('a') && $sides->contains('b') ? 1 : 0,
+                $row->sentenceMeaningMatches->count(),
+                (float) $row->similarity,
+                -$row->order,
+                -$row->id,
+            ];
+        }
+
+        $keeperOf = [];
+
+        foreach ($rows as $row) {
+            foreach ($row->sentenceMeaningMatches as $junction) {
+                $key = $junction->side.':'.$junction->entity_sentence_id;
+                $incumbentId = $keeperOf[$key] ?? null;
+
+                if ($incumbentId === null
+                    || $priorities[$row->id] > $priorities[$incumbentId]) {
+                    $keeperOf[$key] = $row->id;
+                }
+            }
+        }
+
+        return $rows
+            ->filter(fn (MeaningMatch $row): bool => $priorities[$row->id][0] === 0
+                && $row->sentenceMeaningMatches->isNotEmpty()
+                && $row->sentenceMeaningMatches->every(
+                    fn ($junction) => ($keeperOf[$junction->side.':'.$junction->entity_sentence_id] ?? null) !== $row->id,
+                ))
+            ->pluck('id')
+            ->values()
+            ->all();
     }
 
     /**
@@ -457,6 +582,36 @@ class SentenceAlignmentService
                 ->where('alignment_chunk', $alignmentChunk)
                 ->delete();
 
+            // A re-fed window (retry after a crash, duplicated job) can carry
+            // sentences that already carry junctions in machine rows from
+            // other chunks. Junctioning them again puts one sentence in two
+            // rows — unfixable by renumbering — so any machine row below the
+            // landmark bar covering an incoming sentence is deleted wholesale
+            // and its coverage re-stored here. Landmark and human rows
+            // (chunk -1) are pinned and never deleted; pools and rollback
+            // exclude them by construction, so an intersection is not
+            // expected and any surviving overlap is left to the resequence
+            // dedupe to resolve in favor of the pinned row.
+            $incomingSentenceIds = collect($links)
+                ->pluck('a_sentence_id')
+                ->merge(collect($links)->pluck('b_sentence_id'))
+                ->merge(collect($dpPathSegment)->pluck('a_sentence_id'))
+                ->merge(collect($dpPathSegment)->pluck('b_sentence_id'))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            if ($incomingSentenceIds !== []) {
+                MeaningMatch::query()
+                    ->where('entity_match_id', $entityMatch->id)
+                    ->where('alignment_chunk', '!=', -1)
+                    ->where('similarity', '<', self::LANDMARK_THRESHOLD)
+                    ->whereHas('sentenceMeaningMatches', fn ($query) => $query
+                        ->whereIn('entity_sentence_id', $incomingSentenceIds))
+                    ->delete();
+            }
+
             $maxOrder = MeaningMatch::query()
                 ->where('entity_match_id', $entityMatch->id)
                 ->max('order');
@@ -529,6 +684,11 @@ class SentenceAlignmentService
             $entityMatch->update([
                 'linked_count' => $this->countLinkedPairs($entityMatch->id),
             ]);
+
+            // Rows land append-after-max, which misplaces re-align pool rows
+            // between surviving landmarks; renormalize in the same transaction
+            // so mid-run state is already in document order.
+            $this->resequenceMatchesByDocumentPosition($entityMatch);
         });
     }
 

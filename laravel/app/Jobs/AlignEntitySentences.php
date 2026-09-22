@@ -9,6 +9,7 @@ use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
+use Closure;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -31,7 +32,7 @@ class AlignEntitySentences implements ShouldQueue
 
     private const ROLLBACK_MATCHES = 2;
 
-    public const LANDMARK_THRESHOLD = 0.90;
+    public const LANDMARK_THRESHOLD = SentenceAlignmentService::LANDMARK_THRESHOLD;
 
     public int $timeout = 600;
 
@@ -247,7 +248,7 @@ class AlignEntitySentences implements ShouldQueue
                 )->isNotEmpty();
 
                 if (! $hasRollbackCandidates) {
-                    $offsets = $this->alignWholePool(
+                    $this->alignWholePool(
                         $entityMatch,
                         $aEntity,
                         $bEntity,
@@ -255,12 +256,6 @@ class AlignEntitySentences implements ShouldQueue
                         $pool['a_end'],
                         $poolBStart,
                         $pool['b_end'],
-                    );
-
-                    $this->persistOffsets(
-                        $entityMatch,
-                        $offsets['a_offset'],
-                        $offsets['b_offset'],
                         $aTotal,
                     );
 
@@ -459,12 +454,11 @@ class AlignEntitySentences implements ShouldQueue
      * Align a pool small enough to fit a single /align call. The pool edges
      * are the landmarks themselves, so no seam rollback/trim is needed:
      * everything the python service returns is committed and trailing skips
-     * are stored up to the pool boundary. With no committed match the
+     * are stored up to the pool boundary. Rows and the advanced cursors are
+     * committed atomically (see persistOffsets). With no committed match the
      * original-side sentences (both sides for translation↔translation pairs)
      * are stored as skips and the a cursor advances by one so the alignment
      * never stalls.
-     *
-     * @return array{a_offset: int, b_offset: int}
      */
     private function alignWholePool(
         EntityMatch $entityMatch,
@@ -474,16 +468,25 @@ class AlignEntitySentences implements ShouldQueue
         int $aEnd,
         int $bStart,
         int $bEnd,
-    ): array {
+        int $aTotal,
+    ): void {
         $aSentences = $this->sentenceSlice($aEntity->id, $aStart, $aEnd - $aStart);
         $bSentences = $this->sentenceSlice($bEntity->id, $bStart, $bEnd - $bStart);
 
         if ($aSentences->isEmpty() || $bSentences->isEmpty()) {
-            if ($aSentences->isNotEmpty()) {
-                $this->storePoolSkips($entityMatch, ['a' => $aSentences->take(1)]);
-            }
+            $this->persistOffsets(
+                $entityMatch,
+                $aStart + 1,
+                $bStart,
+                $aTotal,
+                function () use ($entityMatch, $aSentences): void {
+                    if ($aSentences->isNotEmpty()) {
+                        $this->storePoolSkips($entityMatch, ['a' => $aSentences->take(1)]);
+                    }
+                },
+            );
 
-            return ['a_offset' => $aStart + 1, 'b_offset' => $bStart];
+            return;
         }
 
         $service = SentenceAlignmentService::create();
@@ -497,32 +500,50 @@ class AlignEntitySentences implements ShouldQueue
         $committed = $this->committedMatches($matches, true);
 
         if ($committed === []) {
-            $this->storePoolSkips($entityMatch, [
-                'a' => $aSentences->take(1),
-                'b' => $bSentences->take(1),
-            ]);
+            $this->persistOffsets(
+                $entityMatch,
+                $aStart + 1,
+                $bStart,
+                $aTotal,
+                // Only the a head is parked: the b cursor stays, so the b
+                // head is re-fed and matched by later windows — a skip row
+                // here would duplicate its junction when that happens.
+                function () use ($entityMatch, $aSentences): void {
+                    $this->storePoolSkips($entityMatch, [
+                        'a' => $aSentences->take(1),
+                    ]);
+                },
+            );
 
-            return ['a_offset' => $aStart + 1, 'b_offset' => $bStart];
+            return;
         }
 
         $alignmentChunk = $this->nextAlignmentChunk($entityMatch->id);
 
-        $service->storeAlignmentSegmentFromMatches(
-            entityMatch: $entityMatch,
-            alignmentChunk: $alignmentChunk,
-            committedMatches: $committed,
-            aSentences: $aSentences,
-            bSentences: $bSentences,
-            isLastChunk: true,
+        $this->persistOffsets(
+            $entityMatch,
+            $aEnd,
+            $bEnd,
+            $aTotal,
+            function () use ($service, $entityMatch, $alignmentChunk, $committed, $aSentences, $bSentences): void {
+                $service->storeAlignmentSegmentFromMatches(
+                    entityMatch: $entityMatch,
+                    alignmentChunk: $alignmentChunk,
+                    committedMatches: $committed,
+                    aSentences: $aSentences,
+                    bSentences: $bSentences,
+                    isLastChunk: true,
+                );
+            },
         );
-
-        return ['a_offset' => $aEnd, 'b_offset' => $bEnd];
     }
 
     /**
      * Store single-sentence skip rows for the original side(s) of the pool:
      * the work's original side, or both sides for translation↔translation
-     * pairs. Sentences already covered by an earlier pool are excluded.
+     * pairs. Sentences already covered by an earlier pool are excluded. Only
+     * pass heads for sides whose cursor advances past the sentence — a parked
+     * side re-feeds its head later, and a skip row here would duplicate it.
      *
      * @param  array<'a'|'b', Collection<int, EntitySentence>>  $windowHeads
      */
@@ -620,17 +641,26 @@ class AlignEntitySentences implements ShouldQueue
         $lastCommitted = $committed[array_key_last($committed)] ?? null;
 
         if ($lastCommitted === null) {
-            $this->storeChunkSkips(
-                $entityMatch,
-                max($aOffset, $storedAOffset),
-                max($bOffset, $storedBOffset),
-            );
+            $skipA = max($aOffset, $storedAOffset);
+            $skipB = max($bOffset, $storedBOffset);
 
             $this->persistOffsets(
                 $entityMatch,
-                max($aOffset, $storedAOffset) + min(1, $aLimit),
+                $skipA + min(1, $aLimit),
                 $storedBOffset,
                 $aTotal,
+                // Only sides whose cursor advances past the sentence get a
+                // skip row; a parked side re-feeds its head into later
+                // windows, and a premature skip row would duplicate the
+                // junction when one of those windows matches it.
+                function () use ($entityMatch, $skipA, $skipB, $aLimit): void {
+                    $this->storeChunkSkips(
+                        $entityMatch,
+                        $skipA,
+                        $skipB,
+                        $aLimit > 0 ? ['a'] : [],
+                    );
+                },
             );
 
             return;
@@ -638,36 +668,59 @@ class AlignEntitySentences implements ShouldQueue
 
         $alignmentChunk = $this->nextAlignmentChunk($entityMatch->id);
 
-        $service->storeAlignmentSegmentFromMatches(
-            entityMatch: $entityMatch,
-            alignmentChunk: $alignmentChunk,
-            committedMatches: $committed,
-            aSentences: $aSentences,
-            bSentences: $bSentences,
-            isLastChunk: $isLastChunk,
-        );
-
-        $newAOffset = $aOffset + (int) $lastCommitted['a_end'];
-        $newBOffset = $bOffset + (int) $lastCommitted['b_end'];
+        // The last chunk stores trailing skips up to the window end, so the
+        // cursors must advance past everything stored — stopping at the last
+        // committed match would re-feed sentences that already carry
+        // junctions and duplicate them.
+        if ($isLastChunk) {
+            $newAOffset = $aOffset + $aSentences->count();
+            $newBOffset = $bOffset + $bSentences->count();
+        } else {
+            $newAOffset = $aOffset + (int) $lastCommitted['a_end'];
+            $newBOffset = $bOffset + (int) $lastCommitted['b_end'];
+        }
 
         if ($newAOffset <= $storedAOffset) {
             $newAOffset = $storedAOffset + min(1, $aLimit);
             $newBOffset = $storedBOffset;
         }
 
-        $this->persistOffsets($entityMatch, $newAOffset, $newBOffset, $aTotal);
+        $this->persistOffsets(
+            $entityMatch,
+            $newAOffset,
+            $newBOffset,
+            $aTotal,
+            function () use ($service, $entityMatch, $alignmentChunk, $committed, $aSentences, $bSentences, $isLastChunk): void {
+                $service->storeAlignmentSegmentFromMatches(
+                    entityMatch: $entityMatch,
+                    alignmentChunk: $alignmentChunk,
+                    committedMatches: $committed,
+                    aSentences: $aSentences,
+                    bSentences: $bSentences,
+                    isLastChunk: $isLastChunk,
+                );
+            },
+        );
     }
 
     /**
      * Skip rows for the alignPoolChunk no-progress path: one sentence per
-     * skip side, taken at that side's window head.
+     * skip side, taken at that side's window head. Only sides listed in
+     * $sides are stored — a side whose cursor stays parked re-feeds its head
+     * into later windows, and junctioning it now would duplicate it.
+     *
+     * @param  list<'a'|'b'>  $sides
      */
-    private function storeChunkSkips(EntityMatch $entityMatch, int $aOffset, int $bOffset): void
+    private function storeChunkSkips(EntityMatch $entityMatch, int $aOffset, int $bOffset, array $sides): void
     {
         $chunk = $this->nextAlignmentChunk($entityMatch->id);
         $service = SentenceAlignmentService::create();
 
         foreach (self::skipSides($entityMatch) as $side) {
+            if (! in_array($side, $sides, true)) {
+                continue;
+            }
+
             $entityId = $side === 'a' ? $entityMatch->a_entity_id : $entityMatch->b_entity_id;
             $offset = $side === 'a' ? $aOffset : $bOffset;
 
@@ -872,19 +925,34 @@ class AlignEntitySentences implements ShouldQueue
         return $max === null ? 0 : ((int) $max) + 1;
     }
 
+    /**
+     * Commit the chunk's rows and the advanced cursors atomically, then hand
+     * control back to the queue. Persisting rows and advancing the cursors in
+     * separate transactions let a crash between the two re-align the same
+     * window under a fresh chunk id while the old rows survived — duplicating
+     * junctions no resequence can undo. $writes runs inside that transaction
+     * before the cursor update; finalize/dispatch happen only after the commit.
+     */
     private function persistOffsets(
         EntityMatch $entityMatch,
         int $newAOffset,
         int $newBOffset,
         int $aTotal,
+        ?Closure $writes = null,
     ): void {
-        $entityMatch->update([
-            'a_last_sentence_offset' => $newAOffset,
-            'b_last_sentence_offset' => $newBOffset,
-            'linked_count' => MeaningMatch::query()
-                ->where('entity_match_id', $entityMatch->id)
-                ->count(),
-        ]);
+        DB::transaction(function () use ($entityMatch, $newAOffset, $newBOffset, $writes): void {
+            if ($writes !== null) {
+                ($writes)();
+            }
+
+            $entityMatch->update([
+                'a_last_sentence_offset' => $newAOffset,
+                'b_last_sentence_offset' => $newBOffset,
+                'linked_count' => MeaningMatch::query()
+                    ->where('entity_match_id', $entityMatch->id)
+                    ->count(),
+            ]);
+        });
 
         if ($newAOffset >= $aTotal) {
             $this->finalize($entityMatch);
