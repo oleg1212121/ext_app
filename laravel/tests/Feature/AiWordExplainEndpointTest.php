@@ -8,6 +8,8 @@ use App\Models\SentenceMeaningMatch;
 use App\Models\User;
 use Mockery\MockInterface;
 
+const AI_EXPLANATION_MODEL_MOCK = ['id' => 7, 'key' => 'openrouter:google/gemini-3-flash-preview', 'label' => 'Gemini Flash'];
+
 /**
  * One EN/RU entity match whose first meaning match rows the classic
  * homonym trap: S1 mentions "bank" (river), S2 uses it (money), S3 follows.
@@ -47,7 +49,6 @@ function explainPayload(array $fixture, array $overrides = []): array
         'sentence_index' => 0,
         'word_id' => $fixture['word']->id,
         'surface' => 'bank',
-        'model' => 'openrouter:google/gemini-3-flash-preview',
         ...$overrides,
     ];
 }
@@ -55,7 +56,8 @@ function explainPayload(array $fixture, array $overrides = []): array
 function mockResolverForExplain(?array &$captured = null): MockInterface
 {
     $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('isValidModel')->andReturn(true);
+    $mock->shouldReceive('resolveExplanationModel')
+        ->andReturn(AI_EXPLANATION_MODEL_MOCK);
     $mock->shouldReceive('ask')->andReturnUsing(function ($model, $instruction, $question) use (&$captured) {
         $captured = ['model' => $model, 'instruction' => $instruction, 'question' => $question];
 
@@ -92,6 +94,18 @@ it('explains a word with the sentence before and after in the same entity', func
     expect($captured['model'])->toBe('openrouter:google/gemini-3-flash-preview');
 });
 
+it('uses the explanation model the resolver resolved, ignoring any client-sent model', function () {
+    $fixture = createExplainFixture();
+    $captured = [];
+    mockResolverForExplain($captured);
+
+    $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-explain', explainPayload($fixture, ['model' => 'openrouter:some/other-model']))
+        ->assertOk();
+
+    expect($captured['model'])->toBe('openrouter:google/gemini-3-flash-preview');
+});
+
 it('resolves the clicked sentence by index when one row holds several sentences', function () {
     $fixture = createExplainFixture();
     $s4 = EntitySentence::query()->create(['entity_id' => $fixture['en']->id, 'content' => 'The current was strong.', 'order' => 4096]);
@@ -117,6 +131,59 @@ it('resolves the clicked sentence by index when one row holds several sentences'
     expect($captured['question'])->toContain('The current was strong.');
 });
 
+it('explains a word addressed by entity sentence id directly (single-language reader rows)', function () {
+    $fixture = createExplainFixture();
+    $captured = [];
+    mockResolverForExplain($captured);
+
+    $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-explain', [
+            'entity_sentence_id' => $fixture['s2']->id,
+            'word_id' => $fixture['word']->id,
+            'surface' => 'bank',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.answer', 'Тестовый ответ');
+
+    // Same sentence context as the meaning-match row: neighbours from the
+    // same entity in document order.
+    expect($captured['question'])->toContain('The bank of the river was steep.');
+    expect($captured['question'])->toContain('in the **bank**.');
+    expect($captured['question'])->toContain('Water carried it away.');
+});
+
+it('refuses an entity-sentence explanation for a restricted entity the user cannot read', function () {
+    $fixture = createExplainFixture();
+    $fixture['en']->update(['is_restricted' => true]);
+
+    mockResolverForExplain();
+
+    $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-explain', [
+            'entity_sentence_id' => $fixture['s2']->id,
+            'word_id' => $fixture['word']->id,
+            'surface' => 'bank',
+        ])
+        ->assertStatus(403)
+        ->assertJsonPath('data.data.error', 'You do not have access to this text.');
+});
+
+it('refuses the explanation when the user has not chosen an explanation model', function () {
+    $fixture = createExplainFixture();
+
+    $mock = mock(AIModelResolver::class);
+    $mock->shouldReceive('resolveExplanationModel')
+        ->once()
+        ->andReturnNull();
+    $mock->shouldReceive('ask')->never();
+    app()->instance(AIModelResolver::class, $mock);
+
+    $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-explain', explainPayload($fixture))
+        ->assertStatus(400)
+        ->assertJsonPath('data.data.error', 'Choose an AI model in your profile settings.');
+});
+
 it('refuses a restricted entity the user cannot read', function () {
     $fixture = createExplainFixture();
     $fixture['en']->update(['is_restricted' => true]);
@@ -138,6 +205,19 @@ it('validates that the meaning match exists', function () {
         ->assertStatus(422);
 });
 
+it('validates that the entity sentence exists', function () {
+    $fixture = createExplainFixture();
+    mockResolverForExplain();
+
+    $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-explain', [
+            'entity_sentence_id' => 999999,
+            'word_id' => $fixture['word']->id,
+            'surface' => 'bank',
+        ])
+        ->assertStatus(422);
+});
+
 it('returns 404 when the sentence index is out of range', function () {
     $fixture = createExplainFixture();
     mockResolverForExplain();
@@ -152,7 +232,7 @@ it('surfaces a provider error as a friendly message without leaking internals', 
     $fixture = createExplainFixture();
 
     $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('isValidModel')->andReturn(true);
+    $mock->shouldReceive('resolveExplanationModel')->andReturn(AI_EXPLANATION_MODEL_MOCK);
     $mock->shouldReceive('ask')
         ->once()
         ->andThrow(new AiProviderException('The AI service is busy. Please try again in a moment.', 429));
@@ -169,7 +249,7 @@ it('rate-limits the word explain endpoint after 20 requests per minute', functio
     $fixture = createExplainFixture();
 
     $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('isValidModel')->andReturn(true);
+    $mock->shouldReceive('resolveExplanationModel')->andReturn(AI_EXPLANATION_MODEL_MOCK);
     // Allow unlimited calls — the first 20 run the controller; the 21st is
     // blocked by the limiter before reaching the resolver.
     $mock->shouldReceive('ask')->andReturn('Test answer');

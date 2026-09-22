@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react]
 status: stable
 stale_after: 2026-12-19
-generated: { by: agent:zcode, at: 2026-09-19T16:15:00Z }
+generated: { by: agent:zcode, at: 2026-09-22T16:15:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -102,10 +102,14 @@ entity and `translationWordMap` for the
 aligned counterpart entity (empty when rows are single-language), plus
 `highlight` (the saved `reader.highlight` setting) and the
 `primaryHighlightable` / `translationHighlightable` language flags (side
-language ≠ the user's native language). `ReaderRow` renders both row halves
-through the shared `WordText`/`WordPopup` components (each gets the row's
-`rowKey`, so clicking a word fires a ledger-deduplicated **lookup** event —
-the reader never credits reads); the primary line is a
+language ≠ the user's native language). The same rule now gates the AI
+Context explanation tab: `primaryExplainable` / `translationExplainable`
+flags, `primarySide` ('a'|'b', which match side the primary column reads —
+`null` for single-language texts) and `explain` (`{enabled, modelKey}` from
+`AIModelResolver::resolveExplanationModel()`, ADR 0035). `ReaderRow` renders
+both row halves through the shared `WordText`/`WordPopup` components (each
+gets the row's `rowKey`, so clicking a word fires a ledger-deduplicated
+**lookup** event — the reader never credits reads); the primary line is a
 `role="button"` div (not a `<button>`) so word buttons inside it stay valid
 HTML — activating the line itself still toggles the translation, word clicks
 stop propagation.

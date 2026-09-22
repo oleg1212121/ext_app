@@ -18,7 +18,19 @@ export default function ReaderRow({
     translationHighlightable,
     highlight,
     onWordProgress,
+    primaryExplainable = false,
+    translationExplainable = false,
+    primarySide = null,
+    explain = null,
 }) {
+    // The translation column lives on the other entity match side than the
+    // primary one; without a primary side (single-language text) it has none.
+    const translationSide = primarySide === 'a' ? 'b' : primarySide === 'b' ? 'a' : null;
+    const columnExplain = (explainable, side) => (
+        explain?.enabled && explainable && side
+            ? {enabled: true, modelKey: explain.modelKey}
+            : undefined
+    );
     const hasTranslation = translation.trim() !== '';
     const isVisible = showAll || expanded;
     const rowRef = useRef(null);
@@ -86,6 +98,8 @@ export default function ReaderRow({
                         onWordProgress={onWordProgress}
                         className="whitespace-pre-line"
                         popupFontSize={popupFontSize}
+                        side={primarySide ?? undefined}
+                        explain={columnExplain(primaryExplainable, primarySide)}
                     />
                 </div>
 
@@ -121,6 +135,8 @@ export default function ReaderRow({
                                 rowKey={rowKey}
                                 onWordProgress={onWordProgress}
                                 popupFontSize={popupFontSize}
+                                side={translationSide ?? undefined}
+                                explain={columnExplain(translationExplainable, translationSide)}
                             />
                         </div>
                     </div>

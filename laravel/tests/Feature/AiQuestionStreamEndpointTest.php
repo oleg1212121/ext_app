@@ -24,7 +24,9 @@ it('streams text chunks as SSE events', function () {
     $user = User::factory()->create();
 
     $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('isValidModel')->andReturn(true);
+    $mock->shouldReceive('resolveAnswerModel')
+        ->once()
+        ->andReturn(['id' => 7, 'key' => 'openrouter:google/gemini-3-flash-preview', 'label' => 'Gemini Flash']);
     $mock->shouldReceive('askStreamed')
         ->once()
         ->andReturnUsing(function ($model, $instruction, $question, $callback) {
@@ -37,7 +39,6 @@ it('streams text chunks as SSE events', function () {
     $response = $this->actingAs($user)->postJson('/ai/question/stream', [
         'data' => "Russian line\nEnglish line",
         'question' => '',
-        'model' => 'openrouter:google/gemini-3-flash-preview',
     ]);
 
     $response->assertOk();
@@ -52,7 +53,9 @@ it('returns the SSE content type and no-buffering headers', function () {
     $user = User::factory()->create();
 
     $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('isValidModel')->andReturn(true);
+    $mock->shouldReceive('resolveAnswerModel')
+        ->once()
+        ->andReturn(['id' => 7, 'key' => 'openrouter:google/gemini-3-flash-preview', 'label' => 'Gemini Flash']);
     $mock->shouldReceive('askStreamed')
         ->once()
         ->andReturnUsing(function ($model, $instruction, $question, $callback) {
@@ -64,7 +67,6 @@ it('returns the SSE content type and no-buffering headers', function () {
     $response = $this->actingAs($user)->postJson('/ai/question/stream', [
         'data' => "Russian line\nEnglish line",
         'question' => '',
-        'model' => 'openrouter:google/gemini-3-flash-preview',
     ]);
 
     $response->assertOk();
@@ -80,7 +82,9 @@ it('streams a provider error as an SSE error event followed by DONE', function (
     $user = User::factory()->create();
 
     $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('isValidModel')->andReturn(true);
+    $mock->shouldReceive('resolveAnswerModel')
+        ->once()
+        ->andReturn(['id' => 7, 'key' => 'openrouter:google/gemini-3-flash-preview', 'label' => 'Gemini Flash']);
     $mock->shouldReceive('askStreamed')
         ->once()
         ->andThrow(new AiProviderException(
@@ -93,7 +97,6 @@ it('streams a provider error as an SSE error event followed by DONE', function (
     $response = $this->actingAs($user)->postJson('/ai/question/stream', [
         'data' => "Russian line\nEnglish line",
         'question' => '',
-        'model' => 'openrouter:google/gemini-3-flash-preview',
     ]);
 
     $content = captureStreamedContent($response);
@@ -109,7 +112,9 @@ it('streams an invalid-model error as an SSE error event', function () {
     $user = User::factory()->create();
 
     $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('isValidModel')->andReturn(true);
+    $mock->shouldReceive('resolveAnswerModel')
+        ->once()
+        ->andReturn(['id' => 7, 'key' => 'openrouter:google/gemini-3-flash-preview', 'label' => 'Gemini Flash']);
     $mock->shouldReceive('askStreamed')
         ->once()
         ->andThrow(new InvalidArgumentException('Unknown provider: foo'));
@@ -119,10 +124,29 @@ it('streams an invalid-model error as an SSE error event', function () {
     $response = $this->actingAs($user)->postJson('/ai/question/stream', [
         'data' => "Russian line\nEnglish line",
         'question' => '',
-        'model' => 'openrouter:google/gemini-3-flash-preview',
     ]);
 
     $content = captureStreamedContent($response);
     expect($content)->toContain('data: {"error":"Invalid model selection."}')
         ->and($content)->toContain('data: [DONE]');
+});
+
+it('refuses the stream with a JSON error before any SSE output when no answer model is chosen', function () {
+    $user = User::factory()->create();
+
+    $mock = mock(AIModelResolver::class);
+    $mock->shouldReceive('resolveAnswerModel')
+        ->once()
+        ->andReturnNull();
+    $mock->shouldReceive('askStreamed')->never();
+
+    $this->app->instance(AIModelResolver::class, $mock);
+
+    $response = $this->actingAs($user)->postJson('/ai/question/stream', [
+        'data' => "Russian line\nEnglish line",
+        'question' => '',
+    ]);
+
+    $response->assertStatus(400)
+        ->assertJsonPath('data.data.error', 'Choose an AI model in your profile settings.');
 });

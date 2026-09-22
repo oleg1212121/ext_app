@@ -20,7 +20,6 @@ class UpdateUiSettingsRequest extends FormRequest
             'simulator.show_workplace' => ['boolean'],
             'simulator.show_question' => ['boolean'],
             'simulator.show_ai' => ['boolean'],
-            'simulator.model' => ['nullable', 'string', 'max:255'],
             'simulator.question' => ['nullable', 'string', 'max:8000'],
             'simulator.ai_panel_width' => ['integer', 'min:280', 'max:1200'],
             'simulator.workplace_height' => ['integer', 'min:80', 'max:800'],

@@ -33,6 +33,13 @@ class AIModelResolver
     protected array $providers = [];
 
     /**
+     * Memoized getGroupedModelChoices() result for this request's user.
+     *
+     * @var array<string, list<array{id: int, key: string, label: string}>>|null
+     */
+    protected ?array $groupedChoicesCache = null;
+
+    /**
      * The registered provider keys.
      *
      * @return array<string>
@@ -177,6 +184,143 @@ class AIModelResolver
         }
 
         return $keys;
+    }
+
+    /**
+     * The user's selectable models grouped by provider, same availability
+     * rules as getGroupedModels() (admin-enabled provider + user's key),
+     * identified by ai_models.id so a pick survives as a stored FK.
+     *
+     * Format: ['Provider Name' => [['id' => int, 'key' => 'provider:model',
+     * 'label' => string], ...], ...] — groups ordered cheapest-first.
+     *
+     * @return array<string, list<array{id: int, key: string, label: string}>>
+     */
+    public function getGroupedModelChoices(): array
+    {
+        if ($this->groupedChoicesCache !== null) {
+            return $this->groupedChoicesCache;
+        }
+
+        $user = Auth::user();
+
+        if ($user === null) {
+            return $this->groupedChoicesCache = [];
+        }
+
+        $keyedProviderIds = []; // ai_provider_id => providerKey
+        $providerNames = [];    // ai_provider_id => display name
+
+        foreach ($this->providerClasses as $key => $class) {
+            $record = AiProviderRecord::forKey($key)->first();
+
+            if ($record === null || ! $record->is_enabled) {
+                continue;
+            }
+
+            if (! $user->hasApiKeyForProvider($key)) {
+                continue;
+            }
+
+            $keyedProviderIds[$record->id] = $key;
+            $providerNames[$record->id] = $class::getProviderName();
+        }
+
+        if (empty($keyedProviderIds)) {
+            return $this->groupedChoicesCache = [];
+        }
+
+        $models = AiModel::query()
+            ->whereIn('ai_provider_id', array_keys($keyedProviderIds))
+            ->enabled()
+            ->unexpired()
+            ->orderByRaw('pricing_prompt + pricing_completion')
+            ->orderBy('name')
+            ->get();
+
+        if ($models->isEmpty()) {
+            return $this->groupedChoicesCache = [];
+        }
+
+        $byProvider = [];
+        foreach ($models as $model) {
+            $byProvider[$model->ai_provider_id][] = [
+                'id' => $model->id,
+                'key' => $keyedProviderIds[$model->ai_provider_id].':'.$model->external_id,
+                'label' => $model->displayLabel(),
+            ];
+        }
+
+        $grouped = [];
+        foreach ($this->orderProvidersByCheapestModel(array_flip($keyedProviderIds)) as $key) {
+            $providerId = array_search($key, $keyedProviderIds, true);
+            $grouped[$providerNames[$providerId]] = $byProvider[$providerId] ?? [];
+        }
+
+        return $this->groupedChoicesCache = $grouped;
+    }
+
+    /**
+     * The user's effective answer model: the stored pick when it is still
+     * available, otherwise the globally cheapest available model (a pick that
+     * stopped being available falls back silently), or null when nothing is
+     * stored — an unset pick deliberately blocks AI usage.
+     *
+     * @return null|array{id: int, key: string, label: string}
+     */
+    public function resolveAnswerModel(): ?array
+    {
+        return $this->pickStoredChoice(Auth::user()?->settings?->ai_model_id, fallbackToCheapest: true);
+    }
+
+    /**
+     * The user's effective explanation model: the stored pick when still
+     * available, otherwise it follows the effective answer model (which may
+     * itself fall back to the cheapest). Null only when no explanation model
+     * applies at all.
+     *
+     * @return null|array{id: int, key: string, label: string}
+     */
+    public function resolveExplanationModel(): ?array
+    {
+        return $this->pickStoredChoice(Auth::user()?->settings?->explanation_model_id, fallbackToCheapest: false)
+            ?? $this->resolveAnswerModel();
+    }
+
+    /**
+     * Find a stored ai_models.id among the user's available choices. A null
+     * stored id is "unset", not "unavailable" — it returns null without
+     * falling back; a stale id only falls back when $fallbackToCheapest.
+     *
+     * @return null|array{id: int, key: string, label: string}
+     */
+    protected function pickStoredChoice(?int $storedId, bool $fallbackToCheapest): ?array
+    {
+        if ($storedId === null) {
+            return null;
+        }
+
+        foreach ($this->getGroupedModelChoices() as $choices) {
+            foreach ($choices as $choice) {
+                if ($choice['id'] === $storedId) {
+                    return $choice;
+                }
+            }
+        }
+
+        if (! $fallbackToCheapest) {
+            return null;
+        }
+
+        // Groups are ordered cheapest-first, so the first group's first
+        // choice is the globally cheapest available model.
+        foreach ($this->getGroupedModelChoices() as $choices) {
+            if ($choices !== []) {
+                return $choices[0];
+            }
+        }
+
+        return null;
     }
 
     /**

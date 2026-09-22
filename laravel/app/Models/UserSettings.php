@@ -11,6 +11,8 @@ class UserSettings extends Model
         'user_id',
         'native_language_id',
         'interface_language_id',
+        'ai_model_id',
+        'explanation_model_id',
         'ui_settings',
     ];
 
@@ -34,5 +36,15 @@ class UserSettings extends Model
     public function interfaceLanguage(): BelongsTo
     {
         return $this->belongsTo(Language::class, 'interface_language_id');
+    }
+
+    public function aiModel(): BelongsTo
+    {
+        return $this->belongsTo(AiModel::class);
+    }
+
+    public function explanationModel(): BelongsTo
+    {
+        return $this->belongsTo(AiModel::class, 'explanation_model_id');
     }
 }

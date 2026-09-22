@@ -4,6 +4,8 @@
 return [
     'bilinguals.title' => ['en' => 'Bilinguals', 'ru' => 'Билингвы'],
     'bilinguals.add_api_key' => ['en' => 'Add an API key in your Profile to use the AI assistant.', 'ru' => 'Добавьте API-ключ в профиле, чтобы пользоваться ИИ-помощником.'],
+    'bilinguals.choose_model' => ['en' => 'Choose an AI model in your Profile to use the AI assistant.', 'ru' => 'Выберите ИИ-модель в профиле, чтобы пользоваться ИИ-помощником.'],
+    'bilinguals.change_model' => ['en' => 'Change the model in your Profile', 'ru' => 'Сменить модель в профиле'],
     'bilinguals.load' => ['en' => 'Load', 'ru' => 'Загрузить'],
     'bilinguals.increase_font_size' => ['en' => 'Increase font size', 'ru' => 'Увеличить размер шрифта'],
     'bilinguals.decrease_font_size' => ['en' => 'Decrease font size', 'ru' => 'Уменьшить размер шрифта'],

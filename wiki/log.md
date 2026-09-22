@@ -1,5 +1,30 @@
 # Directory Update Log
 
+## 2026-09-22 (feat: per-user AI model preferences + tabbed profile; model picker removed from simulator)
+
+Implemented ADR 0035. The simulator's model picker is gone: the answer model
+and a new **explanation model** are per-user preferences stored as
+`user_settings.ai_model_id` / `explanation_model_id` (nullable FKs to
+`ai_models`, `nullOnDelete` because `ai:sync-models` hard-deletes vanished
+rows), edited in the profile's new **AI Models tab** (`PATCH
+/profile/ai-models`), and resolved server-side — `/ai/question`,
+`/ai/question/stream` and `/ai/word-explain` no longer accept a `model`
+field. Semantics: unset answer model blocks AI with a "choose a model"
+prompt (simulator toolbar label and word-popup explain tab link to
+`/profile?tab=ai`); a picked-but-unavailable model silently falls back to
+the cheapest available; an unset explanation model follows the answer model.
+The migration backfilled `ai_model_id` from the legacy
+`ui_settings.simulator.model` (now stripped; validation rule removed).
+Word explanations now follow the "column language ≠ native language" rule
+everywhere and the **Reader gained the explain tab** (bilingual rows post
+`meaning_match_id`/`side`/`sentence_index`, single-language rows post
+`entity_sentence_id`). The profile page itself was reworked into four
+deep-linkable tabs (Account / Preferences / AI Models / Danger zone), each
+section moved to its own component under `Pages/Profile/`; the page keeps
+the legacy palette. Updated `ai-providers.md`, `bilinguals-simulator.md`,
+`interactive-words.md`, `reader.md`; added `profile.md`; new ADR
+`0035-per-user-ai-model-preferences.md`.
+
 ## 2026-09-22 (fix: junction-uniqueness invariants — last-chunk cursors, premature skips, dedupe; stale-worker ops note)
 
 Follow-up to the order-invariant fix earlier today. Diagnostic on the fresh
