@@ -1,5 +1,43 @@
 # Directory Update Log
 
+## 2026-09-22 (feat: alignments live under their work; reader renamed to /reader)
+
+Implemented ADR 0036. `/library/{work}` is now tabbed: the **Entities tab**
+(its former content) and a new **Alignments tab** (`?tab=alignments`)
+listing the work's readable entity matches (`matchPayload` + a
+server-computed `reader_target` = the non-native side, original-side then
+A-side tiebreaks; card = `Components/AlignmentCard.jsx`, stretched link to
+the editor `/alignments/{id}`, Simulator + Read·{LANG} buttons; search
+matches either side's entity name). "Add alignment" leads to
+`/library/{work}/alignments/create` + `POST /library/{work}/alignments`
+(`LibraryController::createAlignment/storeAlignment`) — the old form minus
+the work picker; store now validates both entities belong to the route
+work. Deleted: `GET/POST /alignments`, `GET /alignments/create`,
+`Alignments/Index.jsx`, `Alignments/Create.jsx`, the navbar "Alignments"
+item (`nav.alignments` string), and `AlignmentController::index/create/
+store` + `alignableWorks()` — the editor `alignments.show` (now
+`whereNumber`) and its JSON endpoints are untouched. Simulator: new pinned
+route `GET /bilinguals/simulator/{entityMatch}`
+(`bilinguals.simulator.forMatch`) renders the page with the text selector
+hidden and the match fixed; the dropdown page stays as the navbar landing.
+Reader: `/reader-react*` renamed to `/reader*` (`reader.show`/`reader.index`
+plus a named `/reader` redirect, which also fixes the previously dangling
+`route('reader')` in the Blade navs); page wrappers are now
+`Pages/Reader.jsx` / `Pages/ReaderIndex.jsx` rendering the unchanged
+`Reader/ReaderApp.jsx` / `Reader/ReaderIndexApp.jsx`. UI strings: new
+`library.tab_*` / `library.add_alignment` / `library.search_alignments` /
+`library.no_alignments_*` / `library.simulator` / `library.read_lang` /
+`library.no_alignable_entities*` / `library.open_alignment_editor` (en+ru).
+Tests: `AlignmentsCreateMatchTest`/`AlignmentCopyTest` move to the
+work-scoped routes, `AlignmentPagesTest` asserts the global pages are gone
+and covers the tab (scoping + restricted matches), `LibraryTest` gains
+tab/search/pagination/reader-target coverage, `ReaderReactPageTest` →
+`ReaderPageTest` on the new URLs (legacy paths assert 404), new
+`SimulatorPinnedMatchTest`. Docs: ADR 0036; CONTEXT.md **Alignments tab**
+term + Library/Entity match updates; wiki `entities.md`,
+`sentence-alignment.md`, `bilinguals-simulator.md`, `reader.md`,
+`interactive-words.md`, `run-alignment.md` playbook refreshed.
+
 ## 2026-09-22 (feat: per-user AI model preferences + tabbed profile; model picker removed from simulator)
 
 Implemented ADR 0035. The simulator's model picker is gone: the answer model

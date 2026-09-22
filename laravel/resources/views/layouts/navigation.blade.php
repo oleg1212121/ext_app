@@ -53,9 +53,6 @@
                         <x-nav-link :href="route('bilinguals.simulator')" :active="request()->routeIs('bilinguals.simulator')">
                             {{ __('nav.bilinguals') }}
                         </x-nav-link>
-                        <x-nav-link :href="route('alignments.index')" :active="request()->routeIs('alignments.*')">
-                            {{ __('nav.alignments') }}
-                        </x-nav-link>
                         @if(Auth::user()->isAdmin())
                         <x-nav-link href="/admin">
                             {{ __('nav.admin') }}
@@ -186,11 +183,6 @@
                     <li>
                         <x-responsive-nav-link :href="route('bilinguals.simulator')" :active="request()->routeIs('bilinguals.simulator')">
                             {{ __('nav.bilinguals') }}
-                        </x-responsive-nav-link>
-                    </li>
-                    <li>
-                        <x-responsive-nav-link :href="route('alignments.index')" :active="request()->routeIs('alignments.*')">
-                            {{ __('nav.alignments') }}
                         </x-responsive-nav-link>
                     </li>
                     @if(Auth::user()->isAdmin())

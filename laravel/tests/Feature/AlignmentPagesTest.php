@@ -10,7 +10,7 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
 
-test('guests are redirected from alignment pages', function () {
+test('guests are redirected from the alignment editor', function () {
     $work = createWork();
     $entityMatch = createEntityMatch(
         createEntity('en', $work, ['name' => 'English text']),
@@ -18,14 +18,19 @@ test('guests are redirected from alignment pages', function () {
         ['status' => 'pending'],
     );
 
-    $this->get(route('alignments.index'))
-        ->assertRedirect(route('login'));
-
     $this->get(route('alignments.show', $entityMatch))
         ->assertRedirect(route('login'));
 });
 
-test('authenticated users can view the alignments list', function () {
+test('the global alignments list and create pages are gone', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->get('/alignments')->assertNotFound();
+    $this->actingAs($user)->get('/alignments/create')->assertNotFound();
+    $this->actingAs($user)->post('/alignments', [])->assertNotFound();
+});
+
+test('the per-work alignments tab lists the work\'s readable entity matches', function () {
     $user = User::factory()->create();
 
     $work = createWork();
@@ -40,17 +45,25 @@ test('authenticated users can view the alignments list', function () {
             'linked_count' => 6,
         ],
     );
+    createEntityMatch(
+        createEntity('en', createWork(['title' => 'Other work']), ['name' => 'Other EN']),
+        createEntity('ru', createWork(['title' => 'Other work 2']), ['name' => 'Other RU']),
+        ['status' => 'completed'],
+    );
 
     $response = $this
         ->actingAs($user)
-        ->get(route('alignments.index'));
+        ->get("/library/{$work->id}?tab=alignments");
 
     $response->assertOk();
     $response->assertInertia(fn (Assert $page) => $page
-        ->component('Alignments/Index')
-        ->has('entityMatches', 1)
-        ->where('entityMatches.0.a_entity_name', 'English chapter')
-        ->where('entityMatches.0.b_entity_name', 'Russian chapter'));
+        ->component('Library/ShowWork')
+        ->where('tab', 'alignments')
+        ->has('alignments', 1)
+        ->where('alignments.0.id', $entityMatch->id)
+        ->where('alignments.0.a_entity_name', 'English chapter')
+        ->where('alignments.0.b_entity_name', 'Russian chapter')
+        ->where('alignments_meta.total', 1));
 });
 
 test('users cannot see restricted entity matches they are not granted', function () {
@@ -69,11 +82,11 @@ test('users cannot see restricted entity matches they are not granted', function
 
     $entityMatch = createEntityMatch($enEntity, $ruEntity, ['status' => 'completed']);
 
-    // Not granted → the match must not leak into the list.
+    // Not granted → the match must not leak into the work's alignments tab.
     $this->actingAs($user)
-        ->get(route('alignments.index'))
+        ->get("/library/{$work->id}?tab=alignments")
         ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page->has('entityMatches', 0));
+        ->assertInertia(fn (Assert $page) => $page->has('alignments', 0));
 
     // Not granted → opening the detail page is forbidden.
     $this->actingAs($user)
@@ -85,11 +98,11 @@ test('users cannot see restricted entity matches they are not granted', function
     $ruEntity->grantedUsers()->attach($user->id);
 
     $this->actingAs($user)
-        ->get(route('alignments.index'))
+        ->get("/library/{$work->id}?tab=alignments")
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->has('entityMatches', 1)
-            ->where('entityMatches.0.a_entity_name', 'Restricted EN'));
+            ->has('alignments', 1)
+            ->where('alignments.0.a_entity_name', 'Restricted EN'));
 });
 
 test('authenticated users can view alignment details', function () {

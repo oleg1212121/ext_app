@@ -4,8 +4,8 @@ title: Reader
 description: React reading interface for imported text entities in any enabled language, with bilingual rows from alignments, server-side pagination, and a per-device reading position.
 tags: [reader, inertia, react]
 status: stable
-stale_after: 2026-12-19
-generated: { by: agent:zcode, at: 2026-09-22T16:15:00Z }
+stale_after: 2026-12-22
+generated: { by: agent:zcode, at: 2026-09-22T18:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -36,9 +36,9 @@ not a hardcoded pair).
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `/reader-react/{lang}` | `ReaderController::index` | React index of texts (`{lang}` validated against enabled languages), named `reader.react.index` |
-| `/reader-react/{lang}/{entityId}` | `ReaderController::show` | React reader for one entity, named `reader.react` |
-| `/reader-react` | redirect | Defaults to `/reader-react/en` |
+| `/reader/{lang}` | `ReaderController::index` | React index of texts (`{lang}` validated against enabled languages), named `reader.index` |
+| `/reader/{lang}/{entityId}` | `ReaderController::show` | React reader for one entity, named `reader.show` |
+| `/reader` | redirect | Defaults to `/reader/en`; also the navbar "Reader" target. The old `/reader-react*` paths are gone (ADR 0036 rework, 2026-09-22) |
 
 # Frontend
 
@@ -118,5 +118,5 @@ stop propagation.
 
 | Surface | Tokens | Notes |
 |---------|--------|-------|
-| `/reader-react/{lang}` (index) | `--wbench-*` | Matches the [design system](/conventions/design-system.md) — cold paper + ultramarine accent, Source Serif 4 / IBM Plex Sans / JetBrains Mono. Hairline toolbar with mono `Reader · En ↔ Ru` stamp (glyph map per language code, code fallback) and underline tabs over the enabled languages; dense list with `.ribbon-mark` hover edge. Implements the four-state contract on the entity list: empty (`No texts in this library` eyebrow + serif invite), loading (the page's signature — an `.ai-loader-rule` fills under the toolbar while Inertia navigates between libraries, with a mono `Loading · {Language}` label), answer (the list), no error state (the static controller has no request to fail). |
-| `/reader-react/{lang}/{entityId}` (reader) | `--color-vellum/*` (legacy) | Still on the warm vellum palette. Migrating it to `--wbench-*` is tracked as a follow-up so a library switch does not visibly cross palettes when entering a text. |
+| `/reader/{lang}` (index) | `--wbench-*` | Matches the [design system](/conventions/design-system.md) — cold paper + ultramarine accent, Source Serif 4 / IBM Plex Sans / JetBrains Mono. Hairline toolbar with mono `Reader · En ↔ Ru` stamp (glyph map per language code, code fallback) and underline tabs over the enabled languages; dense list with `.ribbon-mark` hover edge. Implements the four-state contract on the entity list: empty (`No texts in this library` eyebrow + serif invite), loading (the page's signature — an `.ai-loader-rule` fills under the toolbar while Inertia navigates between libraries, with a mono `Loading · {Language}` label), answer (the list), no error state (the static controller has no request to fail). |
+| `/reader/{lang}/{entityId}` (reader) | `--color-vellum/*` (legacy) | Still on the warm vellum palette. Migrating it to `--wbench-*` is tracked as a follow-up so a library switch does not visibly cross palettes when entering a text. |

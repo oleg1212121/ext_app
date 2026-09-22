@@ -131,15 +131,20 @@ const Bilinguals = (props) => {
     const { t } = useI18n()
     const answerModel = props.answerModel
     const canUseAi = props.canUseAi
-    const textList = props.textList
+    const textList = props.textList ?? []
     const errors = props.errors
+    // Opened from an alignment card: the match is pinned by the URL — the
+    // text selector is hidden and saved positions key on the pinned match.
+    const pinnedMatch = props.pinnedMatch ?? null
 
     const initialPositions = loadPositions();
     const savedTextExists = initialPositions.currentText != null
         && textList.some((item) => String(item.id) === String(initialPositions.currentText));
-    const initialText = savedTextExists ? String(initialPositions.currentText) : props.currentText;
-    const initialSaved = savedTextExists
-        ? (initialPositions.alignments?.[String(initialPositions.currentText)] ?? null)
+    const initialText = pinnedMatch
+        ? String(pinnedMatch.id)
+        : (savedTextExists ? String(initialPositions.currentText) : props.currentText);
+    const initialSaved = pinnedMatch || savedTextExists
+        ? (initialPositions.alignments?.[initialText] ?? null)
         : null;
 
     let [showWorkplace, setShowWorkplace] = React.useState(props.showWorkplace)
@@ -542,11 +547,17 @@ const Bilinguals = (props) => {
                         </Link>
                     )}
                     <span className={HAIRLINE} aria-hidden="true"/>
-                    <div className="flex items-center gap-2">
-                        <Select value={currentText} onChange={changeText}
-                                items={textList}/>
-                                <Button color="green" onClick={() => handleLoadText()} type='button'>{t('bilinguals.load')}</Button>
-                    </div>
+                    {pinnedMatch ? (
+                        <span className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] max-w-[22rem] truncate whitespace-nowrap">
+                            {pinnedMatch.text}
+                        </span>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <Select value={currentText} onChange={changeText}
+                                    items={textList}/>
+                                    <Button color="green" onClick={() => handleLoadText()} type='button'>{t('bilinguals.load')}</Button>
+                        </div>
+                    )}
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div className="flex items-center gap-1">
                         <FontButton aria-label={t('bilinguals.increase_font_size')} label={t('bilinguals.increase_font_size')} onClick={() => changeFontSize('+')}>+</FontButton>

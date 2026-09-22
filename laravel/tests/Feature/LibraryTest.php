@@ -209,6 +209,161 @@ test('work page 404s for an unknown work', function () {
         ->assertNotFound();
 });
 
+test('work page tabs default to entities and honor the query param', function () {
+    createLanguages();
+    $work = createWork(['title' => 'Tabbed']);
+
+    $this->actingAs(approvedUser())
+        ->get("/library/{$work->id}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('tab', 'entities')
+            ->has('entities', 0)
+            ->where('meta.total', 0));
+
+    $this->actingAs(approvedUser())
+        ->get("/library/{$work->id}?tab=alignments")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('tab', 'alignments')
+            ->has('alignments', 0)
+            ->where('alignments_meta.total', 0));
+
+    $this->actingAs(approvedUser())
+        ->get("/library/{$work->id}?tab=bogus")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('tab', 'entities'));
+});
+
+test('alignments tab search matches either side entity name', function () {
+    createLanguages();
+    $work = createWork(['title' => 'Aligned']);
+    $user = approvedUser();
+
+    $match = createEntityMatch(
+        createEntity('en', $work, ['name' => 'Garnett Translation']),
+        createEntity('ru', $work, ['name' => 'Русский перевод']),
+    );
+
+    $this->actingAs($user)
+        ->get("/library/{$work->id}?tab=alignments&q=garnett")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('tab', 'alignments')
+            ->has('alignments', 1)
+            ->where('alignments.0.id', $match->id)
+            ->where('q', 'garnett'));
+
+    $this->actingAs($user)
+        ->get("/library/{$work->id}?tab=alignments&q=".rawurlencode('перевод'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->has('alignments', 1));
+
+    $this->actingAs($user)
+        ->get("/library/{$work->id}?tab=alignments&q=nothing")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->has('alignments', 0));
+});
+
+test('alignments tab paginates', function () {
+    createLanguages();
+    $work = createWork(['title' => 'Long shelf']);
+
+    foreach (range(1, 16) as $i) {
+        createEntityMatch(
+            createEntity('en', $work, ['name' => "Pair {$i} EN"]),
+            createEntity('ru', $work, ['name' => "Pair {$i} RU"]),
+        );
+    }
+
+    $this->actingAs(approvedUser())
+        ->get("/library/{$work->id}?tab=alignments")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->has('alignments', 15)
+            ->where('alignments_meta.current_page', 1)
+            ->where('alignments_meta.last_page', 2)
+            ->where('alignments_meta.total', 16));
+
+    $this->actingAs(approvedUser())
+        ->get("/library/{$work->id}?tab=alignments&page=2")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->has('alignments', 1)
+            ->where('alignments_meta.current_page', 2));
+});
+
+test('alignment reader target prefers the language the user is learning', function () {
+    createLanguages();
+    $work = createWork(['title' => 'Native', 'original_language_id' => Language::query()->where('code', 'en')->value('id')]);
+    $en = createEntity('en', $work, ['name' => 'EN side']);
+    $ru = createEntity('ru', $work, ['name' => 'RU side']);
+    createEntityMatch($en, $ru);
+
+    // Native English → read the Russian side.
+    $this->actingAs(approvedUser())
+        ->get("/library/{$work->id}?tab=alignments")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('alignments.0.reader_target.lang', 'ru')
+            ->where('alignments.0.reader_target.entity_id', $ru->id));
+
+    // Native Russian → read the English side.
+    $russian = approvedUser();
+    $russian->settings()->update(['native_language_id' => Language::query()->where('code', 'ru')->value('id')]);
+
+    $this->actingAs($russian)
+        ->get("/library/{$work->id}?tab=alignments")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('alignments.0.reader_target.lang', 'en')
+            ->where('alignments.0.reader_target.entity_id', $en->id));
+});
+
+test('alignment reader target tiebreaks on the original language', function () {
+    createLanguages();
+    $fr = Language::query()->create([
+        'code' => 'fr',
+        'name' => 'French',
+        'native_name' => 'Français',
+        'is_enabled' => true,
+        'sort_order' => 5,
+    ]);
+
+    // Both sides are non-native for a French reader; the original side wins.
+    $work = createWork(['title' => 'Tiebreak', 'original_language_id' => Language::query()->where('code', 'en')->value('id')]);
+    $en = createEntity('en', $work, ['name' => 'EN original']);
+    $ru = createEntity('ru', $work, ['name' => 'RU translation']);
+    createEntityMatch($en, $ru);
+
+    $french = approvedUser();
+    $french->settings()->update(['native_language_id' => $fr->id]);
+
+    $this->actingAs($french)
+        ->get("/library/{$work->id}?tab=alignments")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('alignments.0.reader_target.lang', 'en')
+            ->where('alignments.0.reader_target.entity_id', $en->id));
+});
+
+test('alignment reader target falls back to the a side for same-language pairs', function () {
+    createLanguages();
+    $work = createWork(['title' => 'Exercises']);
+    $first = createEntity('en', $work, ['name' => 'Exercises']);
+    $second = createEntity('en', $work, ['name' => 'Answer key']);
+    createEntityMatch($first, $second);
+
+    // Both sides are the reader's native language: no learning side exists,
+    // so the original side (a, for this all-English work) is opened.
+    $this->actingAs(approvedUser())
+        ->get("/library/{$work->id}?tab=alignments")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('alignments.0.reader_target.lang', 'en')
+            ->where('alignments.0.reader_target.entity_id', fn ($id) => in_array($id, [$first->id, $second->id], true)));
+});
+
 test('create work form renders with enabled languages', function () {
     createLanguages();
 

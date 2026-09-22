@@ -4,8 +4,8 @@ title: Sentence Alignment Pipeline
 description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse.
 tags: [alignment, embeddings, pipeline, jobs, filament, hash]
 status: stable
-stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-09-22T16:00:00Z }
+stale_after: 2026-12-22
+generated: { by: agent:zcode, at: 2026-09-22T18:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -626,34 +626,45 @@ its output can look exactly like an unfixed bug.
 6. **Review** — humans fix machine output in the Filament
     `EntityMatch` resource's custom `EditEntityAlignment` page (one merged
     resource since ADR 0018 — side-based draft props with language-name
-    labels via `sideLabel()`, falling back to the side letter), or in the new
-    Inertia/React **Alignments editor**: `/alignments` (pair list)
-    → `/alignments/{id}` (pair editor), linked from the NavBar. The pair list
-    has a **"+ Create new"** button → `/alignments/create`
-    (`AlignmentController@create`/`@store`, routes `alignments.create`/
-    `alignments.store`): a **work-first** React form — pick a work, then the
-    two entities (`first_entity_id` / `second_entity_id`; each work's eligible
-    entities are grouped by language and the second select excludes the
-    first's language). Entities are eligible when **readable by the user**,
-    signed (`signature` not null), and non-empty; only works with entities in
-    ≥2 languages appear. There is no "original text" radio — the original
-    language lives on the work. The form also carries the Filament-parity
-    `chunk_size` (25–100, default 75) + `max_n` (1–8, default 6). **Inertia
-    pitfall:** `useForm.setData` with an object argument **replaces** the
-    whole form state (it does not merge), so multi-field change handlers
-    (work/entity selects, Entities\Create work-mode radios) must use the
-    functional form `setData((current) => ({...current, ...}))` — the
-    object form silently dropped `work_id`/`chunk_size`/`max_n`, which
-    emptied both entity selects the moment an entity was picked. Store
-    validates **same work** (same-language pairs such as exercises and
+    labels via `sideLabel()`, falling back to the side letter), or in the
+    Inertia/React **Alignments editor**: since ADR
+    [0036](../../docs/adr/0036-alignments-live-under-work.md) alignment
+    browsing and creation live under each work — the work page's
+    **Alignments tab** (`/library/{work}?tab=alignments`, see
+    [Library & entities](/domains/entities.md)) lists the work's readable
+    matches and its "Add alignment" card leads to
+    `/library/{work}/alignments/create`
+    (`LibraryController@createAlignment`/`@store`, routes
+    `library.alignments.create`/`library.alignments.store`; the former
+    global `/alignments` list, `/alignments/create` form, and the navbar
+    item are gone). The form is the old create minus the work picker: two
+    entity selects (`first_entity_id` / `second_entity_id`) of the route
+    work's eligible entities (grouped by language, the second select
+    excludes the first pick). Entities are eligible when **readable by the
+    user**, signed (`signature` not null), and non-empty. There is no
+    "original text" radio — the original language lives on the work. The
+    form carries the Filament-parity `chunk_size` (25–100, default 75) +
+    `max_n` (1–8, default 6). **Inertia pitfall:** `useForm.setData` with an
+    object argument **replaces** the whole form state (it does not merge),
+    so multi-field change handlers (entity selects, Entities\Create
+    work-mode radios) must use the functional form
+    `setData((current) => ({...current, ...}))` — the object form silently
+    dropped `chunk_size`/`max_n`, which emptied both entity selects the
+    moment an entity was picked. Store validates that **both entities
+    belong to the route work** (same-language pairs such as exercises and
     answers are valid — ADR 0019), canonicalizes the pair
     order (lower id = a side, so the `unique(a_entity_id, b_entity_id)`
     constraint covers both orders), creates the match (`status='pending'`),
     dispatches `AlignEntitySentences::beginFromScratch($id)`, and redirects
-    to the list with a flash; a duplicate pair is blocked with an error plus
-    a "Open existing match" link (flash `existing_match_id`), and creating a
-    match involving an entity the user cannot read is `403`. The editor is a
-    parallel entry point backed by the surgical `AlignmentEditorController`
+    to the work's Alignments tab with a flash; a duplicate pair is blocked
+    with an error plus an "Open existing match" link (flash
+    `existing_match_id`), and creating a match involving an entity the user
+    cannot read is `403`. Each match card links (stretched link) to the
+    editor `/alignments/{id}` and carries Simulator / Read·{LANG} buttons —
+    `GET /bilinguals/simulator/{entityMatch}` (pinned simulator) and the
+    reader, with the reading side resolved server-side as the
+    non-native-language side. The editor itself is
+    a parallel entry point backed by the surgical `AlignmentEditorController`
     endpoints — create/delete pair, approve pair (set `similarity = 1.0` +
     `alignment_chunk = -1`, promoting a row to a hard landmark), add/edit/
      unlink/hard-delete sentence, and

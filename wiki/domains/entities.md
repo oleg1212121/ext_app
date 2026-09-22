@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Library & entities (management surface)
-description: Work-first Library browse surface (/library) plus the language-scoped entity create/detail/edit pages, driven by enabled languages.
-tags: [entities, works, library, inertia, react, languages, hash, clone]
+description: Work-first Library browse surface (/library) with per-work Entities and Alignments tabs, plus the language-scoped entity create/detail/edit pages, driven by enabled languages.
+tags: [entities, works, library, alignments-tab, inertia, react, languages, hash, clone]
 status: stable
-stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-09-20T12:00:00Z }
+stale_after: 2026-12-22
+generated: { by: agent:zcode, at: 2026-09-22T12:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -38,11 +38,16 @@ Since the Library rework it is **work-first**: `/library` is the work catalog �
 every approved user sees every work, empty ones included (ADR
 [0021](../../docs/adr/0021-works-are-a-public-catalog.md); works carry no access
 semantics) — and a work page shows the entities of that work **the user can
-read** (public + granted; Readable count), with a search bar and an add-entity
-entry. Entity detail, editing, and sentence management keep their
-language-scoped `/entities/{lang}/...` URLs so Alignments/Reader deep links
-survive. Entity deletion remains admin-only (Filament); alignment pairing
-stays in `/alignments`.
+read** (public + granted; Readable count). Since ADR
+[0036](../../docs/adr/0036-alignments-live-under-work.md) the work page is
+tabbed: an **Entities** tab (the original content — search, add-entity card,
+entity cards) and an **Alignments** tab listing the work's readable
+[entity matches](/database/entities-alignment.md) with add-alignment entry
+(the former global `/alignments` surface is gone — see
+[sentence alignment](/domains/sentence-alignment.md)). Entity detail, editing,
+and sentence management keep their language-scoped `/entities/{lang}/...` URLs
+so Alignments/Reader deep links survive. Entity deletion remains admin-only
+(Filament).
 
 Since ADR
 [0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md) every
@@ -60,8 +65,9 @@ selects and every `{lang}` route are driven by `Language::enabled()`. See ADR
 |-------|---------|---------|
 | `/library` | `LibraryController::index` | Works grid: `?q=` search (title/author ilike), plus-card → create work, per-work **readable** entity count, 15/page. Named `library.index` |
 | `/library/create` (GET/POST `/library`) | `LibraryController::createWork` / `storeWork` | Create-work form (title, author, description, original language — must be enabled) → redirect to the work page. Named `library.create` / `library.store` |
-| `/library/{work}` | `LibraryController::showWork` | Work info + readable entities of the work, `?q=` search (name/label ilike), plus-card → add entity, 15/page. Named `library.show` |
+| `/library/{work}` | `LibraryController::showWork` | Work info + tabbed lists, `?tab=entities` (default) or `?tab=alignments`, per-tab `?q=` search + 15/page. Entities tab: readable entities (name/label search), plus-card → add entity. Alignments tab: work's readable entity matches (either side's name search), each payload via `AlignmentEditorApiPresenter::matchPayload` + a server-computed `reader_target` (the non-native side; original-side then A-side tiebreaks), plus-card → add alignment. Named `library.show` |
 | `/library/{work}/entities/create` (GET) + POST `/library/{work}/entities` | `LibraryController::createEntity` / `storeEntity` | Work-scoped entity creation: work fixed, language picked from enabled languages; no existing/new-work choice. Runs the shared `EntityCreationService` pipeline. Named `library.entities.create` / `library.entities.store` |
+| `/library/{work}/alignments/create` (GET) + POST `/library/{work}/alignments` | `LibraryController::createAlignment` / `storeAlignment` | Work-scoped entity-match creation (ADR 0036): two entity selects of the work's alignable entities (readable + signature + sentences), `chunk_size`/`max_n`; canonical a/b order, duplicate-pair guard, alignment-copy fast path else `AlignEntitySentences::beginFromScratch`; redirects back to the Alignments tab. Named `library.alignments.create` / `library.alignments.store` |
 | `/entities`, `/entities/{lang}` | redirect → `/library` | Legacy language-first browse pages (picker + per-language table) |
 | `/entities/{lang}/create` | `EntityController::create` | Language-first create form (work picker + inline "new work" fields), named `entities.create` |
 | `/entities/{lang}` (POST) | `EntityController::store` | Creates the entity under the resolved work via `EntityCreationService`; stores an optional file and dispatches `ProcessEntityFile`, named `entities.store` |
@@ -79,13 +85,19 @@ other surfaces; `{work}` is numeric.
 Inertia pages under `resources/js/Pages/` — `Library/Index` (works grid with
 search, dashed plus-card, work cards: title, author, original-language chip,
 readable entity count), `Library/CreateWork`, `Library/ShowWork` (work info,
-entity search, plus-card, entity cards linking to `/entities/{code}/{id}`),
-`Library/CreateEntity` (work fixed, language select), plus the surviving
-`Entities/Create`, `Entities/Show`, `Entities/Edit` (metadata form + dnd-kit
-sortable sentence manager). The navbar entry is **Library**. All use the
+tab bar, per-tab search + plus-card; entity cards linking to
+`/entities/{code}/{id}`, alignment cards via `Components/AlignmentCard.jsx` —
+stretched link to the editor `/alignments/{id}` with Simulator / Read·{LANG}
+buttons on top), `Library/CreateEntity` (work fixed, language select),
+`Library/CreateAlignment` (work fixed, two entity selects + chunk params),
+plus the surviving `Entities/Create`, `Entities/Show`, `Entities/Edit`
+(metadata form + dnd-kit sortable sentence manager). The navbar entry is
+**Library** (the Alignments navbar item is gone — ADR 0036). All use the
 `--wbench-*` tokens to match the sibling Alignments management surface and the
 [design system](/conventions/design-system.md); pagination is the shared
-`Components/LinkPagination.jsx` (prev/next Inertia links preserving `q`/`page`).
+`Components/LinkPagination.jsx` (prev/next Inertia links preserving
+`tab`/`q`/`page`); alignment display helpers (status badge, similarity
+grading) live in `lib/alignmentDisplay.js`.
 
 # Editing (ADR 0015)
 

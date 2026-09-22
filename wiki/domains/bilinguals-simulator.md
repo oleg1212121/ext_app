@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-09-22T16:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-22T18:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -31,7 +31,8 @@ variants.
 
 | Route | Method | Handler | Purpose |
 |-------|--------|---------|---------|
-| `/bilinguals/en/ru/simulator` | GET | `SimulatorController::simulator` | Inertia page `Bilinguals/Bilinguals` |
+| `/bilinguals/en/ru/simulator` | GET | `SimulatorController::simulator` | Inertia page `Bilinguals/Bilinguals` with the alignment dropdown picker (navbar "Bilinguals" landing) |
+| `/bilinguals/simulator/{entityMatch}` | GET | `SimulatorController::simulatorForMatch` | The same page with a match **pinned by the URL** (opened from an alignment card's Simulator button, ADR 0036): the text selector is hidden, the match label is shown instead, 403 without `canReadMatch` |
 | `/text` | POST | `SimulatorController::text` | Paginated aligned text content (JSON) |
 | `/ai/question` | POST | `SimulatorController::askAi` | Ask an AI model about the text (JSON), named `ai.question` |
 | `/ai/question/stream` | POST | `SimulatorController::askAiStreamed` | SSE-streamed variant, named `ai.question.stream` |
@@ -49,8 +50,11 @@ variants.
   guidance), and with no keys the "Add an API key in your Profile" empty
   state. The default assessment prompt still comes from
   `SimulatorController::DEFAULT_QUESTION`.
-* The text dropdown lists `EntityMatch` records as
-  `"<a-side entity name> / <b-side entity name>"`.
+* The text dropdown (picker page) lists `EntityMatch` records as
+  `"<a-side entity name> / <b-side entity name>"`. On the pinned route the
+  dropdown is replaced by the pinned match's label; saved per-device
+  positions (current match, page, revealed row) still key on the match id,
+  so a pinned open restores that match's last position.
 * **Read access is gated per Entity, not per match.** Both the dropdown and
   `text()` filter/403 on `EntityAccessService::canReadMatch` — the caller must
   hold an Access grant (or be admin) on **both** entities of the match

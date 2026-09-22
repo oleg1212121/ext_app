@@ -1,7 +1,7 @@
 import Main from '../Layouts/Main.jsx';
 import ReaderApp from './Reader/ReaderApp.jsx';
 
-const ReaderReact = ({
+const Reader = ({
     lang = 'en',
     entity,
     rows = [],
@@ -39,6 +39,6 @@ const ReaderReact = ({
     />
 );
 
-ReaderReact.layout = (page) => <Main>{page}</Main>;
+Reader.layout = (page) => <Main>{page}</Main>;
 
-export default ReaderReact;
+export default Reader;

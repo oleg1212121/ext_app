@@ -34,7 +34,7 @@ class ReaderController extends Controller
     {
         $language = $this->resolveLanguage($lang);
 
-        return Inertia::render('ReaderReactIndex', [
+        return Inertia::render('ReaderIndex', [
             'lang' => $lang,
             'languages' => Language::query()->enabled()->orderBy('sort_order')->pluck('code')->all(),
             'entities' => $this->entitiesForLanguage($language),
@@ -59,7 +59,7 @@ class ReaderController extends Controller
         $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
         $wordMap = new EntityWordMap;
 
-        return Inertia::render('ReaderReact', [
+        return Inertia::render('Reader', [
             'lang' => $lang,
             'entity' => [
                 'id' => $entity->id,

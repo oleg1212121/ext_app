@@ -21,7 +21,7 @@ The two positions inside an entity match, stored canonically (the lower entity i
 _Avoid_: EN side / RU side (language-specific wording), left/right
 
 **Entity match**:
-The container pairing two distinct entities of the same **Work** ("the same text, two versions"), held by its **A-side** and **B-side**. The two entities are usually in different languages, but a same-language pairing (exercises + answers) is equally valid. See ADR 0019.
+The container pairing two distinct entities of the same **Work** ("the same text, two versions"), held by its **A-side** and **B-side**. The two entities are usually in different languages, but a same-language pairing (exercises + answers) is equally valid. Shown to users under the label "Alignments" (see the Library Context's **Alignments tab**). See ADR 0019.
 _Avoid_: match, alignment
 
 **Original text**:
@@ -441,9 +441,18 @@ The domain of the user-facing browse surface for works and their texts — the
 
 **Library**:
 The user-facing section (nav item, `/library`) where an approved user browses
-the **Work catalog** and, inside a work, the entities they can read.
+the **Work catalog** and, inside a work, the entities they can read and the
+work's entity matches (the **Alignments tab**).
 _Avoid_: entities page (the former language-first surface), Parallel Library
 (the Reader's former on-page subtitle).
+
+**Alignments tab**:
+The work page's tab that lists the **Entity matches** of that work, labeled
+"Alignments" in the UI — the canonical term stays Entity match. Creating a
+match happens from this tab: the work is the page the form lives on, never a
+picker choice. The former cross-work list of all matches is gone; an
+individual match's editor keeps its own standalone address.
+_Avoid_: alignment list (the removed global surface), global alignments.
 
 **Work catalog**:
 The complete set of **Works**, visible to every approved user regardless of

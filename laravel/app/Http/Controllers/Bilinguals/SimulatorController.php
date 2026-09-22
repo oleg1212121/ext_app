@@ -34,7 +34,30 @@ class SimulatorController extends Controller
 
     public function simulator(): Response
     {
-        $textList = $this->getEntityMatchTextList();
+        return $this->simulatorResponse(null);
+    }
+
+    /**
+     * The simulator with a match pinned by the URL (opened from its
+     * alignment card): no text selector, the client loads this match.
+     */
+    public function simulatorForMatch(EntityMatch $entityMatch): Response
+    {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
+        return $this->simulatorResponse($entityMatch);
+    }
+
+    private function simulatorResponse(?EntityMatch $pinned): Response
+    {
+        if ($pinned !== null) {
+            $pinned->loadMissing(['aEntity.language', 'bEntity.language']);
+            $pinnedName = $this->matchLabel($pinned);
+        } else {
+            $pinnedName = null;
+        }
+
+        $textList = $pinned !== null ? [] : $this->getEntityMatchTextList();
         $firstId = $textList[0]['id'] ?? null;
 
         $canUseAi = auth()->user()->canUseAi();
@@ -47,6 +70,7 @@ class SimulatorController extends Controller
 
         return Inertia::render('Bilinguals/Bilinguals', [
             'textList' => $textList,
+            'pinnedMatch' => $pinnedName !== null ? ['id' => $pinned->id, 'text' => $pinnedName] : null,
             'showWorkplace' => (bool) ($saved['show_workplace'] ?? true),
             'showQuestion' => (bool) ($saved['show_question'] ?? false),
             'showText' => (bool) ($saved['show_text'] ?? true),
@@ -57,12 +81,24 @@ class SimulatorController extends Controller
                 : null,
             'explanationModelKey' => $this->modelResolver->resolveExplanationModel()['id'] ?? null,
             'currentQuestion' => $saved['question'] ?? self::DEFAULT_QUESTION,
-            'currentText' => $firstId !== null ? (string) $firstId : '',
+            'currentText' => $pinnedName !== null
+                ? (string) $pinned->id
+                : ($firstId !== null ? (string) $firstId : ''),
             'fontSize' => $this->clampInt($saved['font_size'] ?? null, 12, 48, 26),
             'aiPanelWidth' => $this->clampInt($saved['ai_panel_width'] ?? null, 280, 1200, 560),
             'workplaceHeight' => $this->clampInt($saved['workplace_height'] ?? null, 80, 800, 168),
             'highlightWords' => (bool) ($saved['highlight_words'] ?? true),
         ]);
+    }
+
+    private function matchLabel(EntityMatch $match): string
+    {
+        $aName = $match->aEntity->name
+            ?? strtoupper($match->aEntity->language?->code ?? 'A');
+        $bName = $match->bEntity->name
+            ?? strtoupper($match->bEntity->language?->code ?? 'B');
+
+        return "{$aName} / {$bName}";
     }
 
     private function clampInt(mixed $value, int $min, int $max, int $default): int
@@ -88,11 +124,7 @@ class SimulatorController extends Controller
 
             $result = [];
             foreach ($matches as $match) {
-                $aName = $match->aEntity->name
-                    ?? strtoupper($match->aEntity->language?->code ?? 'A');
-                $bName = $match->bEntity->name
-                    ?? strtoupper($match->bEntity->language?->code ?? 'B');
-                $result[] = ['id' => $match->id, 'text' => "{$aName} / {$bName}"];
+                $result[] = ['id' => $match->id, 'text' => $this->matchLabel($match)];
             }
 
             return $result;
