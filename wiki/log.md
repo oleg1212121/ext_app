@@ -1,5 +1,30 @@
 # Directory Update Log
 
+## 2026-09-22 (feat: simulator picker page and reader index deleted — deep links only)
+
+ADR 0036 amendment. The work page is now the sole hub, so the two remaining
+global browse surfaces are gone: the simulator picker
+`GET /bilinguals/en/ru/simulator` (dropdown of all readable matches; the
+pinned route `/bilinguals/simulator/{entityMatch}` is the only simulator
+entry and restores saved page/row per match) and the reader index
+`GET /reader/{lang}` + the `/reader` redirect (reading is reached from
+alignment cards' "Read · {LANG}" and the entity page's Read button;
+`GET /reader/{lang}/{entityId}` is unchanged). Deleted with them: the
+"Bilinguals"/"Reader" navbar items (React `NavBar.jsx` + Blade navs),
+`ReaderIndex.jsx`/`Reader/ReaderIndexApp.jsx`, `SimulatorController::
+simulator()/getEntityMatchTextList()` (pinned-only now, no `textList`
+prop), `ReaderController::index()/entitiesForLanguage()`, `Bilinguals.jsx`
+picker mode (Select/Load/changeText), and the picker/index-only UI strings
+(`nav.bilinguals`, `nav.reader`, 9 reader index keys incl. dormant
+`reader_heading`, 5 bilinguals picker keys; new `bilinguals.no_aligned_rows`
+replaces the "press Load" empty state; `load_error_hint` copy updated).
+Tests: `SimulatorPinnedMatchTest` gains picker-404, `SimulatorApiKeyTest`/
+`UiSettingsTest` re-point to the pinned route via the new shared
+`createSimulatorMatch()` helper in `tests/Pest.php`, `ReaderPageTest` drops
+index tests and extends the 404 guard to `/reader` + `/reader/en`. Docs:
+ADR 0036 amendment; wiki `bilinguals-simulator.md`, `reader.md`,
+`entities-alignment.md`, `design-system.md` refreshed.
+
 ## 2026-09-22 (feat: alignments live under their work; reader renamed to /reader)
 
 Implemented ADR 0036. `/library/{work}` is now tabbed: the **Entities tab**

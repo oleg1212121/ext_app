@@ -47,12 +47,6 @@
                                 </x-nav-link>
                             </div>
                         </div>
-                        <x-nav-link :href="route('reader')" :active="request()->routeIs('reader')">
-                            {{ __('nav.reader') }}
-                        </x-nav-link>
-                        <x-nav-link :href="route('bilinguals.simulator')" :active="request()->routeIs('bilinguals.simulator')">
-                            {{ __('nav.bilinguals') }}
-                        </x-nav-link>
                         @if(Auth::user()->isAdmin())
                         <x-nav-link href="/admin">
                             {{ __('nav.admin') }}
@@ -174,16 +168,6 @@
                                 </x-responsive-nav-link>
                             </li>
                         </ul>
-                    </li>
-                    <li>
-                        <x-responsive-nav-link :href="route('reader')" :active="request()->routeIs('reader')">
-                            {{ __('nav.reader') }}
-                        </x-responsive-nav-link>
-                    </li>
-                    <li>
-                        <x-responsive-nav-link :href="route('bilinguals.simulator')" :active="request()->routeIs('bilinguals.simulator')">
-                            {{ __('nav.bilinguals') }}
-                        </x-responsive-nav-link>
                     </li>
                     @if(Auth::user()->isAdmin())
                     <li>

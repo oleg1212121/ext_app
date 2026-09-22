@@ -30,17 +30,6 @@ class ReaderController extends Controller
         protected AIModelResolver $modelResolver,
     ) {}
 
-    public function index(string $lang): Response
-    {
-        $language = $this->resolveLanguage($lang);
-
-        return Inertia::render('ReaderIndex', [
-            'lang' => $lang,
-            'languages' => Language::query()->enabled()->orderBy('sort_order')->pluck('code')->all(),
-            'entities' => $this->entitiesForLanguage($language),
-        ]);
-    }
-
     public function show(ReaderPageRequest $request, string $lang, int $entityId): Response
     {
         $language = $this->resolveLanguage($lang);
@@ -260,20 +249,6 @@ class ReaderController extends Controller
             fn (array $row): array => [$row[1], $row[0]],
             $rows,
         );
-    }
-
-    /**
-     * @return list<array{id: int, name: string}>
-     */
-    private function entitiesForLanguage(Language $language): array
-    {
-        return $this->access()
-            ->readableQuery(auth()->user(), $language->id)
-            ->select('id', 'name')
-            ->orderBy('name')
-            ->limit(100)
-            ->get()
-            ->all();
     }
 
     private function resolveLanguage(string $lang): Language

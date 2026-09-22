@@ -43,14 +43,10 @@ Route::middleware(['auth', 'approved'])->group(function () {
         return Inertia::render('Dashboard');
     })->middleware('verified')->name('dashboard');
 
-    Route::redirect('/reader', '/reader/en')->name('reader');
     Route::get('/reader/{lang}/{entityId}', [ReaderController::class, 'show'])
         ->where('lang', '[a-z]{2}')
         ->whereNumber('entityId')
         ->name('reader.show');
-    Route::get('/reader/{lang}', [ReaderController::class, 'index'])
-        ->where('lang', '[a-z]{2}')
-        ->name('reader.index');
 
     Route::get('/crossword', [CrosswordController::class, 'index'])->name('crossword');
     Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');
@@ -151,7 +147,6 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::patch('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'updateSentence'])->whereNumber('sentence');
     Route::delete('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'unlinkSentence'])->whereNumber('sentence');
     Route::delete('/alignments/{entityMatch}/unmatched/{sentence}', [AlignmentEditorController::class, 'destroyUnmatched'])->whereNumber('sentence');
-    Route::get('/bilinguals/en/ru/simulator', [SimulatorController::class, 'simulator'])->name('bilinguals.simulator');
     // A match pinned from its alignment card: no text selector — the URL
     // names the match (the pair itself carries both languages).
     Route::get('/bilinguals/simulator/{entityMatch}', [SimulatorController::class, 'simulatorForMatch'])

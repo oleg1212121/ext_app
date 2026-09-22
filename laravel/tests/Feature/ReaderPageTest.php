@@ -141,70 +141,14 @@ test('guests are redirected from reader page', function () {
         ->assertRedirect(route('login'));
 });
 
-test('guests are redirected from reader index page', function () {
-    $this->get(route('reader.index', ['lang' => 'en']))
-        ->assertRedirect(route('login'));
-});
-
-test('reader index redirects bare path to english route', function () {
-    $user = User::factory()->create();
-
-    $this->actingAs($user)
-        ->get('/reader')
-        ->assertRedirect('/reader/en');
-});
-
-test('the legacy reader-react paths are gone', function () {
+test('the legacy reader paths are gone', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)->get('/reader-react')->assertNotFound();
     $this->actingAs($user)->get('/reader-react/en')->assertNotFound();
     $this->actingAs($user)->get('/reader-react/en/1')->assertNotFound();
-});
-
-test('authenticated users can view reader index with english entities', function () {
-    $user = User::factory()->create();
-    $enEntity = createEntity('en', null, [
-        'name' => 'Index EN Entity',
-        'file_path' => 'texts/simulator/index_en.txt',
-    ]);
-
-    $this->actingAs($user)
-        ->get(route('reader.index', ['lang' => 'en']))
-        ->assertSuccessful()
-        ->assertInertia(fn ($page) => $page
-            ->component('ReaderIndex')
-            ->where('lang', 'en')
-            ->where('languages', ['en', 'ru'])
-            ->has('entities', 1)
-            ->where('entities.0.id', $enEntity->id)
-            ->where('entities.0.name', 'Index EN Entity'));
-});
-
-test('authenticated users can view reader index with russian entities', function () {
-    $user = User::factory()->create();
-    $ruEntity = createEntity('ru', null, [
-        'name' => 'Index RU Entity',
-        'file_path' => 'texts/simulator/index_ru.txt',
-    ]);
-
-    $this->actingAs($user)
-        ->get(route('reader.index', ['lang' => 'ru']))
-        ->assertSuccessful()
-        ->assertInertia(fn ($page) => $page
-            ->component('ReaderIndex')
-            ->where('lang', 'ru')
-            ->has('entities', 1)
-            ->where('entities.0.id', $ruEntity->id)
-            ->where('entities.0.name', 'Index RU Entity'));
-});
-
-test('unsupported reader index language returns not found', function () {
-    $user = User::factory()->create();
-
-    $this->actingAs($user)
-        ->get('/reader/de')
-        ->assertNotFound();
+    $this->actingAs($user)->get('/reader')->assertNotFound();
+    $this->actingAs($user)->get('/reader/en')->assertNotFound();
 });
 
 test('authenticated users can view reader page with english primary rows', function () {

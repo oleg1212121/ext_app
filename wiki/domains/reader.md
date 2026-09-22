@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react]
 status: stable
 stale_after: 2026-12-22
-generated: { by: agent:zcode, at: 2026-09-22T18:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-22T20:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -26,25 +26,28 @@ sources:
 
 # What it does
 
-A reading UI over imported text entities: pick a language and a text, read it
-with its aligned counterpart when one exists. Backed by the same
+A reading UI over imported text entities: read a text with its aligned
+counterpart when one exists. Backed by the same
 [entities](/database/entities-alignment.md) the alignment pipeline fills;
 `{lang}` is validated against enabled languages (any language with entities,
-not a hardcoded pair).
+not a hardcoded pair). The former reader index (`/reader/{lang}`, a
+per-language list of readable texts) and the `/reader` redirect are gone
+(ADR 0036 amendment, 2026-09-22): the reader is reached through deep links —
+each alignment card's "Read · {LANG}" button (the side is resolved
+per-user server-side) and the entity page's Read button — and the navbar
+"Reader" item is gone with it.
 
 # Routes
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `/reader/{lang}` | `ReaderController::index` | React index of texts (`{lang}` validated against enabled languages), named `reader.index` |
-| `/reader/{lang}/{entityId}` | `ReaderController::show` | React reader for one entity, named `reader.show` |
-| `/reader` | redirect | Defaults to `/reader/en`; also the navbar "Reader" target. The old `/reader-react*` paths are gone (ADR 0036 rework, 2026-09-22) |
+| `/reader/{lang}/{entityId}` | `ReaderController::show` | React reader for one entity, named `reader.show`. The old `/reader-react*` paths, the reader index `/reader/{lang}`, and the `/reader` redirect are all gone (ADR 0036 rework + amendment, 2026-09-22) |
 
 # Frontend
 
-Inertia pages under `resources/js/Pages/Reader/` — `ReaderIndexApp` (listing,
-language tabs driven by the enabled `languages` prop) and `ReaderApp` +
-`ReaderRow` (reading view).
+Inertia pages under `resources/js/Pages/Reader/` — `ReaderApp` +
+`ReaderRow` (reading view). The back arrow is browser-history back; there is
+no in-app listing to return to.
 
 # Bilingual rows
 
@@ -61,9 +64,8 @@ normalization) or `es:{entitySentenceId}` per single-language row — used to
 scope familiarity lookup events to a sentence pair (ADR 0028).
 
 Reads are gated by `EntityAccessService` (see the [Entity Access](
-../../CONTEXT.md#entity-access-context) context). The index lists only
-entities the caller may read (Public, or Restricted with an Access grant);
-`show` 403s on a Restricted entity without a grant.
+../../CONTEXT.md#entity-access-context) context): `show` 403s on a
+Restricted entity without an Access grant.
 
 # Pagination
 
@@ -118,5 +120,4 @@ stop propagation.
 
 | Surface | Tokens | Notes |
 |---------|--------|-------|
-| `/reader/{lang}` (index) | `--wbench-*` | Matches the [design system](/conventions/design-system.md) — cold paper + ultramarine accent, Source Serif 4 / IBM Plex Sans / JetBrains Mono. Hairline toolbar with mono `Reader · En ↔ Ru` stamp (glyph map per language code, code fallback) and underline tabs over the enabled languages; dense list with `.ribbon-mark` hover edge. Implements the four-state contract on the entity list: empty (`No texts in this library` eyebrow + serif invite), loading (the page's signature — an `.ai-loader-rule` fills under the toolbar while Inertia navigates between libraries, with a mono `Loading · {Language}` label), answer (the list), no error state (the static controller has no request to fail). |
-| `/reader/{lang}/{entityId}` (reader) | `--color-vellum/*` (legacy) | Still on the warm vellum palette. Migrating it to `--wbench-*` is tracked as a follow-up so a library switch does not visibly cross palettes when entering a text. |
+| `/reader/{lang}/{entityId}` (reader) | `--color-vellum/*` (legacy) | Still on the warm vellum palette. Migrating it to `--wbench-*` is tracked as a follow-up so a library switch does not visibly cross palettes when entering a text. (The deleted reader index was the `--wbench-*` reference implementation; the design-system page's canonical example is now the simulator.) |

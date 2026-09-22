@@ -2,7 +2,6 @@ import React from 'react';
 import { Link } from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx'
 import Spinner from '../../Components/Spinner.jsx'
-import Select from "../../Components/Forms/Select.jsx";
 import Button from "../../Components/Forms/Button.jsx";
 import Workplace from "./Components/Workplace.jsx";
 import AI from "./Components/AI.jsx";
@@ -131,28 +130,21 @@ const Bilinguals = (props) => {
     const { t } = useI18n()
     const answerModel = props.answerModel
     const canUseAi = props.canUseAi
-    const textList = props.textList ?? []
     const errors = props.errors
-    // Opened from an alignment card: the match is pinned by the URL — the
-    // text selector is hidden and saved positions key on the pinned match.
-    const pinnedMatch = props.pinnedMatch ?? null
+    // Opened from an alignment card: the match is pinned by the URL — there
+    // is no text selector and saved positions key on the pinned match.
+    const pinnedMatch = props.pinnedMatch
 
     const initialPositions = loadPositions();
-    const savedTextExists = initialPositions.currentText != null
-        && textList.some((item) => String(item.id) === String(initialPositions.currentText));
-    const initialText = pinnedMatch
-        ? String(pinnedMatch.id)
-        : (savedTextExists ? String(initialPositions.currentText) : props.currentText);
-    const initialSaved = pinnedMatch || savedTextExists
-        ? (initialPositions.alignments?.[initialText] ?? null)
-        : null;
+    const initialText = String(pinnedMatch.id);
+    const initialSaved = initialPositions.alignments?.[initialText] ?? null;
 
     let [showWorkplace, setShowWorkplace] = React.useState(props.showWorkplace)
     let [showQuestion, setShowQuestion] = React.useState(props.showQuestion)
     let [showText, setShowText] = React.useState(props.showText)
     let [showAI, setShowAI] = React.useState(props.showAI)
     let [highlightWords, setHighlightWords] = React.useState(props.highlightWords ?? true)
-    let [currentText, setCurrentText] = React.useState(initialText)
+    let [currentText] = React.useState(initialText)
     let [currentQuestion, setCurrentQuestion] = React.useState(props.currentQuestion)
     const [pending, setPending] = React.useState(false);
     const [aiAnswer, setAiAnswer] = React.useState('');
@@ -279,27 +271,6 @@ const Bilinguals = (props) => {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    const handleLoadText = React.useCallback(() => {
-        const saved = loadPositions().alignments?.[String(currentText)] ?? null;
-        const page = saved?.page ?? 1;
-        setTextPage(page);
-        if (saved?.row) {
-            setCheckedRows({[saved.row.n]: {en: !!saved.row.en, ru: !!saved.row.ru}});
-            pendingScrollRowRef.current = saved.row.n;
-        } else {
-            setCheckedRows({});
-        }
-        return fetchPage(page);
-    }, [fetchPage, currentText]);
-
-    const changeText = (event) => {
-        const value = event.target.value;
-        setCurrentText(value);
-        const positions = loadPositions();
-        positions.currentText = String(value);
-        savePositions(positions);
-    };
 
     const onToggleRow = (n, side) => {
         if (side === 'en' && !checkedRows[n]?.en) {
@@ -547,17 +518,9 @@ const Bilinguals = (props) => {
                         </Link>
                     )}
                     <span className={HAIRLINE} aria-hidden="true"/>
-                    {pinnedMatch ? (
-                        <span className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] max-w-[22rem] truncate whitespace-nowrap">
-                            {pinnedMatch.text}
-                        </span>
-                    ) : (
-                        <div className="flex items-center gap-2">
-                            <Select value={currentText} onChange={changeText}
-                                    items={textList}/>
-                                    <Button color="green" onClick={() => handleLoadText()} type='button'>{t('bilinguals.load')}</Button>
-                        </div>
-                    )}
+                    <span className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] max-w-[22rem] truncate whitespace-nowrap">
+                        {pinnedMatch.text}
+                    </span>
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div className="flex items-center gap-1">
                         <FontButton aria-label={t('bilinguals.increase_font_size')} label={t('bilinguals.increase_font_size')} onClick={() => changeFontSize('+')}>+</FontButton>
@@ -676,7 +639,7 @@ const Bilinguals = (props) => {
                                     </div>
                                 </div>
                             )}
-                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} hasText={!!currentText} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow} wordMaps={wordMaps} highlightWords={highlightWords} onWordProgress={handleWordProgress} rowKeys={rowKeys} allEn={allEn} onToggleAllEn={toggleAllEn} popupFontSize={popupFontSize} explain={{enabled: canUseAi, modelKey: props.explanationModelKey}}/>
+                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow} wordMaps={wordMaps} highlightWords={highlightWords} onWordProgress={handleWordProgress} rowKeys={rowKeys} allEn={allEn} onToggleAllEn={toggleAllEn} popupFontSize={popupFontSize} explain={{enabled: canUseAi, modelKey: props.explanationModelKey}}/>
                         </>
                     }
                     {showWorkplace === true &&

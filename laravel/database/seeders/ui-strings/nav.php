@@ -2,9 +2,7 @@
 
 // UI strings: navigation (NavBar.jsx + layouts/navigation.blade.php).
 return [
-    'nav.bilinguals' => ['en' => 'Bilinguals', 'ru' => 'Билингвы'],
     'nav.library' => ['en' => 'Library', 'ru' => 'Библиотека'],
-    'nav.reader' => ['en' => 'Reader', 'ru' => 'Читалка'],
     'nav.admin' => ['en' => 'Admin', 'ru' => 'Админка'],
     'nav.profile' => ['en' => 'Profile', 'ru' => 'Профиль'],
     'nav.log_out' => ['en' => 'Log out', 'ru' => 'Выйти'],

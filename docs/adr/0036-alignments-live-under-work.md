@@ -54,3 +54,29 @@ params and a second URL level would fork every link for no data difference;
 keeping the global list in parallel was rejected because two creation entry
 points and two lists for one work-scoped concept is the confusion this
 rework removes.
+
+## Amendment (2026-09-22, same day): the global browse pages go too
+
+The two remaining global surfaces — the simulator picker
+`/bilinguals/en/ru/simulator` (a dropdown of every readable match, kept at
+first as the navbar "Bilinguals" landing) and the reader index
+`/reader/{lang}` + the `/reader` redirect (a per-language list of readable
+texts, the navbar "Reader" target) — are deleted, navbar items included.
+The work page is the hub this ADR set out to create, and both pages were
+pre-rework ways to reach what it now reaches more directly:
+
+- The pinned route `GET /bilinguals/simulator/{entityMatch}` is the only
+  simulator entry. The picker's one perk — auto-resuming the last-used
+  alignment — worked per match via localStorage anyway, and the pinned
+  route restores that same saved page/row keyed by the match id. There is
+  no in-page match switching anymore; the Alignments tab is the switcher.
+- Reading is one click from each alignment card ("Read · {LANG}", the
+  server-resolved non-native side) and from the entity page's Read button.
+  `GET /reader/{lang}/{entityId}` is unchanged; nothing else needs to
+  exist. The index carried no progress or continue-reading state — reading
+  positions were always device-local inside the reader itself — so nothing
+  is lost beyond the flat list.
+
+The navbar keeps Library, Puzzles, and Admin. The old paths
+(`/bilinguals/en/ru/simulator`, `/reader`, `/reader/{lang}`) return 404,
+guarded in the test suite alongside the earlier `/reader-react*` guards.

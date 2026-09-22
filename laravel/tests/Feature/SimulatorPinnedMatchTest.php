@@ -23,7 +23,7 @@ test('the pinned simulator route preloads the match from the url', function () {
             ->where('currentText', (string) $match->id)
             ->where('pinnedMatch.id', $match->id)
             ->where('pinnedMatch.text', 'Pinned EN / Pinned RU')
-            ->has('textList', 0));
+            ->missing('textList'));
 });
 
 test('the pinned simulator route is forbidden without access to both sides', function () {
@@ -48,20 +48,10 @@ test('an unknown match id on the pinned simulator route is not found', function 
         ->assertNotFound();
 });
 
-test('the picker simulator page keeps its default newest-match selection', function () {
+test('the old picker simulator page is gone', function () {
     $user = User::factory()->create();
-    $work = createWork();
-    $match = createEntityMatch(
-        createEntity('en', $work, ['name' => 'Picker EN']),
-        createEntity('ru', $work, ['name' => 'Picker RU']),
-        ['status' => 'completed'],
-    );
 
     $this->actingAs($user)
         ->get('/bilinguals/en/ru/simulator')
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('currentText', (string) $match->id)
-            ->where('pinnedMatch', null)
-            ->has('textList', 1));
+        ->assertNotFound();
 });

@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-09-22T18:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-22T20:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -31,8 +31,7 @@ variants.
 
 | Route | Method | Handler | Purpose |
 |-------|--------|---------|---------|
-| `/bilinguals/en/ru/simulator` | GET | `SimulatorController::simulator` | Inertia page `Bilinguals/Bilinguals` with the alignment dropdown picker (navbar "Bilinguals" landing) |
-| `/bilinguals/simulator/{entityMatch}` | GET | `SimulatorController::simulatorForMatch` | The same page with a match **pinned by the URL** (opened from an alignment card's Simulator button, ADR 0036): the text selector is hidden, the match label is shown instead, 403 without `canReadMatch` |
+| `/bilinguals/simulator/{entityMatch}` | GET | `SimulatorController::simulatorForMatch` | Inertia page `Bilinguals/Bilinguals` with the match **pinned by the URL** (opened from an alignment card's Simulator button, ADR 0036): no text selector, the match label is shown instead, 403 without `canReadMatch`. The old picker page `/bilinguals/en/ru/simulator` and the navbar "Bilinguals" item are gone (ADR 0036 amendment) |
 | `/text` | POST | `SimulatorController::text` | Paginated aligned text content (JSON) |
 | `/ai/question` | POST | `SimulatorController::askAi` | Ask an AI model about the text (JSON), named `ai.question` |
 | `/ai/question/stream` | POST | `SimulatorController::askAiStreamed` | SSE-streamed variant, named `ai.question.stream` |
@@ -50,17 +49,18 @@ variants.
   guidance), and with no keys the "Add an API key in your Profile" empty
   state. The default assessment prompt still comes from
   `SimulatorController::DEFAULT_QUESTION`.
-* The text dropdown (picker page) lists `EntityMatch` records as
-  `"<a-side entity name> / <b-side entity name>"`. On the pinned route the
-  dropdown is replaced by the pinned match's label; saved per-device
-  positions (current match, page, revealed row) still key on the match id,
-  so a pinned open restores that match's last position.
-* **Read access is gated per Entity, not per match.** Both the dropdown and
-  `text()` filter/403 on `EntityAccessService::canReadMatch` — the caller must
-  hold an Access grant (or be admin) on **both** entities of the match
-  (ADR 0014). A user who uploaded only one side of a work therefore cannot
-  read the bilingual simulator content until they also upload/match the other
-  side.
+* The simulator is reached **only through a pinned URL** — an alignment
+  card's Simulator button names the match, shown in the toolbar as
+  `"<a-side entity name> / <b-side entity name>"`. There is no in-page
+  switching; to read another pair, go back to the work's Alignments tab.
+  Saved per-device positions (page, revealed row) key on the match id, so a
+  pinned open restores that match's last position.
+* **Read access is gated per Entity, not per match.** The pinned route and
+  `text()` both 403/filter on `EntityAccessService::canReadMatch` — the
+  caller must hold an Access grant (or be admin) on **both** entities of the
+  match (ADR 0014). A user who uploaded only one side of a work therefore
+  cannot read the bilingual simulator content until they also upload/match
+  the other side.
 * `text()` paginates (default 50/page, max 200) and serves an entity match by
   `entity_match_id` (the meaning matches shaped for the UI by
   `MeaningMatchPresenter`); a legacy `filename` mode still reads pre-aligned
@@ -119,7 +119,7 @@ variants.
   color. GFM tables get hairline rules and mono-caps headers. Inside the AI
   answer panel (`#ai_answer_div`), `--wbench-danger` and `--wbench-emphasis`
   are both overridden to the shared red `#fe2500`.
-* The default assessment question (`SimulatorController::simulator`) instructs
+* The default assessment question (`SimulatorController::DEFAULT_QUESTION`) instructs
   the model to use `##` headings per task, straight double quotes for cited
   words, `~~removed~~`/`**added**` for corrections, `==double equals==` for the
   key weak-point phrases, and `>` blockquotes for improved versions — each
@@ -143,10 +143,11 @@ variants.
 # Frontend
 
 React page `resources/js/Pages/Bilinguals/` (`Bilinguals.jsx` plus `AI/`,
-`TextContent/`, `Workplace/` sub-components). Props include `answerModel`
+`TextContent/`, `Workplace/` sub-components). Props include `pinnedMatch` (`{id, text}` — the URL-pinned
+match and its toolbar label), `answerModel`
 (`{id, label}` or null — the resolved answer model shown in the toolbar),
 `explanationModelKey` (resolved explanation model id, only discriminates the
-word popup's client cache), `textList`, `show*` feature flags
+word popup's client cache), `show*` feature flags
 (`showWorkplace`, `showQuestion`, `showText`, `showAI`), plus the saved UI
 settings seeds (`fontSize`, `aiPanelWidth`, `workplaceHeight`, and the
 `show*`/`currentQuestion` props pre-merged with saved values).
@@ -160,7 +161,7 @@ Split by write frequency (ADR 0024):
   `simulator` section). **The model is not part of `ui_settings`** — it is a
   typed `user_settings.ai_model_id` preference edited in the Profile
   (ADR 0035; the legacy `simulator.model` key was backfilled into it and
-  removed). Seeded into page props by `SimulatorController::simulator()`
+  removed). Seeded into page props by `SimulatorController::simulatorForMatch()`
   (`DEFAULT_QUESTION` constant is the question fallback). The frontend
   writes back via the `useUiSettingsAutosave` hook — one debounced (~800 ms)
   PATCH to `/ui-settings` per change burst; the backend section-merges so a
@@ -171,10 +172,9 @@ Split by write frequency (ADR 0024):
   `ext_app.simulator.position.v1` (`lib/simulatorPosition.js`): current
   entity match plus, per alignment, the last page and the last opened row
   (`{n, en, ru}` — global row number and which halves were revealed). On
-  mount the saved alignment auto-loads at its saved page; the saved row's
+  mount the pinned match auto-loads at its saved page; the saved row's
   checkboxes are re-checked (controlled `checkedRows` state in
-  `TextContent.jsx`) and the row scrolls into view. Switching alignments and
-  pressing Load restores each alignment's own saved page instead of resetting
-  to page 1. The header RU master checkbox stays uncontrolled; `all_en` is
+  `TextContent.jsx`) and the row scrolls into view. The
+  header RU master checkbox stays uncontrolled; `all_en` is
   controlled React state (`allEn`, reset on every page load) and is
   deliberately NOT persisted; `per_page` is not persisted either.

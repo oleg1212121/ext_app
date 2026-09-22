@@ -111,8 +111,8 @@ sources:
   `AlignEntitySentences::finalize()` enforces original completeness (both
   sides when neither is the original). The editor's **Needs review** section
   surfaces one-sided rows (any similarity) plus two-sided rows below 0.55.
-* `EntityMatch` is what the simulator's text dropdown lists — joining
-  `aEntity` / `bEntity` for display names.
+* `EntityMatch` is what an alignment card and the pinned simulator route
+  label — joining `aEntity` / `bEntity` for display names.
 * **Read access is Restricted by default** (ADR
   [0013](../../docs/adr/0013-default-restricted-uploads-and-per-entity-grants.md)):
   every new Entity is `is_restricted = true`; admin publishes to make it

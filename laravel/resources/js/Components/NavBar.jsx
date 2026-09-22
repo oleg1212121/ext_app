@@ -66,9 +66,7 @@ export default function NavBar() {
     const navLinks = useMemo(() => {
         if (!isAuthenticated || !isApproved) return []
         return [
-            {href: '/bilinguals/en/ru/simulator', label: t('nav.bilinguals')},
             {href: '/library', label: t('nav.library')},
-            {href: '/reader', label: t('nav.reader')},
             {label: t('nav.puzzles'), children: [{href: '/crossword', label: t('nav.crossword')}]},
             ...(canAccessAdminPanel ? [{href: '/admin', label: t('nav.admin'), external: true}] : []),
         ]

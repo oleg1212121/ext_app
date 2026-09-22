@@ -139,6 +139,20 @@ function createEntityMatch(Entity $first, Entity $second, array $attributes = []
     ]);
 }
 
+/**
+ * A minimal readable completed pair for hitting the pinned simulator page.
+ */
+function createSimulatorMatch(): EntityMatch
+{
+    $work = createWork();
+
+    return createEntityMatch(
+        createEntity('en', $work, ['name' => 'Sim EN']),
+        createEntity('ru', $work, ['name' => 'Sim RU']),
+        ['status' => 'completed'],
+    );
+}
+
 /*
 |--------------------------------------------------------------------------
 | Dictionary-domain fixtures (unified language-keyed schema)

@@ -15,7 +15,6 @@ use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\Word;
-use Exception;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
@@ -32,11 +31,6 @@ class SimulatorController extends Controller
         protected MeaningMatchPresenter $presenter,
     ) {}
 
-    public function simulator(): Response
-    {
-        return $this->simulatorResponse(null);
-    }
-
     /**
      * The simulator with a match pinned by the URL (opened from its
      * alignment card): no text selector, the client loads this match.
@@ -48,17 +42,10 @@ class SimulatorController extends Controller
         return $this->simulatorResponse($entityMatch);
     }
 
-    private function simulatorResponse(?EntityMatch $pinned): Response
+    private function simulatorResponse(EntityMatch $pinned): Response
     {
-        if ($pinned !== null) {
-            $pinned->loadMissing(['aEntity.language', 'bEntity.language']);
-            $pinnedName = $this->matchLabel($pinned);
-        } else {
-            $pinnedName = null;
-        }
-
-        $textList = $pinned !== null ? [] : $this->getEntityMatchTextList();
-        $firstId = $textList[0]['id'] ?? null;
+        $pinned->loadMissing(['aEntity.language', 'bEntity.language']);
+        $pinnedName = $this->matchLabel($pinned);
 
         $canUseAi = auth()->user()->canUseAi();
 
@@ -69,8 +56,7 @@ class SimulatorController extends Controller
         $answerModel = $this->modelResolver->resolveAnswerModel();
 
         return Inertia::render('Bilinguals/Bilinguals', [
-            'textList' => $textList,
-            'pinnedMatch' => $pinnedName !== null ? ['id' => $pinned->id, 'text' => $pinnedName] : null,
+            'pinnedMatch' => ['id' => $pinned->id, 'text' => $pinnedName],
             'showWorkplace' => (bool) ($saved['show_workplace'] ?? true),
             'showQuestion' => (bool) ($saved['show_question'] ?? false),
             'showText' => (bool) ($saved['show_text'] ?? true),
@@ -81,9 +67,7 @@ class SimulatorController extends Controller
                 : null,
             'explanationModelKey' => $this->modelResolver->resolveExplanationModel()['id'] ?? null,
             'currentQuestion' => $saved['question'] ?? self::DEFAULT_QUESTION,
-            'currentText' => $pinnedName !== null
-                ? (string) $pinned->id
-                : ($firstId !== null ? (string) $firstId : ''),
+            'currentText' => (string) $pinned->id,
             'fontSize' => $this->clampInt($saved['font_size'] ?? null, 12, 48, 26),
             'aiPanelWidth' => $this->clampInt($saved['ai_panel_width'] ?? null, 280, 1200, 560),
             'workplaceHeight' => $this->clampInt($saved['workplace_height'] ?? null, 80, 800, 168),
@@ -108,31 +92,6 @@ class SimulatorController extends Controller
         }
 
         return max($min, min($max, (int) $value));
-    }
-
-    /**
-     * @return array<int, array{id: int, text: string}>
-     */
-    private function getEntityMatchTextList(): array
-    {
-        try {
-            $matches = $this->access()
-                ->readableMatchQuery(auth()->user())
-                ->with(['aEntity.language', 'bEntity.language'])
-                ->latest('id')
-                ->get();
-
-            $result = [];
-            foreach ($matches as $match) {
-                $result[] = ['id' => $match->id, 'text' => $this->matchLabel($match)];
-            }
-
-            return $result;
-        } catch (Exception $e) {
-            error_log('Entity matches not loaded: '.$e->getMessage());
-
-            return [];
-        }
     }
 
     public function text(BilingualsTextRequest $request): JsonResponse

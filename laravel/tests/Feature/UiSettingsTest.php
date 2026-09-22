@@ -78,6 +78,7 @@ test('invalid values are rejected', function () {
 
 test('simulator page seeds props from saved ui settings', function () {
     $user = User::factory()->create();
+    $match = createSimulatorMatch();
     withSavedUiSettings($user, [
         'simulator' => [
             'font_size' => 34,
@@ -90,7 +91,7 @@ test('simulator page seeds props from saved ui settings', function () {
     ]);
 
     $this->actingAs($user)
-        ->get('/bilinguals/en/ru/simulator')
+        ->get("/bilinguals/simulator/{$match->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('fontSize', 34)
@@ -101,9 +102,10 @@ test('simulator page seeds props from saved ui settings', function () {
 
 test('simulator page falls back to defaults when nothing is saved', function () {
     $user = User::factory()->create();
+    $match = createSimulatorMatch();
 
     $this->actingAs($user)
-        ->get('/bilinguals/en/ru/simulator')
+        ->get("/bilinguals/simulator/{$match->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('fontSize', 26)
@@ -114,6 +116,7 @@ test('simulator page falls back to defaults when nothing is saved', function () 
 
 test('simulator model choice no longer lives in ui settings', function () {
     $user = User::factory()->create();
+    $match = createSimulatorMatch();
     $provider = AiProvider::factory()->enabled()->create(['key' => 'openrouter', 'name' => 'OpenRouter']);
     AiModel::factory()->enabled()->create(['ai_provider_id' => $provider->id, 'external_id' => 'cheap', 'name' => 'Cheap', 'pricing_prompt' => '0', 'pricing_completion' => '0']);
     UserApiKey::factory()->create(['user_id' => $user->id, 'ai_provider_id' => $provider->id]);
@@ -125,7 +128,7 @@ test('simulator model choice no longer lives in ui settings', function () {
     ]);
 
     $this->actingAs($user)
-        ->get('/bilinguals/en/ru/simulator')
+        ->get("/bilinguals/simulator/{$match->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('answerModel', null));
 });

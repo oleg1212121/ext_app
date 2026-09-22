@@ -11,7 +11,8 @@ generated: { by: agent:ox-alpha, at: 2026-08-23T20:25:00Z }
 
 Shared visual language for the app. New pages should derive their look from this,
 not from a new palette per page. The canonical implementation of this system is
-the Bilinguals simulator (`/bilinguals/en/ru/simulator`).
+the Bilinguals simulator (`/bilinguals/simulator/{entityMatch}`, opened from
+an alignment card).
 
 # Subject & voice
 
