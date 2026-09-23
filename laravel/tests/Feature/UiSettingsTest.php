@@ -111,7 +111,10 @@ test('simulator page falls back to defaults when nothing is saved', function () 
             ->where('fontSize', 26)
             ->where('showText', true)
             ->where('showQuestion', false)
-            ->where('currentQuestion', SimulatorController::DEFAULT_QUESTION));
+            // Nothing saved: currentQuestion is null and the client renders
+            // the :base template for the currently-toggled sides.
+            ->where('currentQuestion', null)
+            ->where('questionTemplate', SimulatorController::DEFAULT_QUESTION));
 });
 
 test('simulator model choice no longer lives in ui settings', function () {
@@ -141,7 +144,7 @@ test('reader page seeds font size from saved ui settings', function () {
     $entity = createEntity('en', null, ['name' => 'Reader EN Entity']);
 
     $this->actingAs($user)
-        ->get(route('reader.show', ['lang' => 'en', 'entityId' => $entity->id]))
+        ->get(route('reader.show', ['entityId' => $entity->id]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('fontSize', 22));
 });
@@ -154,7 +157,7 @@ test('reader page clamps an out of range saved font size', function () {
     $entity = createEntity('en', null, ['name' => 'Reader EN Entity']);
 
     $this->actingAs($user)
-        ->get(route('reader.show', ['lang' => 'en', 'entityId' => $entity->id]))
+        ->get(route('reader.show', ['entityId' => $entity->id]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('fontSize', 38));
 });

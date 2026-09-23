@@ -1,5 +1,40 @@
 # Directory Update Log
 
+## 2026-09-23 (feat: side rule + language toggle on reader and simulator; reader route drops {lang})
+
+ADR 0037. Both reading surfaces now default their sides from the user's
+**Native language** via the new shared `EntityMatch::readingSideFor()`
+(native side translates → the work's original side reads → A-side),
+replacing the URL-entity-driven side on the reader and the hardcoded EN/RU
+layout on the simulator; `LibraryController::readerTarget()` is refactored
+onto the same rule so the alignment card's Read button and the reader page
+agree. `GET /reader/{lang}/{entityId}` is deleted — the route is now
+`GET /reader/{entityId}` (the URL entity only anchors the match; legacy
+shapes 404, test-guarded). Both pages grow a header language radio that
+swaps sides client-side and persists the flip as Working state
+(`ext_app.reader.side-flip.v1` keyed by `positionKey`; `flipped` in the
+simulator's per-match position store). The simulator's columns become
+positional **target/base** roles (`hide_target`/`hide_base`,
+`check_target`/`check_base`, `all_target`/`all_base` in
+`public/css/simulator.css` + `TextContent.jsx`), column headers show the
+sides' real language names, and `DEFAULT_QUESTION` becomes a `:base` template
+the client substitutes per toggle — saved custom questions ship verbatim,
+while a saved copy of the old hardcoded default (`LEGACY_DEFAULT_QUESTION`)
+counts as not customized and `question` persists `null` until actually
+edited. Reader perf: `.reader-row { content-visibility: auto }`,
+`React.memo` on `ReaderRow`/`WordText` with stable explain-payload
+identities, and the per-row hover `setState` replaced by existing CSS
+`:hover` rules (scrolling had been re-rendering every token span crossed).
+UI strings: +`reader.reading_language`, +`bilinguals.learning_language`;
+removed dormant `bilinguals.english`/`bilinguals.russian` (orphaned DB keys
+deleted). Tests: `ReaderPageTest` rewritten for the side rule + route shape
+(native-default, original-fallback, translation-pair, legacy-404 guards),
+`UiSettingsTest` re-pointed, `SimulatorPinnedMatchTest` gains
+languages/defaultLearningSide/questionTemplate/custom-question/legacy-null
+tests. Docs: ADR 0037; CONTEXT.md gains **Reading side**, **Translation
+side**, **Side swap**; wiki `reader.md` + `bilinguals-simulator.md`
+refreshed; `web-routes.md` regenerated.
+
 ## 2026-09-22 (feat: simulator picker page and reader index deleted — deep links only)
 
 ADR 0036 amendment. The work page is now the sole hub, so the two remaining

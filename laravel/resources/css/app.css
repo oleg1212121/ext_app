@@ -123,6 +123,15 @@
     color: var(--color-vermilion-night);
 }
 
+/* A reader page is one long list of token-heavy rows: rows far off-screen
+   skip layout and paint until scrolled near (WordText spans number in the
+   tens of thousands per page). The size hint approximates a two-line row;
+   rendered rows measure themselves. */
+.reader-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 8rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .reader-row:hover .primary-line {
         transition: none;

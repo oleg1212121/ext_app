@@ -1,7 +1,10 @@
-import {useEffect, useRef, useState} from 'react';
+import {memo, useEffect, useMemo, useRef} from 'react';
 import WordText from '../../Components/WordText.jsx';
 
-export default function ReaderRow({
+// Memoized: rows are token-heavy, and the reader re-renders for plenty of
+// reasons (audio status, page picker, sibling row expansion) that leave an
+// untouched row's props identical.
+function ReaderRow({
     index,
     primary,
     translation,
@@ -26,15 +29,23 @@ export default function ReaderRow({
     // The translation column lives on the other entity match side than the
     // primary one; without a primary side (single-language text) it has none.
     const translationSide = primarySide === 'a' ? 'b' : primarySide === 'b' ? 'a' : null;
-    const columnExplain = (explainable, side) => (
-        explain?.enabled && explainable && side
+    // Stable payload identities: without them, memoized WordText instances
+    // would re-render on every parent pass.
+    const primaryExplainPayload = useMemo(
+        () => (explain?.enabled && primaryExplainable && primarySide
             ? {enabled: true, modelKey: explain.modelKey}
-            : undefined
+            : undefined),
+        [explain, primaryExplainable, primarySide],
+    );
+    const translationExplainPayload = useMemo(
+        () => (explain?.enabled && translationExplainable && translationSide
+            ? {enabled: true, modelKey: explain.modelKey}
+            : undefined),
+        [explain, translationExplainable, translationSide],
     );
     const hasTranslation = translation.trim() !== '';
     const isVisible = showAll || expanded;
     const rowRef = useRef(null);
-    const [hovered, setHovered] = useState(false);
 
     useEffect(() => {
         if (rowRef.current) {
@@ -61,8 +72,6 @@ export default function ReaderRow({
         <li
             ref={rowRef}
             className="reader-row group relative"
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
         >
             <div
                 className={[
@@ -99,12 +108,14 @@ export default function ReaderRow({
                         className="whitespace-pre-line"
                         popupFontSize={popupFontSize}
                         side={primarySide ?? undefined}
-                        explain={columnExplain(primaryExplainable, primarySide)}
+                        explain={primaryExplainPayload}
                     />
                 </div>
 
                 {sideBySide && hasTranslation && (
-                    <span aria-hidden="true" className="gutter-cane hidden lg:block row-span-2 self-stretch h-full min-h-[3rem]" data-row-hover={hovered || isVisible ? 'true' : 'false'}/>
+                    // Hover styling is CSS-only (.group:hover in app.css);
+                    // the data attribute covers the revealed state.
+                    <span aria-hidden="true" className="gutter-cane hidden lg:block row-span-2 self-stretch h-full min-h-[3rem]" data-row-hover={isVisible ? 'true' : 'false'}/>
                 )}
 
                 {hasTranslation && (
@@ -136,7 +147,7 @@ export default function ReaderRow({
                                 onWordProgress={onWordProgress}
                                 popupFontSize={popupFontSize}
                                 side={translationSide ?? undefined}
-                                explain={columnExplain(translationExplainable, translationSide)}
+                                explain={translationExplainPayload}
                             />
                         </div>
                     </div>
@@ -152,3 +163,5 @@ export default function ReaderRow({
         </li>
     );
 }
+
+export default memo(ReaderRow);

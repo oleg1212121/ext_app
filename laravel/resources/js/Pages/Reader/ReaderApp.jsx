@@ -1,10 +1,11 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {router} from '@inertiajs/react';
 import ReaderRow from './ReaderRow.jsx';
 import {popupFontSizeFor} from '../../Components/WordPopup.jsx';
 import {useI18n} from '../../i18n';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 import {loadReadingPositions, saveReadingPositions} from '../../lib/readingPosition';
+import {loadSideFlip, saveSideFlip} from '../../lib/sideFlip';
 
 const MIN_FONT_SIZE = 16;
 const MAX_FONT_SIZE = 38;
@@ -62,7 +63,8 @@ const Divider = () => (
 );
 
 export default function ReaderApp({
-    lang = 'en',
+    primaryLang = null,
+    translationLang = null,
     entity,
     rows = [],
     rowKeys = [],
@@ -87,6 +89,9 @@ export default function ReaderApp({
     useUiSettingsAutosave('reader', {font_size: fontSize, highlight});
     const [wordMap, setWordMap] = useState(initialWordMap);
     const [translationWordMap, setTranslationWordMap] = useState(initialTranslationWordMap);
+    // Language toggle (Working state, per device + positionKey): when true,
+    // the server's translation column is read as the primary one.
+    const [flipped, setFlipped] = useState(() => loadSideFlip(positionKey));
     const [showAll, setShowAll] = useState(false);
     const [sideBySide, setSideBySide] = useState(false);
     const [wideMode, setWideMode] = useState(false);
@@ -143,6 +148,37 @@ export default function ReaderApp({
         setWordMap(apply);
         setTranslationWordMap(apply);
     }, []);
+
+    // The language toggle only exists when the text has a translation side;
+    // when flipped, the server's translation column is read as the primary.
+    const hasTranslation = translationLang !== null && translationLang !== undefined;
+    const effectiveFlipped = hasTranslation && flipped;
+
+    const displayRows = useMemo(
+        () => (effectiveFlipped
+            ? rows.map(([primary, translation]) => [translation, primary])
+            : rows),
+        [rows, effectiveFlipped],
+    );
+
+    const shownWordMap = effectiveFlipped ? translationWordMap : wordMap;
+    const shownTranslationWordMap = effectiveFlipped ? wordMap : translationWordMap;
+    const shownPrimaryHighlightable = effectiveFlipped ? translationHighlightable : primaryHighlightable;
+    const shownTranslationHighlightable = effectiveFlipped ? primaryHighlightable : translationHighlightable;
+    const shownPrimaryExplainable = effectiveFlipped ? translationExplainable : primaryExplainable;
+    const shownTranslationExplainable = effectiveFlipped ? primaryExplainable : translationExplainable;
+    const otherSide = primarySide === 'a' ? 'b' : primarySide === 'b' ? 'a' : null;
+    const shownPrimarySide = effectiveFlipped ? otherSide : primarySide;
+    const readingLang = effectiveFlipped ? translationLang : primaryLang;
+
+    const setReadingLang = useCallback((lang) => {
+        if (!hasTranslation || lang === readingLang) {
+            return;
+        }
+        const next = !flipped;
+        setFlipped(next);
+        saveSideFlip(positionKey, next);
+    }, [flipped, hasTranslation, readingLang, positionKey]);
 
     const handlePickAudio = useCallback(() => {
         audioPickerRef.current?.click();
@@ -360,11 +396,42 @@ export default function ReaderApp({
                     <div className="min-w-0 flex items-baseline gap-3">
                         <h1 className="truncate font-serif text-lg sm:text-xl tracking-tight">{entityTitle}</h1>
                         <span className="font-sans text-[10px] tracking-[0.2em] uppercase text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
-                            {LANG_GLYPH[lang] ?? lang}
+                            {LANG_GLYPH[readingLang] ?? readingLang}
                         </span>
                     </div>
 
                     <div className="ml-auto flex flex-wrap items-center gap-2 sm:gap-3">
+                        {hasTranslation && (
+                            <div
+                                role="radiogroup"
+                                aria-label={t('reader.reading_language')}
+                                className="flex items-center gap-0.5 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm p-0.5"
+                            >
+                                {[primaryLang, translationLang].map((code) => (
+                                    <label
+                                        key={code}
+                                        className={[
+                                            'px-2 h-7 inline-flex items-center font-sans text-xs tracking-wide rounded-sm cursor-pointer select-none',
+                                            'transition-colors duration-150 focus-within:outline-none focus-within:ring-2 focus-within:ring-[var(--color-vermilion)]',
+                                            readingLang === code
+                                                ? 'bg-[var(--color-vermilion)] text-vellum dark:bg-[var(--color-vermilion-night)] dark:text-ink-night'
+                                                : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
+                                        ].join(' ')}
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="reader-reading-language"
+                                            value={code}
+                                            checked={readingLang === code}
+                                            onChange={() => setReadingLang(code)}
+                                            className="sr-only"
+                                        />
+                                        {LANG_GLYPH[code] ?? code}
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+
                         <div className="flex items-center gap-0.5 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm">
                             <IconButton label={t('reader.decrease_text_size')} onClick={() => adjustFontSize(-FONT_STEP)}>
                                 −
@@ -479,7 +546,7 @@ export default function ReaderApp({
                     </div>
 
                     <ol role="list" className="list-none m-0 p-0 space-y-1">
-                        {rows.map(([primary, translation], index) => (
+                        {displayRows.map(([primary, translation], index) => (
                             <ReaderRow
                                 key={index}
                                 index={index}
@@ -492,15 +559,15 @@ export default function ReaderApp({
                                 popupFontSize={popupFontSize}
                                 expanded={expandedRows.has(index)}
                                 onToggle={toggleRow}
-                                wordMap={wordMap}
-                                primaryHighlightable={primaryHighlightable}
-                                translationWordMap={translationWordMap}
-                                translationHighlightable={translationHighlightable}
+                                wordMap={shownWordMap}
+                                primaryHighlightable={shownPrimaryHighlightable}
+                                translationWordMap={shownTranslationWordMap}
+                                translationHighlightable={shownTranslationHighlightable}
                                 highlight={highlight}
                                 onWordProgress={handleWordProgress}
-                                primaryExplainable={primaryExplainable}
-                                translationExplainable={translationExplainable}
-                                primarySide={primarySide}
+                                primaryExplainable={shownPrimaryExplainable}
+                                translationExplainable={shownTranslationExplainable}
+                                primarySide={shownPrimarySide}
                                 explain={explain}
                             />
                         ))}

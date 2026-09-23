@@ -43,8 +43,10 @@ Route::middleware(['auth', 'approved'])->group(function () {
         return Inertia::render('Dashboard');
     })->middleware('verified')->name('dashboard');
 
-    Route::get('/reader/{lang}/{entityId}', [ReaderController::class, 'show'])
-        ->where('lang', '[a-z]{2}')
+    // The entity id alone names the text — its entity match carries both
+    // languages, and the side rule picks which one is read (same reasoning
+    // as ADR 0036's simulator route: no language segment).
+    Route::get('/reader/{entityId}', [ReaderController::class, 'show'])
         ->whereNumber('entityId')
         ->name('reader.show');
 

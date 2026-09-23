@@ -24,7 +24,19 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SimulatorController extends Controller
 {
-    public const DEFAULT_QUESTION = 'Compare Russian original vs. my translation. Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; wrap the few most important weak-point phrases in ==double equals==; put improved versions in > blockquotes. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Assess grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version. 4. Give a couple of improved versions.';
+    /**
+     * The default assessment instruction. :base is substituted client-side
+     * with the name of whichever side currently plays the base (translation
+     * target) language, so the question tracks the language toggle.
+     */
+    public const DEFAULT_QUESTION = 'Compare :base original vs. my translation. Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; wrap the few most important weak-point phrases in ==double equals==; put improved versions in > blockquotes. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Assess grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version. 4. Give a couple of improved versions.';
+
+    /**
+     * The default question as it shipped before the sides became toggleable;
+     * a saved copy of it is treated as "not customized" so the templated
+     * default keeps tracking the current sides.
+     */
+    public const LEGACY_DEFAULT_QUESTION = 'Compare Russian original vs. my translation. Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; wrap the few most important weak-point phrases in ==double equals==; put improved versions in > blockquotes. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Assess grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version. 4. Give a couple of improved versions.';
 
     public function __construct(
         protected AIModelResolver $modelResolver,
@@ -51,12 +63,37 @@ class SimulatorController extends Controller
 
         $saved = auth()->user()->settings?->ui_settings['simulator'] ?? [];
 
+        // A saved question is the user's customization and ships verbatim;
+        // a copy of the pre-template default counts as not customized so it
+        // keeps tracking the language toggle. Null lets the client render
+        // the templated default for the current sides.
+        $savedQuestion = $saved['question'] ?? null;
+        if ($savedQuestion === self::LEGACY_DEFAULT_QUESTION) {
+            $savedQuestion = null;
+        }
+
         // The model is a per-user preference picked in the profile; the page
         // only shows which model is answering (or that none is chosen).
         $answerModel = $this->modelResolver->resolveAnswerModel();
 
         return Inertia::render('Bilinguals/Bilinguals', [
             'pinnedMatch' => ['id' => $pinned->id, 'text' => $pinnedName],
+            // Both sides' languages: the client labels the columns and
+            // substitutes the question template from these.
+            'languages' => [
+                'a' => [
+                    'code' => $pinned->aEntity->language?->code,
+                    'name' => $pinned->aEntity->language?->name,
+                ],
+                'b' => [
+                    'code' => $pinned->bEntity->language?->code,
+                    'name' => $pinned->bEntity->language?->name,
+                ],
+            ],
+            // The side the side rule (EntityMatch::readingSideFor) reads by
+            // default; the client's toggle flips around this.
+            'defaultLearningSide' => $pinned->readingSideFor(auth()->user()->nativeLanguage()?->id),
+            'questionTemplate' => self::DEFAULT_QUESTION,
             'showWorkplace' => (bool) ($saved['show_workplace'] ?? true),
             'showQuestion' => (bool) ($saved['show_question'] ?? false),
             'showText' => (bool) ($saved['show_text'] ?? true),
@@ -66,7 +103,7 @@ class SimulatorController extends Controller
                 ? ['id' => $answerModel['id'], 'label' => $answerModel['label']]
                 : null,
             'explanationModelKey' => $this->modelResolver->resolveExplanationModel()['id'] ?? null,
-            'currentQuestion' => $saved['question'] ?? self::DEFAULT_QUESTION,
+            'currentQuestion' => $savedQuestion,
             'currentText' => (string) $pinned->id,
             'fontSize' => $this->clampInt($saved['font_size'] ?? null, 12, 48, 26),
             'aiPanelWidth' => $this->clampInt($saved['ai_panel_width'] ?? null, 280, 1200, 560),

@@ -4,6 +4,9 @@ import {segmentText} from '../lib/wordTokenizer.mjs';
 import {FAMILIARITY_MAX, FAMILIARITY_STRONG_AT, FAMILIARITY_PROGRESS_AT, recordWordEvents} from '../lib/wordFamiliarity';
 import WordPopup from './WordPopup.jsx';
 
+// Memoized: a reading page mounts hundreds of WordText instances and its
+// parent components re-render for reasons (streaming answer, audio status,
+// sibling rows) that leave most instances' props identical.
 function tierClass(familiarity, highlight) {
     if (!highlight) {
         return 'word-token';
@@ -45,7 +48,7 @@ function tierClass(familiarity, highlight) {
  * is a meaning match row (side required), anything else ("es:{id}") is a
  * bare entity sentence (side unused).
  */
-export default function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, explain}) {
+function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, explain}) {
     const sentences = useMemo(() => String(text ?? '').split('\n'), [text]);
     const sentenceSegments = useMemo(
         () => sentences.map((sentence) => segmentText(sentence)),
@@ -149,3 +152,5 @@ export default function WordText({text, wordMap = {}, highlight = true, rowKey, 
         </span>
     );
 }
+
+export default React.memo(WordText);

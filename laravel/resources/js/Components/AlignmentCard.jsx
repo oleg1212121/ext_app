@@ -73,7 +73,7 @@ export default function AlignmentCard({run}) {
                 </Link>
                 {run.reader_target && (
                     <Link
-                        href={`/reader/${run.reader_target.lang}/${run.reader_target.entity_id}`}
+                        href={`/reader/${run.reader_target.entity_id}`}
                         className="inline-flex h-8 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-3 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                     >
                         {t('library.read_lang', {lang: (run.reader_target.lang || '').toUpperCase()})}

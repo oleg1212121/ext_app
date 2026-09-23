@@ -525,6 +525,29 @@ Ctrl-clicking it opens the **Word popup** — a plain click does nothing.
 Tokens without a dictionary link are never interactive.
 _Avoid_: clickable text, word link.
 
+**Reading side**:
+The side of an **Entity match** a reading surface (reader, bilinguals
+simulator) opens as the text being learned: never the side in the user's
+**Native language** when exactly one side is native; otherwise the work's
+**Original text** side; otherwise the A-side. The same rule drives the
+library's Read button and the reading pages — see ADR 0037.
+_Avoid_: primary side (payload/prop vocabulary, not the concept), learning
+side (simulator display-column wording).
+
+**Translation side**:
+The side of an Entity match shown as the translation against the **Reading
+side** — by construction the side in the user's Native language when one
+exists. Not stored per match; derived by the same rule.
+_Avoid_: base side (the simulator's display-column role, which is
+positional, not language-derived).
+
+**Side swap**:
+A reader's per-device flip of the **Reading side** and **Translation side**
+around their computed default, via the pages' language toggle. A
+**Working state** kind: kept per device (keyed per text/match), never stored
+server-side, and the default always recomputes from the Native language.
+_Avoid_: language setting (a durable UI setting it is not), reverse mode.
+
 **Word popup**:
 The anchored popover a Ctrl-click on an Interactive word opens: one section
 per Word class under the **Headword** with its definitions, transcriptions,

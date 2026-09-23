@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Reader
-description: React reading interface for imported text entities in any enabled language, with bilingual rows from alignments, server-side pagination, and a per-device reading position.
+description: React reading interface for imported text entities in any enabled language, with bilingual rows from alignments, a native-language default reading side with a client-side swap, server-side pagination, and a per-device reading position.
 tags: [reader, inertia, react]
 status: stable
-stale_after: 2026-12-22
-generated: { by: agent:zcode, at: 2026-09-22T20:00:00Z }
+stale_after: 2026-12-23
+generated: { by: agent:zcode, at: 2026-09-23T12:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -19,6 +19,9 @@ sources:
   - id: position-store
     resource: laravel/resources/js/lib/readingPosition.js
     title: readingPosition.js (localStorage Reading position store)
+  - id: side-flip-store
+    resource: laravel/resources/js/lib/sideFlip.js
+    title: sideFlip.js (localStorage Side swap store)
   - id: routes
     resource: laravel/routes/web.php
     title: Routes
@@ -28,20 +31,36 @@ sources:
 
 A reading UI over imported text entities: read a text with its aligned
 counterpart when one exists. Backed by the same
-[entities](/database/entities-alignment.md) the alignment pipeline fills;
-`{lang}` is validated against enabled languages (any language with entities,
-not a hardcoded pair). The former reader index (`/reader/{lang}`, a
-per-language list of readable texts) and the `/reader` redirect are gone
-(ADR 0036 amendment, 2026-09-22): the reader is reached through deep links —
-each alignment card's "Read · {LANG}" button (the side is resolved
-per-user server-side) and the entity page's Read button — and the navbar
-"Reader" item is gone with it.
+[entities](/database/entities-alignment.md) the alignment pipeline fills.
+The route is language-segment-free — `GET /reader/{entityId}`; the entity id
+alone names the text and its match carries both languages (ADR 0037, same
+reasoning as ADR 0036's simulator route). The reader is reached through deep
+links — each alignment card's "Read · {LANG}" button and the entity page's
+Read button. The old `/reader/{lang}/{entityId}` shape is deleted (404,
+test-guarded).
 
 # Routes
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `/reader/{lang}/{entityId}` | `ReaderController::show` | React reader for one entity, named `reader.show`. The old `/reader-react*` paths, the reader index `/reader/{lang}`, and the `/reader` redirect are all gone (ADR 0036 rework + amendment, 2026-09-22) |
+| `/reader/{entityId}` | `ReaderController::show` | React reader for one entity, named `reader.show`. The URL entity only anchors its match — the **Reading side** rule (ADR 0037) picks which language is read. Legacy `/reader-react*`, `/reader`, `/reader/{lang}`, `/reader/{lang}/{entityId}` all 404 |
+
+# Side rule and language toggle
+
+`EntityMatch::readingSideFor(nativeLanguageId)` decides the reading side:
+the side in the user's **Native language** becomes the translation, else the
+work's original side, else the A-side — the exact rule
+`LibraryController::readerTarget()` uses for the card's Read button, so link
+and page agree. `buildRows()` normalizes rows for that side (reading text in
+column 0) and the payload ships `primaryLang` / `translationLang` (null for
+single-language texts), `primarySide`, and per-column word maps and
+highlight/explain flags.
+
+`ReaderApp` renders a two-option language radio (labelled with the actual
+language codes) whenever a translation side exists. Flipping is pure client
+display state — rows, word maps, flags and `primarySide` swap in render, no
+reload — and persists as a **Side swap** (Working state) under
+`ext_app.reader.side-flip.v1` (`lib/sideFlip.js`), keyed by `positionKey`.
 
 # Frontend
 
@@ -52,16 +71,16 @@ no in-app listing to return to.
 # Bilingual rows
 
 `ReaderController::buildRows()` finds the entity's `EntityMatch` (either
-side). With no match — or when the caller may not read the **other** side's
-entity — it falls back to single-language rows rather than leaking the
+side). With no match — or when the caller may not read **both** sides'
+entities — it falls back to single-language rows rather than leaking the
 restricted counterpart (mirrors the simulator both-sides rule from ADR 0014).
 With a readable match the meaning matches are shaped into bilingual rows by
 `MeaningMatchPresenter::toSimulatorRows()` and normalized for the reading
-side: rows are `[a, b]` pairs, flipped when reading from the b side so the
-reading language always comes first. The payload also carries `rowKeys` —
-`mm:{meaningMatchId}` per bilingual row (never flipped by the side
-normalization) or `es:{entitySentenceId}` per single-language row — used to
-scope familiarity lookup events to a sentence pair (ADR 0028).
+side: rows are `[a, b]` pairs, flipped so the reading language always comes
+first. The payload also carries `rowKeys` — `mm:{meaningMatchId}` per
+bilingual row (never flipped by the side normalization) or
+`es:{entitySentenceId}` per single-language row — used to scope familiarity
+lookup events to a sentence pair (ADR 0028).
 
 Reads are gated by `EntityAccessService` (see the [Entity Access](
 ../../CONTEXT.md#entity-access-context) context): `show` 403s on a
@@ -116,8 +135,18 @@ gets the row's `rowKey`, so clicking a word fires a ledger-deduplicated
 HTML — activating the line itself still toggles the translation, word clicks
 stop propagation.
 
+# Rendering cost
+
+A page mounts tens of thousands of token spans, so rows render with
+`content-visibility: auto` (`.reader-row` in `app.css`) — off-screen rows
+skip layout and paint until scrolled near — and both `ReaderRow` and
+`WordText` are `React.memo`ized with stable prop identities (memoized
+explain payloads, `useCallback` handlers, CSS-only hover via `.group:hover`).
+There is deliberately no row virtualization yet; find-in-page and row
+reveal still work because `content-visibility` keeps rows in the DOM.
+
 ## Visual system per page
 
 | Surface | Tokens | Notes |
 |---------|--------|-------|
-| `/reader/{lang}/{entityId}` (reader) | `--color-vellum/*` (legacy) | Still on the warm vellum palette. Migrating it to `--wbench-*` is tracked as a follow-up so a library switch does not visibly cross palettes when entering a text. (The deleted reader index was the `--wbench-*` reference implementation; the design-system page's canonical example is now the simulator.) |
+| `/reader/{entityId}` (reader) | `--color-vellum/*` (legacy) | Still on the warm vellum palette. Migrating it to `--wbench-*` is tracked as a follow-up so a library switch does not visibly cross palettes when entering a text. (The deleted reader index was the `--wbench-*` reference implementation; the design-system page's canonical example is now the simulator.) |

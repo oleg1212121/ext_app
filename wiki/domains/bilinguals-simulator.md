@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Bilinguals Simulator
-description: Side-by-side bilingual reading trainer where users translate and get AI assessment of their translation.
+description: Side-by-side bilingual reading trainer where users translate and get AI assessment of their translation, with a native-language default learning side and a per-device language swap.
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
-stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-09-22T20:00:00Z }
+stale_after: 2026-12-23
+generated: { by: agent:zcode, at: 2026-09-23T12:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -47,8 +47,24 @@ variants.
   model's label as a link to `/profile?tab=ai`; with API keys stored but no
   model chosen it shows "Choose an AI model" (asking is blocked with the same
   guidance), and with no keys the "Add an API key in your Profile" empty
-  state. The default assessment prompt still comes from
-  `SimulatorController::DEFAULT_QUESTION`.
+  state. The default assessment prompt comes from
+  `SimulatorController::DEFAULT_QUESTION` — a `:base` **template**: the
+  client substitutes the current base column's language name and regenerates
+  it on toggle. A saved custom question ships verbatim and is never
+  rewritten; a saved copy of the pre-template default (the hardcoded
+  "Compare Russian original…" text, `LEGACY_DEFAULT_QUESTION`) counts as not
+  customized so it keeps tracking the toggle (ADR 0037).
+* **Columns are positional display roles, not languages** (ADR 0037): the
+  left **target** column hides the language being learned (revealed per row,
+  read-credited); the right **base** column carries the Open/Ask actions and
+  pairs with the workplace. A toolbar language radio picks the learning side
+  around the server-computed `defaultLearningSide`
+  (`EntityMatch::readingSideFor` — native side translates, then the work's
+  original, then A-side, shared with the reader); the flip is pure display
+  state (rows and word maps swap columns, `WordText` keeps receiving the
+  actual match `side` so word-explain payloads stay exact). Column headers
+  show the sides' real language names and the toolbar badge the match's real
+  codes — no more hardcoded EN/RU.
 * The simulator is reached **only through a pinned URL** — an alignment
   card's Simulator button names the match, shown in the toolbar as
   `"<a-side entity name> / <b-side entity name>"`. There is no in-page
@@ -72,14 +88,14 @@ variants.
   `null` in filename mode), so `TextContent` renders both cells through the
   shared `WordText`/`WordPopup` components with a
   `simulator.highlight_words` toolbar toggle.
-* **Checking a row's EN checkbox credits a read** (+1 familiarity to the
-  EN side's dictionary words, ADR 0028): `onToggleRow` fires one
+* **Revealing a row's target cell credits a read** (+1 familiarity to the
+  learning side's dictionary words, ADR 0028): `onToggleRow` fires one
   best-effort `POST /word-events` scoped to the row's `row_key`; the
-  response's familiarity values recolor the words on both sides. The `all_en`
-  header checkbox is a controlled React checkbox that reveals the whole
-  column and batches one read event per loaded row into a single request.
-  Only actual checkbox opens fire events — the localStorage restore paths
-  re-check boxes silently.
+  response's familiarity values recolor the words on both sides. The
+  `all_target` header checkbox is a controlled React checkbox that reveals
+  the whole column and batches one read event per loaded row into a single
+  request. Only actual checkbox opens fire events — the localStorage restore
+  paths re-check boxes silently.
 * AI calls go through `AIModelResolver::ask()`; the model is the user's
   stored answer model, resolved server-side — the client sends no model
   field (ADR 0035) — see
@@ -144,13 +160,17 @@ variants.
 
 React page `resources/js/Pages/Bilinguals/` (`Bilinguals.jsx` plus `AI/`,
 `TextContent/`, `Workplace/` sub-components). Props include `pinnedMatch` (`{id, text}` — the URL-pinned
-match and its toolbar label), `answerModel`
+match and its toolbar label), `languages` (`{a: {code, name}, b: …}` —
+labels the columns and feeds the question template), `defaultLearningSide`
+('a'|'b' from the shared side rule), `questionTemplate`
+(`DEFAULT_QUESTION` with its `:base` placeholder), `answerModel`
 (`{id, label}` or null — the resolved answer model shown in the toolbar),
 `explanationModelKey` (resolved explanation model id, only discriminates the
 word popup's client cache), `show*` feature flags
 (`showWorkplace`, `showQuestion`, `showText`, `showAI`), plus the saved UI
 settings seeds (`fontSize`, `aiPanelWidth`, `workplaceHeight`, and the
-`show*`/`currentQuestion` props pre-merged with saved values).
+`show*` props; `currentQuestion` ships **null** unless the user customized
+the question, in which case it is the verbatim custom text).
 
 # Persistence
 
@@ -161,20 +181,23 @@ Split by write frequency (ADR 0024):
   `simulator` section). **The model is not part of `ui_settings`** — it is a
   typed `user_settings.ai_model_id` preference edited in the Profile
   (ADR 0035; the legacy `simulator.model` key was backfilled into it and
-  removed). Seeded into page props by `SimulatorController::simulatorForMatch()`
-  (`DEFAULT_QUESTION` constant is the question fallback). The frontend
-  writes back via the `useUiSettingsAutosave` hook — one debounced (~800 ms)
-  PATCH to `/ui-settings` per change burst; the backend section-merges so a
-  simulator save never wipes the `reader` section (the Reader page persists
-  its own `font_size` the same way). Validation bounds mirror the client
-  clamps (`UpdateUiSettingsRequest`).
+  removed). The **question saves only what the user typed**: the textarea is
+  seeded from the `:base` template (regenerated on toggle) and `question`
+  persists `null` until an actual edit makes it custom (ADR 0037). Seeded
+  into page props by `SimulatorController::simulatorForMatch()`. The
+  frontend writes back via the `useUiSettingsAutosave` hook — one debounced
+  (~800 ms) PATCH to `/ui-settings` per change burst; the backend
+  section-merges so a simulator save never wipes the `reader` section (the
+  Reader page persists its own `font_size` the same way). Validation bounds
+  mirror the client clamps (`UpdateUiSettingsRequest`).
 * **Working state → localStorage, per device.** Key
   `ext_app.simulator.position.v1` (`lib/simulatorPosition.js`): current
-  entity match plus, per alignment, the last page and the last opened row
-  (`{n, en, ru}` — global row number and which halves were revealed). On
-  mount the pinned match auto-loads at its saved page; the saved row's
-  checkboxes are re-checked (controlled `checkedRows` state in
-  `TextContent.jsx`) and the row scrolls into view. The
-  header RU master checkbox stays uncontrolled; `all_en` is
-  controlled React state (`allEn`, reset on every page load) and is
-  deliberately NOT persisted; `per_page` is not persisted either.
+  entity match plus, per alignment, the last page, the last opened row
+  (`{n, target, base}` — global row number and which display halves were
+  revealed; legacy `{n, en, ru}` entries are read positionally), and the
+  language `flipped` flag. On mount the pinned match auto-loads at its saved
+  page; the saved row's checkboxes are re-checked (controlled `checkedRows`
+  state in `TextContent.jsx`) and the row scrolls into view. The base-side
+  master checkbox stays uncontrolled; `all_target` is controlled React state
+  (`allTarget`, reset on every page load) and is deliberately NOT persisted;
+  `per_page` is not persisted either.

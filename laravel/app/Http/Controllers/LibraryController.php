@@ -205,31 +205,18 @@ class LibraryController extends Controller
     }
 
     /**
-     * The side an alignment card's reader button opens: the language the user
-     * is learning (not their native one), shown against the native side. When
-     * both sides qualify, prefer the work's original language, then the
-     * A-side.
+     * The side an alignment card's reader button opens: the same side rule
+     * the reader page applies (EntityMatch::readingSideFor) — the user's
+     * native side becomes the translation, ties prefer the work's original
+     * language, then the A-side — so the button and the page agree.
      *
      * @return array{lang: string, entity_id: int}|null
      */
     private function readerTarget(EntityMatch $entityMatch, ?int $nativeLanguageId): ?array
     {
-        $sides = ['a' => $entityMatch->aEntity, 'b' => $entityMatch->bEntity];
-
-        $nonNative = array_keys(array_filter(
-            $sides,
-            fn (?Entity $entity): bool => $entity !== null && $entity->language_id !== $nativeLanguageId,
-        ));
-
-        $originalSide = $entityMatch->originalSide();
-
-        // One learning side wins outright; otherwise (both or neither are
-        // non-native) the work's original side breaks the tie, then the A-side.
-        $side = count($nonNative) === 1
-            ? $nonNative[0]
-            : ($originalSide ?? 'a');
-
-        $entity = $sides[$side] ?? null;
+        $entity = $entityMatch->readingSideFor($nativeLanguageId) === 'a'
+            ? $entityMatch->aEntity
+            : $entityMatch->bEntity;
 
         if ($entity === null || $entity->language?->code === null) {
             return null;

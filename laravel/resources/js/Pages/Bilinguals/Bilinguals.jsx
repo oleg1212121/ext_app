@@ -68,8 +68,8 @@ function updateResizeableFontStyles(fontSize) {
     const controlFontSize = Math.round(fontSize * CONTROL_FONT_SCALE);
 
     styleElement.textContent = `
-        .eng.resizeable_element,
-        .rus.resizeable_element,
+        .target.resizeable_element,
+        .base.resizeable_element,
         textarea.resizeable_element,
         #ai_answer_div {
             font-size: ${fontSize}px;
@@ -139,13 +139,33 @@ const Bilinguals = (props) => {
     const initialText = String(pinnedMatch.id);
     const initialSaved = initialPositions.alignments?.[initialText] ?? null;
 
+    // Which match side is the learning target by default comes from the
+    // server's side rule; the per-device flip inverts it (Working state).
+    const languages = props.languages ?? {a: {code: null, name: null}, b: {code: null, name: null}};
+    const defaultLearningSide = props.defaultLearningSide === 'b' ? 'b' : 'a';
+    const otherSide = (side) => (side === 'a' ? 'b' : 'a');
+    const [flipped, setFlipped] = React.useState(initialSaved?.flipped === true);
+    const learningSide = flipped ? otherSide(defaultLearningSide) : defaultLearningSide;
+    const baseSide = otherSide(learningSide);
+
+    // A saved question is the user's customization and ships verbatim; null
+    // means "render the template for the current sides".
+    const [customQuestion, setCustomQuestion] = React.useState(props.currentQuestion ?? null);
+    const effectiveQuestion = customQuestion ?? String(props.questionTemplate ?? '')
+        .replaceAll(':base', languages[baseSide]?.name ?? languages[baseSide]?.code ?? '');
+
+    // Legacy saved rows keyed the reveal halves 'en'/'ru'; map them onto the
+    // positional target/base halves.
+    const normalizeSavedRow = (saved) => (saved?.n
+        ? {n: saved.n, target: !!(saved.target ?? saved.en), base: !!(saved.base ?? saved.ru)}
+        : null);
+
     let [showWorkplace, setShowWorkplace] = React.useState(props.showWorkplace)
     let [showQuestion, setShowQuestion] = React.useState(props.showQuestion)
     let [showText, setShowText] = React.useState(props.showText)
     let [showAI, setShowAI] = React.useState(props.showAI)
     let [highlightWords, setHighlightWords] = React.useState(props.highlightWords ?? true)
     let [currentText] = React.useState(initialText)
-    let [currentQuestion, setCurrentQuestion] = React.useState(props.currentQuestion)
     const [pending, setPending] = React.useState(false);
     const [aiAnswer, setAiAnswer] = React.useState('');
     const [aiError, setAiError] = React.useState(null);
@@ -157,20 +177,25 @@ const Bilinguals = (props) => {
     const [rows, setRows] = React.useState([]);
     const [rowKeys, setRowKeys] = React.useState(null);
     const [wordMaps, setWordMaps] = React.useState(null);
-    const [allEn, setAllEn] = React.useState(false);
+    const [allTarget, setAllTarget] = React.useState(false);
     const [textMeta, setTextMeta] = React.useState(null);
     const [textPage, setTextPage] = React.useState(initialSaved?.page ?? 1);
     const [loadError, setLoadError] = React.useState(null);
     const [fontSize, setFontSize] = React.useState(props.fontSize ?? DEFAULT_FONT_SIZE);
     // Word-popup typography follows the page's font setting (ADR 0031).
     const popupFontSize = popupFontSizeFor(fontSize);
+    // Stable identity so memoized WordText columns don't re-render on every
+    // parent pass (the AI panel streams state updates ~20x/second).
+    const explainConfig = React.useMemo(
+        () => ({enabled: canUseAi, modelKey: props.explanationModelKey}),
+        [canUseAi, props.explanationModelKey],
+    );
     const [aiPanelWidth, setAiPanelWidth] = React.useState(props.aiPanelWidth ?? 560);
     const [workplaceHeight, setWorkplaceHeight] = React.useState(props.workplaceHeight ?? 168);
-    const [checkedRows, setCheckedRows] = React.useState(
-        () => initialSaved?.row
-            ? {[initialSaved.row.n]: {en: !!initialSaved.row.en, ru: !!initialSaved.row.ru}}
-            : {}
-    );
+    const [checkedRows, setCheckedRows] = React.useState(() => {
+        const saved = normalizeSavedRow(initialSaved?.row);
+        return saved ? {[saved.n]: {target: saved.target, base: saved.base}} : {};
+    });
     const pendingScrollRowRef = React.useRef(null);
     const initialLoadDoneRef = React.useRef(false);
 
@@ -181,7 +206,7 @@ const Bilinguals = (props) => {
         show_question: showQuestion,
         show_ai: showAI,
         highlight_words: highlightWords,
-        question: currentQuestion,
+        question: customQuestion,
         ai_panel_width: aiPanelWidth,
         workplace_height: workplaceHeight,
     });
@@ -221,22 +246,22 @@ const Bilinguals = (props) => {
             setRows(nextRows);
             setRowKeys(nextRowKeys);
             setWordMaps(nextWordMaps);
-            setAllEn(false);
+            setAllTarget(false);
             setTextMeta(meta);
             setTextPage(meta.current_page ?? page);
             const positions = persistPage(meta.current_page ?? page);
             setCheckedRows({});
-            const saved = positions.alignments?.[String(currentText)]?.row;
+            const saved = normalizeSavedRow(positions.alignments?.[String(currentText)]?.row);
             const pageStart = ((meta.current_page ?? page) - 1) * (meta.per_page ?? DEFAULT_PER_PAGE);
             if (saved && saved.n > pageStart && saved.n <= pageStart + (meta.per_page ?? DEFAULT_PER_PAGE)) {
-                setCheckedRows({[saved.n]: {en: !!saved.en, ru: !!saved.ru}});
+                setCheckedRows({[saved.n]: {target: saved.target, base: saved.base}});
                 pendingScrollRowRef.current = saved.n;
             }
         } catch (e) {
             setRows([]);
             setRowKeys(null);
             setWordMaps(null);
-            setAllEn(false);
+            setAllTarget(false);
             setTextMeta(null);
             setLoadError(e instanceof Error ? e.message : t('bilinguals.failed_to_load_text'));
         } finally {
@@ -272,21 +297,38 @@ const Bilinguals = (props) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Persisting the flip joins the per-match Working state (page + last
+    // opened row) in the browser's position store.
+    const setLearningSide = (side) => {
+        const nextFlipped = side !== defaultLearningSide;
+        if (nextFlipped === flipped) {
+            return;
+        }
+        setFlipped(nextFlipped);
+        const positions = loadPositions();
+        const key = String(currentText);
+        positions.alignments = {
+            ...(positions.alignments ?? {}),
+            [key]: {...(positions.alignments?.[key] ?? {}), flipped: nextFlipped},
+        };
+        savePositions(positions);
+    };
+
     const onToggleRow = (n, side) => {
-        if (side === 'en' && !checkedRows[n]?.en) {
+        if (side === 'target' && !checkedRows[n]?.target) {
             creditRead(n);
         }
         setCheckedRows((prev) => {
-            const rowState = {...(prev[n] ?? {en: false, ru: false}), [side]: !(prev[n]?.[side])};
+            const rowState = {...(prev[n] ?? {target: false, base: false}), [side]: !(prev[n]?.[side])};
             const next = {...prev, [n]: rowState};
-            const open = rowState.en || rowState.ru;
+            const open = rowState.target || rowState.base;
             const positions = loadPositions();
             const key = String(currentText);
             positions.alignments = {
                 ...(positions.alignments ?? {}),
                 [key]: {
                     ...(positions.alignments?.[key] ?? {}),
-                    row: open ? {n, en: rowState.en, ru: rowState.ru} : null,
+                    row: open ? {n, target: rowState.target, base: rowState.base} : null,
                 },
             };
             savePositions(positions);
@@ -314,6 +356,21 @@ const Bilinguals = (props) => {
         ? ((textMeta.current_page - 1) * textMeta.per_page)
         : 0;
 
+    // Display order: column 0 is the learning target (hidden until revealed),
+    // column 1 the base the Open/Ask actions and the workplace pair with.
+    const shownRows = React.useMemo(() => (
+        learningSide === 'a' ? rows : rows.map(([a, b]) => [b, a])
+    ), [rows, learningSide]);
+
+    // Word maps stay keyed by the match's actual sides; the display columns
+    // index into them by the side currently playing each role.
+    const targetWordMap = wordMaps?.[learningSide] ?? {};
+    const baseWordMap = wordMaps?.[baseSide] ?? {};
+    const targetHighlightable = !!(wordMaps?.highlightable?.[learningSide]);
+    const baseHighlightable = !!(wordMaps?.highlightable?.[baseSide]);
+    const targetExplainable = !!(wordMaps?.explainable?.[learningSide]);
+    const baseExplainable = !!(wordMaps?.explainable?.[baseSide]);
+
     // Apply {wordId: familiarity} results from the familiarity API: recolor
     // every occurrence of the touched words on both sides.
     const applyFamiliarity = React.useCallback((familiarity) => {
@@ -325,34 +382,34 @@ const Bilinguals = (props) => {
             : maps));
     }, []);
 
-    // Revealing a row's EN sentence credits its dictionary words a read
+    // Revealing a row's target sentence credits its dictionary words a read
     // (+1, deduplicated per sentence pair server-side).
     const creditRead = React.useCallback((n) => {
-        if (!wordMaps?.highlightable?.a || !rowKeys) {
+        if (!targetHighlightable || !rowKeys) {
             return;
         }
         const index = n - 1 - rowOffset;
-        if (index < 0 || index >= rows.length || !rowKeys[index]) {
+        if (index < 0 || index >= shownRows.length || !rowKeys[index]) {
             return;
         }
-        const wordIds = rowWordIds(rows[index][0], wordMaps.a ?? {});
+        const wordIds = rowWordIds(shownRows[index][0], targetWordMap);
         if (wordIds.length === 0) {
             return;
         }
         recordWordEvents([{row_key: rowKeys[index], kind: 'read', word_ids: wordIds}])
             .then(applyFamiliarity);
-    }, [wordMaps, rowKeys, rows, rowOffset, applyFamiliarity]);
+    }, [targetHighlightable, targetWordMap, rowKeys, shownRows, rowOffset, applyFamiliarity]);
 
-    // Master EN checkbox: reveal the whole column and credit every loaded
+    // Master target checkbox: reveal the whole column and credit every loaded
     // row's words in one batched request.
-    const toggleAllEn = (checked) => {
-        setAllEn(checked);
-        if (!checked || !wordMaps?.highlightable?.a || !rowKeys) {
+    const toggleAllTarget = (checked) => {
+        setAllTarget(checked);
+        if (!checked || !targetHighlightable || !rowKeys) {
             return;
         }
         const events = [];
-        rows.forEach((row, index) => {
-            const wordIds = rowWordIds(row[0], wordMaps.a ?? {});
+        shownRows.forEach((row, index) => {
+            const wordIds = rowWordIds(row[0], targetWordMap);
             if (rowKeys[index] && wordIds.length > 0) {
                 events.push({row_key: rowKeys[index], kind: 'read', word_ids: wordIds});
             }
@@ -374,7 +431,7 @@ const Bilinguals = (props) => {
         }
     };
     const changeQuestion = (event) => {
-        setCurrentQuestion(event.target.value)
+        setCustomQuestion(event.target.value)
     }
     React.useEffect(() => {
         if (!showWorkplace || !pendingWorkplaceFocusRef.current) {
@@ -460,9 +517,11 @@ const Bilinguals = (props) => {
             return;
         }
 
+        // The display row's base column (index 1) pairs with the workplace —
+        // whatever language plays the base after a toggle.
         const cellContent = String(row?.[1] ?? '').trim().replace('*', '');
         const workplaceText = String(overrides.workplaceText ?? workplaceRef.current?.value ?? '').trim().replace('*', '');
-        const question = String(overrides.question ?? questionRef.current?.value ?? '').trim();
+        const question = String(overrides.question ?? effectiveQuestion ?? '').trim();
 
         if (!cellContent || !workplaceText) {
             return;
@@ -470,7 +529,7 @@ const Bilinguals = (props) => {
 
         const payload = {
             data: `${cellContent}\n${workplaceText}`,
-            question: overrides.question ?? currentQuestion,
+            question,
         };
 
         await streamAsk(payload);
@@ -489,7 +548,7 @@ const Bilinguals = (props) => {
             <div className="flex-none border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]">
                 <div className="flex flex-1 flex-wrap items-center gap-3 px-4 sm:px-5 py-2">
                     <span className="font-[var(--wbench-mono)] text-[11px] tracking-[0.22em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] whitespace-nowrap">
-                        {t('bilinguals.title')} <span className="text-[var(--wbench-rule)] dark:text-[var(--wbench-rule-night)]">·</span> en&nbsp;↔&nbsp;ru
+                        {t('bilinguals.title')} <span className="text-[var(--wbench-rule)] dark:text-[var(--wbench-rule-night)]">·</span> {languages.a?.code ?? 'a'}&nbsp;↔&nbsp;{languages.b?.code ?? 'b'}
                     </span>
                     <span className={HAIRLINE} aria-hidden="true"/>
                     {canUseAi ? (
@@ -521,6 +580,36 @@ const Bilinguals = (props) => {
                     <span className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] max-w-[22rem] truncate whitespace-nowrap">
                         {pinnedMatch.text}
                     </span>
+                    <span className={HAIRLINE} aria-hidden="true"/>
+                    <div
+                        role="radiogroup"
+                        aria-label={t('bilinguals.learning_language')}
+                        className="flex items-center gap-0.5 border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] rounded-sm p-0.5"
+                    >
+                        {['a', 'b'].map((side) => (
+                            <label
+                                key={side}
+                                title={t('bilinguals.learning_language')}
+                                className={[
+                                    'px-2 h-6 inline-flex items-center font-[var(--wbench-mono)] text-[11px] tracking-wide uppercase rounded-sm cursor-pointer select-none',
+                                    'transition-colors duration-200 focus-within:outline-none focus-within:ring-2 focus-within:ring-[var(--wbench-accent)]',
+                                    learningSide === side
+                                        ? 'bg-[var(--wbench-accent)] text-white dark:bg-[var(--wbench-accent-night)]'
+                                        : 'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]',
+                                ].join(' ')}
+                            >
+                                <input
+                                    type="radio"
+                                    name="simulator-learning-language"
+                                    value={side}
+                                    checked={learningSide === side}
+                                    onChange={() => setLearningSide(side)}
+                                    className="sr-only"
+                                />
+                                {languages[side]?.code ?? side}
+                            </label>
+                        ))}
+                    </div>
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div className="flex items-center gap-1">
                         <FontButton aria-label={t('bilinguals.increase_font_size')} label={t('bilinguals.increase_font_size')} onClick={() => changeFontSize('+')}>+</FontButton>
@@ -639,11 +728,38 @@ const Bilinguals = (props) => {
                                     </div>
                                 </div>
                             )}
-                            <TextContent ask={ask} focusOnWorkplace={focusOnWorkplace} rows={rows} rowOffset={rowOffset} pending={pending} loadError={loadError} canUseAi={canUseAi} checkedRows={checkedRows} onToggleRow={onToggleRow} wordMaps={wordMaps} highlightWords={highlightWords} onWordProgress={handleWordProgress} rowKeys={rowKeys} allEn={allEn} onToggleAllEn={toggleAllEn} popupFontSize={popupFontSize} explain={{enabled: canUseAi, modelKey: props.explanationModelKey}}/>
+                            <TextContent
+                                ask={ask}
+                                focusOnWorkplace={focusOnWorkplace}
+                                rows={shownRows}
+                                rowOffset={rowOffset}
+                                pending={pending}
+                                loadError={loadError}
+                                canUseAi={canUseAi}
+                                checkedRows={checkedRows}
+                                onToggleRow={onToggleRow}
+                                targetLanguage={languages[learningSide]}
+                                baseLanguage={languages[baseSide]}
+                                targetSide={learningSide}
+                                baseSide={baseSide}
+                                targetWordMap={targetWordMap}
+                                baseWordMap={baseWordMap}
+                                targetHighlightable={targetHighlightable}
+                                baseHighlightable={baseHighlightable}
+                                targetExplainable={targetExplainable}
+                                baseExplainable={baseExplainable}
+                                highlightWords={highlightWords}
+                                onWordProgress={handleWordProgress}
+                                rowKeys={rowKeys}
+                                allTarget={allTarget}
+                                onToggleAllTarget={toggleAllTarget}
+                                popupFontSize={popupFontSize}
+                                explain={explainConfig}
+                            />
                         </>
                     }
                     {showWorkplace === true &&
-                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={currentQuestion} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)} canUseAi={canUseAi} height={workplaceHeight} onHeightChange={setWorkplaceHeight}/>
+                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={effectiveQuestion} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)} canUseAi={canUseAi} height={workplaceHeight} onHeightChange={setWorkplaceHeight}/>
                     }
                 </div>
                 {showAI === true &&

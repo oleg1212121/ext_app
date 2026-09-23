@@ -2,7 +2,8 @@ import Main from '../Layouts/Main.jsx';
 import ReaderApp from './Reader/ReaderApp.jsx';
 
 const Reader = ({
-    lang = 'en',
+    primaryLang,
+    translationLang,
     entity,
     rows = [],
     rowKeys = [],
@@ -20,7 +21,8 @@ const Reader = ({
     explain = null,
 }) => (
     <ReaderApp
-        lang={lang}
+        primaryLang={primaryLang}
+        translationLang={translationLang}
         entity={entity}
         rows={rows}
         rowKeys={rowKeys}

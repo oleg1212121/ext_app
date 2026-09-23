@@ -11,7 +11,6 @@ use App\Http\Requests\ReaderPageRequest;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
-use App\Models\Language;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
@@ -30,26 +29,26 @@ class ReaderController extends Controller
         protected AIModelResolver $modelResolver,
     ) {}
 
-    public function show(ReaderPageRequest $request, string $lang, int $entityId): Response
+    public function show(ReaderPageRequest $request, int $entityId): Response
     {
-        $language = $this->resolveLanguage($lang);
-
-        $entity = Entity::query()
-            ->where('language_id', $language->id)
-            ->findOrFail($entityId);
+        $entity = Entity::query()->with('language')->findOrFail($entityId);
 
         if (! $this->access()->canRead(auth()->user(), $entity)) {
             abort(403);
         }
 
-        ['rows' => $rows, 'rowKeys' => $rowKeys, 'translationEntity' => $translationEntity, 'meta' => $meta, 'positionKey' => $positionKey, 'readingSide' => $readingSide] = $this->buildRows($entity, $request->page());
+        $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
+
+        ['rows' => $rows, 'rowKeys' => $rowKeys, 'readingEntity' => $readingEntity, 'translationEntity' => $translationEntity, 'meta' => $meta, 'positionKey' => $positionKey, 'readingSide' => $readingSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
 
         $userId = (int) auth()->id();
-        $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
         $wordMap = new EntityWordMap;
 
         return Inertia::render('Reader', [
-            'lang' => $lang,
+            // The two columns' languages after the side rule — the reading
+            // language first, translation null for single-language texts.
+            'primaryLang' => $readingEntity->language?->code,
+            'translationLang' => $translationEntity?->language?->code,
             'entity' => [
                 'id' => $entity->id,
                 'name' => $entity->name,
@@ -60,8 +59,8 @@ class ReaderController extends Controller
             'positionKey' => $positionKey,
             'fontSize' => $this->savedReaderFontSize(),
             'highlight' => $this->savedHighlight(),
-            'wordMap' => $this->wordMapForRows($wordMap->forEntity($entity, $userId), $rows, 0),
-            'primaryHighlightable' => $entity->language_id !== $nativeLanguageId,
+            'wordMap' => $this->wordMapForRows($wordMap->forEntity($readingEntity, $userId), $rows, 0),
+            'primaryHighlightable' => $readingEntity->language_id !== $nativeLanguageId,
             'translationWordMap' => $translationEntity !== null
                 ? $this->wordMapForRows($wordMap->forEntity($translationEntity, $userId), $rows, 1)
                 : [],
@@ -69,7 +68,7 @@ class ReaderController extends Controller
             // The AI explanation tab follows the same "not your native
             // language" rule as highlighting; the model itself is the user's
             // stored explanation preference, resolved server-side.
-            'primaryExplainable' => $entity->language_id !== $nativeLanguageId,
+            'primaryExplainable' => $readingEntity->language_id !== $nativeLanguageId,
             'translationExplainable' => $translationEntity !== null && $translationEntity->language_id !== $nativeLanguageId,
             'primarySide' => $readingSide,
             'explain' => [
@@ -98,26 +97,32 @@ class ReaderController extends Controller
     /**
      * @param  int  $page  Pre-clamped at the floor by ReaderPageRequest; the
      *                     ceiling is clamped in paginateRows.
-     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, translationEntity: Entity|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
+     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, readingEntity: Entity, translationEntity: Entity|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
      */
-    private function buildRows(Entity $entity, int $page): array
+    private function buildRows(Entity $entity, ?int $nativeLanguageId, int $page): array
     {
         $entityMatch = EntityMatch::query()
             ->where(function ($query) use ($entity): void {
                 $query->where('a_entity_id', $entity->id)
                     ->orWhere('b_entity_id', $entity->id);
             })
-            ->with(['aEntity', 'bEntity'])
+            ->with(['aEntity.language', 'aEntity.work', 'bEntity.language', 'bEntity.work'])
             ->first();
 
         if ($entityMatch === null) {
             return $this->singleLanguageRows($entity, $page);
         }
 
-        $readingSide = $entityMatch->a_entity_id === $entity->id ? 'a' : 'b';
-        $otherEntity = $readingSide === 'a' ? $entityMatch->bEntity : $entityMatch->aEntity;
+        // The URL entity only anchors the match; the side rule — native side
+        // translates, then the work's original, then the A-side — picks
+        // which language is read and which one is shown as translation.
+        $readingSide = $entityMatch->readingSideFor($nativeLanguageId);
+        $readingEntity = $readingSide === 'a' ? $entityMatch->aEntity : $entityMatch->bEntity;
+        $translationEntity = $readingSide === 'a' ? $entityMatch->bEntity : $entityMatch->aEntity;
 
-        if ($otherEntity === null || ! $this->access()->canRead(auth()->user(), $otherEntity)) {
+        if ($readingEntity === null || $translationEntity === null
+            || ! $this->access()->canRead(auth()->user(), $readingEntity)
+            || ! $this->access()->canRead(auth()->user(), $translationEntity)) {
             return $this->singleLanguageRows($entity, $page);
         }
 
@@ -134,7 +139,8 @@ class ReaderController extends Controller
         return [
             'rows' => $this->normalizeRowsForReadingSide($bilingualRows, $readingSide),
             'rowKeys' => $this->presenter->toSimulatorRowKeys($paginator->getCollection()),
-            'translationEntity' => $otherEntity,
+            'readingEntity' => $readingEntity,
+            'translationEntity' => $translationEntity,
             'meta' => $this->metaFor($paginator),
             'positionKey' => 'mm:'.$entityMatch->id,
             'readingSide' => $readingSide,
@@ -145,7 +151,7 @@ class ReaderController extends Controller
      * Rows of the bare entity keyed by their entity sentences, with no
      * translation side.
      *
-     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, translationEntity: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
+     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, readingEntity: Entity, translationEntity: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
      */
     private function singleLanguageRows(Entity $entity, int $page): array
     {
@@ -162,6 +168,7 @@ class ReaderController extends Controller
             'rowKeys' => $paginator->getCollection()
                 ->map(fn (EntitySentence $sentence): string => 'es:'.$sentence->id)
                 ->all(),
+            'readingEntity' => $entity,
             'translationEntity' => null,
             'meta' => $this->metaFor($paginator),
             // Deliberately not es: — that prefix names a single entity
@@ -249,14 +256,6 @@ class ReaderController extends Controller
             fn (array $row): array => [$row[1], $row[0]],
             $rows,
         );
-    }
-
-    private function resolveLanguage(string $lang): Language
-    {
-        return Language::query()
-            ->enabled()
-            ->where('code', $lang)
-            ->firstOrFail();
     }
 
     private function access(): EntityAccessService
