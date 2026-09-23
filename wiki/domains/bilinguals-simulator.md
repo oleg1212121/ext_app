@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
 stale_after: 2026-12-23
-generated: { by: agent:zcode, at: 2026-09-23T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-23T17:30:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -127,7 +127,10 @@ variants.
   `.ai-correction` spans, quotes in four styles — `"…"`, `«…»`, `“…”`, `‘…’`
   — → `<mark class="ai-quote">`, and `\d{1,3}%` scores →
   `<mark class="ai-score">` → DOMPurify sanitize.
-* Styling in `public/css/simulator.css` (day + night, `--wbench-*` tokens):
+* Styling in `public/css/simulator.css` (day + night, `--wbench-*` tokens;
+  loaded page-scoped via a `<Head>` link in `Bilinguals.jsx`, not globally —
+  the global `app.blade.php` link was removed in the 2026-09-23 reader-freeze
+  work):
   quotes red (`--wbench-danger`), scores as JetBrains Mono chips
   (`--wbench-emphasis` tint), corrections with a danger-struck old side, a
   soft-ink mono `→`, and an accent-underlined new side; `==…==` uses the base

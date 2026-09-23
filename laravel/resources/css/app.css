@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "flowbite-react/plugin/tailwindcss";
+@import "./fonts.css";
 @import "./crossword.css";
 @source "../../.flowbite-react/class-list.json";
 
@@ -63,6 +64,28 @@
     --wbench-down-night: #4D8FD1;
 }
 
+/* App-wide text emphasis — accent italic, emphasis-red bold. Moved here from
+   public/css/simulator.css (2026-09-23): these rules styled Welcome's italics
+   back when simulator.css loaded globally, and scoping that file dropped them. */
+em, i {
+    color: var(--wbench-accent);
+    font-style: italic;
+    font-weight: 400;
+}
+
+b, strong {
+    color: var(--wbench-emphasis);
+    font-weight: 600;
+}
+
+.dark em, .dark i {
+    color: var(--wbench-accent-night);
+}
+
+.dark b, .dark strong {
+    color: var(--wbench-emphasis-night);
+}
+
 .gutter-cane {
     width: 1px;
     background-color: var(--color-hairline);
@@ -115,28 +138,17 @@
     }
 }
 
-.reader-row:hover .primary-line {
-    color: var(--color-vermilion);
-}
+/* No .reader-row:hover .primary-line recolor: recoloring inline text while
+   rows sweep under the cursor during scroll forces per-row glyph
+   re-rasterization and was a reader scroll-freeze ingredient (2026-09-23).
+   Hover feedback is the cursor + the reveal rule only. */
 
-.dark .reader-row:hover .primary-line {
-    color: var(--color-vermilion-night);
-}
-
-/* A reader page is one long list of token-heavy rows: rows far off-screen
-   skip layout and paint until scrolled near (WordText spans number in the
-   tens of thousands per page). The size hint approximates a two-line row;
-   rendered rows measure themselves. */
-.reader-row {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 8rem;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .reader-row:hover .primary-line {
-        transition: none;
-    }
-}
+/* Deliberately no content-visibility on rows: with an intrinsic-size hint
+   taller than the rendered row, Chromium oscillates rows between placeholder
+   and rendered height at the relevance boundary while scrolling (scroll
+   height churns, relayout repeats, CPU stays pegged at idle). Pages are
+   capped at 50 paginated rows (ADR 0032), so rendering everything is cheap;
+   if that ever changes, row virtualization is the fix. */
 
 /* Interactive dictionary words (reader + bilinguals simulator). */
 :root {

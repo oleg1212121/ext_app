@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx'
 import Spinner from '../../Components/Spinner.jsx'
 import Button from "../../Components/Forms/Button.jsx";
@@ -545,6 +545,12 @@ const Bilinguals = (props) => {
 
     return (
         <div className="body w-full flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-sans)]">
+            {/* Page-scoped stylesheet: the simulator's CSS used to load
+                globally from app.blade.php, dragging :has() tables and
+                ai-prose rules onto every Inertia page. */}
+            <Head>
+                <link href="/css/simulator.css" rel="stylesheet" type="text/css"/>
+            </Head>
             <div className="flex-none border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]">
                 <div className="flex flex-1 flex-wrap items-center gap-3 px-4 sm:px-5 py-2">
                     <span className="font-[var(--wbench-mono)] text-[11px] tracking-[0.22em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] whitespace-nowrap">

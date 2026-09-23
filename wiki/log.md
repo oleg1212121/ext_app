@@ -1,5 +1,155 @@
 # Directory Update Log
 
+## 2026-09-23 (fix: reading-position restore never worked — router.replace misuse; stuck spinner resolved)
+
+The pass-4 placeholder exposed a pre-existing bug: `ReaderApp`'s restore
+called `router.replace(url, {only, …})`, but in Inertia v3 `replace()` is a
+client-side page-object patch (`clientVisit`) — it accepts no options object
+and never fetches. The saved page was never loaded; the call spread the URL
+string's characters into the page object, reset scroll, and rewrote the URL
+to `?page=N` — the "page reloaded back to the start" glitch. With the
+placeholder waiting on the options' `onFinish` (never called by
+`clientVisit`), the reader hung on the spinner. Diagnosis: container-only
+jsdom harness running the real built bundle (no browser) — primed
+localStorage, captured XHRs, proved `replace` sent nothing; canary via
+`savePosition` clamping proved the effect ran. Fix: `router.visit(url,
+{only, preserveState, preserveScroll, replace: true, onFinish})` — a real
+partial reload with history-replace semantics; harness then showed the
+partial request firing and the spinner clearing. 695 tests pass.
+
+## 2026-09-23 (fix: reader-entry scroll yank (restore race) + Welcome italics restored)
+
+Two follow-ups after the freeze fix. (1) Opening a text with a saved reading
+position served page 1, then the restore's partial reload swapped rows under
+the user and the page-turn effect's `scrollTo(top: 0)` yanked scroll to the
+start — a pre-existing race newly visible now that the page works. `ReaderApp`
+now holds rows/pager behind a small spinner while a restore is pending
+(`restoring` state from localStorage at init, cleared by the visit's
+`onFinish`), so the saved page appears directly at its top and the scroll is
+a no-op. (2) Pass 4's simulator.css scoping regressed Welcome: the file
+carried an app-wide `em, i`/`b, strong` accent-color convention that styled
+Welcome's parenthesized italics. Moved the four rules into `resources/css/
+app.css` (global, where they belonged) and dropped them from
+`public/css/simulator.css`. 695 tests pass.
+
+## 2026-09-23 (chore: perf-probe scaffolding removed after confirmed fix)
+
+User confirmed the reader freeze is gone (3.5-min instrumented session:
+flat ~25 MB heap, zero React commits across 726 scroll events, ≤6 ms
+event-loop lag, 2 long tasks). Removed `lib/perfProbe.js`, the
+`POST /perf-probe` debug route, `PerfProbeTest.php` and the probe log.
+Kept every fix: self-hosted fonts (`public/fonts/` + `resources/css/
+fonts.css`), transition/hover-recolor-free rows, the empty-word-map
+plain-text fast path, `overflow-anchor`/`scrollbar-gutter` guards, stable
+row keys, text-mode page picker, page-scoped `simulator.css`, Alpine
+scoping, content-visibility removal. A noted curiosity for future work: the
+healthy page showed ~440 constant per-second DOM add/remove mutations at
+idle — harmless to performance, suspected browser-extension overlay, worth
+identifying if anything ever regresses.
+
+## 2026-09-23 (reader freeze pass 4 — fonts self-hosted, rows de-animated, probe v2; wedge proven load-time not scroll-time)
+
+The user ran pass 3's `?perf=1` probe: nginx served `/reader/15?perf=1` on the
+new build but **zero** `POST /perf-probe` requests arrived (route confirmed
+registered under `APP_ENV=local`). Since pass 3's probe first fired at t=2s,
+the main thread was already wedged before 2 seconds elapsed — the freeze is
+**load-time, inside the webfont-swap window (~1.5s)**, and merely overlaps
+with scrolling. Pass 4 therefore strips every mechanism active in that window
+and during scroll: (1) all five Google font families self-hosted —
+`public/fonts/` (68 woff2 subsets, 1.9 MB) + generated `resources/css/
+fonts.css` imported by `app.css`; the css2 `<link>` and preconnects removed
+from `app.blade.php`; (2) `ReaderRow` carries no transitions (primary line,
+translation reveal, hover rule) and no `.reader-row:hover` recolor
+(re-rasterizing variable-font text per row under the cursor was the one
+scroll-path paint trigger); (3) plain-text fast path — sides with an empty
+word map skip `WordText` entirely (raw string, `\n`→space to match
+`WordText`'s sentence join); `entity_words` is empty DB-wide, so current
+pages mount no token machinery at all; (4) page picker `type="text"`
+`inputMode="numeric"` (no Chrome wheel-spin on focused number inputs) and no
+`aria-live`; (5) `public/css/simulator.css` scoped to the simulator page via
+`<Head>` in `Bilinguals.jsx` instead of loading globally. Probe v2: t=0
+`boot` beacon, per-installer try/catch, 300/700/1200/2000/3000 ms ladder then
+1 s cadence, auto-enabled on localhost/127.0.0.1 (no parameter needed).
+698 tests pass.
+
+## 2026-09-23 (reader freeze pass 3 — perf probe (?perf=1) + engine-side guards; pagination & logs verified clean)
+
+The freeze persisted after pass 2's fixes, so the diagnosis moved to
+zero-browser evidence plus an opt-in probe (user's machine must not be loaded
+by agent-driven browsers). Verified clean: `ReaderController` genuinely
+paginates (entity 15 = 1,558 meaning-match rows → 32 pages of exactly 50, ~7 KB
+props; `entity_words` is empty DB-wide, so the page renders plain text — no
+interactive spans at all); `laravel-2026-09-23.log` has no storms/memory
+errors; nginx shows minutes-apart requests; the served bundle is byte-identical
+to the build containing pass-2's fixes. Full re-read of `ReaderApp`, `Reader`,
+`Main`, `WordText`, hooks and libs found **zero** scroll listeners/observers/
+intervals and no constructible scroll→state→scrollTo cycle — so the loop
+driver is not visible in source and must be captured from the user's one
+repro. Added `lib/perfProbe.js` (?perf=1): counting-only React-commit counter
+(via a `__REACT_DEVTOOLS_GLOBAL_HOOK__` shim that must be app.jsx's first
+import), Inertia visit counters, DOM-mutation counter, longtask/scroll/font
+counters, 1s event-loop heartbeat — sampled every 2s to the new debug-only
+`POST /perf-probe` route (non-production; `PerfProbeTest.php` covers it) and
+mirrored into `document.title`. Shipped defensive fixes alongside:
+`overflow-anchor:none` + `scrollbar-gutter:stable` on `#contentContainer`,
+`transition-[max-width]` instead of `transition-all` on the width wrapper,
+rows keyed by `rowKey` instead of index. 698 tests pass.
+
+## 2026-09-23 (fix: reader freeze — Alpine scoped to Blade pages, dead `--fs` writes removed)
+
+Second reader-performance pass, this time with live forensics. Reproduced the
+freeze deterministically in a clean headless Chromium (no extensions, throwaway
+profile) against `/reader/15`: ~1.5s after load the renderer's main thread
+wedged permanently — rAF starved (5 frames total), `Runtime.evaluate` never
+returning, CPU pegged; exactly the reported "scrollbar moves, page dead" state.
+Debugger-pause stacks sampled during the hang alternate between **Alpine's
+global MutationObserver tree-walk** (`initTree`/`walk`/`initDirectives` —
+Alpine processes every DOM mutation on the page) and **react-dom commit frames**
+(placement/deletion/reconcile), while a MutationObserver counter installed
+pre-boot recorded ~35k mutation records per 4s in batches of ~53 attribute
+writes on the reader root and rows — matching the per-row `--fs`
+`style.setProperty` effects (1 root + 50 rows). Ruled out: extensions (clean
+profile), Inertia visit/reload loop (`inertiaVisits: 0`), scroll listeners
+(none in app code; Inertia's document scroll listener is inert without
+`[scroll-region]`), and the reader component itself — the full real tree
+(real `App` + Reader page + Main/NavBar/flowbite + Alpine) mounted under jsdom
+stays at a single render with the exact production payload, so the loop needs
+real layout (Chromium) plus the Alpine/attribute-write cycle.
+
+Fixes: (1) `app.jsx` now starts Alpine **only on non-Inertia pages** (no
+`#app` root) — its only consumers are the Blade layouts' dropdown nav
+(`layouts/navigation.blade.php`, routed only by `auth/pending-approval`);
+React pages lose the observer entirely. (2) Deleted the dead per-row/root
+`--fs` `style.setProperty` effects in `ReaderApp`/`ReaderRow` — no CSS
+consumes `var(--fs)`, and those writes were the storm's content. The exact
+first domino in Chromium's layout↔React interplay remains unpinned (further
+browser profiling halted by resource concerns); both sampled loop
+participants are now gone from the reader page. Assets rebuilt. Tests:
+`composer run test:tia` 695 passed. Updated `wiki/architecture/frontend.md`
+(Alpine scoping), `wiki/domains/reader.md` (rendering cost). No
+route/model/command changes (`wiki:sync` not required).
+
+## 2026-09-23 (fix: reader scroll jank — content-visibility removed from reader rows)
+
+The `content-visibility: auto` + `contain-intrinsic-size: auto 8rem`
+mitigation added earlier today (see the entry below) caused the very lag it
+was meant to fix, on Chromium: a rendered reader row measures ~66px, about
+half the 8rem placeholder, so scrolling kept flipping rows between
+placeholder and rendered height at the relevance boundary — scroll height
+churned, rows re-laid-out every frame, and CPU stayed pegged even after
+scrolling stopped. Diagnosis ruled out the JS tree first: no scroll
+listeners/observers/timers anywhere in the reader components, `React.memo`
+held (no re-renders on scroll), built assets were current, and a `/reader/15`
+page is tiny (50 rows × ~1 sentence/side ≈ 5 KB of text; `entity_words` empty
+in dev → zero interactive token spans). With pagination fixed at 50 rows/page
+of page-scoped data (ADR 0032) the deferral buys nothing, so the rule was
+deleted from `app.css` (memoization and CSS-only hover retained; a comment
+marks the spot as deliberately content-visibility-free). If pages ever grow
+past pagination, row virtualization is the fix — not `content-visibility`
+with a mismatched intrinsic size. Assets rebuilt; docs: wiki `reader.md`
+"Rendering cost" rewritten. No route/model/command changes (`wiki:sync` not
+required); no test changes (`ReaderPageTest` does not assert CSS).
+
 ## 2026-09-23 (feat: side rule + language toggle on reader and simulator; reader route drops {lang})
 
 ADR 0037. Both reading surfaces now default their sides from the user's

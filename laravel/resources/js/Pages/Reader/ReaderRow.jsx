@@ -1,4 +1,4 @@
-import {memo, useEffect, useMemo, useRef} from 'react';
+import {memo, useMemo} from 'react';
 import WordText from '../../Components/WordText.jsx';
 
 // Memoized: rows are token-heavy, and the reader re-renders for plenty of
@@ -45,13 +45,14 @@ function ReaderRow({
     );
     const hasTranslation = translation.trim() !== '';
     const isVisible = showAll || expanded;
-    const rowRef = useRef(null);
 
-    useEffect(() => {
-        if (rowRef.current) {
-            rowRef.current.style.setProperty('--fs', `${fontSize}px`);
-        }
-    }, [fontSize]);
+    // Plain-text fast path: when the server ships no word map for a side
+    // (entity_words still building, or text not indexed), WordText's
+    // tokenizer/segment machinery has nothing to do — render the raw string
+    // instead. WordText joins sentences (split on "\n") with spaces, so the
+    // fallback replaces newlines the same way to stay visually identical.
+    const primaryInteractive = Object.keys(wordMap ?? {}).length > 0;
+    const translationInteractive = Object.keys(translationWordMap ?? {}).length > 0;
 
     const toggleable = hasTranslation && !showAll;
 
@@ -70,7 +71,6 @@ function ReaderRow({
 
     return (
         <li
-            ref={rowRef}
             className="reader-row group relative"
         >
             <div
@@ -88,7 +88,6 @@ function ReaderRow({
                     aria-expanded={toggleable ? isVisible : undefined}
                     className={[
                         'primary-line block text-left w-full',
-                        'transition-colors duration-150',
                         'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]',
                         toggleable ? 'cursor-pointer' : 'cursor-default',
                         'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] focus-visible:rounded-sm',
@@ -99,17 +98,19 @@ function ReaderRow({
                         fontFamily: 'var(--font-serif)',
                     }}
                 >
-                    <WordText
-                        text={primary}
-                        wordMap={wordMap}
-                        highlight={highlight && primaryHighlightable}
-                        rowKey={rowKey}
-                        onWordProgress={onWordProgress}
-                        className="whitespace-pre-line"
-                        popupFontSize={popupFontSize}
-                        side={primarySide ?? undefined}
-                        explain={primaryExplainPayload}
-                    />
+                    {primaryInteractive ? (
+                        <WordText
+                            text={primary}
+                            wordMap={wordMap}
+                            highlight={highlight && primaryHighlightable}
+                            rowKey={rowKey}
+                            onWordProgress={onWordProgress}
+                            className="whitespace-pre-line"
+                            popupFontSize={popupFontSize}
+                            side={primarySide ?? undefined}
+                            explain={primaryExplainPayload}
+                        />
+                    ) : primary.replaceAll('\n', ' ')}
                 </div>
 
                 {sideBySide && hasTranslation && (
@@ -121,7 +122,6 @@ function ReaderRow({
                 {hasTranslation && (
                     <div
                         className={[
-                            'transition-opacity duration-150',
                             isVisible ? 'opacity-100' : 'opacity-0 hidden',
                         ].join(' ')}
                         style={{
@@ -139,16 +139,18 @@ function ReaderRow({
                                 borderLeft: sideBySide ? undefined : '1px solid var(--color-verdigris)',
                             }}
                         >
-                            <WordText
-                                text={translation}
-                                wordMap={translationWordMap}
-                                highlight={highlight && translationHighlightable}
-                                rowKey={rowKey}
-                                onWordProgress={onWordProgress}
-                                popupFontSize={popupFontSize}
-                                side={translationSide ?? undefined}
-                                explain={translationExplainPayload}
-                            />
+                            {translationInteractive ? (
+                                <WordText
+                                    text={translation}
+                                    wordMap={translationWordMap}
+                                    highlight={highlight && translationHighlightable}
+                                    rowKey={rowKey}
+                                    onWordProgress={onWordProgress}
+                                    popupFontSize={popupFontSize}
+                                    side={translationSide ?? undefined}
+                                    explain={translationExplainPayload}
+                                />
+                            ) : translation.replaceAll('\n', ' ')}
                         </div>
                     </div>
                 )}
@@ -157,7 +159,7 @@ function ReaderRow({
             {!sideBySide && (
                 <span
                     aria-hidden="true"
-                    className="absolute left-0 top-4 bottom-4 w-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)] opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                    className="absolute left-0 top-4 bottom-4 w-px bg-[var(--color-hairline)] dark:bg-[var(--color-hairline-night)] opacity-0 group-hover:opacity-100"
                 />
             )}
         </li>

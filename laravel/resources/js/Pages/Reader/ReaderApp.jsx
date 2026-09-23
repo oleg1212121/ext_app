@@ -101,17 +101,10 @@ export default function ReaderApp({
     const [audioPlaying, setAudioPlaying] = useState(false);
     const [pageInput, setPageInput] = useState('1');
 
-    const rootRef = useRef(null);
     const contentRef = useRef(null);
     const audioRef = useRef(null);
     const audioPickerRef = useRef(null);
     const audioObjectUrlRef = useRef(null);
-
-    useEffect(() => {
-        if (rootRef.current) {
-            rootRef.current.style.setProperty('--fs', `${fontSize}px`);
-        }
-    }, [fontSize]);
 
     useEffect(() => {
         return () => {
@@ -365,20 +358,44 @@ export default function ReaderApp({
         }
 
         if (clamped > 1) {
-            router.replace(`${window.location.pathname}?page=${clamped}`, {
+            // router.visit, NOT router.replace: in Inertia v3 replace() is a
+            // client-side page-object patch that takes no options and never
+            // fetches — the saved page was never actually loaded (and the
+            // stray page-set reset the scroll: the "reload" glitch).
+            router.visit(`${window.location.pathname}?page=${clamped}`, {
                 only: PAGED_PROPS,
                 preserveState: true,
                 preserveScroll: true,
+                replace: true,
+                // Fires on success and failure alike: a failed visit still
+                // reveals page 1 instead of trapping the placeholder.
+                onFinish: () => setRestoring(false),
             });
         }
     }, [positionKey, lastPage, savePosition]);
+
+    // While the restore above is in flight, hold the rows and pager back:
+    // rendering page 1 for a beat and then swapping rows under the user
+    // scrolled mid-read looked like a reload and yanked scroll to the top
+    // (the page-turn effect scrolls on the currentPage change). The
+    // placeholder keeps the container short, so that scroll lands as a
+    // harmless no-op on the restored page.
+    const [restoring, setRestoring] = useState(() => {
+        if (!positionKey || (meta?.last_page ?? 1) <= 1) {
+            return false;
+        }
+        if (new URLSearchParams(window.location.search).has('page')) {
+            return false;
+        }
+        const saved = loadReadingPositions()[positionKey];
+        return Number.isInteger(saved) && saved > 1;
+    });
 
     const entityTitle = entity?.name ?? t('reader.untitled');
 
     return (
         <div
             id="readerRoot"
-            ref={rootRef}
             className="flex-1 min-h-0 flex flex-col bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]"
         >
             <header className="flex-none border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]">
@@ -527,11 +544,15 @@ export default function ReaderApp({
             <main
                 id="contentContainer"
                 ref={contentRef}
-                className="flex-1 min-h-0 overflow-y-auto"
+                // overflow-anchor: Chromium's scroll anchoring recomputes
+                // anchor nodes on every layout change and is a known
+                // scroll-freeze ingredient; scrollbar-gutter:stable keeps
+                // the scrollbar from appearing/disappearing mid-scroll.
+                className="flex-1 min-h-0 overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable]"
             >
                 <div
                     className={[
-                        'mx-auto px-5 sm:px-8 lg:px-10 pt-12 pb-24 transition-all duration-300',
+                        'mx-auto px-5 sm:px-8 lg:px-10 pt-12 pb-24 transition-[max-width] duration-300',
                         wideMode ? 'w-[95%] max-w-[1400px] 2xl:max-w-[1600px]' : 'max-w-[62rem]',
                     ].join(' ')}
                 >
@@ -546,9 +567,21 @@ export default function ReaderApp({
                     </div>
 
                     <ol role="list" className="list-none m-0 p-0 space-y-1">
-                        {displayRows.map(([primary, translation], index) => (
+                        {restoring ? (
+                            <li className="flex justify-center py-24" aria-busy="true">
+                                <svg
+                                    className="animate-spin h-6 w-6 text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                                </svg>
+                            </li>
+                        ) : displayRows.map(([primary, translation], index) => (
                             <ReaderRow
-                                key={index}
+                                key={rowKeys[index] ?? index}
                                 index={index}
                                 primary={primary}
                                 translation={translation}
@@ -579,7 +612,7 @@ export default function ReaderApp({
                 </div>
             </main>
 
-            {meta && totalRows > 0 && (
+            {meta && !restoring && totalRows > 0 && (
                 <nav
                     aria-label={t('reader.pages')}
                     className="flex-none border-t border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]"
@@ -595,9 +628,13 @@ export default function ReaderApp({
                         <span className="flex items-center gap-1.5 font-sans text-xs tabular-nums text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
                             <input
                                 id="readerPagePicker"
-                                type="number"
-                                min={1}
-                                max={lastPage}
+                                // type="text" + inputMode, not type="number":
+                                // Chrome's number input spins the value on
+                                // wheel while focused, an unneeded re-render
+                                // trigger under the cursor in a scroll area.
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
                                 value={pageInput}
                                 aria-label={t('reader.go_to_page')}
                                 onChange={(event) => setPageInput(event.target.value)}
@@ -608,9 +645,9 @@ export default function ReaderApp({
                                         event.currentTarget.blur();
                                     }
                                 }}
-                                className="w-14 h-7 px-1 text-center bg-transparent border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="w-14 h-7 px-1 text-center bg-transparent border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
                             />
-                            <span aria-live="polite">{t('reader.page_of', {last: lastPage})}</span>
+                            <span>{t('reader.page_of', {last: lastPage})}</span>
                         </span>
                         <IconButton
                             label={t('reader.next_page')}

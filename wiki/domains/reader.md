@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react]
 status: stable
 stale_after: 2026-12-23
-generated: { by: agent:zcode, at: 2026-09-23T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-23T19:30:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -115,6 +115,21 @@ shrank). Page turns are Inertia partial reloads (`only` the paged props,
 `preserveState`) so the component — and its audio player — stay mounted;
 the word-map state mirrors are resynced from props on page change.
 
+⚠️ The restore's original call, `router.replace(url, {only, …})`, was **wrong
+for Inertia v3**: `replace()` is a client-side page-object patch
+(`clientVisit`), takes no options object, and never fetches — so the saved
+page was never actually loaded; the call garbage-patched the page object,
+reset scroll, and rewrote the URL, reading as a "reload back to the start"
+(2026-09-23). The restore now uses `router.visit(url, {only, preserveState,
+preserveScroll, replace: true, onFinish})` — a real partial reload with
+history-replace semantics. When a restore is pending at mount, `ReaderApp`
+holds the rows and pager back behind a small spinner (`restoring` state,
+cleared by the visit's `onFinish` — success or failure): rendering page 1
+for a beat and then swapping rows under a user who had already scrolled
+looked like a reload and yanked scroll to the top. With the placeholder,
+the container stays short so the post-visit scroll is a no-op and the saved
+page appears directly, at its top.
+
 # Interactive words
 
 `show()` also ships the [interactive word](/domains/interactive-words.md)
@@ -137,13 +152,60 @@ stop propagation.
 
 # Rendering cost
 
-A page mounts tens of thousands of token spans, so rows render with
-`content-visibility: auto` (`.reader-row` in `app.css`) — off-screen rows
-skip layout and paint until scrolled near — and both `ReaderRow` and
-`WordText` are `React.memo`ized with stable prop identities (memoized
-explain payloads, `useCallback` handlers, CSS-only hover via `.group:hover`).
-There is deliberately no row virtualization yet; find-in-page and row
-reveal still work because `content-visibility` keeps rows in the DOM.
+Both `ReaderRow` and `WordText` are `React.memo`ized with stable prop
+identities (memoized explain payloads, `useCallback` handlers, CSS-only hover
+via `.group:hover`), so scrolling and unrelated state changes (audio status,
+page picker, sibling row expansion) never re-render token-heavy rows. Rows
+carry no per-row `--fs` style effects: the custom property had no CSS
+consumer, and its writes were the attribute-mutation storm observed in the
+2026-09-23 freeze forensics.
+
+There is deliberately **no `content-visibility` on rows** and no row
+virtualization. Pages are capped at 50 paginated rows of page-scoped data
+(ADR 0032), so a page renders at most ~1–2k token spans even with a fully
+populated word index — rendering everything is cheap. A `content-visibility:
+auto` + `contain-intrinsic-size: auto 8rem` mitigation was tried and removed
+the same day: rendered rows (~66px) are roughly half the placeholder height,
+so Chromium kept flipping rows between placeholder and rendered state at the
+relevance boundary while scrolling — scroll height churned, relayout
+repeated, and CPU stayed pegged even after scrolling stopped. If pages ever
+grow past pagination, row virtualization is the fix — not
+`content-visibility` with a mismatched intrinsic size.
+
+Additional engine-side guards on `#contentContainer` (2026-09-23, second
+freeze pass): `[overflow-anchor:none]` (Chromium scroll anchoring recomputes
+anchor nodes on layout changes and is a known scroll-freeze ingredient) and
+`[scrollbar-gutter:stable]` (no appear/disappear width oscillation). The
+width-toggle wrapper uses `transition-[max-width]` instead of
+`transition-all`, and rows are keyed by `rowKey` (`mm:`/`es:` ids), not
+list index, so partial reloads keep row identity stable.
+
+Fourth pass (2026-09-23, after the probe proved the main thread wedges
+~1.5–2s after load — inside the webfont-swap window, not scroll-caused):
+rows carry **no transitions at all** (primary line, translation reveal, and
+the hover rule span lost `transition-*`; there is no `.reader-row:hover`
+recolor either — recoloring inline text while rows sweep under the cursor
+forces per-row glyph re-rasterization). When a side's word map is empty,
+`ReaderRow` renders the raw string instead of `WordText` (tokenizer/segment
+machinery never mounts; newlines are replaced with spaces to match
+`WordText`'s sentence joining). The page picker is `type="text"
+inputMode="numeric"` (Chrome spins focused `type="number"` on wheel). Fonts
+are self-hosted from `public/fonts/` via `resources/css/fonts.css` (same
+five families the former Google css2 link provided) — no network font fetch,
+no swap-timed reflow. `public/css/simulator.css` is loaded only by the
+simulator page (`<Head>` link in `Bilinguals.jsx`), not globally.
+
+# Freeze resolution (2026-09-23)
+
+The freeze was diagnosed with a temporary frontend performance probe (since
+removed together with its `/perf-probe` route and test): it proved the main
+thread wedged ~1.5–2s after load — inside the external webfont swap window —
+long before scrolling, while static analysis had (correctly) shown zero
+scroll-reactive code. After pass 4 (fonts self-hosted, rows de-animated,
+plain-text fast path), a 3.5-minute instrumented session on `/reader/15`
+showed a flat heap (~25 MB), zero React commits across 726 scroll events,
+≤6 ms event-loop lag, and 2 long tasks total. `wiki/log.md` keeps the full
+pass-by-pass timeline.
 
 ## Visual system per page
 
