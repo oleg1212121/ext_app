@@ -15,6 +15,7 @@ use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\Word;
+use Exception;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
@@ -44,6 +45,15 @@ class SimulatorController extends Controller
     ) {}
 
     /**
+     * The standalone simulator (Practice menu): no pinned match — the page
+     * shows the alignment picker and loads matches via POST /text.
+     */
+    public function simulator(): Response
+    {
+        return $this->simulatorResponse(null);
+    }
+
+    /**
      * The simulator with a match pinned by the URL (opened from its
      * alignment card): no text selector, the client loads this match.
      */
@@ -54,10 +64,17 @@ class SimulatorController extends Controller
         return $this->simulatorResponse($entityMatch);
     }
 
-    private function simulatorResponse(EntityMatch $pinned): Response
+    private function simulatorResponse(?EntityMatch $pinned): Response
     {
-        $pinned->loadMissing(['aEntity.language', 'bEntity.language']);
-        $pinnedName = $this->matchLabel($pinned);
+        if ($pinned !== null) {
+            $pinned->loadMissing(['aEntity.language', 'bEntity.language']);
+            $pinnedName = $this->matchLabel($pinned);
+        } else {
+            $pinnedName = null;
+        }
+
+        $textList = $pinned !== null ? [] : $this->getEntityMatchTextList();
+        $firstId = $textList[0]['id'] ?? null;
 
         $canUseAi = auth()->user()->canUseAi();
 
@@ -77,10 +94,12 @@ class SimulatorController extends Controller
         $answerModel = $this->modelResolver->resolveAnswerModel();
 
         return Inertia::render('Bilinguals/Bilinguals', [
-            'pinnedMatch' => ['id' => $pinned->id, 'text' => $pinnedName],
+            'textList' => $textList,
+            'pinnedMatch' => $pinnedName !== null ? ['id' => $pinned->id, 'text' => $pinnedName] : null,
             // Both sides' languages: the client labels the columns and
-            // substitutes the question template from these.
-            'languages' => [
+            // substitutes the question template from these. Null on the
+            // picker entry — they arrive with each POST /text response.
+            'languages' => $pinned !== null ? [
                 'a' => [
                     'code' => $pinned->aEntity->language?->code,
                     'name' => $pinned->aEntity->language?->name,
@@ -89,10 +108,12 @@ class SimulatorController extends Controller
                     'code' => $pinned->bEntity->language?->code,
                     'name' => $pinned->bEntity->language?->name,
                 ],
-            ],
+            ] : null,
             // The side the side rule (EntityMatch::readingSideFor) reads by
             // default; the client's toggle flips around this.
-            'defaultLearningSide' => $pinned->readingSideFor(auth()->user()->nativeLanguage()?->id),
+            'defaultLearningSide' => $pinned !== null
+                ? $pinned->readingSideFor(auth()->user()->nativeLanguage()?->id)
+                : 'a',
             'questionTemplate' => self::DEFAULT_QUESTION,
             'showWorkplace' => (bool) ($saved['show_workplace'] ?? true),
             'showQuestion' => (bool) ($saved['show_question'] ?? false),
@@ -104,12 +125,39 @@ class SimulatorController extends Controller
                 : null,
             'explanationModelKey' => $this->modelResolver->resolveExplanationModel()['id'] ?? null,
             'currentQuestion' => $savedQuestion,
-            'currentText' => (string) $pinned->id,
+            'currentText' => $pinnedName !== null
+                ? (string) $pinned->id
+                : ($firstId !== null ? (string) $firstId : ''),
             'fontSize' => $this->clampInt($saved['font_size'] ?? null, 12, 48, 26),
             'aiPanelWidth' => $this->clampInt($saved['ai_panel_width'] ?? null, 280, 1200, 560),
             'workplaceHeight' => $this->clampInt($saved['workplace_height'] ?? null, 80, 800, 168),
             'highlightWords' => (bool) ($saved['highlight_words'] ?? true),
         ]);
+    }
+
+    /**
+     * @return array<int, array{id: int, text: string}>
+     */
+    private function getEntityMatchTextList(): array
+    {
+        try {
+            $matches = $this->access()
+                ->readableMatchQuery(auth()->user())
+                ->with(['aEntity.language', 'bEntity.language'])
+                ->latest('id')
+                ->get();
+
+            $result = [];
+            foreach ($matches as $match) {
+                $result[] = ['id' => $match->id, 'text' => $this->matchLabel($match)];
+            }
+
+            return $result;
+        } catch (Exception $e) {
+            error_log('Entity matches not loaded: '.$e->getMessage());
+
+            return [];
+        }
     }
 
     private function matchLabel(EntityMatch $match): string
@@ -166,7 +214,7 @@ class SimulatorController extends Controller
     }
 
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, row_keys: list<string>|null, word_maps: array|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
+     * @return array{rows: list<array{0: string, 1: string}>, row_keys: list<string>|null, word_maps: array|null, languages: array{a: array, b: array}|null, default_learning_side: string, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
      */
     private function textFromEntityMatch(int $entityMatchId, int $page, int $perPage): array
     {
@@ -193,6 +241,19 @@ class SimulatorController extends Controller
             'rows' => $this->presenter->toSimulatorRows($paginator->getCollection()),
             'row_keys' => $this->presenter->toSimulatorRowKeys($paginator->getCollection()),
             'word_maps' => $this->wordMapsFor($match),
+            // The picker page's language toggle tracks the loaded match: the
+            // same shapes the pinned route ships at render time.
+            'languages' => [
+                'a' => [
+                    'code' => $match->aEntity->language?->code,
+                    'name' => $match->aEntity->language?->name,
+                ],
+                'b' => [
+                    'code' => $match->bEntity->language?->code,
+                    'name' => $match->bEntity->language?->name,
+                ],
+            ],
+            'default_learning_side' => $match->readingSideFor(auth()->user()->nativeLanguage()?->id),
             'meta' => [
                 'current_page' => $paginator->currentPage(),
                 'per_page' => $paginator->perPage(),

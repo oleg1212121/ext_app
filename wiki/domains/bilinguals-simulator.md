@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
 stale_after: 2026-12-23
-generated: { by: agent:zcode, at: 2026-09-23T17:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-09-24T20:00:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -31,7 +31,8 @@ variants.
 
 | Route | Method | Handler | Purpose |
 |-------|--------|---------|---------|
-| `/bilinguals/simulator/{entityMatch}` | GET | `SimulatorController::simulatorForMatch` | Inertia page `Bilinguals/Bilinguals` with the match **pinned by the URL** (opened from an alignment card's Simulator button, ADR 0036): no text selector, the match label is shown instead, 403 without `canReadMatch`. The old picker page `/bilinguals/en/ru/simulator` and the navbar "Bilinguals" item are gone (ADR 0036 amendment) |
+| `/simulator` | GET | `SimulatorController::simulator` | The standalone page with the **alignment picker** (Practice → Simulator, ADR 0038): same Inertia page `Bilinguals/Bilinguals`, no pinned match — a Select + Load header control lists the readable matches and loads one in place via `POST /text`. The old picker URL `/bilinguals/en/ru/simulator` stays deleted (404, test-guarded) |
+| `/bilinguals/simulator/{entityMatch}` | GET | `SimulatorController::simulatorForMatch` | Inertia page `Bilinguals/Bilinguals` with the match **pinned by the URL** (opened from an alignment card's Simulator button, ADR 0036): no text selector, the match label is shown instead, 403 without `canReadMatch` |
 | `/text` | POST | `SimulatorController::text` | Paginated aligned text content (JSON) |
 | `/ai/question` | POST | `SimulatorController::askAi` | Ask an AI model about the text (JSON), named `ai.question` |
 | `/ai/question/stream` | POST | `SimulatorController::askAiStreamed` | SSE-streamed variant, named `ai.question.stream` |
@@ -65,12 +66,14 @@ variants.
   actual match `side` so word-explain payloads stay exact). Column headers
   show the sides' real language names and the toolbar badge the match's real
   codes — no more hardcoded EN/RU.
-* The simulator is reached **only through a pinned URL** — an alignment
-  card's Simulator button names the match, shown in the toolbar as
-  `"<a-side entity name> / <b-side entity name>"`. There is no in-page
-  switching; to read another pair, go back to the work's Alignments tab.
-  Saved per-device positions (page, revealed row) key on the match id, so a
-  pinned open restores that match's last position.
+* Two **entry points share one page** (ADR 0038): the pinned URL from an
+  alignment card (match fixed, label shown in the toolbar) and the Practice
+  menu's `/simulator` (no pin — the Select + Load picker lists the readable
+  matches via `getEntityMatchTextList()`, preselecting the last picker
+  choice from the per-device position store). Load fetches the chosen match
+  in place via `POST /text`; switching text needs no reload. Saved per-device
+  positions (page, revealed row, flip) key on the match id either way, so a
+  reopen restores that match's last position.
 * **Read access is gated per Entity, not per match.** The pinned route and
   `text()` both 403/filter on `EntityAccessService::canReadMatch` — the
   caller must hold an Access grant (or be admin) on **both** entities of the
@@ -84,8 +87,11 @@ variants.
   carry `word_maps` (`{a, b, highlightable, explainable}` — the
   [interactive word](/domains/interactive-words.md) maps for both sides plus
   the per-side explain-eligibility rule "column language ≠ native language";
-  `null` in filename mode) and `row_keys` (`mm:{meaningMatchId}` per row,
-  `null` in filename mode), so `TextContent` renders both cells through the
+  `null` in filename mode), `row_keys` (`mm:{meaningMatchId}` per row,
+  `null` in filename mode), and — so the picker page's language toggle tracks
+  the loaded match (ADR 0038) — `languages` (`{a, b}` code/name) and
+  `default_learning_side` (the same side rule the pinned route applies at
+  render time), so `TextContent` renders both cells through the
   shared `WordText`/`WordPopup` components with a
   `simulator.highlight_words` toolbar toggle.
 * **Revealing a row's target cell credits a read** (+1 familiarity to the
@@ -162,9 +168,13 @@ variants.
 # Frontend
 
 React page `resources/js/Pages/Bilinguals/` (`Bilinguals.jsx` plus `AI/`,
-`TextContent/`, `Workplace/` sub-components). Props include `pinnedMatch` (`{id, text}` — the URL-pinned
-match and its toolbar label), `languages` (`{a: {code, name}, b: …}` —
-labels the columns and feeds the question template), `defaultLearningSide`
+`TextContent/`, `Workplace/` sub-components). Props include `pinnedMatch`
+(`{id, text}` — the URL-pinned match and its toolbar label; **null** on the
+`/simulator` picker entry, where `textList` (`[{id, text}]`, the readable
+matches) drives the Select + Load header instead), `languages`
+(`{a: {code, name}, b: …}` — labels the columns and feeds the question
+template; client state on the picker entry, updated from each `/text`
+response), `defaultLearningSide`
 ('a'|'b' from the shared side rule), `questionTemplate`
 (`DEFAULT_QUESTION` with its `:base` placeholder), `answerModel`
 (`{id, label}` or null — the resolved answer model shown in the toolbar),

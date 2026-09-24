@@ -446,6 +446,13 @@ work's entity matches (the **Alignments tab**).
 _Avoid_: entities page (the former language-first surface), Parallel Library
 (the Reader's former on-page subtitle).
 
+**Practice**:
+The navbar group of self-study surfaces — the Reader (the text library a
+learner reads from) and the Simulator (the bilingual trainer with its
+alignment picker). A menu group, not a surface of its own; both surfaces
+also keep their deep-link entries from alignments. See ADR 0038.
+_Avoid_: training, exercises.
+
 **Alignments tab**:
 The work page's tab that lists the **Entity matches** of that work, labeled
 "Alignments" in the UI — the canonical term stays Entity match. Creating a

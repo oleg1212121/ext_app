@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react]
 status: stable
 stale_after: 2026-12-23
-generated: { by: agent:zcode, at: 2026-09-23T19:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-09-24T20:00:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -32,18 +32,22 @@ sources:
 A reading UI over imported text entities: read a text with its aligned
 counterpart when one exists. Backed by the same
 [entities](/database/entities-alignment.md) the alignment pipeline fills.
-The route is language-segment-free — `GET /reader/{entityId}`; the entity id
-alone names the text and its match carries both languages (ADR 0037, same
-reasoning as ADR 0036's simulator route). The reader is reached through deep
-links — each alignment card's "Read · {LANG}" button and the entity page's
-Read button. The old `/reader/{lang}/{entityId}` shape is deleted (404,
-test-guarded).
+The reading route is language-segment-free — `GET /reader/{entityId}`; the
+entity id alone names the text and its match carries both languages
+(ADR 0037, same reasoning as ADR 0036's simulator route). Entries: the
+**Practice** menu's Reader item opens the revived text library
+(`GET /reader/{lang?}`, ADR 0038) whose list deep-links into the reading
+page, and the alignment card's "Read · {LANG}" button and the entity page's
+Read button link straight to it. The old `/reader/{lang}/{entityId}` shape
+is deleted (404, test-guarded); `/reader` and `/reader/{lang}` are live
+again as the index.
 
 # Routes
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `/reader/{entityId}` | `ReaderController::show` | React reader for one entity, named `reader.show`. The URL entity only anchors its match — the **Reading side** rule (ADR 0037) picks which language is read. Legacy `/reader-react*`, `/reader`, `/reader/{lang}`, `/reader/{lang}/{entityId}` all 404 |
+| `/reader/{entityId}` | `ReaderController::show` | React reader for one entity, named `reader.show`. The URL entity only anchors its match — the **Reading side** rule (ADR 0037) picks which language is read. Legacy `/reader-react*`, `/reader/{lang}/{entityId}` all 404 |
+| `/reader/{lang?}` | `ReaderController::index` | The text library (Practice → Reader), named `reader.index`. Language tabs over the readable entities of that language (top 100, `EntityAccessService::readableQuery`); bare `/reader` derives the user's native enabled language, fallback en. Clicking a text visits `/reader/{id}` |
 
 # Side rule and language toggle
 
@@ -65,8 +69,10 @@ reload — and persists as a **Side swap** (Working state) under
 # Frontend
 
 Inertia pages under `resources/js/Pages/Reader/` — `ReaderApp` +
-`ReaderRow` (reading view). The back arrow is browser-history back; there is
-no in-app listing to return to.
+`ReaderRow` (reading view), plus the restored index `Pages/ReaderIndex.jsx`
+→ `Reader/ReaderIndexApp.jsx` (language tabs + text list, ADR 0038). The
+back arrow is browser-history back; the index is a separate page, not an
+in-app listing inside the reader.
 
 # Bilingual rows
 
@@ -211,4 +217,4 @@ pass-by-pass timeline.
 
 | Surface | Tokens | Notes |
 |---------|--------|-------|
-| `/reader/{entityId}` (reader) | `--color-vellum/*` (legacy) | Still on the warm vellum palette. Migrating it to `--wbench-*` is tracked as a follow-up so a library switch does not visibly cross palettes when entering a text. (The deleted reader index was the `--wbench-*` reference implementation; the design-system page's canonical example is now the simulator.) |
+| `/reader/{entityId}` (reader) | `--color-vellum/*` (legacy) | Still on the warm vellum palette. Migrating it to `--wbench-*` is tracked as a follow-up so a library switch does not visibly cross palettes when entering a text. (The reader index — the `--wbench-*` reference implementation, deleted with the Practice disposal and restored by ADR 0038 — still uses the `--wbench-*` tokens; the design-system page's canonical example is the simulator.) |

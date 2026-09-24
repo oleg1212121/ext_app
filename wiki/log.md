@@ -1,5 +1,27 @@
 # Directory Update Log
 
+## 2026-09-24 (feat: Practice menu revives the reader index and the simulator picker)
+
+The ADR 0036 disposal was partially reversed (ADR 0038): a **Practice**
+dropdown, first in the navbar (Reader / Simulator; the NavBar dropdown state
+generalized from the hardcoded puzzles toggle to per-label `openMenu`/
+`expandedMenu`; Blade nav mirror updated too). Routes: `GET /reader/{lang?}`
+(`reader.index` — the restored text library, bare `/reader` derives the
+native enabled language, fallback en; `ReaderIndex.jsx` +
+`ReaderIndexApp.jsx` resurrected from 4df1c78^, retargeted to visit
+`/reader/{id}`) and `GET /simulator` (`bilinguals.simulator` — the picker
+entry into the same `Bilinguals/Bilinguals` page: Select + Load header
+restored, loads matches in place via `POST /text`, which now also ships
+`languages` + `default_learning_side` from the shared side rule so the
+language toggle tracks the loaded match; `simulatorResponse()` accepts a
+null pin). Model stays text + link to `/profile?tab=ai`. Untouched: the
+reading route `/reader/{entityId}`, the pinned simulator route, the
+language toggle, the freeze fixes; `/reader/{lang}/{entityId}` and
+`/bilinguals/en/ru/simulator` stay 404. UI-string seeds re-added
+(`nav.practice/reader/simulator`, the reader index keys, the picker keys)
+and reseeded. Reader/simulator/entity wiki concepts updated;
+`web-routes.md` regenerated via `wiki:sync`.
+
 ## 2026-09-23 (fix: reading-position restore never worked — router.replace misuse; stuck spinner resolved)
 
 The pass-4 placeholder exposed a pre-existing bug: `ReaderApp`'s restore

@@ -24,6 +24,12 @@ return [
     'bilinguals.load_error_hint' => ['en' => 'Try again in a moment.', 'ru' => 'Повторите попытку чуть позже.'],
     'bilinguals.no_text_loaded' => ['en' => 'No text loaded', 'ru' => 'Текст не загружен'],
     'bilinguals.no_aligned_rows' => ['en' => 'This pair has no aligned sentences yet.', 'ru' => 'У этой пары пока нет выровненных предложений.'],
+    // Alignment picker (Practice → Simulator entry).
+    'bilinguals.load' => ['en' => 'Load', 'ru' => 'Загрузить'],
+    'bilinguals.press' => ['en' => 'Press', 'ru' => 'Нажмите'],
+    'bilinguals.load_hint_tail' => ['en' => 'to bring in the selected text.', 'ru' => ', чтобы загрузить выбранный текст.'],
+    'bilinguals.no_text_selected' => ['en' => 'No text selected', 'ru' => 'Текст не выбран'],
+    'bilinguals.pick_text_hint' => ['en' => 'Pick a text and load it to start.', 'ru' => 'Выберите текст и загрузите его, чтобы начать.'],
     'bilinguals.learning_language' => ['en' => 'Learning language', 'ru' => 'Изучаемый язык'],
     'bilinguals.open' => ['en' => 'Open', 'ru' => 'Открыть'],
     'bilinguals.ask' => ['en' => 'Ask', 'ru' => 'Спросить'],

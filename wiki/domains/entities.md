@@ -91,7 +91,8 @@ stretched link to the editor `/alignments/{id}` with Simulator / Read·{LANG}
 buttons on top), `Library/CreateEntity` (work fixed, language select),
 `Library/CreateAlignment` (work fixed, two entity selects + chunk params),
 plus the surviving `Entities/Create`, `Entities/Show`, `Entities/Edit`
-(metadata form + dnd-kit sortable sentence manager). The navbar entry is
+(metadata form + dnd-kit sortable sentence manager). The navbar entries are
+**Practice** (the restored Reader index + Simulator picker, ADR 0038) and
 **Library** (the Alignments navbar item is gone — ADR 0036). All use the
 `--wbench-*` tokens to match the sibling Alignments management surface and the
 [design system](/conventions/design-system.md); pagination is the shared

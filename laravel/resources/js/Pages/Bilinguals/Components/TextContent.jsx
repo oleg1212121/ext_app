@@ -40,6 +40,16 @@ export default function TextContent(props) {
                             <p className="font-[var(--wbench-serif)] text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] leading-snug">{props.loadError}</p>
                             <p className="mt-3 font-[var(--wbench-sans)] text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">{t('bilinguals.load_error_hint')}</p>
                         </>
+                    ) : !props.hasText ? (
+                        <>
+                            <p className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] mb-3">{t('bilinguals.no_text_selected')}</p>
+                            <p className="font-[var(--wbench-serif)] text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] leading-snug">{t('bilinguals.pick_text_hint')}</p>
+                        </>
+                    ) : !props.hasLoaded ? (
+                        <>
+                            <p className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] mb-3">{t('bilinguals.no_text_loaded')}</p>
+                            <p className="font-[var(--wbench-serif)] text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] leading-snug">{t('bilinguals.press')} <span className="font-[var(--wbench-sans)] font-medium">{t('bilinguals.load')}</span> {t('bilinguals.load_hint_tail')}</p>
+                        </>
                     ) : (
                         <>
                             <p className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] mb-3">{t('bilinguals.no_text_loaded')}</p>

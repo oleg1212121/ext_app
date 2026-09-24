@@ -2,6 +2,9 @@
 
 // UI strings: navigation (NavBar.jsx + layouts/navigation.blade.php).
 return [
+    'nav.practice' => ['en' => 'Practice', 'ru' => 'Практика'],
+    'nav.reader' => ['en' => 'Reader', 'ru' => 'Читалка'],
+    'nav.simulator' => ['en' => 'Simulator', 'ru' => 'Симулятор'],
     'nav.library' => ['en' => 'Library', 'ru' => 'Библиотека'],
     'nav.admin' => ['en' => 'Admin', 'ru' => 'Админка'],
     'nav.profile' => ['en' => 'Profile', 'ru' => 'Профиль'],

@@ -33,4 +33,15 @@ return [
     'reader.hint' => ['en' => 'Tap a line to reveal its translation · Spacebar toggles audio playback', 'ru' => 'Нажмите на строку, чтобы увидеть перевод · Пробел включает и выключает аудио'],
     'reader.highlights' => ['en' => 'Highlights', 'ru' => 'Подсветка слов'],
     'reader.reading_language' => ['en' => 'Reading language', 'ru' => 'Язык чтения'],
+    // Reader index (ReaderIndexApp.jsx) — the Practice → Reader browse page.
+    'reader.reader_heading' => ['en' => 'Reader', 'ru' => 'Читалка'],
+    'reader.library_language' => ['en' => 'Library language', 'ru' => 'Язык библиотеки'],
+    'reader.loading' => ['en' => 'Loading', 'ru' => 'Загрузка'],
+    'reader.english' => ['en' => 'English', 'ru' => 'Английский'],
+    'reader.russian' => ['en' => 'Russian', 'ru' => 'Русский'],
+    'reader.no_texts' => ['en' => 'No texts in this language', 'ru' => 'На этом языке текстов нет'],
+    'reader.no_texts_hint' => ['en' => 'Switch the language above, or ask an editor to add texts.', 'ru' => 'Переключите язык выше или попросите редактора добавить тексты.'],
+    'reader.texts' => ['en' => 'Texts', 'ru' => 'Тексты'],
+    'reader.index_hint_open' => ['en' => 'Open a text to read it', 'ru' => 'Откройте текст, чтобы читать'],
+    'reader.index_hint_gutter' => ['en' => 'the translation appears across the gutter', 'ru' => 'перевод появится напротив каждой строки'],
 ];

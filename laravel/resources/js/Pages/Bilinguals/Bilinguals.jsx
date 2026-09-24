@@ -2,6 +2,7 @@ import React from 'react';
 import { Head, Link } from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx'
 import Spinner from '../../Components/Spinner.jsx'
+import Select from "../../Components/Forms/Select.jsx";
 import Button from "../../Components/Forms/Button.jsx";
 import Workplace from "./Components/Workplace.jsx";
 import AI from "./Components/AI.jsx";
@@ -116,6 +117,8 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
         rows: payload.rows ?? [],
         rowKeys: payload.row_keys ?? null,
         wordMaps: payload.word_maps ?? null,
+        languages: payload.languages ?? null,
+        defaultLearningSide: payload.default_learning_side ?? null,
         meta: payload.meta ?? {
             current_page: page,
             per_page: perPage,
@@ -131,18 +134,27 @@ const Bilinguals = (props) => {
     const answerModel = props.answerModel
     const canUseAi = props.canUseAi
     const errors = props.errors
-    // Opened from an alignment card: the match is pinned by the URL — there
-    // is no text selector and saved positions key on the pinned match.
-    const pinnedMatch = props.pinnedMatch
+    const textList = props.textList ?? []
+    // Pinned from an alignment card the match is fixed by the URL; from the
+    // Practice menu there is no pin — the alignment picker selects the text.
+    const pinnedMatch = props.pinnedMatch ?? null
 
     const initialPositions = loadPositions();
-    const initialText = String(pinnedMatch.id);
-    const initialSaved = initialPositions.alignments?.[initialText] ?? null;
+    const savedTextExists = initialPositions.currentText != null
+        && textList.some((item) => String(item.id) === String(initialPositions.currentText));
+    const initialText = pinnedMatch
+        ? String(pinnedMatch.id)
+        : (savedTextExists ? String(initialPositions.currentText) : String(props.currentText ?? ''));
+    const initialSaved = pinnedMatch || savedTextExists
+        ? (initialPositions.alignments?.[initialText] ?? null)
+        : null;
 
     // Which match side is the learning target by default comes from the
     // server's side rule; the per-device flip inverts it (Working state).
-    const languages = props.languages ?? {a: {code: null, name: null}, b: {code: null, name: null}};
-    const defaultLearningSide = props.defaultLearningSide === 'b' ? 'b' : 'a';
+    // State, not props: on the picker entry they arrive with each loaded
+    // match's POST /text response.
+    const [languages, setLanguages] = React.useState(props.languages ?? {a: {code: null, name: null}, b: {code: null, name: null}});
+    const [defaultLearningSide, setDefaultLearningSide] = React.useState(props.defaultLearningSide === 'b' ? 'b' : 'a');
     const otherSide = (side) => (side === 'a' ? 'b' : 'a');
     const [flipped, setFlipped] = React.useState(initialSaved?.flipped === true);
     const learningSide = flipped ? otherSide(defaultLearningSide) : defaultLearningSide;
@@ -165,7 +177,7 @@ const Bilinguals = (props) => {
     let [showText, setShowText] = React.useState(props.showText)
     let [showAI, setShowAI] = React.useState(props.showAI)
     let [highlightWords, setHighlightWords] = React.useState(props.highlightWords ?? true)
-    let [currentText] = React.useState(initialText)
+    let [currentText, setCurrentText] = React.useState(initialText)
     const [pending, setPending] = React.useState(false);
     const [aiAnswer, setAiAnswer] = React.useState('');
     const [aiError, setAiError] = React.useState(null);
@@ -242,10 +254,16 @@ const Bilinguals = (props) => {
         setLoadError(null);
         setPending(true);
         try {
-            const {rows: nextRows, rowKeys: nextRowKeys, wordMaps: nextWordMaps, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
+            const {rows: nextRows, rowKeys: nextRowKeys, wordMaps: nextWordMaps, languages: nextLanguages, defaultLearningSide: nextDefaultSide, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
             setRows(nextRows);
             setRowKeys(nextRowKeys);
             setWordMaps(nextWordMaps);
+            if (nextLanguages) {
+                setLanguages(nextLanguages);
+            }
+            if (nextDefaultSide) {
+                setDefaultLearningSide(nextDefaultSide);
+            }
             setAllTarget(false);
             setTextMeta(meta);
             setTextPage(meta.current_page ?? page);
@@ -296,6 +314,24 @@ const Bilinguals = (props) => {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Picker entry: Load fetches the selected match in place; fetchPage
+    // restores the saved page and opened row, the flip is per-match too.
+    const handleLoadText = React.useCallback(() => {
+        const saved = loadPositions().alignments?.[String(currentText)] ?? null;
+        const page = saved?.page ?? 1;
+        setTextPage(page);
+        setFlipped(saved?.flipped === true);
+        return fetchPage(page);
+    }, [fetchPage, currentText]);
+
+    const changeText = (event) => {
+        const value = event.target.value;
+        setCurrentText(value);
+        const positions = loadPositions();
+        positions.currentText = String(value);
+        savePositions(positions);
+    };
 
     // Persisting the flip joins the per-match Working state (page + last
     // opened row) in the browser's position store.
@@ -583,9 +619,17 @@ const Bilinguals = (props) => {
                         </Link>
                     )}
                     <span className={HAIRLINE} aria-hidden="true"/>
-                    <span className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] max-w-[22rem] truncate whitespace-nowrap">
-                        {pinnedMatch.text}
-                    </span>
+                    {pinnedMatch ? (
+                        <span className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] max-w-[22rem] truncate whitespace-nowrap">
+                            {pinnedMatch.text}
+                        </span>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <Select value={currentText} onChange={changeText}
+                                    items={textList}/>
+                            <Button color="green" onClick={() => handleLoadText()} type='button'>{t('bilinguals.load')}</Button>
+                        </div>
+                    )}
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div
                         role="radiogroup"
@@ -741,6 +785,8 @@ const Bilinguals = (props) => {
                                 rowOffset={rowOffset}
                                 pending={pending}
                                 loadError={loadError}
+                                hasText={!!currentText}
+                                hasLoaded={!!textMeta}
                                 canUseAi={canUseAi}
                                 checkedRows={checkedRows}
                                 onToggleRow={onToggleRow}

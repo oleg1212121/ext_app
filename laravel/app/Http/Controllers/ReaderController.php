@@ -11,6 +11,7 @@ use App\Http\Requests\ReaderPageRequest;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
+use App\Models\Language;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
@@ -28,6 +29,27 @@ class ReaderController extends Controller
         protected MeaningMatchPresenter $presenter,
         protected AIModelResolver $modelResolver,
     ) {}
+
+    /**
+     * The text library (Practice → Reader): language tabs over the list of
+     * readable texts. Bare /reader derives the user's native enabled
+     * language, falling back to en.
+     */
+    public function index(?string $lang = null): Response
+    {
+        if ($lang === null) {
+            $native = auth()->user()->nativeLanguage();
+            $lang = ($native?->is_enabled ?? false) ? $native->code : 'en';
+        }
+
+        $language = $this->resolveLanguage($lang);
+
+        return Inertia::render('ReaderIndex', [
+            'lang' => $lang,
+            'languages' => Language::query()->enabled()->orderBy('sort_order')->pluck('code')->all(),
+            'entities' => $this->entitiesForLanguage($language),
+        ]);
+    }
 
     public function show(ReaderPageRequest $request, int $entityId): Response
     {
@@ -256,6 +278,28 @@ class ReaderController extends Controller
             fn (array $row): array => [$row[1], $row[0]],
             $rows,
         );
+    }
+
+    /**
+     * @return list<array{id: int, name: string}>
+     */
+    private function entitiesForLanguage(Language $language): array
+    {
+        return $this->access()
+            ->readableQuery(auth()->user(), $language->id)
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->limit(100)
+            ->get()
+            ->all();
+    }
+
+    private function resolveLanguage(string $lang): Language
+    {
+        return Language::query()
+            ->enabled()
+            ->where('code', $lang)
+            ->firstOrFail();
     }
 
     private function access(): EntityAccessService

@@ -50,6 +50,13 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('entityId')
         ->name('reader.show');
 
+    // Practice → Reader: the text library. Bare /reader derives the user's
+    // native enabled language (fallback en). Registered after reader.show;
+    // whereNumber vs [a-z]{2} keeps /reader/5 and /reader/en disjoint.
+    Route::get('/reader/{lang?}', [ReaderController::class, 'index'])
+        ->where('lang', '[a-z]{2}')
+        ->name('reader.index');
+
     Route::get('/crossword', [CrosswordController::class, 'index'])->name('crossword');
     Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');
     Route::post('/crossword/complete', [CrosswordController::class, 'complete'])->name('crossword.complete');
@@ -149,6 +156,11 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::patch('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'updateSentence'])->whereNumber('sentence');
     Route::delete('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'unlinkSentence'])->whereNumber('sentence');
     Route::delete('/alignments/{entityMatch}/unmatched/{sentence}', [AlignmentEditorController::class, 'destroyUnmatched'])->whereNumber('sentence');
+    // Practice → Simulator: the standalone page with the alignment picker;
+    // the pinned route below stays the deep-link entry from alignment cards.
+    Route::get('/simulator', [SimulatorController::class, 'simulator'])
+        ->name('bilinguals.simulator');
+
     // A match pinned from its alignment card: no text selector — the URL
     // names the match (the pair itself carries both languages).
     Route::get('/bilinguals/simulator/{entityMatch}', [SimulatorController::class, 'simulatorForMatch'])
