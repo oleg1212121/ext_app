@@ -5,11 +5,17 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
 stale_after: 2026-12-23
-generated: { by: agent:zcode, at: 2026-09-24T21:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-09-24T22:40:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
     title: SimulatorController
+  - id: prompt-templates
+    resource: laravel/app/Support/PromptTemplates.php
+    title: PromptTemplates
+  - id: adr-question
+    resource: docs/adr/0040-server-assembled-assessment-question.md
+    title: ADR 0040 — Server-assembled assessment question from DB prompt templates
   - id: adr-preferences
     resource: docs/adr/0035-per-user-ai-model-preferences.md
     title: ADR 0035 — Per-user AI model preferences, resolved server-side
@@ -54,14 +60,18 @@ variants.
   renders for every approved user per the saved `show_ai` setting, and its
   toggle button is always in the toolbar, so keyless users always meet the
   add-key call to action (the panel body shows the full "Add an API key…"
-  sentence as a link while `canUseAi` is false). The default assessment
-  prompt comes from
-  `SimulatorController::DEFAULT_QUESTION` — a `:base` **template**: the
-  client substitutes the current base column's language name and regenerates
-  it on toggle. A saved custom question ships verbatim and is never
-  rewritten; a saved copy of the pre-template default (the hardcoded
-  "Compare Russian original…" text, `LEGACY_DEFAULT_QUESTION`) counts as not
-  customized so it keeps tracking the toggle (ADR 0037).
+  sentence as a link while `canUseAi` is false). The assessment question is
+  **split and assembled server-side** (ADR 0040): an admin-editable
+  **Question template** — the format-rules text, stored in the seeded
+  `prompt_templates` rows (`App\Support\PromptTemplates`, Filament
+  "Prompt Templates" resource, Edit-only) — and a user-editable **task
+  list** (default also a `prompt_templates` row). The client shows the
+  template read-only above the tasks textarea, substituting **both**
+  `:base` and `:learning` with the current columns' language names on every
+  render so it tracks the toggle; the AI endpoints receive only `tasks` plus
+  the two column language codes and join template + tasks into the system
+  message (`PromptTemplates::assemble`). The user's customized task list is
+  a UI settings entry; a Reset affordance clears it back to the default.
 * **Columns are positional display roles, not languages** (ADR 0037): the
   left **target** column hides the language being learned (revealed per row,
   read-credited); the right **base** column carries the Open/Ask actions and
@@ -123,7 +133,10 @@ variants.
   plus its before/after neighbours **in the same entity** by document
   order, marks the surface with `**…**`, and asks the user's resolved
   **explanation model** for a 2–4-sentence explanation of the word's sense
-  in that context, replied in the user's **Native language**. Manual fire
+  in that context, replied in the user's **Native language**. The
+  instruction is an admin-editable prompt template
+  (`word.explanation`, `:word`/`:native` placeholders, fallback constant in
+  `PromptTemplates` — ADR 0040). Manual fire
   only (button on the popup's second tab) — see
   [interactive words](/domains/interactive-words.md).
 * Answers are rendered from markdown with the shared
@@ -151,7 +164,7 @@ variants.
   color. GFM tables get hairline rules and mono-caps headers. Inside the AI
   answer panel (`#ai_answer_div`), `--wbench-danger` and `--wbench-emphasis`
   are both overridden to the shared red `#fe2500`.
-* The default assessment question (`SimulatorController::DEFAULT_QUESTION`) instructs
+* The question **template** (the format-rules half, admin-editable) instructs
   the model to use `##` headings per task, straight double quotes for cited
   words, `~~removed~~`/`**added**` for corrections, `==double equals==` for the
   key weak-point phrases, and `>` blockquotes for improved versions — each
@@ -182,28 +195,30 @@ matches) drives the Select + Load header instead), `languages`
 (`{a: {code, name}, b: …}` — labels the columns and feeds the question
 template; client state on the picker entry, updated from each `/text`
 response), `defaultLearningSide`
-('a'|'b' from the shared side rule), `questionTemplate`
-(`DEFAULT_QUESTION` with its `:base` placeholder), `answerModel`
+('a'|'b' from the shared side rule), `questionTemplates`
+(`{format, tasks}` — the raw, unsubstituted template rows for display and
+the default task list), `answerModel`
 (`{id, label}` or null — the resolved answer model shown in the AI panel
 header), `explanationModelKey` (resolved explanation model id, only discriminates the
 word popup's client cache), `show*` feature flags
 (`showWorkplace`, `showQuestion`, `showText`, `showAI`), plus the saved UI
 settings seeds (`fontSize`, `aiPanelWidth`, `workplaceHeight`, and the
-`show*` props; `currentQuestion` ships **null** unless the user customized
-the question, in which case it is the verbatim custom text).
+`show*` props; `currentTasks` ships **null** unless the user customized
+the task list, in which case it is the verbatim custom text).
 
 # Persistence
 
 Split by write frequency (ADR 0024):
 
-* **Stable settings → DB.** Font size, panel visibility, question, AI panel
+* **Stable settings → DB.** Font size, panel visibility, task list, AI panel
   width, workplace height live in `user_settings.ui_settings` (JSONB,
   `simulator` section). **The model is not part of `ui_settings`** — it is a
   typed `user_settings.ai_model_id` preference edited in the Profile
   (ADR 0035; the legacy `simulator.model` key was backfilled into it and
-  removed). The **question saves only what the user typed**: the textarea is
-  seeded from the `:base` template (regenerated on toggle) and `question`
-  persists `null` until an actual edit makes it custom (ADR 0037). Seeded
+  removed). The `question` key stores **only the customized task list**:
+  the textarea is seeded with the default task list and `question`
+  persists `null` until an actual edit; the Reset affordance returns it to
+  `null` (ADR 0040). Seeded
   into page props by `SimulatorController::simulatorForMatch()`. The
   frontend writes back via the `useUiSettingsAutosave` hook — one debounced
   (~800 ms) PATCH to `/ui-settings` per change burst; the backend

@@ -160,11 +160,19 @@ const Bilinguals = (props) => {
     const learningSide = flipped ? otherSide(defaultLearningSide) : defaultLearningSide;
     const baseSide = otherSide(learningSide);
 
-    // A saved question is the user's customization and ships verbatim; null
-    // means "render the template for the current sides".
-    const [customQuestion, setCustomQuestion] = React.useState(props.currentQuestion ?? null);
-    const effectiveQuestion = customQuestion ?? String(props.questionTemplate ?? '')
-        .replaceAll(':base', languages[baseSide]?.name ?? languages[baseSide]?.code ?? '');
+    // The question is split: an admin-owned format template (shown read-only,
+    // never editable) plus the user's editable task list. A saved task list is
+    // the customization and ships verbatim; null means "show the default".
+    const [customTasks, setCustomTasks] = React.useState(props.currentTasks ?? null);
+    const effectiveTasks = customTasks ?? String(props.questionTemplates?.tasks ?? '');
+    // The read-only template substitutes the current column language names on
+    // every render, so it tracks the language toggle.
+    const questionInfo = String(props.questionTemplates?.format ?? '')
+        .replaceAll(':base', languages[baseSide]?.name ?? languages[baseSide]?.code ?? '')
+        .replaceAll(':learning', languages[learningSide]?.name ?? languages[learningSide]?.code ?? '');
+    // Bumped on reset to remount the uncontrolled tasks textarea with the
+    // restored default.
+    const [questionResetKey, setQuestionResetKey] = React.useState(0);
 
     // Legacy saved rows keyed the reveal halves 'en'/'ru'; map them onto the
     // positional target/base halves.
@@ -218,7 +226,7 @@ const Bilinguals = (props) => {
         show_question: showQuestion,
         show_ai: showAI,
         highlight_words: highlightWords,
-        question: customQuestion,
+        question: customTasks,
         ai_panel_width: aiPanelWidth,
         workplace_height: workplaceHeight,
     });
@@ -467,7 +475,11 @@ const Bilinguals = (props) => {
         }
     };
     const changeQuestion = (event) => {
-        setCustomQuestion(event.target.value)
+        setCustomTasks(event.target.value)
+    }
+    const resetQuestion = () => {
+        setCustomTasks(null);
+        setQuestionResetKey((key) => key + 1);
     }
     React.useEffect(() => {
         if (!showWorkplace || !pendingWorkplaceFocusRef.current) {
@@ -557,7 +569,9 @@ const Bilinguals = (props) => {
         // whatever language plays the base after a toggle.
         const cellContent = String(row?.[1] ?? '').trim().replace('*', '');
         const workplaceText = String(overrides.workplaceText ?? workplaceRef.current?.value ?? '').trim().replace('*', '');
-        const question = String(overrides.question ?? effectiveQuestion ?? '').trim();
+        // Only the tasks travel; the server joins them with the admin's
+        // format template using the current column language codes.
+        const tasks = String(overrides.tasks ?? effectiveTasks ?? '').trim();
 
         if (!cellContent || !workplaceText) {
             return;
@@ -565,7 +579,9 @@ const Bilinguals = (props) => {
 
         const payload = {
             data: `${cellContent}\n${workplaceText}`,
-            question,
+            tasks,
+            base: languages[baseSide]?.code ?? null,
+            learning: languages[learningSide]?.code ?? null,
         };
 
         await streamAsk(payload);
@@ -575,7 +591,7 @@ const Bilinguals = (props) => {
         if (!lastAskPayload || pending) {
             return;
         }
-        const payload = {...lastAskPayload, ...(overrides.question ? {question: overrides.question} : {})};
+        const payload = {...lastAskPayload, ...(overrides.tasks ? {tasks: overrides.tasks} : {})};
         await streamAsk(payload);
     };
 
@@ -783,7 +799,7 @@ const Bilinguals = (props) => {
                         </>
                     }
                     {showWorkplace === true &&
-                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={effectiveQuestion} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)} canUseAi={canUseAi} height={workplaceHeight} onHeightChange={setWorkplaceHeight}/>
+                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={effectiveTasks} questionInfo={questionInfo} onResetQuestion={resetQuestion} questionResetKey={questionResetKey} canResetQuestion={customTasks !== null} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)} canUseAi={canUseAi} height={workplaceHeight} onHeightChange={setWorkplaceHeight}/>
                     }
                 </div>
                 {showAI === true &&

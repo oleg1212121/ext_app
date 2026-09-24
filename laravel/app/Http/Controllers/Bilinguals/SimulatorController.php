@@ -15,6 +15,7 @@ use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\Word;
+use App\Support\PromptTemplates;
 use Exception;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
@@ -25,20 +26,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SimulatorController extends Controller
 {
-    /**
-     * The default assessment instruction. :base is substituted client-side
-     * with the name of whichever side currently plays the base (translation
-     * target) language, so the question tracks the language toggle.
-     */
-    public const DEFAULT_QUESTION = 'Compare :base original vs. my translation. Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; wrap the few most important weak-point phrases in ==double equals==; put improved versions in > blockquotes. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Assess grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version. 4. Give a couple of improved versions.';
-
-    /**
-     * The default question as it shipped before the sides became toggleable;
-     * a saved copy of it is treated as "not customized" so the templated
-     * default keeps tracking the current sides.
-     */
-    public const LEGACY_DEFAULT_QUESTION = 'Compare Russian original vs. my translation. Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; wrap the few most important weak-point phrases in ==double equals==; put improved versions in > blockquotes. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Assess grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version. 4. Give a couple of improved versions.';
-
     public function __construct(
         protected AIModelResolver $modelResolver,
         protected MeaningMatchPresenter $presenter,
@@ -80,14 +67,8 @@ class SimulatorController extends Controller
 
         $saved = auth()->user()->settings?->ui_settings['simulator'] ?? [];
 
-        // A saved question is the user's customization and ships verbatim;
-        // a copy of the pre-template default counts as not customized so it
-        // keeps tracking the language toggle. Null lets the client render
-        // the templated default for the current sides.
-        $savedQuestion = $saved['question'] ?? null;
-        if ($savedQuestion === self::LEGACY_DEFAULT_QUESTION) {
-            $savedQuestion = null;
-        }
+        // The saved question now holds only the user's customized task list
+        // and ships verbatim; null lets the client show the default tasks.
 
         // The model is a per-user preference picked in the profile; the page
         // only shows which model is answering (or that none is chosen).
@@ -114,7 +95,12 @@ class SimulatorController extends Controller
             'defaultLearningSide' => $pinned !== null
                 ? $pinned->readingSideFor(auth()->user()->nativeLanguage()?->id)
                 : 'a',
-            'questionTemplate' => self::DEFAULT_QUESTION,
+            // Raw admin-editable templates: the client substitutes the current
+            // sides for display; the AI endpoints assemble server-side.
+            'questionTemplates' => [
+                'format' => PromptTemplates::format(),
+                'tasks' => PromptTemplates::tasks(),
+            ],
             'showWorkplace' => (bool) ($saved['show_workplace'] ?? true),
             'showQuestion' => (bool) ($saved['show_question'] ?? false),
             'showText' => (bool) ($saved['show_text'] ?? true),
@@ -124,7 +110,7 @@ class SimulatorController extends Controller
                 ? ['id' => $answerModel['id'], 'label' => $answerModel['label']]
                 : null,
             'explanationModelKey' => $this->modelResolver->resolveExplanationModel()['id'] ?? null,
-            'currentQuestion' => $savedQuestion,
+            'currentTasks' => $saved['question'] ?? null,
             'currentText' => $pinnedName !== null
                 ? (string) $pinned->id
                 : ($firstId !== null ? (string) $firstId : ''),
@@ -374,7 +360,7 @@ class SimulatorController extends Controller
         $status = 200;
         $prompt = $request->validated('data') ?? '';
 
-        $instruction = $request->validated('question') ?? '';
+        $instruction = $this->assembleInstruction($request);
         $model = $this->modelResolver->resolveAnswerModel();
 
         if ($model === null) {
@@ -422,7 +408,7 @@ class SimulatorController extends Controller
     public function askAiStreamed(AiQuestionRequest $request): StreamedResponse|JsonResponse
     {
         $prompt = $request->validated('data') ?? '';
-        $instruction = $request->validated('question') ?? '';
+        $instruction = $this->assembleInstruction($request);
         $model = $this->modelResolver->resolveAnswerModel();
 
         if ($model === null) {
@@ -458,6 +444,20 @@ class SimulatorController extends Controller
             'X-Accel-Buffering' => 'no',
             'Connection' => 'keep-alive',
         ]);
+    }
+
+    /**
+     * The system message for an assessment: the admin's format template
+     * (prompt_templates, :base/:learning substituted from the client's
+     * current column language codes) joined with the user's task list.
+     */
+    private function assembleInstruction(AiQuestionRequest $request): string
+    {
+        return PromptTemplates::assemble(
+            $request->validated('tasks'),
+            $request->validated('base'),
+            $request->validated('learning'),
+        );
     }
 
     /**
@@ -543,11 +543,7 @@ class SimulatorController extends Controller
             : '';
 
         $nativeName = auth()->user()->nativeLanguage()?->name ?? 'English';
-        $instruction = 'You are a dictionary assistant for a language learner. '
-            .'Explain the meaning of the word «'.$validated['surface'].'» as it is used in the sentence labelled "Sentence with the word", '
-            .'using the neighbouring sentences only as context. Reply in '.$nativeName.'. '
-            .'Be concise: 2 to 4 sentences. Name the sense that applies here and, when natural, give the closest '
-            .$nativeName.' equivalent word or phrase. Markdown formatting is allowed. Do not repeat the sentences back.';
+        $instruction = PromptTemplates::explanation($validated['surface'], $nativeName);
 
         $question = "Word to explain: «{$validated['surface']}»{$headwordNote}\n\n"
             ."Sentence before:\n".($previous?->content ?? '(not available)')."\n\n"

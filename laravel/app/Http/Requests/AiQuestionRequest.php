@@ -18,7 +18,9 @@ class AiQuestionRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request. The model is not
      * client-supplied: the controller resolves the user's stored answer-model
-     * preference via AIModelResolver::resolveAnswerModel().
+     * preference via AIModelResolver::resolveAnswerModel(). The client sends
+     * only the user's task list plus the current column language codes — the
+     * controller joins them with the admin's format template.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -26,7 +28,9 @@ class AiQuestionRequest extends FormRequest
     {
         return [
             'data' => ['nullable', 'string'],
-            'question' => ['nullable', 'string', 'max:2000'],
+            'tasks' => ['nullable', 'string', 'max:4000'],
+            'base' => ['nullable', 'string', 'max:8'],
+            'learning' => ['nullable', 'string', 'max:8'],
         ];
     }
 }

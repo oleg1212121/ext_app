@@ -150,6 +150,23 @@ markdown-to-HTML conversion emits (paragraph, list item, heading, `em`/`strong`
 run, code, etc.). Signals interactivity with a pointer cursor and an
 accent-tinted background on hover. _Avoid_: html element (implementation term)
 
+**Question template**:
+The admin-owned part of the assessment question — the format-rules
+instruction the learner cannot edit, shown above the question input as
+read-only text. Its `:base`/`:learning` placeholders stand for whichever
+languages currently play the base and learning columns, so the displayed
+text follows the language swap. Edited in the admin panel, not in UI
+settings. _Avoid_: format rules (only its current content), prompt (the
+assembled whole), default question (that was the old single-part text).
+
+**Task list**:
+The learner-editable part of the assessment question — what the reader
+should do with the translation (assessments, corrections, improved
+versions). The learner's customized task list is a UI settings entry;
+clearing it falls back to the admin-managed default. The server joins the
+Question template and the task list into the assessment question it sends.
+_Avoid_: question (that is the assembled whole), tasks, prompt.
+
 # Language Catalog Context
 
 The domain of the admin-managed registry of languages available in the application, surfaced through the Filament `/admin` panel.
@@ -172,7 +189,7 @@ _Avoid_: active language, available language
 The per-user configuration row (one per user) holding the user's durable choices — the **Native language**, the **Interface language**, and **UI settings**. Stored in `user_settings`. _Avoid_: preferences, profile (the page, not the row).
 
 **UI settings**:
-The stable, user-chosen interface configuration inside User settings — simulator layout and panel visibility, font sizes, the selected AI model, the customized assessment question, and panel sizes. A sub-kind of User settings; changes follow the user across devices. See ADR 0024. _Avoid_: simulator cache, UI state (that includes Working state, which is not stored server-side).
+The stable, user-chosen interface configuration inside User settings — simulator layout and panel visibility, font sizes, the selected AI model, the customized assessment task list, and panel sizes. A sub-kind of User settings; changes follow the user across devices. See ADR 0024. _Avoid_: simulator cache, UI state (that includes Working state, which is not stored server-side).
 
 **Working state**:
 The per-device last position on a reading surface — in the simulator, the current entity match, the page reached per alignment, and the last opened row with its revealed halves; in the reader, the per-text **Reading position**. Kept in the browser only, never stored server-side. See ADR 0024 and ADR 0032. _Avoid_: UI settings (durable, cross-device), cache, session.

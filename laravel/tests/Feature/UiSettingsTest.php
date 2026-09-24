@@ -1,11 +1,11 @@
 <?php
 
-use App\Http\Controllers\Bilinguals\SimulatorController;
 use App\Models\AiModel;
 use App\Models\AiProvider;
 use App\Models\User;
 use App\Models\UserApiKey;
 use App\Models\UserSettings;
+use App\Support\PromptTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -74,6 +74,10 @@ test('invalid values are rejected', function () {
     $this->actingAs($user)
         ->patch('/ui-settings', ['reader' => ['font_size' => 5]])
         ->assertInvalid('reader.font_size');
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['simulator' => ['question' => str_repeat('a', 4001)]])
+        ->assertInvalid('simulator.question');
 });
 
 test('simulator page seeds props from saved ui settings', function () {
@@ -97,7 +101,7 @@ test('simulator page seeds props from saved ui settings', function () {
             ->where('fontSize', 34)
             ->where('showText', false)
             ->where('showQuestion', true)
-            ->where('currentQuestion', 'My saved prompt.'));
+            ->where('currentTasks', 'My saved prompt.'));
 });
 
 test('simulator page falls back to defaults when nothing is saved', function () {
@@ -111,10 +115,11 @@ test('simulator page falls back to defaults when nothing is saved', function () 
             ->where('fontSize', 26)
             ->where('showText', true)
             ->where('showQuestion', false)
-            // Nothing saved: currentQuestion is null and the client renders
-            // the :base template for the currently-toggled sides.
-            ->where('currentQuestion', null)
-            ->where('questionTemplate', SimulatorController::DEFAULT_QUESTION));
+            // Nothing saved: currentTasks is null and the client shows the
+            // default task list under the live format template.
+            ->where('currentTasks', null)
+            ->where('questionTemplates.format', PromptTemplates::FORMAT_FALLBACK)
+            ->where('questionTemplates.tasks', PromptTemplates::TASKS_FALLBACK));
 });
 
 test('simulator model choice no longer lives in ui settings', function () {

@@ -24,7 +24,7 @@ it('rate-limits the AI question endpoint after 20 requests per minute', function
 
     $payload = [
         'data' => "Russian line\nEnglish line",
-        'question' => '',
+        'tasks' => '',
     ];
 
     // First 20 requests succeed.

@@ -13,6 +13,8 @@ return [
     'bilinguals.text' => ['en' => 'Text', 'ru' => 'Текст'],
     'bilinguals.workplace' => ['en' => 'Workplace', 'ru' => 'Рабочее поле'],
     'bilinguals.question' => ['en' => 'Question', 'ru' => 'Вопрос'],
+    'bilinguals.question_template' => ['en' => 'Template', 'ru' => 'Шаблон'],
+    'bilinguals.question_reset' => ['en' => 'Reset', 'ru' => 'Сбросить'],
     'bilinguals.ai' => ['en' => 'AI', 'ru' => 'ИИ'],
     'bilinguals.rows_count' => ['en' => '· :total rows', 'ru' => '· строк: :total'],
     'bilinguals.previous' => ['en' => 'Previous', 'ru' => 'Назад'],

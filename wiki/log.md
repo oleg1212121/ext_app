@@ -1,5 +1,52 @@
 # Directory Update Log
 
+## 2026-09-24 (feat: word-explanation instruction joins the prompt templates)
+
+The Context explanation's system message — the last hardcoded AI prompt on
+the reading surfaces — moved from an inline string in
+`SimulatorController::explainWord()` into `prompt_templates` as
+`word.explanation` (ADR 0040 extended): `PromptTemplates::explanation()`
+substitutes `:word` (the clicked surface) and `:native` (the user's Native
+language name) into the admin-edited row, with `EXPLANATION_FALLBACK`
+covering an unseeded/blanked row. Seeder gained the third row; the Filament
+Prompt Templates hint now lists both placeholder sets
+(`:base`/`:learning`, `:word`/`:native`). Tests: `PromptTemplateTest`
+covers fallback + seeded substitution; `AiWordExplainEndpointTest` asserts
+a seeded custom template reaches the resolver as the instruction.
+`bilinguals-simulator.md`, `schema-overview.md`, ADR 0040 updated; dev DB
+re-seeded.
+
+## 2026-09-24 (feat: assessment question split into admin template + user task list)
+
+The single editable question textarea split in two (ADR 0040). The
+**Question template** — the format-rules text — moved into the new seeded
+`prompt_templates` table (`App\Models\PromptTemplate`,
+`App\Support\PromptTemplates` with fallback constants for blank/missing
+rows; Filament **Prompt Templates** resource, List+Edit only — keys are
+code contracts) and renders on the page as read-only muted text above the
+input, substituting **both** `:base` and `:learning` with the current
+columns' language names on every render, so it now visibly follows the
+language toggle (the old uncontrolled textarea froze its text). The
+**Task list** — the "Tasks: 1…4" part — keeps a textarea with the default
+from `simulator.question.tasks` plus a new **Reset** affordance (bumps a
+remount key; `customTasks: null` restores the default). Assembly moved
+server-side: `/ai/question` + `/ai/question/stream` now take
+`{tasks, base, learning}` (codes) instead of `question`, and
+`SimulatorController` joins the DB template + tasks via
+`PromptTemplates::assemble` (empty tasks → default) into the system
+message. Length caps aligned at 4000 (`AiQuestionRequest` tasks,
+`UpdateUiSettingsRequest` simulator.question — fixes the old
+2000-vs-8000 mismatch that could 422 a long saved question). UI settings
+key stays `question` (now holding the tasks customization); the
+`LEGACY_DEFAULT_QUESTION` normalization is gone (single-user deployment —
+the old full text is treated as a verbatim task-list edit). Tests:
+`SimulatorPinnedMatchTest` / `UiSettingsTest` re-pointed to
+`questionTemplates`/`currentTasks`; AI endpoint tests assert the assembled
+instruction incl. a seeded custom template; new `PromptTemplateTest`.
+Glossary: **Question template** / **Task list** added, **UI settings**
+reworded; `bilinguals-simulator.md` and `schema-overview.md` updated;
+models reference regenerated via `wiki:sync`.
+
 ## 2026-09-24 (feat: simulator AI model/setup link moved into the AI Response panel)
 
 The simulator's toolbar three-state block — model label / "Choose an AI
