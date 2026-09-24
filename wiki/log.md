@@ -1,5 +1,25 @@
 # Directory Update Log
 
+## 2026-09-24 (feat: simulator AI model/setup link moved into the AI Response panel)
+
+The simulator's toolbar three-state block — model label / "Choose an AI
+model" / "Add an API key", each a profile link — moved into the **AI
+Response panel header** as the second line under the title. The header was
+reshaped: the "Reader's gloss" eyebrow is gone (ui-string retired), the
+"AI Response" title grew to `text-lg`, and below it sits whichever state
+applies, now as short labels with the full sentences as tooltips
+(new ui-strings `bilinguals.add_api_key_short` / `choose_model_short`;
+all three states deep-link `/profile?tab=ai`, the no-key one previously
+linked bare `/profile`). To make the guidance reachable, the AI panel is no
+longer gated on `canUseAi`: `showAI` seeds purely from the saved
+`show_ai` setting, the toolbar AI toggle renders for everyone, and keyless
+users get the full "Add an API key in your Profile…" sentence as a single
+link in the panel body (the fragment-hint empty state stays for
+token-holders). Toolbar link block removed with no fallback — hiding the
+panel hides the CTA by user choice. `SimulatorApiKeyTest` keyless
+expectation flips to `showAI: true`; `bilinguals-simulator.md` and the
+glossary **Gloss** entry (panel renamed) updated.
+
 ## 2026-09-24 (feat: Library dropdown — works URL branches, tabs → pages)
 
 The Library moved from a single `/library` link with per-work tabs to a

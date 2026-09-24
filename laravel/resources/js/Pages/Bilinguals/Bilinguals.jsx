@@ -1,5 +1,5 @@
 import React from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx'
 import Spinner from '../../Components/Spinner.jsx'
 import Select from "../../Components/Forms/Select.jsx";
@@ -593,32 +593,6 @@ const Bilinguals = (props) => {
                         {t('bilinguals.title')} <span className="text-[var(--wbench-rule)] dark:text-[var(--wbench-rule-night)]">·</span> {languages.a?.code ?? 'a'}&nbsp;↔&nbsp;{languages.b?.code ?? 'b'}
                     </span>
                     <span className={HAIRLINE} aria-hidden="true"/>
-                    {canUseAi ? (
-                        answerModel ? (
-                            <Link
-                                href="/profile?tab=ai"
-                                className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
-                                title={t('bilinguals.change_model')}
-                            >
-                                {answerModel.label}
-                            </Link>
-                        ) : (
-                            <Link
-                                href="/profile?tab=ai"
-                                className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
-                            >
-                                {t('bilinguals.choose_model')}
-                            </Link>
-                        )
-                    ) : (
-                        <Link
-                            href="/profile"
-                            className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
-                        >
-                            {t('bilinguals.add_api_key')}
-                        </Link>
-                    )}
-                    <span className={HAIRLINE} aria-hidden="true"/>
                     {pinnedMatch ? (
                         <span className="font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] max-w-[22rem] truncate whitespace-nowrap">
                             {pinnedMatch.text}
@@ -720,21 +694,19 @@ const Bilinguals = (props) => {
                             </svg>
                             <Underline isActive={highlightWords}/>
                         </button>
-                        {canUseAi && (
-                            <button
-                                type="button"
-                                className={tabClass(showAI)}
-                                aria-label={t('bilinguals.ai')}
-                                aria-pressed={showAI}
-                                title={t('bilinguals.ai')}
-                                onClick={() => setShowAI(!showAI)}
-                            >
-                                <svg className={panelToggleIconClass(showAI)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m8 8-4 4 4 4m8 0 4-4-4-4m-2-3-4 14"/>
-                                </svg>
-                                <Underline isActive={showAI}/>
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            className={tabClass(showAI)}
+                            aria-label={t('bilinguals.ai')}
+                            aria-pressed={showAI}
+                            title={t('bilinguals.ai')}
+                            onClick={() => setShowAI(!showAI)}
+                        >
+                            <svg className={panelToggleIconClass(showAI)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m8 8-4 4 4 4m8 0 4-4-4-4m-2-3-4 14"/>
+                            </svg>
+                            <Underline isActive={showAI}/>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -815,7 +787,7 @@ const Bilinguals = (props) => {
                     }
                 </div>
                 {showAI === true &&
-                    <AI aiAnswer={aiAnswer} pending={pending} aiError={aiError} onRetry={retryAsk} width={aiPanelWidth} onWidthChange={setAiPanelWidth}/>
+                    <AI aiAnswer={aiAnswer} pending={pending} aiError={aiError} onRetry={retryAsk} canUseAi={canUseAi} answerModel={answerModel} width={aiPanelWidth} onWidthChange={setAiPanelWidth}/>
                 }
             </div>
         </div>

@@ -1,3 +1,4 @@
+import {Link} from '@inertiajs/react';
 import {useI18n} from '../../../i18n';
 
 export default function AI(props) {
@@ -33,6 +34,33 @@ export default function AI(props) {
     const hasAnswer = Boolean(props.aiAnswer);
     const isLoading = props.pending === true;
     const hasError = Boolean(props.aiError);
+    // The model link doubles as the setup call to action: whichever of the
+    // three states the user is in, the link points at the profile's AI tab.
+    const modelLink = !props.canUseAi ? (
+        <Link
+            href="/profile?tab=ai"
+            className="truncate font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
+            title={t('bilinguals.add_api_key')}
+        >
+            {t('bilinguals.add_api_key_short')}
+        </Link>
+    ) : props.answerModel ? (
+        <Link
+            href="/profile?tab=ai"
+            className="truncate font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
+            title={t('bilinguals.change_model')}
+        >
+            {props.answerModel.label}
+        </Link>
+    ) : (
+        <Link
+            href="/profile?tab=ai"
+            className="truncate font-[var(--wbench-mono)] text-[11px] tracking-wide text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
+            title={t('bilinguals.choose_model')}
+        >
+            {t('bilinguals.choose_model_short')}
+        </Link>
+    );
 
     return (
         <div
@@ -43,8 +71,8 @@ export default function AI(props) {
             <div className="min-w-0 flex-1 flex flex-col overflow-hidden border-l border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
                 <div className="relative flex-none flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]">
                     <div className="flex flex-col gap-0.5 min-w-0">
-                        <span className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">{t('bilinguals.readers_gloss')}</span>
-                        <span className="font-[var(--wbench-serif)] text-sm tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] truncate">{t('bilinguals.ai_response')}</span>
+                        <span className="font-[var(--wbench-serif)] text-lg tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] truncate">{t('bilinguals.ai_response')}</span>
+                        {modelLink}
                     </div>
                     {hasAnswer && !isLoading && !hasError && (
                         <button
@@ -93,6 +121,20 @@ export default function AI(props) {
                             <div id="ai_answer_div"
                                  className="resizeable_element ai-prose max-w-none break-words"
                                  dangerouslySetInnerHTML={{__html: (props.aiAnswer ?? '') + (isLoading ? '<span class="ai-stream-cursor"></span>' : '')}}></div>
+                        </div>
+                    ) : !props.canUseAi ? (
+                        <div className="px-4 py-6 max-w-none">
+                            <div className="flex items-start gap-3">
+                                <span className="mt-1 shrink-0 inline-block h-5 w-5 border border-[var(--wbench-accent)] dark:border-[var(--wbench-accent-night)] text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] font-[var(--wbench-mono)] text-[10px] leading-[18px] text-center" aria-hidden="true">§</span>
+                                <p className="font-[var(--wbench-serif)] text-base text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] leading-relaxed">
+                                    <Link
+                                        href="/profile?tab=ai"
+                                        className="text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
+                                    >
+                                        {t('bilinguals.add_api_key')}
+                                    </Link>
+                                </p>
+                            </div>
                         </div>
                     ) : (
                         <div className="px-4 py-6 max-w-none">

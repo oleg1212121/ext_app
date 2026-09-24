@@ -140,7 +140,7 @@ The domain of the bilinguals simulator's AI-assisted assessment surface — the
 ## Language
 
 **Gloss**:
-The reader's AI answer text rendered in the Reader's gloss panel of the
+The reader's AI answer text rendered in the AI Response panel of the
 bilinguals simulator. Not to be confused with a dictionary gloss.
 _Avoid_: AI answer (transport/implementation term), response
 

@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
 stale_after: 2026-12-23
-generated: { by: agent:zcode, at: 2026-09-24T20:00:00+03:00 }
+generated: { by: agent:zcode, at: 2026-09-24T21:30:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -44,11 +44,18 @@ variants.
 * The page carries **no model picker** (ADR 0035): the answer model is a
   per-user preference picked in the Profile's AI Models tab
   (`user_settings.ai_model_id`, resolved server-side by
-  `AIModelResolver::resolveAnswerModel()`). The toolbar shows the effective
-  model's label as a link to `/profile?tab=ai`; with API keys stored but no
-  model chosen it shows "Choose an AI model" (asking is blocked with the same
-  guidance), and with no keys the "Add an API key in your Profile" empty
-  state. The default assessment prompt comes from
+  `AIModelResolver::resolveAnswerModel()`). The AI Response panel header
+  shows the setup state below its title, each state a link to
+  `/profile?tab=ai`: the effective model's label (tooltip "Change the model
+  in your Profile"), or — with API keys stored but no model chosen — the
+  short "Choose a model…" label (full-sentence tooltip; asking is blocked
+  with the same guidance), or — with no keys — the short "Add an API key…"
+  label (full-sentence tooltip). The panel itself is **not AI-gated**: it
+  renders for every approved user per the saved `show_ai` setting, and its
+  toggle button is always in the toolbar, so keyless users always meet the
+  add-key call to action (the panel body shows the full "Add an API key…"
+  sentence as a link while `canUseAi` is false). The default assessment
+  prompt comes from
   `SimulatorController::DEFAULT_QUESTION` — a `:base` **template**: the
   client substitutes the current base column's language name and regenerates
   it on toggle. A saved custom question ships verbatim and is never
@@ -177,8 +184,8 @@ template; client state on the picker entry, updated from each `/text`
 response), `defaultLearningSide`
 ('a'|'b' from the shared side rule), `questionTemplate`
 (`DEFAULT_QUESTION` with its `:base` placeholder), `answerModel`
-(`{id, label}` or null — the resolved answer model shown in the toolbar),
-`explanationModelKey` (resolved explanation model id, only discriminates the
+(`{id, label}` or null — the resolved answer model shown in the AI panel
+header), `explanationModelKey` (resolved explanation model id, only discriminates the
 word popup's client cache), `show*` feature flags
 (`showWorkplace`, `showQuestion`, `showText`, `showAI`), plus the saved UI
 settings seeds (`fontSize`, `aiPanelWidth`, `workplaceHeight`, and the

@@ -118,7 +118,7 @@ class SimulatorController extends Controller
             'showWorkplace' => (bool) ($saved['show_workplace'] ?? true),
             'showQuestion' => (bool) ($saved['show_question'] ?? false),
             'showText' => (bool) ($saved['show_text'] ?? true),
-            'showAI' => $canUseAi && (bool) ($saved['show_ai'] ?? true),
+            'showAI' => (bool) ($saved['show_ai'] ?? true),
             'canUseAi' => $canUseAi,
             'answerModel' => $answerModel !== null
                 ? ['id' => $answerModel['id'], 'label' => $answerModel['label']]

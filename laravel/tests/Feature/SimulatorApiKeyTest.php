@@ -79,6 +79,8 @@ it('renders an empty state when the user has no keys', function () {
             ->where('answerModel', null)
             ->where('explanationModelKey', null)
             ->where('canUseAi', false)
-            ->where('showAI', false)
+            // The panel itself is not AI-gated anymore: keyless users see it
+            // with the add-an-API-key call to action in its header.
+            ->where('showAI', true)
         );
 });
