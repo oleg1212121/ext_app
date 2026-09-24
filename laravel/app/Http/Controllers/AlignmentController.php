@@ -10,7 +10,7 @@ use Inertia\Response;
 
 /**
  * Renders the alignment editor page. The browse/create surface lives under
- * each work (/library/{work}?tab=alignments, ADR 0036); only the editor
+ * each work (/works/{work}/alignments, ADR 0036/0039); only the editor
  * route stays global.
  */
 class AlignmentController extends Controller

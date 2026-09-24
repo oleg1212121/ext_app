@@ -28,26 +28,35 @@ if (! function_exists('adminUser')) {
     }
 }
 
-test('guest is redirected from the library', function () {
-    $this->get('/library')->assertRedirect();
+test('guest is redirected from the works pages', function () {
+    $this->get('/works')->assertRedirect();
 });
 
-test('unapproved user is redirected from the library', function () {
+test('unapproved user is redirected from the works pages', function () {
     $user = User::factory()->create(['is_approved' => false]);
 
-    $this->actingAs($user)->get('/library')->assertRedirect('/pending-approval');
+    $this->actingAs($user)->get('/works')->assertRedirect('/pending-approval');
 });
 
-test('the legacy entities browse pages redirect to the library', function () {
+test('the legacy library URLs are gone', function () {
+    $user = approvedUser();
+
+    $this->actingAs($user)->get('/library')->assertNotFound();
+    $this->actingAs($user)->get('/library/1')->assertNotFound();
+    $this->actingAs($user)->get('/library/1?tab=alignments')->assertNotFound();
+    $this->actingAs($user)->post('/library', [])->assertNotFound();
+});
+
+test('the legacy entities browse pages redirect to the works entities branch', function () {
     createLanguages();
 
     $this->actingAs(approvedUser())
         ->get('/entities')
-        ->assertRedirect('/library');
+        ->assertRedirect('/works/entities');
 
     $this->actingAs(approvedUser())
         ->get('/entities/en')
-        ->assertRedirect('/library');
+        ->assertRedirect('/works/entities');
 });
 
 test('index lists works including a work with no entities', function () {
@@ -56,15 +65,17 @@ test('index lists works including a work with no entities', function () {
     createEntity('en', null, ['name' => 'Alpha EN']);
 
     $this->actingAs(approvedUser())
-        ->get('/library')
+        ->get('/works')
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('Library/Index')
+            ->where('variant', 'catalog')
             ->has('works', 2)
             ->where('works.0.title', 'Alpha')
             ->where('works.0.author', 'An Author')
             ->where('works.0.original_language.name', 'English')
             ->where('works.0.entities_count', 0)
+            ->where('works.0.alignments_count', 0)
             ->where('works.1.entities_count', 1)
             ->where('meta.total', 2));
 });
@@ -82,16 +93,79 @@ test('work card counts only entities the user can read', function () {
     $assertCount = fn (int $count) => fn ($page) => $page->where('works.0.entities_count', $count);
 
     $this->actingAs($user)
-        ->get('/library')
+        ->get('/works')
         ->assertInertia($assertCount(2));
 
     $this->actingAs(approvedUser())
-        ->get('/library')
+        ->get('/works')
         ->assertInertia($assertCount(1));
 
     $this->actingAs(adminUser())
-        ->get('/library')
+        ->get('/works')
         ->assertInertia($assertCount(3));
+});
+
+test('the entities branch list shows every work with readable entity counts', function () {
+    createLanguages();
+    createWork(['title' => 'Alpha']);
+    createEntity('en', null, ['name' => 'Alpha EN']);
+
+    $this->actingAs(approvedUser())
+        ->get('/works/entities')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Library/Index')
+            ->where('variant', 'entities')
+            ->has('works', 2)
+            ->where('works.0.entities_count', 0)
+            ->where('works.1.entities_count', 1)
+            ->where('meta.total', 2));
+});
+
+test('the alignments branch list counts only matches the user can read', function () {
+    createLanguages();
+    $user = approvedUser();
+    $work = createWork(['title' => 'Counted']);
+    createWork(['title' => 'Empty of matches']);
+
+    $openEn = createEntity('en', $work, ['name' => 'Open EN', 'is_restricted' => false]);
+    $openRu = createEntity('ru', $work, ['name' => 'Open RU', 'is_restricted' => false]);
+    createEntityMatch($openEn, $openRu);
+
+    $secretEn = createEntity('en', $work, ['name' => 'Secret EN', 'is_restricted' => true]);
+    $secretRu = createEntity('ru', $work, ['name' => 'Secret RU', 'is_restricted' => true]);
+    createEntityMatch($secretEn, $secretRu);
+
+    $assertCount = fn (int $count) => fn ($page) => $page
+        ->where('variant', 'alignments')
+        ->where('works.0.alignments_count', $count);
+
+    // Works stay a public catalog: even a work with zero readable matches is listed.
+    $this->actingAs($user)
+        ->get('/works/alignments')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Library/Index')
+            ->has('works', 2)
+            ->where('works.0.alignments_count', 1)
+            ->where('works.1.title', 'Empty of matches')
+            ->where('works.1.alignments_count', 0));
+
+    // Grants on both sides of the restricted match make it count.
+    $secretEn->grantedUsers()->attach($user->id);
+    $secretRu->grantedUsers()->attach($user->id);
+
+    $this->actingAs($user)
+        ->get('/works/alignments')
+        ->assertInertia($assertCount(2));
+
+    $this->actingAs(approvedUser())
+        ->get('/works/alignments')
+        ->assertInertia($assertCount(1));
+
+    $this->actingAs(adminUser())
+        ->get('/works/alignments')
+        ->assertInertia($assertCount(2));
 });
 
 test('index search matches works by title or author', function () {
@@ -101,20 +175,20 @@ test('index search matches works by title or author', function () {
     createWork(['title' => 'Crime and Punishment', 'author' => 'Dostoevsky']);
 
     $this->actingAs(approvedUser())
-        ->get('/library?q=tolstoy')
+        ->get('/works?q=tolstoy')
         ->assertInertia(fn ($page) => $page
             ->where('q', 'tolstoy')
             ->has('works', 2)
             ->where('meta.total', 2));
 
     $this->actingAs(approvedUser())
-        ->get('/library?q=crime')
+        ->get('/works?q=crime')
         ->assertInertia(fn ($page) => $page
             ->has('works', 1)
             ->where('works.0.title', 'Crime and Punishment'));
 
     $this->actingAs(approvedUser())
-        ->get('/library?q=nothing-matches')
+        ->get('/works?q=nothing-matches')
         ->assertInertia(fn ($page) => $page
             ->has('works', 0)
             ->where('meta.total', 0));
@@ -128,7 +202,7 @@ test('index paginates works', function () {
     }
 
     $this->actingAs(approvedUser())
-        ->get('/library')
+        ->get('/works')
         ->assertInertia(fn ($page) => $page
             ->has('works', 15)
             ->where('meta.current_page', 1)
@@ -136,13 +210,54 @@ test('index paginates works', function () {
             ->where('meta.total', 16));
 
     $this->actingAs(approvedUser())
-        ->get('/library?page=2')
+        ->get('/works?page=2')
         ->assertInertia(fn ($page) => $page
             ->has('works', 1)
             ->where('meta.current_page', 2));
 });
 
-test('work page lists only readable entities of the work', function () {
+test('a work landing page shows its metadata and readable counts', function () {
+    createLanguages();
+    $work = createWork([
+        'title' => 'Landing',
+        'author' => 'Author',
+        'description' => 'A description',
+        'original_language_id' => Language::query()->where('code', 'ru')->value('id'),
+    ]);
+    $user = approvedUser();
+
+    createEntity('en', $work, ['name' => 'Open EN', 'is_restricted' => false]);
+    $granted = createEntity('ru', $work, ['name' => 'Granted RU', 'is_restricted' => true]);
+    $granted->grantedUsers()->attach($user->id);
+    createEntity('ru', $work, ['name' => 'Secret RU', 'is_restricted' => true]);
+
+    $openEn = createEntity('en', $work, ['name' => 'Pair EN', 'is_restricted' => false]);
+    $openRu = createEntity('ru', $work, ['name' => 'Pair RU', 'is_restricted' => false]);
+    createEntityMatch($openEn, $openRu);
+
+    $this->actingAs($user)
+        ->get("/works/{$work->id}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Library/ShowWork')
+            ->where('work.title', 'Landing')
+            ->where('work.author', 'Author')
+            ->where('work.description', 'A description')
+            ->where('work.original_language.code', 'ru')
+            ->where('work.entities_count', 4)
+            ->where('work.alignments_count', 1)
+            ->missing('tab')
+            ->missing('entities')
+            ->missing('alignments'));
+});
+
+test('a work landing page 404s for an unknown work', function () {
+    $this->actingAs(approvedUser())
+        ->get('/works/999999')
+        ->assertNotFound();
+});
+
+test('the work entities page lists only readable entities of the work', function () {
     createLanguages();
     $work = createWork(['title' => 'Shown', 'author' => 'Author', 'description' => 'A description']);
     $user = approvedUser();
@@ -154,13 +269,12 @@ test('work page lists only readable entities of the work', function () {
     createEntity('en', null, ['name' => 'Other work entity', 'is_restricted' => false]);
 
     $this->actingAs($user)
-        ->get("/library/{$work->id}")
+        ->get("/works/{$work->id}/entities")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->component('Library/ShowWork')
+            ->component('Library/WorkEntities')
             ->where('work.title', 'Shown')
-            ->where('work.author', 'Author')
-            ->where('work.description', 'A description')
+            ->where('work.id', $work->id)
             ->has('entities', 2)
             ->where('entities.0.name', 'Granted RU')
             ->where('entities.0.language.code', 'ru')
@@ -171,12 +285,12 @@ test('work page lists only readable entities of the work', function () {
     expect($open->work_id)->toBe($work->id);
 });
 
-test('work page renders an empty work with zero entities', function () {
+test('the work entities page renders an empty work with zero entities', function () {
     createLanguages();
     $work = createWork(['title' => 'Empty']);
 
     $this->actingAs(approvedUser())
-        ->get("/library/{$work->id}")
+        ->get("/works/{$work->id}/entities")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('work.title', 'Empty')
@@ -184,58 +298,26 @@ test('work page renders an empty work with zero entities', function () {
             ->where('meta.total', 0));
 });
 
-test('work page search matches entities by name or label', function () {
+test('the work entities page search matches entities by name or label', function () {
     createLanguages();
     $work = createWork(['title' => 'Searched']);
     createEntity('en', $work, ['name' => 'Alpha', 'label' => 'Garnett translation', 'is_restricted' => false]);
     createEntity('en', $work, ['name' => 'Beta', 'is_restricted' => false]);
 
     $this->actingAs(approvedUser())
-        ->get("/library/{$work->id}?q=alpha")
+        ->get("/works/{$work->id}/entities?q=alpha")
         ->assertInertia(fn ($page) => $page
             ->has('entities', 1)
             ->where('entities.0.name', 'Alpha'));
 
     $this->actingAs(approvedUser())
-        ->get("/library/{$work->id}?q=garnett")
+        ->get("/works/{$work->id}/entities?q=garnett")
         ->assertInertia(fn ($page) => $page
             ->has('entities', 1)
             ->where('entities.0.name', 'Alpha'));
 });
 
-test('work page 404s for an unknown work', function () {
-    $this->actingAs(approvedUser())
-        ->get('/library/999999')
-        ->assertNotFound();
-});
-
-test('work page tabs default to entities and honor the query param', function () {
-    createLanguages();
-    $work = createWork(['title' => 'Tabbed']);
-
-    $this->actingAs(approvedUser())
-        ->get("/library/{$work->id}")
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->where('tab', 'entities')
-            ->has('entities', 0)
-            ->where('meta.total', 0));
-
-    $this->actingAs(approvedUser())
-        ->get("/library/{$work->id}?tab=alignments")
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->where('tab', 'alignments')
-            ->has('alignments', 0)
-            ->where('alignments_meta.total', 0));
-
-    $this->actingAs(approvedUser())
-        ->get("/library/{$work->id}?tab=bogus")
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page->where('tab', 'entities'));
-});
-
-test('alignments tab search matches either side entity name', function () {
+test('the work alignments page search matches either side entity name', function () {
     createLanguages();
     $work = createWork(['title' => 'Aligned']);
     $user = approvedUser();
@@ -246,26 +328,26 @@ test('alignments tab search matches either side entity name', function () {
     );
 
     $this->actingAs($user)
-        ->get("/library/{$work->id}?tab=alignments&q=garnett")
+        ->get("/works/{$work->id}/alignments?q=garnett")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->where('tab', 'alignments')
+            ->component('Library/WorkAlignments')
             ->has('alignments', 1)
             ->where('alignments.0.id', $match->id)
             ->where('q', 'garnett'));
 
     $this->actingAs($user)
-        ->get("/library/{$work->id}?tab=alignments&q=".rawurlencode('перевод'))
+        ->get("/works/{$work->id}/alignments?q=".rawurlencode('перевод'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->has('alignments', 1));
 
     $this->actingAs($user)
-        ->get("/library/{$work->id}?tab=alignments&q=nothing")
+        ->get("/works/{$work->id}/alignments?q=nothing")
         ->assertOk()
         ->assertInertia(fn ($page) => $page->has('alignments', 0));
 });
 
-test('alignments tab paginates', function () {
+test('the work alignments page paginates', function () {
     createLanguages();
     $work = createWork(['title' => 'Long shelf']);
 
@@ -277,7 +359,7 @@ test('alignments tab paginates', function () {
     }
 
     $this->actingAs(approvedUser())
-        ->get("/library/{$work->id}?tab=alignments")
+        ->get("/works/{$work->id}/alignments")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->has('alignments', 15)
@@ -286,7 +368,7 @@ test('alignments tab paginates', function () {
             ->where('alignments_meta.total', 16));
 
     $this->actingAs(approvedUser())
-        ->get("/library/{$work->id}?tab=alignments&page=2")
+        ->get("/works/{$work->id}/alignments?page=2")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->has('alignments', 1)
@@ -302,7 +384,7 @@ test('alignment reader target prefers the language the user is learning', functi
 
     // Native English → read the Russian side.
     $this->actingAs(approvedUser())
-        ->get("/library/{$work->id}?tab=alignments")
+        ->get("/works/{$work->id}/alignments")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('alignments.0.reader_target.lang', 'ru')
@@ -313,7 +395,7 @@ test('alignment reader target prefers the language the user is learning', functi
     $russian->settings()->update(['native_language_id' => Language::query()->where('code', 'ru')->value('id')]);
 
     $this->actingAs($russian)
-        ->get("/library/{$work->id}?tab=alignments")
+        ->get("/works/{$work->id}/alignments")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('alignments.0.reader_target.lang', 'en')
@@ -340,7 +422,7 @@ test('alignment reader target tiebreaks on the original language', function () {
     $french->settings()->update(['native_language_id' => $fr->id]);
 
     $this->actingAs($french)
-        ->get("/library/{$work->id}?tab=alignments")
+        ->get("/works/{$work->id}/alignments")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('alignments.0.reader_target.lang', 'en')
@@ -357,7 +439,7 @@ test('alignment reader target falls back to the a side for same-language pairs',
     // Both sides are the reader's native language: no learning side exists,
     // so the original side (a, for this all-English work) is opened.
     $this->actingAs(approvedUser())
-        ->get("/library/{$work->id}?tab=alignments")
+        ->get("/works/{$work->id}/alignments")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('alignments.0.reader_target.lang', 'en')
@@ -368,19 +450,19 @@ test('create work form renders with enabled languages', function () {
     createLanguages();
 
     $this->actingAs(approvedUser())
-        ->get('/library/create')
+        ->get('/works/create')
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('Library/CreateWork')
             ->has('languages', 2));
 });
 
-test('store work creates the work and redirects to its page', function () {
+test('store work creates the work and redirects to its landing page', function () {
     createLanguages();
     $languageId = Language::query()->where('code', 'en')->value('id');
 
     $response = $this->actingAs(approvedUser())
-        ->post('/library', [
+        ->post('/works', [
             'title' => 'New Work',
             'author' => 'Someone',
             'description' => 'Freshly added',
@@ -391,14 +473,14 @@ test('store work creates the work and redirects to its page', function () {
     expect($work->author)->toBe('Someone')
         ->and($work->original_language_id)->toBe($languageId);
 
-    $response->assertRedirect("/library/{$work->id}");
+    $response->assertRedirect("/works/{$work->id}");
 });
 
 test('store work validates title and original language', function () {
     createLanguages();
 
     $this->actingAs(approvedUser())
-        ->post('/library', [])
+        ->post('/works', [])
         ->assertSessionHasErrors(['title', 'original_language_id']);
 
     $disabled = Language::query()->create([
@@ -410,7 +492,7 @@ test('store work validates title and original language', function () {
     ]);
 
     $this->actingAs(approvedUser())
-        ->post('/library', ['title' => 'Valid', 'original_language_id' => $disabled->id])
+        ->post('/works', ['title' => 'Valid', 'original_language_id' => $disabled->id])
         ->assertSessionHasErrors('original_language_id');
 });
 
@@ -419,7 +501,7 @@ test('create entity form renders scoped to the work', function () {
     $work = createWork(['title' => 'Scoped']);
 
     $this->actingAs(approvedUser())
-        ->get("/library/{$work->id}/entities/create")
+        ->get("/works/{$work->id}/entities/create")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('Library/CreateEntity')
@@ -434,7 +516,7 @@ test('store entity creates a restricted entity under the work with a creator gra
     $languageId = Language::query()->where('code', 'en')->value('id');
 
     $response = $this->actingAs($user)
-        ->post("/library/{$work->id}/entities", [
+        ->post("/works/{$work->id}/entities", [
             'language_id' => $languageId,
             'name' => 'Library Entity',
             'description' => 'From the library form',
@@ -468,7 +550,7 @@ test('store entity with a file stores it and dispatches the pipeline', function 
     $file = UploadedFile::fake()->create('text.txt', 20, 'text/plain');
 
     $response = $this->actingAs(approvedUser())
-        ->post("/library/{$work->id}/entities", [
+        ->post("/works/{$work->id}/entities", [
             'language_id' => $languageId,
             'name' => 'With File',
             'file' => $file,
@@ -488,17 +570,17 @@ test('store entity validates the language and name', function () {
     $work = createWork(['title' => 'Validation Host']);
 
     $this->actingAs(approvedUser())
-        ->post("/library/{$work->id}/entities", ['name' => 'No Language'])
+        ->post("/works/{$work->id}/entities", ['name' => 'No Language'])
         ->assertSessionHasErrors('language_id');
 
     $this->actingAs(approvedUser())
-        ->post("/library/{$work->id}/entities", [
+        ->post("/works/{$work->id}/entities", [
             'language_id' => Language::query()->where('code', 'en')->value('id'),
         ])
         ->assertSessionHasErrors('name');
 
     $this->actingAs(approvedUser())
-        ->post('/library/999999/entities', [
+        ->post('/works/999999/entities', [
             'language_id' => Language::query()->where('code', 'en')->value('id'),
             'name' => 'Nowhere',
         ])

@@ -71,7 +71,14 @@ export default function NavBar() {
                 {href: '/reader', label: t('nav.reader')},
                 {href: '/simulator', label: t('nav.simulator')},
             ]},
-            {href: '/library', label: t('nav.library')},
+            // The works branches share the /works prefix, so each child
+            // carries its own URL match rule instead of naive prefix matching
+            // (works.*: the catalog, its create form, and work landing pages).
+            {label: t('nav.library'), children: [
+                {href: '/works', label: t('nav.works'), match: (u) => u === '/works' || u === '/works/create' || /^\/works\/\d+\/?$/.test(u)},
+                {href: '/works/entities', label: t('nav.entities'), match: (u) => u.startsWith('/works/entities') || /^\/works\/\d+\/entities/.test(u)},
+                {href: '/works/alignments', label: t('nav.alignments'), match: (u) => u.startsWith('/works/alignments') || /^\/works\/\d+\/alignments/.test(u)},
+            ]},
             {label: t('nav.puzzles'), children: [{href: '/crossword', label: t('nav.crossword')}]},
             ...(canAccessAdminPanel ? [{href: '/admin', label: t('nav.admin'), external: true}] : []),
         ]
@@ -83,9 +90,16 @@ export default function NavBar() {
         return url === href || url.startsWith(`${href}/`)
     }
 
+    // A child either carries its own match rule (the works branches, which
+    // share the /works prefix) or falls back to prefix matching.
+    const childActive = (child) => {
+        if (!url) return false
+        return child.match ? child.match(url) : isActive(child.href)
+    }
+
     const hasActiveChild = (item) => {
         if (!item.children) return false
-        return item.children.some((c) => isActive(c.href))
+        return item.children.some(childActive)
     }
 
     const logoHref = '/'
@@ -287,7 +301,7 @@ export default function NavBar() {
                                         {expandedMenu === l.label && (
                                             <ul role="list" className="pl-4 pb-1 divide-y divide-[var(--color-hairline)]/50 dark:divide-[var(--color-hairline-night)]/50">
                                                 {l.children.map((child) => {
-                                                    const active = isActive(child.href)
+                                                    const active = childActive(child)
                                                     return (
                                                         <li key={child.href}>
                                                             <Link

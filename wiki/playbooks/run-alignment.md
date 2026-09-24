@@ -70,10 +70,10 @@ sources:
    e5-small signatures are incompatible — null them out first
    (`UPDATE entities SET signature = NULL;`), the command
    only processes entities with NULL signatures.
-3. **Align** — create an `EntityMatch` (`status='pending'`): via the work
-   page's **Alignments tab** → "Add alignment"
-   (`/library/{work}/alignments/create`,
-   `library.alignments.create/store` — the work is the page, no work
+3. **Align** — create an `EntityMatch` (`status='pending'`): via the work's
+   **Alignments page** → "Add alignment"
+   (`/works/{work}/alignments/create`,
+   `works.alignments.create/store` — the work is the page, no work
    picker; ADR 0036) — pick `first_entity_id` + `second_entity_id` (there is
    no original-side choice; the original language lives on the work); the
    store validates **both entities belong to the route work**
@@ -152,8 +152,8 @@ sources:
     dispatching).
  5. **Review manually** in the Filament admin: `EntityMatchResource` →
     custom `EditEntityAlignment` page (draft store → persister → presenter
-    classes in `app/Classes/AlignmentEditor*`). Web view: the work page's
-    Alignments tab and `/alignments/{entityMatch}` (ADR 0036). The Filament table offers two explicit
+    classes in `app/Classes/AlignmentEditor*`). Web view: the work's
+    Alignments page and `/alignments/{entityMatch}` (ADR 0036). The Filament table offers two explicit
     restart actions (visible only on `status ∈ {completed, failed}`):
     **Re-align** calls the landmark-aware `begin()` — preserving human
     `alignment_chunk=-1` rows and high-confidence landmarks, deleting only

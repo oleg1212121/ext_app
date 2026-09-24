@@ -50,7 +50,7 @@ function createAlignablePair(): array
 test('guests are redirected from the create match page', function () {
     $work = createWork();
 
-    $this->get("/library/{$work->id}/alignments/create")->assertRedirect(route('login'));
+    $this->get("/works/{$work->id}/alignments/create")->assertRedirect(route('login'));
 });
 
 test('the creation page lists only the work\'s alignable readable entities', function () {
@@ -76,7 +76,7 @@ test('the creation page lists only the work\'s alignable readable entities', fun
     ]);
 
     $this->actingAs($user)
-        ->get("/library/{$work->id}/alignments/create")
+        ->get("/works/{$work->id}/alignments/create")
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Library/CreateAlignment')
@@ -89,19 +89,19 @@ test('the creation page lists only the work\'s alignable readable entities', fun
             ->where('entities.ru.0.text', 'Russian chapter'));
 });
 
-test('creating a match stores the settings, starts the pipeline and redirects to the work tab', function () {
+test('creating a match stores the settings, starts the pipeline and redirects to the work alignments page', function () {
     Bus::fake();
     $user = User::factory()->create();
     ['enEntity' => $enEntity, 'ruEntity' => $ruEntity, 'work' => $work] = createAlignablePair();
 
-    $response = $this->actingAs($user)->post("/library/{$work->id}/alignments", [
+    $response = $this->actingAs($user)->post("/works/{$work->id}/alignments", [
         'first_entity_id' => $enEntity->id,
         'second_entity_id' => $ruEntity->id,
         'chunk_size' => 50,
         'max_n' => 4,
     ]);
 
-    $response->assertRedirect("/library/{$work->id}?tab=alignments");
+    $response->assertRedirect("/works/{$work->id}/alignments");
     $response->assertSessionHas('success');
 
     $match = EntityMatch::query()
@@ -122,8 +122,8 @@ test('out-of-range chunk size and max_n are rejected', function () {
     ['enEntity' => $enEntity, 'ruEntity' => $ruEntity, 'work' => $work] = createAlignablePair();
 
     $this->actingAs($user)
-        ->from("/library/{$work->id}/alignments/create")
-        ->post("/library/{$work->id}/alignments", [
+        ->from("/works/{$work->id}/alignments/create")
+        ->post("/works/{$work->id}/alignments", [
             'first_entity_id' => $enEntity->id,
             'second_entity_id' => $ruEntity->id,
             'chunk_size' => 20,
@@ -142,14 +142,14 @@ test('a duplicate entity pair is blocked with a link to the existing match', fun
     $existing = createEntityMatch($enEntity, $ruEntity, ['status' => 'completed']);
 
     $this->actingAs($user)
-        ->from("/library/{$work->id}/alignments/create")
-        ->post("/library/{$work->id}/alignments", [
+        ->from("/works/{$work->id}/alignments/create")
+        ->post("/works/{$work->id}/alignments", [
             'first_entity_id' => $enEntity->id,
             'second_entity_id' => $ruEntity->id,
             'chunk_size' => 75,
             'max_n' => 6,
         ])
-        ->assertRedirect("/library/{$work->id}/alignments/create")
+        ->assertRedirect("/works/{$work->id}/alignments/create")
         ->assertSessionHasErrors('second_entity_id')
         ->assertSessionHas('existing_match_id', $existing->id);
 
@@ -163,14 +163,14 @@ test('entities of another work are rejected even under a valid work route', func
     $ruEntity = createEntity('ru', null, ['name' => 'Russian chapter']);
 
     $this->actingAs($user)
-        ->from("/library/{$work->id}/alignments/create")
-        ->post("/library/{$work->id}/alignments", [
+        ->from("/works/{$work->id}/alignments/create")
+        ->post("/works/{$work->id}/alignments", [
             'first_entity_id' => $enEntity->id,
             'second_entity_id' => $ruEntity->id,
             'chunk_size' => 75,
             'max_n' => 6,
         ])
-        ->assertRedirect("/library/{$work->id}/alignments/create")
+        ->assertRedirect("/works/{$work->id}/alignments/create")
         ->assertSessionHasErrors('second_entity_id');
 
     expect(EntityMatch::query()->count())->toBe(0);
@@ -187,14 +187,14 @@ test('a mixed pair — one entity of the work, one of another — is rejected', 
     ]);
 
     $this->actingAs($user)
-        ->from("/library/{$work->id}/alignments/create")
-        ->post("/library/{$work->id}/alignments", [
+        ->from("/works/{$work->id}/alignments/create")
+        ->post("/works/{$work->id}/alignments", [
             'first_entity_id' => $enEntity->id,
             'second_entity_id' => $outsider->id,
             'chunk_size' => 75,
             'max_n' => 6,
         ])
-        ->assertRedirect("/library/{$work->id}/alignments/create")
+        ->assertRedirect("/works/{$work->id}/alignments/create")
         ->assertSessionHasErrors('second_entity_id');
 
     expect(EntityMatch::query()->count())->toBe(0);
@@ -217,7 +217,7 @@ test('the creation page lists same-language entities of the work', function () {
     ]);
 
     $this->actingAs($user)
-        ->get("/library/{$work->id}/alignments/create")
+        ->get("/works/{$work->id}/alignments/create")
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Library/CreateAlignment')
@@ -243,14 +243,14 @@ test('a same-language entity pair can be matched', function () {
         'order' => 1,
     ]);
 
-    $response = $this->actingAs($user)->post("/library/{$work->id}/alignments", [
+    $response = $this->actingAs($user)->post("/works/{$work->id}/alignments", [
         'first_entity_id' => $enEntity->id,
         'second_entity_id' => $answers->id,
         'chunk_size' => 75,
         'max_n' => 6,
     ]);
 
-    $response->assertRedirect("/library/{$work->id}?tab=alignments");
+    $response->assertRedirect("/works/{$work->id}/alignments");
 
     $match = EntityMatch::query()
         ->where('a_entity_id', min($enEntity->id, $answers->id))
@@ -273,7 +273,7 @@ test('cannot create a match involving an entity the user cannot read', function 
     ]);
 
     $this->actingAs($user)
-        ->post("/library/{$work->id}/alignments", [
+        ->post("/works/{$work->id}/alignments", [
             'first_entity_id' => $restricted->id,
             'second_entity_id' => $ruEntity->id,
             'chunk_size' => 75,

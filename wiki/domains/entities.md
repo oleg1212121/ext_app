@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Library & entities (management surface)
-description: Work-first Library browse surface (/library) with per-work Entities and Alignments tabs, plus the language-scoped entity create/detail/edit pages, driven by enabled languages.
-tags: [entities, works, library, alignments-tab, inertia, react, languages, hash, clone]
+description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, and per-work landing/branch pages (ADR 0039) — plus the language-scoped entity create/detail/edit pages, driven by enabled languages.
+tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone]
 status: stable
-stale_after: 2026-12-22
-generated: { by: agent:zcode, at: 2026-09-22T12:00:00Z }
+stale_after: 2026-12-24
+generated: { by: agent:zcode, at: 2026-09-24T00:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -34,20 +34,26 @@ sources:
 
 A user-facing **management** surface for [entities](/database/entities-alignment.md),
 distinct from the reader (the read-only [consume](/domains/reader.md) surface).
-Since the Library rework it is **work-first**: `/library` is the work catalog —
-every approved user sees every work, empty ones included (ADR
+It is **work-first**: the works catalog is public — every approved user sees
+every work, empty ones included (ADR
 [0021](../../docs/adr/0021-works-are-a-public-catalog.md); works carry no access
-semantics) — and a work page shows the entities of that work **the user can
+semantics) — while a work's pages show its entities and matches **the user can
 read** (public + granted; Readable count). Since ADR
-[0036](../../docs/adr/0036-alignments-live-under-work.md) the work page is
-tabbed: an **Entities** tab (the original content — search, add-entity card,
-entity cards) and an **Alignments** tab listing the work's readable
+[0039](../../docs/adr/0039-library-dropdown-works-branches.md) the section
+lives under `/works` behind a three-entry **Library** navbar dropdown
+(**Works / Entities / Alignments**), and the former per-work tab layout is
+gone: `/works/{work}` is a work **landing page** (metadata + readable counts
+linking onward), and the former tab contents are standalone pages —
+`/works/{work}/entities` (search, add-entity card, entity cards) and
+`/works/{work}/alignments` listing the work's readable
 [entity matches](/database/entities-alignment.md) with add-alignment entry
 (the former global `/alignments` surface is gone — see
-[sentence alignment](/domains/sentence-alignment.md)). Entity detail, editing,
-and sentence management keep their language-scoped `/entities/{lang}/...` URLs
-so Alignments/Reader deep links survive. Entity deletion remains admin-only
-(Filament).
+[sentence alignment](/domains/sentence-alignment.md)). The old `/library/*`
+URLs were removed without redirects (ADR 0039); the pre-existing `/entities`,
+`/entities/{lang}` legacy redirects now target `/works/entities`. Entity
+detail, editing, and sentence management keep their language-scoped
+`/entities/{lang}/...` URLs so Alignments/Reader deep links survive. Entity
+deletion remains admin-only (Filament).
 
 Since ADR
 [0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md) every
@@ -63,12 +69,14 @@ selects and every `{lang}` route are driven by `Language::enabled()`. See ADR
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `/library` | `LibraryController::index` | Works grid: `?q=` search (title/author ilike), plus-card → create work, per-work **readable** entity count, 15/page. Named `library.index` |
-| `/library/create` (GET/POST `/library`) | `LibraryController::createWork` / `storeWork` | Create-work form (title, author, description, original language — must be enabled) → redirect to the work page. Named `library.create` / `library.store` |
-| `/library/{work}` | `LibraryController::showWork` | Work info + tabbed lists, `?tab=entities` (default) or `?tab=alignments`, per-tab `?q=` search + 15/page. Entities tab: readable entities (name/label search), plus-card → add entity. Alignments tab: work's readable entity matches (either side's name search), each payload via `AlignmentEditorApiPresenter::matchPayload` + a server-computed `reader_target` (the non-native side; original-side then A-side tiebreaks), plus-card → add alignment. Named `library.show` |
-| `/library/{work}/entities/create` (GET) + POST `/library/{work}/entities` | `LibraryController::createEntity` / `storeEntity` | Work-scoped entity creation: work fixed, language picked from enabled languages; no existing/new-work choice. Runs the shared `EntityCreationService` pipeline. Named `library.entities.create` / `library.entities.store` |
-| `/library/{work}/alignments/create` (GET) + POST `/library/{work}/alignments` | `LibraryController::createAlignment` / `storeAlignment` | Work-scoped entity-match creation (ADR 0036): two entity selects of the work's alignable entities (readable + signature + sentences), `chunk_size`/`max_n`; canonical a/b order, duplicate-pair guard, alignment-copy fast path else `AlignEntitySentences::beginFromScratch`; redirects back to the Alignments tab. Named `library.alignments.create` / `library.alignments.store` |
-| `/entities`, `/entities/{lang}` | redirect → `/library` | Legacy language-first browse pages (picker + per-language table) |
+| `/works` | `LibraryController::index` | Works catalog: `?q=` search (title/author ilike), plus-card → create work, per-work **readable** entity + alignment counts, 15/page. Named `works.index`. `entitiesIndex` / `alignmentsIndex` serve the same list for `/works/entities` / `/works/alignments` (`works.entities.index` / `works.alignments.index`) — the branch works-lists; only the card count and card target differ |
+| `/works/create` (GET/POST `/works`) | `LibraryController::createWork` / `storeWork` | Create-work form (title, author, description, original language — must be enabled) → redirect to the work landing page. Named `works.create` / `works.store` |
+| `/works/{work}` | `LibraryController::showWork` | Work landing page (ADR 0039): catalog metadata + readable `entities_count` / `alignments_count`, each linking to the work's branch page. Named `works.show` |
+| `/works/{work}/entities` | `LibraryController::workEntities` | The work's readable entities (former entities tab): `?q=` search (name/label), 15/page, plus-card → add entity. Named `works.entities.show` |
+| `/works/{work}/alignments` | `LibraryController::workAlignments` | The work's readable entity matches (former alignments tab; ADR 0036): either side's name search, each payload via `AlignmentEditorApiPresenter::matchPayload` + a server-computed `reader_target` (the non-native side; original-side then A-side tiebreaks), plus-card → add alignment. Named `works.alignments.show` |
+| `/works/{work}/entities/create` (GET) + POST `/works/{work}/entities` | `LibraryController::createEntity` / `storeEntity` | Work-scoped entity creation: work fixed, language picked from enabled languages; no existing/new-work choice. Runs the shared `EntityCreationService` pipeline. Named `works.entities.create` / `works.entities.store` |
+| `/works/{work}/alignments/create` (GET) + POST `/works/{work}/alignments` | `LibraryController::createAlignment` / `storeAlignment` | Work-scoped entity-match creation (ADR 0036): two entity selects of the work's alignable entities (readable + signature + sentences), `chunk_size`/`max_n`; canonical a/b order, duplicate-pair guard, alignment-copy fast path else `AlignEntitySentences::beginFromScratch`; redirects back to the work's Alignments page. Named `works.alignments.create` / `works.alignments.store` |
+| `/entities`, `/entities/{lang}` | redirect → `/works/entities` | Legacy language-first browse pages (picker + per-language table) |
 | `/entities/{lang}/create` | `EntityController::create` | Language-first create form (work picker + inline "new work" fields), named `entities.create` |
 | `/entities/{lang}` (POST) | `EntityController::store` | Creates the entity under the resolved work via `EntityCreationService`; stores an optional file and dispatches `ProcessEntityFile`, named `entities.store` |
 | `/entities/{lang}/{entity}` (GET/PATCH) | `EntityController::show` / `update` | Detail page / metadata update, named `entities.show` / `entities.update` |
@@ -82,22 +90,28 @@ other surfaces; `{work}` is numeric.
 
 # Frontend
 
-Inertia pages under `resources/js/Pages/` — `Library/Index` (works grid with
-search, dashed plus-card, work cards: title, author, original-language chip,
-readable entity count), `Library/CreateWork`, `Library/ShowWork` (work info,
-tab bar, per-tab search + plus-card; entity cards linking to
-`/entities/{code}/{id}`, alignment cards via `Components/AlignmentCard.jsx` —
-stretched link to the editor `/alignments/{id}` with Simulator / Read·{LANG}
-buttons on top), `Library/CreateEntity` (work fixed, language select),
-`Library/CreateAlignment` (work fixed, two entity selects + chunk params),
-plus the surviving `Entities/Create`, `Entities/Show`, `Entities/Edit`
-(metadata form + dnd-kit sortable sentence manager). The navbar entries are
-**Practice** (the restored Reader index + Simulator picker, ADR 0038) and
-**Library** (the Alignments navbar item is gone — ADR 0036). All use the
-`--wbench-*` tokens to match the sibling Alignments management surface and the
+Inertia pages under `resources/js/Pages/` — `Library/Index` (the works list,
+one component for all three lists via a `variant` prop — `catalog` /
+`entities` / `alignments` pick the count chip and the card target; search,
+dashed plus-card on the catalog only, work cards: title, author,
+original-language chip, readable count), `Library/CreateWork`,
+`Library/ShowWork` (the work landing page: metadata + two branch cards),
+`Library/WorkEntities` (per-tab search + plus-card; entity cards linking to
+`/entities/{code}/{id}`), `Library/WorkAlignments` (alignment cards via
+`Components/AlignmentCard.jsx` — stretched link to the editor
+`/alignments/{id}` with Simulator / Read·{LANG} buttons on top),
+`Library/CreateEntity` (work fixed, language select), `Library/CreateAlignment`
+(work fixed, two entity selects + chunk params), plus the surviving
+`Entities/Create`, `Entities/Show`, `Entities/Edit` (metadata form + dnd-kit
+sortable sentence manager). The navbar's **Library** dropdown groups
+**Works / Entities / Alignments** (ADR 0039; each child carries an explicit
+URL match rule because the branches share the `/works` prefix), alongside
+**Practice** (the restored Reader index + Simulator picker, ADR 0038); the
+Blade nav mirror has the same dropdown. All use the `--wbench-*` tokens to
+match the sibling Alignments management surface and the
 [design system](/conventions/design-system.md); pagination is the shared
 `Components/LinkPagination.jsx` (prev/next Inertia links preserving
-`tab`/`q`/`page`); alignment display helpers (status badge, similarity
+`q`/`page`); alignment display helpers (status badge, similarity
 grading) live in `lib/alignmentDisplay.js`.
 
 # Editing (ADR 0015)
@@ -190,11 +204,12 @@ Entity reads are gated by `EntityAccessService` (see the [Entity Access](
 ../../CONTEXT.md#entity-access-context) context). A new upload is Restricted; only
 admin and explicitly granted users may read it until an admin publishes it
 (`is_restricted = false`). Library entity lists and per-work counts filter by
-`EntityAccessService::readableQuery` / `readableConstraint`; the detail pages
+`EntityAccessService::readableQuery` / `readableConstraint` (matches via
+`readableMatchConstraint`); the detail pages
 403 accordingly, and reading an `EntityMatch` in the simulator requires grants
 on **both** of its Entities (see ADR
 [0013](../../docs/adr/0013-default-restricted-uploads-and-per-entity-grants.md)
 / [0014](../../docs/adr/0014-per-entity-grants-require-both-sides-for-simulator.md)).
 Works themselves are a public catalog (ADR 0021) — a work with zero readable
-entities still appears in every user's Library grid, revealing nothing about
+entities still appears in every user's works lists, revealing nothing about
 the restricted entities it may hold.

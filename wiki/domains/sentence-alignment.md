@@ -629,13 +629,13 @@ its output can look exactly like an unfixed bug.
     labels via `sideLabel()`, falling back to the side letter), or in the
     Inertia/React **Alignments editor**: since ADR
     [0036](../../docs/adr/0036-alignments-live-under-work.md) alignment
-    browsing and creation live under each work — the work page's
-    **Alignments tab** (`/library/{work}?tab=alignments`, see
+    browsing and creation live under each work — the work's
+    **Alignments page** (`/works/{work}/alignments`, see
     [Library & entities](/domains/entities.md)) lists the work's readable
     matches and its "Add alignment" card leads to
-    `/library/{work}/alignments/create`
+    `/works/{work}/alignments/create`
     (`LibraryController@createAlignment`/`@store`, routes
-    `library.alignments.create`/`library.alignments.store`; the former
+    `works.alignments.create`/`works.alignments.store`; the former
     global `/alignments` list, `/alignments/create` form, and the navbar
     item are gone). The form is the old create minus the work picker: two
     entity selects (`first_entity_id` / `second_entity_id`) of the route
@@ -656,7 +656,7 @@ its output can look exactly like an unfixed bug.
     order (lower id = a side, so the `unique(a_entity_id, b_entity_id)`
     constraint covers both orders), creates the match (`status='pending'`),
     dispatches `AlignEntitySentences::beginFromScratch($id)`, and redirects
-    to the work's Alignments tab with a flash; a duplicate pair is blocked
+    to the work's Alignments page with a flash; a duplicate pair is blocked
     with an error plus an "Open existing match" link (flash
     `existing_match_id`), and creating a match involving an entity the user
     cannot read is `403`. Each match card links (stretched link) to the

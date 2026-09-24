@@ -1,5 +1,34 @@
 # Directory Update Log
 
+## 2026-09-24 (feat: Library dropdown — works URL branches, tabs → pages)
+
+The Library moved from a single `/library` link with per-work tabs to a
+three-entry navbar **Library** dropdown over a `/works` URL space (ADR 0039):
+**Works** (`/works`, the catalog), **Entities** (`/works/entities` branch
+list), **Alignments** (`/works/alignments` branch list). A work's card now
+opens a **landing page** `/works/{work}` (metadata + readable entity and
+alignment counts via the new `Work::alignments` hasMany-through and
+`EntityAccessService::readableMatchConstraint`, extracted from
+`readableMatchQuery` for `withCount` reuse), and the former tab contents are
+standalone pages: `/works/{work}/entities` and `/works/{work}/alignments`
+(create/store forms re-prefixed). Branch lists show the full public catalog
+(ADR 0021) with readable-only counts; each navbar child carries an explicit
+URL match rule (shared `/works` prefix defeats naive prefix matching), and
+the Blade nav mirror got the same dropdown + mobile accordion (it previously
+had no Library entry). Routes renamed `library.*` → `works.*`;
+`/library/*` removed with no redirects; `/entities`, `/entities/{lang}`
+legacy redirects retargeted to `/works/entities`. Pages: `Library/Index`
+gained a `variant` prop (one component, three lists), `Library/ShowWork` is
+the landing page, new `Library/WorkEntities` / `Library/WorkAlignments`; new
+UI strings `nav.works/entities/alignments`, `library.entities_title/
+alignments_title/alignment(s)`, retired `library.tab_*`; reseeded.
+`LibraryTest` rewritten around the new URLs (+ landing/branch-list/404
+coverage), `AlignmentPagesTest` / `AlignmentsCreateMatchTest` retargeted.
+Glossary: **Alignments tab** → **Alignments page**, added **Work landing
+page** / **Entities page**, reworked **Library**; ADR 0039; entities,
+sentence-alignment, run-alignment wiki concepts updated; `web-routes.md`
+regenerated via `wiki:sync`.
+
 ## 2026-09-24 (feat: Practice menu revives the reader index and the simulator picker)
 
 The ADR 0036 disposal was partially reversed (ADR 0038): a **Practice**

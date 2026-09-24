@@ -30,7 +30,7 @@ test('the global alignments list and create pages are gone', function () {
     $this->actingAs($user)->post('/alignments', [])->assertNotFound();
 });
 
-test('the per-work alignments tab lists the work\'s readable entity matches', function () {
+test('the per-work alignments page lists the work\'s readable entity matches', function () {
     $user = User::factory()->create();
 
     $work = createWork();
@@ -53,12 +53,11 @@ test('the per-work alignments tab lists the work\'s readable entity matches', fu
 
     $response = $this
         ->actingAs($user)
-        ->get("/library/{$work->id}?tab=alignments");
+        ->get("/works/{$work->id}/alignments");
 
     $response->assertOk();
     $response->assertInertia(fn (Assert $page) => $page
-        ->component('Library/ShowWork')
-        ->where('tab', 'alignments')
+        ->component('Library/WorkAlignments')
         ->has('alignments', 1)
         ->where('alignments.0.id', $entityMatch->id)
         ->where('alignments.0.a_entity_name', 'English chapter')
@@ -82,9 +81,9 @@ test('users cannot see restricted entity matches they are not granted', function
 
     $entityMatch = createEntityMatch($enEntity, $ruEntity, ['status' => 'completed']);
 
-    // Not granted → the match must not leak into the work's alignments tab.
+    // Not granted → the match must not leak into the work's alignments page.
     $this->actingAs($user)
-        ->get("/library/{$work->id}?tab=alignments")
+        ->get("/works/{$work->id}/alignments")
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page->has('alignments', 0));
 
@@ -98,7 +97,7 @@ test('users cannot see restricted entity matches they are not granted', function
     $ruEntity->grantedUsers()->attach($user->id);
 
     $this->actingAs($user)
-        ->get("/library/{$work->id}?tab=alignments")
+        ->get("/works/{$work->id}/alignments")
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->has('alignments', 1)

@@ -73,28 +73,39 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::post('/word-events', [WordController::class, 'recordEvents'])
         ->name('word.events.store');
 
-    Route::get('/library', [LibraryController::class, 'index'])->name('library.index');
-    Route::get('/library/create', [LibraryController::class, 'createWork'])->name('library.create');
-    Route::post('/library', [LibraryController::class, 'storeWork'])->name('library.store');
-    Route::get('/library/{work}', [LibraryController::class, 'showWork'])
+    // Library → Works: the catalog plus its Entities and Alignments branches
+    // (ADR 0039). Static branch lists register before {work}; whereNumber
+    // keeps /works/{work} disjoint from /works/entities and /works/alignments.
+    Route::get('/works', [LibraryController::class, 'index'])->name('works.index');
+    Route::get('/works/create', [LibraryController::class, 'createWork'])->name('works.create');
+    Route::post('/works', [LibraryController::class, 'storeWork'])->name('works.store');
+    Route::get('/works/entities', [LibraryController::class, 'entitiesIndex'])->name('works.entities.index');
+    Route::get('/works/alignments', [LibraryController::class, 'alignmentsIndex'])->name('works.alignments.index');
+    Route::get('/works/{work}', [LibraryController::class, 'showWork'])
         ->whereNumber('work')
-        ->name('library.show');
-    Route::get('/library/{work}/entities/create', [LibraryController::class, 'createEntity'])
+        ->name('works.show');
+    Route::get('/works/{work}/entities', [LibraryController::class, 'workEntities'])
         ->whereNumber('work')
-        ->name('library.entities.create');
-    Route::post('/library/{work}/entities', [LibraryController::class, 'storeEntity'])
+        ->name('works.entities.show');
+    Route::get('/works/{work}/entities/create', [LibraryController::class, 'createEntity'])
         ->whereNumber('work')
-        ->name('library.entities.store');
-    Route::get('/library/{work}/alignments/create', [LibraryController::class, 'createAlignment'])
+        ->name('works.entities.create');
+    Route::post('/works/{work}/entities', [LibraryController::class, 'storeEntity'])
         ->whereNumber('work')
-        ->name('library.alignments.create');
-    Route::post('/library/{work}/alignments', [LibraryController::class, 'storeAlignment'])
+        ->name('works.entities.store');
+    Route::get('/works/{work}/alignments', [LibraryController::class, 'workAlignments'])
         ->whereNumber('work')
-        ->name('library.alignments.store');
+        ->name('works.alignments.show');
+    Route::get('/works/{work}/alignments/create', [LibraryController::class, 'createAlignment'])
+        ->whereNumber('work')
+        ->name('works.alignments.create');
+    Route::post('/works/{work}/alignments', [LibraryController::class, 'storeAlignment'])
+        ->whereNumber('work')
+        ->name('works.alignments.store');
 
-    // The language-first browse pages moved to the work-first Library
-    Route::redirect('/entities', '/library');
-    Route::redirect('/entities/{lang}', '/library')->where('lang', '[a-z]{2}');
+    // The language-first browse pages moved to the works Entities branch
+    Route::redirect('/entities', '/works/entities');
+    Route::redirect('/entities/{lang}', '/works/entities')->where('lang', '[a-z]{2}');
     Route::get('/entities/{lang}/create', [EntityController::class, 'create'])
         ->where('lang', '[a-z]{2}')
         ->name('entities.create');
@@ -140,7 +151,7 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('sentence')
         ->name('entities.sentences.destroy');
     // The global alignments browse pages moved under each work
-    // (/library/{work}?tab=alignments); only the editor stays global.
+    // (/works/{work}/alignments); only the editor stays global.
     Route::get('/alignments/{entityMatch}', [AlignmentController::class, 'show'])
         ->whereNumber('entityMatch')
         ->name('alignments.show');
