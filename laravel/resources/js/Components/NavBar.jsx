@@ -34,8 +34,9 @@ export default function NavBar() {
 
     const [userMenuOpen, setUserMenuOpen] = useState(false)
     const [mobileOpen, setMobileOpen] = useState(false)
-    const [puzzlesOpen, setPuzzlesOpen] = useState(false)
-    const [puzzlesExpanded, setPuzzlesExpanded] = useState(false)
+    // One dropdown open at a time, keyed by the item's label.
+    const [openMenu, setOpenMenu] = useState(null)
+    const [expandedMenu, setExpandedMenu] = useState(null)
 
     useEffect(() => {
         const onDocClick = (e) => {
@@ -45,8 +46,8 @@ export default function NavBar() {
             if (!e.target.closest?.('[data-mobile-menu]')) {
                 setMobileOpen(false)
             }
-            if (!e.target.closest?.('[data-puzzles-dropdown]')) {
-                setPuzzlesOpen(false)
+            if (!e.target.closest?.('[data-nav-dropdown]')) {
+                setOpenMenu(null)
             }
         }
         document.addEventListener('click', onDocClick)
@@ -56,8 +57,8 @@ export default function NavBar() {
     useEffect(() => {
         setMobileOpen(false)
         setUserMenuOpen(false)
-        setPuzzlesOpen(false)
-        setPuzzlesExpanded(false)
+        setOpenMenu(null)
+        setExpandedMenu(null)
     }, [url])
 
     const isApproved = user?.is_approved ?? false
@@ -66,10 +67,18 @@ export default function NavBar() {
     const navLinks = useMemo(() => {
         if (!isAuthenticated || !isApproved) return []
         return [
-            {href: '/bilinguals/en/ru/simulator', label: t('nav.bilinguals')},
-            {href: '/alignments', label: t('nav.alignments')},
-            {href: '/library', label: t('nav.library')},
-            {href: '/reader-react', label: t('nav.reader')},
+            {label: t('nav.practice'), children: [
+                {href: '/reader', label: t('nav.reader')},
+                {href: '/simulator', label: t('nav.simulator')},
+            ]},
+            // The works branches share the /works prefix, so each child
+            // carries its own URL match rule instead of naive prefix matching
+            // (works.*: the catalog, its create form, and work landing pages).
+            {label: t('nav.library'), children: [
+                {href: '/works', label: t('nav.works'), match: (u) => u === '/works' || u === '/works/create' || /^\/works\/\d+\/?$/.test(u)},
+                {href: '/works/entities', label: t('nav.entities'), match: (u) => u.startsWith('/works/entities') || /^\/works\/\d+\/entities/.test(u)},
+                {href: '/works/alignments', label: t('nav.alignments'), match: (u) => u.startsWith('/works/alignments') || /^\/works\/\d+\/alignments/.test(u)},
+            ]},
             {label: t('nav.puzzles'), children: [{href: '/crossword', label: t('nav.crossword')}]},
             ...(canAccessAdminPanel ? [{href: '/admin', label: t('nav.admin'), external: true}] : []),
         ]
@@ -81,9 +90,16 @@ export default function NavBar() {
         return url === href || url.startsWith(`${href}/`)
     }
 
+    // A child either carries its own match rule (the works branches, which
+    // share the /works prefix) or falls back to prefix matching.
+    const childActive = (child) => {
+        if (!url) return false
+        return child.match ? child.match(url) : isActive(child.href)
+    }
+
     const hasActiveChild = (item) => {
         if (!item.children) return false
-        return item.children.some((c) => isActive(c.href))
+        return item.children.some(childActive)
     }
 
     const logoHref = '/'
@@ -105,16 +121,16 @@ export default function NavBar() {
                                 {navLinks.map((l) => {
                                     if (l.children) {
                                         return (
-                                            <div key={l.label} className="relative" data-puzzles-dropdown>
+                                            <div key={l.label} className="relative" data-nav-dropdown>
                                                 <button
                                                     type="button"
                                                     onClick={(e) => {
                                                         e.stopPropagation()
-                                                        setPuzzlesOpen((v) => !v)
+                                                        setOpenMenu(openMenu === l.label ? null : l.label)
                                                     }}
                                                     className={tabClass(hasActiveChild(l))}
                                                     aria-haspopup="menu"
-                                                    aria-expanded={puzzlesOpen}
+                                                    aria-expanded={openMenu === l.label}
                                                 >
                                                     {l.label}
                                                     <svg className="ml-0.5 h-3 w-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -123,7 +139,7 @@ export default function NavBar() {
                                                     <Underline isActive={hasActiveChild(l)}/>
                                                 </button>
 
-                                                {puzzlesOpen && (
+                                                {openMenu === l.label && (
                                                     <div
                                                         role="menu"
                                                         className="absolute left-0 mt-2 w-48 bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] shadow-lg overflow-hidden"
@@ -259,7 +275,7 @@ export default function NavBar() {
                                     <li key={l.label}>
                                         <button
                                             type="button"
-                                            onClick={() => setPuzzlesExpanded((v) => !v)}
+                                            onClick={() => setExpandedMenu(expandedMenu === l.label ? null : l.label)}
                                             className={[
                                                 'w-full flex items-center justify-between py-3 font-serif text-lg tracking-tight transition-colors',
                                                 hasActiveChild(l)
@@ -271,7 +287,7 @@ export default function NavBar() {
                                             <svg
                                                 className={[
                                                     'h-4 w-4 opacity-60 transition-transform duration-200',
-                                                    puzzlesExpanded ? 'rotate-180' : '',
+                                                    expandedMenu === l.label ? 'rotate-180' : '',
                                                 ].join(' ')}
                                                 fill="none"
                                                 viewBox="0 0 24 24"
@@ -282,10 +298,10 @@ export default function NavBar() {
                                             </svg>
                                         </button>
 
-                                        {puzzlesExpanded && (
+                                        {expandedMenu === l.label && (
                                             <ul role="list" className="pl-4 pb-1 divide-y divide-[var(--color-hairline)]/50 dark:divide-[var(--color-hairline-night)]/50">
                                                 {l.children.map((child) => {
-                                                    const active = isActive(child.href)
+                                                    const active = childActive(child)
                                                     return (
                                                         <li key={child.href}>
                                                             <Link

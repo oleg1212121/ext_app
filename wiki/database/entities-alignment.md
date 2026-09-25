@@ -5,7 +5,7 @@ description: Works grouping per-language entities, their sentences, and the mach
 tags: [database, schema, alignment, entities, works, hash]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-09-20T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-22T16:00:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
@@ -71,6 +71,15 @@ sources:
   sentence's document order. Drag-to-reorder renumbers document order so the
   sentence sorts exactly where it was dropped (see ADR
   [0016](../../docs/adr/0016-drop-position-wins-alignment-editor.md)).
+* **The alignment pipeline is order-preserving by contract**: sentences keep
+  the original order of the uploaded source text file — alignment assigns
+  sentence orders once at split and never permutes them; it writes
+  matches/junctions only. `meaning_matches.order` must equal the
+  document-position sequence of each side's junctioned sentences, enforced by
+  `resequenceMatchesByDocumentPosition()` after every chunk persist, at the
+  `finalize()` completion gate, and in the alignment-copy transaction
+  (`AlignmentCopyService`). Details: the order-preservation invariant in
+  [Sentence Alignment Pipeline](/domains/sentence-alignment.md).
 * **Landmarks**: `meaning_matches.alignment_chunk = -1` marks human-made rows
   (always `similarity = 1.0`); machine rows carry a monotonic per-run chunk
   id. Machine rows with `similarity >= 0.90` are auto-landmarks. Both tiers
@@ -102,8 +111,8 @@ sources:
   `AlignEntitySentences::finalize()` enforces original completeness (both
   sides when neither is the original). The editor's **Needs review** section
   surfaces one-sided rows (any similarity) plus two-sided rows below 0.55.
-* `EntityMatch` is what the simulator's text dropdown lists — joining
-  `aEntity` / `bEntity` for display names.
+* `EntityMatch` is what an alignment card and the pinned simulator route
+  label — joining `aEntity` / `bEntity` for display names.
 * **Read access is Restricted by default** (ADR
   [0013](../../docs/adr/0013-default-restricted-uploads-and-per-entity-grants.md)):
   every new Entity is `is_restricted = true`; admin publishes to make it

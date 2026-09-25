@@ -4,8 +4,8 @@ title: Sentence Alignment Pipeline
 description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse.
 tags: [alignment, embeddings, pipeline, jobs, filament, hash]
 status: stable
-stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-09-20T12:00:00Z }
+stale_after: 2026-12-22
+generated: { by: agent:zcode, at: 2026-09-22T18:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -61,6 +61,80 @@ contract (`a_sentences`/`b_sentences`, match spans
 `works.original_language_id` and returns `'a'`, `'b'`, or `null` when neither
 side is the original language (two translations of a third-language original —
 first-class pairs).
+
+# Order-preservation invariant
+
+**Alignment never changes sentence order.** Sentences go in their original
+order from the uploaded source text file: `entity_sentences.order` is assigned
+once, at split time (`SparseOrderService::initial($index)` — stage 1), and the
+only code path that ever renumbers it is the alignment editor's explicit
+drag/place action (ADR 0016). The alignment pipeline writes matches and
+junctions, never sentence orders.
+
+The derived guarantee: walking `meaning_matches` by `order`, each side's
+sentences appear in document order — the per-sentence number shown in the
+reader and the alignment editor is exactly that rank, so a scrambled
+`meaning_matches.order` **is** a scrambled alignment on every display surface.
+
+Enforcement (all inside `SentenceAlignmentService`):
+`resequenceMatchesByDocumentPosition()` renumbers a match's rows 0, 1024,
+2048… so the stored sequence equals document position — a-anchored rows
+(two-sided or a-only) sort by their a position; single-b rows have no a anchor
+and are **not** compared on the a scale (mixing the two scales was the Sep 2026
+regression that put an unmatched RU sentence *after* a two-sided row whose RU
+partner came later); each pending b-only row is emitted immediately before
+the first anchored row whose b position is larger; junction-less rows go
+last. Before the walk it **drops fully subsumed duplicate rows**: a machine
+row whose every junction is also held by a higher-priority row (landmark/human
+over machine, then two-sided, richer, more similar, earlier) is deleted —
+two rows claiming the same sentence can never both sit in document order.
+Partial overlaps of multi-sentence rows are legitimate n:m matches and stay.
+It runs:
+- at **write time**, inside `persistSegment()`'s transaction after every
+  chunk/skip persist — so even mid-run (status `aligning`) rows read in
+  document order, not appended after the tail;
+- at the **completion gate** — `finalize()` after the junction-less repair
+  (best-effort: a failure logs a warning and completion proceeds);
+- in the **copy fast path** — inside `AlignmentCopyService::copyAlignment()`'s
+  transaction, so a copy of a pre-fix source with a scrambled order column
+  still lands ordered (a copy either lands ordered or falls back to the full
+  pipeline).
+
+Manual repair for a single match: `php artisan alignments:resequence {id}`
+(`ResequenceEntityMatchesCommand`; idempotent — reports 0 changes when the
+order column already equals document position; also drops subsumed duplicate
+rows).
+
+**Junction-uniqueness invariant.** One sentence is junctioned into at most
+one machine row per side per entity match. Enforced three ways:
+`persistSegment()` deletes every machine row below the landmark bar
+(`alignment_chunk != -1` and `similarity <` `LANDMARK_THRESHOLD`, shared
+const with the job) that junctions any sentence of the segment it is about to
+store — so a re-fed window (retry after a crash, duplicated job) **replaces**
+stale coverage instead of duplicating it; the last chunk of a pool advances
+the cursors to the **window end** (trailing skips are stored up to the window
+end, so stopping at the last committed match would re-feed already-junctioned
+sentences); and a no-progress chunk stores skip rows **only for sides whose
+cursor advances** past the stored sentence — a parked side re-feeds its head
+into later windows, and a premature skip row there would duplicate the
+junction when one of those windows matches it (finalize's junction-less
+repair covers a parked original side instead). Landmark/human rows
+(`alignment_chunk = -1` or at/above the landmark bar) are pinned: never
+deleted by the pipeline; when a re-fed window overlaps a landmark's
+sentences, the resequence dedupe resolves the duplicate **in favor of the
+landmark** (the redundant machine copy is the row that goes).
+
+Related write-atomicity guarantee: each chunk's rows and the advanced cursors
+commit in **one** transaction (`persistOffsets()` in the job), so a crashed
+worker cannot leave committed rows without an advanced cursor — that window
+used to re-align the same region under a fresh `alignment_chunk`, duplicating
+junctions no resequence could undo.
+
+**Operations note (2026-09-22):** PHP code loads once per queue-worker
+process. After pulling alignment fixes, **restart the worker** (stop and
+re-run `composer run dev`, or `php artisan queue:restart`) before re-testing
+— a long-lived worker that predates the fix keeps executing the old code and
+its output can look exactly like an unfixed bug.
 
 # Stages
 
@@ -123,7 +197,11 @@ first-class pairs).
    positional sentence mapping (Nth source sentence ↔ Nth copy sentence,
    mirrored sides if the orientation flipped; human landmarks
    `alignment_chunk = -1` preserved), the new match is `completed` at creation
-   and no Python call is made. Source selection: most human-confirmed rows
+   and no Python call is made. The copy transaction renormalizes the cloned
+   rows with `resequenceMatchesByDocumentPosition()` so a source predating an
+   ordering fix cannot propagate a scrambled order column (see the
+   order-preservation invariant above). Source selection: most human-confirmed
+   rows
    (`confirmed_count`), then `linked_count`, then latest `completed_at`. Any
    structural mismatch (sentence counts, unmappable junction, pre-existing
    rows) falls back to the pipeline. Stale hashes are recomputed
@@ -187,7 +265,11 @@ first-class pairs).
     authored in); **when neither side is the original language
     (translation↔translation pair), BOTH sides are repaired**. The repair is
     best-effort: if it fails, a warning is logged and completion proceeds
-    regardless. `storeSkipSentences()` on `SentenceAlignmentService` persists
+    regardless. `finalize()` then runs
+    `resequenceMatchesByDocumentPosition()` over the whole match (same
+    best-effort contract) so every completion path leaves the stored sequence
+    equal to document position — see the order-preservation invariant above.
+    `storeSkipSentences()` on `SentenceAlignmentService` persists
     single-sided rows (side parameter `'a'|'b'`), and the crawl's empty-commit
     seams (`alignWholePool`, `alignPoolChunk`) use it to junction the first
     uncommitted covered-side sentence instead of silently advancing past it.
@@ -544,34 +626,45 @@ first-class pairs).
 6. **Review** — humans fix machine output in the Filament
     `EntityMatch` resource's custom `EditEntityAlignment` page (one merged
     resource since ADR 0018 — side-based draft props with language-name
-    labels via `sideLabel()`, falling back to the side letter), or in the new
-    Inertia/React **Alignments editor**: `/alignments` (pair list)
-    → `/alignments/{id}` (pair editor), linked from the NavBar. The pair list
-    has a **"+ Create new"** button → `/alignments/create`
-    (`AlignmentController@create`/`@store`, routes `alignments.create`/
-    `alignments.store`): a **work-first** React form — pick a work, then the
-    two entities (`first_entity_id` / `second_entity_id`; each work's eligible
-    entities are grouped by language and the second select excludes the
-    first's language). Entities are eligible when **readable by the user**,
-    signed (`signature` not null), and non-empty; only works with entities in
-    ≥2 languages appear. There is no "original text" radio — the original
-    language lives on the work. The form also carries the Filament-parity
-    `chunk_size` (25–100, default 75) + `max_n` (1–8, default 6). **Inertia
-    pitfall:** `useForm.setData` with an object argument **replaces** the
-    whole form state (it does not merge), so multi-field change handlers
-    (work/entity selects, Entities\Create work-mode radios) must use the
-    functional form `setData((current) => ({...current, ...}))` — the
-    object form silently dropped `work_id`/`chunk_size`/`max_n`, which
-    emptied both entity selects the moment an entity was picked. Store
-    validates **same work** (same-language pairs such as exercises and
+    labels via `sideLabel()`, falling back to the side letter), or in the
+    Inertia/React **Alignments editor**: since ADR
+    [0036](../../docs/adr/0036-alignments-live-under-work.md) alignment
+    browsing and creation live under each work — the work's
+    **Alignments page** (`/works/{work}/alignments`, see
+    [Library & entities](/domains/entities.md)) lists the work's readable
+    matches and its "Add alignment" card leads to
+    `/works/{work}/alignments/create`
+    (`LibraryController@createAlignment`/`@store`, routes
+    `works.alignments.create`/`works.alignments.store`; the former
+    global `/alignments` list, `/alignments/create` form, and the navbar
+    item are gone). The form is the old create minus the work picker: two
+    entity selects (`first_entity_id` / `second_entity_id`) of the route
+    work's eligible entities (grouped by language, the second select
+    excludes the first pick). Entities are eligible when **readable by the
+    user**, signed (`signature` not null), and non-empty. There is no
+    "original text" radio — the original language lives on the work. The
+    form carries the Filament-parity `chunk_size` (25–100, default 75) +
+    `max_n` (1–8, default 6). **Inertia pitfall:** `useForm.setData` with an
+    object argument **replaces** the whole form state (it does not merge),
+    so multi-field change handlers (entity selects, Entities\Create
+    work-mode radios) must use the functional form
+    `setData((current) => ({...current, ...}))` — the object form silently
+    dropped `chunk_size`/`max_n`, which emptied both entity selects the
+    moment an entity was picked. Store validates that **both entities
+    belong to the route work** (same-language pairs such as exercises and
     answers are valid — ADR 0019), canonicalizes the pair
     order (lower id = a side, so the `unique(a_entity_id, b_entity_id)`
     constraint covers both orders), creates the match (`status='pending'`),
     dispatches `AlignEntitySentences::beginFromScratch($id)`, and redirects
-    to the list with a flash; a duplicate pair is blocked with an error plus
-    a "Open existing match" link (flash `existing_match_id`), and creating a
-    match involving an entity the user cannot read is `403`. The editor is a
-    parallel entry point backed by the surgical `AlignmentEditorController`
+    to the work's Alignments page with a flash; a duplicate pair is blocked
+    with an error plus an "Open existing match" link (flash
+    `existing_match_id`), and creating a match involving an entity the user
+    cannot read is `403`. Each match card links (stretched link) to the
+    editor `/alignments/{id}` and carries Simulator / Read·{LANG} buttons —
+    `GET /bilinguals/simulator/{entityMatch}` (pinned simulator) and the
+    reader, with the reading side resolved server-side as the
+    non-native-language side. The editor itself is
+    a parallel entry point backed by the surgical `AlignmentEditorController`
     endpoints — create/delete pair, approve pair (set `similarity = 1.0` +
     `alignment_chunk = -1`, promoting a row to a hard landmark), add/edit/
      unlink/hard-delete sentence, and

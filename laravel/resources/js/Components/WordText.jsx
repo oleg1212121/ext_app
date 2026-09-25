@@ -4,6 +4,9 @@ import {segmentText} from '../lib/wordTokenizer.mjs';
 import {FAMILIARITY_MAX, FAMILIARITY_STRONG_AT, FAMILIARITY_PROGRESS_AT, recordWordEvents} from '../lib/wordFamiliarity';
 import WordPopup from './WordPopup.jsx';
 
+// Memoized: a reading page mounts hundreds of WordText instances and its
+// parent components re-render for reasons (streaming answer, audio status,
+// sibling rows) that leave most instances' props identical.
 function tierClass(familiarity, highlight) {
     if (!highlight) {
         return 'word-token';
@@ -39,10 +42,14 @@ function tierClass(familiarity, highlight) {
  * The text is one row side: its sentences joined with "\n" in document order
  * (MeaningMatchPresenter::sideText). Each sentence renders in its own inline
  * span — visually identical, but a click knows which sentence it hit. With
- * rowKey, side and aiModel all present, WordPopup gets an `explain` payload;
- * the backend rebuilds the same sentence list, so the index is exact.
+ * rowKey and an `explain` ({enabled, modelKey, modelLabel, followsAnswer,
+ * answerLabel}) present — enabled or not — WordPopup gets an `explain`
+ * payload; the backend rebuilds the same sentence list, so
+ * the index is exact. rowKey's prefix selects the backend source: "mm:{id}"
+ * is a meaning match row (side required), anything else ("es:{id}") is a
+ * bare entity sentence (side unused).
  */
-export default function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, aiModel}) {
+function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, explain}) {
     const sentences = useMemo(() => String(text ?? '').split('\n'), [text]);
     const sentenceSegments = useMemo(
         () => sentences.map((sentence) => segmentText(sentence)),
@@ -85,11 +92,19 @@ export default function WordText({text, wordMap = {}, highlight = true, rowKey, 
         onWordProgress?.(key, familiarity);
     }, [onWordProgress]);
 
-    const explain = popup && rowKey && side && aiModel ? {
-        meaningMatchId: Number(rowKey.slice(3)),
-        side,
+    // The payload is built whenever `explain` exists — enabled or not — so
+    // the word popup's tab strip (and its Models used popup) also reaches
+    // keyless users; `enabled` rides along for the guidance states.
+    const explainPayload = popup && rowKey && explain ? {
+        rowKind: rowKey.startsWith('mm:') ? 'mm' : 'es',
+        rowId: Number(rowKey.slice(3)),
+        side: side ?? null,
         sentenceIndex: popup.sentenceIndex,
-        model: aiModel,
+        modelKey: explain.modelKey ?? null,
+        enabled: explain.enabled === true,
+        modelLabel: explain.modelLabel ?? null,
+        followsAnswer: explain.followsAnswer === true,
+        answerLabel: explain.answerLabel ?? null,
     } : undefined;
 
     return (
@@ -136,7 +151,7 @@ export default function WordText({text, wordMap = {}, highlight = true, rowKey, 
                     familiarity={popup.familiarity}
                     rect={popup.rect}
                     fontSize={popupFontSize}
-                    explain={explain}
+                    explain={explainPayload}
                     onClose={() => setPopup(null)}
                     onProgress={handleProgress}
                 />,
@@ -145,3 +160,5 @@ export default function WordText({text, wordMap = {}, highlight = true, rowKey, 
         </span>
     );
 }
+
+export default React.memo(WordText);

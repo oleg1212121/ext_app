@@ -4,8 +4,8 @@ title: Running an Alignment
 description: End-to-end workflow for aligning two same-work entities (any language pair) into sentence meaning matches.
 tags: [alignment, embeddings, jobs, howto]
 status: stable
-stale_after: 2026-12-10
-generated: { by: agent:zcode, at: 2026-09-20T23:59:00Z }
+stale_after: 2026-12-22
+generated: { by: agent:zcode, at: 2026-09-22T18:00:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -70,13 +70,16 @@ sources:
    e5-small signatures are incompatible — null them out first
    (`UPDATE entities SET signature = NULL;`), the command
    only processes entities with NULL signatures.
-3. **Align** — create an `EntityMatch` (`status='pending'`): via the
-   `/alignments` "+ Create new" React form (`alignments.create/store`) —
-   pick a **work**, then `first_entity_id` + `second_entity_id` (there is no
-   original-side choice; the original language lives on the work); the store
-   validates **same work** (same-language pairs such as exercises and
-   answers are valid — ADR 0019) and canonicalizes the pair
-   (lower entity id = a side) — or via the Filament `EntityMatchResource` /
+3. **Align** — create an `EntityMatch` (`status='pending'`): via the work's
+   **Alignments page** → "Add alignment"
+   (`/works/{work}/alignments/create`,
+   `works.alignments.create/store` — the work is the page, no work
+   picker; ADR 0036) — pick `first_entity_id` + `second_entity_id` (there is
+   no original-side choice; the original language lives on the work); the
+   store validates **both entities belong to the route work**
+   (same-language pairs such as exercises and answers are valid — ADR 0019)
+   and canonicalizes the pair (lower entity id = a side) — or via the
+   Filament `EntityMatchResource` /
    `EntityResource` "Find Match" action (same-work entities, any languages), an import command, or directly. Every creation entry
    point first tries `AlignmentCopyService::copyFor()` (ADR 0033): a
    completed match between **exact-copy** entities (equal `text_hash` +
@@ -149,8 +152,8 @@ sources:
     dispatching).
  5. **Review manually** in the Filament admin: `EntityMatchResource` →
     custom `EditEntityAlignment` page (draft store → persister → presenter
-    classes in `app/Classes/AlignmentEditor*`). Web view: `/alignments` and
-    `/alignments/{entityMatch}`. The Filament table offers two explicit
+    classes in `app/Classes/AlignmentEditor*`). Web view: the work's
+    Alignments page and `/alignments/{entityMatch}` (ADR 0036). The Filament table offers two explicit
     restart actions (visible only on `status ∈ {completed, failed}`):
     **Re-align** calls the landmark-aware `begin()` — preserving human
     `alignment_chunk=-1` rows and high-confidence landmarks, deleting only
@@ -163,6 +166,30 @@ sources:
    (`SparseOrderService`; language-agnostic — it scopes `entity_sentences`
    and `meaning_matches`, no `--lang`). Run it manually after large bulk
    edits.
+7. **Repair display order** — if a match shows sentences out of sequence in
+   the reader or the alignment editor (a scrambled `meaning_matches.order`;
+   see the order-preservation invariant in
+   [Sentence Alignment](/domains/sentence-alignment.md) — alignment itself
+   must never change sentence order), renumber one match back to document
+   position:
+
+   ```bash
+   docker exec ext_app_laravel php artisan alignments:resequence <entityMatchId>
+   ```
+
+   Idempotent: reports `0` changed rows when the order column already equals
+   document position. Every pipeline write path (chunk persist, finalize,
+   alignment copy) already runs the same resequencing, so a manual run is
+   only needed for rows written before the fix (Sep 2026) or after a manual
+   DB edit. The same command also **drops fully subsumed duplicate rows**
+   (one sentence junctioned into several machine rows — the signature of a
+   re-fed window), always resolving duplicates in favor of landmark/human
+   rows; legitimate n:m partial overlaps are left alone.
+
+   If the order is still wrong after a re-run of the alignment itself, check
+   the worker before suspecting the code: a queue worker started before a
+   fix keeps executing the old code until restarted (`composer run dev`
+   again, or `php artisan queue:restart`).
 
 # Failure handling
 

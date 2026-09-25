@@ -1,6 +1,6 @@
 <?php
 
-// UI strings: Reader (ReaderApp.jsx, ReaderIndexApp.jsx).
+// UI strings: Reader (ReaderApp.jsx).
 return [
     'reader.back_to_library' => ['en' => '← Library', 'ru' => '← Библиотека'],
     'reader.untitled' => ['en' => 'Untitled', 'ru' => 'Без названия'],
@@ -31,6 +31,9 @@ return [
     'reader.go_to_page' => ['en' => 'Go to page', 'ru' => 'Перейти к странице'],
     'reader.page_of' => ['en' => 'of :last', 'ru' => 'из :last'],
     'reader.hint' => ['en' => 'Tap a line to reveal its translation · Spacebar toggles audio playback', 'ru' => 'Нажмите на строку, чтобы увидеть перевод · Пробел включает и выключает аудио'],
+    'reader.highlights' => ['en' => 'Highlights', 'ru' => 'Подсветка слов'],
+    'reader.reading_language' => ['en' => 'Reading language', 'ru' => 'Язык чтения'],
+    // Reader index (ReaderIndexApp.jsx) — the Practice → Reader browse page.
     'reader.reader_heading' => ['en' => 'Reader', 'ru' => 'Читалка'],
     'reader.library_language' => ['en' => 'Library language', 'ru' => 'Язык библиотеки'],
     'reader.loading' => ['en' => 'Loading', 'ru' => 'Загрузка'],
@@ -41,5 +44,4 @@ return [
     'reader.texts' => ['en' => 'Texts', 'ru' => 'Тексты'],
     'reader.index_hint_open' => ['en' => 'Open a text to read it', 'ru' => 'Откройте текст, чтобы читать'],
     'reader.index_hint_gutter' => ['en' => 'the translation appears across the gutter', 'ru' => 'перевод появится напротив каждой строки'],
-    'reader.highlights' => ['en' => 'Highlights', 'ru' => 'Подсветка слов'],
 ];

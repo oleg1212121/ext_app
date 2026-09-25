@@ -19,6 +19,9 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing" force="true"/>
+        <!-- The full sequential suite exhausts the 128M default in one process
+             (Filament pages dominate peak memory). -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>

@@ -157,16 +157,27 @@ class EntityAccessService
      */
     public function readableMatchQuery(User $user): Builder
     {
-        $query = EntityMatch::query();
+        return $this->readableMatchConstraint($user)(EntityMatch::query());
+    }
 
+    /**
+     * Constraint scoping any entity-match query to what the user may read
+     * (both sides readable). Usable on plain match queries (readableMatchQuery)
+     * and inside relation constraints such as withCount (e.g. the Library's
+     * per-work alignment counts). A no-op for admins.
+     *
+     * @return Closure(Builder): Builder
+     */
+    public function readableMatchConstraint(User $user): Closure
+    {
         if ($user->isAdmin()) {
-            return $query;
+            return fn (Builder $query): Builder => $query;
         }
 
         $readable = fn (Builder $query): Builder => $query->where('is_restricted', false)
             ->orWhereHas('grantedUsers', fn (Builder $query): Builder => $query->whereKey($user->getKey()));
 
-        return $query
+        return fn (Builder $query): Builder => $query
             ->whereHas('aEntity', $readable)
             ->whereHas('bEntity', $readable);
     }

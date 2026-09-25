@@ -95,7 +95,7 @@ export default function CreateEntity({work, languages = []}) {
 
     const submit = (e) => {
         e.preventDefault();
-        post(`/library/${work.id}/entities`, {
+        post(`/works/${work.id}/entities`, {
             preserveScroll: true,
             forceFormData: true,
         });
@@ -106,7 +106,7 @@ export default function CreateEntity({work, languages = []}) {
             <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
                 <header className="flex flex-col gap-3 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] pb-4">
                     <Link
-                        href={`/library/${work.id}`}
+                        href={`/works/${work.id}/entities`}
                         className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                     >
                         ← {work.title}
@@ -218,7 +218,7 @@ export default function CreateEntity({work, languages = []}) {
                     <div className="flex items-center gap-4">
                         <PrimaryButton disabled={processing}>{t('library.create_entity')}</PrimaryButton>
                         <Link
-                            href={`/library/${work.id}`}
+                            href={`/works/${work.id}/entities`}
                             className="font-sans text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                         >
                             {t('library.cancel')}

@@ -20,8 +20,9 @@ class UpdateUiSettingsRequest extends FormRequest
             'simulator.show_workplace' => ['boolean'],
             'simulator.show_question' => ['boolean'],
             'simulator.show_ai' => ['boolean'],
-            'simulator.model' => ['nullable', 'string', 'max:255'],
-            'simulator.question' => ['nullable', 'string', 'max:8000'],
+            // The user's customized task list (the format template lives in
+            // prompt_templates); same limit as the AI endpoints' tasks rule.
+            'simulator.question' => ['nullable', 'string', 'max:4000'],
             'simulator.ai_panel_width' => ['integer', 'min:280', 'max:1200'],
             'simulator.workplace_height' => ['integer', 'min:80', 'max:800'],
             'simulator.highlight_words' => ['boolean'],

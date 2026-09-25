@@ -32,8 +32,8 @@ table.bilingual-table .bilingual-control-inner {
     width: 100%;
 }
 
-table.bilingual-table .eng,
-table.bilingual-table .rus {
+table.bilingual-table .target,
+table.bilingual-table .base {
     display: block;
     width: 100%;
     overflow-wrap: anywhere;

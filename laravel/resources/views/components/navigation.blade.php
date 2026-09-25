@@ -18,12 +18,6 @@
                         <x-nav-link :href="route('crossword')" :active="request()->routeIs('crossword')">
                             {{ __('nav.crossword') }}
                         </x-nav-link>
-                        <x-nav-link :href="route('reader')" :active="request()->routeIs('reader')">
-                            {{ __('nav.reader') }}
-                        </x-nav-link>
-                        <x-nav-link :href="route('bilinguals.simulator')" :active="request()->routeIs('bilinguals.simulator')">
-                            {{ __('nav.bilinguals') }}
-                        </x-nav-link>
                     </div>
                 @endauth
             </div>

@@ -92,6 +92,24 @@ return [
         'sentence_split_chunk_bytes' => (int) env('PYTHON_SPLIT_CHUNK_BYTES', 262_144),
     ],
 
+    // Downloadable word-frequency lists for words:import-frequency. Each
+    // named source fixes the language it belongs to. The ru file is a
+    // mirror of the Lyashevskaya & Sharoff (2009) RNC lemma dictionary —
+    // the official dict.ruslang.ru host serves a broken TLS certificate.
+    'frequency' => [
+        'timeout' => (int) env('FREQUENCY_DOWNLOAD_TIMEOUT', 300),
+        'sources' => [
+            'en-opensubtitles' => [
+                'lang' => 'en',
+                'url' => env('FREQUENCY_EN_URL', 'https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/en/en_full.txt'),
+            ],
+            'ru-rnc' => [
+                'lang' => 'ru',
+                'url' => env('FREQUENCY_RU_URL', 'https://raw.githubusercontent.com/nestekon/The-Caesar-Cipher-Hacking/master/freqrnc2011.csv'),
+            ],
+        ],
+    ],
+
     'admin' => [
         'name' => env('ADMIN_NAME', 'Admin'),
         'email' => env('ADMIN_EMAIL'),

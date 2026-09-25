@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent/opencode, at: 2026-09-03T16:30:00Z }
+generated: { by: agent/zcode, at: 2026-09-22T15:30:00Z }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base
@@ -13,6 +13,15 @@ sources:
   - id: resolver
     resource: laravel/app/Classes/AIModelResolver.php
     title: Provider registry and entry point
+  - id: adr-preferences
+    resource: docs/adr/0035-per-user-ai-model-preferences.md
+    title: ADR 0035 — Per-user AI model preferences, resolved server-side
+  - id: settings-migration
+    resource: laravel/database/migrations/2026_09_22_000001_add_ai_model_preferences_to_user_settings_table.php
+    title: user_settings.ai_model_id / explanation_model_id FKs (+ backfill)
+  - id: prefs-request
+    resource: laravel/app/Http/Requests/UpdateAiModelPreferencesRequest.php
+    title: UpdateAiModelPreferencesRequest
   - id: contract
     resource: laravel/app/Contracts/AiProviderInterface.php
     title: Provider interface
@@ -86,8 +95,19 @@ sources:
   gates simulator-picker appearance. _Avoid: "visible", "configured"_
 * **Model (enabled)** — per-row toggle; `ai_models.is_enabled`. _Avoid: "active
   model"_
+* **Answer model** — the user's chosen model for AI answers
+  (`user_settings.ai_model_id`, FK to `ai_models`), picked in the Profile's AI
+  Models tab. Unset **blocks** AI answers (no silent default); set-but-
+  unavailable falls back silently to the cheapest available model (ADR 0035).
+  _Avoid: "default model", "selected model"_
+* **Explanation model** — the user's chosen model for word explanations
+  (`user_settings.explanation_model_id`). Unset **follows the answer model**;
+  set-but-unavailable falls back to the effective answer model. _Avoid:
+  "explanation AI", "word model"_
 * **Sync** — catalog mirror from `services.<key>.models_url`; deliberately
-  ignores provider enabled-state.
+  ignores provider enabled-state. The mirror **hard-deletes** `ai_models`
+  rows missing upstream, which is why stored model preferences are
+  `nullOnDelete` FKs rather than strings.
 
 # Shape of the abstraction
 
@@ -100,7 +120,17 @@ OpenRouter model ids containing `/` are fine), e.g.
   the authenticated user has a User key for** (and that are admin-enabled);
   within each provider sorted by price ascending (cheapest first) and provider
   groups ordered by their cheapest model, so the globally cheapest model is
-  first. Drives the simulator's model picker.
+  first.
+* `getGroupedModelChoices()` — the same availability rules and ordering, but
+  entries carry `ai_models.id` (`{id, key, label}`), feeding the Profile's
+  AI Models tab where the stored value is a model id, not a string.
+* `resolveAnswerModel()` — the user's effective answer model: the stored
+  `ai_model_id` when still available, else the globally cheapest available
+  (silent fallback); `null` when nothing is stored (blocked) or nothing is
+  available. Memoized per instance alongside `getGroupedModelChoices()`.
+* `resolveExplanationModel()` — the stored `explanation_model_id` when
+  available, else the effective answer model; `null` only when no model
+  applies at all.
 * `firstModelKey()` — the first model key from `getGroupedModels()` (globally
   cheapest), or `null` when the user has no usable providers.
 * `getAllModelKeys()` — flat list for validation.
@@ -111,6 +141,13 @@ OpenRouter model ids containing `/` are fine), e.g.
   `?string`.
 * `isValidModel($modelString)` — catalog-only check (does this model exist?);
   authorization (does this user have a key?) is enforced in `ask()`.
+
+User-facing request endpoints do **not** accept a model from the client
+(ADR 0035): `/ai/question` and `/ai/question/stream` resolve the answer model
+and `/ai/word-explain` the explanation model via the methods above, answering
+with "Choose an AI model in your profile settings." when the resolution is
+null. The Profile persists both ids via `PATCH /profile/ai-models`
+(`UpdateAiModelPreferencesRequest`, `Rule::exists('ai_models')->where('is_enabled')`).
 
 `App\Classes\AiProvider` (abstract, implements
 `App\Contracts\AiProviderInterface`) provides: `isConfigured()` (a **System

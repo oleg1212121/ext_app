@@ -11,9 +11,15 @@ import.meta.glob([
 
 window.Alpine = Alpine;
 
-Alpine.start();
-
 const inertiaRoot = document.getElementById('app');
+
+// Alpine drives the Blade layouts' dropdown nav (auth pages, which have no
+// #app root). On Inertia pages its global MutationObserver would walk every
+// node React touches — pure overhead there, and a freeze ingredient on the
+// reader — so it only starts where Inertia is absent.
+if (!inertiaRoot) {
+    Alpine.start();
+}
 
 if (inertiaRoot) {
     createInertiaApp({

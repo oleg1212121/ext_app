@@ -1,7 +1,11 @@
+import {useState} from 'react';
+import {Link} from '@inertiajs/react';
+import ModelsUsedPopup, {RobotHelpIcon} from '../../../Components/ModelsUsedPopup.jsx';
 import {useI18n} from '../../../i18n';
 
 export default function AI(props) {
     const {t} = useI18n();
+    const [modelsOpen, setModelsOpen] = useState(false);
     const panelWidth = props.width ?? 560;
     const setPanelWidth = (updater) => props.onWidthChange(
         typeof updater === 'function' ? updater(panelWidth) : updater
@@ -42,9 +46,20 @@ export default function AI(props) {
             <div className="drag-handle-vertical" onMouseDown={startDrag} aria-hidden="true"></div>
             <div className="min-w-0 flex-1 flex flex-col overflow-hidden border-l border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
                 <div className="relative flex-none flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)]">
-                    <div className="flex flex-col gap-0.5 min-w-0">
-                        <span className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">{t('bilinguals.readers_gloss')}</span>
-                        <span className="font-[var(--wbench-serif)] text-sm tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] truncate">{t('bilinguals.ai_response')}</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-[var(--wbench-serif)] text-lg tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] truncate">{t('bilinguals.ai_response')}</span>
+                        {/* The robot icon replaces the old model-label link: it opens the Models used popup, which carries the label, the setup guidance, and the profile links. */}
+                        <button
+                            type="button"
+                            onClick={() => setModelsOpen(true)}
+                            title={t('ai.models_icon')}
+                            aria-label={t('ai.models_icon')}
+                            aria-haspopup="dialog"
+                            className="shrink-0 inline-flex items-center rounded-sm text-[var(--wbench-ink-soft)] transition-colors hover:text-[var(--wbench-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] dark:text-[var(--wbench-ink-soft-night)] dark:hover:text-[var(--wbench-accent-night)]"
+                        >
+                            {/* 24px box: the robot drawing fills ~half the viewBox height, so only a box this size puts its drawn height at the text-lg title's capitals. */}
+                            <RobotHelpIcon className="h-6 w-6"/>
+                        </button>
                     </div>
                     {hasAnswer && !isLoading && !hasError && (
                         <button
@@ -94,6 +109,20 @@ export default function AI(props) {
                                  className="resizeable_element ai-prose max-w-none break-words"
                                  dangerouslySetInnerHTML={{__html: (props.aiAnswer ?? '') + (isLoading ? '<span class="ai-stream-cursor"></span>' : '')}}></div>
                         </div>
+                    ) : !props.canUseAi ? (
+                        <div className="px-4 py-6 max-w-none">
+                            <div className="flex items-start gap-3">
+                                <span className="mt-1 shrink-0 inline-block h-5 w-5 border border-[var(--wbench-accent)] dark:border-[var(--wbench-accent-night)] text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] font-[var(--wbench-mono)] text-[10px] leading-[18px] text-center" aria-hidden="true">§</span>
+                                <p className="font-[var(--wbench-serif)] text-base text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] leading-relaxed">
+                                    <Link
+                                        href="/profile?tab=ai"
+                                        className="text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] hover:underline"
+                                    >
+                                        {t('bilinguals.add_api_key')}
+                                    </Link>
+                                </p>
+                            </div>
+                        </div>
                     ) : (
                         <div className="px-4 py-6 max-w-none">
                             <div className="flex items-start gap-3">
@@ -106,6 +135,13 @@ export default function AI(props) {
                     )}
                 </div>
             </div>
+            <ModelsUsedPopup
+                open={modelsOpen}
+                onClose={() => setModelsOpen(false)}
+                enabled={props.canUseAi === true}
+                answerModel={props.answerModel ?? null}
+                explanationModel={props.explanationModel ?? null}
+            />
         </div>
     )
 }

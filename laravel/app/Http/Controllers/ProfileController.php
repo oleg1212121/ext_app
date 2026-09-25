@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\AIModelResolver;
 use App\Http\Requests\ProfileUpdateRequest;
 use App\Http\Requests\StoreApiKeyRequest;
+use App\Http\Requests\UpdateAiModelPreferencesRequest;
 use App\Http\Requests\UpdateUserSettingsRequest;
 use App\Models\AiProvider;
 use App\Models\Language;
@@ -16,6 +18,10 @@ use Inertia\Response;
 
 class ProfileController extends Controller
 {
+    public function __construct(
+        protected AIModelResolver $modelResolver,
+    ) {}
+
     /**
      * Display the user's profile form.
      */
@@ -53,6 +59,9 @@ class ProfileController extends Controller
             'nativeLanguageId' => $request->user()->settings?->native_language_id,
             'interfaceLanguageId' => $request->user()->settings?->interface_language_id,
             'languages' => $languages,
+            'aiModelChoices' => $this->modelResolver->getGroupedModelChoices(),
+            'aiModelId' => $request->user()->settings?->ai_model_id,
+            'explanationModelId' => $request->user()->settings?->explanation_model_id,
         ]);
     }
 
@@ -87,7 +96,22 @@ class ProfileController extends Controller
             ],
         );
 
-        return Redirect::route('profile.edit')->with('status', 'settings-updated');
+        return Redirect::route('profile.edit', ['tab' => 'preferences'])->with('status', 'settings-updated');
+    }
+
+    /**
+     * Update the user's AI model preferences (answer + explanation model).
+     */
+    public function updateAiModels(UpdateAiModelPreferencesRequest $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $user->settings()->updateOrCreate(
+            ['user_id' => $user->id],
+            $request->validated(),
+        );
+
+        return Redirect::route('profile.edit', ['tab' => 'ai'])->with('status', 'ai-models-updated');
     }
 
     /**

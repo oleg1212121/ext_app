@@ -21,7 +21,7 @@ The two positions inside an entity match, stored canonically (the lower entity i
 _Avoid_: EN side / RU side (language-specific wording), left/right
 
 **Entity match**:
-The container pairing two distinct entities of the same **Work** ("the same text, two versions"), held by its **A-side** and **B-side**. The two entities are usually in different languages, but a same-language pairing (exercises + answers) is equally valid. See ADR 0019.
+The container pairing two distinct entities of the same **Work** ("the same text, two versions"), held by its **A-side** and **B-side**. The two entities are usually in different languages, but a same-language pairing (exercises + answers) is equally valid. Shown to users under the label "Alignments" (see the Library Context's **Alignments page**). See ADR 0019.
 _Avoid_: match, alignment
 
 **Original text**:
@@ -140,7 +140,7 @@ The domain of the bilinguals simulator's AI-assisted assessment surface — the
 ## Language
 
 **Gloss**:
-The reader's AI answer text rendered in the Reader's gloss panel of the
+The reader's AI answer text rendered in the AI Response panel of the
 bilinguals simulator. Not to be confused with a dictionary gloss.
 _Avoid_: AI answer (transport/implementation term), response
 
@@ -149,6 +149,23 @@ A hoverable text-level unit inside a gloss — any text-bearing element the
 markdown-to-HTML conversion emits (paragraph, list item, heading, `em`/`strong`
 run, code, etc.). Signals interactivity with a pointer cursor and an
 accent-tinted background on hover. _Avoid_: html element (implementation term)
+
+**Question template**:
+The admin-owned part of the assessment question — the format-rules
+instruction the learner cannot edit, shown above the question input as
+read-only text. Its `:base`/`:learning` placeholders stand for whichever
+languages currently play the base and learning columns, so the displayed
+text follows the language swap. Edited in the admin panel, not in UI
+settings. _Avoid_: format rules (only its current content), prompt (the
+assembled whole), default question (that was the old single-part text).
+
+**Task list**:
+The learner-editable part of the assessment question — what the reader
+should do with the translation (assessments, corrections, improved
+versions). The learner's customized task list is a UI settings entry;
+clearing it falls back to the admin-managed default. The server joins the
+Question template and the task list into the assessment question it sends.
+_Avoid_: question (that is the assembled whole), tasks, prompt.
 
 # Language Catalog Context
 
@@ -172,7 +189,7 @@ _Avoid_: active language, available language
 The per-user configuration row (one per user) holding the user's durable choices — the **Native language**, the **Interface language**, and **UI settings**. Stored in `user_settings`. _Avoid_: preferences, profile (the page, not the row).
 
 **UI settings**:
-The stable, user-chosen interface configuration inside User settings — simulator layout and panel visibility, font sizes, the selected AI model, the customized assessment question, and panel sizes. A sub-kind of User settings; changes follow the user across devices. See ADR 0024. _Avoid_: simulator cache, UI state (that includes Working state, which is not stored server-side).
+The stable, user-chosen interface configuration inside User settings — simulator layout and panel visibility, font sizes, the selected AI model, the customized assessment task list, and panel sizes. A sub-kind of User settings; changes follow the user across devices. See ADR 0024. _Avoid_: simulator cache, UI state (that includes Working state, which is not stored server-side).
 
 **Working state**:
 The per-device last position on a reading surface — in the simulator, the current entity match, the page reached per alignment, and the last opened row with its revealed halves; in the reader, the per-text **Reading position**. Kept in the browser only, never stored server-side. See ADR 0024 and ADR 0032. _Avoid_: UI settings (durable, cross-device), cache, session.
@@ -326,8 +343,20 @@ _Avoid_: model URL, list URL, models URL
 **Chat endpoint**:
 The URL a provider exposes for chat-completion requests; stored on the
 provider class as `aiApiLink` (e.g. `services.<provider>.url`). Distinct from
-the **models endpoint**.
+the **Models endpoint**.
 _Avoid_: API URL, completion URL
+
+**Models used popup**:
+The centered modal listing the AI models a reading surface currently answers
+from — the model behind AI questions (the simulator's **Gloss**) and the
+model behind **Context explanations** — each label linking to the profile's
+AI Models tab, with a hint while the explanation model merely follows the
+answer model. Opened from the robot-with-question-mark icon beside the AI
+Response panel's title and beside the **Word popup**'s Explanation tab; a
+reader without a **User key** meets the add-a-key call to action inside it
+instead of the model rows.
+_Avoid_: model tooltip (the retired always-visible header link it replaced),
+help modal
 
 # Entity Access Context
 
@@ -435,21 +464,53 @@ _Avoid_: total count, library size.
 # Library Context
 
 The domain of the user-facing browse surface for works and their texts — the
-`/library` section that replaced the language-first entities pages.
+`/works` section reached through the navbar's Library dropdown.
 
 ## Language
 
 **Library**:
-The user-facing section (nav item, `/library`) where an approved user browses
-the **Work catalog** and, inside a work, the entities they can read.
-_Avoid_: entities page (the former language-first surface), Parallel Library
-(the Reader's former on-page subtitle).
+The user-facing section — a nav dropdown with three branches over the
+`/works` URL space — where an approved user browses the **Work catalog** and,
+inside a work, its texts and entity matches. The branches: **Works** (the
+catalog lists), a work's **Entities page**, a work's **Alignments page**.
+_Avoid_: Parallel Library (the Reader's former on-page subtitle), tab (the
+retired per-work tab layout — see ADR 0039).
+
+**Practice**:
+The navbar group of self-study surfaces — the Reader (the text library a
+learner reads from) and the Simulator (the bilingual trainer with its
+alignment picker). A menu group, not a surface of its own; both surfaces
+also keep their deep-link entries from alignments. See ADR 0038.
+_Avoid_: training, exercises.
+
+**Work landing page**:
+A work's own page (`/works/{id}`): the catalog metadata (title, author,
+original language, description) plus the work's readable entity and
+alignment counts (see Readable count), each linking to the work's
+**Entities page** / **Alignments page**. _Avoid_: work page (ambiguous —
+any of a work's pages), work detail.
+
+**Entities page**:
+A work's page (`/works/{id}/entities`) listing the per-language texts of
+that work the user can read — where new texts are uploaded to the work.
+_Avoid_: entities tab (retired with the tab layout), text list.
+
+**Alignments page**:
+A work's page (`/works/{id}/alignments`) listing the **Entity matches** of
+that work, labeled "Alignments" in the UI — the canonical term stays Entity
+match. Creating a match happens from this page: the work is the page the
+form lives on, never a picker choice. An individual match's editor keeps
+its own standalone address. _Avoid_: alignment list (the removed global
+surface), global alignments, alignments tab (retired with the tab layout).
 
 **Work catalog**:
 The complete set of **Works**, visible to every approved user regardless of
 entity access — including works with no entities yet. A Work carries no access
 semantics of its own; access control and counts live on its entities (see
-Readable count in the Entity Access Context). See ADR 0021.
+Readable count in the Entity Access Context). All three branch lists
+(**Works**, and the per-branch lists at `/works/entities`,
+`/works/alignments`) show this complete set; only the counts are
+readable-scoped. See ADR 0021.
 _Avoid_: available works (Available is the AI-provider term), my library,
 book collection.
 
@@ -487,6 +548,22 @@ select puzzle words. A word is eligible for a Level when its rank (lower =
 more common) is within the band's cutoff.
 _Avoid_: difficulty (implies curated ordering), CEFR level.
 
+**Frequency rank**:
+The number on a dictionary Word telling how common it is in the language:
+lower = more common; 1 100 000 means unranked (absent from the imported
+frequency lists, native-speaker territory). Imported from public
+frequency lists, then nudged by Frequency corrections. _Avoid_:
+frequency count (the number is a position, not an occurrence tally),
+popularity.
+
+**Frequency correction**:
+The one-time pull a text applies to a word's Frequency rank: 2% of the
+rank's own value toward the word's position in that text's word list,
+never overshooting the position. Each text applies it exactly once; a
+heavily-used unranked word earns its way into the Level bands over
+several texts. _Avoid_: boost (moves both directions), accrual
+(implementation term).
+
 **Word familiarity**:
 The reader's exposure score for one dictionary Word, global across all
 works: 0–100, where 100 means the word is known and no row means never
@@ -515,6 +592,29 @@ A dictionary-linked token rendered as clickable text on a reading surface;
 Ctrl-clicking it opens the **Word popup** — a plain click does nothing.
 Tokens without a dictionary link are never interactive.
 _Avoid_: clickable text, word link.
+
+**Reading side**:
+The side of an **Entity match** a reading surface (reader, bilinguals
+simulator) opens as the text being learned: never the side in the user's
+**Native language** when exactly one side is native; otherwise the work's
+**Original text** side; otherwise the A-side. The same rule drives the
+library's Read button and the reading pages — see ADR 0037.
+_Avoid_: primary side (payload/prop vocabulary, not the concept), learning
+side (simulator display-column wording).
+
+**Translation side**:
+The side of an Entity match shown as the translation against the **Reading
+side** — by construction the side in the user's Native language when one
+exists. Not stored per match; derived by the same rule.
+_Avoid_: base side (the simulator's display-column role, which is
+positional, not language-derived).
+
+**Side swap**:
+A reader's per-device flip of the **Reading side** and **Translation side**
+around their computed default, via the pages' language toggle. A
+**Working state** kind: kept per device (keyed per text/match), never stored
+server-side, and the default always recomputes from the Native language.
+_Avoid_: language setting (a durable UI setting it is not), reverse mode.
 
 **Word popup**:
 The anchored popover a Ctrl-click on an Interactive word opens: one section

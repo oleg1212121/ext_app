@@ -217,7 +217,7 @@ class WiktionaryParser
 
         return [
             'word' => $word,
-            'l_word' => mb_strtolower($word),
+            'l_word' => $this->normalizeLookupKey($word),
             'pos' => $pos,
             'definitions' => array_values(array_unique($definitions)),
             'forms' => array_values(array_unique($forms)),
@@ -360,6 +360,15 @@ class WiktionaryParser
         }
     }
 
+    /**
+     * Lookup key for matching: lowercased with combining marks (Russian
+     * headwords' stress marks) stripped. The display `word` keeps them.
+     */
+    private function normalizeLookupKey(string $word): string
+    {
+        return (string) preg_replace('/\p{M}/u', '', mb_strtolower($word));
+    }
+
     private function flushForms(array $batch, object $wordIds, int $defaultWordClassId): void
     {
         $rows = [];
@@ -371,7 +380,7 @@ class WiktionaryParser
             foreach ($record['forms'] as $form) {
                 $rows[] = [
                     'form' => mb_substr($form, 0, 256),
-                    'l_word' => mb_strtolower(mb_substr($form, 0, 256)),
+                    'l_word' => $this->normalizeLookupKey(mb_substr($form, 0, 256)),
                     'word_id' => $wordId,
                 ];
             }

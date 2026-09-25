@@ -87,6 +87,25 @@ class EntityMatch extends Model
     }
 
     /**
+     * Which side a reading surface opens as the learning text for a user:
+     * the side in the user's native language becomes the translation, so the
+     * other side is read. When neither side (or both) is native, the work's
+     * original side is read; with no original side either, the canonical
+     * A-side. The same rule drives the library's Read button.
+     */
+    public function readingSideFor(?int $nativeLanguageId): string
+    {
+        $aIsNative = $nativeLanguageId !== null && $this->aEntity?->language_id === $nativeLanguageId;
+        $bIsNative = $nativeLanguageId !== null && $this->bEntity?->language_id === $nativeLanguageId;
+
+        if ($aIsNative !== $bIsNative) {
+            return $bIsNative ? 'a' : 'b';
+        }
+
+        return $this->originalSide() ?? 'a';
+    }
+
+    /**
      * Map a language code to this match's side ('a' or 'b').
      */
     public function sideForLanguage(string $languageCode): ?string

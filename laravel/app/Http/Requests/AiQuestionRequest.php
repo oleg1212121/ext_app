@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Classes\AIModelResolver;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -17,7 +16,11 @@ class AiQuestionRequest extends FormRequest
     }
 
     /**
-     * Get the validation rules that apply to the request.
+     * Get the validation rules that apply to the request. The model is not
+     * client-supplied: the controller resolves the user's stored answer-model
+     * preference via AIModelResolver::resolveAnswerModel(). The client sends
+     * only the user's task list plus the current column language codes — the
+     * controller joins them with the admin's format template.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -25,13 +28,9 @@ class AiQuestionRequest extends FormRequest
     {
         return [
             'data' => ['nullable', 'string'],
-            'question' => ['nullable', 'string', 'max:2000'],
-            'model' => ['required', 'string', 'max:200', function ($attribute, $value, $fail) {
-                $resolver = app(AIModelResolver::class);
-                if (! $resolver->isValidModel($value)) {
-                    $fail('The selected AI model is invalid.');
-                }
-            }],
+            'tasks' => ['nullable', 'string', 'max:4000'],
+            'base' => ['nullable', 'string', 'max:8'],
+            'learning' => ['nullable', 'string', 'max:8'],
         ];
     }
 }

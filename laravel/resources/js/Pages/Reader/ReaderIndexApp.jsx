@@ -51,13 +51,15 @@ export default function ReaderIndexApp({lang = 'en', languages = [], entities = 
         if (nextLang === lang || navigating) return;
         setPendingLang(nextLang);
         setNavigating(true);
-        router.visit(`/reader-react/${nextLang}`);
+        router.visit(`/reader/${nextLang}`);
     };
 
     const openReader = (entityId) => {
         const id = entityId ?? selectedEntityId;
         if (!id) return;
-        router.visit(`/reader-react/${lang}/${id}`);
+        // The reader route no longer carries the language segment: the side
+        // rule picks the reading language from the entity's match.
+        router.visit(`/reader/${id}`);
     };
 
     const pendingLabel = pendingLang ? t(pendingLang === 'en' ? 'reader.english' : 'reader.russian') : '';

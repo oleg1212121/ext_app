@@ -7,59 +7,44 @@
     line-height: 1.55;
 }
 
-/* Text emphasis — accent italic, emphasis-red bold; replaces legacy red literals. */
-em, i {
-    color: var(--wbench-accent);
-    font-style: italic;
-    font-weight: 400;
-}
-
-b, strong {
-    color: var(--wbench-emphasis);
-    font-weight: 600;
-}
-
-.dark em, .dark i {
-    color: var(--wbench-accent-night);
-}
-
-.dark b, .dark strong {
-    color: var(--wbench-emphasis-night);
-}
+/* App-wide em/i/b/strong emphasis colors moved to resources/css/app.css
+   (2026-09-23): they styled Welcome's italics while this file loaded
+   globally, and scoping the file here broke them. */
 
 /* Custom styles for dynamic font resizing */
 .resizeable_element {
     font-size: inherit;
 }
 
-/* Checkbox visibility logic for bilingual content */
-.hide_en,
-.hide_ru {
+/* Checkbox visibility logic for bilingual content. Columns are positional:
+   .hide_target is the learning column (left), .hide_base the base column. */
+.hide_target,
+.hide_base {
     opacity: 0;
     user-select: none;
     pointer-events: none;
     transition: opacity 120ms ease;
 }
 
-table.table:has(#all_ru:checked) .hide_ru {
+table.table:has(#all_base:checked) .hide_base {
     opacity: 1;
     pointer-events: initial;
     user-select: initial;
 }
 
-table.table:has(#all_en:checked) .hide_en {
+table.table:has(#all_target:checked) .hide_target {
     opacity: 1;
     pointer-events: initial;
     user-select: initial;
 }
 
-.simulator-row:has(.check_en:checked) > .hide_en {
+.simulator-row:has(.check_target:checked) > .hide_target {
     opacity: 1;
     pointer-events: initial;
     user-select: initial;
 }
 
-.simulator-row:has(.check_ru:checked) > .hide_ru {
+.simulator-row:has(.check_base:checked) > .hide_base {
     opacity: 1;
     pointer-events: initial;
     user-select: initial;
