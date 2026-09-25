@@ -30,17 +30,15 @@ function ReaderRow({
     // primary one; without a primary side (single-language text) it has none.
     const translationSide = primarySide === 'a' ? 'b' : primarySide === 'b' ? 'a' : null;
     // Stable payload identities: without them, memoized WordText instances
-    // would re-render on every parent pass.
+    // would re-render on every parent pass. Passed through whenever the side
+    // is language-eligible — enabled or not — so keyless users still get the
+    // word popup's tab strip and its Models used popup.
     const primaryExplainPayload = useMemo(
-        () => (explain?.enabled && primaryExplainable && primarySide
-            ? {enabled: true, modelKey: explain.modelKey}
-            : undefined),
+        () => (primaryExplainable && primarySide ? explain ?? undefined : undefined),
         [explain, primaryExplainable, primarySide],
     );
     const translationExplainPayload = useMemo(
-        () => (explain?.enabled && translationExplainable && translationSide
-            ? {enabled: true, modelKey: explain.modelKey}
-            : undefined),
+        () => (translationExplainable && translationSide ? explain ?? undefined : undefined),
         [explain, translationExplainable, translationSide],
     );
     const hasTranslation = translation.trim() !== '';

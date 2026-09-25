@@ -65,6 +65,7 @@ class ReaderController extends Controller
 
         $userId = (int) auth()->id();
         $wordMap = new EntityWordMap;
+        $explanationModel = $this->modelResolver->resolveExplanationModel();
 
         return Inertia::render('Reader', [
             // The two columns' languages after the side rule — the reading
@@ -95,7 +96,9 @@ class ReaderController extends Controller
             'primarySide' => $readingSide,
             'explain' => [
                 'enabled' => auth()->user()->canUseAi(),
-                'modelKey' => $this->modelResolver->resolveExplanationModel()['id'] ?? null,
+                'modelKey' => $explanationModel['id'] ?? null,
+                'modelLabel' => $explanationModel['label'] ?? null,
+                'followsAnswer' => $this->modelResolver->explanationModelFollowsAnswer(),
             ],
         ]);
     }

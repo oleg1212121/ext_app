@@ -5,7 +5,7 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-09-22T18:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-25T18:43:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -105,21 +105,33 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
 
 # Context explanation tab
 
-When the surrounding `WordText` receives a `rowKey`, a `side` and an enabled
-`explain` flag (`{enabled, modelKey}` — eligibility per column), the popup
+When the surrounding `WordText` receives a `rowKey`, a `side` and an `explain`
+payload (`{enabled, modelKey, modelLabel, followsAnswer, answerLabel}` —
+eligibility per column, carried enabled or not), the popup
 grows a tab strip: the dictionary content above stays on the first tab and a
 second tab ("Explanation") offers the **Context explanation** — an AI answer
 to "what does this word mean in this sentence?". Eligibility follows the
 same rule everywhere: a column is explainable when its language ≠ the user's
 native language (the `*Highlightable`/`word_maps.explainable` maps), so the
 Reader now has the tab too — the simulator on both surfaces since the model
-no longer needs page state (ADR 0035).
+no longer needs page state (ADR 0035). Right of the Explanation tab sits a
+**robot-with-question-mark icon** (not a tab — its click never switches
+tabs) opening the **Models used popup**
+(`Components/ModelsUsedPopup.jsx`): the models currently serving the
+surface, each label a link to `/profile?tab=ai` — on the simulator both the
+AI questions (answer) model and the explanation model (with a muted
+"follows answer model" hint while no separate explanation pick exists,
+`AIModelResolver::explanationModelFollowsAnswer()`), on the reader just the
+explanation model. While the modal is open it owns Escape and
+outside-click closing — the word popup underneath stays put.
 
 * **The request is manual.** The tab shows an "Explain this word" button;
   pressing it POSTs `/ai/word-explain` (sync JSON, no streaming). Until
-  then nothing is spent; no auto-fetch on popup open. When the user has no
-  resolved explanation model, the tab shows choose-a-model guidance with a
-  link to `/profile?tab=ai` instead of the button.
+  then nothing is spent; no auto-fetch on popup open. Keyless users
+  (`enabled` false — the strip still renders for them) see add-an-API-key
+  guidance with a link to `/profile?tab=ai`; when the user has no
+  resolved explanation model, the tab shows choose-a-model guidance
+  instead of the button.
 * **Sentence identity travels as an index or an id.** For bilingual rows the
   row text joins a side's non-empty sentences in document order with `\n`
   (`MeaningMatchPresenter::sideText`); `WordText` renders each sentence in
@@ -214,7 +226,9 @@ no longer needs page state (ADR 0035).
   `translationWordMap`, `rowKeys`, `highlight`, `primaryHighlightable`,
   `translationHighlightable`, plus the explanation quartet `primaryExplainable`
   / `translationExplainable` / `primarySide` / `explain`
-  (`{enabled, modelKey}`); `ReaderRow` renders both row halves through
+  (`{enabled, modelKey, modelLabel, followsAnswer}` — the label fields feed
+  the word popup's Models used popup, which on the reader lists the
+  explanation model only); `ReaderRow` renders both row halves through
   `WordText` (the primary line is a `role="button"` div so the word tokens —
   themselves `role="button"` spans — stay valid HTML inside it) and derives
   the popup font from its own `fontSize`. Lookup events only — no read
@@ -225,6 +239,7 @@ no longer needs page state (ADR 0035).
   (`{a, b, highlightable, explainable}`; `null` in legacy filename mode) and
   `row_keys` (aligned with `rows`); `TextContent` renders both cells through
   `WordText` (`side="a"`/`side="b"`, and `explain = {enabled: canUseAi,
-  modelKey}` gated per side by `word_maps.explainable`), fires read
+  modelKey, modelLabel, followsAnswer, answerLabel}` gated per side by
+  `word_maps.explainable`), fires read
   events from the row/column checkboxes, and enables the popup's Context
   explanation tab.

@@ -19,5 +19,6 @@ return [
     'word.explain_failed' => ['en' => 'Explanation failed (:status)', 'ru' => 'Не удалось объяснить (:status)'],
     'word.explain_again' => ['en' => 'Ask again', 'ru' => 'Спросить ещё раз'],
     'word.explain_choose_model' => ['en' => 'Choose an AI model in your Profile to get word explanations.', 'ru' => 'Выберите ИИ-модель в профиле, чтобы получать объяснения слов.'],
+    'word.explain_no_key' => ['en' => 'Add an API key in your Profile to get word explanations.', 'ru' => 'Добавьте API-ключ в профиле, чтобы получать объяснения слов.'],
     'word.explain_go_to_settings' => ['en' => 'Go to Profile → AI Models', 'ru' => 'Перейти в профиль → ИИ-модели'],
 ];
