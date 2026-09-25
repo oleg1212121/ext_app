@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {Link} from '@inertiajs/react';
+import ModelsUsedPopup, {RobotHelpIcon} from './ModelsUsedPopup.jsx';
 import {useI18n} from '../i18n';
 import {getCsrfToken} from '../lib/http';
 import {renderMarkdown} from '../lib/markdown';
@@ -109,12 +110,12 @@ function TranslationLine({translations}) {
  * The Word popup's second tab: a manual "Explain" that asks the AI what the
  * word means in its sentence context (POST /ai/word-explain). The model is
  * the user's stored explanation preference — the server resolves it; the
- * popup only carries `modelKey` to discriminate the client cache. When the
- * user has not chosen an explanation model (modelKey null) the tab shows
- * guidance instead of a request button. The request fires only from the
- * button; a hit in the page-lifetime explain cache renders instantly
- * instead. `explainKey` also guards against stale responses landing after
- * the popup has moved to another word.
+ * popup only carries `modelKey` to discriminate the client cache. Keyless
+ * users (enabled false) and users without a chosen explanation model
+ * (modelKey null) see guidance instead of a request button. The request
+ * fires only from the button; a hit in the page-lifetime explain cache
+ * renders instantly instead. `explainKey` also guards against stale
+ * responses landing after the popup has moved to another word.
  */
 function ExplainPane({explain, explainKey}) {
     const {t} = useI18n();
@@ -195,7 +196,17 @@ function ExplainPane({explain, explainKey}) {
 
     return (
         <div className="px-3.5 pb-1">
-            {explain.modelKey == null ? (
+            {explain.enabled === false ? (
+                <div className="py-3">
+                    <p className="text-[0.857em] opacity-70">{t('word.explain_no_key')}</p>
+                    <Link
+                        href="/profile?tab=ai"
+                        className="mt-2 inline-block text-[0.857em] text-[var(--color-verdigris)] underline underline-offset-2 hover:opacity-80 dark:text-[var(--color-verdigris-night)]"
+                    >
+                        {t('word.explain_go_to_settings')}
+                    </Link>
+                </div>
+            ) : explain.modelKey == null ? (
                 <div className="py-3">
                     <p className="text-[0.857em] opacity-70">{t('word.explain_choose_model')}</p>
                     <Link
@@ -259,13 +270,17 @@ function ExplainPane({explain, explainKey}) {
  * its reading font size (popupFontSizeFor); every inner text size is
  * em-relative to it, and the width scales with it.
  *
- * With an `explain` payload ({rowKind, rowId, side, sentenceIndex, modelKey})
- * the popup grows a tab strip: the dictionary content stays on the first
- * tab, and a second tab offers the manual AI context explanation. Without it
- * the popup renders exactly as before. `modelKey` (the user's explanation
- * model id) only discriminates the client cache and decides between the
- * request button and choose-a-model guidance — the server resolves the
- * actual model per user preference.
+ * With an `explain` payload ({rowKind, rowId, side, sentenceIndex, modelKey,
+ * enabled, modelLabel, followsAnswer, answerLabel}) the popup grows a tab
+ * strip: the dictionary content stays on the first tab, and a second tab
+ * offers the manual AI context explanation. Without it the popup renders
+ * exactly as before. `modelKey` (the user's explanation model id) only
+ * discriminates the client cache and decides between the request button and
+ * choose-a-model guidance — the server resolves the actual model per user
+ * preference. The label fields (`modelLabel`, `followsAnswer`, and the
+ * simulator-only `answerLabel`) exist for the tab strip's robot icon, which
+ * opens the Models used popup; `enabled` false (no API key) keeps the strip
+ * and shows add-key guidance instead of the request button.
  */
 export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain}) {
     const {t} = useI18n();
@@ -274,6 +289,12 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [tab, setTab] = useState('dictionary');
+    const [modelsOpen, setModelsOpen] = useState(false);
+    // Read by the document-level close handlers below: while the nested
+    // Models used popup is open, that modal owns Escape and outside-click
+    // closing — the word popup underneath must stay put.
+    const modelsOpenRef = useRef(false);
+    modelsOpenRef.current = modelsOpen;
     const ref = useRef(null);
 
     const explainKey = explain
@@ -282,6 +303,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
 
     useEffect(() => {
         setTab('dictionary');
+        setModelsOpen(false);
     }, [wordId, explainKey]);
 
     useEffect(() => {
@@ -323,11 +345,17 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     useEffect(() => {
         const onKeyDown = (event) => {
             if (event.key === 'Escape') {
+                if (modelsOpenRef.current) {
+                    return;
+                }
                 event.stopPropagation();
                 onClose();
             }
         };
         const onMouseDown = (event) => {
+            if (modelsOpenRef.current) {
+                return;
+            }
             if (ref.current && !ref.current.contains(event.target)) {
                 onClose();
             }
@@ -425,6 +453,17 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                             >
                                 {t('word.tab_explanation')}
                             </button>
+                            {/* Not a tab: opens the Models used popup. Kept out of the tab buttons so clicking it never switches tabs. */}
+                            <button
+                                type="button"
+                                onClick={() => setModelsOpen(true)}
+                                title={t('ai.models_icon')}
+                                aria-label={t('ai.models_icon')}
+                                aria-haspopup="dialog"
+                                className="-mb-px ml-1 inline-flex items-center rounded-sm border-b-2 border-transparent py-1.5 opacity-60 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
+                            >
+                                <RobotHelpIcon className="h-[1.1em] w-[1.1em]"/>
+                            </button>
                         </div>
                     )}
 
@@ -515,6 +554,18 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                             )}
                         </div>
                     </div>
+
+                    {explainProps && (
+                        <ModelsUsedPopup
+                            open={modelsOpen}
+                            onClose={() => setModelsOpen(false)}
+                            enabled={explainProps.enabled !== false}
+                            answerModel={explainProps.answerLabel ? {label: explainProps.answerLabel} : null}
+                            explanationModel={explainProps.modelLabel
+                                ? {label: explainProps.modelLabel, followsAnswer: explainProps.followsAnswer === true}
+                                : null}
+                        />
+                    )}
                 </>
             )}
         </div>,

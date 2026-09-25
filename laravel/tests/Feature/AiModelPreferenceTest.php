@@ -87,6 +87,7 @@ it('resolveExplanationModel follows the answer model when unset', function () {
     $this->actingAs($user);
 
     expect((new AIModelResolver)->resolveExplanationModel()['id'])->toBe($answer->id);
+    expect((new AIModelResolver)->explanationModelFollowsAnswer())->toBeTrue();
 });
 
 it('resolveExplanationModel returns the stored explanation pick', function () {
@@ -103,6 +104,7 @@ it('resolveExplanationModel returns the stored explanation pick', function () {
     $this->actingAs($user);
 
     expect((new AIModelResolver)->resolveExplanationModel()['id'])->toBe($explanation->id);
+    expect((new AIModelResolver)->explanationModelFollowsAnswer())->toBeFalse();
 });
 
 it('resolveExplanationModel follows the answer model when the explanation pick is stale', function () {
@@ -119,6 +121,8 @@ it('resolveExplanationModel follows the answer model when the explanation pick i
     $this->actingAs($user);
 
     expect((new AIModelResolver)->resolveExplanationModel()['id'])->toBe($answer->id);
+    // A stale pick no longer counts as the user's own: it follows again.
+    expect((new AIModelResolver)->explanationModelFollowsAnswer())->toBeTrue();
 });
 
 it('resolveExplanationModel falls back to the answer model fallback when the user removed the explanation provider key', function () {

@@ -205,10 +205,18 @@ const Bilinguals = (props) => {
     // Word-popup typography follows the page's font setting (ADR 0031).
     const popupFontSize = popupFontSizeFor(fontSize);
     // Stable identity so memoized WordText columns don't re-render on every
-    // parent pass (the AI panel streams state updates ~20x/second).
+    // parent pass (the AI panel streams state updates ~20x/second). The
+    // model display fields feed the word popup's Models used popup; the
+    // answer label is simulator-only (the reader has no AI questions).
     const explainConfig = React.useMemo(
-        () => ({enabled: canUseAi, modelKey: props.explanationModelKey}),
-        [canUseAi, props.explanationModelKey],
+        () => ({
+            enabled: canUseAi,
+            modelKey: props.explanationModel?.id ?? null,
+            modelLabel: props.explanationModel?.label ?? null,
+            followsAnswer: props.explanationModel?.followsAnswer === true,
+            answerLabel: props.answerModel?.label ?? null,
+        }),
+        [canUseAi, props.explanationModel, props.answerModel],
     );
     const [aiPanelWidth, setAiPanelWidth] = React.useState(props.aiPanelWidth ?? 560);
     const [workplaceHeight, setWorkplaceHeight] = React.useState(props.workplaceHeight ?? 168);
@@ -803,7 +811,7 @@ const Bilinguals = (props) => {
                     }
                 </div>
                 {showAI === true &&
-                    <AI aiAnswer={aiAnswer} pending={pending} aiError={aiError} onRetry={retryAsk} canUseAi={canUseAi} answerModel={answerModel} width={aiPanelWidth} onWidthChange={setAiPanelWidth}/>
+                    <AI aiAnswer={aiAnswer} pending={pending} aiError={aiError} onRetry={retryAsk} canUseAi={canUseAi} answerModel={answerModel} explanationModel={props.explanationModel ?? null} width={aiPanelWidth} onWidthChange={setAiPanelWidth}/>
                 }
             </div>
         </div>

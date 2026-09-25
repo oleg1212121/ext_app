@@ -17,16 +17,15 @@ export default function TextContent(props) {
     const rowOffset = props.rowOffset ?? 0;
     const hasRows = (props.rows?.length ?? 0) > 0;
 
+    // Passed through whenever the side is language-eligible — enabled or
+    // not — so keyless users still get the word popup's tab strip and its
+    // Models used popup; `enabled` rides along for the guidance states.
     const targetExplain = useMemo(
-        () => (props.explain?.enabled && props.targetExplainable
-            ? {enabled: true, modelKey: props.explain.modelKey}
-            : undefined),
+        () => (props.targetExplainable ? props.explain : undefined),
         [props.explain, props.targetExplainable],
     );
     const baseExplain = useMemo(
-        () => (props.explain?.enabled && props.baseExplainable
-            ? {enabled: true, modelKey: props.explain.modelKey}
-            : undefined),
+        () => (props.baseExplainable ? props.explain : undefined),
         [props.explain, props.baseExplainable],
     );
 

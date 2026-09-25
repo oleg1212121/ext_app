@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia]
 status: stable
 stale_after: 2026-12-23
-generated: { by: agent:zcode, at: 2026-09-24T22:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-09-25T18:43:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -51,16 +51,21 @@ variants.
   per-user preference picked in the Profile's AI Models tab
   (`user_settings.ai_model_id`, resolved server-side by
   `AIModelResolver::resolveAnswerModel()`). The AI Response panel header
-  shows the setup state below its title, each state a link to
-  `/profile?tab=ai`: the effective model's label (tooltip "Change the model
-  in your Profile"), or — with API keys stored but no model chosen — the
-  short "Choose a model…" label (full-sentence tooltip; asking is blocked
-  with the same guidance), or — with no keys — the short "Add an API key…"
-  label (full-sentence tooltip). The panel itself is **not AI-gated**: it
-  renders for every approved user per the saved `show_ai` setting, and its
-  toggle button is always in the toolbar, so keyless users always meet the
-  add-key call to action (the panel body shows the full "Add an API key…"
-  sentence as a link while `canUseAi` is false). The assessment question is
+  shows a **robot-with-question-mark icon** right of its title that opens
+  the **Models used popup** (`Components/ModelsUsedPopup.jsx`, the same
+  modal the word popup's Explanation tab opens): the effective answer and
+  explanation model labels, each a link to `/profile?tab=ai` (tooltip
+  "Change the model in your Profile"); the explanation row adds a muted
+  "(follows answer model)" hint while the user has no separate explanation
+  pick (`AIModelResolver::explanationModelFollowsAnswer()`). Keyless users
+  (`canUseAi` false) get the full "Add an API key…" sentence as the popup's
+  link instead of rows; with keys stored but no model chosen, a row shows
+  the short "Choose a model…" label (asking stays blocked). The panel
+  itself is **not AI-gated**: it renders for every approved user per the
+  saved `show_ai` setting, and its toggle button is always in the toolbar,
+  so keyless users always meet the add-key call to action (the panel body
+  shows the full "Add an API key…" sentence as a link while `canUseAi` is
+  false). The assessment question is
   **split and assembled server-side** (ADR 0040): an admin-editable
   **Question template** — the format-rules text, stored in the seeded
   `prompt_templates` rows (`App\Support\PromptTemplates`, Filament
@@ -198,9 +203,11 @@ response), `defaultLearningSide`
 ('a'|'b' from the shared side rule), `questionTemplates`
 (`{format, tasks}` — the raw, unsubstituted template rows for display and
 the default task list), `answerModel`
-(`{id, label}` or null — the resolved answer model shown in the AI panel
-header), `explanationModelKey` (resolved explanation model id, only discriminates the
-word popup's client cache), `show*` feature flags
+(`{id, label}` or null — the resolved answer model shown in the AI panel's
+Models used popup), `explanationModel` (`{id, label, followsAnswer}` or
+null — the resolved explanation model: `id` discriminates the word popup's
+client cache, the label and the follows-answer flag feed the Models used
+popup), `show*` feature flags
 (`showWorkplace`, `showQuestion`, `showText`, `showAI`), plus the saved UI
 settings seeds (`fontSize`, `aiPanelWidth`, `workplaceHeight`, and the
 `show*` props; `currentTasks` ships **null** unless the user customized

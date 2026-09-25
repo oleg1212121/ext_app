@@ -25,7 +25,7 @@ it('shows no answer model while the user has not picked one', function () {
         );
 });
 
-it('shows the stored answer model and explanation model id', function () {
+it('shows the stored answer model and explanation model', function () {
     $user = User::factory()->create();
     $match = createSimulatorMatch();
     $provider = AiProvider::factory()->enabled()->create(['key' => 'openrouter', 'name' => 'OpenRouter']);
@@ -43,7 +43,8 @@ it('shows the stored answer model and explanation model id', function () {
         ->assertInertia(fn ($page) => $page
             ->where('answerModel.id', $cheap->id)
             ->where('answerModel.label', 'Cheap (free)')
-            ->where('explanationModelKey', $fancy->id)
+            ->where('explanationModel.id', $fancy->id)
+            ->where('explanationModel.followsAnswer', false)
         );
 });
 
@@ -62,7 +63,9 @@ it('shows the fallback model when the stored pick is no longer available', funct
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('answerModel.id', $cheap->id)
-            ->where('explanationModelKey', $cheap->id)
+            ->where('explanationModel.id', $cheap->id)
+            // No stored explanation pick: it follows the answer model.
+            ->where('explanationModel.followsAnswer', true)
         );
 });
 
@@ -77,7 +80,7 @@ it('renders an empty state when the user has no keys', function () {
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('answerModel', null)
-            ->where('explanationModelKey', null)
+            ->where('explanationModel', null)
             ->where('canUseAi', false)
             // The panel itself is not AI-gated anymore: keyless users see it
             // with the add-an-API-key call to action in its header.

@@ -73,6 +73,8 @@ class SimulatorController extends Controller
         // The model is a per-user preference picked in the profile; the page
         // only shows which model is answering (or that none is chosen).
         $answerModel = $this->modelResolver->resolveAnswerModel();
+        $explanationModel = $this->modelResolver->resolveExplanationModel();
+        $explanationFollowsAnswer = $this->modelResolver->explanationModelFollowsAnswer();
 
         return Inertia::render('Bilinguals/Bilinguals', [
             'textList' => $textList,
@@ -109,7 +111,13 @@ class SimulatorController extends Controller
             'answerModel' => $answerModel !== null
                 ? ['id' => $answerModel['id'], 'label' => $answerModel['label']]
                 : null,
-            'explanationModelKey' => $this->modelResolver->resolveExplanationModel()['id'] ?? null,
+            'explanationModel' => $explanationModel !== null
+                ? [
+                    'id' => $explanationModel['id'],
+                    'label' => $explanationModel['label'],
+                    'followsAnswer' => $explanationFollowsAnswer,
+                ]
+                : null,
             'currentTasks' => $saved['question'] ?? null,
             'currentText' => $pinnedName !== null
                 ? (string) $pinned->id

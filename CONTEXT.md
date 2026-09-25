@@ -343,8 +343,20 @@ _Avoid_: model URL, list URL, models URL
 **Chat endpoint**:
 The URL a provider exposes for chat-completion requests; stored on the
 provider class as `aiApiLink` (e.g. `services.<provider>.url`). Distinct from
-the **models endpoint**.
+the **Models endpoint**.
 _Avoid_: API URL, completion URL
+
+**Models used popup**:
+The centered modal listing the AI models a reading surface currently answers
+from — the model behind AI questions (the simulator's **Gloss**) and the
+model behind **Context explanations** — each label linking to the profile's
+AI Models tab, with a hint while the explanation model merely follows the
+answer model. Opened from the robot-with-question-mark icon beside the AI
+Response panel's title and beside the **Word popup**'s Explanation tab; a
+reader without a **User key** meets the add-a-key call to action inside it
+instead of the model rows.
+_Avoid_: model tooltip (the retired always-visible header link it replaced),
+help modal
 
 # Entity Access Context
 

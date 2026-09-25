@@ -563,7 +563,10 @@ test('reader page passes explanation gating and side props', function () {
             ->where('primarySide', 'b')
             // No API keys yet: AI explanations stay off.
             ->where('explain.enabled', false)
-            ->where('explain.modelKey', null));
+            ->where('explain.modelKey', null)
+            ->where('explain.modelLabel', null)
+            // Unset explanation pick "follows" the answer model by definition.
+            ->where('explain.followsAnswer', true));
 });
 
 test('reader page carries the explanation model when the user can use AI', function () {
@@ -571,7 +574,7 @@ test('reader page carries the explanation model when the user can use AI', funct
     $entities = createAlignedReaderEntities();
 
     $provider = AiProvider::factory()->enabled()->create(['key' => 'openrouter', 'name' => 'OpenRouter']);
-    $model = AiModel::factory()->enabled()->create(['ai_provider_id' => $provider->id, 'external_id' => 'explain', 'name' => 'Explain Model']);
+    $model = AiModel::factory()->enabled()->create(['ai_provider_id' => $provider->id, 'external_id' => 'explain', 'name' => 'Explain Model', 'pricing_prompt' => '0', 'pricing_completion' => '0']);
     UserApiKey::factory()->create(['user_id' => $user->id, 'ai_provider_id' => $provider->id]);
     $user->settings()->updateOrCreate(['user_id' => $user->id], ['ai_model_id' => $model->id]);
 
@@ -581,7 +584,10 @@ test('reader page carries the explanation model when the user can use AI', funct
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
             ->where('explain.enabled', true)
-            ->where('explain.modelKey', $model->id));
+            ->where('explain.modelKey', $model->id)
+            ->where('explain.modelLabel', 'Explain Model (free)')
+            // No separate explanation pick: it follows the answer model.
+            ->where('explain.followsAnswer', true));
 });
 
 test('a single language reader page has no primary side', function () {

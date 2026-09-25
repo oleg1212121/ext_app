@@ -288,6 +288,15 @@ class AIModelResolver
     }
 
     /**
+     * Whether the effective explanation model is not the user's stored pick
+     * (unset, or no longer available) and therefore follows the answer model.
+     */
+    public function explanationModelFollowsAnswer(): bool
+    {
+        return $this->pickStoredChoice(Auth::user()?->settings?->explanation_model_id, fallbackToCheapest: false) === null;
+    }
+
+    /**
      * Find a stored ai_models.id among the user's available choices. A null
      * stored id is "unset", not "unavailable" — it returns null without
      * falling back; a stale id only falls back when $fallbackToCheapest.

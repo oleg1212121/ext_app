@@ -42,8 +42,9 @@ function tierClass(familiarity, highlight) {
  * The text is one row side: its sentences joined with "\n" in document order
  * (MeaningMatchPresenter::sideText). Each sentence renders in its own inline
  * span — visually identical, but a click knows which sentence it hit. With
- * rowKey and an enabled `explain` ({enabled, modelKey}) present, WordPopup
- * gets an `explain` payload; the backend rebuilds the same sentence list, so
+ * rowKey and an `explain` ({enabled, modelKey, modelLabel, followsAnswer,
+ * answerLabel}) present — enabled or not — WordPopup gets an `explain`
+ * payload; the backend rebuilds the same sentence list, so
  * the index is exact. rowKey's prefix selects the backend source: "mm:{id}"
  * is a meaning match row (side required), anything else ("es:{id}") is a
  * bare entity sentence (side unused).
@@ -91,12 +92,19 @@ function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress,
         onWordProgress?.(key, familiarity);
     }, [onWordProgress]);
 
-    const explainPayload = popup && rowKey && explain?.enabled ? {
+    // The payload is built whenever `explain` exists — enabled or not — so
+    // the word popup's tab strip (and its Models used popup) also reaches
+    // keyless users; `enabled` rides along for the guidance states.
+    const explainPayload = popup && rowKey && explain ? {
         rowKind: rowKey.startsWith('mm:') ? 'mm' : 'es',
         rowId: Number(rowKey.slice(3)),
         side: side ?? null,
         sentenceIndex: popup.sentenceIndex,
         modelKey: explain.modelKey ?? null,
+        enabled: explain.enabled === true,
+        modelLabel: explain.modelLabel ?? null,
+        followsAnswer: explain.followsAnswer === true,
+        answerLabel: explain.answerLabel ?? null,
     } : undefined;
 
     return (

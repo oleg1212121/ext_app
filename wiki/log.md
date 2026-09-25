@@ -1,5 +1,26 @@
 # Directory Update Log
 
+## 2026-09-25 (feat: Models used popup replaces the AI panel's model-label link)
+
+The AI Response panel header's three-state model link ("Add an API key…" /
+model label / "Choose a model…") is replaced by a
+robot-with-question-mark icon that opens the new **Models used popup**
+(`Components/ModelsUsedPopup.jsx`) — a centered modal listing the models
+currently in use, each label a link to `/profile?tab=ai`: on the simulator
+"AI questions" (answer model) and "Explanations" (explanation model, with a
+muted "follows answer model" hint while no separate pick exists — new
+`AIModelResolver::explanationModelFollowsAnswer()`), on the reader just the
+explanation model. The same icon sits right of the word popup's Explanation
+tab (both surfaces — one shared component); while the modal is open it owns
+Escape/outside-click closing so the word popup underneath stays put. The
+word popup's tab strip now also renders for keyless users (add-key
+guidance in the Explanation tab, new `word.explain_no_key` string; new
+`ai.*` string group). Prop changes: simulator `explanationModelKey` →
+`explanationModel {id, label, followsAnswer}`; reader `explain` gains
+`modelLabel`/`followsAnswer`. CONTEXT.md gained **Models used popup**;
+`bilinguals-simulator.md` and `interactive-words.md` updated. Tests:
+`SimulatorApiKeyTest`, `ReaderPageTest`, `AiModelPreferenceTest` extended.
+
 ## 2026-09-25 (fix: l_word lookup keys lose combining stress marks)
 
 The ru-rnc frequency import matched only 2 of 3 words — investigation
