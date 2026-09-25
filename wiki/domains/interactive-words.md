@@ -5,7 +5,7 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-09-22T16:10:00Z }
+generated: { by: agent:zcode, at: 2026-09-22T18:00:00Z }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -210,7 +210,7 @@ no longer needs page state (ADR 0035).
 
 # Consuming surfaces
 
-* **Reader** (`/reader-react/{lang}/{entityId}`): props `wordMap`,
+* **Reader** (`/reader/{lang}/{entityId}`): props `wordMap`,
   `translationWordMap`, `rowKeys`, `highlight`, `primaryHighlightable`,
   `translationHighlightable`, plus the explanation quartet `primaryExplainable`
   / `translationExplainable` / `primarySide` / `explain`

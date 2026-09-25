@@ -43,14 +43,19 @@ Route::middleware(['auth', 'approved'])->group(function () {
         return Inertia::render('Dashboard');
     })->middleware('verified')->name('dashboard');
 
-    Route::redirect('/reader-react', '/reader-react/en');
-    Route::get('/reader-react/{lang}/{entityId}', [ReaderController::class, 'show'])
-        ->where('lang', '[a-z]{2}')
+    // The entity id alone names the text — its entity match carries both
+    // languages, and the side rule picks which one is read (same reasoning
+    // as ADR 0036's simulator route: no language segment).
+    Route::get('/reader/{entityId}', [ReaderController::class, 'show'])
         ->whereNumber('entityId')
-        ->name('reader.react');
-    Route::get('/reader-react/{lang}', [ReaderController::class, 'index'])
+        ->name('reader.show');
+
+    // Practice → Reader: the text library. Bare /reader derives the user's
+    // native enabled language (fallback en). Registered after reader.show;
+    // whereNumber vs [a-z]{2} keeps /reader/5 and /reader/en disjoint.
+    Route::get('/reader/{lang?}', [ReaderController::class, 'index'])
         ->where('lang', '[a-z]{2}')
-        ->name('reader.react.index');
+        ->name('reader.index');
 
     Route::get('/crossword', [CrosswordController::class, 'index'])->name('crossword');
     Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');
@@ -68,22 +73,39 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::post('/word-events', [WordController::class, 'recordEvents'])
         ->name('word.events.store');
 
-    Route::get('/library', [LibraryController::class, 'index'])->name('library.index');
-    Route::get('/library/create', [LibraryController::class, 'createWork'])->name('library.create');
-    Route::post('/library', [LibraryController::class, 'storeWork'])->name('library.store');
-    Route::get('/library/{work}', [LibraryController::class, 'showWork'])
+    // Library → Works: the catalog plus its Entities and Alignments branches
+    // (ADR 0039). Static branch lists register before {work}; whereNumber
+    // keeps /works/{work} disjoint from /works/entities and /works/alignments.
+    Route::get('/works', [LibraryController::class, 'index'])->name('works.index');
+    Route::get('/works/create', [LibraryController::class, 'createWork'])->name('works.create');
+    Route::post('/works', [LibraryController::class, 'storeWork'])->name('works.store');
+    Route::get('/works/entities', [LibraryController::class, 'entitiesIndex'])->name('works.entities.index');
+    Route::get('/works/alignments', [LibraryController::class, 'alignmentsIndex'])->name('works.alignments.index');
+    Route::get('/works/{work}', [LibraryController::class, 'showWork'])
         ->whereNumber('work')
-        ->name('library.show');
-    Route::get('/library/{work}/entities/create', [LibraryController::class, 'createEntity'])
+        ->name('works.show');
+    Route::get('/works/{work}/entities', [LibraryController::class, 'workEntities'])
         ->whereNumber('work')
-        ->name('library.entities.create');
-    Route::post('/library/{work}/entities', [LibraryController::class, 'storeEntity'])
+        ->name('works.entities.show');
+    Route::get('/works/{work}/entities/create', [LibraryController::class, 'createEntity'])
         ->whereNumber('work')
-        ->name('library.entities.store');
+        ->name('works.entities.create');
+    Route::post('/works/{work}/entities', [LibraryController::class, 'storeEntity'])
+        ->whereNumber('work')
+        ->name('works.entities.store');
+    Route::get('/works/{work}/alignments', [LibraryController::class, 'workAlignments'])
+        ->whereNumber('work')
+        ->name('works.alignments.show');
+    Route::get('/works/{work}/alignments/create', [LibraryController::class, 'createAlignment'])
+        ->whereNumber('work')
+        ->name('works.alignments.create');
+    Route::post('/works/{work}/alignments', [LibraryController::class, 'storeAlignment'])
+        ->whereNumber('work')
+        ->name('works.alignments.store');
 
-    // The language-first browse pages moved to the work-first Library
-    Route::redirect('/entities', '/library');
-    Route::redirect('/entities/{lang}', '/library')->where('lang', '[a-z]{2}');
+    // The language-first browse pages moved to the works Entities branch
+    Route::redirect('/entities', '/works/entities');
+    Route::redirect('/entities/{lang}', '/works/entities')->where('lang', '[a-z]{2}');
     Route::get('/entities/{lang}/create', [EntityController::class, 'create'])
         ->where('lang', '[a-z]{2}')
         ->name('entities.create');
@@ -128,10 +150,11 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('entity')
         ->whereNumber('sentence')
         ->name('entities.sentences.destroy');
-    Route::get('/alignments', [AlignmentController::class, 'index'])->name('alignments.index');
-    Route::get('/alignments/create', [AlignmentController::class, 'create'])->name('alignments.create');
-    Route::post('/alignments', [AlignmentController::class, 'store'])->name('alignments.store');
-    Route::get('/alignments/{entityMatch}', [AlignmentController::class, 'show'])->name('alignments.show');
+    // The global alignments browse pages moved under each work
+    // (/works/{work}/alignments); only the editor stays global.
+    Route::get('/alignments/{entityMatch}', [AlignmentController::class, 'show'])
+        ->whereNumber('entityMatch')
+        ->name('alignments.show');
 
     Route::get('/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'rows']);
     Route::get('/alignments/{entityMatch}/unmatched', [AlignmentEditorController::class, 'unmatched']);
@@ -144,7 +167,16 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::patch('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'updateSentence'])->whereNumber('sentence');
     Route::delete('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'unlinkSentence'])->whereNumber('sentence');
     Route::delete('/alignments/{entityMatch}/unmatched/{sentence}', [AlignmentEditorController::class, 'destroyUnmatched'])->whereNumber('sentence');
-    Route::get('/bilinguals/en/ru/simulator', [SimulatorController::class, 'simulator'])->name('bilinguals.simulator');
+    // Practice → Simulator: the standalone page with the alignment picker;
+    // the pinned route below stays the deep-link entry from alignment cards.
+    Route::get('/simulator', [SimulatorController::class, 'simulator'])
+        ->name('bilinguals.simulator');
+
+    // A match pinned from its alignment card: no text selector — the URL
+    // names the match (the pair itself carries both languages).
+    Route::get('/bilinguals/simulator/{entityMatch}', [SimulatorController::class, 'simulatorForMatch'])
+        ->whereNumber('entityMatch')
+        ->name('bilinguals.simulator.forMatch');
     Route::post('/text', [SimulatorController::class, 'text']);
     Route::post('/ai/question', [SimulatorController::class, 'askAi'])->name('ai.question')->middleware('throttle:20,1');
     Route::post('/ai/question/stream', [SimulatorController::class, 'askAiStreamed'])->name('ai.question.stream')->middleware('throttle:20,1');

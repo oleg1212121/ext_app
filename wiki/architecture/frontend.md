@@ -4,7 +4,7 @@ title: Frontend Architecture
 description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, and Vite build.
 tags: [frontend, react, inertia, livewire, tailwind]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-08-15T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-23T14:35:00+03:00 }
 sources:
   - id: package
     resource: laravel/package.json
@@ -20,10 +20,15 @@ sources:
 |-------|-------|----------|
 | **Inertia + React 19 (JSX)** | `resources/js/Pages/` | **Primary.** All new pages. Bilinguals simulator, Reader, Entities/Alignments, Dashboard, Welcome, auth pages |
 | **Livewire 4** | `app/Livewire/`, `resources/views/livewire/` | Filament admin pages and the Filament alignment editor |
-| **Alpine.js 3** | loaded globally in `resources/js/app.jsx` | Lightweight interactivity in Blade |
+| **Alpine.js 3** | started in `resources/js/app.jsx`, only on non-Inertia pages | Lightweight interactivity in Blade (auth-page nav dropdowns) |
 
 **Rule: new pages are Inertia/React (JSX).** Do not add new Livewire
 components; Livewire remains only inside Filament.
+
+Alpine starts only when the page has no Inertia `#app` root (Blade auth
+pages). On React pages its global MutationObserver would re-walk every node
+React touches — pure overhead there and a freeze ingredient on the reader
+(see wiki/log.md, 2026-09-23).
 
 UI kit: `flowbite-react` components (see `resources/js/Pages/` for usage).
 

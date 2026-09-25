@@ -6,6 +6,7 @@ use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\EntityWord;
+use App\Models\Language;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
@@ -136,121 +137,192 @@ function createLongAlignedText(int $count): array
     return ['en' => $en, 'ru' => $ru, 'entityMatch' => $entityMatch];
 }
 
-test('guests are redirected from reader react page', function () {
-    $this->get(route('reader.react', ['lang' => 'en', 'entityId' => 1]))
+test('guests are redirected from reader page', function () {
+    $this->get(route('reader.show', ['entityId' => 1]))
         ->assertRedirect(route('login'));
 });
 
-test('guests are redirected from reader react index page', function () {
-    $this->get(route('reader.react.index', ['lang' => 'en']))
-        ->assertRedirect(route('login'));
-});
-
-test('reader react index redirects bare path to english route', function () {
+test('the legacy reader paths are gone', function () {
     $user = User::factory()->create();
 
-    $this->actingAs($user)
-        ->get('/reader-react')
-        ->assertRedirect('/reader-react/en');
+    $this->actingAs($user)->get('/reader-react')->assertNotFound();
+    $this->actingAs($user)->get('/reader-react/en')->assertNotFound();
+    $this->actingAs($user)->get('/reader-react/en/1')->assertNotFound();
+    // The language segment is gone from the reading route: the old
+    // two-segment shape no longer resolves, whatever the language code.
+    // (/reader and /reader/{lang} are live again as the Practice index.)
+    $this->actingAs($user)->get('/reader/en/1')->assertNotFound();
+    $this->actingAs($user)->get('/reader/de/1')->assertNotFound();
 });
 
-test('authenticated users can view reader react index with english entities', function () {
+test('the practice reader index lists readable texts for the language', function () {
     $user = User::factory()->create();
-    $enEntity = createEntity('en', null, [
-        'name' => 'Index EN Entity',
-        'file_path' => 'texts/simulator/index_en.txt',
-    ]);
+    createAlignedReaderEntities();
 
     $this->actingAs($user)
-        ->get(route('reader.react.index', ['lang' => 'en']))
+        ->get('/reader/en')
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReactIndex')
+            ->component('ReaderIndex')
             ->where('lang', 'en')
-            ->where('languages', ['en', 'ru'])
             ->has('entities', 1)
-            ->where('entities.0.id', $enEntity->id)
-            ->where('entities.0.name', 'Index EN Entity'));
+            ->where('entities.0.name', 'Test EN Entity'));
 });
 
-test('authenticated users can view reader react index with russian entities', function () {
+test('bare reader index derives the native language', function () {
     $user = User::factory()->create();
-    $ruEntity = createEntity('ru', null, [
-        'name' => 'Index RU Entity',
-        'file_path' => 'texts/simulator/index_ru.txt',
-    ]);
+    createAlignedReaderEntities();
 
+    // Factory users are native English speakers.
     $this->actingAs($user)
-        ->get(route('reader.react.index', ['lang' => 'ru']))
+        ->get('/reader')
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReactIndex')
-            ->where('lang', 'ru')
-            ->has('entities', 1)
-            ->where('entities.0.id', $ruEntity->id)
-            ->where('entities.0.name', 'Index RU Entity'));
+            ->component('ReaderIndex')
+            ->where('lang', 'en')
+            ->has('entities', 1));
 });
 
-test('unsupported reader react index language returns not found', function () {
-    $user = User::factory()->create();
-
-    $this->actingAs($user)
-        ->get('/reader-react/de')
-        ->assertNotFound();
+test('guests are redirected from the reader index', function () {
+    $this->get('/reader')->assertRedirect(route('login'));
 });
 
-test('authenticated users can view reader react page with english primary rows', function () {
+test('the side rule reads the non-native side regardless of the url entity', function () {
     $user = User::factory()->create();
     $entities = createAlignedReaderEntities();
 
+    // Factory users are native English speakers: the EN side is the native
+    // one, so the reader opens the RU text with EN as translation — opening
+    // either entity of the match lands on the same reading side.
+    foreach ([$entities['en'], $entities['ru']] as $entity) {
+        $this->actingAs($user)
+            ->get(route('reader.show', ['entityId' => $entity->id]))
+            ->assertSuccessful()
+            ->assertInertia(fn ($page) => $page
+                ->component('Reader')
+                ->where('primaryLang', 'ru')
+                ->where('translationLang', 'en')
+                ->where('entity.id', $entity->id)
+                ->has('rows', 1)
+                ->where('rows.0.0', 'Первое RU sentence.')
+                ->where('rows.0.1', 'First EN sentence about a cat.')
+                ->has('rowKeys', 1)
+                ->where('rowKeys.0', 'mm:'.MeaningMatch::query()->where('entity_match_id', $entities['entityMatch']->id)->value('id')));
+    }
+});
+
+test('without a native side the work original is read', function () {
+    $user = User::factory()->create();
+    $french = Language::query()->create([
+        'code' => 'fr',
+        'name' => 'French',
+        'is_enabled' => true,
+        'sort_order' => 5,
+    ]);
+    $german = Language::query()->create([
+        'code' => 'de',
+        'name' => 'German',
+        'is_enabled' => true,
+        'sort_order' => 6,
+    ]);
+
+    // Original French work, German translation; the native EN side of the
+    // user matches neither, so the original (A) side is read.
+    $work = createWork(['original_language_id' => $french->id]);
+    $fr = Entity::query()->create([
+        'work_id' => $work->id,
+        'language_id' => $french->id,
+        'name' => 'Test FR Entity',
+    ]);
+    $de = Entity::query()->create([
+        'work_id' => $work->id,
+        'language_id' => $german->id,
+        'name' => 'Test DE Entity',
+    ]);
+
+    $frSentence = EntitySentence::query()->create([
+        'entity_id' => $fr->id,
+        'content' => 'Phrase originale.',
+        'order' => 1,
+    ]);
+    $entityMatch = createEntityMatch($fr, $de, ['status' => 'completed', 'linked_count' => 1]);
+    $meaningMatch = MeaningMatch::query()->create([
+        'entity_match_id' => $entityMatch->id,
+        'order' => 0,
+        'similarity' => 1.0,
+        'alignment_chunk' => 0,
+    ]);
+    SentenceMeaningMatch::query()->create([
+        'entity_sentence_id' => $frSentence->id,
+        'meaning_match_id' => $meaningMatch->id,
+        'side' => 'a',
+    ]);
+
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $entities['en']->id]))
+        ->get(route('reader.show', ['entityId' => $de->id]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
-            ->where('lang', 'en')
-            ->where('entity.id', $entities['en']->id)
-            ->where('entity.name', 'Test EN Entity')
-            ->has('rows', 1)
-            ->where('rows.0.0', 'First EN sentence about a cat.')
-            ->where('rows.0.1', 'Первое RU sentence.')
-            ->has('rowKeys', 1)
-            ->where('rowKeys.0', 'mm:'.MeaningMatch::query()->where('entity_match_id', $entities['entityMatch']->id)->value('id')));
+            ->component('Reader')
+            ->where('primaryLang', 'fr')
+            ->where('translationLang', 'de')
+            ->where('primarySide', 'a')
+            ->where('rows.0.0', 'Phrase originale.'));
 });
 
-test('authenticated users can view reader react page with russian primary rows', function () {
+test('with no native and no original side the a-side is read', function () {
     $user = User::factory()->create();
-    $entities = createAlignedReaderEntities();
+
+    // Two translations (ru, fr) of an English-original work: neither side
+    // is native for the factory user and neither is the original, so the
+    // canonical A-side is read against the B-side.
+    $work = createWork();
+    $french = Language::query()->create([
+        'code' => 'fr',
+        'name' => 'French',
+        'is_enabled' => true,
+        'sort_order' => 5,
+    ]);
+    $ru = createEntity('ru', $work, ['name' => 'Test RU Entity']);
+    $fr = Entity::query()->create([
+        'work_id' => $work->id,
+        'language_id' => $french->id,
+        'name' => 'Test FR Entity',
+    ]);
+
+    $ruSentence = EntitySentence::query()->create([
+        'entity_id' => $ru->id,
+        'content' => 'Первое RU sentence.',
+        'order' => 1,
+    ]);
+    $entityMatch = createEntityMatch($ru, $fr, ['status' => 'completed', 'linked_count' => 1]);
+    $meaningMatch = MeaningMatch::query()->create([
+        'entity_match_id' => $entityMatch->id,
+        'order' => 0,
+        'similarity' => 1.0,
+        'alignment_chunk' => 0,
+    ]);
+    SentenceMeaningMatch::query()->create([
+        'entity_sentence_id' => $ruSentence->id,
+        'meaning_match_id' => $meaningMatch->id,
+        'side' => 'a',
+    ]);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'ru', 'entityId' => $entities['ru']->id]))
+        ->get(route('reader.show', ['entityId' => $fr->id]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
-            ->where('lang', 'ru')
-            ->where('entity.id', $entities['ru']->id)
-            ->where('entity.name', 'Test RU Entity')
-            ->has('rows', 1)
-            ->where('rows.0.0', 'Первое RU sentence.')
-            ->where('rows.0.1', 'First EN sentence about a cat.')
-            // Row keys follow the rows, whatever side is being read.
-            ->has('rowKeys', 1)
-            ->where('rowKeys.0', 'mm:'.MeaningMatch::query()->where('entity_match_id', $entities['entityMatch']->id)->value('id')));
+            ->component('Reader')
+            ->where('primaryLang', 'ru')
+            ->where('translationLang', 'fr')
+            ->where('primarySide', 'a')
+            ->where('rows.0.0', 'Первое RU sentence.'));
 });
 
-test('unsupported reader react language returns not found', function () {
+test('missing reader entity returns not found', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->get('/reader-react/de/1')
-        ->assertNotFound();
-});
-
-test('missing reader react entity returns not found', function () {
-    $user = User::factory()->create();
-
-    $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => 99999]))
+        ->get(route('reader.show', ['entityId' => 99999]))
         ->assertNotFound();
 });
 
@@ -268,11 +340,12 @@ test('entity without alignment returns single language rows', function () {
     ]);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $en->id]))
+        ->get(route('reader.show', ['entityId' => $en->id]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
-            ->where('lang', 'en')
+            ->component('Reader')
+            ->where('primaryLang', 'en')
+            ->where('translationLang', null)
             ->has('rows', 1)
             ->where('rows.0.0', 'Standalone EN sentence.')
             ->where('rows.0.1', '')
@@ -321,32 +394,34 @@ test('reader page includes the interactive word map with familiarity values', fu
     ]);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $entities['en']->id]))
+        ->get(route('reader.show', ['entityId' => $entities['en']->id]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
-            ->where('wordMap.cat.w', $cat->id)
-            ->where('wordMap.cat.s', null)
-            ->where('wordMap.sentence.s', 100)
-            ->where('translationWordMap.первое.w', $ruWord->id)
+            ->component('Reader')
+            // The side rule reads the RU side, so the primary map is the RU
+            // one and the EN map rides along as the translation.
+            ->where('wordMap.первое.w', $ruWord->id)
+            ->where('translationWordMap.cat.w', $cat->id)
+            ->where('translationWordMap.cat.s', null)
+            ->where('translationWordMap.sentence.s', 100)
             ->where('highlight', true)
-            // Factory users are native English speakers: the EN primary side
-            // is native (not highlightable), the RU translation side is.
-            ->where('primaryHighlightable', false)
-            ->where('translationHighlightable', true));
+            // Factory users are native English speakers: the RU primary side
+            // is not native (highlightable), the EN translation side is.
+            ->where('primaryHighlightable', true)
+            ->where('translationHighlightable', false));
 });
 
-test('reader react page paginates rows and reports meta', function () {
+test('reader page paginates rows and reports meta', function () {
     $user = User::factory()->create();
     $text = createLongAlignedText(60);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id, 'page' => 2]))
+        ->get(route('reader.show', ['entityId' => $text['en']->id, 'page' => 2]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
+            ->component('Reader')
             ->has('rows', 10)
-            ->where('rows.0.0', 'Row 51 sentence.')
+            ->where('rows.0.0', 'Строка 51 sentence.')
             ->has('rowKeys', 10)
             ->where('meta.current_page', 2)
             ->where('meta.per_page', 50)
@@ -360,12 +435,12 @@ test('an out-of-range reader page clamps to the last page', function () {
     $text = createLongAlignedText(60);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id, 'page' => 99]))
+        ->get(route('reader.show', ['entityId' => $text['en']->id, 'page' => 99]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
+            ->component('Reader')
             ->has('rows', 10)
-            ->where('rows.0.0', 'Row 51 sentence.')
+            ->where('rows.0.0', 'Строка 51 sentence.')
             ->where('meta.current_page', 2)
             ->where('meta.last_page', 2));
 });
@@ -375,32 +450,32 @@ test('junk reader page values resolve to the first page', function () {
     $text = createLongAlignedText(60);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id, 'page' => 'abc']))
+        ->get(route('reader.show', ['entityId' => $text['en']->id, 'page' => 'abc']))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
+            ->component('Reader')
             ->has('rows', 50)
-            ->where('rows.0.0', 'Row 1 sentence.')
+            ->where('rows.0.0', 'Строка 1 sentence.')
             ->where('meta.current_page', 1));
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id, 'page' => 0]))
+        ->get(route('reader.show', ['entityId' => $text['en']->id, 'page' => 0]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
-            ->where('rows.0.0', 'Row 1 sentence.')
+            ->component('Reader')
+            ->where('rows.0.0', 'Строка 1 sentence.')
             ->where('meta.current_page', 1));
 });
 
-test('both reading sides of a match share one position key', function () {
+test('both entities of a match share one position key', function () {
     $user = User::factory()->create();
     $text = createLongAlignedText(1);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'ru', 'entityId' => $text['ru']->id]))
+        ->get(route('reader.show', ['entityId' => $text['ru']->id]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
+            ->component('Reader')
             ->where('rows.0.0', 'Строка 1 sentence.')
             ->where('meta.last_page', 1)
             ->where('positionKey', 'mm:'.$text['entityMatch']->id));
@@ -422,10 +497,10 @@ test('a single language entity paginates with an entity position key', function 
     }
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $en->id, 'page' => 2]))
+        ->get(route('reader.show', ['entityId' => $en->id, 'page' => 2]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
+            ->component('Reader')
             ->has('rows', 5)
             ->where('rows.0.0', 'Line 51.')
             ->where('meta.total', 55)
@@ -456,20 +531,21 @@ test('the word map is scoped to the rows on the current page', function () {
         ->update(['content' => 'The orbit decays.']);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id]))
+        ->get(route('reader.show', ['entityId' => $text['en']->id]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
+            ->component('Reader')
             ->has('rows', 50)
-            ->missing('wordMap.orbit'));
+            // The EN side is the translation column for a native-EN user.
+            ->missing('translationWordMap.orbit'));
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $text['en']->id, 'page' => 2]))
+        ->get(route('reader.show', ['entityId' => $text['en']->id, 'page' => 2]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
+            ->component('Reader')
             ->has('rows', 5)
-            ->where('wordMap.orbit.w', $orbit->id));
+            ->where('translationWordMap.orbit.w', $orbit->id));
 });
 
 test('reader page passes explanation gating and side props', function () {
@@ -477,14 +553,14 @@ test('reader page passes explanation gating and side props', function () {
     $entities = createAlignedReaderEntities();
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $entities['en']->id]))
+        ->get(route('reader.show', ['entityId' => $entities['en']->id]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
-            // Reading the EN side: primary is native, translation is not.
-            ->where('primaryExplainable', false)
-            ->where('translationExplainable', true)
-            ->where('primarySide', 'a')
+            ->component('Reader')
+            // Reading the RU side: primary is not native, translation is.
+            ->where('primaryExplainable', true)
+            ->where('translationExplainable', false)
+            ->where('primarySide', 'b')
             // No API keys yet: AI explanations stay off.
             ->where('explain.enabled', false)
             ->where('explain.modelKey', null));
@@ -500,10 +576,10 @@ test('reader page carries the explanation model when the user can use AI', funct
     $user->settings()->updateOrCreate(['user_id' => $user->id], ['ai_model_id' => $model->id]);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $entities['en']->id]))
+        ->get(route('reader.show', ['entityId' => $entities['en']->id]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
+            ->component('Reader')
             ->where('explain.enabled', true)
             ->where('explain.modelKey', $model->id));
 });
@@ -522,10 +598,10 @@ test('a single language reader page has no primary side', function () {
     ]);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $en->id]))
+        ->get(route('reader.show', ['entityId' => $en->id]))
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
-            ->component('ReaderReact')
+            ->component('Reader')
             ->where('primarySide', null)
             // The factory user is a native English speaker: the EN primary
             // column is native, so it is not explainable.

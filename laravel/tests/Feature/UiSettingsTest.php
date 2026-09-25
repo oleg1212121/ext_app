@@ -1,11 +1,11 @@
 <?php
 
-use App\Http\Controllers\Bilinguals\SimulatorController;
 use App\Models\AiModel;
 use App\Models\AiProvider;
 use App\Models\User;
 use App\Models\UserApiKey;
 use App\Models\UserSettings;
+use App\Support\PromptTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -74,10 +74,15 @@ test('invalid values are rejected', function () {
     $this->actingAs($user)
         ->patch('/ui-settings', ['reader' => ['font_size' => 5]])
         ->assertInvalid('reader.font_size');
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['simulator' => ['question' => str_repeat('a', 4001)]])
+        ->assertInvalid('simulator.question');
 });
 
 test('simulator page seeds props from saved ui settings', function () {
     $user = User::factory()->create();
+    $match = createSimulatorMatch();
     withSavedUiSettings($user, [
         'simulator' => [
             'font_size' => 34,
@@ -90,30 +95,36 @@ test('simulator page seeds props from saved ui settings', function () {
     ]);
 
     $this->actingAs($user)
-        ->get('/bilinguals/en/ru/simulator')
+        ->get("/bilinguals/simulator/{$match->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('fontSize', 34)
             ->where('showText', false)
             ->where('showQuestion', true)
-            ->where('currentQuestion', 'My saved prompt.'));
+            ->where('currentTasks', 'My saved prompt.'));
 });
 
 test('simulator page falls back to defaults when nothing is saved', function () {
     $user = User::factory()->create();
+    $match = createSimulatorMatch();
 
     $this->actingAs($user)
-        ->get('/bilinguals/en/ru/simulator')
+        ->get("/bilinguals/simulator/{$match->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('fontSize', 26)
             ->where('showText', true)
             ->where('showQuestion', false)
-            ->where('currentQuestion', SimulatorController::DEFAULT_QUESTION));
+            // Nothing saved: currentTasks is null and the client shows the
+            // default task list under the live format template.
+            ->where('currentTasks', null)
+            ->where('questionTemplates.format', PromptTemplates::FORMAT_FALLBACK)
+            ->where('questionTemplates.tasks', PromptTemplates::TASKS_FALLBACK));
 });
 
 test('simulator model choice no longer lives in ui settings', function () {
     $user = User::factory()->create();
+    $match = createSimulatorMatch();
     $provider = AiProvider::factory()->enabled()->create(['key' => 'openrouter', 'name' => 'OpenRouter']);
     AiModel::factory()->enabled()->create(['ai_provider_id' => $provider->id, 'external_id' => 'cheap', 'name' => 'Cheap', 'pricing_prompt' => '0', 'pricing_completion' => '0']);
     UserApiKey::factory()->create(['user_id' => $user->id, 'ai_provider_id' => $provider->id]);
@@ -125,7 +136,7 @@ test('simulator model choice no longer lives in ui settings', function () {
     ]);
 
     $this->actingAs($user)
-        ->get('/bilinguals/en/ru/simulator')
+        ->get("/bilinguals/simulator/{$match->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('answerModel', null));
 });
@@ -138,7 +149,7 @@ test('reader page seeds font size from saved ui settings', function () {
     $entity = createEntity('en', null, ['name' => 'Reader EN Entity']);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $entity->id]))
+        ->get(route('reader.show', ['entityId' => $entity->id]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('fontSize', 22));
 });
@@ -151,7 +162,7 @@ test('reader page clamps an out of range saved font size', function () {
     $entity = createEntity('en', null, ['name' => 'Reader EN Entity']);
 
     $this->actingAs($user)
-        ->get(route('reader.react', ['lang' => 'en', 'entityId' => $entity->id]))
+        ->get(route('reader.show', ['entityId' => $entity->id]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('fontSize', 38));
 });

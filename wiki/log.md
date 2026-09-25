@@ -1,5 +1,371 @@
 # Directory Update Log
 
+## 2026-09-24 (feat: word-explanation instruction joins the prompt templates)
+
+The Context explanation's system message — the last hardcoded AI prompt on
+the reading surfaces — moved from an inline string in
+`SimulatorController::explainWord()` into `prompt_templates` as
+`word.explanation` (ADR 0040 extended): `PromptTemplates::explanation()`
+substitutes `:word` (the clicked surface) and `:native` (the user's Native
+language name) into the admin-edited row, with `EXPLANATION_FALLBACK`
+covering an unseeded/blanked row. Seeder gained the third row; the Filament
+Prompt Templates hint now lists both placeholder sets
+(`:base`/`:learning`, `:word`/`:native`). Tests: `PromptTemplateTest`
+covers fallback + seeded substitution; `AiWordExplainEndpointTest` asserts
+a seeded custom template reaches the resolver as the instruction.
+`bilinguals-simulator.md`, `schema-overview.md`, ADR 0040 updated; dev DB
+re-seeded.
+
+## 2026-09-24 (feat: assessment question split into admin template + user task list)
+
+The single editable question textarea split in two (ADR 0040). The
+**Question template** — the format-rules text — moved into the new seeded
+`prompt_templates` table (`App\Models\PromptTemplate`,
+`App\Support\PromptTemplates` with fallback constants for blank/missing
+rows; Filament **Prompt Templates** resource, List+Edit only — keys are
+code contracts) and renders on the page as read-only muted text above the
+input, substituting **both** `:base` and `:learning` with the current
+columns' language names on every render, so it now visibly follows the
+language toggle (the old uncontrolled textarea froze its text). The
+**Task list** — the "Tasks: 1…4" part — keeps a textarea with the default
+from `simulator.question.tasks` plus a new **Reset** affordance (bumps a
+remount key; `customTasks: null` restores the default). Assembly moved
+server-side: `/ai/question` + `/ai/question/stream` now take
+`{tasks, base, learning}` (codes) instead of `question`, and
+`SimulatorController` joins the DB template + tasks via
+`PromptTemplates::assemble` (empty tasks → default) into the system
+message. Length caps aligned at 4000 (`AiQuestionRequest` tasks,
+`UpdateUiSettingsRequest` simulator.question — fixes the old
+2000-vs-8000 mismatch that could 422 a long saved question). UI settings
+key stays `question` (now holding the tasks customization); the
+`LEGACY_DEFAULT_QUESTION` normalization is gone (single-user deployment —
+the old full text is treated as a verbatim task-list edit). Tests:
+`SimulatorPinnedMatchTest` / `UiSettingsTest` re-pointed to
+`questionTemplates`/`currentTasks`; AI endpoint tests assert the assembled
+instruction incl. a seeded custom template; new `PromptTemplateTest`.
+Glossary: **Question template** / **Task list** added, **UI settings**
+reworded; `bilinguals-simulator.md` and `schema-overview.md` updated;
+models reference regenerated via `wiki:sync`.
+
+## 2026-09-24 (feat: simulator AI model/setup link moved into the AI Response panel)
+
+The simulator's toolbar three-state block — model label / "Choose an AI
+model" / "Add an API key", each a profile link — moved into the **AI
+Response panel header** as the second line under the title. The header was
+reshaped: the "Reader's gloss" eyebrow is gone (ui-string retired), the
+"AI Response" title grew to `text-lg`, and below it sits whichever state
+applies, now as short labels with the full sentences as tooltips
+(new ui-strings `bilinguals.add_api_key_short` / `choose_model_short`;
+all three states deep-link `/profile?tab=ai`, the no-key one previously
+linked bare `/profile`). To make the guidance reachable, the AI panel is no
+longer gated on `canUseAi`: `showAI` seeds purely from the saved
+`show_ai` setting, the toolbar AI toggle renders for everyone, and keyless
+users get the full "Add an API key in your Profile…" sentence as a single
+link in the panel body (the fragment-hint empty state stays for
+token-holders). Toolbar link block removed with no fallback — hiding the
+panel hides the CTA by user choice. `SimulatorApiKeyTest` keyless
+expectation flips to `showAI: true`; `bilinguals-simulator.md` and the
+glossary **Gloss** entry (panel renamed) updated.
+
+## 2026-09-24 (feat: Library dropdown — works URL branches, tabs → pages)
+
+The Library moved from a single `/library` link with per-work tabs to a
+three-entry navbar **Library** dropdown over a `/works` URL space (ADR 0039):
+**Works** (`/works`, the catalog), **Entities** (`/works/entities` branch
+list), **Alignments** (`/works/alignments` branch list). A work's card now
+opens a **landing page** `/works/{work}` (metadata + readable entity and
+alignment counts via the new `Work::alignments` hasMany-through and
+`EntityAccessService::readableMatchConstraint`, extracted from
+`readableMatchQuery` for `withCount` reuse), and the former tab contents are
+standalone pages: `/works/{work}/entities` and `/works/{work}/alignments`
+(create/store forms re-prefixed). Branch lists show the full public catalog
+(ADR 0021) with readable-only counts; each navbar child carries an explicit
+URL match rule (shared `/works` prefix defeats naive prefix matching), and
+the Blade nav mirror got the same dropdown + mobile accordion (it previously
+had no Library entry). Routes renamed `library.*` → `works.*`;
+`/library/*` removed with no redirects; `/entities`, `/entities/{lang}`
+legacy redirects retargeted to `/works/entities`. Pages: `Library/Index`
+gained a `variant` prop (one component, three lists), `Library/ShowWork` is
+the landing page, new `Library/WorkEntities` / `Library/WorkAlignments`; new
+UI strings `nav.works/entities/alignments`, `library.entities_title/
+alignments_title/alignment(s)`, retired `library.tab_*`; reseeded.
+`LibraryTest` rewritten around the new URLs (+ landing/branch-list/404
+coverage), `AlignmentPagesTest` / `AlignmentsCreateMatchTest` retargeted.
+Glossary: **Alignments tab** → **Alignments page**, added **Work landing
+page** / **Entities page**, reworked **Library**; ADR 0039; entities,
+sentence-alignment, run-alignment wiki concepts updated; `web-routes.md`
+regenerated via `wiki:sync`.
+
+## 2026-09-24 (feat: Practice menu revives the reader index and the simulator picker)
+
+The ADR 0036 disposal was partially reversed (ADR 0038): a **Practice**
+dropdown, first in the navbar (Reader / Simulator; the NavBar dropdown state
+generalized from the hardcoded puzzles toggle to per-label `openMenu`/
+`expandedMenu`; Blade nav mirror updated too). Routes: `GET /reader/{lang?}`
+(`reader.index` — the restored text library, bare `/reader` derives the
+native enabled language, fallback en; `ReaderIndex.jsx` +
+`ReaderIndexApp.jsx` resurrected from 4df1c78^, retargeted to visit
+`/reader/{id}`) and `GET /simulator` (`bilinguals.simulator` — the picker
+entry into the same `Bilinguals/Bilinguals` page: Select + Load header
+restored, loads matches in place via `POST /text`, which now also ships
+`languages` + `default_learning_side` from the shared side rule so the
+language toggle tracks the loaded match; `simulatorResponse()` accepts a
+null pin). Model stays text + link to `/profile?tab=ai`. Untouched: the
+reading route `/reader/{entityId}`, the pinned simulator route, the
+language toggle, the freeze fixes; `/reader/{lang}/{entityId}` and
+`/bilinguals/en/ru/simulator` stay 404. UI-string seeds re-added
+(`nav.practice/reader/simulator`, the reader index keys, the picker keys)
+and reseeded. Reader/simulator/entity wiki concepts updated;
+`web-routes.md` regenerated via `wiki:sync`.
+
+## 2026-09-23 (fix: reading-position restore never worked — router.replace misuse; stuck spinner resolved)
+
+The pass-4 placeholder exposed a pre-existing bug: `ReaderApp`'s restore
+called `router.replace(url, {only, …})`, but in Inertia v3 `replace()` is a
+client-side page-object patch (`clientVisit`) — it accepts no options object
+and never fetches. The saved page was never loaded; the call spread the URL
+string's characters into the page object, reset scroll, and rewrote the URL
+to `?page=N` — the "page reloaded back to the start" glitch. With the
+placeholder waiting on the options' `onFinish` (never called by
+`clientVisit`), the reader hung on the spinner. Diagnosis: container-only
+jsdom harness running the real built bundle (no browser) — primed
+localStorage, captured XHRs, proved `replace` sent nothing; canary via
+`savePosition` clamping proved the effect ran. Fix: `router.visit(url,
+{only, preserveState, preserveScroll, replace: true, onFinish})` — a real
+partial reload with history-replace semantics; harness then showed the
+partial request firing and the spinner clearing. 695 tests pass.
+
+## 2026-09-23 (fix: reader-entry scroll yank (restore race) + Welcome italics restored)
+
+Two follow-ups after the freeze fix. (1) Opening a text with a saved reading
+position served page 1, then the restore's partial reload swapped rows under
+the user and the page-turn effect's `scrollTo(top: 0)` yanked scroll to the
+start — a pre-existing race newly visible now that the page works. `ReaderApp`
+now holds rows/pager behind a small spinner while a restore is pending
+(`restoring` state from localStorage at init, cleared by the visit's
+`onFinish`), so the saved page appears directly at its top and the scroll is
+a no-op. (2) Pass 4's simulator.css scoping regressed Welcome: the file
+carried an app-wide `em, i`/`b, strong` accent-color convention that styled
+Welcome's parenthesized italics. Moved the four rules into `resources/css/
+app.css` (global, where they belonged) and dropped them from
+`public/css/simulator.css`. 695 tests pass.
+
+## 2026-09-23 (chore: perf-probe scaffolding removed after confirmed fix)
+
+User confirmed the reader freeze is gone (3.5-min instrumented session:
+flat ~25 MB heap, zero React commits across 726 scroll events, ≤6 ms
+event-loop lag, 2 long tasks). Removed `lib/perfProbe.js`, the
+`POST /perf-probe` debug route, `PerfProbeTest.php` and the probe log.
+Kept every fix: self-hosted fonts (`public/fonts/` + `resources/css/
+fonts.css`), transition/hover-recolor-free rows, the empty-word-map
+plain-text fast path, `overflow-anchor`/`scrollbar-gutter` guards, stable
+row keys, text-mode page picker, page-scoped `simulator.css`, Alpine
+scoping, content-visibility removal. A noted curiosity for future work: the
+healthy page showed ~440 constant per-second DOM add/remove mutations at
+idle — harmless to performance, suspected browser-extension overlay, worth
+identifying if anything ever regresses.
+
+## 2026-09-23 (reader freeze pass 4 — fonts self-hosted, rows de-animated, probe v2; wedge proven load-time not scroll-time)
+
+The user ran pass 3's `?perf=1` probe: nginx served `/reader/15?perf=1` on the
+new build but **zero** `POST /perf-probe` requests arrived (route confirmed
+registered under `APP_ENV=local`). Since pass 3's probe first fired at t=2s,
+the main thread was already wedged before 2 seconds elapsed — the freeze is
+**load-time, inside the webfont-swap window (~1.5s)**, and merely overlaps
+with scrolling. Pass 4 therefore strips every mechanism active in that window
+and during scroll: (1) all five Google font families self-hosted —
+`public/fonts/` (68 woff2 subsets, 1.9 MB) + generated `resources/css/
+fonts.css` imported by `app.css`; the css2 `<link>` and preconnects removed
+from `app.blade.php`; (2) `ReaderRow` carries no transitions (primary line,
+translation reveal, hover rule) and no `.reader-row:hover` recolor
+(re-rasterizing variable-font text per row under the cursor was the one
+scroll-path paint trigger); (3) plain-text fast path — sides with an empty
+word map skip `WordText` entirely (raw string, `\n`→space to match
+`WordText`'s sentence join); `entity_words` is empty DB-wide, so current
+pages mount no token machinery at all; (4) page picker `type="text"`
+`inputMode="numeric"` (no Chrome wheel-spin on focused number inputs) and no
+`aria-live`; (5) `public/css/simulator.css` scoped to the simulator page via
+`<Head>` in `Bilinguals.jsx` instead of loading globally. Probe v2: t=0
+`boot` beacon, per-installer try/catch, 300/700/1200/2000/3000 ms ladder then
+1 s cadence, auto-enabled on localhost/127.0.0.1 (no parameter needed).
+698 tests pass.
+
+## 2026-09-23 (reader freeze pass 3 — perf probe (?perf=1) + engine-side guards; pagination & logs verified clean)
+
+The freeze persisted after pass 2's fixes, so the diagnosis moved to
+zero-browser evidence plus an opt-in probe (user's machine must not be loaded
+by agent-driven browsers). Verified clean: `ReaderController` genuinely
+paginates (entity 15 = 1,558 meaning-match rows → 32 pages of exactly 50, ~7 KB
+props; `entity_words` is empty DB-wide, so the page renders plain text — no
+interactive spans at all); `laravel-2026-09-23.log` has no storms/memory
+errors; nginx shows minutes-apart requests; the served bundle is byte-identical
+to the build containing pass-2's fixes. Full re-read of `ReaderApp`, `Reader`,
+`Main`, `WordText`, hooks and libs found **zero** scroll listeners/observers/
+intervals and no constructible scroll→state→scrollTo cycle — so the loop
+driver is not visible in source and must be captured from the user's one
+repro. Added `lib/perfProbe.js` (?perf=1): counting-only React-commit counter
+(via a `__REACT_DEVTOOLS_GLOBAL_HOOK__` shim that must be app.jsx's first
+import), Inertia visit counters, DOM-mutation counter, longtask/scroll/font
+counters, 1s event-loop heartbeat — sampled every 2s to the new debug-only
+`POST /perf-probe` route (non-production; `PerfProbeTest.php` covers it) and
+mirrored into `document.title`. Shipped defensive fixes alongside:
+`overflow-anchor:none` + `scrollbar-gutter:stable` on `#contentContainer`,
+`transition-[max-width]` instead of `transition-all` on the width wrapper,
+rows keyed by `rowKey` instead of index. 698 tests pass.
+
+## 2026-09-23 (fix: reader freeze — Alpine scoped to Blade pages, dead `--fs` writes removed)
+
+Second reader-performance pass, this time with live forensics. Reproduced the
+freeze deterministically in a clean headless Chromium (no extensions, throwaway
+profile) against `/reader/15`: ~1.5s after load the renderer's main thread
+wedged permanently — rAF starved (5 frames total), `Runtime.evaluate` never
+returning, CPU pegged; exactly the reported "scrollbar moves, page dead" state.
+Debugger-pause stacks sampled during the hang alternate between **Alpine's
+global MutationObserver tree-walk** (`initTree`/`walk`/`initDirectives` —
+Alpine processes every DOM mutation on the page) and **react-dom commit frames**
+(placement/deletion/reconcile), while a MutationObserver counter installed
+pre-boot recorded ~35k mutation records per 4s in batches of ~53 attribute
+writes on the reader root and rows — matching the per-row `--fs`
+`style.setProperty` effects (1 root + 50 rows). Ruled out: extensions (clean
+profile), Inertia visit/reload loop (`inertiaVisits: 0`), scroll listeners
+(none in app code; Inertia's document scroll listener is inert without
+`[scroll-region]`), and the reader component itself — the full real tree
+(real `App` + Reader page + Main/NavBar/flowbite + Alpine) mounted under jsdom
+stays at a single render with the exact production payload, so the loop needs
+real layout (Chromium) plus the Alpine/attribute-write cycle.
+
+Fixes: (1) `app.jsx` now starts Alpine **only on non-Inertia pages** (no
+`#app` root) — its only consumers are the Blade layouts' dropdown nav
+(`layouts/navigation.blade.php`, routed only by `auth/pending-approval`);
+React pages lose the observer entirely. (2) Deleted the dead per-row/root
+`--fs` `style.setProperty` effects in `ReaderApp`/`ReaderRow` — no CSS
+consumes `var(--fs)`, and those writes were the storm's content. The exact
+first domino in Chromium's layout↔React interplay remains unpinned (further
+browser profiling halted by resource concerns); both sampled loop
+participants are now gone from the reader page. Assets rebuilt. Tests:
+`composer run test:tia` 695 passed. Updated `wiki/architecture/frontend.md`
+(Alpine scoping), `wiki/domains/reader.md` (rendering cost). No
+route/model/command changes (`wiki:sync` not required).
+
+## 2026-09-23 (fix: reader scroll jank — content-visibility removed from reader rows)
+
+The `content-visibility: auto` + `contain-intrinsic-size: auto 8rem`
+mitigation added earlier today (see the entry below) caused the very lag it
+was meant to fix, on Chromium: a rendered reader row measures ~66px, about
+half the 8rem placeholder, so scrolling kept flipping rows between
+placeholder and rendered height at the relevance boundary — scroll height
+churned, rows re-laid-out every frame, and CPU stayed pegged even after
+scrolling stopped. Diagnosis ruled out the JS tree first: no scroll
+listeners/observers/timers anywhere in the reader components, `React.memo`
+held (no re-renders on scroll), built assets were current, and a `/reader/15`
+page is tiny (50 rows × ~1 sentence/side ≈ 5 KB of text; `entity_words` empty
+in dev → zero interactive token spans). With pagination fixed at 50 rows/page
+of page-scoped data (ADR 0032) the deferral buys nothing, so the rule was
+deleted from `app.css` (memoization and CSS-only hover retained; a comment
+marks the spot as deliberately content-visibility-free). If pages ever grow
+past pagination, row virtualization is the fix — not `content-visibility`
+with a mismatched intrinsic size. Assets rebuilt; docs: wiki `reader.md`
+"Rendering cost" rewritten. No route/model/command changes (`wiki:sync` not
+required); no test changes (`ReaderPageTest` does not assert CSS).
+
+## 2026-09-23 (feat: side rule + language toggle on reader and simulator; reader route drops {lang})
+
+ADR 0037. Both reading surfaces now default their sides from the user's
+**Native language** via the new shared `EntityMatch::readingSideFor()`
+(native side translates → the work's original side reads → A-side),
+replacing the URL-entity-driven side on the reader and the hardcoded EN/RU
+layout on the simulator; `LibraryController::readerTarget()` is refactored
+onto the same rule so the alignment card's Read button and the reader page
+agree. `GET /reader/{lang}/{entityId}` is deleted — the route is now
+`GET /reader/{entityId}` (the URL entity only anchors the match; legacy
+shapes 404, test-guarded). Both pages grow a header language radio that
+swaps sides client-side and persists the flip as Working state
+(`ext_app.reader.side-flip.v1` keyed by `positionKey`; `flipped` in the
+simulator's per-match position store). The simulator's columns become
+positional **target/base** roles (`hide_target`/`hide_base`,
+`check_target`/`check_base`, `all_target`/`all_base` in
+`public/css/simulator.css` + `TextContent.jsx`), column headers show the
+sides' real language names, and `DEFAULT_QUESTION` becomes a `:base` template
+the client substitutes per toggle — saved custom questions ship verbatim,
+while a saved copy of the old hardcoded default (`LEGACY_DEFAULT_QUESTION`)
+counts as not customized and `question` persists `null` until actually
+edited. Reader perf: `.reader-row { content-visibility: auto }`,
+`React.memo` on `ReaderRow`/`WordText` with stable explain-payload
+identities, and the per-row hover `setState` replaced by existing CSS
+`:hover` rules (scrolling had been re-rendering every token span crossed).
+UI strings: +`reader.reading_language`, +`bilinguals.learning_language`;
+removed dormant `bilinguals.english`/`bilinguals.russian` (orphaned DB keys
+deleted). Tests: `ReaderPageTest` rewritten for the side rule + route shape
+(native-default, original-fallback, translation-pair, legacy-404 guards),
+`UiSettingsTest` re-pointed, `SimulatorPinnedMatchTest` gains
+languages/defaultLearningSide/questionTemplate/custom-question/legacy-null
+tests. Docs: ADR 0037; CONTEXT.md gains **Reading side**, **Translation
+side**, **Side swap**; wiki `reader.md` + `bilinguals-simulator.md`
+refreshed; `web-routes.md` regenerated.
+
+## 2026-09-22 (feat: simulator picker page and reader index deleted — deep links only)
+
+ADR 0036 amendment. The work page is now the sole hub, so the two remaining
+global browse surfaces are gone: the simulator picker
+`GET /bilinguals/en/ru/simulator` (dropdown of all readable matches; the
+pinned route `/bilinguals/simulator/{entityMatch}` is the only simulator
+entry and restores saved page/row per match) and the reader index
+`GET /reader/{lang}` + the `/reader` redirect (reading is reached from
+alignment cards' "Read · {LANG}" and the entity page's Read button;
+`GET /reader/{lang}/{entityId}` is unchanged). Deleted with them: the
+"Bilinguals"/"Reader" navbar items (React `NavBar.jsx` + Blade navs),
+`ReaderIndex.jsx`/`Reader/ReaderIndexApp.jsx`, `SimulatorController::
+simulator()/getEntityMatchTextList()` (pinned-only now, no `textList`
+prop), `ReaderController::index()/entitiesForLanguage()`, `Bilinguals.jsx`
+picker mode (Select/Load/changeText), and the picker/index-only UI strings
+(`nav.bilinguals`, `nav.reader`, 9 reader index keys incl. dormant
+`reader_heading`, 5 bilinguals picker keys; new `bilinguals.no_aligned_rows`
+replaces the "press Load" empty state; `load_error_hint` copy updated).
+Tests: `SimulatorPinnedMatchTest` gains picker-404, `SimulatorApiKeyTest`/
+`UiSettingsTest` re-point to the pinned route via the new shared
+`createSimulatorMatch()` helper in `tests/Pest.php`, `ReaderPageTest` drops
+index tests and extends the 404 guard to `/reader` + `/reader/en`. Docs:
+ADR 0036 amendment; wiki `bilinguals-simulator.md`, `reader.md`,
+`entities-alignment.md`, `design-system.md` refreshed.
+
+## 2026-09-22 (feat: alignments live under their work; reader renamed to /reader)
+
+Implemented ADR 0036. `/library/{work}` is now tabbed: the **Entities tab**
+(its former content) and a new **Alignments tab** (`?tab=alignments`)
+listing the work's readable entity matches (`matchPayload` + a
+server-computed `reader_target` = the non-native side, original-side then
+A-side tiebreaks; card = `Components/AlignmentCard.jsx`, stretched link to
+the editor `/alignments/{id}`, Simulator + Read·{LANG} buttons; search
+matches either side's entity name). "Add alignment" leads to
+`/library/{work}/alignments/create` + `POST /library/{work}/alignments`
+(`LibraryController::createAlignment/storeAlignment`) — the old form minus
+the work picker; store now validates both entities belong to the route
+work. Deleted: `GET/POST /alignments`, `GET /alignments/create`,
+`Alignments/Index.jsx`, `Alignments/Create.jsx`, the navbar "Alignments"
+item (`nav.alignments` string), and `AlignmentController::index/create/
+store` + `alignableWorks()` — the editor `alignments.show` (now
+`whereNumber`) and its JSON endpoints are untouched. Simulator: new pinned
+route `GET /bilinguals/simulator/{entityMatch}`
+(`bilinguals.simulator.forMatch`) renders the page with the text selector
+hidden and the match fixed; the dropdown page stays as the navbar landing.
+Reader: `/reader-react*` renamed to `/reader*` (`reader.show`/`reader.index`
+plus a named `/reader` redirect, which also fixes the previously dangling
+`route('reader')` in the Blade navs); page wrappers are now
+`Pages/Reader.jsx` / `Pages/ReaderIndex.jsx` rendering the unchanged
+`Reader/ReaderApp.jsx` / `Reader/ReaderIndexApp.jsx`. UI strings: new
+`library.tab_*` / `library.add_alignment` / `library.search_alignments` /
+`library.no_alignments_*` / `library.simulator` / `library.read_lang` /
+`library.no_alignable_entities*` / `library.open_alignment_editor` (en+ru).
+Tests: `AlignmentsCreateMatchTest`/`AlignmentCopyTest` move to the
+work-scoped routes, `AlignmentPagesTest` asserts the global pages are gone
+and covers the tab (scoping + restricted matches), `LibraryTest` gains
+tab/search/pagination/reader-target coverage, `ReaderReactPageTest` →
+`ReaderPageTest` on the new URLs (legacy paths assert 404), new
+`SimulatorPinnedMatchTest`. Docs: ADR 0036; CONTEXT.md **Alignments tab**
+term + Library/Entity match updates; wiki `entities.md`,
+`sentence-alignment.md`, `bilinguals-simulator.md`, `reader.md`,
+`interactive-words.md`, `run-alignment.md` playbook refreshed.
+
 ## 2026-09-22 (feat: per-user AI model preferences + tabbed profile; model picker removed from simulator)
 
 Implemented ADR 0035. The simulator's model picker is gone: the answer model

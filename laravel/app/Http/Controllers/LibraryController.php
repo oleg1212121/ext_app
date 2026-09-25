@@ -2,12 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\AlignmentCopyService;
+use App\Classes\AlignmentEditorApiPresenter;
 use App\Classes\EntityAccessService;
 use App\Classes\EntityCreationService;
+use App\Http\Requests\StoreEntityMatchRequest;
 use App\Http\Requests\StoreWorkEntityRequest;
 use App\Http\Requests\StoreWorkRequest;
+use App\Jobs\AlignEntitySentences;
 use App\Models\Entity;
+use App\Models\EntityMatch;
 use App\Models\Language;
+use App\Models\User;
 use App\Models\Work;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -16,24 +22,58 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * The Library — the work-first browse surface. Works are a public catalog
- * (every approved user sees every work, empty ones included; see ADR 0021);
- * entity lists and counts stay scoped to what the user can read.
+ * The Library — the work-first browse surface: the works catalog, its
+ * Entities and Alignments branch lists, and each work's landing and branch
+ * pages. Works are a public catalog (every approved user sees every work,
+ * empty ones included; see ADR 0021); entity and alignment lists stay
+ * scoped to what the user can read. See ADR 0039 for the /works URL split.
  */
 class LibraryController extends Controller
 {
     public function __construct(
         private readonly EntityAccessService $access,
         private readonly EntityCreationService $creation,
+        private readonly AlignmentEditorApiPresenter $presenter,
+        private readonly AlignmentCopyService $alignmentCopy = new AlignmentCopyService,
     ) {}
 
     public function index(Request $request): Response
+    {
+        return $this->worksPayload($request, 'catalog');
+    }
+
+    /**
+     * The Entities branch's works list: the same public catalog framed for
+     * browsing texts — only the card count and card target differ.
+     */
+    public function entitiesIndex(Request $request): Response
+    {
+        return $this->worksPayload($request, 'entities');
+    }
+
+    /**
+     * The Alignments branch's works list: the catalog with readable
+     * alignment counts; a work's card leads to its alignments page.
+     */
+    public function alignmentsIndex(Request $request): Response
+    {
+        return $this->worksPayload($request, 'alignments');
+    }
+
+    /**
+     * The works list shared by the catalog and both branch lists: search,
+     * 15 per page, with readable-only entity and alignment counts.
+     */
+    private function worksPayload(Request $request, string $variant): Response
     {
         $q = trim((string) $request->query('q', ''));
 
         $works = Work::query()
             ->with('originalLanguage')
-            ->withCount(['entities' => $this->access->readableConstraint($request->user())])
+            ->withCount([
+                'entities' => $this->access->readableConstraint($request->user()),
+                'alignments' => $this->access->readableMatchConstraint($request->user()),
+            ])
             ->when($q !== '', function (Builder $query) use ($q): Builder {
                 $needle = $this->searchNeedle($q);
 
@@ -46,6 +86,7 @@ class LibraryController extends Controller
             ->paginate(15);
 
         return Inertia::render('Library/Index', [
+            'variant' => $variant,
             'q' => $q,
             'works' => $works->through(function (Work $work): array {
                 return [
@@ -55,6 +96,7 @@ class LibraryController extends Controller
                     'description' => $work->description,
                     'original_language' => $this->languageRef($work),
                     'entities_count' => $work->entities_count,
+                    'alignments_count' => $work->alignments_count,
                     'created_at' => $work->created_at?->toISOString(),
                 ];
             })->items(),
@@ -78,14 +120,88 @@ class LibraryController extends Controller
     {
         $work = Work::query()->create($request->validated());
 
-        return redirect()->route('library.show', ['work' => $work->id]);
+        return redirect()->route('works.show', ['work' => $work->id]);
     }
 
+    /**
+     * A work's landing page: the catalog metadata plus the readable counts
+     * that link into the work's Entities and Alignments branch pages.
+     */
     public function showWork(Request $request, int $work): Response
     {
-        $work = Work::query()->with('originalLanguage')->findOrFail($work);
+        $work = Work::query()
+            ->with('originalLanguage')
+            ->withCount([
+                'entities' => $this->access->readableConstraint($request->user()),
+                'alignments' => $this->access->readableMatchConstraint($request->user()),
+            ])
+            ->findOrFail($work);
+
+        return Inertia::render('Library/ShowWork', [
+            'work' => [
+                'id' => $work->id,
+                'title' => $work->title,
+                'author' => $work->author,
+                'description' => $work->description,
+                'original_language' => $this->languageRef($work),
+                'entities_count' => $work->entities_count,
+                'alignments_count' => $work->alignments_count,
+                'created_at' => $work->created_at?->toISOString(),
+            ],
+        ]);
+    }
+
+    /**
+     * A work's Entities branch: the work's readable per-language texts (the
+     * former entities tab).
+     */
+    public function workEntities(Request $request, int $work): Response
+    {
+        $work = Work::query()->findOrFail($work);
         $q = trim((string) $request->query('q', ''));
 
+        return Inertia::render('Library/WorkEntities', [
+            'work' => $this->workRef($work),
+            'q' => $q,
+            ...$this->workEntitiesPayload($request, $work, $q),
+        ]);
+    }
+
+    /**
+     * A work's Alignments branch: the work's readable entity matches (the
+     * former alignments tab).
+     */
+    public function workAlignments(Request $request, int $work): Response
+    {
+        $work = Work::query()->findOrFail($work);
+        $q = trim((string) $request->query('q', ''));
+
+        return Inertia::render('Library/WorkAlignments', [
+            'work' => $this->workRef($work),
+            'q' => $q,
+            ...$this->workAlignmentsPayload($request, $work, $q),
+        ]);
+    }
+
+    /**
+     * @return array{id: int, title: string, author: ?string}
+     */
+    private function workRef(Work $work): array
+    {
+        return [
+            'id' => $work->id,
+            'title' => $work->title,
+            'author' => $work->author,
+        ];
+    }
+
+    /**
+     * The work's readable per-language texts.
+     *
+     * @return array{entities: list<array<string, mixed>>, meta: array<string, int>}
+     */
+    private function workEntitiesPayload(Request $request, Work $work, string $q): array
+    {
         $entities = $this->access->readableQuery($request->user())
             ->where('work_id', $work->id)
             ->with('language')
@@ -101,16 +217,7 @@ class LibraryController extends Controller
             ->orderBy('name')
             ->paginate(15);
 
-        return Inertia::render('Library/ShowWork', [
-            'work' => [
-                'id' => $work->id,
-                'title' => $work->title,
-                'author' => $work->author,
-                'description' => $work->description,
-                'original_language' => $this->languageRef($work),
-                'created_at' => $work->created_at?->toISOString(),
-            ],
-            'q' => $q,
+        return [
             'entities' => $entities->through(function (Entity $entity): array {
                 return [
                     'id' => $entity->id,
@@ -132,7 +239,72 @@ class LibraryController extends Controller
                 'total' => $entities->total(),
                 'per_page' => $entities->perPage(),
             ],
-        ]);
+        ];
+    }
+
+    /**
+     * The work's readable entity matches. A match has no
+     * work_id of its own — same-work is enforced at creation (and every
+     * mutation), so the A-side entity names the work.
+     *
+     * @return array{alignments: list<array<string, mixed>>, alignments_meta: array<string, int>}
+     */
+    private function workAlignmentsPayload(Request $request, Work $work, string $q): array
+    {
+        $nativeLanguageId = $request->user()->nativeLanguage()?->id;
+
+        $matches = $this->access->readableMatchQuery($request->user())
+            ->whereHas('aEntity', fn (Builder $query) => $query->where('work_id', $work->id))
+            ->with(['aEntity.language', 'bEntity.language', 'aEntity.work'])
+            ->when($q !== '', function (Builder $query) use ($q): Builder {
+                $needle = $this->searchNeedle($q);
+
+                return $query->where(function (Builder $query) use ($needle): void {
+                    $query->whereHas('aEntity', fn (Builder $inner) => $inner->where('name', 'ilike', $needle))
+                        ->orWhereHas('bEntity', fn (Builder $inner) => $inner->where('name', 'ilike', $needle));
+                });
+            })
+            ->latest()
+            ->paginate(15);
+
+        return [
+            'alignments' => $matches->through(function (EntityMatch $entityMatch) use ($nativeLanguageId): array {
+                return [
+                    ...$this->presenter->matchPayload($entityMatch),
+                    'reader_target' => $this->readerTarget($entityMatch, $nativeLanguageId),
+                ];
+            })->items(),
+            'alignments_meta' => [
+                'current_page' => $matches->currentPage(),
+                'last_page' => $matches->lastPage(),
+                'total' => $matches->total(),
+                'per_page' => $matches->perPage(),
+            ],
+        ];
+    }
+
+    /**
+     * The side an alignment card's reader button opens: the same side rule
+     * the reader page applies (EntityMatch::readingSideFor) — the user's
+     * native side becomes the translation, ties prefer the work's original
+     * language, then the A-side — so the button and the page agree.
+     *
+     * @return array{lang: string, entity_id: int}|null
+     */
+    private function readerTarget(EntityMatch $entityMatch, ?int $nativeLanguageId): ?array
+    {
+        $entity = $entityMatch->readingSideFor($nativeLanguageId) === 'a'
+            ? $entityMatch->aEntity
+            : $entityMatch->bEntity;
+
+        if ($entity === null || $entity->language?->code === null) {
+            return null;
+        }
+
+        return [
+            'lang' => $entity->language->code,
+            'entity_id' => $entity->id,
+        ];
     }
 
     public function createEntity(int $work): Response
@@ -163,6 +335,117 @@ class LibraryController extends Controller
         );
 
         return $this->redirectFromCreation($result, $language->code);
+    }
+
+    public function createAlignment(Request $request, int $work): Response
+    {
+        $work = Work::query()->findOrFail($work);
+
+        return Inertia::render('Library/CreateAlignment', [
+            'work' => [
+                'id' => $work->id,
+                'title' => $work->title,
+                'author' => $work->author,
+            ],
+            'entities' => $this->alignableEntities($request->user(), $work),
+        ]);
+    }
+
+    public function storeAlignment(StoreEntityMatchRequest $request, int $work): RedirectResponse
+    {
+        $work = Work::query()->findOrFail($work);
+
+        $data = $request->validated();
+
+        $firstEntity = Entity::find($data['first_entity_id']);
+        $secondEntity = Entity::find($data['second_entity_id']);
+
+        if ($firstEntity === null || $secondEntity === null
+            || ! $this->access->canRead($request->user(), $firstEntity)
+            || ! $this->access->canRead($request->user(), $secondEntity)) {
+            abort(403);
+        }
+
+        // The form only lists this work's entities; a forged pair from
+        // another work is rejected here.
+        if ($firstEntity->work_id !== $work->id || $secondEntity->work_id !== $work->id) {
+            return back()->withErrors([
+                'second_entity_id' => 'Both entities must belong to the selected work.',
+            ]);
+        }
+
+        // Same-language pairs are valid (e.g. a book of exercises and its
+        // answer key); the a/b sides stay canonical by entity id.
+
+        // Canonical pair order: the lower entity id is always the a side, so
+        // the unique(a_entity_id, b_entity_id) constraint covers both orders.
+        [$aEntityId, $bEntityId] = [
+            min((int) $data['first_entity_id'], (int) $data['second_entity_id']),
+            max((int) $data['first_entity_id'], (int) $data['second_entity_id']),
+        ];
+
+        $existing = EntityMatch::query()
+            ->where('a_entity_id', $aEntityId)
+            ->where('b_entity_id', $bEntityId)
+            ->first();
+
+        if ($existing !== null) {
+            return back()
+                ->withErrors(['second_entity_id' => 'A match for this entity pair already exists.'])
+                ->with('existing_match_id', $existing->id);
+        }
+
+        $entityMatch = EntityMatch::create([
+            'a_entity_id' => $aEntityId,
+            'b_entity_id' => $bEntityId,
+            'chunk_size' => (int) $data['chunk_size'],
+            'max_n' => (int) $data['max_n'],
+            'status' => 'pending',
+        ]);
+
+        // An exact-copy pair reuses a completed alignment instead of running
+        // the (potentially half-hour) pipeline.
+        if ($this->alignmentCopy->copyFor($entityMatch)) {
+            return redirect()
+                ->route('works.alignments.show', ['work' => $work->id])
+                ->with('success', 'Entity match created — alignment copied from an identical text pair.');
+        }
+
+        AlignEntitySentences::beginFromScratch($entityMatch->id);
+
+        return redirect()
+            ->route('works.alignments.show', ['work' => $work->id])
+            ->with('success', 'Entity match created — alignment started.');
+    }
+
+    /**
+     * The work's alignable entities (readable, signature generated, sentences
+     * split), grouped by language code for the create form's selects.
+     *
+     * @return array<string, list<array{id: int, text: string}>>
+     */
+    private function alignableEntities(User $user, Work $work): array
+    {
+        $eligible = $this->access->readableQuery($user)
+            ->where('work_id', $work->id)
+            ->whereNotNull('signature')
+            ->has('sentences')
+            ->with('language')
+            ->orderBy('name')
+            ->get();
+
+        $byLanguage = [];
+
+        foreach ($eligible as $entity) {
+            $code = $entity->language?->code ?? '?';
+
+            $byLanguage[$code][] = [
+                'id' => $entity->id,
+                'text' => $entity->name.($entity->label !== null ? " ({$entity->label})" : ''),
+            ];
+        }
+
+        return $byLanguage;
     }
 
     /**

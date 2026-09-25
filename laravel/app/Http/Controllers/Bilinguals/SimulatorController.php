@@ -15,6 +15,7 @@ use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\Word;
+use App\Support\PromptTemplates;
 use Exception;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
@@ -25,21 +26,49 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SimulatorController extends Controller
 {
-    public const DEFAULT_QUESTION = 'Compare Russian original vs. my translation. Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; wrap the few most important weak-point phrases in ==double equals==; put improved versions in > blockquotes. Tasks: 1. Assess meaning accuracy (with percentile) and point out my weak parts. 2. Assess grammar (with percentile) and point out my weak parts. 3. Fix grammar/improve my version. 4. Give a couple of improved versions.';
-
     public function __construct(
         protected AIModelResolver $modelResolver,
         protected MeaningMatchPresenter $presenter,
     ) {}
 
+    /**
+     * The standalone simulator (Practice menu): no pinned match — the page
+     * shows the alignment picker and loads matches via POST /text.
+     */
     public function simulator(): Response
     {
-        $textList = $this->getEntityMatchTextList();
+        return $this->simulatorResponse(null);
+    }
+
+    /**
+     * The simulator with a match pinned by the URL (opened from its
+     * alignment card): no text selector, the client loads this match.
+     */
+    public function simulatorForMatch(EntityMatch $entityMatch): Response
+    {
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
+        return $this->simulatorResponse($entityMatch);
+    }
+
+    private function simulatorResponse(?EntityMatch $pinned): Response
+    {
+        if ($pinned !== null) {
+            $pinned->loadMissing(['aEntity.language', 'bEntity.language']);
+            $pinnedName = $this->matchLabel($pinned);
+        } else {
+            $pinnedName = null;
+        }
+
+        $textList = $pinned !== null ? [] : $this->getEntityMatchTextList();
         $firstId = $textList[0]['id'] ?? null;
 
         $canUseAi = auth()->user()->canUseAi();
 
         $saved = auth()->user()->settings?->ui_settings['simulator'] ?? [];
+
+        // The saved question now holds only the user's customized task list
+        // and ships verbatim; null lets the client show the default tasks.
 
         // The model is a per-user preference picked in the profile; the page
         // only shows which model is answering (or that none is chosen).
@@ -47,31 +76,49 @@ class SimulatorController extends Controller
 
         return Inertia::render('Bilinguals/Bilinguals', [
             'textList' => $textList,
+            'pinnedMatch' => $pinnedName !== null ? ['id' => $pinned->id, 'text' => $pinnedName] : null,
+            // Both sides' languages: the client labels the columns and
+            // substitutes the question template from these. Null on the
+            // picker entry — they arrive with each POST /text response.
+            'languages' => $pinned !== null ? [
+                'a' => [
+                    'code' => $pinned->aEntity->language?->code,
+                    'name' => $pinned->aEntity->language?->name,
+                ],
+                'b' => [
+                    'code' => $pinned->bEntity->language?->code,
+                    'name' => $pinned->bEntity->language?->name,
+                ],
+            ] : null,
+            // The side the side rule (EntityMatch::readingSideFor) reads by
+            // default; the client's toggle flips around this.
+            'defaultLearningSide' => $pinned !== null
+                ? $pinned->readingSideFor(auth()->user()->nativeLanguage()?->id)
+                : 'a',
+            // Raw admin-editable templates: the client substitutes the current
+            // sides for display; the AI endpoints assemble server-side.
+            'questionTemplates' => [
+                'format' => PromptTemplates::format(),
+                'tasks' => PromptTemplates::tasks(),
+            ],
             'showWorkplace' => (bool) ($saved['show_workplace'] ?? true),
             'showQuestion' => (bool) ($saved['show_question'] ?? false),
             'showText' => (bool) ($saved['show_text'] ?? true),
-            'showAI' => $canUseAi && (bool) ($saved['show_ai'] ?? true),
+            'showAI' => (bool) ($saved['show_ai'] ?? true),
             'canUseAi' => $canUseAi,
             'answerModel' => $answerModel !== null
                 ? ['id' => $answerModel['id'], 'label' => $answerModel['label']]
                 : null,
             'explanationModelKey' => $this->modelResolver->resolveExplanationModel()['id'] ?? null,
-            'currentQuestion' => $saved['question'] ?? self::DEFAULT_QUESTION,
-            'currentText' => $firstId !== null ? (string) $firstId : '',
+            'currentTasks' => $saved['question'] ?? null,
+            'currentText' => $pinnedName !== null
+                ? (string) $pinned->id
+                : ($firstId !== null ? (string) $firstId : ''),
             'fontSize' => $this->clampInt($saved['font_size'] ?? null, 12, 48, 26),
             'aiPanelWidth' => $this->clampInt($saved['ai_panel_width'] ?? null, 280, 1200, 560),
             'workplaceHeight' => $this->clampInt($saved['workplace_height'] ?? null, 80, 800, 168),
             'highlightWords' => (bool) ($saved['highlight_words'] ?? true),
         ]);
-    }
-
-    private function clampInt(mixed $value, int $min, int $max, int $default): int
-    {
-        if (! is_int($value) && ! is_string($value) || ! preg_match('/^-?\d+$/', (string) $value)) {
-            return $default;
-        }
-
-        return max($min, min($max, (int) $value));
     }
 
     /**
@@ -88,11 +135,7 @@ class SimulatorController extends Controller
 
             $result = [];
             foreach ($matches as $match) {
-                $aName = $match->aEntity->name
-                    ?? strtoupper($match->aEntity->language?->code ?? 'A');
-                $bName = $match->bEntity->name
-                    ?? strtoupper($match->bEntity->language?->code ?? 'B');
-                $result[] = ['id' => $match->id, 'text' => "{$aName} / {$bName}"];
+                $result[] = ['id' => $match->id, 'text' => $this->matchLabel($match)];
             }
 
             return $result;
@@ -101,6 +144,25 @@ class SimulatorController extends Controller
 
             return [];
         }
+    }
+
+    private function matchLabel(EntityMatch $match): string
+    {
+        $aName = $match->aEntity->name
+            ?? strtoupper($match->aEntity->language?->code ?? 'A');
+        $bName = $match->bEntity->name
+            ?? strtoupper($match->bEntity->language?->code ?? 'B');
+
+        return "{$aName} / {$bName}";
+    }
+
+    private function clampInt(mixed $value, int $min, int $max, int $default): int
+    {
+        if (! is_int($value) && ! is_string($value) || ! preg_match('/^-?\d+$/', (string) $value)) {
+            return $default;
+        }
+
+        return max($min, min($max, (int) $value));
     }
 
     public function text(BilingualsTextRequest $request): JsonResponse
@@ -138,7 +200,7 @@ class SimulatorController extends Controller
     }
 
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, row_keys: list<string>|null, word_maps: array|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
+     * @return array{rows: list<array{0: string, 1: string}>, row_keys: list<string>|null, word_maps: array|null, languages: array{a: array, b: array}|null, default_learning_side: string, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
      */
     private function textFromEntityMatch(int $entityMatchId, int $page, int $perPage): array
     {
@@ -165,6 +227,19 @@ class SimulatorController extends Controller
             'rows' => $this->presenter->toSimulatorRows($paginator->getCollection()),
             'row_keys' => $this->presenter->toSimulatorRowKeys($paginator->getCollection()),
             'word_maps' => $this->wordMapsFor($match),
+            // The picker page's language toggle tracks the loaded match: the
+            // same shapes the pinned route ships at render time.
+            'languages' => [
+                'a' => [
+                    'code' => $match->aEntity->language?->code,
+                    'name' => $match->aEntity->language?->name,
+                ],
+                'b' => [
+                    'code' => $match->bEntity->language?->code,
+                    'name' => $match->bEntity->language?->name,
+                ],
+            ],
+            'default_learning_side' => $match->readingSideFor(auth()->user()->nativeLanguage()?->id),
             'meta' => [
                 'current_page' => $paginator->currentPage(),
                 'per_page' => $paginator->perPage(),
@@ -285,7 +360,7 @@ class SimulatorController extends Controller
         $status = 200;
         $prompt = $request->validated('data') ?? '';
 
-        $instruction = $request->validated('question') ?? '';
+        $instruction = $this->assembleInstruction($request);
         $model = $this->modelResolver->resolveAnswerModel();
 
         if ($model === null) {
@@ -333,7 +408,7 @@ class SimulatorController extends Controller
     public function askAiStreamed(AiQuestionRequest $request): StreamedResponse|JsonResponse
     {
         $prompt = $request->validated('data') ?? '';
-        $instruction = $request->validated('question') ?? '';
+        $instruction = $this->assembleInstruction($request);
         $model = $this->modelResolver->resolveAnswerModel();
 
         if ($model === null) {
@@ -369,6 +444,20 @@ class SimulatorController extends Controller
             'X-Accel-Buffering' => 'no',
             'Connection' => 'keep-alive',
         ]);
+    }
+
+    /**
+     * The system message for an assessment: the admin's format template
+     * (prompt_templates, :base/:learning substituted from the client's
+     * current column language codes) joined with the user's task list.
+     */
+    private function assembleInstruction(AiQuestionRequest $request): string
+    {
+        return PromptTemplates::assemble(
+            $request->validated('tasks'),
+            $request->validated('base'),
+            $request->validated('learning'),
+        );
     }
 
     /**
@@ -454,11 +543,7 @@ class SimulatorController extends Controller
             : '';
 
         $nativeName = auth()->user()->nativeLanguage()?->name ?? 'English';
-        $instruction = 'You are a dictionary assistant for a language learner. '
-            .'Explain the meaning of the word «'.$validated['surface'].'» as it is used in the sentence labelled "Sentence with the word", '
-            .'using the neighbouring sentences only as context. Reply in '.$nativeName.'. '
-            .'Be concise: 2 to 4 sentences. Name the sense that applies here and, when natural, give the closest '
-            .$nativeName.' equivalent word or phrase. Markdown formatting is allowed. Do not repeat the sentences back.';
+        $instruction = PromptTemplates::explanation($validated['surface'], $nativeName);
 
         $question = "Word to explain: «{$validated['surface']}»{$headwordNote}\n\n"
             ."Sentence before:\n".($previous?->content ?? '(not available)')."\n\n"

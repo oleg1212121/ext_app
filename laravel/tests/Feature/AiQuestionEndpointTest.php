@@ -2,11 +2,13 @@
 
 use App\Classes\AIModelResolver;
 use App\Exceptions\AiProviderException;
+use App\Models\PromptTemplate;
 use App\Models\User;
+use App\Support\PromptTemplates;
 
 const AI_ANSWER_MODEL_MOCK = ['id' => 7, 'key' => 'openrouter:google/gemini-3-flash-preview', 'label' => 'Gemini Flash'];
 
-it('accepts an empty question without server error', function () {
+it('accepts an empty task list and assembles the default instruction', function () {
     $user = User::factory()->create();
 
     $mock = mock(AIModelResolver::class);
@@ -17,7 +19,7 @@ it('accepts an empty question without server error', function () {
         ->once()
         ->with(
             'openrouter:google/gemini-3-flash-preview',
-            '',
+            str_replace([':base', ':learning'], ['', ''], PromptTemplates::FORMAT_FALLBACK).' '.PromptTemplates::TASKS_FALLBACK,
             "Russian line\nEnglish line",
         )
         ->andReturn('Test answer');
@@ -26,12 +28,45 @@ it('accepts an empty question without server error', function () {
 
     $response = $this->actingAs($user)->postJson('/ai/question', [
         'data' => "Russian line\nEnglish line",
-        'question' => '',
+        'tasks' => '',
     ]);
 
     $response->assertOk()
         ->assertJsonPath('data.code', 200)
         ->assertJsonPath('data.answer', 'Test answer');
+});
+
+it('assembles the instruction from the admin-edited template row and the sent task list', function () {
+    $user = User::factory()->create();
+    createLanguages();
+    PromptTemplate::query()->updateOrCreate(
+        ['key' => PromptTemplates::FORMAT_KEY],
+        ['text' => 'Judge :base against :learning.'],
+    );
+
+    $mock = mock(AIModelResolver::class);
+    $mock->shouldReceive('resolveAnswerModel')
+        ->once()
+        ->andReturn(AI_ANSWER_MODEL_MOCK);
+    $mock->shouldReceive('ask')
+        ->once()
+        ->with(
+            'openrouter:google/gemini-3-flash-preview',
+            'Judge English against Russian. My tasks.',
+            'prompt',
+        )
+        ->andReturn('Test answer');
+
+    $this->app->instance(AIModelResolver::class, $mock);
+
+    $response = $this->actingAs($user)->postJson('/ai/question', [
+        'data' => 'prompt',
+        'tasks' => 'My tasks.',
+        'base' => 'en',
+        'learning' => 'ru',
+    ]);
+
+    $response->assertOk()->assertJsonPath('data.answer', 'Test answer');
 });
 
 it('asks with the user\'s stored answer model, ignoring any client-sent model field', function () {
@@ -43,14 +78,16 @@ it('asks with the user\'s stored answer model, ignoring any client-sent model fi
         ->andReturn(AI_ANSWER_MODEL_MOCK);
     $mock->shouldReceive('ask')
         ->once()
-        ->with('openrouter:google/gemini-3-flash-preview', '', 'prompt')
+        ->with('openrouter:google/gemini-3-flash-preview', PromptTemplates::assemble('Grade it.', 'en', 'ru'), 'prompt')
         ->andReturn('Test answer');
 
     $this->app->instance(AIModelResolver::class, $mock);
 
     $response = $this->actingAs($user)->postJson('/ai/question', [
         'data' => 'prompt',
-        'question' => '',
+        'tasks' => 'Grade it.',
+        'base' => 'en',
+        'learning' => 'ru',
         'model' => 'openrouter:some/other-model',
     ]);
 
@@ -70,7 +107,7 @@ it('refuses the question when the user has not chosen an answer model', function
 
     $response = $this->actingAs($user)->postJson('/ai/question', [
         'data' => "Russian line\nEnglish line",
-        'question' => '',
+        'tasks' => '',
     ]);
 
     $response->assertStatus(400)
@@ -96,7 +133,7 @@ it('surfaces a provider error as a friendly message without leaking internals', 
 
     $response = $this->actingAs($user)->postJson('/ai/question', [
         'data' => "Russian line\nEnglish line",
-        'question' => '',
+        'tasks' => '',
     ]);
 
     $response->assertStatus(429)
@@ -125,7 +162,7 @@ it('returns a friendly message when the model resolver rejects the model', funct
 
     $response = $this->actingAs($user)->postJson('/ai/question', [
         'data' => "Russian line\nEnglish line",
-        'question' => '',
+        'tasks' => '',
     ]);
 
     $response->assertStatus(400)

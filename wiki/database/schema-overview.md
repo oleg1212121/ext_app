@@ -32,6 +32,7 @@ is an `INSERT` into `languages` — never DDL (ADR
 | [Dictionary](dictionary.md) | Unified `words` (+ `language_id`) with satellites, `word_classes`/`transcription_types` per language, one directed `word_translations` pivot. Filled by [Dictionary Import](/domains/dictionary-import.md) |
 | [Crossword](../domains/crossword.md) | `entity_words` (token-first per-entity word list, nullable `word_id` link), `user_word` (per-user `familiarity` 0–100 exposure score), `user_word_event` (read/lookup idempotency ledger: user × word × row_key × kind unique; ADR [0028](../../docs/adr/0028-numeric-word-familiarity.md)), `entities.words_indexed_at` staleness marker, `words.frequency` ranks. See ADR [0025](../../docs/adr/0025-crossword-word-index-and-progress.md). The same tables power [Interactive words](../domains/interactive-words.md) — no position/occurrence tables exist (ADR [0027](../../docs/adr/0027-render-time-word-segmentation.md)); `forms` carries the runtime-read `l_word` index |
 | AI catalog | `ai_providers`, `ai_models`, `user_api_keys` (2026_09_10_000002) |
+| Prompt templates | `prompt_templates` (2026_09_24_000001): seeded admin-editable AI prompt texts keyed `simulator.question.format` / `simulator.question.tasks` (`:base`/`:learning` — assessment question) and `word.explanation` (`:word`/`:native` — Context explanation); placeholders substituted server-side (ADR [0040](../../docs/adr/0040-server-assembled-assessment-question.md)) |
 | Users & settings | `users` (role/approval inline), `user_settings` (native + interface language) |
 | [Localization](../domains/localization.md) | `ui_string_keys` (dotted key, group), `ui_strings` (one text per interface-enabled language); `languages.is_interface_enabled` gates pickers |
 
@@ -50,7 +51,7 @@ default), the **interface language** (`interface_language_id`, nullable —
 null follows the native language; only `languages.is_interface_enabled`
 languages are valid), and **UI settings** (`ui_settings`, nullable JSONB —
 per-section blobs keyed `simulator` / `reader`: font sizes, panel visibility,
-selected AI model, customized assessment question, panel drag sizes). Created
+selected AI model, customized assessment task list, panel drag sizes). Created
 at registration; the language fields are changeable from the profile page
 (Inertia `Profile/Edit`) and admin-managed via the language selects on the
 `UserResource` create/edit forms (the former standalone `UserSettingsResource`

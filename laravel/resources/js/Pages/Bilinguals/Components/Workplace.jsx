@@ -43,7 +43,22 @@ export default function Workplace(props) {
                 </div>
                 {props.showQuestion === true && (
                     <div className="px-4 pb-4 border-t border-[var(--wbench-rule)]/70 dark:border-[var(--wbench-rule-night)]/70 pt-3">
-                        <Textarea onChange={props.changeQuestion} ref={props.questionRef} label={t('bilinguals.question')} value={props.currentQuestion} placeholder={t('bilinguals.question_placeholder')} className="resizeable_element" rows={3}/>
+                        {/* The format template is admin-owned and read-only;
+                            the textarea below edits only the task list. */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="font-[var(--wbench-mono)] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] text-[10px] tracking-[0.24em] uppercase">{t('bilinguals.question_template')}</span>
+                            {props.canResetQuestion === true && (
+                                <button
+                                    type="button"
+                                    onClick={props.onResetQuestion}
+                                    className="font-[var(--wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-accent)] dark:hover:text-[var(--wbench-accent-night)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
+                                >
+                                    {t('bilinguals.question_reset')}
+                                </button>
+                            )}
+                        </div>
+                        <p className="mb-2 text-xs leading-relaxed text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">{props.questionInfo}</p>
+                        <Textarea onChange={props.changeQuestion} ref={props.questionRef} label={t('bilinguals.question')} value={props.currentQuestion} key={props.questionResetKey} placeholder={t('bilinguals.question_placeholder')} className="resizeable_element" rows={3}/>
                     </div>
                 )}
                 {props.canUseAi && props.showQuestion !== true && (

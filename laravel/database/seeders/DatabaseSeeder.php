@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
             LanguageSeeder::class,
             UiStringSeeder::class,
             AiProviderSeeder::class,
+            PromptTemplateSeeder::class,
             SentenceTypeSeeder::class,
             WordClassSeeder::class,
             TranscriptionTypeSeeder::class,

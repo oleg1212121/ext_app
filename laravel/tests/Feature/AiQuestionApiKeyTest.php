@@ -4,6 +4,7 @@ use App\Classes\AIModelResolver;
 use App\Models\AiModel;
 use App\Models\AiProvider;
 use App\Models\User;
+use App\Support\PromptTemplates;
 
 it('refuses an AI question when the user has no available answer model', function () {
     $user = User::factory()->create();
@@ -21,7 +22,7 @@ it('refuses an AI question when the user has no available answer model', functio
     $this->actingAs($user)
         ->postJson('/ai/question', [
             'data' => 'Russian line',
-            'question' => '',
+            'tasks' => '',
         ])
         ->assertStatus(400)
         ->assertJsonPath('data.data.error', 'Choose an AI model in your profile settings.');
@@ -36,7 +37,11 @@ it('asks with the answer model the resolver fell back to after the picked provid
         ->andReturn(['id' => 3, 'key' => 'gemini:cheap-model', 'label' => 'Cheap Model']);
     $mock->shouldReceive('ask')
         ->once()
-        ->with('gemini:cheap-model', '', 'Russian line')
+        ->with(
+            'gemini:cheap-model',
+            str_replace([':base', ':learning'], ['', ''], PromptTemplates::FORMAT_FALLBACK).' '.PromptTemplates::TASKS_FALLBACK,
+            'Russian line',
+        )
         ->andReturn('Fallback answer');
 
     $this->app->instance(AIModelResolver::class, $mock);
@@ -51,7 +56,7 @@ it('asks with the answer model the resolver fell back to after the picked provid
     $this->actingAs($user)
         ->postJson('/ai/question', [
             'data' => 'Russian line',
-            'question' => '',
+            'tasks' => '',
         ])
         ->assertOk()
         ->assertJsonPath('data.answer', 'Fallback answer');

@@ -4,8 +4,10 @@ use App\Classes\AIModelResolver;
 use App\Exceptions\AiProviderException;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
+use App\Models\PromptTemplate;
 use App\Models\SentenceMeaningMatch;
 use App\Models\User;
+use App\Support\PromptTemplates;
 use Mockery\MockInterface;
 
 const AI_EXPLANATION_MODEL_MOCK = ['id' => 7, 'key' => 'openrouter:google/gemini-3-flash-preview', 'label' => 'Gemini Flash'];
@@ -264,4 +266,21 @@ it('rate-limits the word explain endpoint after 20 requests per minute', functio
     $this->actingAs($fixture['user'])
         ->postJson('/ai/word-explain', explainPayload($fixture))
         ->assertStatus(429);
+});
+
+it('assembles the instruction from the admin-edited word-explanation template', function () {
+    $fixture = createExplainFixture();
+    PromptTemplate::query()->updateOrCreate(
+        ['key' => PromptTemplates::EXPLANATION_KEY],
+        ['text' => 'Explain :word for a :native speaker.'],
+    );
+
+    $captured = [];
+    mockResolverForExplain($captured);
+
+    $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-explain', explainPayload($fixture))
+        ->assertOk();
+
+    expect($captured['instruction'])->toBe('Explain bank for a Russian speaker.');
 });

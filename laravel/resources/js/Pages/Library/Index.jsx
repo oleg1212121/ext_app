@@ -3,13 +3,26 @@ import Main from '../../Layouts/Main.jsx';
 import LinkPagination from '../../Components/LinkPagination.jsx';
 import {useI18n} from '../../i18n';
 
-export default function Index({works = [], meta, q = ''}) {
+// Card target and count per list variant: the catalog links to the work's
+// landing page; the branch lists link straight into the work's branch page.
+const VARIANTS = {
+    catalog: {path: '', countKey: 'entities_count', countSingular: 'library.entity', countPlural: 'library.entities'},
+    entities: {path: '/entities', countKey: 'entities_count', countSingular: 'library.entity', countPlural: 'library.entities'},
+    alignments: {path: '/alignments', countKey: 'alignments_count', countSingular: 'library.alignment', countPlural: 'library.alignments'},
+};
+
+export default function Index({works = [], meta, q = '', variant = 'catalog'}) {
     const {t} = useI18n();
+    const config = VARIANTS[variant] ?? VARIANTS.catalog;
+    const title = variant === 'alignments'
+        ? t('library.alignments_title')
+        : variant === 'entities' ? t('library.entities_title') : t('library.works');
+
     const pageUrl = (page) => {
         const params = new URLSearchParams();
         if (q) params.set('q', q);
         params.set('page', String(page));
-        return `/library?${params.toString()}`;
+        return `/works${config.path}?${params.toString()}`;
     };
 
     return (
@@ -20,11 +33,11 @@ export default function Index({works = [], meta, q = ''}) {
                         {t('library.library')}
                     </p>
                     <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                        {t('library.works')}
+                        {title}
                     </h1>
                 </header>
 
-                <form method="get" action="/library" className="flex items-center gap-2">
+                <form method="get" action={`/works${config.path}`} className="flex items-center gap-2">
                     <label htmlFor="work-search" className="sr-only">{t('library.search_works')}</label>
                     <input
                         id="work-search"
@@ -43,20 +56,22 @@ export default function Index({works = [], meta, q = ''}) {
                 </form>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <Link
-                        href="/library/create"
-                        className="group flex min-h-32 flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-6 transition-colors hover:border-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
-                    >
-                        <span className="font-serif text-3xl leading-none text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] transition-colors group-hover:text-[var(--wbench-accent)] dark:group-hover:text-[var(--wbench-accent-night)]">
-                            +
-                        </span>
-                        <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] transition-colors group-hover:text-[var(--wbench-accent)] dark:group-hover:text-[var(--wbench-accent-night)]">
-                            {t('library.add_work')}
-                        </span>
-                    </Link>
+                    {variant === 'catalog' && (
+                        <Link
+                            href="/works/create"
+                            className="group flex min-h-32 flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-6 transition-colors hover:border-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
+                        >
+                            <span className="font-serif text-3xl leading-none text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] transition-colors group-hover:text-[var(--wbench-accent)] dark:group-hover:text-[var(--wbench-accent-night)]">
+                                +
+                            </span>
+                            <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] transition-colors group-hover:text-[var(--wbench-accent)] dark:group-hover:text-[var(--wbench-accent-night)]">
+                                {t('library.add_work')}
+                            </span>
+                        </Link>
+                    )}
 
                     {works.map((work) => (
-                        <WorkCard key={work.id} work={work}/>
+                        <WorkCard key={work.id} work={work} variant={variant}/>
                     ))}
                 </div>
 
@@ -77,11 +92,14 @@ export default function Index({works = [], meta, q = ''}) {
     );
 }
 
-function WorkCard({work}) {
+function WorkCard({work, variant}) {
     const {t} = useI18n();
+    const config = VARIANTS[variant] ?? VARIANTS.catalog;
+    const count = work[config.countKey];
+
     return (
         <Link
-            href={`/library/${work.id}`}
+            href={`/works/${work.id}${config.path}`}
             className="group flex flex-col gap-2 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-5 transition-colors hover:border-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
         >
             <div className="flex items-baseline justify-between gap-3">
@@ -89,7 +107,7 @@ function WorkCard({work}) {
                     {work.original_language?.name ?? '—'}
                 </span>
                 <span className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    {work.entities_count} {work.entities_count === 1 ? t('library.entity') : t('library.entities')}
+                    {count} {count === 1 ? t(config.countSingular) : t(config.countPlural)}
                 </span>
             </div>
             <h2 className="font-serif text-xl leading-snug tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] group-hover:text-[var(--wbench-accent)] dark:group-hover:text-[var(--wbench-accent-night)]">

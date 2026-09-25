@@ -3,6 +3,7 @@
 use App\Classes\AIModelResolver;
 use App\Exceptions\AiProviderException;
 use App\Models\User;
+use App\Support\PromptTemplates;
 use Illuminate\Testing\TestResponse;
 
 /**
@@ -29,6 +30,12 @@ it('streams text chunks as SSE events', function () {
         ->andReturn(['id' => 7, 'key' => 'openrouter:google/gemini-3-flash-preview', 'label' => 'Gemini Flash']);
     $mock->shouldReceive('askStreamed')
         ->once()
+        ->with(
+            'openrouter:google/gemini-3-flash-preview',
+            str_replace([':base', ':learning'], ['', ''], PromptTemplates::FORMAT_FALLBACK).' '.PromptTemplates::TASKS_FALLBACK,
+            "Russian line\nEnglish line",
+            Mockery::type('callable'),
+        )
         ->andReturnUsing(function ($model, $instruction, $question, $callback) {
             $callback('Hello ');
             $callback('world');
@@ -38,7 +45,7 @@ it('streams text chunks as SSE events', function () {
 
     $response = $this->actingAs($user)->postJson('/ai/question/stream', [
         'data' => "Russian line\nEnglish line",
-        'question' => '',
+        'tasks' => '',
     ]);
 
     $response->assertOk();
@@ -66,7 +73,7 @@ it('returns the SSE content type and no-buffering headers', function () {
 
     $response = $this->actingAs($user)->postJson('/ai/question/stream', [
         'data' => "Russian line\nEnglish line",
-        'question' => '',
+        'tasks' => '',
     ]);
 
     $response->assertOk();
@@ -96,7 +103,7 @@ it('streams a provider error as an SSE error event followed by DONE', function (
 
     $response = $this->actingAs($user)->postJson('/ai/question/stream', [
         'data' => "Russian line\nEnglish line",
-        'question' => '',
+        'tasks' => '',
     ]);
 
     $content = captureStreamedContent($response);
@@ -123,7 +130,7 @@ it('streams an invalid-model error as an SSE error event', function () {
 
     $response = $this->actingAs($user)->postJson('/ai/question/stream', [
         'data' => "Russian line\nEnglish line",
-        'question' => '',
+        'tasks' => '',
     ]);
 
     $content = captureStreamedContent($response);
@@ -144,7 +151,7 @@ it('refuses the stream with a JSON error before any SSE output when no answer mo
 
     $response = $this->actingAs($user)->postJson('/ai/question/stream', [
         'data' => "Russian line\nEnglish line",
-        'question' => '',
+        'tasks' => '',
     ]);
 
     $response->assertStatus(400)

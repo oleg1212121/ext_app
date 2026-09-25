@@ -125,7 +125,7 @@ function completedSourceMatch(Entity $a, Entity $b, int $confirmedRows = PHP_INT
 function storeMatch(Entity $first, Entity $second)
 {
     return test()->actingAs(User::factory()->create())
-        ->post(route('alignments.store'), [
+        ->post("/works/{$first->work_id}/alignments", [
             'first_entity_id' => $first->id,
             'second_entity_id' => $second->id,
             'chunk_size' => 75,
@@ -153,7 +153,7 @@ test('creating a match between exact copies reuses the completed alignment', fun
     Bus::fake();
 
     storeMatch($enCopy, $ruCopy)
-        ->assertRedirect(route('alignments.index'))
+        ->assertRedirect('/works/'.$work->id.'/alignments')
         ->assertSessionHas('success', 'Entity match created — alignment copied from an identical text pair.');
 
     Bus::assertNotDispatched(AlignEntitySentences::class);
@@ -326,7 +326,7 @@ test('with no eligible completed source the full pipeline runs', function () {
     Bus::fake();
 
     storeMatch($en, $ru)
-        ->assertRedirect(route('alignments.index'))
+        ->assertRedirect('/works/'.$work->id.'/alignments')
         ->assertSessionHas('success', 'Entity match created — alignment started.');
 
     Bus::assertDispatched(AlignEntitySentences::class);
@@ -358,7 +358,7 @@ test('a scrambled source order column does not survive the copy', function () {
 
     Bus::fake();
 
-    storeMatch($enCopy, $ruCopy)->assertRedirect(route('alignments.index'));
+    storeMatch($enCopy, $ruCopy)->assertRedirect('/works/'.$work->id.'/alignments');
 
     $newMatch = matchFor($enCopy, $ruCopy);
 
