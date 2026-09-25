@@ -26,6 +26,7 @@ class Entity extends Model
         'is_restricted',
         'is_approved',
         'words_indexed_at',
+        'frequency_counted_at',
     ];
 
     protected function casts(): array
@@ -36,6 +37,7 @@ class Entity extends Model
             'text_hashed_at' => 'datetime',
             'sentences_updated_at' => 'datetime',
             'words_indexed_at' => 'datetime',
+            'frequency_counted_at' => 'datetime',
         ];
     }
 

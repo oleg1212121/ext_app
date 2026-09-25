@@ -4,8 +4,8 @@ title: Unified Dictionary Tables
 description: One words table (+ satellites) keyed by language, per-language word classes and transcription types, and a symmetric word_translations pivot (one row per pair).
 tags: [database, schema, dictionary, words]
 status: stable
-stale_after: 2026-12-13
-generated: { by: agent:zcode, at: 2026-09-13T21:00:00Z }
+stale_after: 2026-12-25
+generated: { by: agent:zcode, at: 2026-09-25T00:00:00Z }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -21,7 +21,7 @@ sources:
 |-------|------|
 | `word_classes` | Parts of speech **per language** (`language_id`, `slug`, `title`, unique `(language_id, slug)`); seeded for en/ru |
 | `transcription_types` | Transcription kinds per language (ipa, enpr for English; МФА for Russian) |
-| `words` | A base-form word in one language: `language_id`, `word`, `l_word` (lowercase), `frequency`, `word_class_id`, raw Wiktionary `translations` JSON. Unique `(word, language_id, word_class_id)`; index `(l_word, word_class_id)` |
+| `words` | A base-form word in one language: `language_id`, `word`, `l_word` (lowercase), `frequency` (rank: lower = more common, `numeric(12,2)`; 1,100,000 = unranked, `Word::FREQUENCY_UNRANKED` — see ADR 0041), `word_class_id`, raw Wiktionary `translations` JSON. Unique `(word, language_id, word_class_id)`; index `(l_word, word_class_id)` |
 | `forms` / `definitions` / `etymologies` / `examples` | Per-word satellites (unique `(form, word_id)` / `(example, word_id)`); `forms` carries `l_word` (indexed, `idx_forms_l_word`) and is the runtime link target for inflected tokens — see the linker's forms pass in [Crossword](/domains/crossword.md) |
 | `transcriptions` | Written phonetic notations per word + `transcription_type_id` (ipa, enpr, …; unique triple) |
 | `pronunciations` | Audio files with pronunciation examples per word (`path` on the public disk, unique `(path, word_id)`); uploaded via the admin |
@@ -51,5 +51,16 @@ sources:
   `transcription_types` row, both with the slug as placeholder `title` —
   nothing is skipped for a missing lookup, so a new language needs no
   seeders. The seeders remain the source of curated en/ru titles.
+* `l_word` keys (words and forms) are lowercased **and stripped of
+  combining marks** — Russian Wiktionary headwords carry stress marks
+  (`свобо́дный`), and every matcher (the entity-word linker's exact pass,
+  `words:import-frequency`) compares against unstressed text. The display
+  `word` keeps its marks.
 * The legacy 2025 vocabulary domain (`words` in the old shape, `books`,
   `book_word`, `saved_phrases`) was deleted with the 2026-09 rework.
+* `words.frequency` is populated by `words:import-frequency {source}`
+  (local `rank,word` CSV or named download — OpenSubtitles 2018 for en,
+  RNC lemmas for ru) and then nudged per entity by
+  `WordFrequencyAccrual` — semantics, sources and the correction math in
+  ADR [0041](../../docs/adr/0041-frequency-rank-semantics-and-entity-correction.md)
+  and [Crossword](/domains/crossword.md).

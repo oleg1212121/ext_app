@@ -43,6 +43,16 @@ it('handles missing pos with unknown default', function () {
     expect($result['pos'])->toBe('unknown');
 });
 
+it('strips combining stress marks from the lookup key', function () {
+    $parser = new WiktionaryParser('ru', 'en');
+    $line = json_decode('{"word":"свобо́дный","pos":"adjective","senses":[{"glosses":["free"]}]}');
+
+    $result = $parser->parseLine($line);
+
+    expect($result['word'])->toBe('свобо́дный');
+    expect($result['l_word'])->toBe('свободный');
+});
+
 it('merges records for same word and pos', function () {
     $parser = new WiktionaryParser('en', 'ru');
     $existing = [

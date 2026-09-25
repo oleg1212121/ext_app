@@ -4,8 +4,8 @@ title: Crossword
 description: Deterministic crossword puzzles generated from an entity's word list, with frequency-band levels, dictionary-backed definitions/translations, and per-user word familiarity.
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
-stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-09-20T00:00:00Z }
+stale_after: 2026-12-25
+generated: { by: agent:zcode, at: 2026-09-25T00:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/CrosswordController.php
@@ -19,12 +19,18 @@ sources:
   - id: linker
     resource: laravel/app/Classes/EntityWordLinker.php
     title: EntityWordLinker
+  - id: accrual
+    resource: laravel/app/Classes/WordFrequencyAccrual.php
+    title: WordFrequencyAccrual (entity frequency correction)
   - id: refresh-job
     resource: laravel/app/Jobs/RefreshEntityWords.php
     title: RefreshEntityWords job
   - id: refresh-command
     resource: laravel/app/Console/Commands/RefreshEntityWordsCommand.php
     title: crossword:refresh sweep
+  - id: accrue-command
+    resource: laravel/app/Console/Commands/AccrueEntityWordFrequencyCommand.php
+    title: words:accrue-entity-frequency sweep
   - id: levels
     resource: laravel/app/Classes/CrosswordLevel.php
     title: CrosswordLevel bands
@@ -73,6 +79,14 @@ stats. Dictionary and frequency imports therefore reach existing entities
 without manual runs. Dev has no `schedule:work` — run
 `php artisan crossword:refresh` by hand there.
 
+Scheduled alongside it (same five-minute cadence, `withoutOverlapping`),
+`words:accrue-entity-frequency` applies the entity **Frequency
+correction** (below): entities whose `frequency_counted_at` is still null
+and whose `words_indexed_at` is at least 15 minutes old — the grace lets
+the link pass fill `word_id` before the one-time pull burns the marker —
+in id order, bounded by `--limit` (200). Dev:
+`php artisan words:accrue-entity-frequency --grace=0`.
+
 # Pipeline
 
 1. **Index** — `EntityWordIndexer` tokenizes `entity_sentences` (PHP
@@ -87,9 +101,27 @@ without manual runs. Dev has no `schedule:work` — run
    inflected **forms** (`forms.l_word`, same class priority) so oblique
    cases and irregular forms get a dictionary link. Exact matches always
    win. Idempotent: only touches `word_id IS NULL` rows.
-3. **Frequency** — `words:import-frequency {file} --lang=` upserts rank
-   numbers onto `words.frequency` from `rank,word` CSVs
-   (`database/frequency/`). Sample list committed for tests.
+3. **Frequency** — `words.frequency` is a **rank** (lower = more common;
+   `Word::FREQUENCY_UNRANKED` = 1,100,000 for words absent from the lists;
+   one above the widest cutoff, so unranked words sit in no band until
+   corrected — ADR
+   [0041](../../docs/adr/0041-frequency-rank-semantics-and-entity-correction.md)).
+   `words:import-frequency {source}` writes authoritative ranks: a local
+   `rank,word` CSV (`--lang=`) or a named source downloaded to
+   `storage/app/frequency/` — `en-opensubtitles` (OpenSubtitles 2018 full
+   list, surface forms, rank = line position) or `ru-rnc`
+   (Lyashevskaya–Sharoff RNC lemmas, ipm summed per lemma across parts of
+   speech). Matching is direct `l_word` equality, applied set-based via a
+   session temp table to every word-class row of the headword; words are
+   never created. A successful import clears `frequency_counted_at` for
+   the imported language's entities so the correction re-applies once
+   against the fresh ranks.
+   **Frequency correction** — `WordFrequencyAccrual` processes each entity
+   exactly once (`entities.frequency_counted_at`): the entity's linked
+   word list is ranked by occurrence count and each word's rank is pulled
+   `2%` of its own value toward that position (clamped, floor 1), all
+   word-class rows together. Unranked words converge into the widest band
+   after appearing in ~5 entities.
 4. **Select + lay out** — `ORDER BY user_word.familiarity (0 = never seen
    first), words.frequency, id LIMIT 30` so the least-familiar band words
    are picked first, excluding words the user already knows

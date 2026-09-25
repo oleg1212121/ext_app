@@ -1,5 +1,45 @@
 # Directory Update Log
 
+## 2026-09-25 (fix: l_word lookup keys lose combining stress marks)
+
+The ru-rnc frequency import matched only 2 of 3 words — investigation
+showed the ru dictionary itself has 3 rows (the kaikki import for Russian
+was never run; en has 190k words / 127k ranked), and exposed the next
+trap: English Wiktionary Russian headwords carry combining stress marks
+(`свобо́дный`), so `WiktionaryParser`'s `mb_strtolower`-only `l_word`
+would never equal the unstressed RNC lemmas (nor entity tokens). The
+parser now strips `\p{M}` when building `l_word` keys (words + forms;
+display `word` unchanged) — same normalization rule as
+`LinkTranslationsCommand::normalizeTargetWord`; `words:import-frequency`
+applies it to RNC lemmas too. `dictionary.md` note added;
+`WiktionaryParserTest` + `ImportWordFrequencyTest` cover the stripping.
+
+## 2026-09-25 (feat: frequency ranks imported from real lists + entity corpus correction)
+
+`words.frequency` is now a fully usable rank: the column widened to
+`numeric(12,2)` (the old `numeric(8,2)` could not even hold the new
+unranked marker), default and zero-backfilled to `1,100,000`
+(`Word::FREQUENCY_UNRANKED`) so unranked words sit in **no** crossword
+band instead of every band, and the migration comment fixed to rank
+semantics (ADR 0041). `words:import-frequency {source}` reworked: named
+sources `en-opensubtitles` (OpenSubtitles 2018 full list, rank = line
+position) and `ru-rnc` (Lyashevskaya–Sharoff RNC lemmas, ipm summed per
+lemma across PoS rows) download to `storage/app/frequency/`
+(`config/services.frequency`, `--force-redownload`), stream through a
+session temp table and apply set-based to every word-class row of a
+matched headword; local `rank,word` CSVs unchanged; a successful import
+resets the imported language's correction markers. New
+`words:accrue-entity-frequency` (every 5 min, `withoutOverlapping`):
+`WordFrequencyAccrual` processes each entity exactly once
+(`entities.frequency_counted_at`, 15-min grace after indexing), pulling
+each linked word's rank 2% of its own value toward its position in the
+entity's word list (clamped, floor 1) — unranked words become
+crossword-eligible after ~5 texts. CONTEXT.md gained **Frequency rank** /
+**Frequency correction**; `crossword.md`, `dictionary.md`, schema-overview
+references regenerated. Tests: `ImportWordFrequencyTest` (8) +
+`AccrueEntityWordFrequencyTest` (12) — import formats, downloads, marker
+scoping, correction math/clamps/limits, level crossing.
+
 ## 2026-09-24 (feat: word-explanation instruction joins the prompt templates)
 
 The Context explanation's system message — the last hardcoded AI prompt on
