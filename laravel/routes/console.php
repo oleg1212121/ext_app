@@ -18,6 +18,10 @@ Schedule::command('crossword:refresh')
     ->everyFiveMinutes()
     ->withoutOverlapping();
 
+Schedule::command('words:accrue-entity-frequency')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
 Schedule::command('entities:refresh-text-hashes')
     ->everyFiveMinutes()
     ->withoutOverlapping();

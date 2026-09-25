@@ -536,6 +536,22 @@ select puzzle words. A word is eligible for a Level when its rank (lower =
 more common) is within the band's cutoff.
 _Avoid_: difficulty (implies curated ordering), CEFR level.
 
+**Frequency rank**:
+The number on a dictionary Word telling how common it is in the language:
+lower = more common; 1 100 000 means unranked (absent from the imported
+frequency lists, native-speaker territory). Imported from public
+frequency lists, then nudged by Frequency corrections. _Avoid_:
+frequency count (the number is a position, not an occurrence tally),
+popularity.
+
+**Frequency correction**:
+The one-time pull a text applies to a word's Frequency rank: 2% of the
+rank's own value toward the word's position in that text's word list,
+never overshooting the position. Each text applies it exactly once; a
+heavily-used unranked word earns its way into the Level bands over
+several texts. _Avoid_: boost (moves both directions), accrual
+(implementation term).
+
 **Word familiarity**:
 The reader's exposure score for one dictionary Word, global across all
 works: 0–100, where 100 means the word is known and no row means never

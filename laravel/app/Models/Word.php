@@ -10,6 +10,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Word extends Model
 {
+    /**
+     * The frequency rank standing for "unranked": no frequency list carries
+     * the word. Above every CrosswordLevel cutoff, so unranked words are
+     * crossword-ineligible until entity corrections pull the rank in.
+     */
+    public const FREQUENCY_UNRANKED = 1100000;
+
     protected $fillable = [
         'language_id',
         'word',
@@ -22,7 +29,7 @@ class Word extends Model
     protected function casts(): array
     {
         return [
-            'frequency' => 'decimal:8',
+            'frequency' => 'decimal:2',
             'translations' => 'array',
         ];
     }
