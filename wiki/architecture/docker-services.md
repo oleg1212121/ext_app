@@ -4,7 +4,7 @@ title: Docker & Services
 description: Containers, ports, mounts, and the rule that all PHP/Composer/NPM commands run inside the app container.
 tags: [docker, infrastructure, devops]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-20T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-26T00:00:00Z }
 sources:
   - id: compose
     resource: docker-compose.yml
@@ -90,11 +90,25 @@ with `./laravel` bind-mounted). Its standing stack is the base compose plus
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile cloudflare up -d
 ```
 
-The overlay adds `queue` (2× `queue:work --tries=1 --timeout=620`),
+The overlay adds `queue` (2× `queue:work --tries=1 --timeout=620 --queue=default,low`),
 `scheduler` (`schedule:work`), and the `backups` crond sidecar; toggles python
 to `--workers 2` with no host ports; keeps `db` **identical to the old baked
 overlay** (creds `docker-compose/prod/postgres.env`, PGDATA
 `./docker-compose/prod/postgres`) so the existing cluster is found untouched.
+
+**Queue lanes**: all workers consume `--queue=default,low` in strict order —
+`low` only runs when no `default` job is pending. A job's lane is declared
+on its class as `#[Queue(QueueLane::DEFAULT)]` (ADR 0042); flip a job to
+`QueueLane::LOW` to defer it, and add any new lane to **all three**
+worker flags (composer `dev` script, prod overlay, systemd unit).
+
+**Native (no-Docker) prod path**: the prod machine can alternatively run the
+stack as systemd units — `ext-queue@.service` (templated worker, instances
+`ext-queue@1`/`ext-queue@2`, same `queue:work` flags as the overlay),
+`ext-scheduler.service`, `ext-python.service` — shipped by `./deploy-native.sh`
+(git pull → build → migrate → seeds → `daemon-reload` → unit restarts; the
+`daemon-reload` is required for unit-file changes to take effect). Both paths
+end with the same deploy guarantees as `deploy.sh`.
 
 Shipping code is `./deploy.sh` on the prod machine: fast-forward `git pull`,
 then `composer install` / `npm ci` / `npm run build` / `storage:link` / cache

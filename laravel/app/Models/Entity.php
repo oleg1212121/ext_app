@@ -20,6 +20,8 @@ class Entity extends Model
         'signature',
         'file_path',
         'file_hash',
+        'split_offset',
+        'split_remainder',
         'text_hash',
         'text_hashed_at',
         'sentences_updated_at',
@@ -34,6 +36,7 @@ class Entity extends Model
         return [
             'is_restricted' => 'boolean',
             'is_approved' => 'boolean',
+            'split_offset' => 'integer',
             'text_hashed_at' => 'datetime',
             'sentences_updated_at' => 'datetime',
             'words_indexed_at' => 'datetime',

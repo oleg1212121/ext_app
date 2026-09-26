@@ -6,15 +6,25 @@ use App\Classes\SentenceSplitter;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\Attributes\Queue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Second stage of the upload pipeline: sentence-split the uploaded file in
+ * bounded runs (a run feeds a limited number of byte chunks to the Python
+ * service, then re-dispatches itself until the file is consumed — ADR 0043).
+ * A failed or interrupted run resumes from the last committed chunk instead
+ * of re-splitting the whole file; the final stage (FinalizeEntityDerivations)
+ * is dispatched only at end-of-file.
+ */
+#[Queue(QueueLane::DEFAULT)]
 class SplitEntityFileSentences implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $timeout = 180;
+    public int $timeout = 600;
 
     public int $tries = 5;
 
@@ -35,20 +45,18 @@ class SplitEntityFileSentences implements ShouldQueue
     {
         $t0 = microtime(true);
 
-        $tSplit = microtime(true);
         $stats = $splitter->process($this->entityId, $this->filePath);
-        $splitMs = (int) round((microtime(true) - $tSplit) * 1000);
-        $totalMs = (int) round((microtime(true) - $t0) * 1000);
 
-        Log::info('SplitEntityFileSentences completed', array_merge(
-            $stats,
-            [
-                'entity_id' => $this->entityId,
-                'split_and_insert_ms' => $splitMs,
-                'total_ms' => $totalMs,
-                'used_passthrough_content' => false,
-            ]
-        ));
+        Log::info('SplitEntityFileSentences run completed', array_merge($stats, [
+            'entity_id' => $this->entityId,
+            'total_ms' => (int) round((microtime(true) - $t0) * 1000),
+        ]));
+
+        if (! ($stats['eof'] ?? false)) {
+            self::dispatch($this->entityId, $this->filePath);
+
+            return;
+        }
 
         FinalizeEntityDerivations::dispatch($this->entityId, $this->filePath);
     }

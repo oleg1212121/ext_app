@@ -1753,8 +1753,8 @@ it('keeps meaning match order in document position while re-aligning around a la
     ]);
 
     // A landmark pins the second pair; persistSegment writes the re-aligned
-    // pool before it AFTER the landmark's order, so only a write-time
-    // resequence keeps the stored sequence in document order.
+    // pool AFTER it — mid-run rows land append-after-max and only the
+    // completion pass puts the sequence back into document order (ADR 0043).
     $landmark = MeaningMatch::create([
         'entity_match_id' => $entityMatch->id,
         'order' => 1024,
@@ -1774,6 +1774,18 @@ it('keeps meaning match order in document position while re-aligning around a la
 
     (new AlignEntitySentences($entityMatch->id))->handle();
 
+    $entityMatch->refresh();
+
+    expect($entityMatch->status)->toBe('aligning')
+        ->and($entityMatch->a_last_sentence_offset)->toBe(1)
+        ->and($entityMatch->b_last_sentence_offset)->toBe(1);
+
+    Bus::assertDispatched(AlignEntitySentences::class, 1);
+
+    // The completion resequence renumbers by document position: the pool
+    // before the landmark must end up sorting before it.
+    SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
+
     $rows = MeaningMatch::query()
         ->where('entity_match_id', $entityMatch->id)
         ->orderBy('order')
@@ -1785,12 +1797,7 @@ it('keeps meaning match order in document position while re-aligning around a la
 
     expect($rows)->toHaveCount(2)
         ->and($rows[0]->order)->toBe(0)
-        ->and($firstSideA->content)->toBe('English 1.', 'the pool before the landmark must sort before it')
-        ->and($entityMatch->refresh()->status)->toBe('aligning')
-        ->and($entityMatch->a_last_sentence_offset)->toBe(1)
-        ->and($entityMatch->b_last_sentence_offset)->toBe(1);
-
-    Bus::assertDispatched(AlignEntitySentences::class, 1);
+        ->and($firstSideA->content)->toBe('English 1.', 'the pool before the landmark must sort before it after resequencing');
 });
 
 it('replaces stale machine rows covering the sentences of a re-stored window', function () {
@@ -1895,7 +1902,16 @@ it('lets a human row absorb a re-fed window duplicate and survives it', function
     );
 
     expect(MeaningMatch::query()->whereKey($landmark->id)->exists())->toBeTrue()
-        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(1)
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(2)
+        ->and($enSentence->refresh()->meaningJunctions()->count())->toBe(2)
+        ->and($ruSentence->refresh()->meaningJunctions()->count())->toBe(2);
+
+    // The subsumed duplicate lingers until the completion pass (ADR 0043):
+    // the human row absorbs it and its duplicated claims are removed.
+    SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
+
+    expect(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(1)
+        ->and(MeaningMatch::query()->whereKey($landmark->id)->exists())->toBeTrue()
         ->and($enSentence->refresh()->meaningJunctions()->count())->toBe(1)
         ->and($ruSentence->refresh()->meaningJunctions()->count())->toBe(1);
 });

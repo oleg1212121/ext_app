@@ -39,6 +39,9 @@ php artisan db:seed --class=AiProviderSeeder --force
 php artisan db:seed --class=LanguageSeeder --force
 
 # Recycle queue workers + scheduler onto the new code (workers finish current job).
+# daemon-reload first: a unit-file change shipped by git pull only reaches
+# systemctl restart after the manager reloads its unit definitions.
+sudo systemctl daemon-reload
 sudo systemctl restart ext-queue@1 ext-queue@2 ext-scheduler
 
 echo "Deployed $(git rev-parse --short HEAD)"

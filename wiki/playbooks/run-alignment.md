@@ -5,7 +5,7 @@ description: End-to-end workflow for aligning two same-work entities (any langua
 tags: [alignment, embeddings, jobs, howto]
 status: stable
 stale_after: 2026-12-22
-generated: { by: agent:zcode, at: 2026-09-22T18:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-26T00:00:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -33,7 +33,10 @@ sources:
   (Laravel uses `services.python.url`; default already points there). Check
   `curl localhost:8001/health` from the host → `{"status":"ok","dim":1024}`.
 * A queue worker is running (`composer run dev` includes
-  `queue:listen --tries=1`).
+  `queue:listen --tries=1 --queue=default,low`). Alignment jobs declare their
+  queue lane as a class attribute (`QueueLane`, ADR 0042) — all currently on
+  `default`, so a `low`-lane job can wait behind any `default` backlog but
+  alignment itself is never deferred.
 * Source text files are in place — simulator texts live under
   `laravel/public/texts/simulator/`.
 

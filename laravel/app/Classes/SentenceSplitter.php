@@ -20,6 +20,14 @@ class SentenceSplitter
 
     private const DEFAULT_CHUNK_SIZE = 262_144;
 
+    /**
+     * Byte chunks one run feeds to python before handing control back to the
+     * queue (0 = split the whole file in one run). A resumed run continues
+     * from the offset and remainder the last committed chunk persisted, so
+     * retries and re-dispatches never re-split committed text.
+     */
+    private const DEFAULT_MAX_CHUNKS_PER_RUN = 8;
+
     private const RETRY_DELAYS_MS = [500, 1_500, 3_000];
 
     private array $sentenceTypeMap = [];
@@ -31,11 +39,9 @@ class SentenceSplitter
 
         $this->loadSentenceTypeMap();
 
-        $entity->sentences()->delete();
-
         $stats = $fileContent !== null
             ? $this->insertSentences($entityId, $fileContent, $lang)
-            : $this->insertSentencesFromFile($entityId, $filePath, $lang);
+            : $this->insertSentencesFromFile($entity, $filePath, $lang);
 
         // Bulk inserts bypass model events, so mark the sentence set changed
         // explicitly — the entity's text hash is now stale.
@@ -58,7 +64,7 @@ class SentenceSplitter
         $defaultTypeId = $this->sentenceTypeMap['sentence'];
         $batch = [];
         $order = 0;
-        $stats = ['sentences' => 0, 'batches' => 0, 'bytes_read' => strlen($content), 'max_buffer_bytes' => strlen($content)];
+        $stats = ['sentences' => 0, 'batches' => 0, 'bytes_read' => strlen($content), 'max_buffer_bytes' => strlen($content), 'eof' => true];
 
         $result = $this->splitViaPython($content, $lang, true);
 
@@ -76,87 +82,148 @@ class SentenceSplitter
         return $stats;
     }
 
-    private function insertSentencesFromFile(int $entityId, string $filePath, string $lang): array
+    /**
+     * Split the file in bounded runs. Each byte chunk commits its sentences
+     * together with the resume point (consumed byte offset + python's
+     * unsplittable remainder) in one transaction, so a crash or run-budget
+     * stop never duplicates or loses sentences: on resume the file is
+     * re-opened at the offset (the trailing UTF-8 carry bytes are re-read as
+     * part of the next chunk) and the remainder is re-fed ahead of it.
+     */
+    private function insertSentencesFromFile(Entity $entity, string $filePath, string $lang): array
     {
         $defaultTypeId = $this->sentenceTypeMap['sentence'];
         $chunkSize = max(1, (int) config('services.python.sentence_split_chunk_bytes', self::DEFAULT_CHUNK_SIZE));
+        $maxChunks = max(0, (int) config('services.python.sentence_split_chunks_per_run', self::DEFAULT_MAX_CHUNKS_PER_RUN));
 
         $fullPath = Storage::disk('local')->path($filePath);
         if (! file_exists($fullPath)) {
             throw new \RuntimeException("File not found: {$fullPath}");
         }
 
+        $offset = $entity->split_offset;
+        $remainder = (string) $entity->split_remainder;
+        $freshRun = $offset === 0 && $remainder === '';
+
         $handle = fopen($fullPath, 'rb');
         if ($handle === false) {
             throw new \RuntimeException("Cannot read file: {$fullPath}");
         }
 
+        if (fseek($handle, $offset) !== 0) {
+            fclose($handle);
+            throw new \RuntimeException("Cannot seek to offset {$offset} in {$fullPath}");
+        }
+
         $batch = [];
-        $remainder = '';
         $rawCarry = '';
-        $order = 0;
-        $stats = ['sentences' => 0, 'batches' => 0, 'bytes_read' => 0, 'max_buffer_bytes' => 0];
+        $order = $freshRun ? 0 : $entity->sentences()->count();
+        $chunksThisRun = 0;
+        $eof = false;
+        $stats = ['sentences' => 0, 'batches' => 0, 'bytes_read' => 0, 'max_buffer_bytes' => 0, 'eof' => false];
 
         try {
             while (! feof($handle)) {
-                $chunk = fread($handle, $chunkSize);
-                if ($chunk === false) {
+                $raw = fread($handle, $chunkSize);
+                if ($raw === false) {
                     throw new \RuntimeException("Cannot read file chunk: {$fullPath}");
                 }
 
-                if ($chunk === '') {
-                    continue;
+                if ($raw === '') {
+                    $eof = true;
+
+                    break;
                 }
 
-                $stats['bytes_read'] += strlen($chunk);
+                $stats['bytes_read'] += strlen($raw);
 
                 // fread may cut a multi-byte UTF-8 character at the chunk edge;
                 // hold the incomplete trailing bytes for the next iteration.
-                $chunk = $rawCarry.$chunk;
-                $carry = $this->carryIncompleteTrailingBytes($chunk);
-                $chunk = substr($chunk, 0, strlen($chunk) - strlen($carry));
+                $combined = $rawCarry.$raw;
+                $carry = $this->carryIncompleteTrailingBytes($combined);
                 $rawCarry = $carry;
+                $chunk = substr($combined, 0, strlen($combined) - strlen($carry));
 
                 $buffer = $remainder.$chunk;
                 $stats['max_buffer_bytes'] = max($stats['max_buffer_bytes'], strlen($buffer));
 
-                if ($buffer === '') {
-                    continue;
+                if (trim($buffer) !== '') {
+                    $result = $this->splitViaPython($buffer, $lang, false);
+                    $remainder = $result['remainder'];
+                    $this->appendSentences($result['sentences'], $entity->id, $defaultTypeId, $batch, $order);
                 }
 
-                $result = $this->splitViaPython($buffer, $lang, false);
-                $remainder = $result['remainder'];
+                $chunksThisRun++;
+                $this->commitChunk($entity->id, $batch, (int) ftell($handle) - strlen($rawCarry), $remainder, $freshRun);
+                $freshRun = false;
 
-                foreach ($result['sentences'] as $sentence) {
-                    $this->appendSentenceToBatch($sentence, $entityId, $defaultTypeId, $batch, $order);
-
-                    if (count($batch) >= self::BATCH_SIZE) {
-                        $this->flushBatch($batch, $stats);
-                    }
-                }
-            }
-
-            $remainder .= $rawCarry;
-
-            if (trim($remainder) !== '') {
-                $result = $this->splitViaPython($remainder, $lang, true);
-
-                foreach ($result['sentences'] as $sentence) {
-                    $this->appendSentenceToBatch($sentence, $entityId, $defaultTypeId, $batch, $order);
-
-                    if (count($batch) >= self::BATCH_SIZE) {
-                        $this->flushBatch($batch, $stats);
-                    }
+                if ($maxChunks > 0 && $chunksThisRun >= $maxChunks) {
+                    break;
                 }
             }
 
-            $this->flushBatch($batch, $stats);
+            if ($eof || feof($handle)) {
+                // End of file: the carry and the tail remainder were never
+                // sentence-delimited — finalize them through python, then
+                // persist the completion point (offset = file size, no
+                // remainder) so no run ever revisits this file.
+                $remainder .= $rawCarry;
+
+                if (trim($remainder) !== '') {
+                    $result = $this->splitViaPython($remainder, $lang, true);
+                    $this->appendSentences($result['sentences'], $entity->id, $defaultTypeId, $batch, $order);
+                }
+
+                $this->commitChunk($entity->id, $batch, (int) filesize($fullPath), '');
+                $eof = true;
+            }
+
             $stats['sentences'] = $order;
+            $stats['eof'] = $eof;
         } finally {
             fclose($handle);
         }
 
         return $stats;
+    }
+
+    /**
+     * @param  list<array{content: string, type: string}>  $sentences
+     */
+    private function appendSentences(array $sentences, int $entityId, int $defaultTypeId, array &$batch, int &$order): void
+    {
+        foreach ($sentences as $sentence) {
+            $this->appendSentenceToBatch($sentence, $entityId, $defaultTypeId, $batch, $order);
+        }
+    }
+
+    /**
+     * Commit one chunk atomically: whatever sentences accumulated for it
+     * (a fresh run first clears the entity's previous sentence set in the
+     * same transaction) plus the resume point. A run that dies mid-chunk
+     * resumes from the previous chunk boundary.
+     */
+    private function commitChunk(int $entityId, array &$batch, int $offset, string $remainder, bool $freshRun = false): void
+    {
+        DB::transaction(function () use ($entityId, &$batch, $offset, $remainder, $freshRun): void {
+            if ($freshRun) {
+                EntitySentence::query()->where('entity_id', $entityId)->delete();
+            }
+
+            if ($batch !== []) {
+                EntitySentence::insert($batch);
+            }
+
+            Entity::query()
+                ->whereKey($entityId)
+                ->update([
+                    'split_offset' => $offset,
+                    'split_remainder' => $remainder,
+                    'sentences_updated_at' => now(),
+                ]);
+
+            $batch = [];
+        });
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Models\EntityWord;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\Attributes\Queue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\Log;
  * when one exists (skipping the Python embed call entirely), or generating the
  * signature from the uploaded file (ADR 0033).
  */
+#[Queue(QueueLane::DEFAULT)]
 class FinalizeEntityDerivations implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;

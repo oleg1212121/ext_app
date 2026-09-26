@@ -29,17 +29,29 @@ class EntityTextHasher
 
     /**
      * sha256 of the entity's sentences, normalized and joined in document
-     * order with a newline separator.
+     * order with a newline separator. Streams the sentences with a cursor so
+     * an entity's whole text is never held in memory; must iterate in
+     * document order (order, not id) — the digest changes if the sequence
+     * does.
      */
     public function hash(Entity $entity): string
     {
-        $content = $entity->sentences()
-            ->orderBy('order')
-            ->pluck('content')
-            ->map(fn (string $sentence): string => self::normalize($sentence))
-            ->implode("\n");
+        $context = hash_init('sha256');
+        $first = true;
 
-        return hash('sha256', $content);
+        foreach ($entity->sentences()
+            ->select('content')
+            ->orderBy('order')
+            ->cursor() as $sentence) {
+            if (! $first) {
+                hash_update($context, "\n");
+            }
+            $first = false;
+
+            hash_update($context, self::normalize($sentence->content));
+        }
+
+        return hash_final($context);
     }
 
     public static function hashFile(string $absolutePath): string

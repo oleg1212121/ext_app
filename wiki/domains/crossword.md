@@ -4,8 +4,8 @@ title: Crossword
 description: Deterministic crossword puzzles generated from an entity's word list, with frequency-band levels, dictionary-backed definitions/translations, and per-user word familiarity.
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
-stale_after: 2026-12-25
-generated: { by: agent:zcode, at: 2026-09-25T00:00:00Z }
+stale_after: 2026-12-26
+generated: { by: agent:zcode, at: 2026-09-26T12:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/CrosswordController.php
@@ -70,14 +70,20 @@ puzzle awards +5 familiarity per puzzle word (ADR 0028).
 Scheduled every five minutes (`routes/console.php`, `withoutOverlapping`),
 `crossword:refresh` picks entities that have sentences and either a stale
 index (never built, or a sentence `updated_at` after
-`entities.words_indexed_at`) or any unlinked `entity_words` row, and
-dispatches one `RefreshEntityWords` queue job per entity
-(`ShouldBeUnique` keyed by entity id; see ADR
+`entities.words_indexed_at`) or an unlinked `entity_words` row that is not
+stamped unmatchable, and dispatches one `RefreshEntityWords` queue job per
+entity (`ShouldBeUnique` keyed by entity id; see ADR
 [0026](../../docs/adr/0026-background-word-list-refresh.md)). The job
 re-indexes when stale and always runs the link pass, then logs per-entity
-stats. Dictionary and frequency imports therefore reach existing entities
-without manual runs. Dev has no `schedule:work` — run
-`php artisan crossword:refresh` by hand there.
+stats. The link pass (ADR 0043) examines a per-run budget of the entity's
+first 20 000 unlinked, unstamped rows, fetches dictionary candidates in
+batches (one exact + one capped form query per 500-row batch, not per word),
+and stamps tokens with no match `unmatchable_at` so sweeps terminate.
+Dictionary imports clear the imported language's stamps;
+`crossword:link --retry-unmatched` clears them manually. Dictionary and
+frequency imports therefore reach existing entities without manual runs.
+Dev has no `schedule:work` — run `php artisan crossword:refresh` by hand
+there.
 
 Scheduled alongside it (same five-minute cadence, `withoutOverlapping`),
 `words:accrue-entity-frequency` applies the entity **Frequency

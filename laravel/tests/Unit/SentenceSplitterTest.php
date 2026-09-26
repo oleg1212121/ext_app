@@ -2,10 +2,12 @@
 
 use App\Classes\SentenceSplitter;
 use App\Classes\SparseOrderService;
+use App\Jobs\ProcessEntityFile;
 use App\Jobs\SplitEntityFileSentences;
 use App\Models\SentenceType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -244,7 +246,10 @@ it('stores russian sentences on the russian entity', function () {
 });
 
 it('inserts large streamed files in order while keeping the split job payload small', function () {
-    config(['services.python.sentence_split_chunk_bytes' => 64]);
+    config([
+        'services.python.sentence_split_chunk_bytes' => 64,
+        'services.python.sentence_split_chunks_per_run' => 0, // unlimited: one run
+    ]);
 
     fakePythonSplitter();
 
@@ -262,12 +267,134 @@ it('inserts large streamed files in order while keeping the split job payload sm
     $payload = serialize(new SplitEntityFileSentences($entity->id, $filePath));
 
     expect($stats['sentences'])->toBe(750)
-        ->and($stats['batches'])->toBe(2)
+        ->and($stats['eof'])->toBeTrue()
         ->and($entity->sentences()->count())->toBe(750)
         ->and($entity->sentences()->orderBy('order')->first()->content)->toBe('Sentence 1 ends here.')
         ->and($entity->sentences()->orderByDesc('order')->first()->content)->toBe('Sentence 750 ends here.')
         ->and(strlen($payload))->toBeLessThan(2048)
         ->and($payload)->not->toContain('Sentence 750 ends here.');
+});
+
+it('stops at the run budget and resumes without duplicating or losing sentences', function () {
+    config(['services.python.sentence_split_chunk_bytes' => 16]);
+    config(['services.python.sentence_split_chunks_per_run' => 2]);
+
+    fakePythonSplitter();
+
+    $text = 'First sentence here. Second one follows. Third one ends. Fourth also. Fifth closes.';
+    $filePath = 'entities/'.uniqid('resume_', true).'.txt';
+    Storage::disk('local')->put($filePath, $text);
+
+    $entity = createEntity('en', null, ['name' => 'Resume', 'file_path' => $filePath]);
+    $splitter = new SentenceSplitter(new SparseOrderService);
+
+    $run = 0;
+
+    do {
+        $stats = $splitter->process($entity->id, $filePath);
+        $run++;
+
+        expect($run)->toBeLessThan(20, 'splitter never converged');
+    } while (! $stats['eof']);
+
+    expect($run)->toBeGreaterThan(1, 'the budget must have split the file across runs')
+        ->and($entity->fresh()->split_offset)->toBe(strlen($text))
+        ->and($entity->fresh()->split_remainder)->toBe('')
+        ->and($entity->sentences()->orderBy('order')->pluck('content')->all())->toEqual([
+            'First sentence here.',
+            'Second one follows.',
+            'Third one ends.',
+            'Fourth also.',
+            'Fifth closes.',
+        ])
+        ->and($entity->sentences()->count())->toBe(5);
+});
+
+it('keeps a sentence intact across a resume boundary', function () {
+    // Chunk edges fall inside "First sentence here." — the run budget cuts
+    // the run mid-sentence, so the resume must re-feed python's remainder.
+    config(['services.python.sentence_split_chunk_bytes' => 5]);
+    config(['services.python.sentence_split_chunks_per_run' => 1]);
+
+    fakePythonSplitter();
+
+    $text = 'First sentence here. Second one. Third one.';
+    $filePath = 'entities/'.uniqid('boundary_resume_', true).'.txt';
+    Storage::disk('local')->put($filePath, $text);
+
+    $streamedEntity = createEntity('en', null, ['name' => 'Streamed', 'file_path' => $filePath]);
+    $memoryEntity = createEntity('en', null, ['name' => 'Memory', 'file_path' => $filePath]);
+    $splitter = new SentenceSplitter(new SparseOrderService);
+
+    do {
+        $stats = $splitter->process($streamedEntity->id, $filePath);
+    } while (! $stats['eof']);
+
+    $splitter->process($memoryEntity->id, $filePath, $text);
+
+    expect($streamedEntity->sentences()->orderBy('order')->pluck('content')->all())
+        ->toEqual($memoryEntity->sentences()->orderBy('order')->pluck('content')->all())
+        ->and($streamedEntity->fresh()->split_offset)->toBe(strlen($text));
+});
+
+it('resumes from a mid-file offset without re-reading committed text', function () {
+    config(['services.python.sentence_split_chunk_bytes' => 10]);
+    config(['services.python.sentence_split_chunks_per_run' => 1]);
+
+    $requests = [];
+    Http::fake(function (Request $request) use (&$requests) {
+        $requests[] = (string) ($request->data()['text'] ?? '');
+
+        return Http::response(['sentences' => [], 'remainder' => '']);
+    });
+
+    $text = 'Alpha one. Beta two. Gamma three.';
+    $filePath = 'entities/'.uniqid('offset_', true).'.txt';
+    Storage::disk('local')->put($filePath, $text);
+
+    $entity = createEntity('en', null, ['name' => 'Offset', 'file_path' => $filePath]);
+    $splitter = new SentenceSplitter(new SparseOrderService);
+
+    $splitter->process($entity->id, $filePath);
+
+    // One chunk per run: the run consumed exactly the bytes it sent.
+    $firstRunEnd = max(array_map(strlen(...), $requests));
+    expect($entity->fresh()->split_offset)->toBe($firstRunEnd);
+
+    $requests = [];
+
+    do {
+        $stats = $splitter->process($entity->id, $filePath);
+    } while (! $stats['eof']);
+
+    // The resumed runs re-fed only remainders + fresh bytes — the first
+    // run's committed text never went back to python, and the file is
+    // consumed exactly once (10-byte chunks: 4 requests total across runs).
+    expect($entity->fresh()->split_offset)->toBe(strlen($text))
+        ->and(collect($requests)->filter(fn (string $text) => str_contains($text, 'Alpha')))->toBeEmpty()
+        ->and($entity->sentences()->count())->toBe(0);
+});
+
+it('resets the split resume state when the upload pipeline re-dispatches the splitter', function () {
+    $text = 'Fresh content.';
+    $filePath = 'entities/'.uniqid('reset_', true).'.txt';
+    Storage::disk('local')->put($filePath, $text);
+
+    $entity = createEntity('en', null, [
+        'name' => 'Reset',
+        'file_path' => $filePath,
+        'split_offset' => 9999,
+        'split_remainder' => 'stale remainder from a previous file',
+    ]);
+
+    Bus::fake();
+
+    (new ProcessEntityFile($entity->id, $filePath))->handle();
+
+    expect($entity->refresh()->split_offset)->toBe(0)
+        ->and($entity->refresh()->split_remainder)->toBe('');
+
+    Bus::assertDispatched(SplitEntityFileSentences::class);
 });
 
 it('throws when the python split service responds with an error', function () {

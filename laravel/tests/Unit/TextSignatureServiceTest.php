@@ -48,7 +48,7 @@ it('configures entity embedding jobs to retry with backoff', function () {
         ->and($generateJob->timeout)->toBe(180)
         ->and($generateJob->tries)->toBe(5)
         ->and($generateJob->backoff())->toEqual([30, 60, 120, 300])
-        ->and($splitJob->timeout)->toBe(180)
+        ->and($splitJob->timeout)->toBe(600) // run-budget sized: 8 chunks × 30 s python timeout (ADR 0043)
         ->and($splitJob->tries)->toBe(5)
         ->and($splitJob->backoff())->toEqual([30, 60, 120, 300]);
 });
