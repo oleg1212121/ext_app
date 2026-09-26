@@ -4,7 +4,7 @@ title: Production Deployment
 description: Bind-mount deploy model — the standalone prod machine runs docker-compose.prod.yml (queue/scheduler/backups/tunnel, db untouched from the baked setup); every release is ./deploy.sh (git pull + composer + npm build + caches + additive migrate); images rebuild only when a Dockerfile changes; deploy.sh refuses to run until containers are recreated and re-stamped after a container-definition change; pushes to master autodeploy via a self-hosted runner.
 tags: [docker, production, deployment, devops, howto]
 status: stable
-generated: { by: agent/opencode-go, at: 2026-08-31T20:05:00Z }
+generated: { by: agent:zcode, at: 2026-09-26T00:00:00Z }
 sources:
   - id: deploy
     resource: deploy.sh
@@ -39,7 +39,7 @@ host checkout bind-mounted at `./laravel`. No code is ever baked into an image
 | | Dev machine | Prod machine (standalone) |
 |---|---|---|
 | Stack | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile cloudflare up -d` |
-| Extra services | — | `queue` (2× `queue:work`), `scheduler` (`schedule:work`), `backups` (daily `pg_dump`), cloudflared |
+| Extra services | — | `queue` (2× `queue:work --queue=default,low`), `scheduler` (`schedule:work`), `backups` (daily `pg_dump`), cloudflared |
 | DB data | `docker-compose/postgres/`, creds in `laravel/.env` | `docker-compose/prod/postgres/`, creds in `docker-compose/prod/postgres.env` (identical to the baked setup) |
 | Release | edits are live instantly (bind mount) | `./deploy.sh` (autodeployed on push to master) |
 
@@ -219,6 +219,14 @@ carry a `safe.directory` entry for it). See the one-time setup below.
 - **Queue/scheduler/backups are prod-machine services** (overlay). On the dev
   machine they don't exist — jobs process only while `composer run dev` runs,
   and `alignments:resume` doesn't tick.
+- **Queue lanes**: all workers consume `--queue=default,low` (strict order; a
+  job's lane is a class property, ADR 0042). Changing the `queue` service
+  command is a **container-definition change** — `docker-compose.prod.yml` is
+  one of the five stamped files, so the next deploy refuses until you
+  recreate (`up -d`) and re-stamp (`./deploy.sh --stamp`). On the native
+  systemd path (`ext-queue@.service`), unit-file changes need
+  `systemctl daemon-reload` before a restart picks them up —
+  `deploy-native.sh` runs it.
 - **Prod serves its checkout's working tree.** Fine on a deploy-only machine;
   on the dev machine any local edit is live instantly.
 - **`config:cache` freezes env reads.** After a deploy, `.env` edits have no

@@ -6,6 +6,7 @@ use App\Models\Entity;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\Attributes\Queue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\Log;
  * reuse and the embedding signature all run in the background — an upload
  * never calls the Python service synchronously (ADR 0033).
  */
+#[Queue(QueueLane::DEFAULT)]
 class ProcessEntityFile implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;

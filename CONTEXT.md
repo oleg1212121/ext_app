@@ -658,3 +658,27 @@ The per-device last page reached in one text on a reading surface — a
 **Working state** kind, one entry per text in the browser's position store.
 Restored when the text is reopened; never stored server-side. See ADR 0032.
 _Avoid_: cache, bookmark, progress (that means Word familiarity here).
+
+# Background Jobs Context
+
+The domain of the application's queued background work — job classes, the
+processing-order lane each runs in, and how workers consume those lanes.
+
+## Language
+
+**Job lane**:
+The processing-order class of a background job, fixed on the job's type:
+a job someone waits on runs in the immediate lane; a job nobody waits on
+runs in the **Low lane** and is processed only when no immediate work is
+pending. A lane changes when work runs, never how it is retried or treated
+on failure. A dispatch site may still move a single dispatch to another
+lane, but by default the type decides. See ADR 0042.
+_Avoid_: priority level (a lane is a reason, not a rank score), importance,
+queue (the implementation), urgent job, deferred job.
+
+**Low lane**:
+The lane for background jobs nobody actively waits on — scheduled sweeps
+and hygiene work. May wait behind all immediate work; starving there is
+accepted while immediate work exists.
+_Avoid_: low-priority queue (the lane is not a queue setting of its own),
+background lane, bulk lane.

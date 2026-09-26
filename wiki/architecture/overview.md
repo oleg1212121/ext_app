@@ -4,7 +4,7 @@ title: Application Overview
 description: What ext_app is, its main components, and how a request flows through the system.
 tags: [architecture, overview]
 status: stable
-generated: { by: agent/kimi-k3, at: 2026-07-27T17:30:00Z }
+generated: { by: agent:zcode, at: 2026-09-26T00:00:00Z }
 sources:
   - id: composer
     resource: laravel/composer.json
@@ -41,9 +41,13 @@ The repo root is a **Docker workspace**; the Laravel application lives in
   [Frontend](/architecture/frontend.md).
 * **Filament 5 admin** at `/admin` — CRUD for dictionaries, entities, and the
   manual alignment editor ([Entities & Alignment](/database/entities-alignment.md)).
-* **Queue workers** — the [alignment pipeline](/domains/sentence-alignment.md)
-  runs as queued jobs (`AlignEntitySentences`, `AlignEntitySentenceChunk`,
-  `GenerateEntitySignature`, `ProcessEntityFile`, `SplitEntityFileSentences`).
+* **Queue workers** — background jobs on the database queue in two strict-order
+  lanes (`default`, `low`; a job declares its lane as a class property, see
+  ADR 0042): the upload pipeline (`ProcessEntityFile`, `SplitEntityFileSentences`,
+  `FinalizeEntityDerivations`, `GenerateEntitySignature`), the
+  [alignment pipeline](/domains/sentence-alignment.md)
+  (`AlignEntitySentences`, self-re-dispatching per chunk), scheduled sweeps
+  (`RefreshEntityWords`, `ComputeEntityTextHash`) and `SyncAiModelsJob`.
 * **Python microservice** (`ext_python`) — BGE-M3 sentence-transformer
   (1024-dim) over HTTP: `/embed`, `/embed/batch`, `/cosine/batch`, `/split`,
   `/align`. Sentence splitting and DP alignment run there; Laravel stores the
