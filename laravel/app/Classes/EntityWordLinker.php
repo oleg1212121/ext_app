@@ -8,6 +8,7 @@ use App\Models\Form;
 use App\Models\Word;
 use App\Models\WordClass;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class EntityWordLinker
@@ -19,6 +20,25 @@ class EntityWordLinker
     ];
 
     private const BATCH_SIZE = 500;
+
+    /**
+     * Unlinked word rows examined per link() run. Rows beyond the budget stay
+     * unlinked and are picked up by the next crossword:refresh sweep — a run
+     * never walks an arbitrarily large word list in one go.
+     */
+    private const MAX_ROWS_PER_RUN = 20_000;
+
+    /**
+     * Cap on inflected-form candidates considered per token (windowed per
+     * l_word). A common surface form can map to thousands of dictionary
+     * lemmas; beyond the cap they are noise for best-class selection.
+     */
+    private const FORM_CANDIDATE_LIMIT = 200;
+
+    /**
+     * @param  int|null  $maxRowsPerRun  override of MAX_ROWS_PER_RUN for tests
+     */
+    public function __construct(private readonly ?int $maxRowsPerRun = null) {}
 
     /**
      * Part-of-speech preference order of a class slug (lower = preferred).
@@ -35,10 +55,13 @@ class EntityWordLinker
      * Fill word_id on the entity's unlinked words by (language, lowercase form),
      * falling back to inflected forms (forms.l_word). Exact dictionary matches
      * always win; the forms pass only sees the tokens the exact pass missed.
-     * Idempotent: only touches word_id IS NULL rows, so re-running after a
-     * dictionary import links the previously unmatched tokens.
+     * Tokens with no candidate at all are stamped unmatchable so later runs
+     * skip them; a dictionary import clears the stamps (clearUnmatchedForLanguage).
      *
-     * @return array{linked: int, unmatched: int}
+     * Idempotent: only touches word_id IS NULL, unstamped rows, so re-running
+     * after a dictionary import links the previously unmatched tokens.
+     *
+     * @return array{linked: int, unmatched: int, budget_exhausted: bool}
      */
     public function link(Entity $entity): array
     {
@@ -48,64 +71,140 @@ class EntityWordLinker
         $unmatched = 0;
         $updates = [];
 
-        EntityWord::query()
+        // Budget window: the first MAX_ROWS_PER_RUN unlinked, unstamped rows
+        // in id order. Everything beyond it waits for the next run.
+        $maxRows = $this->maxRowsPerRun ?? self::MAX_ROWS_PER_RUN;
+
+        $windowIds = EntityWord::query()
             ->where('entity_id', $entity->id)
             ->whereNull('word_id')
-            ->select(['id', 'l_word'])
-            ->chunkById(self::BATCH_SIZE, function ($words) use ($entity, $classPriority, &$linked, &$unmatched, &$updates): void {
-                foreach ($words as $entityWord) {
-                    $wordId = $this->exactWordId($entity, $entityWord->l_word, $classPriority)
-                        ?? $this->formWordId($entity, $entityWord->l_word, $classPriority);
+            ->whereNull('unmatchable_at')
+            ->orderBy('id')
+            ->limit($maxRows)
+            ->pluck('id');
 
-                    if ($wordId === null) {
-                        $unmatched++;
+        $budgetExhausted = $windowIds->count() >= $maxRows;
 
-                        continue;
-                    }
+        foreach (array_chunk($windowIds->all(), self::BATCH_SIZE) as $chunkIds) {
+            $words = EntityWord::query()
+                ->whereIn('id', $chunkIds)
+                ->select(['id', 'l_word'])
+                ->get();
 
-                    $updates[] = ['id' => $entityWord->id, 'entity_id' => $entity->id, 'word_id' => $wordId];
-                    $linked++;
+            $lWords = $words->pluck('l_word')->unique()->values()->all();
+            $exactByWord = $this->exactCandidates($entity, $lWords);
+            $formByWord = $this->formCandidates($entity->language_id, $lWords);
 
-                    if (count($updates) >= self::BATCH_SIZE) {
-                        $this->flush($updates);
-                        $updates = [];
-                    }
+            $unmatchedIds = [];
+
+            foreach ($words as $entityWord) {
+                $wordId = $this->bestCandidateId($exactByWord[$entityWord->l_word] ?? null, $classPriority)
+                    ?? $this->bestCandidateId($formByWord[$entityWord->l_word] ?? null, $classPriority);
+
+                if ($wordId === null) {
+                    $unmatchedIds[] = $entityWord->id;
+                    $unmatched++;
+
+                    continue;
                 }
-            });
+
+                $updates[] = ['id' => $entityWord->id, 'entity_id' => $entity->id, 'word_id' => $wordId];
+                $linked++;
+
+                if (count($updates) >= self::BATCH_SIZE) {
+                    $this->flush($updates);
+                    $updates = [];
+                }
+            }
+
+            if ($unmatchedIds !== []) {
+                EntityWord::query()
+                    ->whereIn('id', $unmatchedIds)
+                    ->update(['unmatchable_at' => now()]);
+            }
+        }
 
         if ($updates !== []) {
             $this->flush($updates);
         }
 
-        return ['linked' => $linked, 'unmatched' => $unmatched];
+        return ['linked' => $linked, 'unmatched' => $unmatched, 'budget_exhausted' => $budgetExhausted];
     }
 
-    private function exactWordId(Entity $entity, string $lWord, array $classPriority): ?int
+    /**
+     * Exact (language, l_word) dictionary candidates for a batch of tokens,
+     * keyed by l_word. Homonyms of one exact form are few, so no cap.
+     *
+     * @param  list<string>  $lWords
+     * @return Collection<string, Collection<int, Word>>
+     */
+    private function exactCandidates(Entity $entity, array $lWords)
     {
-        return $this->bestWordId(
-            Word::query()
-                ->where('language_id', $entity->language_id)
-                ->where('l_word', $lWord),
-            $classPriority,
-        );
+        return Word::query()
+            ->selectRaw('id as word_id, l_word, word_class_id')
+            ->where('language_id', $entity->language_id)
+            ->whereIn('l_word', $lWords)
+            ->get()
+            ->groupBy('l_word');
     }
 
-    private function formWordId(Entity $entity, string $lWord, array $classPriority): ?int
+    /**
+     * Inflected-form candidates for a batch of tokens, keyed by l_word,
+     * capped at FORM_CANDIDATE_LIMIT words per token via a per-l_word window.
+     *
+     * @param  list<string>  $lWords
+     * @return Collection<string, Collection<int, object>>
+     */
+    private function formCandidates(int $languageId, array $lWords)
     {
-        return $this->bestWordId(
-            Word::query()
-                ->where('words.language_id', $entity->language_id)
-                ->whereIn('words.id', Form::query()->where('l_word', $lWord)->select('word_id')),
-            $classPriority,
-        );
+        $ranked = Form::query()
+            ->selectRaw('forms.l_word, words.id as word_id, words.word_class_id, row_number() over (partition by forms.l_word order by words.id) as candidate_rank')
+            ->join('words', 'words.id', '=', 'forms.word_id')
+            ->where('words.language_id', $languageId)
+            ->whereIn('forms.l_word', $lWords);
+
+        return DB::table(DB::raw('('.$ranked->toSql().') forms_ranked'))
+            ->mergeBindings($ranked->getQuery())
+            ->select(['l_word', 'word_id', 'word_class_id'])
+            ->where('candidate_rank', '<=', self::FORM_CANDIDATE_LIMIT)
+            ->get()
+            ->groupBy('l_word');
     }
 
-    private function bestWordId(Builder $query, array $classPriority): ?int
+    private function bestCandidateId($candidates, array $classPriority): ?int
     {
-        return $query->get(['id', 'word_class_id'])
-            ->sortBy(fn (Word $word): int => $classPriority[$word->word_class_id] ?? PHP_INT_MAX)
-            ->first()
-            ?->id;
+        return $candidates?->sortBy(
+            fn (object $candidate): int => $classPriority[$candidate->word_class_id] ?? PHP_INT_MAX,
+        )->first()?->word_id;
+    }
+
+    /**
+     * Re-attempt the tokens a previous run stamped unmatchable — called after
+     * a dictionary import so newly imported words can link them.
+     */
+    public static function clearUnmatchedForLanguage(int $languageId): int
+    {
+        return EntityWord::query()
+            ->whereNotNull('unmatchable_at')
+            ->whereHas('entity', fn (Builder $query) => $query->where('language_id', $languageId))
+            ->update(['unmatchable_at' => null]);
+    }
+
+    /**
+     * Clear the unmatchable stamps of the given entities' word rows.
+     *
+     * @param  list<int>  $entityIds
+     */
+    public static function clearUnmatchedForEntities(array $entityIds): int
+    {
+        if ($entityIds === []) {
+            return 0;
+        }
+
+        return EntityWord::query()
+            ->whereIn('entity_id', $entityIds)
+            ->whereNotNull('unmatchable_at')
+            ->update(['unmatchable_at' => null]);
     }
 
     /**

@@ -1,5 +1,38 @@
 # Directory Update Log
 
+## 2026-09-26 (feat: bounded job runs — run budgets + durable progress markers, ADR 0043)
+
+An audit found 4 of 8 queued jobs could process unbounded rows in one
+`handle()` and one dispatch site was uncapped. Now every queued run has a
+**run budget** and unbounded pipelines self-re-dispatch over durable
+**progress markers** (ADR 0043; CONTEXT.md gains **Run budget**,
+**Progress marker**, **Dispatch cap**, Crossword gains **Unmatchable
+stamp**). Details: the splitter splits in bounded runs (8 × 256 KB byte
+chunks under a 600 s timeout), committing sentences + resume point
+(`entities.split_offset` + `split_remainder` — new migration) atomically per
+chunk, re-dispatching until EOF; `ProcessEntityFile` zeroes the markers on
+(re)upload; `EntityTextHasher` streams the digest via
+`orderBy('order')->cursor()` + `hash_update` (same normalization ⇒ same
+digests; must never be `chunkById`); the word linker fetches dictionary
+candidates in per-500-row batches (exact uncapped, forms capped at 200
+candidates/token via a window function), examines ≤20 000 rows/run, stamps
+unmatched tokens `entity_words.unmatchable_at` (new migration) — the
+`crossword:refresh` sweep only re-picks entities with *unstamped* unlinked
+tokens, imports clear the imported language's stamps,
+`crossword:link --retry-unmatched` clears them manually; alignment cleanup
+(`resequenceMatchesByDocumentPosition`) moved from per-chunk to
+finalize-only (O(n²) → O(n) — mid-run `order` stays append-after-max and a
+subsumed duplicate lingers until completion; pools sort by document
+position so nothing mid-run consumes it); dispatch caps:
+`entity:generate-signatures --limit=100` (default), scheduled
+`entity-orders:rebalance --limit=500`, Filament `FileUpload ->maxSize(10240)`
+(10 MB total input cap everywhere). Uniqueness rule recorded: a
+`ShouldBeUnique` job must not self-dispatch (its own lock swallows the
+dispatch) — `RefreshEntityWords` continues via the sweep's re-pick. Wiki:
+`overview.md`, `entities.md`, `sentence-alignment.md`, `crossword.md`.
+Tests: splitter resume/boundary/offset tests + `ProcessEntityFile` reset,
+linker stamp/budget/cap tests, alignment contract tests updated.
+
 ## 2026-09-26 (feat: two-lane queue priority — default/low with a per-job lane property)
 
 Every queue worker (composer `dev` script, prod overlay `queue` service,

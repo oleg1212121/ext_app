@@ -80,6 +80,7 @@ class EntityResource extends Resource
                     ->label('Text File')
                     ->disk('local')
                     ->acceptedFileTypes(['text/plain'])
+                    ->maxSize(10240)
                     ->directory(fn (Get $get): string => 'entities/'.(Language::find($get('language_id'))?->code ?? 'misc')),
             ]);
     }

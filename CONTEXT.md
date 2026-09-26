@@ -542,6 +542,13 @@ queued refresh per entity whose list is stale or has unlinked tokens. Until
 it completes, crossword generation reports the word list as still building.
 _Avoid_: reindex, rebuild, backfill.
 
+**Unmatchable stamp**:
+The marker on an Entity word list entry that found no dictionary **Word**
+to link to, letting later refresh runs skip it instead of re-scanning it.
+Cleared when the dictionary grows — an import clears the stamps of the
+imported language so the tokens get another linking chance. See ADR 0043.
+_Avoid_: failure, dead token, blacklist.
+
 **Level**:
 A global frequency-rank band (top 100, top 500, … top 1 000 000) used to
 select puzzle words. A word is eligible for a Level when its rank (lower =
@@ -682,3 +689,22 @@ and hygiene work. May wait behind all immediate work; starving there is
 accepted while immediate work exists.
 _Avoid_: low-priority queue (the lane is not a queue setting of its own),
 background lane, bulk lane.
+
+**Run budget**:
+The fixed maximum amount of work one background job run may process — byte
+chunks, rows, or external calls. A run that reaches its budget stops
+cleanly and hands control back to the queue or the scheduler; it never
+processes "whatever is left". See ADR 0043.
+_Avoid_: batch size (an insert/storage detail), limit (too generic), chunk
+(means an alignment window here).
+
+**Progress marker**:
+Durable per-entity state recording how much of a pipeline earlier runs
+committed, letting the next run resume instead of restarting. Committed
+atomically with the work it describes; a re-supplied input resets it.
+_Avoid_: offset (the column name), checkpoint, watermark, cache.
+
+**Dispatch cap**:
+The per-sweep maximum number of jobs a scheduled command dispatches; work
+beyond it waits for the next tick of the same sweep. See ADR 0043.
+_Avoid_: rate limit, throttle, batch.

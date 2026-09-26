@@ -4,7 +4,7 @@ title: Application Overview
 description: What ext_app is, its main components, and how a request flows through the system.
 tags: [architecture, overview]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-26T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-26T12:00:00Z }
 sources:
   - id: composer
     resource: laravel/composer.json
@@ -43,7 +43,9 @@ The repo root is a **Docker workspace**; the Laravel application lives in
   manual alignment editor ([Entities & Alignment](/database/entities-alignment.md)).
 * **Queue workers** — background jobs on the database queue in two strict-order
   lanes (`default`, `low`; a job declares its lane as a class property, see
-  ADR 0042): the upload pipeline (`ProcessEntityFile`, `SplitEntityFileSentences`,
+  ADR 0042), each run bounded by a fixed run budget with unbounded pipelines
+  self-re-dispatching over durable progress markers (ADR 0043): the upload
+  pipeline (`ProcessEntityFile`, `SplitEntityFileSentences`,
   `FinalizeEntityDerivations`, `GenerateEntitySignature`), the
   [alignment pipeline](/domains/sentence-alignment.md)
   (`AlignEntitySentences`, self-re-dispatching per chunk), scheduled sweeps

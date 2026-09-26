@@ -4,8 +4,8 @@ title: Library & entities (management surface)
 description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, and per-work landing/branch pages (ADR 0039) — plus the language-scoped entity create/detail/edit pages, driven by enabled languages.
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone]
 status: stable
-stale_after: 2026-12-24
-generated: { by: agent:zcode, at: 2026-09-24T00:00:00Z }
+stale_after: 2026-12-26
+generated: { by: agent:zcode, at: 2026-09-26T12:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -163,10 +163,18 @@ upload never fails because of the embedding service**):
   foreign keys to the source; deleting either never touches the other.
 - **No exact copy:** the Entity is created (`created_by`, `file_hash`,
   `sentences_updated_at = now`, signature still null) and `ProcessEntityFile`
-  is dispatched, which now just chains `SplitEntityFileSentences` →
+  is dispatched (which zeroes the split progress markers — a re-uploaded
+  file always splits from byte 0), chaining `SplitEntityFileSentences` →
   `FinalizeEntityDerivations`: compute the text hash, then copy signature +
   word statistics from a text-hash-equal source if one exists, else generate
-  the embedding signature in the background.
+  the embedding signature in the background. The splitter runs in bounded
+  runs (ADR 0043): each feeds at most 8 byte-chunks to Python, committing
+  the inserted sentences together with the resume point
+  (`entities.split_offset` + `split_remainder`) in one transaction, then
+  re-dispatches itself until the file is consumed; `FinalizeEntityDerivations`
+  is dispatched only at end-of-file, so a retry resumes from the last
+  committed chunk instead of re-splitting. Uploads are capped at 10 MB on
+  every path (form requests `max:10240`, Filament `FileUpload ->maxSize`).
 
 The `signature` column is never user-entered on the front end. Near-duplicate
 merging (the ≥0.95 grant/merge/delete flow of ADR 0013) is gone; the
@@ -176,7 +184,11 @@ signature's remaining uses are cross-language candidate finding (Filament
 # Text hash maintenance
 
 `EntityTextHasher` computes `text_hash` = sha256 over sentence contents in
-`order`, each whitespace-normalized (case/punctuation preserved). Staleness:
+`order`, each whitespace-normalized (case/punctuation preserved). The digest
+streams the sentences with an `orderBy('order')->cursor()` + incremental
+`hash_update` — never `chunkById` (id order ≠ document order after a
+rebalance; the digest would change) — so an entity's whole text is never
+hydrated into memory (ADR 0043). Staleness:
 `text_hash IS NULL OR text_hashed_at < sentences_updated_at`. The
 `entities:refresh-text-hashes` command (scheduled every 5 min with
 `withoutOverlapping`, `--limit`/`--dry-run`) dispatches `ShouldBeUnique`

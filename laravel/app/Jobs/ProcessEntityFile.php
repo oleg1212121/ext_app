@@ -43,6 +43,10 @@ class ProcessEntityFile implements ShouldQueue
     {
         $entity = Entity::query()->findOrFail($this->entityId);
 
+        // A (re)upload always splits from byte 0: clear any resume point a
+        // previous file's split pipeline may have left behind.
+        $entity->forceFill(['split_offset' => 0, 'split_remainder' => ''])->save();
+
         Log::info('ProcessEntityFile dispatching sentence split', [
             'entity_id' => $this->entityId,
             'lang' => $entity->language?->code,
