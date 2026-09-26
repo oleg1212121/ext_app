@@ -10,7 +10,7 @@ Group=alex
 WorkingDirectory=/home/alex/projects/ext_app/laravel
 # Wait for migrations to be applied before consuming (mirrors the prod overlay).
 ExecStartPre=/bin/sh -c 'until php artisan migrate:status >/dev/null 2>&1; do sleep 2; done'
-ExecStart=/usr/bin/php artisan queue:work --tries=1 --timeout=620
+ExecStart=/usr/bin/php artisan queue:work --tries=1 --timeout=620 --queue=default,low
 Restart=on-failure
 RestartSec=5
 

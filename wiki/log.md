@@ -1,5 +1,27 @@
 # Directory Update Log
 
+## 2026-09-26 (feat: two-lane queue priority — default/low with a per-job lane property)
+
+Every queue worker (composer `dev` script, prod overlay `queue` service,
+`ext-queue@.service`) now consumes `--queue=default,low` in strict order, so
+process-later work can wait behind waited-on work without any new service
+(database driver, `jobs.queue` already existed; ADR 0042). The lane is a
+`#[Queue(QueueLane::DEFAULT)]` class attribute on all 8 jobs (new
+`app/Jobs/QueueLane.php` constants) — a `public $queue` property is
+impossible (the Queueable trait owns it; PHP forbids incompatible trait
+property redeclarations), and the dispatcher resolves dispatch-site
+`->onQueue()` override → attribute. Re-classifying a job is a one-line edit;
+`QueueLaneTest` enforces that every job class declares a lane (plus
+push-path assertions via `Queue::fake`). All jobs ship on `default`, so
+runtime behavior is unchanged until a lane is flipped.
+`deploy-native.sh` gained `systemctl daemon-reload` before unit restarts
+(unit-file changes need it). Deploys: the compose change is a
+container-definition change → recreate + `--stamp`. Wiki:
+`docker-services.md` (lanes + the previously undocumented native systemd
+path), `overview.md` (job inventory fixed — stale `AlignEntitySentenceChunk`
+removed), `run-alignment.md`, `production-deployment.md`. CONTEXT.md gains
+the **Background Jobs Context** (**Job lane**, **Low lane**).
+
 ## 2026-09-25 (feat: Models used popup replaces the AI panel's model-label link)
 
 The AI Response panel header's three-state model link ("Add an API key…" /
