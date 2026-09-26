@@ -685,10 +685,9 @@ class SentenceAlignmentService
                 'linked_count' => $this->countLinkedPairs($entityMatch->id),
             ]);
 
-            // Rows land append-after-max, which misplaces re-align pool rows
-            // between surviving landmarks; renormalize in the same transaction
-            // so mid-run state is already in document order.
-            $this->resequenceMatchesByDocumentPosition($entityMatch);
+            // Resequencing happens once at finalize() — a per-chunk pass here
+            // re-read both entities' full sentence lists after every window,
+            // making the whole pipeline quadratic (ADR 0043).
         });
     }
 

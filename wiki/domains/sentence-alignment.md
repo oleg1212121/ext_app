@@ -4,8 +4,8 @@ title: Sentence Alignment Pipeline
 description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse.
 tags: [alignment, embeddings, pipeline, jobs, filament, hash]
 status: stable
-stale_after: 2026-12-22
-generated: { by: agent:zcode, at: 2026-09-22T18:00:00Z }
+stale_after: 2026-12-26
+generated: { by: agent:zcode, at: 2026-09-26T12:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -90,11 +90,14 @@ over machine, then two-sided, richer, more similar, earlier) is deleted —
 two rows claiming the same sentence can never both sit in document order.
 Partial overlaps of multi-sentence rows are legitimate n:m matches and stay.
 It runs:
-- at **write time**, inside `persistSegment()`'s transaction after every
-  chunk/skip persist — so even mid-run (status `aligning`) rows read in
-  document order, not appended after the tail;
 - at the **completion gate** — `finalize()` after the junction-less repair
-  (best-effort: a failure logs a warning and completion proceeds);
+  (best-effort: a failure logs a warning and completion proceeds). This is
+  the pipeline's **only** pass (ADR 0043 removed the per-chunk write-time
+  call: it re-read both entities' full sentence lists after every window,
+  quadratic across a run). Accepted: mid-run rows sit append-after-max and a
+  subsumed duplicate lingers until completion — nothing in the pipeline
+  consumes mid-run order (pool partitioning sorts by document position, not
+  `order`), and `alignments:resequence` remains the manual repair;
 - in the **copy fast path** — inside `AlignmentCopyService::copyAlignment()`'s
   transaction, so a copy of a pre-fix source with a scrambled order column
   still lands ordered (a copy either lands ordered or falls back to the full
@@ -121,8 +124,9 @@ junction when one of those windows matches it (finalize's junction-less
 repair covers a parked original side instead). Landmark/human rows
 (`alignment_chunk = -1` or at/above the landmark bar) are pinned: never
 deleted by the pipeline; when a re-fed window overlaps a landmark's
-sentences, the resequence dedupe resolves the duplicate **in favor of the
-landmark** (the redundant machine copy is the row that goes).
+sentences, the completion resequence dedupe resolves the duplicate **in
+favor of the landmark** (the redundant machine copy is the row that goes —
+it lingers, harmless, until the run completes; ADR 0043).
 
 Related write-atomicity guarantee: each chunk's rows and the advanced cursors
 commit in **one** transaction (`persistOffsets()` in the job), so a crashed

@@ -90,6 +90,9 @@ return [
         'align_timeout' => env('PYTHON_ALIGN_TIMEOUT', 600),
         'has_similar_batch_size' => (int) env('PYTHON_HAS_SIMILAR_BATCH', 200),
         'sentence_split_chunk_bytes' => (int) env('PYTHON_SPLIT_CHUNK_BYTES', 262_144),
+        // Byte chunks one split run feeds to python before re-dispatching
+        // itself; 0 means unlimited (split the whole file in one run).
+        'sentence_split_chunks_per_run' => (int) env('PYTHON_SPLIT_CHUNKS_PER_RUN', 8),
     ],
 
     // Downloadable word-frequency lists for words:import-frequency. Each

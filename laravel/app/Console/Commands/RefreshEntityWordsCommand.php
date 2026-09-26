@@ -79,8 +79,11 @@ class RefreshEntityWordsCommand extends Command
                     // Or the index is fresh but tokens still wait for a
                     // dictionary match — re-attempted every run so a new
                     // dictionary import takes effect without a manual
-                    // crossword:link.
-                    ->orWhereHas('entityWords', fn ($words) => $words->whereNull('word_id'));
+                    // crossword:link. Tokens stamped unmatchable don't
+                    // qualify; an import clears their stamps.
+                    ->orWhereHas('entityWords', fn ($words) => $words
+                        ->whereNull('word_id')
+                        ->whereNull('unmatchable_at'));
             })
             ->orderBy('id')
             ->limit($limit)

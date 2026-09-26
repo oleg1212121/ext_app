@@ -8,7 +8,9 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('entity-orders:rebalance')->daily();
+// A scheduled rebalance only touches the first 500 entity/match lists per
+// run; the next day's run continues from where it stopped (ids ascend).
+Schedule::command('entity-orders:rebalance --limit=500')->daily();
 
 Schedule::command('alignments:resume')
     ->everyFiveMinutes()

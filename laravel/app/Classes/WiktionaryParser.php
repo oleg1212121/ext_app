@@ -134,6 +134,10 @@ class WiktionaryParser
             $output->writeln('');
         }
 
+        // The dictionary just grew: previously unmatchable entity tokens of
+        // this language get another linking chance.
+        $this->stats['unmatched_cleared'] = EntityWordLinker::clearUnmatchedForLanguage($this->languageId);
+
         return $this->stats;
     }
 
