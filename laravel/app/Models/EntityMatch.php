@@ -11,6 +11,7 @@ class EntityMatch extends Model
     protected $fillable = [
         'a_entity_id',
         'b_entity_id',
+        'created_by',
         'status',
         'entity_similarity',
         'a_total_sentences',
@@ -49,6 +50,16 @@ class EntityMatch extends Model
     public function bEntity(): BelongsTo
     {
         return $this->belongsTo(Entity::class, 'b_entity_id');
+    }
+
+    /**
+     * The user who created this alignment — whose processing slot it
+     * consumes while pending/aligning (ADR 0044). Distinct from the side
+     * entities' uploaders, who can differ.
+     */
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function meaningMatches(): HasMany

@@ -1,5 +1,23 @@
 # Directory Update Log
 
+## 2026-09-27 (feat: per-user processing limits — 2 entities, 1 alignment, ADR 0044)
+
+Non-admin users could create entities and alignments without bound, each
+running Python-backed pipelines on the shared default lane. Now a user holds
+at most 2 entities with `entities.status = 'processing'` and 1 alignment with
+`entity_matches.status IN ('pending','aligning')`; approved admins are exempt
+and the numbers live in `config/limits.php` (env-overridable). Entities gain
+an explicit `processing|completed|failed` lifecycle (pipeline `failed()` hooks
+free the slot; no-file and finished exact-copy clones are born `completed`),
+alignments gain a `created_by` owner column (backfilled from the a-side
+uploader; CONTEXT.md gains **Processing status**, **Alignment owner**,
+**In-flight**, **Processing limit** under a new Processing Limits Context).
+Count-then-create runs under the creator's locked user row
+(`App\Classes\ProcessingLimits`); rejections surface as `limit` validation
+errors with banners on the three create forms. New tests
+`EntityProcessingLimitTest` / `EntityStatusLifecycleTest` /
+`AlignmentLimitTest`. Concepts updated: entities.md, sentence-alignment.md.
+
 ## 2026-09-26 (feat: bounded job runs — run budgets + durable progress markers, ADR 0043)
 
 An audit found 4 of 8 queued jobs could process unbounded rows in one

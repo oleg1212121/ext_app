@@ -18,6 +18,8 @@ class EditEntity extends EditRecord
             $data['file_path'] = $data['file'];
             $data['file_hash'] = EntityTextHasher::hashStoredFile((string) $data['file']);
             $data['sentences_updated_at'] = now();
+            // A fresh upload restarts the pipeline (ADR 0044).
+            $data['status'] = 'processing';
         }
         unset($data['file']);
 

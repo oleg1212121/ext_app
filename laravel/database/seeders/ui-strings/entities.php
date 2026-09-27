@@ -49,6 +49,7 @@ return [
     'entities.signature_generated' => ['en' => 'Signature generated', 'ru' => 'Сигнатура сгенерирована'],
     'entities.signature_pending' => ['en' => 'Signature pending', 'ru' => 'Сигнатура формируется'],
     'entities.no_file' => ['en' => 'No file', 'ru' => 'Нет файла'],
+    'entities.limit_reached' => ['en' => 'You already have the maximum number of entities being processed. Wait for one to finish before uploading another.', 'ru' => 'У вас уже обрабатывается максимальное количество текстов. Дождитесь завершения одного из них, прежде чем загружать новый.'],
     'entities.read' => ['en' => 'Read', 'ru' => 'Читать'],
     'entities.open_alignment' => ['en' => 'Open alignment', 'ru' => 'Открыть выравнивание'],
     'entities.source_file' => ['en' => 'Source file', 'ru' => 'Исходный файл'],

@@ -49,6 +49,19 @@ class GenerateEntitySignature implements ShouldQueue
             );
         }
 
-        $entity->update(['signature' => json_encode($signature)]);
+        $entity->update(['signature' => json_encode($signature), 'status' => 'completed']);
+    }
+
+    /**
+     * The embedding pass gave up after its retries: hand the entity's
+     * processing slot back (ADR 0044). The Filament Signature action or the
+     * entity:generate-signatures sweep can put it back in processing.
+     */
+    public function failed(\Throwable $e): void
+    {
+        Entity::query()
+            ->whereKey($this->entityId)
+            ->whereNull('signature')
+            ->update(['status' => 'failed']);
     }
 }

@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\Language;
 use App\Models\UiString;
 use App\Models\UiStringKey;
+use App\Support\UiStrings;
 use Illuminate\Database\Seeder;
 
 class UiStringSeeder extends Seeder
@@ -41,5 +42,7 @@ class UiStringSeeder extends Seeder
                 }
             }
         }
+
+        UiStrings::flush();
     }
 }

@@ -4,8 +4,8 @@ title: Sentence Alignment Pipeline
 description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse.
 tags: [alignment, embeddings, pipeline, jobs, filament, hash]
 status: stable
-stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-09-26T12:00:00Z }
+stale_after: 2026-12-27
+generated: { by: agent:zcode, at: 2026-09-27T12:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -63,6 +63,22 @@ side is the original language (two translations of a third-language original —
 first-class pairs).
 
 # Order-preservation invariant
+
+**Alignment ownership & per-user limit (ADR 0044).** `entity_matches.created_by`
+records the user who created the match — its **alignment owner**, distinct from
+the two side entities' uploaders (who can differ). It is backfilled from the
+a-side uploader, set at every creation point (the Library form and all
+admin-only Filament actions), and nullable (`nullOnDelete`). A non-admin may
+hold at most `limits.alignments_processing_per_user` (default 1) matches with
+`status IN ('pending','aligning')`; the count-then-create runs under the
+creator's locked user row in `LibraryController::storeAlignment`, rejecting
+with a `limit` validation error (banner on the create form). The limit gates
+creation only: sentence-mutation re-pending, `alignments:resume`, and the
+admin re-align actions skip it. Accepted exposure: a match frozen by the
+ADR 0034 approved-entity freeze stays `pending` and holds its owner's slot
+until approval, and a match stuck `aligning` (job chain died before
+`failed()`) holds it too. The exact-copy reuse fast path is born `completed`
+and never counts.
 
 **Alignment never changes sentence order.** Sentences go in their original
 order from the uploaded source text file: `entity_sentences.order` is assigned

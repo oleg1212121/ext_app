@@ -54,4 +54,16 @@ class ProcessEntityFile implements ShouldQueue
 
         SplitEntityFileSentences::dispatch($this->entityId, $this->filePath);
     }
+
+    /**
+     * The pipeline never got started after its retries: hand the entity's
+     * processing slot back (ADR 0044).
+     */
+    public function failed(\Throwable $e): void
+    {
+        Entity::query()
+            ->whereKey($this->entityId)
+            ->whereNull('signature')
+            ->update(['status' => 'failed']);
+    }
 }

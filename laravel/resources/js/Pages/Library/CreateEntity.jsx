@@ -215,6 +215,14 @@ export default function CreateEntity({work, languages = []}) {
                         <InputError messages={errors.file ? [errors.file] : []}/>
                     </div>
 
+                    {errors.limit && (
+                        <div className="border border-[var(--wbench-danger)]/40 bg-[var(--wbench-danger)]/5 px-4 py-3 text-sm">
+                            <p className="text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
+                                {t('entities.limit_reached')}
+                            </p>
+                        </div>
+                    )}
+
                     <div className="flex items-center gap-4">
                         <PrimaryButton disabled={processing}>{t('library.create_entity')}</PrimaryButton>
                         <Link

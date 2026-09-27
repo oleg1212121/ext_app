@@ -5,7 +5,7 @@ description: End-to-end workflow for aligning two same-work entities (any langua
 tags: [alignment, embeddings, jobs, howto]
 status: stable
 stale_after: 2026-12-22
-generated: { by: agent:zcode, at: 2026-09-26T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-27T12:00:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -66,7 +66,9 @@ sources:
    ```
 
    Dispatches `GenerateEntitySignature` jobs (entity id + file path; the job
-   reads the language from the entity). Signatures are BGE-M3
+   reads the language from the entity) and flips each dispatched entity to
+   `status = 'processing'` (its processing slot is held until the signature
+   lands or the job's retries run out — ADR 0044). Signatures are BGE-M3
    (1024-dim) text fingerprints used to verify that a pair is actually
    the same text (threshold 0.70, see
    [Sentence Alignment](/domains/sentence-alignment.md)). Old 384-dim

@@ -73,7 +73,7 @@ class FinalizeEntityDerivations implements ShouldQueue
                 );
             }
 
-            $entity->update(['signature' => json_encode($signature)]);
+            $entity->update(['signature' => json_encode($signature), 'status' => 'completed']);
         }
 
         Log::info('FinalizeEntityDerivations completed', [
@@ -85,13 +85,26 @@ class FinalizeEntityDerivations implements ShouldQueue
         ]);
     }
 
+    /**
+     * The pipeline gave up: hand the entity's processing slot back. Only a
+     * signature-less entity is failed — if the signature already landed, the
+     * upload pipeline effectively finished and only enrichment was lost.
+     */
+    public function failed(\Throwable $e): void
+    {
+        Entity::query()
+            ->whereKey($this->entityId)
+            ->whereNull('signature')
+            ->update(['status' => 'failed']);
+    }
+
     private function copySignature(Entity $entity, ?Entity $source): bool
     {
         if ($source === null || $source->signature === null || $entity->signature !== null) {
             return false;
         }
 
-        $entity->update(['signature' => $source->signature]);
+        $entity->update(['signature' => $source->signature, 'status' => 'completed']);
 
         return true;
     }

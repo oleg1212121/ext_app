@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Classes\EntityAccessService;
 use App\Classes\EntityCreationService;
 use App\Classes\SparseOrderService;
+use App\Exceptions\ProcessingLimitReached;
 use App\Http\Requests\ReorderEntitySentenceRequest;
 use App\Http\Requests\StoreEntityRequest;
 use App\Http\Requests\StoreEntitySentenceRequest;
@@ -55,13 +56,17 @@ class EntityController extends Controller
 
         $work = $this->resolveWork($request, $language);
 
-        $result = $this->creation->create(
-            $request->user(),
-            $work,
-            $language,
-            $request->validated(),
-            $request->file('file'),
-        );
+        try {
+            $result = $this->creation->create(
+                $request->user(),
+                $work,
+                $language,
+                $request->validated(),
+                $request->file('file'),
+            );
+        } catch (ProcessingLimitReached $e) {
+            return back()->withErrors(['limit' => $e->getMessage()]);
+        }
 
         if ($result['status'] === 'created_from_copy') {
             return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $result['entity']->id])
@@ -110,6 +115,7 @@ class EntityController extends Controller
                 'description' => $entity->description,
                 'file_path' => $entity->file_path,
                 'signature_status' => $entity->signatureStatus(),
+                'status' => $entity->status,
                 'is_approved' => $entity->is_approved,
                 'sentences_count' => $entity->sentences_count,
                 'created_at' => $entity->created_at?->toISOString(),

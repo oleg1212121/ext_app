@@ -133,6 +133,11 @@ function EntityCard({entity}) {
             <span className={`mt-auto inline-flex items-center rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] w-fit ${SIGNATURE_BADGE[entity.signature_status] ?? SIGNATURE_BADGE.none}`}>
                 {entity.signature_status}
             </span>
+            {entity.status === 'failed' && (
+                <span className="-mt-2 inline-flex items-center rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] w-fit text-[var(--wbench-danger)] dark:text-[var(--wbench-danger-night)] border-[var(--wbench-danger)]/40 dark:border-[var(--wbench-danger-night)]/40">
+                    {entity.status}
+                </span>
+            )}
         </Link>
     );
 }

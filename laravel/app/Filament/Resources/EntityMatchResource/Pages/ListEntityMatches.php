@@ -81,6 +81,7 @@ class ListEntityMatches extends ListRecords
                         'chunk_size' => $data['chunk_size'] ?? 75,
                         'max_n' => $data['max_n'] ?? 6,
                         'status' => 'pending',
+                        'created_by' => auth()->id(),
                     ]);
 
                     if ((new AlignmentCopyService)->copyFor($entityMatch)) {

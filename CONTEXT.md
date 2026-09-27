@@ -514,6 +514,37 @@ readable-scoped. See ADR 0021.
 _Avoid_: available works (Available is the AI-provider term), my library,
 book collection.
 
+# Processing Limits Context
+
+The domain of how much of the shared background pipeline one user may occupy
+at once — the caps on a user's concurrently processing entities and
+alignments, and the states that count against them. See ADR 0044.
+
+## Language
+
+**Processing status**:
+The explicit lifecycle column on an Entity: `processing` while its upload
+pipeline runs, `completed` when split/hash/signature are done, `failed` when
+the pipeline exhausted its retries. Scheduled enrichment never re-enters
+`processing`. _Avoid_: signature status (the display-only derivation),
+entity state.
+
+**Alignment owner**:
+The user recorded in `entity_matches.created_by` — who created the match,
+and whose alignment slot it consumes. The paired entities may have different
+uploaders; ownership never derives from them. _Avoid_: creator (the Entity
+term), uploader (belongs to entities).
+
+**In-flight**:
+An entity whose **Processing status** is `processing`, or an alignment whose
+status is `pending` or `aligning` — the states that hold one of the owner's
+slots. _Avoid_: pending (overloaded), running, active.
+
+**Processing limit**:
+The configurable per-user cap on concurrently **In-flight** entities and
+alignments, enforced only at creation. Admins are exempt. _Avoid_: quota,
+rate limit (a rate, not a concurrency), concurrency cap.
+
 # Crossword Context
 
 The domain of crossword puzzles generated from a text's own vocabulary —
