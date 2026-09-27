@@ -2,6 +2,7 @@
 
 use App\Models\Definition;
 use App\Models\Etymology;
+use App\Models\Form;
 use App\Models\Language;
 use App\Models\Transcription;
 use App\Models\TranscriptionType;
@@ -80,6 +81,138 @@ it('flags a surface form different from the dictionary lemma', function () {
         ->getJson(route('words.show', ['word' => $word->id, 'surface' => 'коту']))
         ->assertOk()
         ->assertJsonPath('data.is_form', true);
+});
+
+it('merges base-word entries of the surface form and hides the relay entry', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    $meltVerb = createWord('en', 'melt', 'verb', ['frequency' => 900]);
+    Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid state.']);
+    $meltNoun = createWord('en', 'melt', 'noun', ['frequency' => 5000]);
+    Definition::query()->create(['word_id' => $meltNoun->id, 'definition' => 'Molten material.']);
+    Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melted', 'l_word' => 'melted']);
+
+    $meltedVerb = createWord('en', 'melted', 'verb', ['frequency' => 8000]);
+    Definition::query()->create(['word_id' => $meltedVerb->id, 'definition' => 'simple past and past participle of melt']);
+    $meltedAdj = createWord('en', 'melted', 'unknown', ['frequency' => 8100]);
+    Definition::query()->create(['word_id' => $meltedAdj->id, 'definition' => 'Being in a liquid state as a result of melting.']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $meltedVerb->id, 'surface' => 'melted']))
+        ->assertOk()
+        ->assertJsonPath('data.form_of', ['melt'])
+        ->assertJsonCount(3, 'data.entries')
+        // Own group keeps the real melted entry; the relay entry is hidden.
+        ->assertJsonPath('data.entries.0.id', $meltedAdj->id)
+        ->assertJsonPath('data.entries.0.word', 'melted')
+        // Base group follows, ranked by frequency; entries within it by class priority.
+        ->assertJsonPath('data.entries.1.id', $meltNoun->id)
+        ->assertJsonPath('data.entries.1.word', 'melt')
+        ->assertJsonPath('data.entries.1.definitions.0', 'Molten material.')
+        ->assertJsonPath('data.entries.2.id', $meltVerb->id)
+        ->assertJsonPath('data.entries.2.definitions.0', 'To change from solid to liquid state.');
+});
+
+it('filters relay glosses out of partially-relay entries', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    // Kaikki merges form-of lines into the real entry: real saw senses
+    // alongside "simple past of see".
+    $sawVerb = createWord('en', 'saw', 'verb');
+    Definition::query()->create(['word_id' => $sawVerb->id, 'definition' => 'To cut (something) with a saw.']);
+    Definition::query()->create(['word_id' => $sawVerb->id, 'definition' => 'simple past of see']);
+    Definition::query()->create(['word_id' => $sawVerb->id, 'definition' => '(colloquial, nonstandard) past participle of see']);
+    Form::query()->create(['word_id' => $sawVerb->id, 'form' => 'sawn', 'l_word' => 'sawn']);
+
+    $sawn = createWord('en', 'sawn', 'unknown');
+
+    $response = $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $sawn->id, 'surface' => 'sawn']))
+        ->assertOk()
+        ->assertJsonPath('data.form_of', ['saw']);
+
+    $sawEntry = collect($response->json('data.entries'))->firstWhere('id', $sawVerb->id);
+    expect($sawEntry)->not->toBeNull()
+        ->and($sawEntry['definitions'])->toBe(['To cut (something) with a saw.']);
+});
+
+it('keeps a relay-only entry when the forms table offers no base word', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    $meltedVerb = createWord('en', 'melted', 'verb');
+    Definition::query()->create(['word_id' => $meltedVerb->id, 'definition' => 'simple past and past participle of melt']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $meltedVerb->id, 'surface' => 'melted']))
+        ->assertOk()
+        ->assertJsonPath('data.form_of', [])
+        ->assertJsonCount(1, 'data.entries')
+        ->assertJsonPath('data.entries.0.definitions.0', 'simple past and past participle of melt');
+});
+
+it('does not duplicate the own headword when the forms table lists it as a form', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    $meltVerb = createWord('en', 'melt', 'verb');
+    Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid state.']);
+    Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melts', 'l_word' => 'melts']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $meltVerb->id, 'surface' => 'melts']))
+        ->assertOk()
+        ->assertJsonPath('data.form_of', [])
+        ->assertJsonCount(1, 'data.entries')
+        ->assertJsonPath('data.is_form', true);
+});
+
+it('orders base-word groups by frequency without a cap', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    $leftAdj = createWord('en', 'left', 'unknown', ['frequency' => 400]);
+    Definition::query()->create(['word_id' => $leftAdj->id, 'definition' => 'Positioned on the left side.']);
+
+    $leaveVerb = createWord('en', 'leave', 'verb', ['frequency' => 100]);
+    Definition::query()->create(['word_id' => $leaveVerb->id, 'definition' => 'To depart from.']);
+    $leaveNoun = createWord('en', 'leave', 'noun', ['frequency' => 9000]);
+    Definition::query()->create(['word_id' => $leaveNoun->id, 'definition' => 'Permission to be absent.']);
+    $liftVerb = createWord('en', 'lift', 'verb', ['frequency' => 3000]);
+    Definition::query()->create(['word_id' => $liftVerb->id, 'definition' => 'To raise.']);
+
+    Form::query()->create(['word_id' => $leaveVerb->id, 'form' => 'left', 'l_word' => 'left']);
+    Form::query()->create(['word_id' => $leaveNoun->id, 'form' => 'left', 'l_word' => 'left']);
+    Form::query()->create(['word_id' => $liftVerb->id, 'form' => 'left', 'l_word' => 'left']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $leftAdj->id, 'surface' => 'left']))
+        ->assertOk()
+        ->assertJsonPath('data.form_of', ['leave', 'lift'])
+        ->assertJsonCount(4, 'data.entries')
+        ->assertJsonPath('data.entries.0.id', $leftAdj->id)
+        ->assertJsonPath('data.entries.1.id', $leaveNoun->id)
+        ->assertJsonPath('data.entries.2.id', $leaveVerb->id)
+        ->assertJsonPath('data.entries.3.id', $liftVerb->id);
+});
+
+it('finds base words through a surface carrying combining marks', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    $kot = createWord('ru', 'кот', 'noun');
+    Definition::query()->create(['word_id' => $kot->id, 'definition' => 'Домашнее животное семейства кошачьих.']);
+    Form::query()->create(['word_id' => $kot->id, 'form' => 'кота', 'l_word' => 'кота']);
+
+    $kota = createWord('ru', 'кота', 'unknown');
+    Definition::query()->create(['word_id' => $kota->id, 'definition' => 'родительный падеж от кот']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $kota->id, 'surface' => 'ко́та']))
+        ->assertOk()
+        ->assertJsonPath('data.form_of', ['кот']);
 });
 
 it('sorts translations native language first', function () {

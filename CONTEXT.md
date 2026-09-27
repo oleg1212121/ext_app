@@ -245,6 +245,17 @@ auto-creates any unseen class with the slug as a placeholder title. A word
 whose part of speech cannot be determined gets the `unknown` class.
 _Avoid_: POS (dump-field jargon), category, speech part.
 
+**Form-of entry**:
+A Word imported from a Wiktionary form-of line — its definitions merely
+relay to another Word ("past participle of the verb melt"). The Word popup
+shows it as a "form of" pointer line, never as content of its own.
+_Avoid_: duplicate, variant, stub.
+
+**Base word**:
+The Word a surface form belongs to via the forms table — "melt" is the Base
+word of "melted". A Word popup lists every Base word's headword group after
+its own. _Avoid_: lemma, root, parent.
+
 **Transcription type**:
 The kind of phonetic notation a transcription is written in (e.g. IPA,
 enpr) — per language, unique by `(language, slug)`. Auto-created by the
@@ -679,6 +690,12 @@ part of speech may share it. The Word popup lists every Word under the
 Headword, one section per Word class.
 _Avoid_: lemma (implementation shorthand), entry (the popup section, not the
 spelling).
+
+**Word family**:
+The set of headword groups the Word popup shows for one token: the surface's
+own group plus every Base word's group, ranked by frequency. The popup's
+content unit — not a stored structure.
+_Avoid_: word group, cluster, entry set.
 
 **Word occurrence**:
 One place a token appears in an entity's text. Occurrences are derived from

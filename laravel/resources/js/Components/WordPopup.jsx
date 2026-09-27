@@ -80,6 +80,17 @@ function popupStyle(rect, fontSize) {
     };
 }
 
+// Section heading: base-word sections of the word family (ADR 0045) are
+// labeled with their own headword — "melt — Verb" — to set them apart from
+// the popup's own headword sections, which keep the plain class label.
+function sectionLabel(entry, headword) {
+    const word = entry.word && entry.word.toLowerCase() !== String(headword ?? '').toLowerCase()
+        ? entry.word
+        : null;
+
+    return [word, entry.word_class].filter(Boolean).join(' — ');
+}
+
 function TranslationLine({translations}) {
     const {t} = useI18n();
     const [expanded, setExpanded] = useState(false);
@@ -423,9 +434,15 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                             {t('word.familiarity', {value: familiarity ?? 0, max: FAMILIARITY_MAX})}
                         </p>
 
-                        {data.is_form && (
+                        {(data.form_of?.length > 0 || data.is_form) && (
                             <p className="mt-1 text-[0.857em] italic opacity-70">
-                                «{surface}» — {t('word.form_of')} «{data.word}»
+                                «{surface}» — {t('word.form_of')}{' '}
+                                {(data.form_of?.length > 0 ? data.form_of : [data.word]).map((headword, index) => (
+                                    <React.Fragment key={`${headword}-${index}`}>
+                                        {index > 0 && ', '}
+                                        «{headword}»
+                                    </React.Fragment>
+                                ))}
                             </p>
                         )}
                     </div>
@@ -476,8 +493,8 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                                         ? 'mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
                                         : undefined}
                                 >
-                                    {entry.word_class && (
-                                        <h3 className="text-[0.786em] uppercase tracking-wider opacity-60">{entry.word_class}</h3>
+                                    {sectionLabel(entry, data.word) && (
+                                        <h3 className="text-[0.786em] uppercase tracking-wider opacity-60">{sectionLabel(entry, data.word)}</h3>
                                     )}
 
                                     {entry.transcriptions?.length > 0 && (

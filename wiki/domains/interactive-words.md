@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups covering every part of speech of the headword (typography follows the host page's font setting, ADR 0031), an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events.
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, form-of entries hidden behind a pointer line, ADR 0045; typography follows the host page's font setting, ADR 0031), an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events.
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-09-25T18:43:00+03:00 }
+generated: { by: agent:zcode, at: 2026-09-27T18:30:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -79,15 +79,25 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    popup). Parity is enforced by `tests/Unit/TokenizerParityTest.php`
    (PHP vs node CLI on shared fixtures); a mismatch breaks coloring, not
    text.
-3. **Popup details are lazy, per headword.** Ctrl-clicking a word fetches
-   `GET /words/{word}?surface={l_word}`. The endpoint returns **every** `words`
-   row sharing the headword — the linked row first, siblings after in
-   `EntityWordLinker::classPriority` order — as
-   `entries: [{id, word_class, transcriptions, definitions, translations,
-   examples, etymologies}]`. `is_form` is true when the surface differs from
-   the word's `l_word` (an inflected form resolved by the linker's forms
-   pass), shown as "«surface» — form of «lemma»". The popover renders one
-   section per entry, translations capped at 8 with a "+N more…" expander.
+3. **Popup details are lazy, per word family.** Ctrl-clicking a word fetches
+   `GET /words/{word}?surface={l_word}`. `WordFamily::resolve` (ADR 0045)
+   builds the entry list: **every** `words` row sharing the linked row's
+   headword — the linked row first, siblings after in
+   `EntityWordLinker::classPriority` order — followed by the headword groups
+   of every **Base word** the `forms` table maps the surface token to (own
+   headword excluded), ranked by `words.frequency` (lower = more common) and
+   uncapped, as
+   `entries: [{id, word, word_class, transcriptions, definitions, translations,
+   examples, etymologies}]`. Relay **Form-of entries** (all definitions
+   boilerplate like "past participle of the verb melt") are hidden when a
+   base group carries the real content, and stray relay glosses are filtered
+   out of partially-relay entries ("saw/verb" mixes real senses with "simple
+   past of see"); the payload then carries `form_of: [base headwords]`,
+   rendered as "«surface» — form of «…»" — as is `is_form`, true when the
+   surface differs from the word's `l_word` (an inflected form resolved by
+   the linker's forms pass). Base sections label themselves with their own
+   headword ("melt — Verb"). The popover renders one section per entry,
+   translations capped at 8 with a "+N more…" expander.
    It always fits the viewport: it opens below the word, flips above it when
    there is more room above, its height is capped to the larger side, the
    body scrolls internally. **Its typography follows the host page's
@@ -214,7 +224,7 @@ outside-click closing — the word popup underneath stays put.
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `GET /words/{word}` | `WordController::show` | Word popup payload: headword + `entries` per part of speech (class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `is_form` |
+| `GET /words/{word}` | `WordController::show` | Word popup payload: the word family (own headword group + base-word groups, ADR 0045) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form` |
 | `POST /ai/word-explain` | `SimulatorController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |
 | `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |
 | `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to untouched) |

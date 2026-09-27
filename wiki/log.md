@@ -1,5 +1,27 @@
 # Directory Update Log
 
+## 2026-09-27 (feat: word popup aggregates the word family, ADR 0045)
+
+Clicking "melted" showed one definition — "past participle of the verb
+melt" — because the kaikki import stores Wiktionary's form-of lines as
+standalone words with verbatim relay glosses, the entity-word linker's exact
+pass prefers them over the forms pass, and the popup loaded only entries
+sharing the linked row's headword. Now `WordFamily::resolve` builds the
+popup's word family per request: the own headword group (unchanged order)
+plus every base headword's group the `forms` table maps the surface token
+to (own headword excluded, ranked by `words.frequency`, uncapped); all-relay
+entries hide behind the "«surface» — form of «…»" pointer line (`form_of`
+payload field) and stray relay glosses are filtered out of partially-relay
+entries ("saw/verb" mixes real senses with "simple past of see") whenever a
+base group exists — detection by an anchored runtime gloss-pattern list in
+`App\Classes\WordFamily`, no schema or import changes (escape hatch:
+`is_form_of` column + import tags + backfill). Entries now carry their own
+`word` so base sections label "melt — Verb"; `entity_words` linking,
+familiarity and crossword untouched. New terms: **Form-of entry**, **Base
+word** (Dictionary), **Word family** (Interactive Reading). New tests
+`tests/Unit/WordFamilyTest.php` + six word-family cases in
+`WordEndpointTest`. Concepts updated: interactive-words.md, dictionary.md.
+
 ## 2026-09-27 (feat: per-user processing limits — 2 entities, 1 alignment, ADR 0044)
 
 Non-admin users could create entities and alignments without bound, each
