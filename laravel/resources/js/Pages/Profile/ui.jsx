@@ -70,6 +70,26 @@ export function InputError({messages = []}) {
     )
 }
 
+export function CheckboxRow({id, checked, onChange, label}) {
+    return (
+        <label
+            htmlFor={id}
+            className="flex cursor-pointer select-none items-center gap-3 py-1.5"
+        >
+            <input
+                id={id}
+                type="checkbox"
+                checked={checked}
+                onChange={(event) => onChange(event.target.checked)}
+                className="h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-vermilion)] dark:accent-[var(--color-vermilion-night)]"
+            />
+            <span className="text-sm text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+                {label}
+            </span>
+        </label>
+    )
+}
+
 export function SelectInput({id, value, onChange, children, error, disabled = false, ...props}) {
     return (
         <select

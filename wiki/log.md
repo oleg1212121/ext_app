@@ -1,5 +1,32 @@
 # Directory Update Log
 
+## 2026-09-27 (feat: per-user popup section visibility — the profile's Popups tab, ADR 0046)
+
+The Word popup's block set was fixed: every user saw every block, and the
+frequency rank was not displayed at all. Now the profile has a fifth tab
+("Popups", between Preferences and AI Models) over eleven per-user
+visibility checkboxes grouped for display (Knowledge / Word family /
+Dictionary details / Tabs & info) plus a live preview that renders the
+popup's real body — the popup body was extracted into the exported
+`PopupContent` (`Components/WordPopup.jsx`; the portal, positioning and
+fetching stay with `WordPopup`) with a fixture-style sample family, so the
+preview cannot drift from the real thing. State persists as a new
+`ui_settings.popup` section (eleven booleans, absent = visible —
+`App\Support\PopupVisibility::for()` resolves it over all-visible defaults
+and shares it to every page as the `popupVisibility` Inertia prop; one map
+drives both surfaces), autosaved per flick via `useUiSettingsAutosave`.
+`PATCH /ui-settings` moved from the approved-only group to the auth-only
+profile group (the tab is reachable pre-approval; the endpoint only touches
+the caller's own settings). The word payload gains `frequency` — the bound
+headword's integer rank, null for unranked (sentinel included) — shown as a
+"Frequency: #N" line under the familiarity line. Explanation off drops the
+whole tab strip incl. the Models-used icon; word_family off filters
+base-word sections; the headword header is never toggleable and no minimum
+is enforced. New term: **Popup preferences**. New tests: popup section
+merge/validation/unapproved-access (`UiSettingsTest`), frequency payload
+(`WordEndpointTest`), popups tab + `popupVisibility` prop
+(`ProfileTest`). Concepts updated: interactive-words.md, profile.md.
+
 ## 2026-09-27 (feat: word popup aggregates the word family, ADR 0045)
 
 Clicking "melted" showed one definition — "past participle of the verb

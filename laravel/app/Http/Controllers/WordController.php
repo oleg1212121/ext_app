@@ -46,11 +46,28 @@ class WordController extends Controller
                 'word_class' => $bound->wordClass?->title,
                 'is_form' => $isForm,
                 'form_of' => $family->formOf(),
+                'frequency' => $this->frequencyRank($bound),
                 'entries' => $headwords
                     ->map(fn (Word $entry): array => $this->entry($entry, $request->user()))
                     ->all(),
             ],
         ]);
+    }
+
+    /**
+     * The headword's frequency rank for the popup's frequency line (lower =
+     * more common). Null when no frequency list carries the word — the line
+     * hides for it.
+     */
+    private function frequencyRank(Word $word): ?int
+    {
+        if ($word->frequency === null) {
+            return null;
+        }
+
+        $rank = (int) round((float) $word->frequency);
+
+        return $rank >= Word::FREQUENCY_UNRANKED ? null : $rank;
     }
 
     /**

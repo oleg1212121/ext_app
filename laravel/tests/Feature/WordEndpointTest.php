@@ -83,6 +83,34 @@ it('flags a surface form different from the dictionary lemma', function () {
         ->assertJsonPath('data.is_form', true);
 });
 
+it('exposes the headword frequency rank', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $word = createWord('en', 'melt', 'verb', ['frequency' => 2143]);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $word->id]))
+        ->assertOk()
+        ->assertJsonPath('data.frequency', 2143);
+});
+
+it('hides the frequency rank for unranked words', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $neverRanked = createWord('en', 'melt', 'verb');
+    $sentinelRanked = createWord('en', 'zarf', 'noun', ['frequency' => Word::FREQUENCY_UNRANKED]);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $neverRanked->id]))
+        ->assertOk()
+        ->assertJsonPath('data.frequency', null);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $sentinelRanked->id]))
+        ->assertOk()
+        ->assertJsonPath('data.frequency', null);
+});
+
 it('merges base-word entries of the surface form and hides the relay entry', function () {
     $user = User::factory()->create();
     createWordClasses();

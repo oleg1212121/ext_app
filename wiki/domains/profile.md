@@ -1,10 +1,10 @@
 ---
 type: Feature
 title: Profile
-description: The /profile account surface — tabbed Account / Preferences / AI Models / Danger zone, per-user language and AI-model preferences, provider API key management, account deletion.
-tags: [profile, settings, ai, inertia, react]
+description: The /profile account surface — tabbed Account / Preferences / Popups / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, provider API key management, account deletion.
+tags: [profile, settings, popups, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-22T16:20:00Z }
+generated: { by: agent:zcode, at: 2026-09-27T20:00:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -12,6 +12,12 @@ sources:
   - id: page
     resource: laravel/resources/js/Pages/Profile/Edit.jsx
     title: Tabbed page shell (Edit.jsx)
+  - id: popups-tab
+    resource: laravel/resources/js/Pages/Profile/PopupsSettings.jsx
+    title: PopupsSettings tab section (checkboxes + live preview)
+  - id: popup-visibility
+    resource: laravel/app/Support/PopupVisibility.php
+    title: PopupVisibility (saved opt-outs over all-visible defaults)
   - id: ai-models
     resource: laravel/resources/js/Pages/Profile/AiModels.jsx
     title: AiModels tab section
@@ -24,6 +30,9 @@ sources:
   - id: adr-preferences
     resource: docs/adr/0035-per-user-ai-model-preferences.md
     title: ADR 0035 — Per-user AI model preferences, resolved server-side
+  - id: adr-popup-visibility
+    resource: docs/adr/0046-per-user-popup-section-visibility.md
+    title: ADR 0046 — Per-user popup section visibility
   - id: routes
     resource: laravel/routes/web.php
     title: Routes (auth group)
@@ -33,7 +42,7 @@ sources:
 
 The single account surface, reachable from the NavBar user dropdown at
 `/profile` for every authenticated user (approved or not). The page is a
-**tab bar of four sections** over the legacy vellum/vermilion palette, each
+**tab bar of five sections** over the legacy vellum/vermilion palette, each
 section rendered as a bordered card; the active tab is reflected in the URL
 as `?tab=` (deep-linkable, `history.replaceState` on switch), and only the
 active tab's forms stay mounted (Crossword-style unmount panels).
@@ -42,11 +51,31 @@ active tab's forms stay mounted (Crossword-style unmount panels).
 |-----|----------|----------|
 | Account | Profile Information (name/email) · Update Password | `PATCH /profile` (`profile.update`), `PUT /password` (`password.update`, auth routes) |
 | Preferences | Native + interface language | `PATCH /profile/settings` (`profile.settings.update`) |
+| Popups | Word popup block visibility (checkbox groups) + live preview | autosaved `PATCH /ui-settings` (`ui-settings.update`, auth-only — section `popup`) |
 | AI Models | Answer + explanation model selects · AI Provider API Keys | `PATCH /profile/ai-models` (`profile.ai-models.update`), `POST /profile/api-keys` + `DELETE /profile/api-keys/{providerKey}` |
 | Danger zone | Delete Account (password modal) | `DELETE /profile` (`profile.destroy`) |
 
 Every form keeps its own Inertia `useForm` state and redirects back to its
 own tab after saving (`Redirect::route('profile.edit', ['tab' => ...])`).
+
+# Popups tab
+
+Per-user **Popup preferences** (ADR 0046): which blocks the Word popup
+renders — familiarity line, progress buttons, form-of line, word family
+sections, frequency line, transcriptions, definitions, translations,
+examples, etymology, Explanation tab. Eleven checkboxes in display groups
+(Knowledge / Word family / Dictionary details / Tabs & info), each bound to
+one key of `ui_settings.popup`; an absent key means visible, so a fresh user
+matches the classic popup exactly. Saving is automatic per flick through
+`useUiSettingsAutosave('popup', …)` — debounced 800 ms, no submit button.
+Below the checkboxes a **live preview** renders the popup's real body — the
+exported `PopupContent` from `Components/WordPopup.jsx` with a fixture-style
+"melted → melt" sample family — bound to the current checkbox state, so the
+preview cannot drift from the real popup; in preview mode progress buttons
+are inert and the Explanation tab shows a canned answer (no tokens spent).
+The server resolves saved state over defaults in
+`App\Support\PopupVisibility::for()` and shares it to every page as the
+`popupVisibility` Inertia prop.
 
 # AI Models tab
 
@@ -74,10 +103,12 @@ All preferences live on the one-row-per-user `user_settings`
 `interface_language_id` (typed FKs to `languages`), `ai_model_id` /
 `explanation_model_id` (typed FKs to `ai_models`, `nullOnDelete` — the model
 sync hard-deletes catalog rows, ADR 0035), and the `ui_settings` JSONB blob
-for per-surface UI state (simulator/reader sections, written via
-`PATCH /ui-settings`, not from this page). The model preferences were
-backfilled from the legacy `ui_settings.simulator.model` string, which no
-longer exists.
+for per-surface UI state (simulator/reader sections via `PATCH /ui-settings`
+from the reading surfaces, and the popup visibility section via the same
+endpoint from this page — `UpdateUiSettingsRequest` carries the boolean
+rules for all three sections; unknown keys are stripped by `validated()`).
+The model preferences were backfilled from the legacy
+`ui_settings.simulator.model` string, which no longer exists.
 
 # Language & validation
 

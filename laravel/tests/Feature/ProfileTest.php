@@ -13,6 +13,44 @@ test('profile page is displayed', function () {
     $response->assertOk();
 });
 
+test('profile page shares the popups tab and all-visible defaults', function () {
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Profile/Edit')
+            ->where('popupVisibility.familiarity', true)
+            ->where('popupVisibility.progress_actions', true)
+            ->where('popupVisibility.form_of', true)
+            ->where('popupVisibility.word_family', true)
+            ->where('popupVisibility.frequency', true)
+            ->where('popupVisibility.transcriptions', true)
+            ->where('popupVisibility.definitions', true)
+            ->where('popupVisibility.translations', true)
+            ->where('popupVisibility.examples', true)
+            ->where('popupVisibility.etymologies', true)
+            ->where('popupVisibility.explanation', true));
+});
+
+test('popup visibility prop reflects the saved opt-outs', function () {
+    $user = User::factory()->create();
+    $user->settings()->updateOrCreate([], [
+        'ui_settings' => ['popup' => ['frequency' => false, 'examples' => false]],
+    ]);
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('popupVisibility.frequency', false)
+            ->where('popupVisibility.examples', false)
+            ->where('popupVisibility.definitions', true));
+});
+
 test('profile information can be updated', function () {
     $user = User::factory()->create();
 

@@ -10,6 +10,7 @@ return [
     'word.i_know_this' => ['en' => 'I know this word', 'ru' => 'Я знаю это слово'],
     'word.remove_mark' => ['en' => 'Remove mark', 'ru' => 'Снять отметку'],
     'word.familiarity' => ['en' => 'Familiarity: :value/:max', 'ru' => 'Знакомость: :value/:max'],
+    'word.frequency' => ['en' => 'Frequency: #:rank', 'ru' => 'Частотность: №:rank'],
     'word.etymology' => ['en' => 'Etymology', 'ru' => 'Этимология'],
     'word.more_translations' => ['en' => '+:count more…', 'ru' => 'ещё :count…'],
     'word.tab_dictionary' => ['en' => 'Dictionary', 'ru' => 'Словарь'],
@@ -21,4 +22,5 @@ return [
     'word.explain_choose_model' => ['en' => 'Choose an AI model in your Profile to get word explanations.', 'ru' => 'Выберите ИИ-модель в профиле, чтобы получать объяснения слов.'],
     'word.explain_no_key' => ['en' => 'Add an API key in your Profile to get word explanations.', 'ru' => 'Добавьте API-ключ в профиле, чтобы получать объяснения слов.'],
     'word.explain_go_to_settings' => ['en' => 'Go to Profile → AI Models', 'ru' => 'Перейти в профиль → ИИ-модели'],
+    'word.explain_preview' => ['en' => 'This is where the **context explanation** appears — an AI answer about what this word means in its sentence. Try the real thing in the reader or the simulator.', 'ru' => 'Здесь появляется **контекстный разбор** — ответ ИИ о том, что это слово значит в своём предложении. Попробуйте настоящий разбор в читалке или симуляторе.'],
 ];

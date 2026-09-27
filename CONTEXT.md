@@ -672,8 +672,19 @@ translations, examples and etymology. On surfaces that provide AI context it
 is tabbed — the dictionary content on the first tab, the **Context
 explanation** on the second — with the progress actions in a footer shared
 by both tabs. Sized to the viewport — it flips above the word when there is
-more room above and scrolls internally instead of running off-screen.
+more room above and scrolls internally instead of running off-screen. Which
+blocks below the headword render at all is the reader's choice through
+**Popup preferences**; the headword itself always shows.
 _Avoid_: modal (it is anchored to the word, not centered), tooltip.
+
+**Popup preferences**:
+A user's per-block visibility map for the Word popup — which lines
+(familiarity, frequency, form-of), family sections, dictionary satellites,
+the Explanation tab and the progress buttons render for them. One shared map
+for every surface that shows the popup; the headword is never hideable, and
+a block the map does not mention shows by default. Edited on the profile's
+Popups tab over a live preview of the real popup.
+_Avoid_: popup settings, popup config, section flags.
 
 **Context explanation**:
 The AI explanation of an Interactive word as it is used in its sentence —

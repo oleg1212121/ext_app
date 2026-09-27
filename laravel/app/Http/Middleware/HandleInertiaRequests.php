@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\PopupVisibility;
+use App\Support\UiStrings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Middleware;
@@ -59,7 +61,8 @@ class HandleInertiaRequests extends Middleware
                 'existing_match_id' => fn () => $request->session()->get('existing_match_id'),
             ],
             'locale' => fn () => app()->getLocale(),
-            'uiStrings' => fn () => \App\Support\UiStrings::mapFor(app()->getLocale()),
+            'uiStrings' => fn () => UiStrings::mapFor(app()->getLocale()),
+            'popupVisibility' => fn () => PopupVisibility::for($request->user()),
         ];
     }
 }

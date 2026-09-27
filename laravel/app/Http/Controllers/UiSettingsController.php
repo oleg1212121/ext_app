@@ -12,7 +12,7 @@ class UiSettingsController extends Controller
         $user = $request->user();
         $ui = $user->settings?->ui_settings ?? [];
 
-        foreach (['simulator', 'reader'] as $section) {
+        foreach (['simulator', 'reader', 'popup'] as $section) {
             if ($request->has($section)) {
                 $ui[$section] = $request->validated($section);
             }
