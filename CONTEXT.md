@@ -704,8 +704,9 @@ spelling).
 
 **Word family**:
 The set of headword groups the Word popup shows for one token: the surface's
-own group plus every Base word's group, ranked by frequency. The popup's
-content unit — not a stored structure.
+own group plus, for every Base word claiming the token as one of its forms,
+its group scoped to the claiming word classes — ranked by frequency. The
+popup's content unit — not a stored structure.
 _Avoid_: word group, cluster, entry set.
 
 **Word occurrence**:

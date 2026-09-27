@@ -1,5 +1,26 @@
 # Directory Update Log
 
+## 2026-09-27 (fix: word-family base groups scoped to the claiming word classes, ADR 0047)
+
+ADR 0045's aggregation loaded each base word's whole headword group, so a
+surface whose base headword has several classes rode in unrelated entries:
+clicking "me" pulled in the character "I", the Roman numeral "I" and every
+other article sharing the spelling "I" — only the pronoun actually lists
+"me" among its forms. `WordFamily::baseGroups` now collects the claiming
+rows as `(base.l_word, base.word_class_id)` pairs (the join already had the
+information; it discarded the class) and keeps, per base group, only the
+entries whose class a claim carries; the whole group is kept when a claim
+has no class (defensive — `words.word_class_id` is NOT NULL). Own groups are
+untouched: clicking a headword directly still shows every class under the
+spelling. Ranking is computed on the scoped groups. Visible shrink:
+"melted" no longer shows "melt — Noun" (the noun does not claim "melted").
+Rejected a character/numeral/symbol class blocklist: POS-taxonomy-dependent
+and blind to cross-class noise generally. CONTEXT.md "Word family" term
+updated; `wiki/domains/interactive-words.md` gained the scoping prose + the
+ADR source. Tests: the melt test now asserts melt-Noun's absence; new test
+proves the me→I scope (pronoun in, character/numeral out); "left" →
+leave verb+noun stays green unchanged.
+
 ## 2026-09-27 (feat: per-user popup section visibility — the profile's Popups tab, ADR 0046)
 
 The Word popup's block set was fixed: every user saw every block, and the

@@ -9,7 +9,8 @@ use Illuminate\Support\Collection;
 
 /**
  * The Word popup's entry set: the surface token's own headword group plus the
- * headword groups of every Base word the forms table maps it to (ADR 0045).
+ * class-scoped headword groups of every Base word the forms table maps it to
+ * (ADR 0045, ADR 0047).
  *
  * Kaikki's "form-of" entries are imported as standalone words whose only
  * definitions relay to the base word ("simple past and past participle of
@@ -170,6 +171,11 @@ class WordFamily
      * headword is excluded — kaikki lists a headword among its own forms, and
      * the own group is already in the popup.
      *
+     * Each base group is scoped to the word classes whose entries actually
+     * claim the surface as one of their forms: "me" belongs to the pronoun
+     * "I", not to the character or numeral entries sharing its spelling
+     * (ADR 0047). A claim without a class keeps the whole group.
+     *
      * @return Collection<int, Collection<int, Word>>
      */
     private static function baseGroups(Word $linked, string $key): Collection
@@ -178,25 +184,41 @@ class WordFamily
             return collect();
         }
 
-        $baseLWords = Form::query()
+        $claims = Form::query()
             ->join('words as base', 'base.id', '=', 'forms.word_id')
             ->where('base.language_id', $linked->language_id)
             ->where('forms.l_word', $key)
             ->where('base.l_word', '!=', $linked->l_word)
             ->whereNotNull('base.l_word')
             ->distinct()
-            ->pluck('base.l_word');
+            ->get(['base.l_word', 'base.word_class_id']);
 
-        if ($baseLWords->isEmpty()) {
+        if ($claims->isEmpty()) {
             return collect();
         }
 
-        return Word::query()
+        $claimingClasses = [];
+        foreach ($claims as $claim) {
+            if ($claim->word_class_id !== null) {
+                $claimingClasses[$claim->l_word][] = (int) $claim->word_class_id;
+            }
+        }
+
+        $groups = Word::query()
             ->where('language_id', $linked->language_id)
-            ->whereIn('l_word', $baseLWords)
+            ->whereIn('l_word', $claims->pluck('l_word')->unique()->values())
             ->with(self::EAGER_LOAD)
             ->get()
             ->groupBy('l_word')
+            ->map(fn (Collection $group, int|string $lWord): Collection => $group->when(
+                ($classes = $claimingClasses[$lWord] ?? null) !== null,
+                fn (Collection $scoped): Collection => $scoped->filter(
+                    fn (Word $word): bool => in_array($word->word_class_id, $classes, true),
+                )->values(),
+            ))
+            ->filter(fn (Collection $group): bool => $group->isNotEmpty());
+
+        return $groups
             ->sortBy(fn (Collection $group): array => [
                 (float) $group->min('frequency'),
                 self::bestClassPriority($group),

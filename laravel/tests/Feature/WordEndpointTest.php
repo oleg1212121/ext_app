@@ -8,6 +8,7 @@ use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\User;
 use App\Models\Word;
+use App\Models\WordClass;
 use App\Models\WordTranslation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -117,6 +118,8 @@ it('merges base-word entries of the surface form and hides the relay entry', fun
 
     $meltVerb = createWord('en', 'melt', 'verb', ['frequency' => 900]);
     Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid state.']);
+    // A base-headword sibling that does not claim the surface form: it must
+    // not ride along with the claiming class.
     $meltNoun = createWord('en', 'melt', 'noun', ['frequency' => 5000]);
     Definition::query()->create(['word_id' => $meltNoun->id, 'definition' => 'Molten material.']);
     Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melted', 'l_word' => 'melted']);
@@ -126,20 +129,68 @@ it('merges base-word entries of the surface form and hides the relay entry', fun
     $meltedAdj = createWord('en', 'melted', 'unknown', ['frequency' => 8100]);
     Definition::query()->create(['word_id' => $meltedAdj->id, 'definition' => 'Being in a liquid state as a result of melting.']);
 
-    $this->actingAs($user)
+    $response = $this->actingAs($user)
         ->getJson(route('words.show', ['word' => $meltedVerb->id, 'surface' => 'melted']))
         ->assertOk()
         ->assertJsonPath('data.form_of', ['melt'])
-        ->assertJsonCount(3, 'data.entries')
+        ->assertJsonCount(2, 'data.entries')
         // Own group keeps the real melted entry; the relay entry is hidden.
         ->assertJsonPath('data.entries.0.id', $meltedAdj->id)
         ->assertJsonPath('data.entries.0.word', 'melted')
-        // Base group follows, ranked by frequency; entries within it by class priority.
-        ->assertJsonPath('data.entries.1.id', $meltNoun->id)
+        // The base group is scoped to the claiming class (melt/verb).
+        ->assertJsonPath('data.entries.1.id', $meltVerb->id)
         ->assertJsonPath('data.entries.1.word', 'melt')
-        ->assertJsonPath('data.entries.1.definitions.0', 'Molten material.')
-        ->assertJsonPath('data.entries.2.id', $meltVerb->id)
-        ->assertJsonPath('data.entries.2.definitions.0', 'To change from solid to liquid state.');
+        ->assertJsonPath('data.entries.1.definitions.0', 'To change from solid to liquid state.');
+
+    expect(collect($response->json('data.entries'))->pluck('id'))->not->toContain($meltNoun->id);
+});
+
+it('scopes base groups to the claiming classes so unrelated same-spelling entries stay hidden', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $languageId = Language::query()->where('code', 'en')->value('id');
+    foreach (['pronoun' => 'Pronoun', 'character' => 'Character', 'numeral' => 'Numeral'] as $slug => $title) {
+        WordClass::query()->create(['language_id' => $languageId, 'slug' => $slug, 'title' => $title]);
+    }
+
+    $iClasses = ['pronoun' => 12, 'character' => 13, 'numeral' => 14];
+    $iWords = [];
+    foreach ($iClasses as $slug => $frequency) {
+        $iWords[$slug] = Word::query()->create([
+            'word' => 'I',
+            'l_word' => 'i',
+            'language_id' => $languageId,
+            'word_class_id' => WordClass::query()->where('language_id', $languageId)->where('slug', $slug)->value('id'),
+            'frequency' => $frequency,
+        ]);
+    }
+    Definition::query()->create(['word_id' => $iWords['pronoun']->id, 'definition' => 'The speaker or writer, referred to as the subject.']);
+    Definition::query()->create(['word_id' => $iWords['character']->id, 'definition' => 'The ninth letter of the Latin alphabet.']);
+    Definition::query()->create(['word_id' => $iWords['numeral']->id, 'definition' => 'The Roman numeral for one.']);
+    // Only the pronoun lists "me" among its forms.
+    Form::query()->create(['word_id' => $iWords['pronoun']->id, 'form' => 'me', 'l_word' => 'me']);
+
+    $me = Word::query()->create([
+        'word' => 'me',
+        'l_word' => 'me',
+        'language_id' => $languageId,
+        'word_class_id' => $iWords['pronoun']->word_class_id,
+        'frequency' => 40,
+    ]);
+    Definition::query()->create(['word_id' => $me->id, 'definition' => 'The speaker or writer as the object of a verb.']);
+
+    $response = $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $me->id, 'surface' => 'me']))
+        ->assertOk()
+        ->assertJsonPath('data.form_of', ['I'])
+        ->assertJsonCount(2, 'data.entries')
+        ->assertJsonPath('data.entries.0.id', $me->id)
+        ->assertJsonPath('data.entries.1.id', $iWords['pronoun']->id)
+        ->assertJsonPath('data.entries.1.word', 'I');
+
+    $entryIds = collect($response->json('data.entries'))->pluck('id');
+    expect($entryIds)->not->toContain($iWords['character']->id)
+        ->and($entryIds)->not->toContain($iWords['numeral']->id);
 });
 
 it('filters relay glosses out of partially-relay entries', function () {

@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, form-of entries hidden behind a pointer line, ADR 0045; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events.
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events.
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-09-27T20:00:00+03:00 }
+generated: { by: agent:zcode, at: 2026-09-27T23:30:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -49,6 +49,9 @@ sources:
   - id: adr-popup-visibility
     resource: docs/adr/0046-per-user-popup-section-visibility.md
     title: ADR 0046 (per-user popup section visibility)
+  - id: adr-family-class-scope
+    resource: docs/adr/0047-class-scoped-word-family-base-groups.md
+    title: ADR 0047 (class-scoped word-family base groups)
 ---
 
 # What it does
@@ -94,7 +97,11 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    headword excluded), ranked by `words.frequency` (lower = more common) and
    uncapped, as
    `entries: [{id, word, word_class, transcriptions, definitions, translations,
-   examples, etymologies}]`. Relay **Form-of entries** (all definitions
+   examples, etymologies}]`. Each base group is **scoped to the word classes
+   whose entries actually claim the surface as a form** (ADR 0047) — "me"
+   pulls in only "I — Pronoun", not the character/numeral entries sharing the
+   spelling, and "melted" no longer rides in "melt — Noun". Relay
+   **Form-of entries** (all definitions
    boilerplate like "past participle of the verb melt") are hidden when a
    base group carries the real content, and stray relay glosses are filtered
    out of partially-relay entries ("saw/verb" mixes real senses with "simple
@@ -240,7 +247,7 @@ outside-click closing — the word popup underneath stays put.
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `GET /words/{word}` | `WordController::show` | Word popup payload: the word family (own headword group + base-word groups, ADR 0045) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked) |
+| `GET /words/{word}` | `WordController::show` | Word popup payload: the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked) |
 | `POST /ai/word-explain` | `SimulatorController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |
 | `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |
 | `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to untouched) |
