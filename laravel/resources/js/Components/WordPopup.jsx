@@ -543,6 +543,7 @@ export function PopupContent({
  * preview.
  */
 export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain, sections}) {
+    const {t} = useI18n();
     const {props} = usePage();
     const effectiveSections = sections ?? props.popupVisibility ?? {};
     const [data, setData] = useState(null);
