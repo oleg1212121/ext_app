@@ -53,8 +53,10 @@ class AlignEntitySentences implements ShouldQueue
     /**
      * Begin a fresh alignment run for an entity match: verify the pair,
      * reset progress, snapshot totals, transition to aligning, and dispatch
-     * the first chunk job. Shared by the 5-minute command, the Filament
-     * "Run from scratch" action, and all the "new alignment" dispatch sites.
+     * the first chunk job. Shared by the Filament "Run from scratch" action
+     * and all the "new alignment" dispatch sites; the 5-minute command and
+     * the "Re-align" action reach it through begin() when there is nothing
+     * to preserve.
      */
     public static function beginFromScratch(int $entityMatchId): void
     {
@@ -95,21 +97,16 @@ class AlignEntitySentences implements ShouldQueue
 
         // The aligner works in image-less sentence space (ADR 0050):
         // illustrations never enter a chunk window, a count, or a cursor, so
-        // the totals below are the alignable sentence counts the offsets
-        // advance against. Illustration-only entities finalize immediately —
-        // finalize()'s completeness repair backfills them single-sided.
-        $aSentenceCount = $aEntity->sentences()->withoutImage()->count();
-        $bSentenceCount = $bEntity->sentences()->withoutImage()->count();
-
-        $chunkSize = min(max((int) $entityMatch->chunk_size, 1), self::MAX_EFFECTIVE_CHUNK_SIZE);
-        $maxN = min(max((int) $entityMatch->max_n, 1), self::MAX_EFFECTIVE_SPAN);
-
-        // Small entities fit a single /align call: raise the effective chunk
-        // size to cover the whole text so one invocation is the last chunk,
-        // skipping the seam rollback/trim machinery entirely.
-        if (max($aSentenceCount, $bSentenceCount) <= self::MAX_EFFECTIVE_CHUNK_SIZE) {
-            $chunkSize = max($aSentenceCount, $bSentenceCount, 1);
-        }
+        // the snapshotted totals are the alignable sentence counts the
+        // offsets advance against. Illustration-only entities finalize
+        // immediately — finalize()'s completeness repair backfills them
+        // single-sided.
+        [
+            'a_count' => $aSentenceCount,
+            'b_count' => $bSentenceCount,
+            'chunk_size' => $chunkSize,
+            'max_n' => $maxN,
+        ] = self::snapshotAlignmentPlan($entityMatch, $aEntity, $bEntity);
 
         $entityMatch->meaningMatches()->delete();
 
@@ -138,12 +135,16 @@ class AlignEntitySentences implements ShouldQueue
     }
 
     /**
-     * Re-align alignment for an entity match that was already set up, keeping
+     * Re-align an entity match that already has meaning-match rows, keeping
      * the human-made rows (alignment_chunk -1) and high-confidence landmarks
      * (similarity >= LANDMARK_THRESHOLD) pinned in place. Only machine rows
-     * below the landmark bar are deleted; handle() then re-aligns the gaps
-     * between landmarks as independent pools. Matches that never went through
-     * the fresh setup (no snapshotted totals) delegate to beginFromScratch.
+     * below the landmark bar are deleted; the snapshot is refreshed so
+     * sentences added or removed since the original run are inside the
+     * re-aligned span; handle() then re-aligns the gaps between landmarks as
+     * independent pools. Matches with no rows never went through a run —
+     * there is nothing to preserve — and delegate to beginFromScratch with
+     * its verify pass. a_total_sentences cannot serve as the "never set up"
+     * marker: the column is NOT NULL DEFAULT 0.
      */
     public static function begin(int $entityMatchId): void
     {
@@ -153,8 +154,21 @@ class AlignEntitySentences implements ShouldQueue
             return;
         }
 
-        if ($entityMatch->a_total_sentences === null) {
+        if (! $entityMatch->meaningMatches()->exists()) {
             self::beginFromScratch($entityMatchId);
+
+            return;
+        }
+
+        $aEntity = $entityMatch->aEntity;
+        $bEntity = $entityMatch->bEntity;
+
+        if ($aEntity === null || $bEntity === null) {
+            $entityMatch->update([
+                'status' => 'failed',
+                'error_message' => 'Missing entity for alignment',
+                'completed_at' => now(),
+            ]);
 
             return;
         }
@@ -164,8 +178,19 @@ class AlignEntitySentences implements ShouldQueue
             ->where('similarity', '<', self::LANDMARK_THRESHOLD)
             ->delete();
 
+        [
+            'a_count' => $aSentenceCount,
+            'b_count' => $bSentenceCount,
+            'chunk_size' => $chunkSize,
+            'max_n' => $maxN,
+        ] = self::snapshotAlignmentPlan($entityMatch, $aEntity, $bEntity);
+
         $entityMatch->update([
             'status' => 'aligning',
+            'a_total_sentences' => $aSentenceCount,
+            'b_total_sentences' => $bSentenceCount,
+            'chunk_size' => $chunkSize,
+            'max_n' => $maxN,
             'a_last_sentence_offset' => 0,
             'b_last_sentence_offset' => 0,
             'linked_count' => MeaningMatch::query()
@@ -176,7 +201,44 @@ class AlignEntitySentences implements ShouldQueue
             'completed_at' => null,
         ]);
 
+        if ($aSentenceCount === 0 || $bSentenceCount === 0) {
+            (new self($entityMatchId))->finalize($entityMatch);
+
+            return;
+        }
+
         self::dispatch($entityMatchId);
+    }
+
+    /**
+     * Snapshot the alignment plan for a run: image-less sentence totals per
+     * side (ADR 0050 — illustrations never enter a chunk window, a count, or
+     * a cursor), chunk_size/max_n clamped to their effective maxima, and the
+     * small-entity single-chunk raise.
+     *
+     * @return array{a_count: int, b_count: int, chunk_size: int, max_n: int}
+     */
+    private static function snapshotAlignmentPlan(EntityMatch $entityMatch, Entity $aEntity, Entity $bEntity): array
+    {
+        $aSentenceCount = $aEntity->sentences()->withoutImage()->count();
+        $bSentenceCount = $bEntity->sentences()->withoutImage()->count();
+
+        $chunkSize = min(max((int) $entityMatch->chunk_size, 1), self::MAX_EFFECTIVE_CHUNK_SIZE);
+        $maxN = min(max((int) $entityMatch->max_n, 1), self::MAX_EFFECTIVE_SPAN);
+
+        // Small entities fit a single /align call: raise the effective chunk
+        // size to cover the whole text so one invocation is the last chunk,
+        // skipping the seam rollback/trim machinery entirely.
+        if (max($aSentenceCount, $bSentenceCount) <= self::MAX_EFFECTIVE_CHUNK_SIZE) {
+            $chunkSize = max($aSentenceCount, $bSentenceCount, 1);
+        }
+
+        return [
+            'a_count' => $aSentenceCount,
+            'b_count' => $bSentenceCount,
+            'chunk_size' => $chunkSize,
+            'max_n' => $maxN,
+        ];
     }
 
     public function handle(): void

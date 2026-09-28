@@ -12,7 +12,7 @@ class AlignmentsResumeCommand extends Command
         {--limit=10 : Maximum entity matches to pick per run}
         {--dry-run : Report what would be dispatched without dispatching}';
 
-    protected $description = 'Pick pending entity matches, verify them, and dispatch the self-restarting alignment pipeline. Scheduled every five minutes.';
+    protected $description = 'Pick pending entity matches and dispatch the self-restarting alignment pipeline, preserving human/landmark rows of matches that already have some (ADR 0051). Scheduled every five minutes.';
 
     public function handle(): int
     {
@@ -40,8 +40,13 @@ class AlignmentsResumeCommand extends Command
         $failed = 0;
 
         foreach ($matches as $entityMatch) {
+            // A match that already has rows carries human edits and
+            // landmarks through the re-run (ADR 0051); a row-less match is
+            // fresh and takes the from-scratch path with its verify pass.
+            $mode = $entityMatch->meaningMatches()->exists() ? 'landmarks preserved' : 'from scratch';
+
             if ($dryRun) {
-                $this->line("Would resume entity match #{$entityMatch->id} (a_entity_id={$entityMatch->a_entity_id}, b_entity_id={$entityMatch->b_entity_id})");
+                $this->line("Would resume entity match #{$entityMatch->id} (a_entity_id={$entityMatch->a_entity_id}, b_entity_id={$entityMatch->b_entity_id}, {$mode})");
                 $dispatched++;
 
                 continue;
@@ -50,7 +55,7 @@ class AlignmentsResumeCommand extends Command
             $before = $entityMatch->status;
 
             try {
-                AlignEntitySentences::beginFromScratch($entityMatch->id);
+                AlignEntitySentences::begin($entityMatch->id);
             } catch (\Throwable $exception) {
                 $this->error("Entity match #{$entityMatch->id} failed during begin: {$exception->getMessage()}");
                 EntityMatch::whereKey($entityMatch->id)->update([
@@ -66,7 +71,7 @@ class AlignmentsResumeCommand extends Command
             $entityMatch->refresh();
 
             if ($entityMatch->status === 'aligning') {
-                $this->info("Dispatched alignment for entity match #{$entityMatch->id}");
+                $this->info("Dispatched alignment for entity match #{$entityMatch->id} ({$mode})");
                 $dispatched++;
             } elseif ($entityMatch->status === 'failed') {
                 $this->warn("Entity match #{$entityMatch->id} failed verify: {$entityMatch->error_message}");
