@@ -61,7 +61,7 @@ class ReaderController extends Controller
 
         $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
 
-        ['rows' => $rows, 'rowKeys' => $rowKeys, 'readingEntity' => $readingEntity, 'translationEntity' => $translationEntity, 'meta' => $meta, 'positionKey' => $positionKey, 'readingSide' => $readingSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
+        ['rows' => $rows, 'rowImages' => $rowImages, 'rowKeys' => $rowKeys, 'readingEntity' => $readingEntity, 'translationEntity' => $translationEntity, 'meta' => $meta, 'positionKey' => $positionKey, 'readingSide' => $readingSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
 
         $userId = (int) auth()->id();
         $wordMap = new EntityWordMap;
@@ -77,6 +77,7 @@ class ReaderController extends Controller
                 'name' => $entity->name,
             ],
             'rows' => $rows,
+            'rowImages' => $rowImages,
             'rowKeys' => $rowKeys,
             'meta' => $meta,
             'positionKey' => $positionKey,
@@ -120,9 +121,7 @@ class ReaderController extends Controller
     }
 
     /**
-     * @param  int  $page  Pre-clamped at the floor by ReaderPageRequest; the
-     *                     ceiling is clamped in paginateRows.
-     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, readingEntity: Entity, translationEntity: Entity|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
+     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, readingEntity: Entity, translationEntity: Entity|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
      */
     private function buildRows(Entity $entity, ?int $nativeLanguageId, int $page): array
     {
@@ -157,12 +156,16 @@ class ReaderController extends Controller
         );
 
         $bilingualRows = $this->presenter->toSimulatorRows($paginator->getCollection());
+        $bilingualImages = $this->presenter->toSimulatorImages($paginator->getCollection());
 
         // Row keys stay in meaning-match order — normalizeRowsForReadingSide
         // only flips the text columns, never the keys. The position key is
         // the entity match: both reading sides page through the same rows.
         return [
             'rows' => $this->normalizeRowsForReadingSide($bilingualRows, $readingSide),
+            // Image pairs flip columns with the text pairs, so row i's images
+            // always line up with row i's [primary, translation] texts.
+            'rowImages' => $this->normalizeRowsForReadingSide($bilingualImages, $readingSide),
             'rowKeys' => $this->presenter->toSimulatorRowKeys($paginator->getCollection()),
             'readingEntity' => $readingEntity,
             'translationEntity' => $translationEntity,
@@ -174,23 +177,44 @@ class ReaderController extends Controller
 
     /**
      * Rows of the bare entity keyed by their entity sentences, with no
-     * translation side.
+     * translation side. An illustration sentence's row carries no text —
+     * its image (with the caption) rides the aligned rowImages entry.
      *
-     * @return array{rows: list<array{0: string, 1: string}>, rowKeys: list<string>, readingEntity: Entity, translationEntity: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
+     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, readingEntity: Entity, translationEntity: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
      */
     private function singleLanguageRows(Entity $entity, int $page): array
     {
         $paginator = $this->paginateRows(
             $entity->sentences()->orderBy('order')->getQuery(),
             $page,
-            ['id', 'content'],
+            ['id', 'content', 'image_path', 'image_width', 'image_height'],
         );
 
+        $collection = $paginator->getCollection();
+
         return [
-            'rows' => $paginator->getCollection()
-                ->map(fn (EntitySentence $sentence): array => [$sentence->content, ''])
+            'rows' => $collection
+                ->map(fn (EntitySentence $sentence): array => [
+                    $sentence->image_path !== null ? '' : $sentence->content,
+                    '',
+                ])
                 ->all(),
-            'rowKeys' => $paginator->getCollection()
+            'rowImages' => $collection
+                ->map(function (EntitySentence $sentence): array {
+                    $images = $sentence->image_path !== null
+                        ? [[
+                            'id' => $sentence->id,
+                            'url' => route('illustrations.show', ['sentence' => $sentence->id]),
+                            'width' => $sentence->image_width !== null ? (int) $sentence->image_width : null,
+                            'height' => $sentence->image_height !== null ? (int) $sentence->image_height : null,
+                            'caption' => $sentence->content,
+                        ]]
+                        : [];
+
+                    return [$images, []];
+                })
+                ->all(),
+            'rowKeys' => $collection
                 ->map(fn (EntitySentence $sentence): string => 'es:'.$sentence->id)
                 ->all(),
             'readingEntity' => $entity,
@@ -266,10 +290,11 @@ class ReaderController extends Controller
 
     /**
      * Put the reading language's text first: rows are [a, b] pairs, so flip
-     * them when reading from the b side.
+     * them when reading from the b side. Works for the image pairs too —
+     * same two-column shape.
      *
-     * @param  list<array{0: string, 1: string}>  $rows
-     * @return list<array{0: string, 1: string}>
+     * @param  list<array{0: mixed, 1: mixed}>  $rows
+     * @return list<array{0: mixed, 1: mixed}>
      */
     private function normalizeRowsForReadingSide(array $rows, string $readingSide): array
     {

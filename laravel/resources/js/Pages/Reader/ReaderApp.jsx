@@ -14,7 +14,7 @@ const FONT_STEP = 2;
 
 // Props a page turn replaces; everything else (entity, fontSize, audio
 // state) survives the visit untouched.
-const PAGED_PROPS = ['rows', 'rowKeys', 'wordMap', 'translationWordMap', 'meta'];
+const PAGED_PROPS = ['rows', 'rowImages', 'rowKeys', 'wordMap', 'translationWordMap', 'meta'];
 
 const LANG_GLYPH = {
     en: 'EN',
@@ -67,6 +67,7 @@ export default function ReaderApp({
     translationLang = null,
     entity,
     rows = [],
+    rowImages = [],
     rowKeys = [],
     meta = null,
     positionKey = null,
@@ -152,6 +153,15 @@ export default function ReaderApp({
             ? rows.map(([primary, translation]) => [translation, primary])
             : rows),
         [rows, effectiveFlipped],
+    );
+
+    // Illustration pairs flip columns exactly like the text pairs, so each
+    // row's images stay on the same side as that row's text.
+    const displayRowImages = useMemo(
+        () => (effectiveFlipped
+            ? rowImages.map(([primary, translation]) => [translation, primary])
+            : rowImages),
+        [rowImages, effectiveFlipped],
     );
 
     const shownWordMap = effectiveFlipped ? translationWordMap : wordMap;
@@ -586,6 +596,8 @@ export default function ReaderApp({
                                 primary={primary}
                                 translation={translation}
                                 rowKey={rowKeys[index]}
+                                primaryImages={displayRowImages[index]?.[0]}
+                                translationImages={displayRowImages[index]?.[1]}
                                 showAll={showAll}
                                 sideBySide={sideBySide}
                                 fontSize={fontSize}

@@ -211,8 +211,13 @@ class AlignmentEditorController extends Controller
         DB::transaction(function () use ($entityMatch, $sentenceModel, $side, $entityId): void {
             $sentenceModel->delete();
 
+            // The totals are the aligner's cursor space — image-less
+            // sentences only (ADR 0050), matching AlignEntitySentences.
             $totalColumn = $side === 'a' ? 'a_total_sentences' : 'b_total_sentences';
-            $entityMatch->update([$totalColumn => EntitySentence::query()->where('entity_id', $entityId)->count()]);
+            $entityMatch->update([$totalColumn => EntitySentence::query()
+                ->where('entity_id', $entityId)
+                ->withoutImage()
+                ->count()]);
         });
 
         return $this->mutationResponse($entityMatch, [], [], [$side]);

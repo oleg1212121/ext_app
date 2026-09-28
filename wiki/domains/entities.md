@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Library & entities (management surface)
-description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, and per-work landing/branch pages (ADR 0039) — plus the language-scoped entity create/detail/edit pages, driven by enabled languages.
-tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone]
+description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, and per-work landing/branch pages (ADR 0039) — plus the language-scoped entity create/detail/edit pages with inline illustration upload (ADR 0050), driven by enabled languages.
+tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations]
 status: stable
-stale_after: 2026-12-27
-generated: { by: agent:zcode, at: 2026-09-27T12:00:00Z }
+stale_after: 2026-12-28
+generated: { by: agent:zcode, at: 2026-09-28T22:30:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -123,6 +123,16 @@ fetches the sentence list from `entities.sentences`, and each mutation
 (insert / update / delete / reorder) returns the updated list. Drag-to-reorder
 uses `SparseOrderService::orderForInsertAfter` with `after_sentence_id = 0`
 sentinel for "at the beginning".
+
+**Illustrations (ADR 0050)**: selecting the seeded `illustration` sentence
+type in the add form grows an image file input (jpg/jpeg/png/webp/gif,
+10 MB; multipart submit) and frees the caption from the non-empty rule;
+inline editing of an illustration edits the caption and may replace the
+image, and the type is pinned. Files store on the private `local` disk
+(`IllustrationStorage`, content-hash named so identical uploads share one
+file, reference-counted delete) and serve through `GET /illustrations/{sentence}`
+behind `EntityAccessService::canRead`. Illustration mutations flip matches to
+`pending` like any sentence mutation.
 
 **Access**: `EntityAccessService::canEdit` mirrors `canRead` — admin bypass;
 Restricted editable by grantees; Public editable by any approved user —

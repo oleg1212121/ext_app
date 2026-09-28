@@ -3,6 +3,7 @@
 namespace App\Classes;
 
 use App\Models\EntityMatch;
+use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use Illuminate\Database\Eloquent\Collection;
@@ -170,7 +171,7 @@ class AlignmentEditorApiPresenter
             ->offset(($page - 1) * self::UNMATCHED_PER_PAGE)
             ->limit(self::UNMATCHED_PER_PAGE)
             ->get()
-            ->map(fn ($sentence): array => $this->sentencePayload($sentence->id, $sentence->content, $sentence->order, $side))
+            ->map(fn (EntitySentence $sentence): array => $this->sentencePayload($sentence, $side))
             ->values()
             ->all();
 
@@ -205,9 +206,8 @@ class AlignmentEditorApiPresenter
             }
 
             $sentences[] = [
-                'id' => $sentence->id,
                 'order' => (int) $sentence->order,
-                'match' => $match,
+                'sentence' => $sentence,
             ];
         }
 
@@ -216,12 +216,7 @@ class AlignmentEditorApiPresenter
         $result = [];
 
         foreach ($sentences as $entry) {
-            $result[] = $this->sentencePayload(
-                $entry['match']->entitySentence->id,
-                $entry['match']->entitySentence->content,
-                $entry['match']->entitySentence->order,
-                $side,
-            );
+            $result[] = $this->sentencePayload($entry['sentence'], $side);
         }
 
         return $result;
@@ -325,19 +320,35 @@ class AlignmentEditorApiPresenter
      */
     private function partContent(array $sentences): string
     {
-        return implode(' / ', array_map(fn (array $sentence): string => $sentence['content'], $sentences));
+        return implode(' / ', array_map(
+            fn (array $sentence): string => $sentence['content'] !== ''
+                ? $sentence['content']
+                : ($sentence['image'] !== null ? '[illustration]' : ''),
+            $sentences,
+        ));
     }
 
     /**
+     * The editor's per-sentence payload. Illustrations (ADR 0050) carry an
+     * image descriptor — the access-checked URL plus intrinsic dimensions —
+     * alongside their optional caption text.
+     *
      * @return array<string, mixed>
      */
-    public function sentencePayload(int $id, string $content, int $order, string $side): array
+    public function sentencePayload(EntitySentence $sentence, string $side): array
     {
         return [
-            'key' => $side.':s-'.$id,
-            'id' => $id,
-            'content' => $content,
-            'order' => (int) $order,
+            'key' => $side.':s-'.$sentence->id,
+            'id' => $sentence->id,
+            'content' => $sentence->content,
+            'order' => (int) $sentence->order,
+            'image' => $sentence->image_path !== null
+                ? [
+                    'url' => route('illustrations.show', ['sentence' => $sentence->id]),
+                    'width' => $sentence->image_width !== null ? (int) $sentence->image_width : null,
+                    'height' => $sentence->image_height !== null ? (int) $sentence->image_height : null,
+                ]
+                : null,
         ];
     }
 }

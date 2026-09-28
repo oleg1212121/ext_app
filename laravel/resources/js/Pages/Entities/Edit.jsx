@@ -134,8 +134,9 @@ const iconBtn = [
     'disabled:opacity-40 disabled:cursor-not-allowed',
 ].join(' ');
 
-const AddForm = ({draft, type, sentenceTypes, busy, submitLabel, onDraftChange, onTypeChange, onSubmit, onCancel}) => {
+const AddForm = ({draft, type, file, illustrationTypeId, sentenceTypes, busy, submitLabel, onDraftChange, onTypeChange, onFileChange, onSubmit, onCancel}) => {
     const {t} = useI18n();
+    const isIllustration = illustrationTypeId !== null && Number(type) === illustrationTypeId;
     return (
     <div className="space-y-2 border-t border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)] px-4 py-3">
         <textarea
@@ -148,16 +149,33 @@ const AddForm = ({draft, type, sentenceTypes, busy, submitLabel, onDraftChange, 
             disabled={busy}
             rows={2}
             autoFocus
-            placeholder={t('entities.sentence_text_placeholder')}
+            placeholder={isIllustration ? t('entities.caption_placeholder') : t('entities.sentence_text_placeholder')}
             className="min-w-0 w-full resize-none rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 py-1 font-serif text-[15px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] focus:outline-none focus:ring-1 focus:ring-[var(--wbench-accent)] dark:focus:ring-[var(--wbench-accent-night)]"
         />
+        {isIllustration && (
+            <div>
+                <InputLabel htmlFor="add-image-inline">{t('entities.image_file')}</InputLabel>
+                <input
+                    id="add-image-inline"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    disabled={busy}
+                    required
+                    onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+                    className="block w-full text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] file:mr-3 file:rounded-sm file:border-0 file:bg-[var(--wbench-accent)] dark:file:bg-[var(--wbench-accent-night)] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white dark:file:text-[var(--wbench-ink-night)]"
+                />
+            </div>
+        )}
         <div className="flex items-end gap-3">
             <div>
                 <InputLabel htmlFor="add-type-inline">{t('entities.type')}</InputLabel>
                 <select
                     id="add-type-inline"
                     value={type}
-                    onChange={(e) => onTypeChange(e.target.value)}
+                    onChange={(e) => {
+                        onTypeChange(e.target.value);
+                        onFileChange(null);
+                    }}
                     required
                     disabled={busy}
                     className={[fieldBase, 'w-auto'].join(' ')}
@@ -166,18 +184,19 @@ const AddForm = ({draft, type, sentenceTypes, busy, submitLabel, onDraftChange, 
                     {sentenceTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
             </div>
-            <PrimaryButton type="button" disabled={busy || !draft.trim() || !type} onClick={onSubmit}>{submitLabel}</PrimaryButton>
+            <PrimaryButton type="button" disabled={busy || !type || (isIllustration ? !file : !draft.trim())} onClick={onSubmit}>{submitLabel}</PrimaryButton>
             <GhostButton onClick={onCancel} disabled={busy}>{t('entities.cancel')}</GhostButton>
         </div>
     </div>
     );
 };
 
-function SortableSentence({sentence, displayOrder, sentenceTypes, editingId, editDraft, editType, busyId, addingAfterId, addDraft, addType, onStartEdit, onChangeDraft, onChangeType, onCommitEdit, onCancelEdit, onDelete, onAddStart, onAddDraftChange, onAddTypeChange, onAddSubmit, onAddCancel}) {
+function SortableSentence({sentence, displayOrder, sentenceTypes, illustrationTypeId, editingId, editDraft, editType, editFile, busyId, addingAfterId, addDraft, addType, addFile, onStartEdit, onChangeDraft, onChangeType, onEditFileChange, onCommitEdit, onCancelEdit, onDelete, onAddStart, onAddDraftChange, onAddTypeChange, onAddFileChange, onAddSubmit, onAddCancel}) {
     const {attributes, listeners, setNodeRef, transform, transition, isDragging} = useSortable({id: sentence.id});
     const {t} = useI18n();
     const editing = editingId === sentence.id;
     const busy = busyId === sentence.id;
+    const isIllustration = sentence.image != null;
 
     const style = {transform: CSS.Transform.toString(transform), transition};
 
@@ -208,16 +227,34 @@ function SortableSentence({sentence, displayOrder, sentenceTypes, editingId, edi
                         disabled={busy}
                         rows={2}
                         autoFocus
+                        placeholder={isIllustration ? t('entities.caption_placeholder') : t('entities.sentence_text_placeholder')}
                         className="min-w-0 flex-1 resize-none rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 py-1 font-serif text-[15px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] focus:outline-none focus:ring-1 focus:ring-[var(--wbench-accent)] dark:focus:ring-[var(--wbench-accent-night)]"
                     />
+                    {isIllustration && (
+                        <div>
+                            <InputLabel htmlFor={`replace-image-${sentence.id}`}>{t('entities.replace_image')}</InputLabel>
+                            <input
+                                id={`replace-image-${sentence.id}`}
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp,image/gif"
+                                disabled={busy}
+                                onChange={(e) => onEditFileChange(e.target.files?.[0] ?? null)}
+                                className="block w-full text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] file:mr-3 file:rounded-sm file:border-0 file:bg-[var(--wbench-accent)] dark:file:bg-[var(--wbench-accent-night)] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white dark:file:text-[var(--wbench-ink-night)]"
+                            />
+                        </div>
+                    )}
                     <div className="flex items-center gap-2">
                         <select
                             value={editType}
                             onChange={(e) => onChangeType(e.target.value)}
-                            disabled={busy}
-                            className="rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 py-1 text-xs text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] focus:outline-none focus:ring-1 focus:ring-[var(--wbench-accent)] dark:focus:ring-[var(--wbench-accent-night)]"
+                            disabled={busy || isIllustration}
+                            title={isIllustration ? t('entities.illustration_type_locked') : undefined}
+                            className="rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 py-1 text-xs text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] focus:outline-none focus:ring-1 focus:ring-[var(--wbench-accent)] dark:focus:ring-[var(--wbench-accent-night)] disabled:opacity-50"
                         >
-                            {sentenceTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            {(isIllustration
+                                ? sentenceTypes
+                                : sentenceTypes.filter((st) => st.id !== illustrationTypeId)
+                            ).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
                         </select>
                         <button type="button" onClick={() => onCommitEdit(sentence)} disabled={busy} aria-label={t('entities.save')} title={t('entities.save_cmd_enter')} className={`${iconBtn} text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]`}>
                             <CheckIcon/>
@@ -230,9 +267,24 @@ function SortableSentence({sentence, displayOrder, sentenceTypes, editingId, edi
             ) : (
                 <>
                     <div className="min-w-0 flex-1">
-                        <p className="whitespace-pre-wrap break-words text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            {sentence.content}
-                        </p>
+                        {sentence.image && (
+                            <a href={sentence.image.url} target="_blank" rel="noreferrer" className="mb-1.5 block">
+                                <img
+                                    src={sentence.image.url}
+                                    alt={sentence.content || t('entities.illustration')}
+                                    loading="lazy"
+                                    decoding="async"
+                                    width={sentence.image.width ?? undefined}
+                                    height={sentence.image.height ?? undefined}
+                                    className="max-h-48 w-auto max-w-full rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]"
+                                />
+                            </a>
+                        )}
+                        {sentence.content !== '' && (
+                            <p className="whitespace-pre-wrap break-words text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
+                                {sentence.content}
+                            </p>
+                        )}
                         {sentence.type && (
                             <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                                 {sentence.type}
@@ -263,12 +315,15 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
         description: entity.description ?? '',
     });
 
+    const illustrationTypeId = sentenceTypes.find((st) => st.name === 'illustration')?.id ?? null;
+
     const [sentences, setSentences] = useState([]);
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState(null);
     const [editingId, setEditingId] = useState(null);
     const [editDraft, setEditDraft] = useState('');
     const [editType, setEditType] = useState('');
+    const [editFile, setEditFile] = useState(null);
 
     const [page, setPage] = useState(1);
     const [perPage, setPerPage] = useState(25);
@@ -279,6 +334,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
     const [addingFirst, setAddingFirst] = useState(false);
     const [addContent, setAddContent] = useState('');
     const [addType, setAddType] = useState('');
+    const [addFile, setAddFile] = useState(null);
     const [addError, setAddError] = useState('');
 
     const sensors = useSensors(
@@ -318,6 +374,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
         setEditingId(sentence.id);
         setEditDraft(sentence.content);
         setEditType(String(sentence.sentence_type_id));
+        setEditFile(null);
         setAddError('');
     };
 
@@ -325,16 +382,29 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
         setEditingId(null);
         setEditDraft('');
         setEditType('');
+        setEditFile(null);
     };
 
     const onCommitEdit = async (sentence) => {
         setBusyId(sentence.id);
         setAddError('');
         try {
+            const headers = {'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken};
+            let body;
+            if (editFile) {
+                const form = new FormData();
+                form.append('content', editDraft);
+                form.append('sentence_type_id', String(parseInt(editType, 10)));
+                form.append('image', editFile);
+                body = form;
+            } else {
+                headers['Content-Type'] = 'application/json';
+                body = JSON.stringify({content: editDraft, sentence_type_id: parseInt(editType, 10)});
+            }
             const res = await fetch(`/entities/${lang}/${entity.id}/sentences/${sentence.id}`, {
                 method: 'PATCH',
-                headers: {'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken},
-                body: JSON.stringify({content: editDraft, sentence_type_id: parseInt(editType, 10)}),
+                headers,
+                body,
             });
             if (res.ok) {
                 const json = await res.json();
@@ -342,7 +412,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                 onCancelEdit();
             } else if (res.status === 422) {
                 const json = await res.json();
-                setAddError(json.errors?.content?.[0] || json.errors?.sentence_type_id?.[0] || t('entities.validation_error'));
+                setAddError(json.errors?.content?.[0] || json.errors?.image?.[0] || json.errors?.sentence_type_id?.[0] || t('entities.validation_error'));
             }
         } finally {
             setBusyId(null);
@@ -418,6 +488,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
         setAddingAfterId(sentence.id);
         setAddContent('');
         setAddType('');
+        setAddFile(null);
         setAddError('');
     };
 
@@ -427,6 +498,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
         setAddingFirst(true);
         setAddContent('');
         setAddType('');
+        setAddFile(null);
         setAddError('');
     };
 
@@ -435,20 +507,36 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
         setAddingFirst(false);
         setAddContent('');
         setAddType('');
+        setAddFile(null);
     };
 
     const onAddSubmit = async (afterSentenceId) => {
         setBusyId('add');
         setAddError('');
         try {
-            const res = await fetch(`/entities/${lang}/${entity.id}/sentences?page=${page}&per_page=${perPage}`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken},
-                body: JSON.stringify({
+            const headers = {'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken};
+            let body;
+            if (addFile) {
+                const form = new FormData();
+                form.append('content', addContent);
+                form.append('sentence_type_id', String(parseInt(addType, 10)));
+                form.append('image', addFile);
+                if (afterSentenceId !== null) {
+                    form.append('after_sentence_id', String(afterSentenceId));
+                }
+                body = form;
+            } else {
+                headers['Content-Type'] = 'application/json';
+                body = JSON.stringify({
                     content: addContent,
                     sentence_type_id: parseInt(addType, 10),
                     after_sentence_id: afterSentenceId,
-                }),
+                });
+            }
+            const res = await fetch(`/entities/${lang}/${entity.id}/sentences?page=${page}&per_page=${perPage}`, {
+                method: 'POST',
+                headers,
+                body,
             });
             if (res.ok) {
                 const json = await res.json();
@@ -461,11 +549,12 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                 }
                 setAddContent('');
                 setAddType('');
+                setAddFile(null);
                 setAddingAfterId(null);
                 setAddingFirst(false);
             } else if (res.status === 422) {
                 const json = await res.json();
-                setAddError(json.errors?.content?.[0] || json.errors?.sentence_type_id?.[0] || t('entities.validation_error'));
+                setAddError(json.errors?.content?.[0] || json.errors?.image?.[0] || json.errors?.sentence_type_id?.[0] || t('entities.validation_error'));
             }
         } finally {
             setBusyId(null);
@@ -572,22 +661,27 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                                                 sentence={sentence}
                                                 displayOrder={(page - 1) * perPage + index + 1}
                                                 sentenceTypes={sentenceTypes}
+                                                illustrationTypeId={illustrationTypeId}
                                                 editingId={editingId}
                                                 editDraft={editDraft}
                                                 editType={editType}
+                                                editFile={editFile}
                                                 busyId={busyId}
                                                 addingAfterId={addingAfterId}
                                                 addDraft={addContent}
                                                 addType={addType}
+                                                addFile={addFile}
                                                 onStartEdit={onStartEdit}
                                                 onChangeDraft={setEditDraft}
                                                 onChangeType={setEditType}
+                                                onEditFileChange={setEditFile}
                                                 onCommitEdit={onCommitEdit}
                                                 onCancelEdit={onCancelEdit}
                                                 onDelete={onDelete}
                                                 onAddStart={onAddStart}
                                                 onAddDraftChange={setAddContent}
                                                 onAddTypeChange={setAddType}
+                                                onAddFileChange={setAddFile}
                                                 onAddSubmit={() => onAddSubmit(sentence.id)}
                                                 onAddCancel={onAddCancel}
                                             />
@@ -595,11 +689,14 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                                                 <AddForm
                                                     draft={addContent}
                                                     type={addType}
+                                                    file={addFile}
+                                                    illustrationTypeId={illustrationTypeId}
                                                     sentenceTypes={sentenceTypes}
                                                     busy={addBusy}
                                                     submitLabel={t('entities.insert_below')}
                                                     onDraftChange={setAddContent}
                                                     onTypeChange={setAddType}
+                                                    onFileChange={setAddFile}
                                                     onSubmit={() => onAddSubmit(sentence.id)}
                                                     onCancel={onAddCancel}
                                                 />
@@ -613,11 +710,14 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                                 <AddForm
                                     draft={addContent}
                                     type={addType}
+                                    file={addFile}
+                                    illustrationTypeId={illustrationTypeId}
                                     sentenceTypes={sentenceTypes}
                                     busy={addBusy}
                                     submitLabel={t('entities.add_sentence')}
                                     onDraftChange={setAddContent}
                                     onTypeChange={setAddType}
+                                    onFileChange={setAddFile}
                                     onSubmit={() => onAddSubmit(null)}
                                     onCancel={onAddCancel}
                                 />

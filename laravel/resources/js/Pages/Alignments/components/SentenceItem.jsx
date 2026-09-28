@@ -119,9 +119,24 @@ export default function SentenceItem({item, side, editing, draft, busy, onStartE
                     </button>
                 </div>
             ) : (
-                <p className="min-w-0 flex-1 whitespace-pre-wrap break-words font-serif text-[15px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                    {item.content || DEFAULT_CONTENT}
-                </p>
+                <div className="min-w-0 flex-1">
+                    {item.image && (
+                        <a href={item.image.url} target="_blank" rel="noreferrer" className="mb-1 inline-block max-w-full">
+                            <img
+                                src={item.image.url}
+                                alt={item.content || t('alignments.illustration')}
+                                loading="lazy"
+                                decoding="async"
+                                className="max-h-28 w-auto max-w-full rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]"
+                            />
+                        </a>
+                    )}
+                    {(item.content !== '' || !item.image) && (
+                        <p className="min-w-0 whitespace-pre-wrap break-words font-serif text-[15px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
+                            {item.content || DEFAULT_CONTENT}
+                        </p>
+                    )}
+                </div>
             )}
 
             {!editing && (

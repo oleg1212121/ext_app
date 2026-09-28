@@ -93,8 +93,13 @@ class AlignEntitySentences implements ShouldQueue
             return;
         }
 
-        $aSentenceCount = EntitySentence::query()->where('entity_id', $aEntity->id)->count();
-        $bSentenceCount = EntitySentence::query()->where('entity_id', $bEntity->id)->count();
+        // The aligner works in image-less sentence space (ADR 0050):
+        // illustrations never enter a chunk window, a count, or a cursor, so
+        // the totals below are the alignable sentence counts the offsets
+        // advance against. Illustration-only entities finalize immediately —
+        // finalize()'s completeness repair backfills them single-sided.
+        $aSentenceCount = $aEntity->sentences()->withoutImage()->count();
+        $bSentenceCount = $bEntity->sentences()->withoutImage()->count();
 
         $chunkSize = min(max((int) $entityMatch->chunk_size, 1), self::MAX_EFFECTIVE_CHUNK_SIZE);
         $maxN = min(max((int) $entityMatch->max_n, 1), self::MAX_EFFECTIVE_SPAN);
@@ -429,6 +434,7 @@ class AlignEntitySentences implements ShouldQueue
     {
         return array_flip(EntitySentence::query()
             ->where('entity_id', $entityId)
+            ->withoutImage()
             ->orderBy('order')
             ->orderBy('id')
             ->pluck('id')
@@ -566,6 +572,7 @@ class AlignEntitySentences implements ShouldQueue
     {
         return EntitySentence::query()
             ->where('entity_id', $entityId)
+            ->withoutImage()
             ->orderBy('order')
             ->orderBy('id')
             ->offset($offset)
@@ -727,6 +734,7 @@ class AlignEntitySentences implements ShouldQueue
 
             $sentence = EntitySentence::query()
                 ->where('entity_id', $entityId)
+                ->withoutImage()
                 ->orderBy('order')
                 ->orderBy('id')
                 ->offset($offset)
@@ -866,6 +874,7 @@ class AlignEntitySentences implements ShouldQueue
 
         $pivot = EntitySentence::query()
             ->where('entity_id', $entityId)
+            ->withoutImage()
             ->whereIn('id', array_unique($sentenceIds))
             ->orderBy('order')
             ->orderBy('id')
@@ -875,8 +884,11 @@ class AlignEntitySentences implements ShouldQueue
             return $currentOffset;
         }
 
+        // The offset is computed in the same image-less space the cursors
+        // advance in — counting illustrations here would overshoot them.
         $offset = EntitySentence::query()
             ->where('entity_id', $entityId)
+            ->withoutImage()
             ->where(fn ($query) => $query
                 ->where('order', '<', $pivot->order)
                 ->orWhere(fn ($query2) => $query2

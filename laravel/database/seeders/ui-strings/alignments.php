@@ -86,4 +86,5 @@ return [
     'alignments.rows' => ['en' => 'rows', 'ru' => 'строк'],
     'alignments.next_page' => ['en' => 'next page', 'ru' => 'следующая страница'],
     'alignments.jump_to_review' => ['en' => 'Jump to unmatched / needs review', 'ru' => 'К нераспределённым / на проверку'],
+    'alignments.illustration' => ['en' => 'Illustration', 'ru' => 'Иллюстрация'],
 ];

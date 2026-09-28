@@ -5,6 +5,7 @@ use App\Http\Controllers\AlignmentEditorController;
 use App\Http\Controllers\Bilinguals\SimulatorController;
 use App\Http\Controllers\CrosswordController;
 use App\Http\Controllers\EntityController;
+use App\Http\Controllers\EntityIllustrationController;
 use App\Http\Controllers\LibraryController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
@@ -155,6 +156,11 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('entity')
         ->whereNumber('sentence')
         ->name('entities.sentences.destroy');
+    // Illustration files live on the private local disk; this route is the
+    // only way they leave it — gated by the owning entity's read access.
+    Route::get('/illustrations/{sentence}', [EntityIllustrationController::class, 'show'])
+        ->whereNumber('sentence')
+        ->name('illustrations.show');
     // The global alignments browse pages moved under each work
     // (/works/{work}/alignments); only the editor stays global.
     Route::get('/alignments/{entityMatch}', [AlignmentController::class, 'show'])

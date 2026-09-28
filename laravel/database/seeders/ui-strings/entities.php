@@ -63,4 +63,9 @@ return [
     'entities.approved_hint' => ['en' => 'Approved — the text and its alignments are locked for editing.', 'ru' => 'Утверждено — текст и его выравнивания защищены от редактирования.'],
     'entities.approve' => ['en' => 'Approve', 'ru' => 'Утвердить'],
     'entities.unapprove' => ['en' => 'Remove approval', 'ru' => 'Снять утверждение'],
+    'entities.caption_placeholder' => ['en' => 'Caption (optional)…', 'ru' => 'Подпись (необязательно)…'],
+    'entities.image_file' => ['en' => 'Image — jpg, png, webp or gif, up to 10 MB', 'ru' => 'Изображение — jpg, png, webp или gif, до 10 МБ'],
+    'entities.replace_image' => ['en' => 'Replace image', 'ru' => 'Заменить изображение'],
+    'entities.illustration_type_locked' => ['en' => 'An illustration keeps its type', 'ru' => 'Тип иллюстрации не меняется'],
+    'entities.illustration' => ['en' => 'Illustration', 'ru' => 'Иллюстрация'],
 ];

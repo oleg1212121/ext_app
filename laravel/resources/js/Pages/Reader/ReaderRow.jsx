@@ -1,6 +1,33 @@
 import {memo, useMemo} from 'react';
 import WordText from '../../Components/WordText.jsx';
 
+const NO_IMAGES = [];
+
+// A book illustration: the picture with its optional caption beneath. No
+// transitions or hover styling — the reader's row perf contract (fixed
+// identity, memo-friendly, no layout thrash) applies.
+const IllustrationFigure = ({image}) => (
+    <figure className="text-center">
+        <img
+            src={image.url}
+            alt={image.caption || ''}
+            loading="lazy"
+            decoding="async"
+            width={image.width ?? undefined}
+            height={image.height ?? undefined}
+            className="mx-auto inline-block max-h-[60vh] w-auto max-w-full rounded-sm"
+        />
+        {image.caption ? (
+            <figcaption
+                className="italic"
+                style={{fontSize: '0.8em', lineHeight: 1.5, color: 'var(--color-ink-soft)'}}
+            >
+                {image.caption}
+            </figcaption>
+        ) : null}
+    </figure>
+);
+
 // Memoized: rows are token-heavy, and the reader re-renders for plenty of
 // reasons (audio status, page picker, sibling row expansion) that leave an
 // untouched row's props identical.
@@ -9,6 +36,8 @@ function ReaderRow({
     primary,
     translation,
     rowKey,
+    primaryImages = NO_IMAGES,
+    translationImages = NO_IMAGES,
     showAll,
     sideBySide,
     fontSize,
@@ -41,7 +70,9 @@ function ReaderRow({
         () => (translationExplainable && translationSide ? explain ?? undefined : undefined),
         [explain, translationExplainable, translationSide],
     );
-    const hasTranslation = translation.trim() !== '';
+    // An image-only side has empty text but still has content to show (and
+    // to reveal), so the illustration counts toward "has translation".
+    const hasTranslation = translation.trim() !== '' || translationImages.length > 0;
     const isVisible = showAll || expanded;
 
     // Plain-text fast path: when the server ships no word map for a side
@@ -96,6 +127,9 @@ function ReaderRow({
                         fontFamily: 'var(--font-serif)',
                     }}
                 >
+                    {primaryImages.map((image) => (
+                        <IllustrationFigure key={image.id} image={image}/>
+                    ))}
                     {primaryInteractive ? (
                         <WordText
                             text={primary}
@@ -137,6 +171,9 @@ function ReaderRow({
                                 borderLeft: sideBySide ? undefined : '1px solid var(--color-verdigris)',
                             }}
                         >
+                            {translationImages.map((image) => (
+                                <IllustrationFigure key={image.id} image={image}/>
+                            ))}
                             {translationInteractive ? (
                                 <WordText
                                     text={translation}

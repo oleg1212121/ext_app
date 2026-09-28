@@ -33,6 +33,11 @@ class EntityTextHasher
      * an entity's whole text is never held in memory; must iterate in
      * document order (order, not id) — the digest changes if the sequence
      * does.
+     *
+     * An illustration (image-bearing sentence, ADR 0050) takes part through
+     * its image hash appended to its line, so two texts differing only in
+     * their pictures are not exact copies. Image-less sentences contribute
+     * exactly as before, keeping pre-illustration hashes valid.
      */
     public function hash(Entity $entity): string
     {
@@ -40,7 +45,7 @@ class EntityTextHasher
         $first = true;
 
         foreach ($entity->sentences()
-            ->select('content')
+            ->select('content', 'image_hash')
             ->orderBy('order')
             ->cursor() as $sentence) {
             if (! $first) {
@@ -49,6 +54,10 @@ class EntityTextHasher
             $first = false;
 
             hash_update($context, self::normalize($sentence->content));
+
+            if ($sentence->image_hash !== null) {
+                hash_update($context, '|illustration:'.$sentence->image_hash);
+            }
         }
 
         return hash_final($context);

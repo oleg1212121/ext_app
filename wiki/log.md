@@ -1,5 +1,33 @@
 # Directory Update Log
 
+## 2026-09-28 (feat: illustrations — image-bearing sentences matched like text and rendered in reader/simulator; ADR 0050)
+
+An **Illustration** is an `entity_sentences` row with non-null `image_path`
+(new columns `image_path/image_hash/image_width/image_height/image_mime`,
+migration `2026_09_28_000002`; seeded `illustration` sentence type), whose
+text is the optional caption. They join meaning matches like any sentence
+(any grouping valid, no new junction rules) but are invisible to the aligner:
+`AlignEntitySentences` filters them from chunk windows, counts, and cursors
+(alignable-sentence space; `a_total_sentences` = alignable count), captions
+never reach python `/align`, and `finalize()`'s completeness repair backfills
+each one single-sided at similarity 0.0 → Needs review → human pairing writes
+1.0 (ADR 0049). Uploads live on the entity edit page's sentence manager
+(multipart add form when the illustration type is selected; inline caption
+edit + image replace, type pinned); files store on the private `local` disk
+(`IllustrationStorage`, content-hash names so identical uploads share a file,
+reference-counted delete) and serve via `GET /illustrations/{sentence}` gated
+by `EntityAccessService::canRead`. `text_hash` folds in `image_hash`
+(pre-illustration hashes unchanged). Reading surfaces: `MeaningMatchPresenter::toSimulatorImages`
+returns row-aligned `[aImages, bImages]`; reader ships the `rowImages` prop
+(flipped by side rule + client toggle, rendered per side above row text,
+image-only sides still reveal) and the simulator adds `row_images` to
+`POST /text`, rendered inside the revealable cells. Alignment editor payloads
+carry an `image` descriptor (`SentenceItem` thumbnails; needs-review parts
+read `[illustration]`). `entity_sentences.content` stays NOT NULL — empty
+captions are `''`. 17 new tests (`EntityIllustrationTest`,
+`EntityIllustrationAlignmentTest`); glossary gains **Illustration**;
+ADR 0050 records the sentence-row decision.
+
 ## 2026-09-28 (feat: alignments review UX — human-confirmed 1-sided leave Needs review, jump button, rows lookahead; ADR 0049)
 
 Three editor changes on `/alignments/{id}`. (1) **Needs review membership**

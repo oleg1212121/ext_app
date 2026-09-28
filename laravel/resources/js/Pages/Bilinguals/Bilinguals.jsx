@@ -115,6 +115,7 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
     const payload = json.data.data;
     return {
         rows: payload.rows ?? [],
+        rowImages: payload.row_images ?? [],
         rowKeys: payload.row_keys ?? null,
         wordMaps: payload.word_maps ?? null,
         languages: payload.languages ?? null,
@@ -195,6 +196,7 @@ const Bilinguals = (props) => {
     const pendingWorkplaceFocusRef = React.useRef(false);
 
     const [rows, setRows] = React.useState([]);
+    const [rowImages, setRowImages] = React.useState([]);
     const [rowKeys, setRowKeys] = React.useState(null);
     const [wordMaps, setWordMaps] = React.useState(null);
     const [allTarget, setAllTarget] = React.useState(false);
@@ -270,8 +272,9 @@ const Bilinguals = (props) => {
         setLoadError(null);
         setPending(true);
         try {
-            const {rows: nextRows, rowKeys: nextRowKeys, wordMaps: nextWordMaps, languages: nextLanguages, defaultLearningSide: nextDefaultSide, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
+            const {rows: nextRows, rowImages: nextRowImages, rowKeys: nextRowKeys, wordMaps: nextWordMaps, languages: nextLanguages, defaultLearningSide: nextDefaultSide, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
             setRows(nextRows);
+            setRowImages(nextRowImages);
             setRowKeys(nextRowKeys);
             setWordMaps(nextWordMaps);
             if (nextLanguages) {
@@ -293,6 +296,7 @@ const Bilinguals = (props) => {
             }
         } catch (e) {
             setRows([]);
+            setRowImages([]);
             setRowKeys(null);
             setWordMaps(null);
             setAllTarget(false);
@@ -413,6 +417,11 @@ const Bilinguals = (props) => {
     const shownRows = React.useMemo(() => (
         learningSide === 'a' ? rows : rows.map(([a, b]) => [b, a])
     ), [rows, learningSide]);
+
+    // Illustration pairs flip columns with the text pairs.
+    const shownRowImages = React.useMemo(() => (
+        learningSide === 'a' ? rowImages : rowImages.map(([a, b]) => [b, a])
+    ), [rowImages, learningSide]);
 
     // Word maps stay keyed by the match's actual sides; the display columns
     // index into them by the side currently playing each role.
@@ -778,6 +787,7 @@ const Bilinguals = (props) => {
                                 ask={ask}
                                 focusOnWorkplace={focusOnWorkplace}
                                 rows={shownRows}
+                                rowImages={shownRowImages}
                                 rowOffset={rowOffset}
                                 pending={pending}
                                 loadError={loadError}

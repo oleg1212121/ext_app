@@ -5,6 +5,30 @@ import WordText from "../../../Components/WordText.jsx";
 import {useI18n} from '../../../i18n';
 import React, {useMemo} from "react";
 
+const NO_IMAGES = [];
+
+// A book illustration inside one column: picture with its optional caption
+// beneath. Rendered inside the column's hideable container, so the reveal
+// checkbox covers it like the text.
+const IllustrationFigure = ({image}) => (
+    <figure className="mb-1 text-center">
+        <img
+            src={image.url}
+            alt={image.caption || ''}
+            loading="lazy"
+            decoding="async"
+            width={image.width ?? undefined}
+            height={image.height ?? undefined}
+            className="mx-auto inline-block max-h-[40vh] w-auto max-w-full rounded-sm"
+        />
+        {image.caption ? (
+            <figcaption className="italic text-[0.85em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                {image.caption}
+            </figcaption>
+        ) : null}
+    </figure>
+);
+
 /**
  * The alignment table. Columns are display-oriented, not side letters: the
  * left column is the learning target (hidden until revealed, read-credited),
@@ -99,6 +123,7 @@ export default function TextContent(props) {
                 {props.rows.map((row, i) => {
                     const n = rowOffset + i + 1;
                     const nStr = n < 10 ? `0${n}` : String(n);
+                    const rowImages = props.rowImages?.[i] ?? NO_IMAGES;
                     return (
                     <tr id={`simulator-row-${n}`}
                         key={rowOffset + i}
@@ -106,6 +131,9 @@ export default function TextContent(props) {
                         <td className="px-4 py-2 align-top hide_target relative">
                             <span className="ribbon-mark absolute left-0 top-0 bottom-0" aria-hidden="true"/>
                             <span className="target content resizeable_element block w-full break-words text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-serif)]">
+                                {(rowImages[0] ?? NO_IMAGES).map((image) => (
+                                    <IllustrationFigure key={image.id} image={image}/>
+                                ))}
                                 <WordText
                                     text={row[0]}
                                     wordMap={props.targetWordMap}
@@ -136,6 +164,9 @@ export default function TextContent(props) {
                         <td className="px-4 py-2 align-top hide_base">
                             <div className="flex w-full flex-col gap-1.5">
                                 <span className="base content resizeable_element block w-full break-words text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-serif)]">
+                                    {(rowImages[1] ?? NO_IMAGES).map((image) => (
+                                        <IllustrationFigure key={image.id} image={image}/>
+                                    ))}
                                     <WordText
                                         text={row[1]}
                                         wordMap={props.baseWordMap}

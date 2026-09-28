@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Sentence Alignment Pipeline
-description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse.
-tags: [alignment, embeddings, pipeline, jobs, filament, hash]
+description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse. Illustrations are excluded from the aligner's sentence space (ADR 0050).
+tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
-stale_after: 2026-12-27
-generated: { by: agent:zcode, at: 2026-09-28T19:40:00Z }
+stale_after: 2026-12-28
+generated: { by: agent:zcode, at: 2026-09-28T22:30:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -175,6 +175,17 @@ re-run `composer run dev`, or `php artisan queue:restart`) before re-testing
 its output can look exactly like an unfixed bug.
 
 # Stages
+
+**The aligner sees image-less sentences only (ADR 0050)**: illustration
+sentences (`entity_sentences.image_path` non-null) are filtered out of every
+chunk window, count, and cursor computation in `AlignEntitySentences`
+(`sentenceSlice`, `sentenceIndex`, `rollbackOffset`, the begin-time totals —
+so `a_total_sentences` counts alignable sentences). Captions never reach the
+python `/align` payload. At the `finalize()` completion gate the
+total-completeness repair backfills each illustration as a single-sided row
+at similarity 0.0, which lands it in Needs review (ADR 0049) for human
+pairing — the human confirmation writes similarity 1.0 like any other
+editor-shaped row.
 
 1. **Split** — `SentenceSplitter` streams entity files in
    ~`services.python.sentence_split_chunk_bytes` chunks to the python `/split`

@@ -2,29 +2,45 @@
 
 namespace App\Http\Requests;
 
-use Illuminate\Contracts\Validation\ValidationRule;
+use App\Models\SentenceType;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class StoreEntitySentenceRequest extends FormRequest
 {
+    private const IMAGE_MIMES = 'jpg,jpeg,png,webp,gif';
+
     public function authorize(): bool
     {
         return true;
     }
 
     /**
-     * @return array<string, ValidationRule|array<mixed>|string>
+     * Illustration sentences (ADR 0050) carry the image file and may leave
+     * the caption empty; every other type keeps the plain-sentence rules.
      */
     public function rules(): array
     {
-        $entity = $this->route('entity');
+        $isIllustration = $this->isIllustrationType();
 
         return [
-            'content' => ['required', 'string', 'max:65535', $this->nonEmptyString()],
+            'content' => $isIllustration
+                ? ['nullable', 'string', 'max:65535']
+                : ['required', 'string', 'max:65535', $this->nonEmptyString()],
             'sentence_type_id' => ['required', 'integer', Rule::exists('sentence_types', 'id')],
+            'image' => $isIllustration
+                ? ['required', 'file', 'image', 'mimes:'.self::IMAGE_MIMES, 'max:10240']
+                : ['nullable', 'file', 'image', 'mimes:'.self::IMAGE_MIMES, 'max:10240'],
             'after_sentence_id' => ['nullable', 'integer'],
         ];
+    }
+
+    public function isIllustrationType(): bool
+    {
+        $illustrationId = SentenceType::illustrationId();
+
+        return $illustrationId !== null
+            && (int) $this->input('sentence_type_id') === $illustrationId;
     }
 
     /**
@@ -37,6 +53,10 @@ class StoreEntitySentenceRequest extends FormRequest
             'content.max' => 'The sentence may not be longer than 65535 characters.',
             'sentence_type_id.required' => 'A sentence type is required.',
             'sentence_type_id.exists' => 'The selected sentence type is invalid.',
+            'image.required' => 'An illustration needs an image file.',
+            'image.image' => 'The uploaded file is not a valid image.',
+            'image.mimes' => 'The image must be a jpg, png, webp or gif file.',
+            'image.max' => 'The image may not be larger than 10 MB.',
         ];
     }
 

@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Bilinguals Simulator
-description: Side-by-side bilingual reading trainer where users translate and get AI assessment of their translation, with a native-language default learning side and a per-device language swap.
-tags: [bilinguals, simulator, ai, inertia]
+description: Side-by-side bilingual reading trainer where users translate and get AI assessment of their translation, with a native-language default learning side, a per-device language swap, and inline illustrations per column (ADR 0050).
+tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
-stale_after: 2026-12-23
-generated: { by: agent:zcode, at: 2026-09-25T18:43:00+03:00 }
+stale_after: 2026-12-28
+generated: { by: agent:zcode, at: 2026-09-28T22:30:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -115,7 +115,10 @@ variants.
   `default_learning_side` (the same side rule the pinned route applies at
   render time), so `TextContent` renders both cells through the
   shared `WordText`/`WordPopup` components with a
-  `simulator.highlight_words` toolbar toggle.
+  `simulator.highlight_words` toolbar toggle. Illustrations ride the
+  row-aligned `row_images` payload (ADR 0050): per row an `[aImages,
+  bImages]` pair rendered inside the revealable cells above the text, so the
+  reveal checkbox covers pictures like words.
 * **Revealing a row's target cell credits a read** (+1 familiarity to the
   learning side's dictionary words, ADR 0028): `onToggleRow` fires one
   best-effort `POST /word-events` scoped to the row's `row_key`; the

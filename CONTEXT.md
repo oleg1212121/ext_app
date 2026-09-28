@@ -65,6 +65,15 @@ reader rely on it. The alignment editor renumbers it when a sentence is dragged
 other mutation paths.
 _Avoid_: line
 
+**Illustration**:
+A picture inserted into an entity's text at a document-order position, carried
+by a sentence of its own whose text is the optional caption. It participates in
+meaning matches like any sentence — typically paired with the same picture in
+the counterpart edition, validly unmatched or paired with text. It is never
+sent to the aligner; an alignment's cursor space counts only image-less
+sentences (see ADR 0050).
+_Avoid_: image sentence (the marker is the image, not the type), figure.
+
 **Junction**:
 A sentence's membership link to a meaning match. Junctions are pure association
 tables with no `order` column. Within-row display order is determined by each
