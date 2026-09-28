@@ -7,6 +7,8 @@ use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 
 function seedResequenceSentence(Entity $entity, SentenceType $sentenceType, int $order, string $label): EntitySentence
 {
@@ -16,6 +18,16 @@ function seedResequenceSentence(Entity $entity, SentenceType $sentenceType, int 
         'content' => $label,
         'order' => $order,
     ]);
+}
+
+/**
+ * Duplicates cannot exist once the strict unique constraint is in place —
+ * suspend it to seed the legacy duplicate state the resolution pass repairs
+ * (RefreshDatabase rebuilds the schema for the next test).
+ */
+function suspendResequenceJunctionUniqueness(): void
+{
+    DB::statement('ALTER TABLE sentence_meaning_matches DROP CONSTRAINT smm_match_sentence_unique');
 }
 
 function seedResequenceJunction(MeaningMatch $match, EntitySentence $a, EntitySentence $b): void
@@ -261,6 +273,8 @@ it('drops a machine row fully duplicated by a better row before renumbering', fu
 
     // The same pair junctioned into two rows — the signature of a re-fed
     // window. The stronger row (higher similarity) keeps the junctions.
+    suspendResequenceJunctionUniqueness();
+
     $keeperRow = MeaningMatch::create([
         'entity_match_id' => $entityMatch->id, 'order' => 1024, 'similarity' => 0.8, 'alignment_chunk' => 0,
     ]);
@@ -287,7 +301,7 @@ it('drops a machine row fully duplicated by a better row before renumbering', fu
         ->and(SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch))->toBe(0);
 });
 
-it('keeps machine rows that only partially overlap so each keeps its own junctions', function () {
+it('resolves a partial overlap by trimming the shared junction from the weaker row', function () {
     $sentenceType = SentenceType::create(['name' => 'Narration']);
     $work = createWork();
     $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
@@ -303,8 +317,12 @@ it('keeps machine rows that only partially overlap so each keeps its own junctio
 
     $entityMatch = createEntityMatch($enEntity, $ruEntity, ['status' => 'completed']);
 
-    // Legitimate n:m overlap: both rows share EN 1 but each holds a b
-    // junction of its own, so neither is fully subsumed.
+    // Overlapping machine rows sharing EN 1 — strict junction uniqueness
+    // (ADR 0048): the stronger row (higher similarity) keeps the shared
+    // sentence, the weaker row keeps only the junctions of its own and
+    // survives as a b-only row.
+    suspendResequenceJunctionUniqueness();
+
     $firstRow = MeaningMatch::create([
         'entity_match_id' => $entityMatch->id, 'order' => 5000, 'similarity' => 0.5, 'alignment_chunk' => 0,
     ]);
@@ -318,9 +336,103 @@ it('keeps machine rows that only partially overlap so each keeps its own junctio
 
     $changed = SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
 
-    expect($changed)->toBe(2)
+    expect($changed)->toBe(3, 'one trimmed junction + two order changes')
         ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(2)
         ->and($firstRow->refresh()->order)->toBe(0)
         ->and($overlappingRow->refresh()->order)->toBe(SparseOrderService::STRIDE)
-        ->and($enSentences[0]->refresh()->meaningJunctions()->count())->toBe(2);
+        ->and($enSentences[0]->refresh()->meaningJunctions()->count())->toBe(1, 'EN 1 keeps exactly one junction — the stronger row\'s')
+        ->and($ruSentences[1]->refresh()->meaningJunctions()->count())->toBe(1)
+        ->and(SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch))->toBe(0);
+});
+
+it('keeps a landmark junction against any machine row and against a later human row', function () {
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    $enSentences = [];
+    $ruSentences = [];
+
+    foreach (range(1, 3) as $order) {
+        $enSentences[] = seedResequenceSentence($enEntity, $sentenceType, $order, "English {$order}.");
+        $ruSentences[] = seedResequenceSentence($ruEntity, $sentenceType, $order, "Russian {$order}.");
+    }
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, ['status' => 'completed']);
+
+    // A human row pins EN 1; a high-similarity machine row (auto-landmark)
+    // pins EN 2; overlapping machine rows and a later human row must all
+    // lose the shared sentences to the pins.
+    suspendResequenceJunctionUniqueness();
+
+    $humanRow = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id, 'order' => 0, 'similarity' => 1.0, 'alignment_chunk' => -1,
+    ]);
+    seedResequenceSideJunction($humanRow, $enSentences[0], 'a');
+
+    $machineOverHuman = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id, 'order' => 1024, 'similarity' => 0.89, 'alignment_chunk' => 2,
+    ]);
+    seedResequenceJunction($machineOverHuman, $enSentences[0], $ruSentences[0]);
+
+    $autoLandmark = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id, 'order' => 2048, 'similarity' => 0.95, 'alignment_chunk' => 2,
+    ]);
+    seedResequenceSideJunction($autoLandmark, $enSentences[1], 'a');
+
+    $machineOverAuto = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id, 'order' => 3072, 'similarity' => 0.7, 'alignment_chunk' => 3,
+    ]);
+    seedResequenceSideJunction($machineOverAuto, $enSentences[1], 'a');
+
+    $firstHuman = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id, 'order' => 4096, 'similarity' => 1.0, 'alignment_chunk' => -1,
+    ]);
+    seedResequenceSideJunction($firstHuman, $enSentences[2], 'a');
+
+    $secondHuman = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id, 'order' => 5120, 'similarity' => 1.0, 'alignment_chunk' => -1,
+    ]);
+    seedResequenceSideJunction($secondHuman, $enSentences[2], 'a');
+
+    SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
+
+    expect($enSentences[0]->refresh()->meaningJunctions()->count())->toBe(1)
+        ->and($enSentences[0]->meaningJunctions()->first()->meaning_match_id)->toBe($humanRow->id, 'human row beats the machine row')
+        ->and($enSentences[1]->refresh()->meaningJunctions()->count())->toBe(1)
+        ->and($enSentences[1]->meaningJunctions()->first()->meaning_match_id)->toBe($autoLandmark->id, 'auto-landmark beats the machine row')
+        ->and($enSentences[2]->refresh()->meaningJunctions()->count())->toBe(1)
+        ->and($enSentences[2]->meaningJunctions()->first()->meaning_match_id)->toBe($firstHuman->id, 'earlier-ordered human row wins the human-vs-human conflict')
+        ->and($machineOverHuman->refresh()->sentenceMeaningMatches->pluck('side')->all())->toBe(['b'], 'machine row survives with only its own junction');
+});
+
+it('rejects a second junction for the same sentence in the same match at the DB level', function () {
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    $enSentence = seedResequenceSentence($enEntity, $sentenceType, 1, 'English 1.');
+    $ruSentence = seedResequenceSentence($ruEntity, $sentenceType, 1, 'Russian 1.');
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, ['status' => 'completed']);
+
+    $row = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id, 'order' => 0, 'similarity' => 0.9, 'alignment_chunk' => 0,
+    ]);
+    seedResequenceSideJunction($row, $enSentence, 'a');
+
+    $otherRow = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id, 'order' => 1024, 'similarity' => 0.5, 'alignment_chunk' => 1,
+    ]);
+
+    expect(fn () => seedResequenceSideJunction($otherRow, $enSentence, 'a'))->toThrow(QueryException::class)
+        ->and(fn () => SentenceMeaningMatch::create([
+            // Even without the explicit column, the model hook fills it and
+            // the constraint still applies.
+            'entity_sentence_id' => $ruSentence->id,
+            'meaning_match_id' => $otherRow->id,
+            'side' => 'b',
+        ]))->not->toThrow(QueryException::class, 'a different sentence in the same match junctions fine');
 });

@@ -166,7 +166,7 @@ class AlignmentEditorController extends Controller
         $sentenceModel = $this->findSideSentence($entityMatch, $side, $sentence);
         $sentenceModel->update(['content' => $content]);
 
-        $rowId = $this->rowIdOfSentence($side, $sentenceModel->id);
+        $rowId = $this->rowIdOfSentence($entityMatch, $side, $sentenceModel->id);
 
         return $this->mutationResponse($entityMatch, $this->rowPayloadsByIds($entityMatch, $rowId !== null ? [$rowId] : []));
     }
@@ -179,7 +179,7 @@ class AlignmentEditorController extends Controller
 
         $sentenceModel = $this->findSideSentence($entityMatch, $side, $sentence);
 
-        $rowId = $this->rowIdOfSentence($side, $sentenceModel->id);
+        $rowId = $this->rowIdOfSentence($entityMatch, $side, $sentenceModel->id);
         abort_if($rowId === null, 422, 'Sentence is not linked.');
 
         DB::transaction(function () use ($entityMatch, $side, $sentenceModel, $rowId): void {
@@ -202,7 +202,7 @@ class AlignmentEditorController extends Controller
 
         $sentenceModel = $this->findSideSentence($entityMatch, $side, $sentence);
 
-        if ($this->rowIdOfSentence($side, $sentenceModel->id) !== null) {
+        if ($this->rowIdOfSentence($entityMatch, $side, $sentenceModel->id) !== null) {
             abort(422, 'Linked sentences must be unlinked before deletion.');
         }
 
@@ -740,10 +740,15 @@ class AlignmentEditorController extends Controller
     /**
      * @param  'a'|'b'  $side
      */
-    private function rowIdOfSentence(string $side, int $sentenceId): ?int
+    private function rowIdOfSentence(EntityMatch $entityMatch, string $side, int $sentenceId): ?int
     {
+        // Scoped to this match: the sentence may also be junctioned in other
+        // matches of the same entity, and an unscoped first() would return a
+        // row of a different alignment.
         $junction = SentenceMeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
             ->where('entity_sentence_id', $sentenceId)
+            ->orderBy('id')
             ->first();
 
         return $junction !== null ? (int) $junction->meaning_match_id : null;

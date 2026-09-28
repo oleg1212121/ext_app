@@ -292,6 +292,7 @@ class AlignmentEditorPersister
 
             foreach ($row['a_sentences'] as $sentenceId) {
                 $junctionInserts[] = [
+                    'entity_match_id' => $entityMatch->id,
                     'entity_sentence_id' => $sentenceId,
                     'meaning_match_id' => $meaningId,
                     'side' => 'a',
@@ -302,6 +303,7 @@ class AlignmentEditorPersister
 
             foreach ($row['b_sentences'] as $sentenceId) {
                 $junctionInserts[] = [
+                    'entity_match_id' => $entityMatch->id,
                     'entity_sentence_id' => $sentenceId,
                     'meaning_match_id' => $meaningId,
                     'side' => 'b',
@@ -310,6 +312,15 @@ class AlignmentEditorPersister
                 ];
             }
         }
+
+        // The draft may list the same sentence under several rows (duplicated
+        // junctions are exactly what the strict uniqueness index forbids, and
+        // bulk insert bypasses the model's creating hook). Rows are sorted by
+        // order, so the first row claiming a sentence keeps it.
+        $junctionInserts = collect($junctionInserts)
+            ->unique(fn (array $row): string => $row['side'].':'.$row['entity_sentence_id'])
+            ->values()
+            ->all();
 
         if (! empty($junctionInserts)) {
             foreach (array_chunk($junctionInserts, 2000) as $chunk) {

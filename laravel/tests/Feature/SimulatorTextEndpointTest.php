@@ -29,6 +29,12 @@ it('returns paginated alignment rows for entity_match_id', function () {
         'content' => 'First RU.',
         'order' => 1,
     ]);
+    $ru2 = EntitySentence::create([
+        'entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'Second RU.',
+        'order' => 2,
+    ]);
 
     $entityMatch = createEntityMatch($enEntity, $ruEntity, ['status' => 'completed']);
 
@@ -58,8 +64,10 @@ it('returns paginated alignment rows for entity_match_id', function () {
         'alignment_chunk' => 0,
     ]);
 
+    // A b-only skip row for a distinct sentence — strict junction
+    // uniqueness (ADR 0048) forbids junctioning RU 1 into two rows.
     SentenceMeaningMatch::create([
-        'entity_sentence_id' => $ru1->id,
+        'entity_sentence_id' => $ru2->id,
         'meaning_match_id' => $skipRow->id,
         'side' => 'b',
     ]);
@@ -89,7 +97,7 @@ it('returns paginated alignment rows for entity_match_id', function () {
 
     $page2->assertOk();
     expect($page2->json('data.data.rows'))->toHaveCount(1)
-        ->and($page2->json('data.data.rows.0'))->toBe(['', 'First RU.'])
+        ->and($page2->json('data.data.rows.0'))->toBe(['', 'Second RU.'])
         ->and($page2->json('data.data.meta.current_page'))->toBe(2);
 });
 

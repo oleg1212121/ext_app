@@ -5,7 +5,7 @@ description: End-to-end workflow for aligning two same-work entities (any langua
 tags: [alignment, embeddings, jobs, howto]
 status: stable
 stale_after: 2026-12-22
-generated: { by: agent:zcode, at: 2026-09-27T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-28T13:45:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -131,14 +131,12 @@ sources:
     `a_total_sentences`, at which point the entity match flips to
     `completed`. Meaning matches carry a monotonic `alignment_chunk` per run.
     Completion goes through a single gate (`AlignEntitySentences::finalize()`):
-    any still-junction-less sentence on the **covered sides** — the work's
-    original side (`EntityMatch::originalSide()`, derived from
-    `works.original_language_id`; **both** sides for translation↔translation
-    pairs where neither entity is the original language) — is drained as a
-    **single-sided meaning match** (`similarity 0.0`) ordered to preserve
-    document order, so covered sides are never unmatched. "One side's
-    sentences exhausted before the other's" is a normal completion (the
-    remaining covered-side tail is drained), not an error — see
+    any still-junction-less sentence on **either side** (total completeness,
+    ADR 0048) is drained as a **single-sided meaning match**
+    (`similarity 0.0`) ordered to preserve document order, so no sentence of
+    either entity is invisible to the reader. "One side's sentences
+    exhausted before the other's" is a normal completion (the remaining tail
+    is drained), not an error — see
     [Sentence Alignment](/domains/sentence-alignment.md).
     Small entities (`max(a_total, b_total) ≤ 75`) are raised to a single
     chunk in `beginFromScratch()`, skipping the seam rollback/trim machinery
@@ -186,10 +184,20 @@ sources:
    document position. Every pipeline write path (chunk persist, finalize,
    alignment copy) already runs the same resequencing, so a manual run is
    only needed for rows written before the fix (Sep 2026) or after a manual
-   DB edit. The same command also **drops fully subsumed duplicate rows**
-   (one sentence junctioned into several machine rows — the signature of a
-   re-fed window), always resolving duplicates in favor of landmark/human
-   rows; legitimate n:m partial overlaps are left alone.
+   DB edit. The same pass enforces **strict junction uniqueness** (ADR 0048):
+   a sentence junctioned into several rows loses all but the highest-priority
+   one (landmark/human rows win over machine, then two-sided, richer, more
+   similar, earlier), trimming the losers' junctions — partial overlaps
+   included.
+
+   For completed matches needing the full treatment (duplicate junctions
+   **plus** missing single-sided rows on either side — e.g. data written
+   before the Sept 2026 invariants), run the in-place repair instead:
+
+   ```bash
+   docker exec ext_app_laravel php artisan alignments:repair <entityMatchId>
+   docker exec ext_app_laravel php artisan alignments:repair --all
+   ```
 
    If the order is still wrong after a re-run of the alignment itself, check
    the worker before suspecting the code: a queue worker started before a

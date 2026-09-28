@@ -1,5 +1,35 @@
 # Directory Update Log
 
+## 2026-09-28 (feat: strict alignment invariants — junction uniqueness, total completeness, weak-pair rescue, ADR 0048)
+
+Three production defects fixed together. (1) The repeating pattern of two
+1-sided rows (EN then RU) followed by a matched row came from the greedy
+aligner's hard 0.55 match bar plus the skip rule's cascade: skipping one
+member of a mutual weak pair collapses the other's lookahead, so both get
+skipped. Now a mutual-best 1:1 (or a two-sided orphan-gap window combo)
+scoring in the new rescue band `[ALIGN_RESCUE_THRESHOLD, 0.55)` (default
+0.45, live knob, 0 disables) is emitted as a real match carrying its true
+sub-threshold score — flagged in Needs review as low-similarity instead of
+masquerading as 1-sided. (2) Duplicate junctions (same sentence in several
+meaning matches) are now impossible: `sentence_meaning_matches` gained a
+denormalized NOT NULL `entity_match_id` + `unique(entity_match_id,
+entity_sentence_id)` (migration resolves legacy duplicates inline,
+landmark/human rows win), `persistSegment` reserves landmark-junctioned
+sentences so re-fed windows never junction them, the resequence dedupe trims
+losers' junctions (partial overlaps included, machine loses to human,
+human-vs-human keeps the earlier row), and the editor dedupes its re-insert
+list. (3) The finalize repair now covers BOTH sides (total completeness —
+translation-side sentences are no longer invisible in the reader), mid-run
+no-progress paths store skip rows for advancing non-original sides, and the
+opposite-side spread-order collision that silently rolled back a side's
+repair is fixed via a shared claimed-orders set. New
+`alignments:repair {id} [--all]` sweeps completed matches in place (dedupe +
+both-side backfill + resequence) — the production cleanup path. Tests that
+seeded duplicate junctions suspend the constraint first; original-side-only
+coverage assertions updated to both sides. `wiki/domains/sentence-alignment.md`
+and `wiki/database/entities-alignment.md` updated; `reference/commands.md`
+regenerated for the new command.
+
 ## 2026-09-27 (fix: word-family base groups scoped to the claiming word classes, ADR 0047)
 
 ADR 0045's aggregation loaded each base word's whole headword group, so a

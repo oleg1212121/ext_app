@@ -210,6 +210,7 @@ class AlignmentCopyService
                 }
 
                 $junctionRows[] = [
+                    'entity_match_id' => $target->id,
                     'entity_sentence_id' => $mappedSentenceId,
                     'meaning_match_id' => null, // filled after the meaning insert
                     'source_meaning_match_id' => $junction->meaning_match_id,

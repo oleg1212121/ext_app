@@ -3,12 +3,10 @@
 namespace App\Jobs;
 
 use App\Classes\SentenceAlignmentService;
-use App\Classes\SparseOrderService;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
-use App\Models\SentenceMeaningMatch;
 use Closure;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -440,16 +438,18 @@ class AlignEntitySentences implements ShouldQueue
 
     /**
      * The sides whose sentences must stay covered when a chunk produces no
-     * committed match: the work's original side; both sides when neither
-     * entity is the original (two translations of a third-language original).
+     * committed match, and the sides finalize() repairs at completion: BOTH
+     * sides (total completeness, ADR 0048) — every sentence ends junctioned
+     * into a meaning match, so nothing is invisible to the reader/simulator.
+     * Mid-run, only sides whose cursor actually advances get skip rows (a
+     * parked side re-feeds its head into later windows, and a premature skip
+     * row would duplicate its junction).
      *
      * @return list<'a'|'b'>
      */
     private static function skipSides(EntityMatch $entityMatch): array
     {
-        $originalSide = $entityMatch->originalSide();
-
-        return $originalSide !== null ? [$originalSide] : ['a', 'b'];
+        return ['a', 'b'];
     }
 
     /**
@@ -458,9 +458,9 @@ class AlignEntitySentences implements ShouldQueue
      * everything the python service returns is committed and trailing skips
      * are stored up to the pool boundary. Rows and the advanced cursors are
      * committed atomically (see persistOffsets). With no committed match the
-     * original-side sentences (both sides for translation↔translation pairs)
-     * are stored as skips and the a cursor advances by one so the alignment
-     * never stalls.
+     * advancing side's head sentence is stored as a skip and the a cursor
+     * advances by one so the alignment never stalls; the parked side is
+     * repaired at finalize (total completeness, ADR 0048).
      */
     private function alignWholePool(
         EntityMatch $entityMatch,
@@ -541,10 +541,9 @@ class AlignEntitySentences implements ShouldQueue
     }
 
     /**
-     * Store single-sentence skip rows for the original side(s) of the pool:
-     * the work's original side, or both sides for translation↔translation
-     * pairs. Sentences already covered by an earlier pool are excluded. Only
-     * pass heads for sides whose cursor advances past the sentence — a parked
+     * Store single-sentence skip rows for the pool's advancing side(s).
+     * Sentences already covered by an earlier pool are excluded. Only pass
+     * heads for sides whose cursor advances past the sentence — a parked
      * side re-feeds its head later, and a skip row here would duplicate it.
      *
      * @param  array<'a'|'b', Collection<int, EntitySentence>>  $windowHeads
@@ -967,24 +966,37 @@ class AlignEntitySentences implements ShouldQueue
 
     /**
      * The single completion gate for an entity match. Every completion site
-     * funnels through here so the coverage invariant holds on exit: any
-     * original-side sentence still junction-less (dropped by a crawl seam,
-     * left over after the translation side was exhausted, or skipped during a
-     * re-align) is junctioned into a single-sided meaning match. When neither
-     * side is the original language (translation↔translation pair), BOTH
-     * sides are repaired. The repair is best-effort — if it fails, a warning
-     * is logged and completion proceeds regardless.
+     * funnels through here so the coverage invariant holds on exit: ANY
+     * sentence of EITHER side still junction-less (dropped by a crawl seam,
+     * left over after the other side was exhausted, or skipped during a
+     * re-align) is junctioned into a single-sided meaning match — total
+     * completeness, so the reader never hides a sentence. The repair is
+     * best-effort — if it fails, a warning is logged and completion proceeds
+     * regardless.
      */
     private function finalize(EntityMatch $entityMatch): void
     {
-        $sides = self::skipSides($entityMatch);
+        $service = SentenceAlignmentService::create();
 
-        foreach ($sides as $side) {
-            [$junctionless, $index] = $this->junctionlessSentences($entityMatch, $side);
+        // Order values already taken by this match's rows, shared across both
+        // sides' repairs: opposite-side runs between the same anchors compute
+        // identical spread values, and the claim check prevents the second
+        // insert from violating unique(entity_match_id, order).
+        $claimedOrders = array_fill_keys(
+            MeaningMatch::query()
+                ->where('entity_match_id', $entityMatch->id)
+                ->pluck('order')
+                ->map(fn ($order) => (int) $order)
+                ->all(),
+            true,
+        );
+
+        foreach (['a', 'b'] as $side) {
+            [$junctionless, $index] = $service->junctionlessSentencesFor($entityMatch, $side);
 
             if ($junctionless->isNotEmpty()) {
                 try {
-                    $this->repairJunctionlessOriginals($entityMatch, $side, $junctionless, $index);
+                    $service->repairJunctionlessSentences($entityMatch, $side, $junctionless, $index, $claimedOrders);
                 } catch (Throwable $exception) {
                     Log::warning('Failed to junction sentences on alignment completion', [
                         'entity_match_id' => $entityMatch->id,
@@ -996,8 +1008,7 @@ class AlignEntitySentences implements ShouldQueue
         }
 
         try {
-            $resequenced = SentenceAlignmentService::create()
-                ->resequenceMatchesByDocumentPosition($entityMatch);
+            $resequenced = $service->resequenceMatchesByDocumentPosition($entityMatch);
 
             if ($resequenced > 0) {
                 Log::info('Resequenced meaning matches by document position on completion', [
@@ -1020,150 +1031,6 @@ class AlignEntitySentences implements ShouldQueue
                 ->where('entity_match_id', $entityMatch->id)
                 ->count(),
         ]);
-    }
-
-    /**
-     * The junction-less sentences of one side in document order, plus the
-     * sentence-id => document-index map that anchors their position among the
-     * meaning matches.
-     *
-     * @param  'a'|'b'  $side
-     * @return array{0: Collection<int, EntitySentence>, 1: array<int, int>}
-     */
-    private function junctionlessSentences(EntityMatch $entityMatch, string $side): array
-    {
-        $entityId = $side === 'a' ? $entityMatch->a_entity_id : $entityMatch->b_entity_id;
-
-        return [
-            EntitySentence::query()
-                ->where('entity_id', $entityId)
-                ->orderBy('order')
-                ->orderBy('id')
-                ->doesntHave('meaningJunctions')
-                ->get(),
-            self::sentenceIndex($entityId),
-        ];
-    }
-
-    /**
-     * Junction every junction-less sentence of one side into a single-sided
-     * meaning match (similarity 0.0, next machine alignment chunk id) ordered
-     * so the reader's meaning-match sequence preserves document order. Runs
-     * of junction-less sentences falling between the same pair of junctioned
-     * anchors share the machine chunk id, so a future re-align deletes and
-     * re-feeds them like any other machine row.
-     *
-     * @param  'a'|'b'  $side
-     * @param  Collection<int, EntitySentence>  $junctionless
-     * @param  array<int, int>  $index
-     */
-    private function repairJunctionlessOriginals(
-        EntityMatch $entityMatch,
-        string $side,
-        Collection $junctionless,
-        array $index,
-    ): void {
-        $anchors = [];
-
-        MeaningMatch::query()
-            ->where('entity_match_id', $entityMatch->id)
-            ->orderBy('order')
-            ->orderBy('id')
-            ->with(['sentenceMeaningMatches' => fn ($query) => $query->where('side', $side)])
-            ->get()
-            ->each(function (MeaningMatch $match) use (&$anchors, $index): void {
-                foreach ($match->sentenceMeaningMatches as $junction) {
-                    $docIndex = $index[$junction->entity_sentence_id] ?? null;
-
-                    if ($docIndex !== null) {
-                        $anchors[$docIndex] = (int) $match->order;
-                    }
-                }
-            });
-
-        ksort($anchors);
-
-        $runs = [];
-        $run = [];
-        $previousIndex = null;
-
-        foreach ($junctionless as $sentence) {
-            $docIndex = $index[$sentence->id] ?? null;
-
-            if ($docIndex === null) {
-                continue;
-            }
-
-            if ($run !== [] && $previousIndex !== null && $docIndex === $previousIndex + 1) {
-                $run[] = $sentence;
-            } else {
-                if ($run !== []) {
-                    $runs[] = $run;
-                }
-
-                $run = [$sentence];
-            }
-
-            $previousIndex = $docIndex;
-        }
-
-        if ($run !== []) {
-            $runs[] = $run;
-        }
-
-        if ($runs === []) {
-            return;
-        }
-
-        $sparseOrder = app(SparseOrderService::class);
-        $alignmentChunk = $this->nextAlignmentChunk($entityMatch->id);
-        $anchorIndexes = array_keys($anchors);
-
-        DB::transaction(function () use (
-            $entityMatch,
-            $side,
-            $sparseOrder,
-            $alignmentChunk,
-            $anchorIndexes,
-            $anchors,
-            $index,
-            $runs,
-        ): void {
-            foreach ($runs as $run) {
-                $firstIndex = $index[$run[0]->id];
-                $lastIndex = $index[$run[array_key_last($run)]->id];
-
-                $low = null;
-                $high = null;
-
-                foreach ($anchorIndexes as $anchorIndex) {
-                    if ($anchorIndex < $firstIndex) {
-                        $low = $anchors[$anchorIndex];
-                    }
-
-                    if ($anchorIndex > $lastIndex && $high === null) {
-                        $high = $anchors[$anchorIndex];
-                    }
-                }
-
-                $orders = $sparseOrder->spreadOrders(count($run), $low, $high);
-
-                foreach ($orders as $offset => $order) {
-                    $meaningMatch = MeaningMatch::create([
-                        'entity_match_id' => $entityMatch->id,
-                        'order' => $order,
-                        'similarity' => 0.0,
-                        'alignment_chunk' => $alignmentChunk,
-                    ]);
-
-                    SentenceMeaningMatch::create([
-                        'entity_sentence_id' => $run[$offset]->id,
-                        'meaning_match_id' => $meaningMatch->id,
-                        'side' => $side,
-                    ]);
-                }
-            }
-        });
     }
 
     public function failed(Throwable $exception): void

@@ -555,14 +555,16 @@ it('drains the RU original tail as skip rows when RU is the original side and lo
 
     $entityMatch->refresh();
 
-    // No skip row is stored while the b cursor is parked; both unmatched RU
-    // originals are junctioned by the completion repair, one row each.
+    // The advancing a head is stored as a skip row (total completeness covers
+    // both sides mid-run too); both unmatched RU originals are junctioned by
+    // the completion repair, one row each.
     expect($entityMatch->status)->toBe('completed')
         ->and($entityMatch->error_message)->toBeNull()
-        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(2)
-        ->and(SentenceMeaningMatch::where('side', 'a')->count())->toBe(0)
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(3)
+        ->and(SentenceMeaningMatch::where('side', 'a')->count())->toBe(1)
         ->and(SentenceMeaningMatch::where('side', 'b')->count())->toBe(2)
-        ->and(EntitySentence::whereDoesntHave('meaningJunctions')->where('entity_id', $ruEntity->id)->count())->toBe(0);
+        ->and(EntitySentence::whereDoesntHave('meaningJunctions')->where('entity_id', $ruEntity->id)->count())->toBe(0)
+        ->and(EntitySentence::whereDoesntHave('meaningJunctions')->where('entity_id', $enEntity->id)->count())->toBe(0);
 
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
@@ -628,12 +630,15 @@ it('inserts a position-aware skip row for a mid-text junction-less original sent
         ->first();
 
     expect($entityMatch->status)->toBe('completed')
-        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(3)
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(4)
         ->and($inserted)->not->toBeNull()
         ->and((float) $inserted->similarity)->toBe(0.0)
         ->and($inserted->sideSentenceMeaningMatches('a')->first()->entity_sentence_id)->toBe($enSentences[1]->id)
         ->and($inserted->sideSentenceMeaningMatches('b')->count())->toBe(0)
-        ->and(EntitySentence::whereDoesntHave('meaningJunctions')->where('entity_id', $enEntity->id)->count())->toBe(0);
+        ->and(EntitySentence::whereDoesntHave('meaningJunctions')->where('entity_id', $enEntity->id)->count())->toBe(0)
+        // Total completeness (ADR 0048): the junction-less translation-side
+        // sentence is repaired too, not only the original side.
+        ->and(EntitySentence::whereDoesntHave('meaningJunctions')->where('entity_id', $ruEntity->id)->count())->toBe(0);
 
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
@@ -700,9 +705,10 @@ it('completes without failing when a human-unlinked original sentence is still j
 
     expect($entityMatch->status)->toBe('completed')
         ->and($entityMatch->error_message)->toBeNull()
-        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(3)
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(4)
         ->and($enSentences[1]->refresh()->meaningJunctions()->count())->toBe(1)
-        ->and(EntitySentence::whereDoesntHave('meaningJunctions')->where('entity_id', $enEntity->id)->count())->toBe(0);
+        ->and(EntitySentence::whereDoesntHave('meaningJunctions')->where('entity_id', $enEntity->id)->count())->toBe(0)
+        ->and(EntitySentence::whereDoesntHave('meaningJunctions')->where('entity_id', $ruEntity->id)->count())->toBe(0);
 
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
@@ -1639,9 +1645,10 @@ it('advances the cursors to the window end when the last chunk stores trailing s
         ->and($entityMatch->a_last_sentence_offset)->toBe(4)
         ->and($entityMatch->b_last_sentence_offset)->toBe(4)
         // 1 re-aligned pair + trailing skips for sentences 2 and 3 on both
-        // sides + the completion repair row for sentence 0, which the
-        // rollback dragged out of the window and no chunk re-covered.
-        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(6)
+        // sides + the completion repair rows for sentence 0 on both sides,
+        // which the rollback dragged out of the window and no chunk
+        // re-covered.
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(7)
         ->and($enSentences[3]->refresh()->meaningJunctions()->count())->toBe(1)
         ->and($ruSentences[3]->refresh()->meaningJunctions()->count())->toBe(1);
 
@@ -1691,7 +1698,9 @@ it('does not junction the parked original-side head into a premature skip row', 
 
     // RU is the original side and its head stays parked while the a cursor
     // drains: no run may junction it into a skip row here — the parked head
-    // is re-fed into every window and finalize junctions it if unmatched.
+    // is re-fed into every window and finalize junctions it if unmatched. The
+    // advancing (translation) side's heads DO get skip rows now — total
+    // completeness covers them mid-run too.
     (new AlignEntitySentences($entityMatch->id))->handle();
     (new AlignEntitySentences($entityMatch->id))->handle();
 
@@ -1699,7 +1708,9 @@ it('does not junction the parked original-side head into a premature skip row', 
 
     expect($entityMatch->a_last_sentence_offset)->toBe(2)
         ->and($entityMatch->b_last_sentence_offset)->toBe(0)
-        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(0)
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(2)
+        ->and(SentenceMeaningMatch::where('side', 'a')->count())->toBe(2)
+        ->and(SentenceMeaningMatch::where('side', 'b')->count())->toBe(0)
         ->and($ruSentence->refresh()->meaningJunctions()->count())->toBe(0);
 
     (new AlignEntitySentences($entityMatch->id))->handle();
@@ -1707,7 +1718,9 @@ it('does not junction the parked original-side head into a premature skip row', 
     $entityMatch->refresh();
 
     expect($entityMatch->status)->toBe('completed')
-        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(1)
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(4)
+        ->and(SentenceMeaningMatch::where('side', 'a')->count())->toBe(3)
+        ->and(SentenceMeaningMatch::where('side', 'b')->count())->toBe(1)
         ->and($ruSentence->refresh()->meaningJunctions()->count())->toBe(1);
 
     Bus::assertDispatched(AlignEntitySentences::class, 2);
@@ -1854,7 +1867,7 @@ it('replaces stale machine rows covering the sentences of a re-stored window', f
         ->and($ruSentence->refresh()->meaningJunctions()->count())->toBe(1);
 });
 
-it('lets a human row absorb a re-fed window duplicate and survives it', function () {
+it('does not junction landmark sentences from a re-fed machine window', function () {
     $sentenceType = SentenceType::create(['name' => 'Narration']);
     $work = createWork();
     $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
@@ -1892,6 +1905,10 @@ it('lets a human row absorb a re-fed window duplicate and survives it', function
         'side' => 'b',
     ]);
 
+    // A re-fed window (duplicated job, retry) proposes the same pair the
+    // human row already pins. Landmark sentences are reserved at write time:
+    // the machine row junctioning only them is never stored, so no duplicate
+    // junction exists even transiently.
     SentenceAlignmentService::create()->storeAlignmentSegmentFromMatches(
         $entityMatch,
         6,
@@ -1902,16 +1919,7 @@ it('lets a human row absorb a re-fed window duplicate and survives it', function
     );
 
     expect(MeaningMatch::query()->whereKey($landmark->id)->exists())->toBeTrue()
-        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(2)
-        ->and($enSentence->refresh()->meaningJunctions()->count())->toBe(2)
-        ->and($ruSentence->refresh()->meaningJunctions()->count())->toBe(2);
-
-    // The subsumed duplicate lingers until the completion pass (ADR 0043):
-    // the human row absorbs it and its duplicated claims are removed.
-    SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
-
-    expect(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(1)
-        ->and(MeaningMatch::query()->whereKey($landmark->id)->exists())->toBeTrue()
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(1)
         ->and($enSentence->refresh()->meaningJunctions()->count())->toBe(1)
         ->and($ruSentence->refresh()->meaningJunctions()->count())->toBe(1);
 });

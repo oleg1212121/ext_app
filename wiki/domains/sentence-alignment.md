@@ -5,11 +5,17 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash]
 status: stable
 stale_after: 2026-12-27
-generated: { by: agent:zcode, at: 2026-09-27T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-28T13:30:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
     title: /align HTTP client + meaning-match storage
+  - id: repair-command
+    resource: laravel/app/Console/Commands/RepairEntityMatchAlignmentCommand.php
+    title: alignments:repair — in-place dedupe + both-side backfill
+  - id: junction-migration
+    resource: laravel/database/migrations/2026_09_28_000001_enforce_junction_uniqueness.php
+    title: Strict junction-uniqueness index (ADR 0048)
   - id: copy-service
     resource: laravel/app/Classes/AlignmentCopyService.php
     title: Alignment reuse for exact-copy entity pairs
@@ -100,12 +106,16 @@ and are **not** compared on the a scale (mixing the two scales was the Sep 2026
 regression that put an unmatched RU sentence *after* a two-sided row whose RU
 partner came later); each pending b-only row is emitted immediately before
 the first anchored row whose b position is larger; junction-less rows go
-last. Before the walk it **drops fully subsumed duplicate rows**: a machine
-row whose every junction is also held by a higher-priority row (landmark/human
-over machine, then two-sided, richer, more similar, earlier) is deleted —
-two rows claiming the same sentence can never both sit in document order.
-Partial overlaps of multi-sentence rows are legitimate n:m matches and stay.
-It runs:
+last. Before the walk it enforces **strict junction uniqueness** (ADR 0048):
+per (side, sentence) held by several rows a keeper is elected by priority
+(landmark/human rows `alignment_chunk = -1` or `similarity >= 0.90` first,
+then two-sided, richer, higher similarity, earlier order, lower id) and the
+losers' junctions on the shared sentence are **deleted — partial overlaps
+included**; rows left with no junctions are deleted too (a human-vs-human
+conflict keeps the earlier-ordered row). The invariant is also DB-enforced:
+`sentence_meaning_matches.entity_match_id` (denormalized, auto-filled by a
+model `creating` hook) carries a unique `(entity_match_id,
+entity_sentence_id)` index. It runs:
 - at the **completion gate** — `finalize()` after the junction-less repair
   (best-effort: a failure logs a warning and completion proceeds). This is
   the pipeline's **only** pass (ADR 0043 removed the per-chunk write-time
@@ -113,36 +123,44 @@ It runs:
   quadratic across a run). Accepted: mid-run rows sit append-after-max and a
   subsumed duplicate lingers until completion — nothing in the pipeline
   consumes mid-run order (pool partitioning sorts by document position, not
-  `order`), and `alignments:resequence` remains the manual repair;
+  `order`), and `alignments:resequence` / `alignments:repair` remain the
+  manual repairs;
 - in the **copy fast path** — inside `AlignmentCopyService::copyAlignment()`'s
   transaction, so a copy of a pre-fix source with a scrambled order column
   still lands ordered (a copy either lands ordered or falls back to the full
   pipeline).
 
-Manual repair for a single match: `php artisan alignments:resequence {id}`
+Manual repairs for a single match: `php artisan alignments:resequence {id}`
 (`ResequenceEntityMatchesCommand`; idempotent — reports 0 changes when the
-order column already equals document position; also drops subsumed duplicate
-rows).
+order column already equals document position; also resolves duplicate
+junctions) and `php artisan alignments:repair {id} [--all]`
+(`RepairEntityMatchAlignmentCommand`) — the repair adds the finalize-style
+junction-less backfill on **both** sides before the resequence, and `--all`
+sweeps every existing match (the production cleanup path: nothing in the
+pipeline revisits completed matches).
 
-**Junction-uniqueness invariant.** One sentence is junctioned into at most
-one machine row per side per entity match. Enforced three ways:
+**Junction-uniqueness invariant (strict, ADR 0048).** One sentence is
+junctioned into at most one meaning match per side per entity match —
+partial overlaps included. Enforced in layers:
 `persistSegment()` deletes every machine row below the landmark bar
 (`alignment_chunk != -1` and `similarity <` `LANDMARK_THRESHOLD`, shared
-const with the job) that junctions any sentence of the segment it is about to
-store — so a re-fed window (retry after a crash, duplicated job) **replaces**
-stale coverage instead of duplicating it; the last chunk of a pool advances
+const with the job) that junctions any sentence of the segment it is about
+to store — so a re-fed window (retry after a crash, duplicated job)
+**replaces** stale coverage instead of duplicating it — and **reserves**
+landmark-junctioned sentences: incoming machine windows skip their
+junctions (a window whose every sentence is reserved stores no row), so a
+re-fed window over a single-sided landmark (which delimits no pool) cannot
+create even a transient duplicate. The last chunk of a pool advances
 the cursors to the **window end** (trailing skips are stored up to the window
 end, so stopping at the last committed match would re-feed already-junctioned
 sentences); and a no-progress chunk stores skip rows **only for sides whose
 cursor advances** past the stored sentence — a parked side re-feeds its head
 into later windows, and a premature skip row there would duplicate the
 junction when one of those windows matches it (finalize's junction-less
-repair covers a parked original side instead). Landmark/human rows
+repair covers a parked side instead). Landmark/human rows
 (`alignment_chunk = -1` or at/above the landmark bar) are pinned: never
-deleted by the pipeline; when a re-fed window overlaps a landmark's
-sentences, the completion resequence dedupe resolves the duplicate **in
-favor of the landmark** (the redundant machine copy is the row that goes —
-it lingers, harmless, until the run completes; ADR 0043).
+deleted by the pipeline; a machine row overlapping one loses the shared
+junction at the completion resequence (trimmed, not necessarily deleted).
 
 Related write-atomicity guarantee: each chunk's rows and the advanced cursors
 commit in **one** transaction (`persistOffsets()` in the job), so a crashed
@@ -273,32 +291,35 @@ its output can look exactly like an unfixed bug.
     them entirely.
     Completion funnels through a single gate
     (`AlignEntitySentences::finalize()`, Aug 2026): before the match flips to
-    `completed`, every sentence on the **covered sides** that is still
-    junction-less — dropped by an empty-commit seam, left over when the other
-    side was exhausted, or skipped during a re-align — is junctioned into a
+    `completed`, every sentence on **either side** that is still junction-less —
+    dropped by an empty-commit seam, left over when the other side was
+    exhausted, or skipped during a re-align — is junctioned into a
     **single-sided meaning match** (`similarity 0.0`, next machine
     `alignment_chunk` id), ordered positionally
     (`SparseOrderService::spreadOrders` between the neighbouring junctioned
     anchors) so the reader's meaning-match sequence preserves the original
-    document order. The covered sides come from `skipSides()`: the work's
-    original side (`EntityMatch::originalSide()` — the language the text was
-    authored in); **when neither side is the original language
-    (translation↔translation pair), BOTH sides are repaired**. The repair is
-    best-effort: if it fails, a warning is logged and completion proceeds
-    regardless. `finalize()` then runs
+    document order. This is the **total completeness** invariant (ADR 0048,
+    Sept 2026): `skipSides()` returns both sides unconditionally — it
+    superseded the original-side-only scope (which left translation-side
+    sentences invisible in the reader; the editor's live unmatched pools were
+    their only surface). Both sides' repairs share a **claimed-orders** set
+    seeded with every existing row order: opposite-side runs between the same
+    anchors compute identical spread values, and without the claim check the
+    second insert violated `unique(entity_match_id, order)` and rolled the
+    whole side's repair back (the old silent translation↔translation failure).
+    The repair is best-effort: if it fails, a warning is logged and completion
+    proceeds regardless. `finalize()` then runs
     `resequenceMatchesByDocumentPosition()` over the whole match (same
     best-effort contract) so every completion path leaves the stored sequence
     equal to document position — see the order-preservation invariant above.
     `storeSkipSentences()` on `SentenceAlignmentService` persists
     single-sided rows (side parameter `'a'|'b'`), and the crawl's empty-commit
     seams (`alignWholePool`, `alignPoolChunk`) use it to junction the first
-    uncommitted covered-side sentence instead of silently advancing past it.
+    uncommitted sentence of whichever side's cursor advances (parked sides
+    still re-feed; finalize is their safety net).
     "One side's sentences exhausted before the other's" is a normal
-    completion now, not an error: the remaining covered-side tail is drained
-    as single-sided rows. This is the **original completeness** invariant —
-    original-side sentences are never unmatched (both sides when neither is
-    the original); only non-original translation-side sentences may be
-    junction-less (the editor's unmatched section).
+    completion, not an error: the remaining tail on either side is drained
+    as single-sided rows.
 3. **Align (precision knobs, Aug 2026)** — the python DP no longer
     force-aligns every sentence. Two live knobs
     (`docker-compose/python/env/.env`, apply on the next request):
@@ -374,10 +395,31 @@ its output can look exactly like an unfixed bug.
       per-request `algorithm` and `anchor_threshold` overrides. Regression
       tests assert greedy/DP equivalence on a clean list, 1:2 lazy expansion,
       skip behavior, anchor+gap resolution, the widening ladder (a 1:4 match
-      that only clears past `primary`), normalized-window scoring, and the
-      orphan-merge (2:1 beats a bar-clearing 1:1 → merged, no unmatched; the
-      margin guard keeps a below-margin pooled window from over-merging), and
-      count encoded texts (stub model).
+    that only clears past `primary`), normalized-window scoring, and the
+    orphan-merge (2:1 beats a bar-clearing 1:1 → merged, no unmatched; the
+    margin guard keeps a below-margin pooled window from over-merging), and
+    count encoded texts (stub model).
+3. **Align (weak-pair rescue, ADR 0048, Sept 2026)** — the greedy gap walk
+   no longer turns every sub-threshold pair into a double skip. When no
+   window combo clears the match bar, `_rescue_mutual_best` first checks the
+   cursor pair: if each sentence's best in-band partner within `max_window`
+   lookahead is the other and the 1:1 score clears `ALIGN_RESCUE_THRESHOLD`
+   (live knob, default 0.45, `0` disables, capped at
+   `ALIGN_DEFAULT_THRESHOLD`), the pair is emitted as a **real match
+   carrying its true sub-threshold score** — it surfaces in the editor's
+   Needs review as a low-similarity row instead of masquerading as two
+   single-sided skip rows (the repeating 1-sided pattern came from the skip
+   rule's cascade: skipping one member of a mutual pair collapses the
+   survivor's lookahead, so the next iteration skips the other side too).
+   Non-mutual weak pairs stay skipped — the structural guard is what makes
+   the lower bar safe. After the walk, `_rescue_orphan_gaps` re-walks gaps
+   holding orphans on **both** sides (previously ignored by `_merge_orphans`
+   entirely) with the window-combo acceptance bar lowered to the rescue
+   threshold, pairing orphan runs the fragmented walk declined. Rescued
+   matches score below 0.55, hence far below the 0.90 landmark bar — they
+   re-align like any machine row. Regression tests: `test_aligner.py`
+   (mutual-best rescue with real score; disabled knob keeps the double
+   skip; non-mutual stays skipped; two-sided orphan gap rescued).
 3. **Align (reserved knobs, Plan 02, Aug 2026)** — four new `/align` request
     fields (all optional) and three new live config accessors were plumbed
     through end-to-end. `high_confidence` is **consumed by plan 03's prepass**

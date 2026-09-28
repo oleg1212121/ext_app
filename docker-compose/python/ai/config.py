@@ -118,6 +118,15 @@ def align_merge_margin() -> float:
     return _live_float("ALIGN_MERGE_MARGIN", 0.02)
 
 
+def align_rescue_threshold() -> float:
+    """Greedy gap walk: a mutual-best 1:1 (each sentence's best in-band
+    partner is the other) scoring below similarity_threshold is still emitted
+    as a match carrying its true score when it clears this bar, so a genuine
+    pair just under the match bar lands in the PHP side's Needs review as a
+    low-similarity row instead of two single-sided skip rows. 0 disables."""
+    return _live_float("ALIGN_RESCUE_THRESHOLD", 0.45)
+
+
 def align_high_confidence() -> float:
     """1:1 prepass anchor bar: mutually-best cells at/above this cosine are
     locked as committed matches that split the chunk into sub-pools."""

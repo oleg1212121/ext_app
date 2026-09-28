@@ -1,11 +1,11 @@
 ---
 type: Database Schema
 title: Works, Entities & Alignment Tables
-description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20).
+description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20; strict junction uniqueness 2026_09_28).
 tags: [database, schema, alignment, entities, works, hash]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-09-22T16:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-28T13:30:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
@@ -16,6 +16,9 @@ sources:
    - id: alignment-migration
      resource: laravel/database/migrations/2026_09_10_000004_create_alignment_tables.php
      title: entity_matches + meaning_matches + sentence_meaning_matches (side column)
+   - id: junction-migration
+     resource: laravel/database/migrations/2026_09_28_000001_enforce_junction_uniqueness.php
+     title: sentence_meaning_matches.entity_match_id + unique (entity_match_id, entity_sentence_id)
    - id: align-service
      resource: laravel/app/Classes/SentenceAlignmentService.php
      title: Writer of meaning matches
@@ -31,7 +34,7 @@ sources:
 | `entity_sentences` | `EntitySentence` | Split sentences with **sparse order** values; unique `(entity_id, order)` |
 | `entity_matches` | `EntityMatch` | Pairing of two distinct same-work entities ("same text, two versions"; same-language companions like exercises + answers included), stored canonically `a_entity_id < b_entity_id` |
 | `meaning_matches` | `MeaningMatch` | Sentence-group level alignment result within a match |
-| `sentence_meaning_matches` | `SentenceMeaningMatch` | Per-sentence membership in a meaning match, with a `side` char(1) (`'a'`/`'b'`) naming which entity of the match the sentence belongs to |
+| `sentence_meaning_matches` | `SentenceMeaningMatch` | Per-sentence membership in a meaning match, with a `side` char(1) (`'a'`/`'b'`) naming which entity of the match the sentence belongs to, plus a denormalized NOT NULL `entity_match_id` backing the strict `unique(entity_match_id, entity_sentence_id)` junction-uniqueness index (ADR 0048; auto-filled from the parent meaning match by a model `creating` hook) |
 | `entity_user` | (pivot) | Access grants: which users may read a Restricted entity, with a nullable `similarity` (null = creator grant; non-null = legacy Signature match grant — no longer produced, ADR 0033) |
 
 # Invariants & notes
@@ -47,10 +50,20 @@ sources:
 * **Every entity belongs to a work** (`work_id` NOT NULL). A work may hold
   several entities in the same language (competing translations) told apart
   by `entities.label`.
-* **Cover both sides**: when neither side of a match is the work's original
-  language, the aligner's skip rows and finalize repairs cover BOTH sides —
-  the original-completeness invariant generalizes to translation↔translation
-  pairs.
+* **Cover both sides — total completeness (ADR 0048)**: the aligner's skip
+  rows and finalize repairs cover BOTH sides of every match. Every sentence
+  of both entities ends junctioned into a meaning match (two-sided or
+  single-sided), so nothing is invisible to the reader/simulator; the
+  editor's unmatched pools remain the live view of junction-less sentences
+  while a match is mid-run.
+* **Strict junction uniqueness (ADR 0048)**: one sentence is junctioned into
+  at most one meaning match per side per entity match — DB-enforced by
+  `unique(entity_match_id, entity_sentence_id)` on
+  `sentence_meaning_matches`. The app elects keepers by priority
+  (landmark/human → two-sided → richer → higher similarity → earlier order)
+  and trims losers' junctions at completion, copy, and via
+  `alignments:repair`; the pipeline reserves landmark sentences so machine
+  windows never junction them; the editor dedupes its re-insert list.
 * **Sparse ordering**: sentence and match order columns hold sparse values
   (stride 1024) maintained by `SparseOrderService`; every creation path emits
   sparse values from birth (the split pipeline, the console importer, the
@@ -105,12 +118,12 @@ sources:
 * **Deletion cleanup**: deleting a sentence cascades to its junctions; a
   meaning match left with no junctions is deleted and the parent
   `EntityMatch.linked_count` is updated (`EntitySentence::booted()`).
-* **Single-sided meaning matches**: the aligner keeps unmatched
-  original-side sentences visible via one-sided junctions (`similarity 0.0`,
-  next machine chunk id); the completion gate
-  `AlignEntitySentences::finalize()` enforces original completeness (both
-  sides when neither is the original). The editor's **Needs review** section
-  surfaces one-sided rows (any similarity) plus two-sided rows below 0.55.
+* **Single-sided meaning matches**: the aligner keeps unmatched sentences
+  visible via one-sided junctions (`similarity 0.0`, next machine chunk id);
+  the completion gate `AlignEntitySentences::finalize()` enforces **total
+  completeness** — both sides are repaired (ADR 0048; previously only the
+  work's original side). The editor's **Needs review** section surfaces
+  one-sided rows (any similarity) plus two-sided rows below 0.55.
 * `EntityMatch` is what an alignment card and the pinned simulator route
   label — joining `aEntity` / `bEntity` for display names.
 * **Read access is Restricted by default** (ADR

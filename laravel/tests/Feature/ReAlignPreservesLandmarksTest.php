@@ -7,6 +7,7 @@ use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 function seedMeaningMatchJunction(MeaningMatch $match, EntitySentence $a, EntitySentence $b): void
@@ -221,6 +222,11 @@ it('wipes every row including human-edited ones when starting from scratch', fun
         'similarity' => 0.5,
         'alignment_chunk' => 0,
     ]);
+
+    // The machine row duplicates the human row's sentences — legacy garbage
+    // the strict uniqueness constraint now forbids; suspend it to stage that
+    // state (beginFromScratch must wipe it regardless).
+    DB::statement('ALTER TABLE sentence_meaning_matches DROP CONSTRAINT smm_match_sentence_unique');
     seedMeaningMatchJunction($machineRow, $enSentence, $ruSentence);
 
     AlignEntitySentences::beginFromScratch($entityMatch->id);
