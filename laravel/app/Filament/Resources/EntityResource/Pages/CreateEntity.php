@@ -21,6 +21,7 @@ class CreateEntity extends CreateRecord
         if ($data['file_path'] !== null) {
             $data['file_hash'] = EntityTextHasher::hashStoredFile((string) $data['file_path']);
             $data['sentences_updated_at'] = now();
+            $data['status'] = 'processing';
         }
 
         return $data;

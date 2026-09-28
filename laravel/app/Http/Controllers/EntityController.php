@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Classes\EntityAccessService;
 use App\Classes\EntityCreationService;
+use App\Classes\IllustrationStorage;
 use App\Classes\SparseOrderService;
+use App\Exceptions\ProcessingLimitReached;
 use App\Http\Requests\ReorderEntitySentenceRequest;
 use App\Http\Requests\StoreEntityRequest;
 use App\Http\Requests\StoreEntitySentenceRequest;
@@ -22,6 +24,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -30,6 +33,7 @@ class EntityController extends Controller
 {
     public function __construct(
         private readonly SparseOrderService $sparseOrder,
+        private readonly IllustrationStorage $illustrations = new IllustrationStorage,
         private readonly EntityCreationService $creation = new EntityCreationService,
     ) {}
 
@@ -55,13 +59,17 @@ class EntityController extends Controller
 
         $work = $this->resolveWork($request, $language);
 
-        $result = $this->creation->create(
-            $request->user(),
-            $work,
-            $language,
-            $request->validated(),
-            $request->file('file'),
-        );
+        try {
+            $result = $this->creation->create(
+                $request->user(),
+                $work,
+                $language,
+                $request->validated(),
+                $request->file('file'),
+            );
+        } catch (ProcessingLimitReached $e) {
+            return back()->withErrors(['limit' => $e->getMessage()]);
+        }
 
         if ($result['status'] === 'created_from_copy') {
             return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $result['entity']->id])
@@ -110,6 +118,7 @@ class EntityController extends Controller
                 'description' => $entity->description,
                 'file_path' => $entity->file_path,
                 'signature_status' => $entity->signatureStatus(),
+                'status' => $entity->status,
                 'is_approved' => $entity->is_approved,
                 'sentences_count' => $entity->sentences_count,
                 'created_at' => $entity->created_at?->toISOString(),
@@ -124,6 +133,13 @@ class EntityController extends Controller
                     'order' => $sentence->order,
                     'content' => $sentence->content,
                     'type' => $sentence->sentenceType?->name,
+                    'image' => $sentence->image_path !== null
+                        ? [
+                            'url' => route('illustrations.show', ['sentence' => $sentence->id]),
+                            'width' => $sentence->image_width !== null ? (int) $sentence->image_width : null,
+                            'height' => $sentence->image_height !== null ? (int) $sentence->image_height : null,
+                        ]
+                        : null,
                 ];
             })->items(),
             'sentences_meta' => [
@@ -249,10 +265,12 @@ class EntityController extends Controller
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
         $data = $request->validated();
-        $content = trim((string) $data['content']);
+        $content = trim((string) ($data['content'] ?? ''));
         $afterSentenceId = $data['after_sentence_id'] ?? null;
 
-        $sentence = DB::transaction(function () use ($entity, $content, $data, $afterSentenceId): Model {
+        $image = $this->isIllustrationType($data) ? $request->file('image') : null;
+
+        $sentence = DB::transaction(function () use ($entity, $content, $data, $afterSentenceId, $image, $language): Model {
             $sentences = EntitySentence::query()
                 ->where('entity_id', $entity->id)
                 ->orderBy('order')
@@ -275,6 +293,7 @@ class EntityController extends Controller
                 'sentence_type_id' => (int) $data['sentence_type_id'],
                 'content' => $content,
                 'order' => $result['order'],
+                ...$this->imageAttributes($image, $language->code),
             ]);
         });
 
@@ -305,10 +324,31 @@ class EntityController extends Controller
 
         $sentenceModel = $this->findEntitySentence($entity->id, $sentence);
 
-        $sentenceModel->update([
-            'content' => trim((string) $data['content']),
+        $updates = [
+            'content' => trim((string) ($data['content'] ?? '')),
             'sentence_type_id' => (int) $data['sentence_type_id'],
-        ]);
+        ];
+
+        $image = $sentenceModel->isIllustration() || $this->isIllustrationType($data)
+            ? $request->file('image')
+            : null;
+
+        if ($image !== null) {
+            $oldPath = $sentenceModel->image_path;
+
+            DB::transaction(function () use ($sentenceModel, $updates, $image, $language): void {
+                $sentenceModel->update([
+                    ...$updates,
+                    ...$this->imageAttributes($image, $language->code),
+                ]);
+            });
+
+            if ($oldPath !== null) {
+                $this->illustrations->releaseIfOrphaned($oldPath);
+            }
+        } else {
+            $sentenceModel->update($updates);
+        }
 
         $this->setMatchesPending($entity->id);
 
@@ -631,6 +671,42 @@ class EntityController extends Controller
     }
 
     /**
+     * Whether the submitted type is the seeded illustration type.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function isIllustrationType(array $data): bool
+    {
+        $illustrationId = SentenceType::illustrationId();
+
+        return $illustrationId !== null
+            && (int) ($data['sentence_type_id'] ?? 0) === $illustrationId;
+    }
+
+    /**
+     * Sentence columns for an uploaded illustration; empty for plain
+     * sentences (a stray file on a non-illustration type is ignored).
+     *
+     * @return array{image_path?: string, image_hash?: string, image_width?: ?int, image_height?: ?int, image_mime?: ?string}
+     */
+    private function imageAttributes(?UploadedFile $image, string $langCode): array
+    {
+        if ($image === null) {
+            return [];
+        }
+
+        $stored = $this->illustrations->store($image, $langCode);
+
+        return [
+            'image_path' => $stored['path'],
+            'image_hash' => $stored['hash'],
+            'image_width' => $stored['width'],
+            'image_height' => $stored['height'],
+            'image_mime' => $stored['mime'],
+        ];
+    }
+
+    /**
      * Shift every order in a SparseOrderService result so that the minimum is
      * non-negative, preserving relative sequence. Mirrors the guard in
      * AlignmentEditorController::storeSentence so entity-editor sentences never
@@ -664,7 +740,7 @@ class EntityController extends Controller
     }
 
     /**
-     * @return array{id: int, order: int, content: string, sentence_type_id: int, type: ?string}
+     * @return array{id: int, order: int, content: string, sentence_type_id: int, type: ?string, image: ?array{url: string, width: ?int, height: ?int}}
      */
     private function sentencePayload(Model $sentence): array
     {
@@ -674,6 +750,13 @@ class EntityController extends Controller
             'content' => $sentence->content,
             'sentence_type_id' => (int) $sentence->sentence_type_id,
             'type' => $sentence->sentenceType?->name,
+            'image' => $sentence->image_path !== null
+                ? [
+                    'url' => route('illustrations.show', ['sentence' => $sentence->id]),
+                    'width' => $sentence->image_width !== null ? (int) $sentence->image_width : null,
+                    'height' => $sentence->image_height !== null ? (int) $sentence->image_height : null,
+                ]
+                : null,
         ];
     }
 }

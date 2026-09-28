@@ -6,6 +6,8 @@ use App\Classes\AlignmentCopyService;
 use App\Classes\AlignmentEditorApiPresenter;
 use App\Classes\EntityAccessService;
 use App\Classes\EntityCreationService;
+use App\Classes\ProcessingLimits;
+use App\Exceptions\ProcessingLimitReached;
 use App\Http\Requests\StoreEntityMatchRequest;
 use App\Http\Requests\StoreWorkEntityRequest;
 use App\Http\Requests\StoreWorkRequest;
@@ -35,6 +37,7 @@ class LibraryController extends Controller
         private readonly EntityCreationService $creation,
         private readonly AlignmentEditorApiPresenter $presenter,
         private readonly AlignmentCopyService $alignmentCopy = new AlignmentCopyService,
+        private readonly ProcessingLimits $limits = new ProcessingLimits,
     ) {}
 
     public function index(Request $request): Response
@@ -225,6 +228,7 @@ class LibraryController extends Controller
                     'label' => $entity->label,
                     'description' => $entity->description,
                     'signature_status' => $entity->signatureStatus(),
+                    'status' => $entity->status,
                     'sentences_count' => $entity->sentences_count,
                     'language' => [
                         'code' => $entity->language?->code,
@@ -326,13 +330,17 @@ class LibraryController extends Controller
         $work = Work::query()->findOrFail($work);
         $language = Language::query()->enabled()->findOrFail((int) $request->validated('language_id'));
 
-        $result = $this->creation->create(
-            $request->user(),
-            $work,
-            $language,
-            $request->validated(),
-            $request->file('file'),
-        );
+        try {
+            $result = $this->creation->create(
+                $request->user(),
+                $work,
+                $language,
+                $request->validated(),
+                $request->file('file'),
+            );
+        } catch (ProcessingLimitReached $e) {
+            return back()->withErrors(['limit' => $e->getMessage()]);
+        }
 
         return $this->redirectFromCreation($result, $language->code);
     }
@@ -395,13 +403,27 @@ class LibraryController extends Controller
                 ->with('existing_match_id', $existing->id);
         }
 
-        $entityMatch = EntityMatch::create([
-            'a_entity_id' => $aEntityId,
-            'b_entity_id' => $bEntityId,
-            'chunk_size' => (int) $data['chunk_size'],
-            'max_n' => (int) $data['max_n'],
-            'status' => 'pending',
-        ]);
+        try {
+            // Created under the creator's lock so two parallel submissions
+            // cannot both pass the alignment limit (ADR 0044).
+            $entityMatch = $this->limits->underCreatorLock(
+                $request->user(),
+                function () use ($request, $aEntityId, $bEntityId, $data): EntityMatch {
+                    $this->limits->assertAlignmentSlot($request->user());
+
+                    return EntityMatch::create([
+                        'a_entity_id' => $aEntityId,
+                        'b_entity_id' => $bEntityId,
+                        'chunk_size' => (int) $data['chunk_size'],
+                        'max_n' => (int) $data['max_n'],
+                        'status' => 'pending',
+                        'created_by' => $request->user()->id,
+                    ]);
+                },
+            );
+        } catch (ProcessingLimitReached $e) {
+            return back()->withErrors(['limit' => $e->getMessage()]);
+        }
 
         // An exact-copy pair reuses a completed alignment instead of running
         // the (potentially half-hour) pipeline.

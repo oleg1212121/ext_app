@@ -25,6 +25,12 @@ class GenerateEntitySignaturesCommand extends Command
             ->get(['id', 'file_path']);
 
         foreach ($entities as $entity) {
+            // Each dispatched pass holds a processing slot (ADR 0044) until
+            // the signature lands or the job's retries run out.
+            Entity::query()
+                ->whereKey($entity->id)
+                ->update(['status' => 'processing']);
+
             GenerateEntitySignature::dispatch($entity->id, $entity->file_path);
         }
 

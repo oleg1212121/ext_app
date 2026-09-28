@@ -1,5 +1,188 @@
 # Directory Update Log
 
+## 2026-09-28 (fix: alignable-totals writers missed by the illustrations commit)
+
+Post-review follow-up to the illustrations entry below: three writers of
+`a/b_total_sentences` still counted illustration rows, breaking ADR 0050's
+"totals are the aligner's sentence space" invariant — the editor's
+add-sentence recount (`AlignmentEditorController::storeSentence`, sibling of
+the already-fixed `destroyUnmatched`), the draft-apply recount
+(`AlignmentEditorPersister`), and the alignment copy
+(`AlignmentCopyService`, whose copied cursor derives from the totals). All
+three now filter `withoutImage()`; junction copying is untouched —
+illustration junctions still copy positionally. Also: `EntitySentence`'s
+deleted hook delegates to `IllustrationStorage::releaseIfOrphaned` instead
+of re-implementing it, and `UpdateSentenceRequest` uses the `withImage()`
+scope. Three new tests in `EntityIllustrationAlignmentTest` pin the
+invariant (editor add-sentence, draft apply, copy onto illustrated copies).
+
+## 2026-09-28 (feat: illustrations — image-bearing sentences matched like text and rendered in reader/simulator; ADR 0050)
+
+An **Illustration** is an `entity_sentences` row with non-null `image_path`
+(new columns `image_path/image_hash/image_width/image_height/image_mime`,
+migration `2026_09_28_000002`; seeded `illustration` sentence type), whose
+text is the optional caption. They join meaning matches like any sentence
+(any grouping valid, no new junction rules) but are invisible to the aligner:
+`AlignEntitySentences` filters them from chunk windows, counts, and cursors
+(alignable-sentence space; `a_total_sentences` = alignable count), captions
+never reach python `/align`, and `finalize()`'s completeness repair backfills
+each one single-sided at similarity 0.0 → Needs review → human pairing writes
+1.0 (ADR 0049). Uploads live on the entity edit page's sentence manager
+(multipart add form when the illustration type is selected; inline caption
+edit + image replace, type pinned); files store on the private `local` disk
+(`IllustrationStorage`, content-hash names so identical uploads share a file,
+reference-counted delete) and serve via `GET /illustrations/{sentence}` gated
+by `EntityAccessService::canRead`. `text_hash` folds in `image_hash`
+(pre-illustration hashes unchanged). Reading surfaces: `MeaningMatchPresenter::toSimulatorImages`
+returns row-aligned `[aImages, bImages]`; reader ships the `rowImages` prop
+(flipped by side rule + client toggle, rendered per side above row text,
+image-only sides still reveal) and the simulator adds `row_images` to
+`POST /text`, rendered inside the revealable cells. Alignment editor payloads
+carry an `image` descriptor (`SentenceItem` thumbnails; needs-review parts
+read `[illustration]`). `entity_sentences.content` stays NOT NULL — empty
+captions are `''`. 17 new tests (`EntityIllustrationTest`,
+`EntityIllustrationAlignmentTest`); glossary gains **Illustration**;
+ADR 0050 records the sentence-row decision.
+
+## 2026-09-28 (feat: alignments review UX — human-confirmed 1-sided leave Needs review, jump button, rows lookahead; ADR 0049)
+
+Three editor changes on `/alignments/{id}`. (1) **Needs review membership**
+now excludes one-sided rows trusted at `similarity = 1.0`: every editor
+mutation writes 1.0 while the pipeline emits its one-sided rows at 0.0, so
+human-shaped rows (added sentence with no counterpart, approved or unlinked
+rows) leave the list and its totals as if resolved, with no new stored state
+(`AlignmentEditorApiPresenter::HUMAN_CONFIRMED_SIMILARITY`; `alignment_chunk
+= -1` was rejected as discriminator because link/unlink/add-sentence don't
+set it). (2) Every rows page carries a **three-row lookahead tail**
+(`ROWS_LOOKAHEAD`): `per_page` normal rows plus the first three rows of the
+next page, marked client-side with an accent "next page" badge (`PairRow`
+`preview`) and still fully editable; meta stays per_page-based so page
+numbering and the `→ p. N` jumps are unchanged. (3) A round
+**scroll-to-review button** pinned top-center (sticky in `Show.jsx`,
+always visible) smooth-scrolls to the unmatched pools — or the needs-review
+list when both pools are empty — without expanding them. UI strings
+`alignments.next_page` / `alignments.jump_to_review` added. Glossary
+"Needs review" updated (+ `_Avoid_: resolved`); ADR 0049 records the
+membership rule.
+
+## 2026-09-28 (feat: strict alignment invariants — junction uniqueness, total completeness, weak-pair rescue, ADR 0048)
+
+Three production defects fixed together. (1) The repeating pattern of two
+1-sided rows (EN then RU) followed by a matched row came from the greedy
+aligner's hard 0.55 match bar plus the skip rule's cascade: skipping one
+member of a mutual weak pair collapses the other's lookahead, so both get
+skipped. Now a mutual-best 1:1 (or a two-sided orphan-gap window combo)
+scoring in the new rescue band `[ALIGN_RESCUE_THRESHOLD, 0.55)` (default
+0.45, live knob, 0 disables) is emitted as a real match carrying its true
+sub-threshold score — flagged in Needs review as low-similarity instead of
+masquerading as 1-sided. (2) Duplicate junctions (same sentence in several
+meaning matches) are now impossible: `sentence_meaning_matches` gained a
+denormalized NOT NULL `entity_match_id` + `unique(entity_match_id,
+entity_sentence_id)` (migration resolves legacy duplicates inline,
+landmark/human rows win), `persistSegment` reserves landmark-junctioned
+sentences so re-fed windows never junction them, the resequence dedupe trims
+losers' junctions (partial overlaps included, machine loses to human,
+human-vs-human keeps the earlier row), and the editor dedupes its re-insert
+list. (3) The finalize repair now covers BOTH sides (total completeness —
+translation-side sentences are no longer invisible in the reader), mid-run
+no-progress paths store skip rows for advancing non-original sides, and the
+opposite-side spread-order collision that silently rolled back a side's
+repair is fixed via a shared claimed-orders set. New
+`alignments:repair {id} [--all]` sweeps completed matches in place (dedupe +
+both-side backfill + resequence) — the production cleanup path. Tests that
+seeded duplicate junctions suspend the constraint first; original-side-only
+coverage assertions updated to both sides. `wiki/domains/sentence-alignment.md`
+and `wiki/database/entities-alignment.md` updated; `reference/commands.md`
+regenerated for the new command.
+
+## 2026-09-27 (fix: word-family base groups scoped to the claiming word classes, ADR 0047)
+
+ADR 0045's aggregation loaded each base word's whole headword group, so a
+surface whose base headword has several classes rode in unrelated entries:
+clicking "me" pulled in the character "I", the Roman numeral "I" and every
+other article sharing the spelling "I" — only the pronoun actually lists
+"me" among its forms. `WordFamily::baseGroups` now collects the claiming
+rows as `(base.l_word, base.word_class_id)` pairs (the join already had the
+information; it discarded the class) and keeps, per base group, only the
+entries whose class a claim carries; the whole group is kept when a claim
+has no class (defensive — `words.word_class_id` is NOT NULL). Own groups are
+untouched: clicking a headword directly still shows every class under the
+spelling. Ranking is computed on the scoped groups. Visible shrink:
+"melted" no longer shows "melt — Noun" (the noun does not claim "melted").
+Rejected a character/numeral/symbol class blocklist: POS-taxonomy-dependent
+and blind to cross-class noise generally. CONTEXT.md "Word family" term
+updated; `wiki/domains/interactive-words.md` gained the scoping prose + the
+ADR source. Tests: the melt test now asserts melt-Noun's absence; new test
+proves the me→I scope (pronoun in, character/numeral out); "left" →
+leave verb+noun stays green unchanged.
+
+## 2026-09-27 (feat: per-user popup section visibility — the profile's Popups tab, ADR 0046)
+
+The Word popup's block set was fixed: every user saw every block, and the
+frequency rank was not displayed at all. Now the profile has a fifth tab
+("Popups", between Preferences and AI Models) over eleven per-user
+visibility checkboxes grouped for display (Knowledge / Word family /
+Dictionary details / Tabs & info) plus a live preview that renders the
+popup's real body — the popup body was extracted into the exported
+`PopupContent` (`Components/WordPopup.jsx`; the portal, positioning and
+fetching stay with `WordPopup`) with a fixture-style sample family, so the
+preview cannot drift from the real thing. State persists as a new
+`ui_settings.popup` section (eleven booleans, absent = visible —
+`App\Support\PopupVisibility::for()` resolves it over all-visible defaults
+and shares it to every page as the `popupVisibility` Inertia prop; one map
+drives both surfaces), autosaved per flick via `useUiSettingsAutosave`.
+`PATCH /ui-settings` moved from the approved-only group to the auth-only
+profile group (the tab is reachable pre-approval; the endpoint only touches
+the caller's own settings). The word payload gains `frequency` — the bound
+headword's integer rank, null for unranked (sentinel included) — shown as a
+"Frequency: #N" line under the familiarity line. Explanation off drops the
+whole tab strip incl. the Models-used icon; word_family off filters
+base-word sections; the headword header is never toggleable and no minimum
+is enforced. New term: **Popup preferences**. New tests: popup section
+merge/validation/unapproved-access (`UiSettingsTest`), frequency payload
+(`WordEndpointTest`), popups tab + `popupVisibility` prop
+(`ProfileTest`). Concepts updated: interactive-words.md, profile.md.
+
+## 2026-09-27 (feat: word popup aggregates the word family, ADR 0045)
+
+Clicking "melted" showed one definition — "past participle of the verb
+melt" — because the kaikki import stores Wiktionary's form-of lines as
+standalone words with verbatim relay glosses, the entity-word linker's exact
+pass prefers them over the forms pass, and the popup loaded only entries
+sharing the linked row's headword. Now `WordFamily::resolve` builds the
+popup's word family per request: the own headword group (unchanged order)
+plus every base headword's group the `forms` table maps the surface token
+to (own headword excluded, ranked by `words.frequency`, uncapped); all-relay
+entries hide behind the "«surface» — form of «…»" pointer line (`form_of`
+payload field) and stray relay glosses are filtered out of partially-relay
+entries ("saw/verb" mixes real senses with "simple past of see") whenever a
+base group exists — detection by an anchored runtime gloss-pattern list in
+`App\Classes\WordFamily`, no schema or import changes (escape hatch:
+`is_form_of` column + import tags + backfill). Entries now carry their own
+`word` so base sections label "melt — Verb"; `entity_words` linking,
+familiarity and crossword untouched. New terms: **Form-of entry**, **Base
+word** (Dictionary), **Word family** (Interactive Reading). New tests
+`tests/Unit/WordFamilyTest.php` + six word-family cases in
+`WordEndpointTest`. Concepts updated: interactive-words.md, dictionary.md.
+
+## 2026-09-27 (feat: per-user processing limits — 2 entities, 1 alignment, ADR 0044)
+
+Non-admin users could create entities and alignments without bound, each
+running Python-backed pipelines on the shared default lane. Now a user holds
+at most 2 entities with `entities.status = 'processing'` and 1 alignment with
+`entity_matches.status IN ('pending','aligning')`; approved admins are exempt
+and the numbers live in `config/limits.php` (env-overridable). Entities gain
+an explicit `processing|completed|failed` lifecycle (pipeline `failed()` hooks
+free the slot; no-file and finished exact-copy clones are born `completed`),
+alignments gain a `created_by` owner column (backfilled from the a-side
+uploader; CONTEXT.md gains **Processing status**, **Alignment owner**,
+**In-flight**, **Processing limit** under a new Processing Limits Context).
+Count-then-create runs under the creator's locked user row
+(`App\Classes\ProcessingLimits`); rejections surface as `limit` validation
+errors with banners on the three create forms. New tests
+`EntityProcessingLimitTest` / `EntityStatusLifecycleTest` /
+`AlignmentLimitTest`. Concepts updated: entities.md, sentence-alignment.md.
+
 ## 2026-09-26 (feat: bounded job runs — run budgets + durable progress markers, ADR 0043)
 
 An audit found 4 of 8 queued jobs could process unbounded rows in one

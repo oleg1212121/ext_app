@@ -233,6 +233,9 @@ class SimulatorController extends Controller
 
         return [
             'rows' => $this->presenter->toSimulatorRows($paginator->getCollection()),
+            // Row-aligned with rows: row i carries its [aImages, bImages]
+            // pair here (illustrations, ADR 0050).
+            'row_images' => $this->presenter->toSimulatorImages($paginator->getCollection()),
             'row_keys' => $this->presenter->toSimulatorRowKeys($paginator->getCollection()),
             'word_maps' => $this->wordMapsFor($match),
             // The picker page's language toggle tracks the loaded match: the

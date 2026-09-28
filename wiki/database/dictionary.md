@@ -4,8 +4,8 @@ title: Unified Dictionary Tables
 description: One words table (+ satellites) keyed by language, per-language word classes and transcription types, and a symmetric word_translations pivot (one row per pair).
 tags: [database, schema, dictionary, words]
 status: stable
-stale_after: 2026-12-25
-generated: { by: agent:zcode, at: 2026-09-25T00:00:00Z }
+stale_after: 2026-12-27
+generated: { by: agent:zcode, at: 2026-09-27T18:30:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -22,7 +22,7 @@ sources:
 | `word_classes` | Parts of speech **per language** (`language_id`, `slug`, `title`, unique `(language_id, slug)`); seeded for en/ru |
 | `transcription_types` | Transcription kinds per language (ipa, enpr for English; МФА for Russian) |
 | `words` | A base-form word in one language: `language_id`, `word`, `l_word` (lowercase), `frequency` (rank: lower = more common, `numeric(12,2)`; 1,100,000 = unranked, `Word::FREQUENCY_UNRANKED` — see ADR 0041), `word_class_id`, raw Wiktionary `translations` JSON. Unique `(word, language_id, word_class_id)`; index `(l_word, word_class_id)` |
-| `forms` / `definitions` / `etymologies` / `examples` | Per-word satellites (unique `(form, word_id)` / `(example, word_id)`); `forms` carries `l_word` (indexed, `idx_forms_l_word`) and is the runtime link target for inflected tokens — see the linker's forms pass in [Crossword](/domains/crossword.md) |
+| `forms` / `definitions` / `etymologies` / `examples` | Per-word satellites (unique `(form, word_id)` / `(example, word_id)`); `forms` carries `l_word` (indexed, `idx_forms_l_word`) and is the runtime link target for inflected tokens — the linker's forms pass in [Crossword](/domains/crossword.md) — and the source of the Word popup's base-word groups ([Interactive words](/domains/interactive-words.md), ADR 0045) |
 | `transcriptions` | Written phonetic notations per word + `transcription_type_id` (ipa, enpr, …; unique triple) |
 | `pronunciations` | Audio files with pronunciation examples per word (`path` on the public disk, unique `(path, word_id)`); uploaded via the admin |
 | `tags` / `word_tags` | Word tags (e.g. most-used) and the pivot |
@@ -30,6 +30,16 @@ sources:
 
 # Notes
 
+* The popup aggregates the **word family** per surface token
+  (`WordFamily::resolve`, ADR 0045): the linked headword's group plus every
+  base headword's group from `forms`. Kaikki's "form-of" entries are stored
+  as ordinary words whose definitions relay to the base word ("simple past
+  and past participle of melt", sometimes merged into a real entry —
+  "saw/verb" carries real senses *and* "simple past of see"); at popup time
+  such **relay glosses** are recognized by an anchored pattern list in
+  `WordFamily` and hidden/filtered whenever a base group carries the real
+  content. Escape hatch if patterns misfire: an `is_form_of` column set at
+  import + backfill.
 * Runtime consumers now exist: `WordController` serves the word popup
   (`GET /words/{word}`, definitions/transcriptions/native-first
   translations/examples) and reads/writes `user_word` progress on behalf of

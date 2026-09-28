@@ -143,10 +143,15 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                         <dt className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                             {t('entities.signature')}
                         </dt>
-                        <dd className="mt-1">
+                        <dd className="mt-1 flex items-center gap-2">
                             <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] ${SIGNATURE_BADGE[entity.signature_status] ?? SIGNATURE_BADGE.none}`}>
                                 {entity.signature_status}
                             </span>
+                            {entity.status === 'failed' && (
+                                <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--wbench-danger)] dark:text-[var(--wbench-danger-night)] border-[var(--wbench-danger)]/40 dark:border-[var(--wbench-danger-night)]/40">
+                                    {entity.status}
+                                </span>
+                            )}
                         </dd>
                     </div>
                     <div className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-4">

@@ -18,6 +18,7 @@ class Entity extends Model
         'label',
         'description',
         'signature',
+        'status',
         'file_path',
         'file_hash',
         'split_offset',

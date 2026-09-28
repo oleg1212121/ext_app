@@ -51,9 +51,11 @@ sentence visible. _Avoid_: skip row (implementation term), empty match
 
 **Needs review**:
 A meaning match a human should inspect because it is low-confidence (similarity
-below the pipeline's acceptance floor) or one-sided (incomplete). Surfaced in
-the Alignments editor as a review list.
-_Avoid_: low-similarity match (score-only wording, misses one-sided rows)
+below the pipeline's acceptance floor) or one-sided (incomplete) and not
+human-confirmed — a single-sided match trusted at similarity 1.0 was shaped by
+a human on purpose and is treated as resolved (see ADR 0049). Surfaced in the
+Alignments editor as a review list.
+_Avoid_: low-similarity match (score-only wording, misses one-sided rows), resolved (not a stored state; the human-confirmed convention replaces it)
 
 **Sentence**:
 A split sentence of an entity. Its entity-global `order` is the **document order** —
@@ -62,6 +64,15 @@ reader rely on it. The alignment editor renumbers it when a sentence is dragged
 (see Move sentence); the entities frontend's insert/reorder operations are the
 other mutation paths.
 _Avoid_: line
+
+**Illustration**:
+A picture inserted into an entity's text at a document-order position, carried
+by a sentence of its own whose text is the optional caption. It participates in
+meaning matches like any sentence — typically paired with the same picture in
+the counterpart edition, validly unmatched or paired with text. It is never
+sent to the aligner; an alignment's cursor space counts only image-less
+sentences (see ADR 0050).
+_Avoid_: image sentence (the marker is the image, not the type), figure.
 
 **Junction**:
 A sentence's membership link to a meaning match. Junctions are pure association
@@ -244,6 +255,17 @@ by `(language, slug)`. Seeded with curated titles for en/ru; the import
 auto-creates any unseen class with the slug as a placeholder title. A word
 whose part of speech cannot be determined gets the `unknown` class.
 _Avoid_: POS (dump-field jargon), category, speech part.
+
+**Form-of entry**:
+A Word imported from a Wiktionary form-of line — its definitions merely
+relay to another Word ("past participle of the verb melt"). The Word popup
+shows it as a "form of" pointer line, never as content of its own.
+_Avoid_: duplicate, variant, stub.
+
+**Base word**:
+The Word a surface form belongs to via the forms table — "melt" is the Base
+word of "melted". A Word popup lists every Base word's headword group after
+its own. _Avoid_: lemma, root, parent.
 
 **Transcription type**:
 The kind of phonetic notation a transcription is written in (e.g. IPA,
@@ -514,6 +536,37 @@ readable-scoped. See ADR 0021.
 _Avoid_: available works (Available is the AI-provider term), my library,
 book collection.
 
+# Processing Limits Context
+
+The domain of how much of the shared background pipeline one user may occupy
+at once — the caps on a user's concurrently processing entities and
+alignments, and the states that count against them. See ADR 0044.
+
+## Language
+
+**Processing status**:
+The explicit lifecycle column on an Entity: `processing` while its upload
+pipeline runs, `completed` when split/hash/signature are done, `failed` when
+the pipeline exhausted its retries. Scheduled enrichment never re-enters
+`processing`. _Avoid_: signature status (the display-only derivation),
+entity state.
+
+**Alignment owner**:
+The user recorded in `entity_matches.created_by` — who created the match,
+and whose alignment slot it consumes. The paired entities may have different
+uploaders; ownership never derives from them. _Avoid_: creator (the Entity
+term), uploader (belongs to entities).
+
+**In-flight**:
+An entity whose **Processing status** is `processing`, or an alignment whose
+status is `pending` or `aligning` — the states that hold one of the owner's
+slots. _Avoid_: pending (overloaded), running, active.
+
+**Processing limit**:
+The configurable per-user cap on concurrently **In-flight** entities and
+alignments, enforced only at creation. Admins are exempt. _Avoid_: quota,
+rate limit (a rate, not a concurrency), concurrency cap.
+
 # Crossword Context
 
 The domain of crossword puzzles generated from a text's own vocabulary —
@@ -630,8 +683,19 @@ translations, examples and etymology. On surfaces that provide AI context it
 is tabbed — the dictionary content on the first tab, the **Context
 explanation** on the second — with the progress actions in a footer shared
 by both tabs. Sized to the viewport — it flips above the word when there is
-more room above and scrolls internally instead of running off-screen.
+more room above and scrolls internally instead of running off-screen. Which
+blocks below the headword render at all is the reader's choice through
+**Popup preferences**; the headword itself always shows.
 _Avoid_: modal (it is anchored to the word, not centered), tooltip.
+
+**Popup preferences**:
+A user's per-block visibility map for the Word popup — which lines
+(familiarity, frequency, form-of), family sections, dictionary satellites,
+the Explanation tab and the progress buttons render for them. One shared map
+for every surface that shows the popup; the headword is never hideable, and
+a block the map does not mention shows by default. Edited on the profile's
+Popups tab over a live preview of the real popup.
+_Avoid_: popup settings, popup config, section flags.
 
 **Context explanation**:
 The AI explanation of an Interactive word as it is used in its sentence —
@@ -648,6 +712,13 @@ part of speech may share it. The Word popup lists every Word under the
 Headword, one section per Word class.
 _Avoid_: lemma (implementation shorthand), entry (the popup section, not the
 spelling).
+
+**Word family**:
+The set of headword groups the Word popup shows for one token: the surface's
+own group plus, for every Base word claiming the token as one of its forms,
+its group scoped to the claiming word classes — ranked by frequency. The
+popup's content unit — not a stored structure.
+_Avoid_: word group, cluster, entry set.
 
 **Word occurrence**:
 One place a token appears in an entity's text. Occurrences are derived from

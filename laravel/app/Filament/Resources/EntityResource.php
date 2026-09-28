@@ -102,6 +102,13 @@ class EntityResource extends Resource
                     ->limit(30),
                 TextColumn::make('file_path')
                     ->limit(30),
+                TextColumn::make('status')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'processing' => 'warning',
+                        'failed' => 'danger',
+                        default => 'success',
+                    }),
                 IconColumn::make('is_restricted')
                     ->boolean()
                     ->label('Restricted'),
@@ -149,10 +156,16 @@ class EntityResource extends Resource
                 Actions\Action::make('generateSignature')
                     ->label('Signature')
                     ->icon('heroicon-o-cpu-chip')
-                    ->action(fn (Entity $record) => GenerateEntitySignature::dispatch(
-                        $record->id,
-                        $record->file_path,
-                    ))
+                    ->action(function (Entity $record) {
+                        // The embedding pass runs in the background; the
+                        // entity holds a processing slot until it lands.
+                        $record->forceFill(['status' => 'processing'])->save();
+
+                        GenerateEntitySignature::dispatch(
+                            $record->id,
+                            $record->file_path,
+                        );
+                    })
                     ->requiresConfirmation()
                     ->visible(fn (Entity $record) => $record->file_path !== null),
                 Actions\Action::make('findMatch')
@@ -200,6 +213,7 @@ class EntityResource extends Resource
                             'a_entity_id' => $aId,
                             'b_entity_id' => $bId,
                             'status' => 'pending',
+                            'created_by' => auth()->id(),
                         ]);
 
                         AlignEntitySentences::beginFromScratch($entityMatch->id);

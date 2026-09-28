@@ -1,11 +1,11 @@
 ---
 type: Database Schema
 title: Works, Entities & Alignment Tables
-description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20).
-tags: [database, schema, alignment, entities, works, hash]
+description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20; strict junction uniqueness 2026_09_28; illustration columns 2026_09_28).
+tags: [database, schema, alignment, entities, works, hash, illustrations]
 status: stable
-stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-09-22T16:00:00Z }
+stale_after: 2026-12-28
+generated: { by: agent:zcode, at: 2026-09-28T22:30:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
@@ -16,6 +16,12 @@ sources:
    - id: alignment-migration
      resource: laravel/database/migrations/2026_09_10_000004_create_alignment_tables.php
      title: entity_matches + meaning_matches + sentence_meaning_matches (side column)
+   - id: junction-migration
+     resource: laravel/database/migrations/2026_09_28_000001_enforce_junction_uniqueness.php
+     title: sentence_meaning_matches.entity_match_id + unique (entity_match_id, entity_sentence_id)
+   - id: illustration-migration
+     resource: laravel/database/migrations/2026_09_28_000002_add_illustration_columns_to_entity_sentences_table.php
+     title: entity_sentences image_path/hash/width/height/mime (ADR 0050)
    - id: align-service
      resource: laravel/app/Classes/SentenceAlignmentService.php
      title: Writer of meaning matches
@@ -27,11 +33,11 @@ sources:
 |-------|-------|------|
 | `works` | `Work` | The abstract book: title, author, description, `original_language_id` → languages. Groups every language version of one text |
 | `entities` | `Entity` | A text (book/story/file) in one language — the original or a translation of its work. Carries `work_id`, `language_id`, `created_by` (nullable uploader), an optional translator/edition `label`, a BGE-M3 embedding `signature`, `is_restricted` gating read access, `is_approved` (edit lock), `file_hash` (raw upload bytes) and `text_hash`/`text_hashed_at`/`sentences_updated_at` (exact-copy detection, ADR 0033) |
-| `sentence_types` | `SentenceType` | Classification for sentences |
-| `entity_sentences` | `EntitySentence` | Split sentences with **sparse order** values; unique `(entity_id, order)` |
+| `sentence_types` | `SentenceType` | Classification for sentences; seeded with `sentence`, `title`, `quote`, `subtitle`, `footnote`, `caption`, `illustration` |
+| `entity_sentences` | `EntitySentence` | Split sentences with **sparse order** values; unique `(entity_id, order)`. Image-bearing rows (illustrations, ADR 0050) additionally carry `image_path`/`image_hash`/`image_width`/`image_height`/`image_mime` — `image_path` non-null is the illustration marker, `content` is the optional caption |
 | `entity_matches` | `EntityMatch` | Pairing of two distinct same-work entities ("same text, two versions"; same-language companions like exercises + answers included), stored canonically `a_entity_id < b_entity_id` |
 | `meaning_matches` | `MeaningMatch` | Sentence-group level alignment result within a match |
-| `sentence_meaning_matches` | `SentenceMeaningMatch` | Per-sentence membership in a meaning match, with a `side` char(1) (`'a'`/`'b'`) naming which entity of the match the sentence belongs to |
+| `sentence_meaning_matches` | `SentenceMeaningMatch` | Per-sentence membership in a meaning match, with a `side` char(1) (`'a'`/`'b'`) naming which entity of the match the sentence belongs to, plus a denormalized NOT NULL `entity_match_id` backing the strict `unique(entity_match_id, entity_sentence_id)` junction-uniqueness index (ADR 0048; auto-filled from the parent meaning match by a model `creating` hook) |
 | `entity_user` | (pivot) | Access grants: which users may read a Restricted entity, with a nullable `similarity` (null = creator grant; non-null = legacy Signature match grant — no longer produced, ADR 0033) |
 
 # Invariants & notes
@@ -47,10 +53,20 @@ sources:
 * **Every entity belongs to a work** (`work_id` NOT NULL). A work may hold
   several entities in the same language (competing translations) told apart
   by `entities.label`.
-* **Cover both sides**: when neither side of a match is the work's original
-  language, the aligner's skip rows and finalize repairs cover BOTH sides —
-  the original-completeness invariant generalizes to translation↔translation
-  pairs.
+* **Cover both sides — total completeness (ADR 0048)**: the aligner's skip
+  rows and finalize repairs cover BOTH sides of every match. Every sentence
+  of both entities ends junctioned into a meaning match (two-sided or
+  single-sided), so nothing is invisible to the reader/simulator; the
+  editor's unmatched pools remain the live view of junction-less sentences
+  while a match is mid-run.
+* **Strict junction uniqueness (ADR 0048)**: one sentence is junctioned into
+  at most one meaning match per side per entity match — DB-enforced by
+  `unique(entity_match_id, entity_sentence_id)` on
+  `sentence_meaning_matches`. The app elects keepers by priority
+  (landmark/human → two-sided → richer → higher similarity → earlier order)
+  and trims losers' junctions at completion, copy, and via
+  `alignments:repair`; the pipeline reserves landmark sentences so machine
+  windows never junction them; the editor dedupes its re-insert list.
 * **Sparse ordering**: sentence and match order columns hold sparse values
   (stride 1024) maintained by `SparseOrderService`; every creation path emits
   sparse values from birth (the split pipeline, the console importer, the
@@ -86,6 +102,16 @@ sources:
   survive Re-align and act as pool boundaries; "Run from scratch" deletes
   both. An **Alignment copy** (ADR 0033) clones rows with their landmark
   markers verbatim.
+* **Illustrations are sentences (ADR 0050)**: an `entity_sentences` row with
+  non-null `image_path` is an Illustration whose text is the optional
+  caption. They join meaning matches like any sentence (any grouping valid)
+  but are invisible to the aligner: chunk windows, counts, and cursors
+  operate on image-less sentence space, and `finalize()`'s completeness
+  repair backfills each one single-sided at similarity 0.0 (→ Needs review,
+  ADR 0049). `text_hash` folds in `image_hash`, so texts differing only in
+  their pictures are not Exact copies. Files sit on the private `local` disk
+  (content-hash named, reference-counted deletion) served via
+  `GET /illustrations/{sentence}` behind the entity's read access.
 * **Exact-copy hashes** (ADR 0033): `text_hash` (indexed, not unique — copies
   share it by design) is sha256 over whitespace-normalized sentence contents
   in document order; `sentences_updated_at` is bumped by every sentence
@@ -105,12 +131,13 @@ sources:
 * **Deletion cleanup**: deleting a sentence cascades to its junctions; a
   meaning match left with no junctions is deleted and the parent
   `EntityMatch.linked_count` is updated (`EntitySentence::booted()`).
-* **Single-sided meaning matches**: the aligner keeps unmatched
-  original-side sentences visible via one-sided junctions (`similarity 0.0`,
-  next machine chunk id); the completion gate
-  `AlignEntitySentences::finalize()` enforces original completeness (both
-  sides when neither is the original). The editor's **Needs review** section
-  surfaces one-sided rows (any similarity) plus two-sided rows below 0.55.
+* **Single-sided meaning matches**: the aligner keeps unmatched sentences
+  visible via one-sided junctions (`similarity 0.0`, next machine chunk id);
+  the completion gate `AlignEntitySentences::finalize()` enforces **total
+  completeness** — both sides are repaired (ADR 0048; previously only the
+  work's original side). The editor's **Needs review** section surfaces
+  one-sided rows below similarity 1.0 (human-confirmed one-sided rows leave
+  the list — ADR 0049) plus two-sided rows below 0.55.
 * `EntityMatch` is what an alignment card and the pinned simulator route
   label — joining `aEntity` / `bEntity` for display names.
 * **Read access is Restricted by default** (ADR

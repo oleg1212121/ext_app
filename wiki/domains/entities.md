@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Library & entities (management surface)
-description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, and per-work landing/branch pages (ADR 0039) — plus the language-scoped entity create/detail/edit pages, driven by enabled languages.
-tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone]
+description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, and per-work landing/branch pages (ADR 0039) — plus the language-scoped entity create/detail/edit pages with inline illustration upload (ADR 0050), driven by enabled languages.
+tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations]
 status: stable
-stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-09-26T12:00:00Z }
+stale_after: 2026-12-28
+generated: { by: agent:zcode, at: 2026-09-28T22:30:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -124,6 +124,16 @@ fetches the sentence list from `entities.sentences`, and each mutation
 uses `SparseOrderService::orderForInsertAfter` with `after_sentence_id = 0`
 sentinel for "at the beginning".
 
+**Illustrations (ADR 0050)**: selecting the seeded `illustration` sentence
+type in the add form grows an image file input (jpg/jpeg/png/webp/gif,
+10 MB; multipart submit) and frees the caption from the non-empty rule;
+inline editing of an illustration edits the caption and may replace the
+image, and the type is pinned. Files store on the private `local` disk
+(`IllustrationStorage`, content-hash named so identical uploads share one
+file, reference-counted delete) and serve through `GET /illustrations/{sentence}`
+behind `EntityAccessService::canRead`. Illustration mutations flip matches to
+`pending` like any sentence mutation.
+
 **Access**: `EntityAccessService::canEdit` mirrors `canRead` — admin bypass;
 Restricted editable by grantees; Public editable by any approved user —
 **except** an approved entity (`is_approved`), which is editable by admin only
@@ -180,6 +190,31 @@ The `signature` column is never user-entered on the front end. Near-duplicate
 merging (the ≥0.95 grant/merge/delete flow of ADR 0013) is gone; the
 signature's remaining uses are cross-language candidate finding (Filament
 "Find Match") and the ≥0.70 pre-align verification gate.
+
+# Entity status & creation limits (ADR 0044)
+
+`entities.status` is the explicit lifecycle of the upload pipeline:
+`processing` from creation (any file upload, or a clone whose exact-copy
+source was still mid-pipeline) until the pipeline finishes → `completed`
+(split + text hash + signature done); any pipeline job exhausting its 5
+retries fires a `failed()` hook that marks a signature-less entity `failed`
+(signed entities keep their state — enrichment is optional). An entity
+created without a file is born `completed`; scheduled enrichment (word index,
+frequency) never re-enters `processing`. The Filament `Signature` action, the
+`entity:generate-signatures` sweep, and a Filament file re-upload flip the
+entity back to `processing`. The legacy `signatureStatus()` display
+derivation (`generated|pending|none`) is untouched and shown beside the
+status (a red `failed` badge on both entity surfaces).
+
+Non-admin users hold at most `limits.entities_processing_per_user`
+(`config/limits.php`, env `LIMIT_ENTITIES_PROCESSING_PER_USER`, default 2)
+entities with status `processing`. The count-then-create runs inside
+`EntityCreationService::create()` under the creator's locked user row
+(`ProcessingLimits::underCreatorLock`), so parallel submissions cannot both
+pass; born-`completed` outcomes (no file, finished clone) skip the check.
+Hitting the limit deletes the just-stored upload and redirects back with a
+`limit` validation error, shown as a banner on both create forms. Approved
+admins are exempt (same bypass as `EntityAccessService`).
 
 # Text hash maintenance
 

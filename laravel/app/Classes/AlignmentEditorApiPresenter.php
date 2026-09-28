@@ -3,6 +3,7 @@
 namespace App\Classes;
 
 use App\Models\EntityMatch;
+use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use Illuminate\Database\Eloquent\Collection;
@@ -15,6 +16,10 @@ class AlignmentEditorApiPresenter
     public const NEEDS_REVIEW_PER_PAGE = 25;
 
     public const LOW_SIMILARITY_THRESHOLD = 0.55;
+
+    public const HUMAN_CONFIRMED_SIMILARITY = 1.0;
+
+    public const ROWS_LOOKAHEAD = 3;
 
     /**
      * @return array<string, mixed>
@@ -75,19 +80,30 @@ class AlignmentEditorApiPresenter
      */
     public function rowsPagePayload(EntityMatch $entityMatch, int $page = 1, int $perPage = 25): array
     {
-        $rows = MeaningMatch::query()
+        $query = MeaningMatch::query()
             ->where('entity_match_id', $entityMatch->id)
             ->with(['sentenceMeaningMatches.entitySentence'])
-            ->orderBy('order')
-            ->paginate($perPage, ['*'], 'page', $page);
+            ->orderBy('order');
+
+        $total = (clone $query)->toBase()->count();
+        $lastPage = max((int) ceil($total / $perPage), 1);
+
+        // Every page serves per_page rows plus a small lookahead tail that
+        // repeats as the head of the next page, so the editor always has
+        // rows below the page boundary to place sentences into. Meta stays
+        // per_page-based: the overlap never changes page numbering.
+        $rows = $query
+            ->offset(($page - 1) * $perPage)
+            ->limit($perPage + self::ROWS_LOOKAHEAD)
+            ->get();
 
         return [
-            'rows' => $this->rowsPayload($rows->getCollection()),
+            'rows' => $this->rowsPayload($rows),
             'meta' => [
-                'current_page' => $rows->currentPage(),
-                'last_page' => $rows->lastPage(),
-                'total' => $rows->total(),
-                'per_page' => $rows->perPage(),
+                'current_page' => $page,
+                'last_page' => $lastPage,
+                'total' => $total,
+                'per_page' => $perPage,
             ],
             'sentences_before' => $this->sentencesBeforePage($entityMatch, $page, $perPage),
         ];
@@ -155,7 +171,7 @@ class AlignmentEditorApiPresenter
             ->offset(($page - 1) * self::UNMATCHED_PER_PAGE)
             ->limit(self::UNMATCHED_PER_PAGE)
             ->get()
-            ->map(fn ($sentence): array => $this->sentencePayload($sentence->id, $sentence->content, $sentence->order, $side))
+            ->map(fn (EntitySentence $sentence): array => $this->sentencePayload($sentence, $side))
             ->values()
             ->all();
 
@@ -190,9 +206,8 @@ class AlignmentEditorApiPresenter
             }
 
             $sentences[] = [
-                'id' => $sentence->id,
                 'order' => (int) $sentence->order,
-                'match' => $match,
+                'sentence' => $sentence,
             ];
         }
 
@@ -201,12 +216,7 @@ class AlignmentEditorApiPresenter
         $result = [];
 
         foreach ($sentences as $entry) {
-            $result[] = $this->sentencePayload(
-                $entry['match']->entitySentence->id,
-                $entry['match']->entitySentence->content,
-                $entry['match']->entitySentence->order,
-                $side,
-            );
+            $result[] = $this->sentencePayload($entry['sentence'], $side);
         }
 
         return $result;
@@ -224,12 +234,18 @@ class AlignmentEditorApiPresenter
                     ->where(function ($oneSided) {
                         $oneSided
                             ->whereHas('sentenceMeaningMatches', fn ($q) => $q->where('side', 'a'))
-                            ->whereDoesntHave('sentenceMeaningMatches', fn ($q) => $q->where('side', 'b'));
+                            ->whereDoesntHave('sentenceMeaningMatches', fn ($q) => $q->where('side', 'b'))
+                            // A one-sided row trusted at 1.0 was shaped by a
+                            // human (every editor mutation writes 1.0; the
+                            // pipeline emits its one-sided rows at 0.0), so
+                            // it is intentional and leaves the review list.
+                            ->where('similarity', '<', self::HUMAN_CONFIRMED_SIMILARITY);
                     })
                     ->orWhere(function ($oneSided) {
                         $oneSided
                             ->whereDoesntHave('sentenceMeaningMatches', fn ($q) => $q->where('side', 'a'))
-                            ->whereHas('sentenceMeaningMatches', fn ($q) => $q->where('side', 'b'));
+                            ->whereHas('sentenceMeaningMatches', fn ($q) => $q->where('side', 'b'))
+                            ->where('similarity', '<', self::HUMAN_CONFIRMED_SIMILARITY);
                     })
                     ->orWhere('similarity', '<', self::LOW_SIMILARITY_THRESHOLD);
             })
@@ -304,19 +320,35 @@ class AlignmentEditorApiPresenter
      */
     private function partContent(array $sentences): string
     {
-        return implode(' / ', array_map(fn (array $sentence): string => $sentence['content'], $sentences));
+        return implode(' / ', array_map(
+            fn (array $sentence): string => $sentence['content'] !== ''
+                ? $sentence['content']
+                : ($sentence['image'] !== null ? '[illustration]' : ''),
+            $sentences,
+        ));
     }
 
     /**
+     * The editor's per-sentence payload. Illustrations (ADR 0050) carry an
+     * image descriptor — the access-checked URL plus intrinsic dimensions —
+     * alongside their optional caption text.
+     *
      * @return array<string, mixed>
      */
-    public function sentencePayload(int $id, string $content, int $order, string $side): array
+    public function sentencePayload(EntitySentence $sentence, string $side): array
     {
         return [
-            'key' => $side.':s-'.$id,
-            'id' => $id,
-            'content' => $content,
-            'order' => (int) $order,
+            'key' => $side.':s-'.$sentence->id,
+            'id' => $sentence->id,
+            'content' => $sentence->content,
+            'order' => (int) $sentence->order,
+            'image' => $sentence->image_path !== null
+                ? [
+                    'url' => route('illustrations.show', ['sentence' => $sentence->id]),
+                    'width' => $sentence->image_width !== null ? (int) $sentence->image_width : null,
+                    'height' => $sentence->image_height !== null ? (int) $sentence->image_height : null,
+                ]
+                : null,
         ];
     }
 }

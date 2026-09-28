@@ -108,7 +108,7 @@ function SentenceColumn({side, sideLabel, containerKey, keys, lookup, adding, dr
     );
 }
 
-export default function PairRow({row, position, aKeys, bKeys, sideLabels, lookup, editing, adding, draft, busy, highlighted, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete, onApprove}) {
+export default function PairRow({row, position, preview = false, aKeys, bKeys, sideLabels, lookup, editing, adding, draft, busy, highlighted, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete, onApprove}) {
     const {t} = useI18n();
     return (
         <section
@@ -126,6 +126,11 @@ export default function PairRow({row, position, aKeys, bKeys, sideLabels, lookup
                     {row.similarity !== null && (
                         <span className="font-mono text-[10px] tabular-nums text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                             {t('alignments.sim')} {Number(row.similarity).toFixed(4)}
+                        </span>
+                    )}
+                    {preview && (
+                        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]">
+                            {t('alignments.next_page')}
                         </span>
                     )}
                 </div>

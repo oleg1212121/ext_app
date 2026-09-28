@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use Illuminate\Contracts\Validation\ValidationRule;
+use App\Models\EntitySentence;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateSentenceRequest extends FormRequest
@@ -13,13 +13,22 @@ class UpdateSentenceRequest extends FormRequest
     }
 
     /**
-     * @return array<string, ValidationRule|array<mixed>|string>
+     * An illustration sentence's text is its caption (ADR 0050), so it may
+     * be emptied here; plain sentences keep the non-empty rule.
      */
     public function rules(): array
     {
+        $sentenceId = $this->route('sentence');
+        $isIllustration = $sentenceId !== null && EntitySentence::query()
+            ->whereKey((int) $sentenceId)
+            ->withImage()
+            ->exists();
+
         return [
             'side' => ['required', 'in:a,b'],
-            'content' => ['required', 'string', 'max:5000', $this->nonEmptyString()],
+            'content' => $isIllustration
+                ? ['nullable', 'string', 'max:5000']
+                : ['required', 'string', 'max:5000', $this->nonEmptyString()],
         ];
     }
 

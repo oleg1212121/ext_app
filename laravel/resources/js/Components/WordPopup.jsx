@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
-import {Link} from '@inertiajs/react';
+import {Link, usePage} from '@inertiajs/react';
 import ModelsUsedPopup, {RobotHelpIcon} from './ModelsUsedPopup.jsx';
 import {useI18n} from '../i18n';
 import {getCsrfToken} from '../lib/http';
@@ -19,6 +19,11 @@ const TRANSLATIONS_PREVIEW = 8;
 const explainCache = new Map();
 
 const explainButtonClass = 'rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]';
+
+// Surface styling of the popup box, shared by the real portal and the
+// profile's Popups-tab preview (ADR 0046). Positioning classes stay with
+// the portal wrapper.
+export const popupContainerClass = 'flex flex-col overflow-hidden rounded-md border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[#FDFBF5] dark:bg-[#1C1915] shadow-lg shadow-black/20 font-sans text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]';
 
 const tabButtonClass = (active) => [
     '-mb-px border-b-2 py-1.5 text-[0.786em] uppercase tracking-wider transition-colors',
@@ -80,6 +85,21 @@ function popupStyle(rect, fontSize) {
     };
 }
 
+// An entry belongs to the popup's own headword when its word matches it;
+// everything else is a base-word section of the word family (ADR 0045).
+function entryMatchesHeadword(entry, headword) {
+    return !entry.word || entry.word.toLowerCase() === String(headword ?? '').toLowerCase();
+}
+
+// Section heading: base-word sections of the word family (ADR 0045) are
+// labeled with their own headword — "melt — Verb" — to set them apart from
+// the popup's own headword sections, which keep the plain class label.
+function sectionLabel(entry, headword) {
+    const word = entryMatchesHeadword(entry, headword) ? null : entry.word;
+
+    return [word, entry.word_class].filter(Boolean).join(' — ');
+}
+
 function TranslationLine({translations}) {
     const {t} = useI18n();
     const [expanded, setExpanded] = useState(false);
@@ -116,24 +136,33 @@ function TranslationLine({translations}) {
  * fires only from the button; a hit in the page-lifetime explain cache
  * renders instantly instead. `explainKey` also guards against stale
  * responses landing after the popup has moved to another word.
+ *
+ * `preview` (the profile's Popups tab) skips the network entirely: it opens
+ * on a canned answer and keeps the Ask-again button inert.
  */
-function ExplainPane({explain, explainKey}) {
+function ExplainPane({explain, explainKey, preview = false}) {
     const {t} = useI18n();
-    const [explanation, setExplanation] = useState(() => (
-        explainCache.has(explainKey)
+    const [explanation, setExplanation] = useState(() => preview
+        ? {status: 'done', answer: t('word.explain_preview')}
+        : (explainCache.has(explainKey)
             ? {status: 'done', answer: explainCache.get(explainKey)}
-            : null
-    ));
+            : null));
     const keyRef = useRef(explainKey);
     keyRef.current = explainKey;
 
     useEffect(() => {
+        if (preview) {
+            return;
+        }
         setExplanation(explainCache.has(explainKey)
             ? {status: 'done', answer: explainCache.get(explainKey)}
             : null);
-    }, [explainKey]);
+    }, [explainKey, preview]);
 
     const request = () => {
+        if (preview) {
+            return;
+        }
         setExplanation({status: 'loading'});
         const body = explain.rowKind === 'es'
             ? {
@@ -263,6 +292,231 @@ function ExplainPane({explain, explainKey}) {
 }
 
 /**
+ * The word popup's body — everything inside the box, minus the box itself:
+ * the headword header (familiarity, frequency, form-of lines), the tab strip
+ * with the Models-used icon, the dictionary sections of the word family, the
+ * Explanation tab and the progress footer. Shared verbatim by the real
+ * portal popup and the profile's Popups-tab preview, so the preview can
+ * never drift from the real thing.
+ *
+ * `sections` (the user's Popup preferences, ADR 0046) hides blocks: a key
+ * set to false drops that block, anything else renders. `explanation` false
+ * removes the whole tab strip — the popup renders as it does for words
+ * without an explain payload. `word_family` false filters the dictionary
+ * sections down to the headword's own, dropping base-word sections.
+ *
+ * `onProgressAction` (null in the preview) drives the footer buttons; the
+ * buttons render disabled without it. `preview` additionally swaps the
+ * Explanation tab's request flow for a canned answer.
+ */
+export function PopupContent({
+    surface,
+    familiarity,
+    data,
+    explainProps,
+    explainKey,
+    sections,
+    modelsOpen = false,
+    onModelsOpenChange = null,
+    onProgressAction = null,
+    progressBusy = false,
+    preview = false,
+}) {
+    const {t} = useI18n();
+    const [tab, setTab] = useState('dictionary');
+
+    // A fresh payload (the popup moved to another word) goes back to the
+    // first tab, exactly like the portal popup used to reset on wordId.
+    useEffect(() => {
+        setTab('dictionary');
+    }, [data]);
+
+    const showTabs = explainProps != null && sections.explanation !== false;
+    const showDictionary = !showTabs || tab === 'dictionary';
+    const entries = sections.word_family === false
+        ? (data.entries ?? []).filter((entry) => entryMatchesHeadword(entry, data.word))
+        : data.entries;
+
+    return (
+        <>
+            <div className="shrink-0 px-3.5 pb-1 pt-3">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="font-serif text-[1.286em] leading-tight">{data.word}</span>
+                    {data.word_class && (
+                        <span className="text-[0.786em] uppercase tracking-wider opacity-60">{data.word_class}</span>
+                    )}
+                </div>
+
+                {sections.familiarity !== false && (
+                    <p className="mt-0.5 text-[0.786em] tabular-nums opacity-60">
+                        {t('word.familiarity', {value: familiarity ?? 0, max: FAMILIARITY_MAX})}
+                    </p>
+                )}
+
+                {sections.frequency !== false && data.frequency != null && (
+                    <p className="mt-0.5 text-[0.786em] tabular-nums opacity-60">
+                        {t('word.frequency', {rank: Number(data.frequency).toLocaleString()})}
+                    </p>
+                )}
+
+                {sections.form_of !== false && (data.form_of?.length > 0 || data.is_form) && (
+                    <p className="mt-1 text-[0.857em] italic opacity-70">
+                        «{surface}» — {t('word.form_of')}{' '}
+                        {(data.form_of?.length > 0 ? data.form_of : [data.word]).map((headword, index) => (
+                            <React.Fragment key={`${headword}-${index}`}>
+                                {index > 0 && ', '}
+                                «{headword}»
+                            </React.Fragment>
+                        ))}
+                    </p>
+                )}
+            </div>
+
+            {showTabs && (
+                <div
+                    role="tablist"
+                    className="flex shrink-0 gap-3 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]"
+                >
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={tab === 'dictionary'}
+                        onClick={() => setTab('dictionary')}
+                        className={tabButtonClass(tab === 'dictionary')}
+                    >
+                        {t('word.tab_dictionary')}
+                    </button>
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={tab === 'explanation'}
+                        onClick={() => setTab('explanation')}
+                        className={tabButtonClass(tab === 'explanation')}
+                    >
+                        {t('word.tab_explanation')}
+                    </button>
+                    {/* Not a tab: opens the Models used popup. Kept out of the tab buttons so clicking it never switches tabs. */}
+                    <button
+                        type="button"
+                        onClick={() => onModelsOpenChange?.(true)}
+                        title={t('ai.models_icon')}
+                        aria-label={t('ai.models_icon')}
+                        aria-haspopup="dialog"
+                        className="-mb-px ml-1 inline-flex items-center rounded-sm border-b-2 border-transparent py-1.5 opacity-60 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
+                    >
+                        <RobotHelpIcon className="h-[1.1em] w-[1.1em]"/>
+                    </button>
+                </div>
+            )}
+
+            {showDictionary && (
+                <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-1">
+                    {entries?.map((entry, index) => (
+                        <section
+                            key={entry.id}
+                            className={index > 0
+                                ? 'mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
+                                : undefined}
+                        >
+                            {sectionLabel(entry, data.word) && (
+                                <h3 className="text-[0.786em] uppercase tracking-wider opacity-60">{sectionLabel(entry, data.word)}</h3>
+                            )}
+
+                            {sections.transcriptions !== false && entry.transcriptions?.length > 0 && (
+                                <p className="mt-1 opacity-80">
+                                    [{entry.transcriptions.map((item) => item.value).join(' · ')}]
+                                </p>
+                            )}
+
+                            {sections.definitions !== false && (entry.definitions?.length > 0 ? (
+                                <ol className="ml-4 mt-1.5 list-decimal space-y-1 text-[0.929em] leading-snug">
+                                    {entry.definitions.map((definition, definitionIndex) => (
+                                        <li key={definitionIndex}>{definition}</li>
+                                    ))}
+                                </ol>
+                            ) : (
+                                <p className="mt-1.5 text-[0.857em] opacity-60">{t('word.no_definitions')}</p>
+                            ))}
+
+                            {sections.translations !== false && (
+                                <TranslationLine translations={entry.translations ?? []} />
+                            )}
+
+                            {sections.examples !== false && entry.examples?.length > 0 && (
+                                <details className="mt-2 text-[0.857em]">
+                                    <summary className="cursor-pointer opacity-70">{t('word.examples')}</summary>
+                                    <ul className="ml-4 mt-1 list-disc space-y-0.5 italic opacity-80">
+                                        {entry.examples.map((example, exampleIndex) => (
+                                            <li key={exampleIndex}>{example}</li>
+                                        ))}
+                                    </ul>
+                                </details>
+                            )}
+
+                            {sections.etymologies !== false && entry.etymologies?.length > 0 && (
+                                <div className="mt-2">
+                                    <p className="text-[0.786em] uppercase tracking-wider opacity-60">{t('word.etymology')}</p>
+                                    {entry.etymologies.map((etymology, etymologyIndex) => (
+                                        <p key={etymologyIndex} className="mt-1 text-[0.857em] italic leading-snug opacity-75">
+                                            {etymology}
+                                        </p>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                    ))}
+                </div>
+            )}
+
+            {showTabs && tab === 'explanation' && (
+                <div className="min-h-0 flex-1 overflow-y-auto pt-1">
+                    <ExplainPane explain={explainProps} explainKey={explainKey} preview={preview}/>
+                </div>
+            )}
+
+            {sections.progress_actions !== false && (
+                <div className="mt-2 shrink-0 border-t border-[var(--color-hairline)] px-3.5 py-2.5 dark:border-[var(--color-hairline-night)]">
+                    <div className="flex gap-2">
+                        {familiarity !== FAMILIARITY_MAX && (
+                            <button
+                                type="button"
+                                disabled={progressBusy || onProgressAction == null}
+                                onClick={() => onProgressAction?.('known')}
+                                className="rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]"
+                            >
+                                {t('word.i_know_this')}
+                            </button>
+                        )}
+                        {familiarity != null && (
+                            <button
+                                type="button"
+                                disabled={progressBusy || onProgressAction == null}
+                                onClick={() => onProgressAction?.('reset')}
+                                className="rounded-sm border border-[var(--color-hairline)] px-2.5 py-1 text-[0.857em] opacity-80 hover:opacity-100 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-hairline-night)]"
+                            >
+                                {t('word.remove_mark')}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {showTabs && (
+                <ModelsUsedPopup
+                    open={modelsOpen}
+                    onClose={() => onModelsOpenChange?.(false)}
+                    enabled={explainProps.enabled !== false}
+                    answerModel={explainProps.answerLabel ? {label: explainProps.answerLabel} : null}
+                    explanationModel={explainProps.modelLabel
+                        ? {label: explainProps.modelLabel, followsAnswer: explainProps.followsAnswer === true}
+                        : null}
+                />
+            )}
+        </>
+    );
+}
+
+/**
  * Word popover shown next to a Ctrl-clicked word: one section per part of
  * speech under the headword (details fetched lazily from GET /words/{id}),
  * plus the word progress actions in a footer that never scrolls away.
@@ -281,14 +535,21 @@ function ExplainPane({explain, explainKey}) {
  * simulator-only `answerLabel`) exist for the tab strip's robot icon, which
  * opens the Models used popup; `enabled` false (no API key) keeps the strip
  * and shows add-key guidance instead of the request button.
+ *
+ * `sections` (the user's Popup preferences, ADR 0046) hides individual
+ * blocks; it defaults to the popupVisibility prop shared to every page, and
+ * an absent map means everything renders. The body itself lives in the
+ * exported PopupContent, which the profile's Popups tab reuses for its live
+ * preview.
  */
-export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain}) {
+export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain, sections}) {
     const {t} = useI18n();
+    const {props} = usePage();
+    const effectiveSections = sections ?? props.popupVisibility ?? {};
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
-    const [tab, setTab] = useState('dictionary');
     const [modelsOpen, setModelsOpen] = useState(false);
     // Read by the document-level close handlers below: while the nested
     // Models used popup is open, that modal owns Escape and outside-click
@@ -302,7 +563,6 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         : null;
 
     useEffect(() => {
-        setTab('dictionary');
         setModelsOpen(false);
     }, [wordId, explainKey]);
 
@@ -400,7 +660,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             role="dialog"
             aria-label={data?.word ?? surface}
             style={{...popupStyle(rect, fontSize), fontSize: `${fontSize}px`}}
-            className="word-popup absolute z-50 flex flex-col overflow-hidden rounded-md border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[#FDFBF5] dark:bg-[#1C1915] shadow-lg shadow-black/20 font-sans text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]"
+            className={`word-popup absolute z-50 ${popupContainerClass}`}
         >
             {(loading || error) && (
                 <div className="p-3.5">
@@ -410,163 +670,18 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             )}
 
             {!loading && data && (
-                <>
-                    <div className="shrink-0 px-3.5 pb-1 pt-3">
-                        <div className="flex items-baseline gap-2 flex-wrap">
-                            <span className="font-serif text-[1.286em] leading-tight">{data.word}</span>
-                            {data.word_class && (
-                                <span className="text-[0.786em] uppercase tracking-wider opacity-60">{data.word_class}</span>
-                            )}
-                        </div>
-
-                        <p className="mt-0.5 text-[0.786em] tabular-nums opacity-60">
-                            {t('word.familiarity', {value: familiarity ?? 0, max: FAMILIARITY_MAX})}
-                        </p>
-
-                        {data.is_form && (
-                            <p className="mt-1 text-[0.857em] italic opacity-70">
-                                «{surface}» — {t('word.form_of')} «{data.word}»
-                            </p>
-                        )}
-                    </div>
-
-                    {explainProps && (
-                        <div
-                            role="tablist"
-                            className="flex shrink-0 gap-3 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]"
-                        >
-                            <button
-                                type="button"
-                                role="tab"
-                                aria-selected={tab === 'dictionary'}
-                                onClick={() => setTab('dictionary')}
-                                className={tabButtonClass(tab === 'dictionary')}
-                            >
-                                {t('word.tab_dictionary')}
-                            </button>
-                            <button
-                                type="button"
-                                role="tab"
-                                aria-selected={tab === 'explanation'}
-                                onClick={() => setTab('explanation')}
-                                className={tabButtonClass(tab === 'explanation')}
-                            >
-                                {t('word.tab_explanation')}
-                            </button>
-                            {/* Not a tab: opens the Models used popup. Kept out of the tab buttons so clicking it never switches tabs. */}
-                            <button
-                                type="button"
-                                onClick={() => setModelsOpen(true)}
-                                title={t('ai.models_icon')}
-                                aria-label={t('ai.models_icon')}
-                                aria-haspopup="dialog"
-                                className="-mb-px ml-1 inline-flex items-center rounded-sm border-b-2 border-transparent py-1.5 opacity-60 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
-                            >
-                                <RobotHelpIcon className="h-[1.1em] w-[1.1em]"/>
-                            </button>
-                        </div>
-                    )}
-
-                    {(!explainProps || tab === 'dictionary') && (
-                        <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-1">
-                            {data.entries?.map((entry, index) => (
-                                <section
-                                    key={entry.id}
-                                    className={index > 0
-                                        ? 'mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
-                                        : undefined}
-                                >
-                                    {entry.word_class && (
-                                        <h3 className="text-[0.786em] uppercase tracking-wider opacity-60">{entry.word_class}</h3>
-                                    )}
-
-                                    {entry.transcriptions?.length > 0 && (
-                                        <p className="mt-1 opacity-80">
-                                            [{entry.transcriptions.map((item) => item.value).join(' · ')}]
-                                        </p>
-                                    )}
-
-                                    {entry.definitions?.length > 0 ? (
-                                        <ol className="ml-4 mt-1.5 list-decimal space-y-1 text-[0.929em] leading-snug">
-                                            {entry.definitions.map((definition, definitionIndex) => (
-                                                <li key={definitionIndex}>{definition}</li>
-                                            ))}
-                                        </ol>
-                                    ) : (
-                                        <p className="mt-1.5 text-[0.857em] opacity-60">{t('word.no_definitions')}</p>
-                                    )}
-
-                                    <TranslationLine translations={entry.translations ?? []} />
-
-                                    {entry.examples?.length > 0 && (
-                                        <details className="mt-2 text-[0.857em]">
-                                            <summary className="cursor-pointer opacity-70">{t('word.examples')}</summary>
-                                            <ul className="ml-4 mt-1 list-disc space-y-0.5 italic opacity-80">
-                                                {entry.examples.map((example, exampleIndex) => (
-                                                    <li key={exampleIndex}>{example}</li>
-                                                ))}
-                                            </ul>
-                                        </details>
-                                    )}
-
-                                    {entry.etymologies?.length > 0 && (
-                                        <div className="mt-2">
-                                            <p className="text-[0.786em] uppercase tracking-wider opacity-60">{t('word.etymology')}</p>
-                                            {entry.etymologies.map((etymology, etymologyIndex) => (
-                                                <p key={etymologyIndex} className="mt-1 text-[0.857em] italic leading-snug opacity-75">
-                                                    {etymology}
-                                                </p>
-                                            ))}
-                                        </div>
-                                    )}
-                                </section>
-                            ))}
-                        </div>
-                    )}
-
-                    {explainProps && tab === 'explanation' && (
-                        <div className="min-h-0 flex-1 overflow-y-auto pt-1">
-                            <ExplainPane explain={explainProps} explainKey={explainKey}/>
-                        </div>
-                    )}
-
-                    <div className="mt-2 shrink-0 border-t border-[var(--color-hairline)] px-3.5 py-2.5 dark:border-[var(--color-hairline-night)]">
-                        <div className="flex gap-2">
-                            {familiarity !== FAMILIARITY_MAX && (
-                                <button
-                                    type="button"
-                                    disabled={busy}
-                                    onClick={() => changeProgress('known')}
-                                    className="rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]"
-                                >
-                                    {t('word.i_know_this')}
-                                </button>
-                            )}
-                            {familiarity != null && (
-                                <button
-                                    type="button"
-                                    disabled={busy}
-                                    onClick={() => changeProgress('reset')}
-                                    className="rounded-sm border border-[var(--color-hairline)] px-2.5 py-1 text-[0.857em] opacity-80 hover:opacity-100 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-hairline-night)]"
-                                >
-                                    {t('word.remove_mark')}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-
-                    {explainProps && (
-                        <ModelsUsedPopup
-                            open={modelsOpen}
-                            onClose={() => setModelsOpen(false)}
-                            enabled={explainProps.enabled !== false}
-                            answerModel={explainProps.answerLabel ? {label: explainProps.answerLabel} : null}
-                            explanationModel={explainProps.modelLabel
-                                ? {label: explainProps.modelLabel, followsAnswer: explainProps.followsAnswer === true}
-                                : null}
-                        />
-                    )}
-                </>
+                <PopupContent
+                    surface={surface}
+                    familiarity={familiarity}
+                    data={data}
+                    explainProps={explainProps}
+                    explainKey={explainKey}
+                    sections={effectiveSections}
+                    modelsOpen={modelsOpen}
+                    onModelsOpenChange={setModelsOpen}
+                    onProgressAction={changeProgress}
+                    progressBusy={busy}
+                />
             )}
         </div>,
         document.body,

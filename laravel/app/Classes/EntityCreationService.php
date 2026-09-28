@@ -2,6 +2,7 @@
 
 namespace App\Classes;
 
+use App\Exceptions\ProcessingLimitReached;
 use App\Jobs\GenerateEntitySignature;
 use App\Jobs\ProcessEntityFile;
 use App\Models\Entity;
@@ -30,6 +31,13 @@ use Illuminate\Support\Facades\Storage;
  * Uploads never call the Python service synchronously and never fail because
  * of it; the embedding signature is a background derivation used only for
  * cross-language alignment candidates (ADR 0033).
+ *
+ * Non-admin users hold a processing slot per in-flight entity (ADR 0044):
+ * an upload (or a clone whose source was still mid-pipeline) is born with
+ * status 'processing' and checked against `limits.entities_processing_per_user`
+ * under the creator's row lock; a no-file entity or a finished clone is born
+ * 'completed' and needs no slot. The pipeline jobs hand the slot back by
+ * flipping status to 'completed'/'failed'.
  */
 class EntityCreationService
 {
@@ -38,11 +46,14 @@ class EntityCreationService
     public function __construct(
         private readonly EntityAccessService $access = new EntityAccessService,
         private readonly EntityTextHasher $hasher = new EntityTextHasher,
+        private readonly ProcessingLimits $limits = new ProcessingLimits,
     ) {}
 
     /**
      * @param  array<string, mixed>  $data  validated entity fields (name, label, description)
      * @return array{status: 'created'|'created_from_copy', entity: Entity, source: ?Entity}
+     *
+     * @throws ProcessingLimitReached
      */
     public function create(User $user, Work $work, Language $language, array $data, ?UploadedFile $file): array
     {
@@ -56,14 +67,65 @@ class EntityCreationService
             );
         }
 
+        try {
+            $result = $this->limits->underCreatorLock(
+                $user,
+                fn (): array => $this->createUnderCreatorLock($user, $work, $language, $data, $filePath, $fileHash),
+            );
+        } catch (ProcessingLimitReached $e) {
+            // The row was never created; don't leave the upload orphaned.
+            if ($filePath !== null) {
+                Storage::disk('local')->delete($filePath);
+            }
+
+            throw $e;
+        }
+
+        // Dispatched only after the creation transaction committed, so a
+        // worker can never pick the job up before the row exists.
+        if ($result['status'] === 'created' && $filePath !== null) {
+            ProcessEntityFile::dispatch($result['entity']->id, $filePath);
+        }
+
+        if ($result['status'] === 'created_from_copy' && $result['entity']->signature === null) {
+            // Source was still mid-pipeline; give the clone its own background
+            // embedding pass.
+            GenerateEntitySignature::dispatch($result['entity']->id, $filePath);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Runs inside the creator lock. The exact-copy lookup decides whether
+     * this entity is born processing (fresh upload, or a clone whose source
+     * still lacks a signature) and therefore consumes a slot.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{status: 'created'|'created_from_copy', entity: Entity, source: ?Entity}
+     */
+    private function createUnderCreatorLock(
+        User $user,
+        Work $work,
+        Language $language,
+        array $data,
+        ?string $filePath,
+        ?string $fileHash,
+    ): array {
+        $source = null;
+
         if ($filePath !== null) {
             $source = $this->findExactCopySource($fileHash, $language);
+        }
 
-            if ($source !== null) {
-                $entity = $this->createCloneFrom($user, $work, $language, $data, $filePath, $fileHash, $source);
+        if ($filePath !== null && ($source === null || $source->signature === null)) {
+            $this->limits->assertEntitySlot($user);
+        }
 
-                return ['status' => 'created_from_copy', 'entity' => $entity, 'source' => $source];
-            }
+        if ($source !== null) {
+            $entity = $this->createCloneFrom($user, $work, $language, $data, $filePath, $fileHash, $source);
+
+            return ['status' => 'created_from_copy', 'entity' => $entity, 'source' => $source];
         }
 
         $entity = Entity::query()->create([
@@ -76,14 +138,11 @@ class EntityCreationService
             'file_path' => $filePath,
             'file_hash' => $fileHash,
             'is_restricted' => true,
+            'status' => $filePath !== null ? 'processing' : 'completed',
             'sentences_updated_at' => now(),
         ]);
 
         $this->access->grant($user, $entity, null);
-
-        if ($filePath !== null) {
-            ProcessEntityFile::dispatch($entity->id, $filePath);
-        }
 
         return ['status' => 'created', 'entity' => $entity, 'source' => null];
     }
@@ -143,6 +202,9 @@ class EntityCreationService
             'signature' => $source->signature,
             'words_indexed_at' => $source->words_indexed_at,
             'is_restricted' => true,
+            // A clone of a mid-pipeline source still owes its own embedding
+            // pass and is born processing; a finished clone is done at birth.
+            'status' => $source->signature !== null ? 'completed' : 'processing',
         ]);
 
         DB::transaction(function () use ($source, $entity): void {
@@ -176,12 +238,6 @@ class EntityCreationService
         });
 
         $this->access->grant($user, $entity, null);
-
-        if ($entity->signature === null) {
-            // Source was still mid-pipeline; give the clone its own background
-            // embedding pass.
-            GenerateEntitySignature::dispatch($entity->id, $filePath);
-        }
 
         return $entity;
     }

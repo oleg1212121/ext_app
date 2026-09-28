@@ -39,6 +39,7 @@ return [
     'alignments.max_n' => ['en' => 'Max sentence span', 'ru' => 'Максимальный охват фраз'],
     'alignments.max_n_hint' => ['en' => 'Alignment window size (1–8).', 'ru' => 'Размер окна выравнивания (1–8).'],
     'alignments.duplicate_match' => ['en' => 'A match for this entity pair already exists.', 'ru' => 'Сопоставление для этой пары сущностей уже существует.'],
+    'alignments.limit_reached' => ['en' => 'You already have an alignment being processed. Wait for it to finish before starting another.', 'ru' => 'У вас уже обрабатывается одно выравнивание. Дождитесь его завершения, прежде чем запускать новое.'],
     'alignments.open_existing_match' => ['en' => 'Open existing match →', 'ru' => 'Открыть существующее сопоставление →'],
     'alignments.create_match' => ['en' => 'Create match', 'ru' => 'Создать сопоставление'],
     'alignments.cancel' => ['en' => 'Cancel', 'ru' => 'Отмена'],
@@ -83,4 +84,7 @@ return [
     'alignments.per_page' => ['en' => 'Per page', 'ru' => 'На странице'],
     'alignments.row' => ['en' => 'row', 'ru' => 'строка'],
     'alignments.rows' => ['en' => 'rows', 'ru' => 'строк'],
+    'alignments.next_page' => ['en' => 'next page', 'ru' => 'следующая страница'],
+    'alignments.jump_to_review' => ['en' => 'Jump to unmatched / needs review', 'ru' => 'К нераспределённым / на проверку'],
+    'alignments.illustration' => ['en' => 'Illustration', 'ru' => 'Иллюстрация'],
 ];

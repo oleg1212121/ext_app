@@ -188,6 +188,7 @@ class EntitySentenceImporter
 
             foreach ($meaningMatches as $index => $meaningMatch) {
                 $junctionRows[] = [
+                    'entity_match_id' => $entityMatch->id,
                     'entity_sentence_id' => $aSentences[$index]->id,
                     'meaning_match_id' => $meaningMatch->id,
                     'side' => 'a',
@@ -196,6 +197,7 @@ class EntitySentenceImporter
                 ];
 
                 $junctionRows[] = [
+                    'entity_match_id' => $entityMatch->id,
                     'entity_sentence_id' => $bSentences[$index]->id,
                     'meaning_match_id' => $meaningMatch->id,
                     'side' => 'b',

@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Classes\SentenceSplitter;
+use App\Models\Entity;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -59,5 +60,18 @@ class SplitEntityFileSentences implements ShouldQueue
         }
 
         FinalizeEntityDerivations::dispatch($this->entityId, $this->filePath);
+    }
+
+    /**
+     * The split gave up after its retries: hand the entity's processing slot
+     * back (ADR 0044). Resumable progress (split_offset) is left untouched,
+     * but a restart currently goes through the Filament Signature action.
+     */
+    public function failed(\Throwable $e): void
+    {
+        Entity::query()
+            ->whereKey($this->entityId)
+            ->whereNull('signature')
+            ->update(['status' => 'failed']);
     }
 }

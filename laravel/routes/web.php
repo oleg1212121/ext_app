@@ -5,6 +5,7 @@ use App\Http\Controllers\AlignmentEditorController;
 use App\Http\Controllers\Bilinguals\SimulatorController;
 use App\Http\Controllers\CrosswordController;
 use App\Http\Controllers\EntityController;
+use App\Http\Controllers\EntityIllustrationController;
 use App\Http\Controllers\LibraryController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
@@ -34,6 +35,11 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::post('/profile/api-keys', [ProfileController::class, 'storeApiKey'])->name('profile.api-keys.store');
     Route::delete('/profile/api-keys/{providerKey}', [ProfileController::class, 'destroyApiKey'])->name('profile.api-keys.destroy');
+
+    // Per-user UI settings (simulator/reader panels, popup section visibility).
+    // Auth-only like the profile it feeds: the Popups tab is reachable before
+    // approval, and the endpoint only ever touches the caller's own settings.
+    Route::patch('/ui-settings', [UiSettingsController::class, 'update'])->name('ui-settings.update');
 });
 
 // All other routes require authentication + approval
@@ -150,6 +156,11 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('entity')
         ->whereNumber('sentence')
         ->name('entities.sentences.destroy');
+    // Illustration files live on the private local disk; this route is the
+    // only way they leave it — gated by the owning entity's read access.
+    Route::get('/illustrations/{sentence}', [EntityIllustrationController::class, 'show'])
+        ->whereNumber('sentence')
+        ->name('illustrations.show');
     // The global alignments browse pages moved under each work
     // (/works/{work}/alignments); only the editor stays global.
     Route::get('/alignments/{entityMatch}', [AlignmentController::class, 'show'])
@@ -181,5 +192,4 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::post('/ai/question', [SimulatorController::class, 'askAi'])->name('ai.question')->middleware('throttle:20,1');
     Route::post('/ai/question/stream', [SimulatorController::class, 'askAiStreamed'])->name('ai.question.stream')->middleware('throttle:20,1');
     Route::post('/ai/word-explain', [SimulatorController::class, 'explainWord'])->name('ai.word-explain')->middleware('throttle:20,1');
-    Route::patch('/ui-settings', [UiSettingsController::class, 'update'])->name('ui-settings.update');
 });

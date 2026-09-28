@@ -36,6 +36,7 @@ class CreateEntityMatch extends CreateRecord
             'a_entity_id' => min($first->id, $second->id),
             'b_entity_id' => max($first->id, $second->id),
             'status' => 'pending',
+            'created_by' => auth()->id(),
         ];
     }
 

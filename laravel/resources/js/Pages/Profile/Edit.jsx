@@ -4,6 +4,7 @@ import Main from '../../Layouts/Main.jsx'
 import {useI18n} from '../../i18n'
 import ProfileInformation from './ProfileInformation.jsx'
 import PreferencesForm from './PreferencesForm.jsx'
+import PopupsSettings from './PopupsSettings.jsx'
 import UpdatePassword from './UpdatePassword.jsx'
 import ApiKeys from './ApiKeys.jsx'
 import AiModels from './AiModels.jsx'
@@ -13,6 +14,7 @@ import {Card} from './ui.jsx'
 const TABS = [
     {id: 'account', labelKey: 'profile.tab_account'},
     {id: 'preferences', labelKey: 'profile.tab_preferences'},
+    {id: 'popups', labelKey: 'profile.tab_popups'},
     {id: 'ai', labelKey: 'profile.tab_ai'},
     {id: 'danger', labelKey: 'profile.tab_danger'},
 ]
@@ -64,6 +66,7 @@ export default function Edit({
     aiModelChoices = {},
     aiModelId = null,
     explanationModelId = null,
+    popupVisibility = null,
 }) {
     const { t } = useI18n()
     const [activeTab, setActiveTab] = useState(initialTab)
@@ -123,6 +126,12 @@ export default function Edit({
                     <TabPanel active={activeTab === 'preferences'}>
                         <Card>
                             <PreferencesForm nativeLanguageId={nativeLanguageId} interfaceLanguageId={interfaceLanguageId} languages={languages}/>
+                        </Card>
+                    </TabPanel>
+
+                    <TabPanel active={activeTab === 'popups'}>
+                        <Card>
+                            <PopupsSettings popupVisibility={popupVisibility}/>
                         </Card>
                     </TabPanel>
 

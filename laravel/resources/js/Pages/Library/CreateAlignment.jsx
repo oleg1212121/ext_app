@@ -201,6 +201,14 @@ export default function CreateAlignment({work, entities = {}}) {
                             </div>
                         </div>
 
+                        {errors.limit && (
+                            <div className="border border-[var(--wbench-danger)]/40 bg-[var(--wbench-danger)]/5 px-4 py-3 text-sm">
+                                <p className="text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
+                                    {t('alignments.limit_reached')}
+                                </p>
+                            </div>
+                        )}
+
                         {duplicateBlocked && (
                             <div className="border border-[var(--wbench-danger)]/40 bg-[var(--wbench-danger)]/5 px-4 py-3 text-sm">
                                 <p className="text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">

@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Reader
-description: React reading interface for imported text entities in any enabled language, with bilingual rows from alignments, a native-language default reading side with a client-side swap, server-side pagination, and a per-device reading position.
-tags: [reader, inertia, react]
+description: React reading interface for imported text entities in any enabled language, with bilingual rows from alignments, inline illustrations (rowImages, ADR 0050), a native-language default reading side with a client-side swap, server-side pagination, and a per-device reading position.
+tags: [reader, inertia, react, illustrations]
 status: stable
-stale_after: 2026-12-23
-generated: { by: agent:zcode, at: 2026-09-24T20:00:00+03:00 }
+stale_after: 2026-12-28
+generated: { by: agent:zcode, at: 2026-09-28T22:30:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -87,6 +87,16 @@ first. The payload also carries `rowKeys` — `mm:{meaningMatchId}` per
 bilingual row (never flipped by the side normalization) or
 `es:{entitySentenceId}` per single-language row — used to scope familiarity
 lookup events to a sentence pair (ADR 0028).
+
+**Illustrations ride a parallel `rowImages` prop** (ADR 0050): row-aligned
+with `rows` (flipped by the same side normalization, and by the client
+language toggle), each entry an `[aImages, bImages]` pair of image
+descriptors (`url` on the access-checked `illustrations.show` route,
+intrinsic `width`/`height`, optional `caption`). Illustration sentences
+contribute no text to `rows` — their caption renders under the picture,
+which `ReaderRow` places above the row text on each side; a text-less side
+with an image still counts as "has translation" so its images reveal.
+Caption tokens are not part of the page word maps.
 
 Reads are gated by `EntityAccessService` (see the [Entity Access](
 ../../CONTEXT.md#entity-access-context) context): `show` 403s on a

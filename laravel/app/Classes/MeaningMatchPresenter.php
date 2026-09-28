@@ -3,6 +3,7 @@
 namespace App\Classes;
 
 use App\Models\EntityMatch;
+use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -15,6 +16,10 @@ class MeaningMatchPresenter
      * document order. Consumers label the columns from the match's entity
      * languages and flip the pair when reading from the b side.
      *
+     * Illustration sentences (ADR 0050) contribute no text here — their
+     * images (and captions) ride toSimulatorImages(); pairing the two
+     * methods keeps a caption from rendering twice.
+     *
      * @param  Collection<int, MeaningMatch>  $meaningMatches
      * @return list<array{0: string, 1: string}>
      */
@@ -26,6 +31,30 @@ class MeaningMatchPresenter
             $rows[] = [
                 $this->sideText($meaningMatch, 'a'),
                 $this->sideText($meaningMatch, 'b'),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Row-aligned with toSimulatorRows (same collection, same order): row i
+     * of toSimulatorRows carries the images of row i here, as an
+     * [aImages, bImages] pair in document order. Each image descriptor
+     * carries the access-checked URL, the intrinsic dimensions for
+     * aspect-ratio reservation, and the optional caption.
+     *
+     * @param  Collection<int, MeaningMatch>  $meaningMatches
+     * @return list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>
+     */
+    public function toSimulatorImages(Collection $meaningMatches): array
+    {
+        $rows = [];
+
+        foreach ($meaningMatches as $meaningMatch) {
+            $rows[] = [
+                $this->sideImages($meaningMatch, 'a'),
+                $this->sideImages($meaningMatch, 'b'),
             ];
         }
 
@@ -55,11 +84,45 @@ class MeaningMatchPresenter
             ->map(fn ($match) => [
                 'order' => $match->entitySentence?->order ?? 0,
                 'content' => $match->entitySentence?->content ?? '',
+                'is_illustration' => $match->entitySentence?->image_path !== null,
             ])
             ->sortBy('order')
+            ->reject(fn (array $item): bool => $item['is_illustration'])
             ->pluck('content')
             ->filter()
             ->implode("\n");
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function sideImages(MeaningMatch $meaningMatch, string $side): array
+    {
+        return $meaningMatch->sentenceMeaningMatches
+            ->where('side', $side)
+            ->map(fn ($match) => [
+                'order' => $match->entitySentence?->order ?? 0,
+                'sentence' => $match->entitySentence,
+            ])
+            ->sortBy('order')
+            ->filter(fn (array $item): bool => $item['sentence']?->image_path !== null)
+            ->map(fn (array $item): array => $this->imagePayload($item['sentence']))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function imagePayload(EntitySentence $sentence): array
+    {
+        return [
+            'id' => $sentence->id,
+            'url' => route('illustrations.show', ['sentence' => $sentence->id]),
+            'width' => $sentence->image_width !== null ? (int) $sentence->image_width : null,
+            'height' => $sentence->image_height !== null ? (int) $sentence->image_height : null,
+            'caption' => $sentence->content,
+        ];
     }
 
     /**

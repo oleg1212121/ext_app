@@ -29,6 +29,21 @@ class UpdateUiSettingsRequest extends FormRequest
             'reader' => ['nullable', 'array'],
             'reader.font_size' => ['integer', 'min:16', 'max:38'],
             'reader.highlight' => ['boolean'],
+            // Word popup section visibility (the profile's Popups tab): a key
+            // absent from the saved map means visible, so only explicit
+            // opt-outs travel.
+            'popup' => ['nullable', 'array'],
+            'popup.familiarity' => ['boolean'],
+            'popup.progress_actions' => ['boolean'],
+            'popup.form_of' => ['boolean'],
+            'popup.word_family' => ['boolean'],
+            'popup.frequency' => ['boolean'],
+            'popup.transcriptions' => ['boolean'],
+            'popup.definitions' => ['boolean'],
+            'popup.translations' => ['boolean'],
+            'popup.examples' => ['boolean'],
+            'popup.etymologies' => ['boolean'],
+            'popup.explanation' => ['boolean'],
         ];
     }
 }

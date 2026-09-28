@@ -6,6 +6,7 @@ const Reader = ({
     translationLang,
     entity,
     rows = [],
+    rowImages = [],
     rowKeys = [],
     meta = null,
     positionKey = null,
@@ -25,6 +26,7 @@ const Reader = ({
         translationLang={translationLang}
         entity={entity}
         rows={rows}
+        rowImages={rowImages}
         rowKeys={rowKeys}
         meta={meta}
         positionKey={positionKey}

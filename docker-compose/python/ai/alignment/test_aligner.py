@@ -1400,6 +1400,138 @@ def invalid_pins_raise_value_error():
     return "OK: crossing / out-of-range / zero-length pins rejected; valid pins accepted"
 
 
+def greedy_rescues_a_mutual_best_subthreshold_pair():
+    reset_cache()
+    # "Dog" <-> "Dog ru" is a mutual-best 1:1 scoring 0.5 — under the 0.55 match
+    # bar but above the 0.45 rescue bar. Without the rescue the skip rule
+    # double-skips the pair (unmatched_a + unmatched_b — the repeating
+    # 1-sided-row pattern); with it the pair is emitted as a real match
+    # carrying its true score, flagged for review on the PHP side.
+    model = StubModel({
+        N("Cat"): [0, 0, 1, 0],
+        N("Cat ru"): [0, 0, 1, 0],
+        N("Dog"): [1, 0, 0, 0],
+        N("Dog ru"): [1, 1.7320508, 0, 0],
+    })
+
+    aligner = BilingualAligner(
+        model=model,
+        max_window=2,
+        similarity_threshold=0.55,
+        max_total_span=6,
+        algorithm="greedy",
+    )
+
+    result = aligner.align_lists(["Cat", "Dog"], ["Cat ru", "Dog ru"])
+
+    assert_same_matches(result["matches"], [
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0},
+        {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2, "score": 0.5},
+    ]), f"unexpected matches: {result['matches']}"
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
+
+    return "OK: mutual-best sub-threshold pair rescued as a real 0.5-score match"
+
+
+def rescue_disabled_keeps_the_mutual_pair_unmatched():
+    reset_cache()
+    # Same input as above with rescue_threshold=0: the pair falls back to the
+    # double-skip (one unmatched sentence per side) — the pre-rescue behavior.
+    model = StubModel({
+        N("Cat"): [0, 0, 1, 0],
+        N("Cat ru"): [0, 0, 1, 0],
+        N("Dog"): [1, 0, 0, 0],
+        N("Dog ru"): [1, 1.7320508, 0, 0],
+    })
+
+    aligner = BilingualAligner(
+        model=model,
+        max_window=2,
+        similarity_threshold=0.55,
+        max_total_span=6,
+        algorithm="greedy",
+        rescue_threshold=0,
+    )
+
+    result = aligner.align_lists(["Cat", "Dog"], ["Cat ru", "Dog ru"])
+
+    assert_same_matches(result["matches"], [
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0},
+    ]), f"unexpected matches: {result['matches']}"
+    assert result["unmatched_a"] == [1], result["unmatched_a"]
+    assert result["unmatched_b"] == [1], result["unmatched_b"]
+
+    return "OK: rescue disabled keeps the double-skip (one unmatched per side)"
+
+
+def greedy_does_not_rescue_a_non_mutual_weak_pair():
+    reset_cache()
+    # "Y"'s best partner is "Pup" (0.7), not "Dog" (0.5), so the weak cursor
+    # pair is not mutual-best: no rescue, and the skip rule correctly consumes
+    # Dog. Only a genuine pairing (Pup<->Y, 0.7) matches; X stays unmatched.
+    # max_total_span=2 keeps the walk at 1:1 combos so the pooled 2:1 window
+    # cannot mask the skip decision under test.
+    model = StubModel({
+        N("Dog"): [1, 0, 0, 0],
+        N("Pup"): [0, 1, 0, 0],
+        N("Y"): [0.5, 0.7, 0.51, 0],
+        N("X"): [0, 0, 0, 1],
+    })
+
+    aligner = BilingualAligner(
+        model=model,
+        max_window=2,
+        similarity_threshold=0.55,
+        max_total_span=2,
+        algorithm="greedy",
+    )
+
+    result = aligner.align_lists(["Dog", "Pup"], ["Y", "X"])
+
+    assert_same_matches(result["matches"], [
+        {"a_start": 1, "a_end": 2, "b_start": 0, "b_end": 1, "score": 0.7},
+    ]), f"unexpected matches: {result['matches']}"
+    assert result["unmatched_a"] == [0], result["unmatched_a"]
+    assert result["unmatched_b"] == [1], result["unmatched_b"]
+
+    return "OK: non-mutual weak pair stays skipped (no rescue)"
+
+
+def two_sided_orphan_gap_is_rescued_at_the_rescue_bar():
+    reset_cache()
+    # The gap before the Pup<->X anchor (0.8) holds Dog x Y with a 0.52 1:1 —
+    # under the match bar and not mutual-best (Y prefers Pup 0.53 > Dog 0.52),
+    # so the walk skips Dog and leaves a two-sided orphan gap. The orphan-gap
+    # pass re-walks that region at the rescue bar and pairs Dog<->Y at 0.52.
+    # max_total_span=2 keeps every decision at the 1:1 cells under test.
+    model = StubModel({
+        N("Dog"): [1, 0, 0, 0],
+        N("Pup"): [0, 1, 0, 0],
+        N("Y"): [0.52, 0.53, 0.67, 0],
+        N("X"): [0, 0.8, 0.6, 0],
+    })
+
+    aligner = BilingualAligner(
+        model=model,
+        max_window=2,
+        similarity_threshold=0.55,
+        max_total_span=2,
+        algorithm="greedy",
+    )
+
+    result = aligner.align_lists(["Dog", "Pup"], ["Y", "X"])
+
+    assert_same_matches(result["matches"], [
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 0.52},
+        {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2, "score": 0.8},
+    ]), f"unexpected matches: {result['matches']}"
+    assert result["unmatched_a"] == [], result["unmatched_a"]
+    assert result["unmatched_b"] == [], result["unmatched_b"]
+
+    return "OK: two-sided orphan gap re-walked at the rescue bar becomes a match"
+
+
 def main() -> int:
     checks = [
         skips_an_unmatchable_sentence_instead_of_force_matching,
@@ -1431,6 +1563,10 @@ def main() -> int:
         no_machine_match_overlaps_a_pin,
         pinned_indices_are_excluded_from_unmatched,
         invalid_pins_raise_value_error,
+        greedy_rescues_a_mutual_best_subthreshold_pair,
+        rescue_disabled_keeps_the_mutual_pair_unmatched,
+        greedy_does_not_rescue_a_non_mutual_weak_pair,
+        two_sided_orphan_gap_is_rescued_at_the_rescue_bar,
     ]
 
     failures = []

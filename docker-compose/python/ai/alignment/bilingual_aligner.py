@@ -141,6 +141,7 @@ class BilingualAligner:
         anchor_threshold=None,
         primary_window=None,
         merge_margin=None,
+        rescue_threshold=None,
         high_confidence=None,
         band_width=None,
         window_embed=None,
@@ -183,6 +184,24 @@ class BilingualAligner:
         # the match's score by at least this margin.
         self.merge_margin = float(
             merge_margin if merge_margin is not None else config.align_merge_margin()
+        )
+        # Greedy gap-walk rescue bar: a mutual-best 1:1 below
+        # similarity_threshold is still emitted as a match carrying its true
+        # (sub-threshold) score when it clears this bar — the pair surfaces as
+        # a low-similarity meaning match flagged for human review instead of
+        # two single-sided skip rows (the repeating 1-sided pattern). 0
+        # disables the rescue; capped at similarity_threshold because pairs at
+        # or above the match bar already match normally.
+        self.rescue_threshold = max(
+            0.0,
+            min(
+                float(
+                    rescue_threshold
+                    if rescue_threshold is not None
+                    else config.align_rescue_threshold()
+                ),
+                self.similarity_threshold,
+            ),
         )
         # Match edges consuming en_step + ru_step sentences above this cap are
         # rejected: 1:5 / 5:1 spans are almost never genuine translations, and
@@ -776,25 +795,37 @@ class BilingualAligner:
             self._align_gap(a_sentences, b_sentences, sim, cursor_i, n, cursor_j, m, k, band)
         )
 
-        return self._merge_orphans(matches, a_sentences, b_sentences)
+        return self._merge_orphans(matches, a_sentences, b_sentences, sim, k, band)
 
-    def _align_gap(self, a_sentences, b_sentences, sim, i0, i1, j0, j1, k, band):
+    def _align_gap(self, a_sentences, b_sentences, sim, i0, i1, j0, j1, k, band, threshold=None):
         """Greedily align the sub-slices EN[i0:i1] x RU[j0:j1] (a gap between
         anchors). Never crosses the gap bounds, so anchor pairs stay intact.
         Window combos and skip decisions are confined to the diagonal band.
+
+        `threshold` overrides similarity_threshold as the window-combo bar —
+        the orphan-gap rescue pass (see _rescue_orphan_gaps) lowers it to
+        rescue_threshold; the mutual-best rescue always uses rescue_threshold.
         """
         matches = []
         i = i0
         j = j0
 
         while i < i1 and j < j1:
-            best = self._best_window_pair(a_sentences, b_sentences, i, i1, j, j1, k, band)
+            best = self._best_window_pair(a_sentences, b_sentences, i, i1, j, j1, k, band, threshold)
 
             if best is not None:
                 en_step, ru_step, score = best
                 matches.append(self._match(a_sentences, b_sentences, i, j, en_step, ru_step, score))
                 i += en_step
                 j += ru_step
+                continue
+
+            rescued = self._rescue_mutual_best(a_sentences, b_sentences, sim, i, i1, j, j1, k, band)
+
+            if rescued is not None:
+                matches.append(rescued)
+                i += 1
+                j += 1
                 continue
 
             if self._should_skip_en(sim, i, i1, j, j1, k, band):
@@ -804,7 +835,51 @@ class BilingualAligner:
 
         return matches
 
-    def _best_window_pair(self, a_sentences, b_sentences, i, i1, j, j1, k, band):
+    def _rescue_mutual_best(self, a_sentences, b_sentences, sim, i, i1, j, j1, k, band):
+        """Rescue a mutual-best 1:1 that no window combo cleared the bar for.
+
+        The skip rule advances the side whose best nearby partner is weaker,
+        and skipping one member of a mutual pair collapses the other's
+        lookahead score — so the next iteration skips the survivor too, and one
+        conceptual pair becomes two unmatched sentences (the repeating
+        single-sided-row pattern). When the cursor pair is each other's best
+        in-band partner within max_window lookahead and the cell clears
+        rescue_threshold, emit it as a real match carrying its true
+        (sub-threshold) score. None when the rescue is disabled, the pair is
+        not mutual-best, or it sits below the rescue bar (the normal skip
+        branch then applies).
+        """
+        if self.rescue_threshold <= 0:
+            return None
+
+        score = float(sim[i, j])
+
+        if score < self.rescue_threshold:
+            return None
+
+        j_candidates = [
+            jj
+            for jj in range(j, min(j + self.max_window, j1))
+            if self._band_allowed(i, jj, k, band)
+        ]
+        i_candidates = [
+            ii
+            for ii in range(i, min(i + self.max_window, i1))
+            if self._band_allowed(ii, j, k, band)
+        ]
+
+        if not j_candidates or not i_candidates:
+            return None
+
+        best_en = float(sim[i, j_candidates].max())
+        best_ru = float(sim[i_candidates, j].max())
+
+        if best_en > score + 1e-9 or best_ru > score + 1e-9:
+            return None
+
+        return self._match(a_sentences, b_sentences, i, j, 1, 1, score)
+
+    def _best_window_pair(self, a_sentences, b_sentences, i, i1, j, j1, k, band, threshold=None):
         """Best multi-sentence window pair starting at the cursor, or None.
 
         Ladder search confined to the diagonal band: only (en_step, ru_step)
@@ -812,14 +887,16 @@ class BilingualAligner:
         length-ratio line — abs((j + ru_step/2) * k - (i + en_step/2)) <= band
         — are candidates, and steps that cannot pair into any in-band combo are
         never embedded. Otherwise unchanged: steps 1..primary are evaluated as
-        one set and the highest-scoring combo that clears similarity_threshold
-        wins — so a 1:1 is committed only when it genuinely beats the other
-        window combos up to primary, not the moment it crosses the bar. If
-        nothing in the primary set clears the bar, widen one step per side up
+        one set and the highest-scoring combo that clears `threshold`
+        (similarity_threshold unless overridden, e.g. by the orphan-gap rescue
+        pass) wins — so a 1:1 is committed only when it genuinely beats the
+        other window combos up to primary, not the moment it crosses the bar.
+        If nothing in the primary set clears the bar, widen one step per side up
         to max_window. Every candidate must satisfy
         en_step + ru_step <= max_total_span. Windows are embedded lazily
         (cache-missing texts only) and scored in one small batch.
         """
+        bar = self.similarity_threshold if threshold is None else threshold
 
         def _center_in_band(en_step, ru_step):
             return abs((j + ru_step / 2.0) * k - (i + en_step / 2.0)) <= band
@@ -862,7 +939,7 @@ class BilingualAligner:
                         best_score = score
                         best = (en_step, ru_step, score)
 
-            if best is None or best_score < self.similarity_threshold:
+            if best is None or best_score < bar:
                 return None
 
             return best
@@ -907,7 +984,65 @@ class BilingualAligner:
 
         return best_en < best_ru
 
-    def _merge_orphans(self, matches, a_sentences, b_sentences):
+    def _rescue_orphan_gaps(self, matches, a_sentences, b_sentences, sim, k, band):
+        """Retry two-sided orphan gaps at the rescue bar (greedy only).
+
+        A gap with orphans on both sides is a region the gap walk consumed
+        without emitting a single match: every window combo scored under the
+        match bar and no mutual-best 1:1 cleared the rescue bar at the walk's
+        cursor. Before the single-sided fold runs, re-walk each such region
+        (leading, between, and trailing) with the window-combo acceptance bar
+        lowered to rescue_threshold — a combo (or mutual-best 1:1) scoring in
+        the rescue band becomes a low-similarity match the PHP side flags for
+        human review, and only sentences with no partner even at that bar stay
+        unmatched. The re-walk is confined to the gap bounds, so matches stay
+        sorted and non-overlapping.
+        """
+        n = len(a_sentences)
+        m = len(b_sentences)
+        out = []
+        prev_end_i = 0
+        prev_end_j = 0
+
+        for match in matches:
+            if match["a_start"] > prev_end_i and match["b_start"] > prev_end_j:
+                out.extend(
+                    self._align_gap(
+                        a_sentences,
+                        b_sentences,
+                        sim,
+                        prev_end_i,
+                        match["a_start"],
+                        prev_end_j,
+                        match["b_start"],
+                        k,
+                        band,
+                        threshold=self.rescue_threshold,
+                    )
+                )
+            out.append(match)
+            prev_end_i = match["a_end"]
+            prev_end_j = match["b_end"]
+
+        if prev_end_i < n and prev_end_j < m:
+            out.extend(
+                self._align_gap(
+                    a_sentences,
+                    b_sentences,
+                    sim,
+                    prev_end_i,
+                    n,
+                    prev_end_j,
+                    m,
+                    k,
+                    band,
+                    threshold=self.rescue_threshold,
+                )
+            )
+
+        return out
+
+    def _merge_orphans(self, matches, a_sentences, b_sentences, sim=None, k=None, band=None):
         """Fold single-sided orphan runs into the preceding match (greedy only).
 
         The anchor-first pass can lock a 1:1 that is really the head of a
@@ -922,9 +1057,15 @@ class BilingualAligner:
         pooled window is kept only if it beats the match's score by
         merge_margin. Windows embed lazily through the shared cache, so this
         costs at most a few new window texts per fired merge.
+
+        Two-sided orphan gaps are retried first at the rescue bar
+        (see _rescue_orphan_gaps) when sim/k/band are supplied.
         """
         if not matches:
             return matches
+
+        if self.rescue_threshold > 0 and sim is not None and k is not None and band is not None:
+            matches = self._rescue_orphan_gaps(matches, a_sentences, b_sentences, sim, k, band)
 
         n = len(a_sentences)
         m = len(b_sentences)

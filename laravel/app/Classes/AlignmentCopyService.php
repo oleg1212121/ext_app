@@ -210,6 +210,7 @@ class AlignmentCopyService
                 }
 
                 $junctionRows[] = [
+                    'entity_match_id' => $target->id,
                     'entity_sentence_id' => $mappedSentenceId,
                     'meaning_match_id' => null, // filled after the meaning insert
                     'source_meaning_match_id' => $junction->meaning_match_id,
@@ -264,8 +265,8 @@ class AlignmentCopyService
         SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($target);
 
         $target->update([
-            'a_total_sentences' => count($targetA),
-            'b_total_sentences' => count($targetB),
+            'a_total_sentences' => $aEntity->sentences()->withoutImage()->count(),
+            'b_total_sentences' => $bEntity->sentences()->withoutImage()->count(),
             'linked_count' => count($meaningRows),
         ]);
 

@@ -80,6 +80,73 @@ test('invalid values are rejected', function () {
         ->assertInvalid('simulator.question');
 });
 
+test('authenticated user can save popup visibility settings', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', [
+            'popup' => [
+                'familiarity' => false,
+                'explanation' => false,
+                'frequency' => false,
+            ],
+        ])
+        ->assertOk()
+        ->assertJson(['saved' => true]);
+
+    $popup = $user->settings()->first()->ui_settings['popup'];
+    expect($popup['familiarity'])->toBeFalse()
+        ->and($popup['explanation'])->toBeFalse()
+        ->and($popup['frequency'])->toBeFalse();
+});
+
+test('saving the popup section keeps the other sections intact', function () {
+    $user = User::factory()->create();
+    withSavedUiSettings($user, [
+        'simulator' => ['font_size' => 30],
+        'reader' => ['highlight' => true],
+    ]);
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['popup' => ['definitions' => false]])
+        ->assertOk();
+
+    $ui = $user->settings()->first()->ui_settings;
+    expect($ui['simulator']['font_size'])->toBe(30)
+        ->and($ui['reader']['highlight'])->toBeTrue()
+        ->and($ui['popup']['definitions'])->toBeFalse();
+});
+
+test('popup junk values are rejected and unknown keys never persist', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['popup' => ['definitions' => 'banana']])
+        ->assertInvalid('popup.definitions');
+
+    // Unknown keys pass validation but validated() strips them, exactly like
+    // the simulator/reader sections.
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['popup' => ['synonyms' => false, 'definitions' => false]])
+        ->assertOk();
+
+    $popup = $user->settings()->first()->ui_settings['popup'];
+    expect($popup)->toBe(['definitions' => false]);
+});
+
+test('an unapproved user can update ui settings', function () {
+    // The Popups tab lives on the auth-only profile; its autosave endpoint
+    // moved out of the approved-only group with it.
+    $user = User::factory()->unapproved()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['popup' => ['examples' => false]])
+        ->assertOk()
+        ->assertJson(['saved' => true]);
+
+    expect($user->settings()->first()->ui_settings['popup']['examples'])->toBeFalse();
+});
+
 test('simulator page seeds props from saved ui settings', function () {
     $user = User::factory()->create();
     $match = createSimulatorMatch();
