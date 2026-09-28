@@ -265,8 +265,8 @@ class AlignmentCopyService
         SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($target);
 
         $target->update([
-            'a_total_sentences' => count($targetA),
-            'b_total_sentences' => count($targetB),
+            'a_total_sentences' => $aEntity->sentences()->withoutImage()->count(),
+            'b_total_sentences' => $bEntity->sentences()->withoutImage()->count(),
             'linked_count' => count($meaningRows),
         ]);
 

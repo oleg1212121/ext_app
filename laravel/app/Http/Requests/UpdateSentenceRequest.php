@@ -21,7 +21,7 @@ class UpdateSentenceRequest extends FormRequest
         $sentenceId = $this->route('sentence');
         $isIllustration = $sentenceId !== null && EntitySentence::query()
             ->whereKey((int) $sentenceId)
-            ->whereNotNull('image_path')
+            ->withImage()
             ->exists();
 
         return [

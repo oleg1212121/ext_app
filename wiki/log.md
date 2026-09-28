@@ -1,5 +1,21 @@
 # Directory Update Log
 
+## 2026-09-28 (fix: alignable-totals writers missed by the illustrations commit)
+
+Post-review follow-up to the illustrations entry below: three writers of
+`a/b_total_sentences` still counted illustration rows, breaking ADR 0050's
+"totals are the aligner's sentence space" invariant — the editor's
+add-sentence recount (`AlignmentEditorController::storeSentence`, sibling of
+the already-fixed `destroyUnmatched`), the draft-apply recount
+(`AlignmentEditorPersister`), and the alignment copy
+(`AlignmentCopyService`, whose copied cursor derives from the totals). All
+three now filter `withoutImage()`; junction copying is untouched —
+illustration junctions still copy positionally. Also: `EntitySentence`'s
+deleted hook delegates to `IllustrationStorage::releaseIfOrphaned` instead
+of re-implementing it, and `UpdateSentenceRequest` uses the `withImage()`
+scope. Three new tests in `EntityIllustrationAlignmentTest` pin the
+invariant (editor add-sentence, draft apply, copy onto illustrated copies).
+
 ## 2026-09-28 (feat: illustrations — image-bearing sentences matched like text and rendered in reader/simulator; ADR 0050)
 
 An **Illustration** is an `entity_sentences` row with non-null `image_path`

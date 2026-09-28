@@ -1,9 +1,12 @@
 <?php
 
+use App\Classes\AlignmentEditorPersister;
+use App\Classes\AlignmentEditorPresenter;
 use App\Classes\EntityTextHasher;
 use App\Classes\MeaningMatchPresenter;
 use App\Jobs\AlignEntitySentences;
 use App\Models\Entity;
+use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
@@ -161,6 +164,150 @@ it('finalizes an illustration-only entity without calling the aligner', function
         ->pluck('entity_sentence_id');
 
     expect($junctionedIds)->toContain($enEntity->sentences()->first()->id);
+});
+
+// ─── totals invariants ────────────────────────────────────────────────────────
+
+/**
+ * A completed pair — one text row junctioned on both sides — whose a side also
+ * carries an illustration outside every row.
+ */
+function illustratedMatchForTotals(): array
+{
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    $enText = EntitySentence::create(['entity_id' => $enEntity->id, 'content' => 'English text.', 'order' => 1]);
+    createIllustrationSentence($enEntity, 2, 'The lighthouse.');
+    $ruText = EntitySentence::create(['entity_id' => $ruEntity->id, 'content' => 'Русский текст.', 'order' => 1]);
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, [
+        'status' => 'completed',
+        'a_total_sentences' => 1,
+        'b_total_sentences' => 1,
+    ]);
+
+    $row = MeaningMatch::create(['entity_match_id' => $entityMatch->id, 'order' => 0, 'similarity' => 1.0]);
+    SentenceMeaningMatch::create(['entity_match_id' => $entityMatch->id, 'entity_sentence_id' => $enText->id, 'meaning_match_id' => $row->id, 'side' => 'a']);
+    SentenceMeaningMatch::create(['entity_match_id' => $entityMatch->id, 'entity_sentence_id' => $ruText->id, 'meaning_match_id' => $row->id, 'side' => 'b']);
+
+    return compact('entityMatch', 'row', 'enEntity', 'ruEntity');
+}
+
+it('keeps the editor add-sentence recount in alignable space', function () {
+    ['entityMatch' => $entityMatch, 'row' => $row] = illustratedMatchForTotals();
+
+    SentenceType::firstOrCreate(['name' => 'sentence']);
+
+    $this->actingAs(approvedUser())
+        ->postJson("/alignments/{$entityMatch->id}/sentences", [
+            'side' => 'a',
+            'meaning_match_id' => $row->id,
+            'content' => 'A brand new sentence.',
+        ])->assertOk();
+
+    $entityMatch->refresh();
+
+    // Two alignable sentences on the a side; the illustration is not counted.
+    expect($entityMatch->a_total_sentences)->toBe(2)
+        ->and($entityMatch->b_total_sentences)->toBe(1);
+});
+
+it('keeps the draft-apply recount in alignable space', function () {
+    ['entityMatch' => $entityMatch, 'enEntity' => $enEntity] = illustratedMatchForTotals();
+
+    $presenter = app(AlignmentEditorPresenter::class);
+
+    $draft = $presenter->toDraft($entityMatch->fresh(['aEntity', 'bEntity']));
+    $draft['unmatched_a'][] = $presenter->sentencePayload(null, 'Draft-added sentence.', 3, 'tmp-en-1');
+
+    app(AlignmentEditorPersister::class)->persist($entityMatch->fresh(), $draft);
+
+    $entityMatch->refresh();
+
+    // The a entity grew to three sentences (text, illustration, draft-added),
+    // but only its two alignable ones count toward the totals.
+    expect($entityMatch->a_total_sentences)->toBe(2)
+        ->and($entityMatch->b_total_sentences)->toBe(1)
+        ->and($enEntity->sentences()->count())->toBe(3);
+});
+
+it('writes alignable totals when an alignment is copied onto illustrated copies', function () {
+    Http::fake();
+    Bus::fake();
+
+    $work = createWork();
+
+    $enSource = createEntity('en', $work, ['name' => 'EN source', 'signature' => json_encode([1.0, 0.0])]);
+    $ruSource = createEntity('ru', $work, ['name' => 'RU source', 'signature' => json_encode([1.0, 0.0])]);
+
+    EntitySentence::create(['entity_id' => $enSource->id, 'content' => 'First.', 'order' => 1024]);
+    $sourceImage = createIllustrationSentence($enSource, 2048, 'The lighthouse.');
+    $sourceTextId = $enSource->sentences()->orderBy('order')->first()->id;
+    EntitySentence::create(['entity_id' => $ruSource->id, 'content' => 'Первый.', 'order' => 1024]);
+
+    foreach ([$enSource, $ruSource] as $entity) {
+        $entity->forceFill([
+            'text_hash' => (new EntityTextHasher)->hash($entity),
+            'text_hashed_at' => now(),
+            'sentences_updated_at' => now(),
+        ])->save();
+    }
+
+    $sourceMatch = createEntityMatch($enSource, $ruSource, ['status' => 'completed', 'completed_at' => now()]);
+
+    $textRow = MeaningMatch::create(['entity_match_id' => $sourceMatch->id, 'order' => 1024, 'similarity' => 0.9]);
+    SentenceMeaningMatch::create(['entity_match_id' => $sourceMatch->id, 'entity_sentence_id' => $sourceTextId, 'meaning_match_id' => $textRow->id, 'side' => 'a']);
+    SentenceMeaningMatch::create(['entity_match_id' => $sourceMatch->id, 'entity_sentence_id' => $ruSource->sentences()->first()->id, 'meaning_match_id' => $textRow->id, 'side' => 'b']);
+
+    $imageRow = MeaningMatch::create(['entity_match_id' => $sourceMatch->id, 'order' => 2048, 'similarity' => 1.0]);
+    SentenceMeaningMatch::create(['entity_match_id' => $sourceMatch->id, 'entity_sentence_id' => $sourceImage->id, 'meaning_match_id' => $imageRow->id, 'side' => 'a']);
+
+    $sourceMatch->update(['linked_count' => 2, 'entity_similarity' => 0.95]);
+
+    // Copies mirror the source sentence composition (image hash included), so
+    // their text hashes match and the positional map holds.
+    $enCopy = createEntity('en', $work, ['name' => 'EN copy', 'signature' => json_encode([1.0, 0.0])]);
+    EntitySentence::create(['entity_id' => $enCopy->id, 'content' => 'First.', 'order' => 1024]);
+    $copyImage = createIllustrationSentence($enCopy, 2048, 'The lighthouse.');
+
+    $ruCopy = createEntity('ru', $work, ['name' => 'RU copy', 'signature' => json_encode([1.0, 0.0])]);
+    EntitySentence::create(['entity_id' => $ruCopy->id, 'content' => 'Первый.', 'order' => 1024]);
+
+    foreach ([$enCopy, $ruCopy] as $entity) {
+        $entity->forceFill([
+            'text_hash' => (new EntityTextHasher)->hash($entity),
+            'text_hashed_at' => now(),
+            'sentences_updated_at' => now(),
+        ])->save();
+    }
+
+    $this->actingAs(User::factory()->create())
+        ->post("/works/{$work->id}/alignments", [
+            'first_entity_id' => $enCopy->id,
+            'second_entity_id' => $ruCopy->id,
+            'chunk_size' => 75,
+            'max_n' => 6,
+        ]);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+
+    $copyMatch = EntityMatch::query()
+        ->where('a_entity_id', min($enCopy->id, $ruCopy->id))
+        ->where('b_entity_id', max($enCopy->id, $ruCopy->id))
+        ->first();
+
+    // Totals are the aligner's space — one text sentence per side — even
+    // though the illustration's junction was copied like any other.
+    expect($copyMatch)->not->toBeNull()
+        ->and($copyMatch->status)->toBe('completed')
+        ->and($copyMatch->a_total_sentences)->toBe(1)
+        ->and($copyMatch->b_total_sentences)->toBe(1)
+        ->and(SentenceMeaningMatch::query()
+            ->where('entity_match_id', $copyMatch->id)
+            ->where('entity_sentence_id', $copyImage->id)
+            ->exists())->toBeTrue();
 });
 
 // ─── presenter ───────────────────────────────────────────────────────────────

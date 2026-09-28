@@ -44,8 +44,8 @@ class AlignmentEditorPersister
 
             $this->syncMeaningMatches($entityMatch, $draft['meaning_rows'], $aIdMap, $bIdMap);
 
-            $aCount = EntitySentence::query()->where('entity_id', $entityMatch->a_entity_id)->count();
-            $bCount = EntitySentence::query()->where('entity_id', $entityMatch->b_entity_id)->count();
+            $aCount = EntitySentence::query()->where('entity_id', $entityMatch->a_entity_id)->withoutImage()->count();
+            $bCount = EntitySentence::query()->where('entity_id', $entityMatch->b_entity_id)->withoutImage()->count();
 
             $linkedCount = MeaningMatch::query()
                 ->where('entity_match_id', $entityMatch->id)

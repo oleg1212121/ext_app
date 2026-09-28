@@ -150,7 +150,7 @@ class AlignmentEditorController extends Controller
             $meaningMatch->update(['similarity' => 1.0]);
 
             $totalColumn = $side === 'a' ? 'a_total_sentences' : 'b_total_sentences';
-            $entityMatch->update([$totalColumn => EntitySentence::query()->where('entity_id', $entityId)->count()]);
+            $entityMatch->update([$totalColumn => EntitySentence::query()->where('entity_id', $entityId)->withoutImage()->count()]);
         });
 
         return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch->refresh())]);

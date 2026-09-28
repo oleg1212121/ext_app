@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
+use App\Classes\IllustrationStorage;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Storage;
 
 class EntitySentence extends Model
 {
@@ -78,15 +78,9 @@ class EntitySentence extends Model
 
         static::deleted(function (EntitySentence $sentence): void {
             // Illustration files are content-hash named, so identical uploads
-            // share one file — remove it only when this was the last referer.
+            // share one file — removal is reference-counted, not per-upload.
             if ($sentence->image_path !== null) {
-                $stillReferenced = EntitySentence::query()
-                    ->where('image_path', $sentence->image_path)
-                    ->exists();
-
-                if (! $stillReferenced) {
-                    Storage::disk('local')->delete($sentence->image_path);
-                }
+                app(IllustrationStorage::class)->releaseIfOrphaned($sentence->image_path);
             }
 
             foreach ($sentence->meaningMatchIdsBeforeDelete ?? [] as $meaningMatchId) {
