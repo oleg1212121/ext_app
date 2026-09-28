@@ -3310,3 +3310,38 @@ did* **Change: AI Models admin enable/disable now fires without a confirmation
   client-side prop forwarding; a server-side render check of the wrapper
   (React static render, `@inertiajs/react` stubbed) reproduced and then
   proved the fix. Wrapper now forwards both props.
+
+## 2026-09-28 (scheduler resume preserves landmarks)
+
+* **Prod incident + fix (ADR 0051)** — editing a sentence on the entity
+  Sentences page flips the entity's matches to `pending`
+  (`EntityController::setMatchesPending`, ADR 0015's mutation rule), and the
+  5-minute `alignments:resume` then ran every pending match through
+  `AlignEntitySentences::beginFromScratch()`, whose
+  `meaningMatches()->delete()` wiped **all** rows including human
+  `alignment_chunk = -1` landmarks — within 5 minutes of any sentence edit
+  (even a pure drag-reorder) the user's manual alignment work was destroyed
+  and replaced by machine output. Happened twice in prod on 2026-09-28
+  (~17:35/17:55 UTC); illustrations survived only because they are
+  `entity_sentences` rows (ADR 0050), which the pipeline never deletes.
+  The wiki had always documented the scheduler as running through
+  `begin()` — the code had diverged from the contract. Fixes:
+  `AlignmentsResumeCommand` now dispatches `begin()` and reports the path
+  ("landmarks preserved" / "from scratch") in dry-run and dispatch output;
+  `begin()`'s dead "never set up" guard (`a_total_sentences === null` — the
+  column is `NOT NULL DEFAULT 0`, so it could never fire) is replaced by
+  **row existence** (row-less matches delegate to `beginFromScratch()` with
+  its verify pass; the scheduler never wipes existing rows); and `begin()`
+  now **re-snapshots the run plan** via the `snapshotAlignmentPlan()`
+  helper shared with `beginFromScratch()` (image-less counts, chunk/max_n
+  clamps, small-entity raise) and mirrors its zero-side immediate finalize,
+  so sentences added since the previous snapshot are inside the re-aligned
+  span. Tests: `AlignmentsResumeCommandTest` gains the incident end-to-end
+  (sentence edit → pending → resume → human row survives, machine row
+  re-derived; its `Http::fake()` beforeEach became
+  `Http::preventStrayRequests()` — a bare catch-all fake shadows scenario
+  fakes because Http stub callbacks resolve first-registered-wins);
+  `ReAlignPreservesLandmarksTest` gains snapshot-refresh and row-less
+  delegation cases. New `docs/adr/0051-scheduler-resume-preserves-landmarks.md`;
+  `wiki/domains/sentence-alignment.md` Stage 3/4 updated (command reference
+  regenerated via `wiki:sync` for the new `alignments:resume` description).

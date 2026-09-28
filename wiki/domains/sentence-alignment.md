@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-09-28T22:30:00Z }
+generated: { by: agent:zcode, at: 2026-09-28T23:59:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -629,8 +629,8 @@ editor-shaped row.
     rows below `LANDMARK_THRESHOLD` (0.90), leaving human-made rows
     (`alignment_chunk = -1`) and high-confidence auto-landmarks
     (`similarity >= 0.90`) pinned in place, resets the cursor, and
-    re-dispatches. Matches that never went through the fresh setup
-    (`a_total_sentences` is null) delegate to `beginFromScratch()`. `handle()`
+    re-dispatches. Matches that never went through the fresh setup delegate to
+    `beginFromScratch()` (see the ADR 0051 entry below). `handle()`
     is now **pool-aware**: `landmarkRows()` collects every landmark (human +
     auto), `landmarkBounds()` turns them into non-overlapping pools (a 1:N
     landmark span merges into one boundary; bounds clamp to the snapshot
@@ -686,12 +686,37 @@ editor-shaped row.
     Filament tests (`FilamentReAlignActionTest`) assert both actions'
     visibility per status, their confirmation copy, and the entry-point
     dispatch each triggers.
+3. **Align (scheduler resume preservation, ADR 0051, Sep 2026)** — two
+    corrections to `begin()` so it can carry the scheduler (a 2026-09-28 prod
+    incident: a sentence edit re-pended a completed match and the 5-minute
+    `alignments:resume` wiped its human rows via `beginFromScratch()`):
+    - The "never set up" delegation is now **row existence** — `begin()`
+      delegates to `beginFromScratch()` when the match has no
+      `meaning_matches` rows. The original guard (`a_total_sentences ===
+      null`) was dead code: the column is `NOT NULL DEFAULT 0`, so it could
+      never fire and a row-less match would have been re-aligned against
+      stale zero totals with no verify pass.
+    - `begin()` **re-snapshots the run plan** (image-less counts per ADR
+      0050, `chunk_size`/`max_n` clamps, small-entity single-chunk raise —
+      the same `snapshotAlignmentPlan()` helper `beginFromScratch()` uses)
+      and mirrors its zero-side immediate finalize, so sentences added or
+      removed since the previous run's snapshot are inside the re-aligned
+      span instead of silently excluded by stale totals.
+    The scheduler, the Filament "Re-align" action, and everything downstream
+    now share one `begin()` contract: existing rows are only ever removed by
+    an explicit "Run from scratch" (or by a genuinely fresh, row-less match).
+    Tests: `ReAlignPreservesLandmarksTest` (snapshot refresh, row-less
+    delegation) and `AlignmentsResumeCommandTest` (the incident end-to-end:
+    sentence edit → pending → `alignments:resume` → human row survives).
 4. **Schedule** — `Schedule::command('alignments:resume')->everyFiveMinutes()
    ->withoutOverlapping()` picks up to 10 `status='pending'` matches per tick
-   and runs them through `AlignEntitySentences::begin()`. Without-overlap
-   prevents concurrent ticks colliding with each other. Set
-   `DB_QUEUE_RETRY_AFTER=900` so the database queue does not re-lease a
-   long-running chunk to a second worker mid-flight.
+   and runs them through `AlignEntitySentences::begin()` (ADR 0051): a match
+   that already has meaning-match rows keeps its human edits and landmarks
+   (the scheduler never wipes existing rows), a row-less match takes the
+   from-scratch path with its verify pass; dry-run and dispatch output report
+   which. Without-overlap prevents concurrent ticks colliding with each
+   other. Set `DB_QUEUE_RETRY_AFTER=900` so the database queue does not
+   re-lease a long-running chunk to a second worker mid-flight.
 5. **Order** — sentences and matches carry sparse order values managed by
    `SparseOrderService`; `entity-orders:rebalance` (language-agnostic since
    the unified schema — it scopes `entity_sentences` and `meaning_matches`

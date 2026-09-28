@@ -5,7 +5,7 @@ description: End-to-end workflow for aligning two same-work entities (any langua
 tags: [alignment, embeddings, jobs, howto]
 status: stable
 stale_after: 2026-12-22
-generated: { by: agent:zcode, at: 2026-09-28T13:45:00Z }
+generated: { by: agent:zcode, at: 2026-09-28T23:59:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -91,14 +91,15 @@ sources:
    language, either orientation) is cloned wholesale and the new match is
    `completed` at creation — no pipeline run, no Python. Only when no
    eligible source exists do the fresh entry
-   points (Filament "new alignment" / "Find Match", the web create form, and
-   the `alignments:resume` command) call
+   points (Filament "new alignment" / "Find Match" and the web create form)
+   call
    `AlignEntitySentences::beginFromScratch($id)` — a shared
    static that verifies the pair, wipes any prior meaning matches, snapshots
     totals, resets the cursor, transitions to `aligning`, and dispatches the
     first chunk. (Approved entities: `alignments:resume` skips their matches
     — an approved entity freezes every alignment it takes part in, ADR 0034.)
-    The Filament **Re-align** action instead calls the
+    The Filament **Re-align** action and the `alignments:resume` command
+    instead call the
     landmark-aware `begin($id)`: it preserves human-made rows
     (`alignment_chunk = -1`) and high-confidence auto-landmarks
     (similarity ≥ 0.90) and only deletes lower-confidence machine rows, then
@@ -148,7 +149,11 @@ sources:
 4. **Let the scheduler pick up pending pairs automatically** —
    `Schedule::command('alignments:resume')->everyFiveMinutes()
    ->withoutOverlapping()` picks up to **10** `status='pending'` entity
-    matches per tick and runs each through `beginFromScratch()`. Run it
+    matches per tick and runs each through `begin()` (ADR 0051): a match
+    that already has meaning-match rows keeps its human edits and landmarks
+    (the scheduler never wipes existing rows), a row-less match takes the
+    from-scratch path with its verify pass; the dry-run and dispatch output
+    report which path. Run it
     manually for
     testing: `docker exec ext_app_laravel php artisan alignments:resume`
     (`--limit=N` to override the batch size, `--dry-run` to report without

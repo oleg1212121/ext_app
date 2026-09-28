@@ -359,3 +359,126 @@ it('carves pools that never overlap a 1:N human landmark span', function () {
         ->and($humanRow->sideSentenceMeaningMatches('b')->pluck('entity_sentence_id')->all())
         ->toEqual($ruSentences->slice(4, 3)->pluck('id')->all());
 });
+
+it('refreshes stale totals and chunk size when sentences were added since the snapshot', function () {
+    $calls = [];
+    Http::fake(function (Request $request) use (&$calls) {
+        $a = $request->data()['a_sentences'] ?? [];
+        $b = $request->data()['b_sentences'] ?? [];
+        $calls[] = ['a' => $a, 'b' => $b];
+
+        $count = min(count($a), count($b));
+        $matches = [];
+
+        for ($i = 0; $i < $count; $i++) {
+            $matches[] = ['a_start' => $i, 'a_end' => $i + 1, 'b_start' => $i, 'b_end' => $i + 1, 'score' => 0.9];
+        }
+
+        return Http::response(['matches' => $matches, 'unmatched_a' => [], 'unmatched_b' => []]);
+    });
+
+    Bus::fake();
+
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    $seed = fn (object $entity, int $order): EntitySentence => EntitySentence::create([
+        'entity_id' => $entity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => ucfirst($entity->name).' '.$order.'.',
+        'order' => $order,
+    ]);
+
+    $enSentences = collect(range(1, 3))->map(fn (int $order): EntitySentence => $seed($enEntity, $order));
+    $ruSentences = collect(range(1, 3))->map(fn (int $order): EntitySentence => $seed($ruEntity, $order));
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, [
+        'status' => 'completed',
+        'chunk_size' => 75,
+        'max_n' => 2,
+        'a_total_sentences' => 3,
+        'b_total_sentences' => 3,
+        'linked_count' => 1,
+        'a_last_sentence_offset' => 3,
+        'b_last_sentence_offset' => 3,
+    ]);
+
+    $humanRow = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id,
+        'order' => 0,
+        'similarity' => 1.0,
+        'alignment_chunk' => -1,
+    ]);
+    seedMeaningMatchJunction($humanRow, $enSentences[0], $ruSentences[0]);
+
+    // Two sentences appear on both sides after the original run snapshotted
+    // totals of 3/3 — a stale snapshot would silently exclude them.
+    $enSentences = $enSentences->merge(collect(range(4, 5))->map(fn (int $order): EntitySentence => $seed($enEntity, $order)));
+    $ruSentences = $ruSentences->merge(collect(range(4, 5))->map(fn (int $order): EntitySentence => $seed($ruEntity, $order)));
+
+    AlignEntitySentences::begin($entityMatch->id);
+
+    $entityMatch->refresh();
+
+    expect($entityMatch->status)->toBe('aligning')
+        ->and($entityMatch->a_total_sentences)->toBe(5)
+        ->and($entityMatch->b_total_sentences)->toBe(5)
+        ->and($entityMatch->chunk_size)->toBe(5)
+        ->and($entityMatch->a_last_sentence_offset)->toBe(0)
+        ->and($entityMatch->b_last_sentence_offset)->toBe(0);
+
+    (new AlignEntitySentences($entityMatch->id))->handle();
+
+    $guard = 0;
+
+    while ($entityMatch->refresh()->status === 'aligning' && $guard < 10) {
+        (new AlignEntitySentences($entityMatch->id))->handle();
+        $guard++;
+    }
+
+    expect($guard)->toBeLessThan(10)
+        ->and($entityMatch->status)->toBe('completed')
+        ->and($entityMatch->a_last_sentence_offset)->toBe(5)
+        ->and($entityMatch->b_last_sentence_offset)->toBe(5);
+
+    // The pool after the landmark spans through the newly added sentences.
+    expect($calls)->toHaveCount(1)
+        ->and($calls[0]['a'])->toBe(['English 2.', 'English 3.', 'English 4.', 'English 5.'])
+        ->and($calls[0]['b'])->toBe(['Russian 2.', 'Russian 3.', 'Russian 4.', 'Russian 5.']);
+
+    expect(MeaningMatch::find($humanRow->id))->not->toBeNull()
+        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(5);
+});
+
+it('delegates to beginFromScratch for a match with no rows', function () {
+    Http::fake();
+    Bus::fake();
+
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    EntitySentence::create(['entity_id' => $enEntity->id, 'sentence_type_id' => $sentenceType->id, 'content' => 'English.', 'order' => 1]);
+    EntitySentence::create(['entity_id' => $ruEntity->id, 'sentence_type_id' => $sentenceType->id, 'content' => 'Russian.', 'order' => 1]);
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, [
+        'status' => 'pending',
+        'chunk_size' => 200,
+    ]);
+
+    AlignEntitySentences::begin($entityMatch->id);
+
+    $entityMatch->refresh();
+
+    // entity_similarity is only written by the from-scratch verify pass.
+    expect($entityMatch->status)->toBe('aligning')
+        ->and($entityMatch->a_total_sentences)->toBe(1)
+        ->and($entityMatch->b_total_sentences)->toBe(1)
+        ->and($entityMatch->chunk_size)->toBe(1)
+        ->and($entityMatch->entity_similarity)->toBe('1.0000');
+
+    Bus::assertDispatched(AlignEntitySentences::class, 1);
+});
