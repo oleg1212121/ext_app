@@ -51,9 +51,11 @@ sentence visible. _Avoid_: skip row (implementation term), empty match
 
 **Needs review**:
 A meaning match a human should inspect because it is low-confidence (similarity
-below the pipeline's acceptance floor) or one-sided (incomplete). Surfaced in
-the Alignments editor as a review list.
-_Avoid_: low-similarity match (score-only wording, misses one-sided rows)
+below the pipeline's acceptance floor) or one-sided (incomplete) and not
+human-confirmed — a single-sided match trusted at similarity 1.0 was shaped by
+a human on purpose and is treated as resolved (see ADR 0049). Surfaced in the
+Alignments editor as a review list.
+_Avoid_: low-similarity match (score-only wording, misses one-sided rows), resolved (not a stored state; the human-confirmed convention replaces it)
 
 **Sentence**:
 A split sentence of an entity. Its entity-global `order` is the **document order** —

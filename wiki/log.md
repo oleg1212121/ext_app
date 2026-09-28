@@ -1,5 +1,26 @@
 # Directory Update Log
 
+## 2026-09-28 (feat: alignments review UX — human-confirmed 1-sided leave Needs review, jump button, rows lookahead; ADR 0049)
+
+Three editor changes on `/alignments/{id}`. (1) **Needs review membership**
+now excludes one-sided rows trusted at `similarity = 1.0`: every editor
+mutation writes 1.0 while the pipeline emits its one-sided rows at 0.0, so
+human-shaped rows (added sentence with no counterpart, approved or unlinked
+rows) leave the list and its totals as if resolved, with no new stored state
+(`AlignmentEditorApiPresenter::HUMAN_CONFIRMED_SIMILARITY`; `alignment_chunk
+= -1` was rejected as discriminator because link/unlink/add-sentence don't
+set it). (2) Every rows page carries a **three-row lookahead tail**
+(`ROWS_LOOKAHEAD`): `per_page` normal rows plus the first three rows of the
+next page, marked client-side with an accent "next page" badge (`PairRow`
+`preview`) and still fully editable; meta stays per_page-based so page
+numbering and the `→ p. N` jumps are unchanged. (3) A round
+**scroll-to-review button** pinned top-center (sticky in `Show.jsx`,
+always visible) smooth-scrolls to the unmatched pools — or the needs-review
+list when both pools are empty — without expanding them. UI strings
+`alignments.next_page` / `alignments.jump_to_review` added. Glossary
+"Needs review" updated (+ `_Avoid_: resolved`); ADR 0049 records the
+membership rule.
+
 ## 2026-09-28 (feat: strict alignment invariants — junction uniqueness, total completeness, weak-pair rescue, ADR 0048)
 
 Three production defects fixed together. (1) The repeating pattern of two

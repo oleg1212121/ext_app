@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash]
 status: stable
 stale_after: 2026-12-27
-generated: { by: agent:zcode, at: 2026-09-28T13:30:00Z }
+generated: { by: agent:zcode, at: 2026-09-28T19:40:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -737,7 +737,16 @@ its output can look exactly like an unfixed bug.
     (rows carry `a_sentences`/`b_sentences` per row; `rows` + per-side
     `unmatched_a`/`unmatched_b` pools with pagination, `last_page` included;
     the rows table's `Pagination` component shows Prev/Next + numbered page
-    buttons with ellipsis and a custom per-page dropdown). Client-side, a
+    buttons with ellipsis and a custom per-page dropdown). Every rows page
+    carries a **three-row lookahead tail** (`ROWS_LOOKAHEAD`): each page
+    serves `per_page` rows plus the first three rows of the next page, so
+    the editor always has rows below the page boundary to place sentences
+    into (a single-sided row in the last row of a page otherwise has no
+    visible working room). Meta stays `per_page`-based — page N always
+    starts at `(N-1)·per_page + 1` and the `→ p. N` jump math is unchanged —
+    and the client marks the overlapping rows with a small accent
+    "next page" badge (`PairRow` `preview` prop, derived from
+    `meta.total`; the extras stay fully draggable/droppable). Client-side, a
     mutation response carrying
     new rows inserts them **by anchor row id**, not a precomputed array index:
     `Show.jsx`'s `runMutation(request, insertAfterRowId)` remembers the anchor
@@ -754,8 +763,11 @@ its output can look exactly like an unfixed bug.
     collapsible **Needs review** section (collapsed by default) listing meaning
     matches a human should inspect: rows whose `similarity < 0.55`
     (`AlignmentEditorApiPresenter::LOW_SIMILARITY_THRESHOLD`) or that are
-    **one-sided** (junctions on exactly one side, any similarity — see the
-    original-completeness repair above). Each row shows its `#order`,
+    **one-sided with similarity below 1.0** (junctions on exactly one side —
+    see the original-completeness repair above). A one-sided row trusted at
+    `similarity = 1.0` is human-made — every editor mutation writes 1.0 while
+    the pipeline emits its one-sided rows at 0.0 — and leaves the list as if
+    resolved (ADR 0049). Each row shows its `#order`,
     `similarity`, both sides' text, a `1-sided` badge, and a `→ p. N` marker;
     clicking it jumps the editor's rows table to the exact page
     (`ceil(rank / per_page)`, the server returns page-independent per-row
@@ -763,7 +775,11 @@ its output can look exactly like an unfixed bug.
     change). Paginated 25/page via
     `GET /alignments/{entityMatch}/needs-review`
     (`AlignmentEditorController::needsReview`, `NeedsReviewRequest`); the
-    section refetches its current page after every editor mutation. The
+    section refetches its current page after every editor mutation. A
+    round floating button pinned at the top-center of the scroll area
+    (sticky in `Show.jsx`, always rendered) scrolls the page down to the
+    review sections — the unmatched pools when either has content, else the
+    needs-review list — without expanding them (scroll only). The
     editor honors the drop position: dragging a sentence — within a row,
     across rows, or from an unmatched pool into a row — renumbers its
     document order (`entity_sentences.order`) via

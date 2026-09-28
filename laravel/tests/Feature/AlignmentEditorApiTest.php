@@ -814,6 +814,54 @@ test('rows endpoint paginates', function () {
     $this->assertSame($world['match']->id, $response->json('match.id'));
 });
 
+test('rows pages carry a three-row lookahead into the next page', function () {
+    $world = editorWorld();
+    for ($i = 1; $i <= 14; $i++) {
+        makeRow($world['match']->id, $i * 10);
+    }
+
+    $pageOne = actingAs(User::factory()->create())
+        ->getJson("/alignments/{$world['match']->id}/rows?page=1&per_page=10")
+        ->assertOk()
+        ->json();
+
+    // Page 1 serves its 10 rows plus the 3-row lookahead tail.
+    expect($pageOne['rows'])->toHaveCount(13);
+    $this->assertSame(100, $pageOne['rows'][9]['order']);
+    $this->assertSame(110, $pageOne['rows'][10]['order']);
+    $this->assertSame(14, $pageOne['meta']['total']);
+    $this->assertSame(2, $pageOne['meta']['last_page']);
+    $this->assertSame(1, $pageOne['meta']['current_page']);
+    $this->assertSame(10, $pageOne['meta']['per_page']);
+
+    // Page numbering ignores the overlap: page 2 still starts at row 11.
+    $pageTwo = actingAs(User::factory()->create())
+        ->getJson("/alignments/{$world['match']->id}/rows?page=2&per_page=10")
+        ->assertOk()
+        ->json();
+
+    expect($pageTwo['rows'])->toHaveCount(4);
+    $this->assertSame(110, $pageTwo['rows'][0]['order']);
+    $this->assertSame(140, $pageTwo['rows'][3]['order']);
+    $this->assertSame(2, $pageTwo['meta']['current_page']);
+});
+
+test('rows lookahead never exceeds the total', function () {
+    $world = editorWorld();
+    for ($i = 1; $i <= 10; $i++) {
+        makeRow($world['match']->id, $i * 10);
+    }
+
+    $pageOne = actingAs(User::factory()->create())
+        ->getJson("/alignments/{$world['match']->id}/rows?page=1&per_page=10")
+        ->assertOk()
+        ->json();
+
+    expect($pageOne['rows'])->toHaveCount(10);
+    $this->assertSame(10, $pageOne['meta']['total']);
+    $this->assertSame(1, $pageOne['meta']['last_page']);
+});
+
 test('unmatched endpoint paginates and reports last_page', function () {
     $world = editorWorld(range(100, 116));
 
@@ -871,7 +919,7 @@ test('linked_count reflects pair count after create and delete', function () {
 });
 
 test('needs-review lists low-similarity and one-sided matches', function () {
-    $world = editorWorld([100, 200, 300], [100, 200, 300]);
+    $world = editorWorld([100, 200, 300, 400, 500], [100, 200, 300]);
     $en = $world['enSentences'];
     $ru = $world['ruSentences'];
 
@@ -879,7 +927,9 @@ test('needs-review lists low-similarity and one-sided matches', function () {
     $low = makeRow($world['match']->id, 200, 0.4);
     $enOnly = makeRow($world['match']->id, 300, 0.9);
     $ruOnly = makeRow($world['match']->id, 400, 0.8);
-    $empty = makeRow($world['match']->id, 500, 1.0);
+    $humanOneSided = makeRow($world['match']->id, 600, 1.0);
+    $pipelineOneSided = makeRow($world['match']->id, 700, 0.0);
+    $empty = makeRow($world['match']->id, 800, 1.0);
 
     linkSentence('a', $en[0]->id, $good->id);
     linkSentence('b', $ru[0]->id, $good->id);
@@ -887,6 +937,8 @@ test('needs-review lists low-similarity and one-sided matches', function () {
     linkSentence('b', $ru[1]->id, $low->id);
     linkSentence('a', $en[2]->id, $enOnly->id);
     linkSentence('b', $ru[2]->id, $ruOnly->id);
+    linkSentence('a', $en[3]->id, $humanOneSided->id);
+    linkSentence('a', $en[4]->id, $pipelineOneSided->id);
 
     $response = actingAs(User::factory()->create())
         ->getJson("/alignments/{$world['match']->id}/needs-review")
@@ -898,7 +950,10 @@ test('needs-review lists low-similarity and one-sided matches', function () {
     expect($ids)->toContain($low->id);
     expect($ids)->toContain($enOnly->id);
     expect($ids)->toContain($ruOnly->id);
+    expect($ids)->toContain($pipelineOneSided->id);
     expect($ids)->not->toContain($good->id);
+    // A one-sided row trusted at 1.0 is human-made and leaves the list.
+    expect($ids)->not->toContain($humanOneSided->id);
     expect($ids)->not->toContain($empty->id);
 
     $lowItem = collect($items)->firstWhere('id', $low->id);

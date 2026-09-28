@@ -5,7 +5,7 @@ description: Works grouping per-language entities, their sentences, and the mach
 tags: [database, schema, alignment, entities, works, hash]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-09-28T13:30:00Z }
+generated: { by: agent:zcode, at: 2026-09-28T19:40:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
@@ -123,7 +123,8 @@ sources:
   the completion gate `AlignEntitySentences::finalize()` enforces **total
   completeness** — both sides are repaired (ADR 0048; previously only the
   work's original side). The editor's **Needs review** section surfaces
-  one-sided rows (any similarity) plus two-sided rows below 0.55.
+  one-sided rows below similarity 1.0 (human-confirmed one-sided rows leave
+  the list — ADR 0049) plus two-sided rows below 0.55.
 * `EntityMatch` is what an alignment card and the pinned simulator route
   label — joining `aEntity` / `bEntity` for display names.
 * **Read access is Restricted by default** (ADR

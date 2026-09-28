@@ -84,4 +84,6 @@ return [
     'alignments.per_page' => ['en' => 'Per page', 'ru' => 'На странице'],
     'alignments.row' => ['en' => 'row', 'ru' => 'строка'],
     'alignments.rows' => ['en' => 'rows', 'ru' => 'строк'],
+    'alignments.next_page' => ['en' => 'next page', 'ru' => 'следующая страница'],
+    'alignments.jump_to_review' => ['en' => 'Jump to unmatched / needs review', 'ru' => 'К нераспределённым / на проверку'],
 ];

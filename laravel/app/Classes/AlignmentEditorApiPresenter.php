@@ -16,6 +16,10 @@ class AlignmentEditorApiPresenter
 
     public const LOW_SIMILARITY_THRESHOLD = 0.55;
 
+    public const HUMAN_CONFIRMED_SIMILARITY = 1.0;
+
+    public const ROWS_LOOKAHEAD = 3;
+
     /**
      * @return array<string, mixed>
      */
@@ -75,19 +79,30 @@ class AlignmentEditorApiPresenter
      */
     public function rowsPagePayload(EntityMatch $entityMatch, int $page = 1, int $perPage = 25): array
     {
-        $rows = MeaningMatch::query()
+        $query = MeaningMatch::query()
             ->where('entity_match_id', $entityMatch->id)
             ->with(['sentenceMeaningMatches.entitySentence'])
-            ->orderBy('order')
-            ->paginate($perPage, ['*'], 'page', $page);
+            ->orderBy('order');
+
+        $total = (clone $query)->toBase()->count();
+        $lastPage = max((int) ceil($total / $perPage), 1);
+
+        // Every page serves per_page rows plus a small lookahead tail that
+        // repeats as the head of the next page, so the editor always has
+        // rows below the page boundary to place sentences into. Meta stays
+        // per_page-based: the overlap never changes page numbering.
+        $rows = $query
+            ->offset(($page - 1) * $perPage)
+            ->limit($perPage + self::ROWS_LOOKAHEAD)
+            ->get();
 
         return [
-            'rows' => $this->rowsPayload($rows->getCollection()),
+            'rows' => $this->rowsPayload($rows),
             'meta' => [
-                'current_page' => $rows->currentPage(),
-                'last_page' => $rows->lastPage(),
-                'total' => $rows->total(),
-                'per_page' => $rows->perPage(),
+                'current_page' => $page,
+                'last_page' => $lastPage,
+                'total' => $total,
+                'per_page' => $perPage,
             ],
             'sentences_before' => $this->sentencesBeforePage($entityMatch, $page, $perPage),
         ];
@@ -224,12 +239,18 @@ class AlignmentEditorApiPresenter
                     ->where(function ($oneSided) {
                         $oneSided
                             ->whereHas('sentenceMeaningMatches', fn ($q) => $q->where('side', 'a'))
-                            ->whereDoesntHave('sentenceMeaningMatches', fn ($q) => $q->where('side', 'b'));
+                            ->whereDoesntHave('sentenceMeaningMatches', fn ($q) => $q->where('side', 'b'))
+                            // A one-sided row trusted at 1.0 was shaped by a
+                            // human (every editor mutation writes 1.0; the
+                            // pipeline emits its one-sided rows at 0.0), so
+                            // it is intentional and leaves the review list.
+                            ->where('similarity', '<', self::HUMAN_CONFIRMED_SIMILARITY);
                     })
                     ->orWhere(function ($oneSided) {
                         $oneSided
                             ->whereDoesntHave('sentenceMeaningMatches', fn ($q) => $q->where('side', 'a'))
-                            ->whereHas('sentenceMeaningMatches', fn ($q) => $q->where('side', 'b'));
+                            ->whereHas('sentenceMeaningMatches', fn ($q) => $q->where('side', 'b'))
+                            ->where('similarity', '<', self::HUMAN_CONFIRMED_SIMILARITY);
                     })
                     ->orWhere('similarity', '<', self::LOW_SIMILARITY_THRESHOLD);
             })

@@ -111,6 +111,10 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     const [activeId, setActiveId] = useState(null);
 
     const activeContainer = useRef(null);
+    // Anchors for the floating jump button: the unmatched pools and the
+    // needs-review list sit below the rows table, both collapsed by default.
+    const unmatchedRef = useRef(null);
+    const needsReviewRef = useRef(null);
     // Row id after which a freshly created row must be inserted once the
     // mutation response arrives — resolved at apply time, not dispatch time.
     const newRowAnchor = useRef(null);
@@ -631,6 +635,23 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
 
     const anyBusy = tableBusy || actionBusy || poolBusy.a || poolBusy.b;
 
+    // Rows past the per_page boundary are the lookahead tail: a preview of
+    // the next page's head, still fully editable. Page N always starts at
+    // (N-1)*per_page + 1, so pagination numbering is unaffected.
+    const normalRowCount = Math.min(
+        rowsMeta.per_page,
+        Math.max(rowsMeta.total - (rowsMeta.current_page - 1) * rowsMeta.per_page, 0),
+    );
+
+    // Scroll only — the sections stay as they are (collapsed by default).
+    const scrollToReview = useCallback(() => {
+        const target = unmatchedA.meta.total + unmatchedB.meta.total > 0
+            ? unmatchedRef.current
+            : needsReviewRef.current;
+
+        target?.scrollIntoView({block: 'start', behavior: 'smooth'});
+    }, [unmatchedA, unmatchedB]);
+
     return (
         <DndContext
             sensors={sensors}
@@ -645,6 +666,19 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             }}
         >
             <div className="flex-1 min-h-0 overflow-y-auto bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)]">
+                <div className="pointer-events-none sticky top-3 z-30 flex justify-center">
+                    <button
+                        type="button"
+                        onClick={scrollToReview}
+                        title={t('alignments.jump_to_review')}
+                        aria-label={t('alignments.jump_to_review')}
+                        className="pointer-events-auto inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] shadow-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
+                    >
+                        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                            <path d="M8 3v10M4 9l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                    </button>
+                </div>
                 <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
                     <header className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] pb-4">
                         <div>
@@ -700,6 +734,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                                         key={row.key}
                                         row={row}
                                         position={(rowsMeta.current_page - 1) * rowsMeta.per_page + index + 1}
+                                        preview={index >= normalRowCount}
                                         aKeys={containers[`row:${row.id}:a`] ?? []}
                                         sideLabels={sideLabels}
                                         bKeys={containers[`row:${row.id}:b`] ?? []}
@@ -735,35 +770,39 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                         )}
                     </div>
 
-                    <UnmatchedSection
-                        expanded={unmatchedOpen}
-                        onToggle={() => setUnmatchedOpen((prev) => !prev)}
-                        aKeys={containers['unmatched:a'] ?? []}
-                        sideLabels={sideLabels}
-                        bKeys={containers['unmatched:b'] ?? []}
-                        lookup={lookup}
-                        unmatchedA={unmatchedA}
-                        unmatchedB={unmatchedB}
-                        busy={actionBusy}
-                        editing={editing}
-                        onStartEdit={onStartEdit}
-                        onEditChange={onEditChange}
-                        onCommitEdit={onCommitEdit}
-                        onCancelEdit={onCancelEdit}
-                        onRemove={onRemove}
-                        onPageChange={(side, page) => loadUnmatched(side, page)}
-                    />
+                    <div ref={unmatchedRef}>
+                        <UnmatchedSection
+                            expanded={unmatchedOpen}
+                            onToggle={() => setUnmatchedOpen((prev) => !prev)}
+                            aKeys={containers['unmatched:a'] ?? []}
+                            sideLabels={sideLabels}
+                            bKeys={containers['unmatched:b'] ?? []}
+                            lookup={lookup}
+                            unmatchedA={unmatchedA}
+                            unmatchedB={unmatchedB}
+                            busy={actionBusy}
+                            editing={editing}
+                            onStartEdit={onStartEdit}
+                            onEditChange={onEditChange}
+                            onCommitEdit={onCommitEdit}
+                            onCancelEdit={onCancelEdit}
+                            onRemove={onRemove}
+                            onPageChange={(side, page) => loadUnmatched(side, page)}
+                        />
+                    </div>
 
-                    <NeedsReviewSection
-                        expanded={needsReviewOpen}
-                        onToggle={() => setNeedsReviewOpen((prev) => !prev)}
-                        items={needsReview.items}
-                        meta={needsReview.meta}
-                        busy={needsReviewBusy}
-                        rowsPerPage={rowsMeta.per_page}
-                        onPageChange={(page) => loadNeedsReview(page)}
-                        onRowClick={jumpToRow}
-                    />
+                    <div ref={needsReviewRef}>
+                        <NeedsReviewSection
+                            expanded={needsReviewOpen}
+                            onToggle={() => setNeedsReviewOpen((prev) => !prev)}
+                            items={needsReview.items}
+                            meta={needsReview.meta}
+                            busy={needsReviewBusy}
+                            rowsPerPage={rowsMeta.per_page}
+                            onPageChange={(page) => loadNeedsReview(page)}
+                            onRowClick={jumpToRow}
+                        />
+                    </div>
                 </div>
             </div>
         </DndContext>
