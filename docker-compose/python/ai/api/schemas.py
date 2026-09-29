@@ -94,6 +94,13 @@ class AlignResponse(BaseModel):
     unmatched_b: list[int]
 
 
+class EnrichTokenPart(BaseModel):
+    """Hyphenated-compound part with its own IPA variants (English)."""
+
+    surface: str
+    ipa: list[str] | None = None
+
+
 class EnrichToken(BaseModel):
     surface: str
     start: int = Field(ge=0)
@@ -105,6 +112,9 @@ class EnrichToken(BaseModel):
     lemma: str | None = None
     # English: Wiktionary IPA variants for this token, with ˈ kept.
     ipa: list[str] | None = None
+    # English: per-part IPA for hyphenated compounds the whole-token lookup
+    # could not resolve ("seven-sided" -> seven + sided).
+    parts: list[EnrichTokenPart] | None = None
     # Russian: dictionary stressed-form candidates carrying U+0301.
     stressed: list[str] | None = None
 

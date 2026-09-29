@@ -214,6 +214,7 @@ class SentenceEnrichmentService
             'cls' => $hint['cls'] ?? null,
             'lemma' => $hint['lemma'] ?? null,
             'ipa' => $hint['ipa'] ?? null,
+            'parts' => $hint['parts'] ?? null,
             'stressed' => $hint['stressed'] ?? null,
         ];
     }
@@ -306,7 +307,71 @@ class SentenceEnrichmentService
             ];
         }
 
+        if ($language === 'en') {
+            $this->attachHyphenParts($entity, $keys, $byKey);
+        }
+
         return ['by_key' => $byKey];
+    }
+
+    /**
+     * Hyphenated compounds the dictionary has no whole-word entry for
+     * ("seven-sided"): resolve each part's IPA separately so python can mark
+     * the compound per part (ADR 0053). Only fires when the whole-token
+     * lookup came up empty.
+     *
+     * @param  list<string>  $keys
+     * @param  array<string, array{cls: ?string, lemma: ?string, ipa: ?list<string>, parts: ?list<array{surface: string, ipa: ?list<string>}>, stressed: ?list<string>}>  $byKey
+     */
+    private function attachHyphenParts(Entity $entity, array $keys, array &$byKey): void
+    {
+        $partKeys = [];
+
+        foreach ($keys as $key) {
+            if (str_contains($key, '-') && empty($byKey[$key]['ipa'])) {
+                foreach (explode('-', $key) as $part) {
+                    if ($part !== '') {
+                        $partKeys[$part] = true;
+                    }
+                }
+            }
+        }
+
+        if ($partKeys === []) {
+            return;
+        }
+
+        $partWords = Word::query()
+            ->where('language_id', $entity->language_id)
+            ->whereIn('l_word', array_keys($partKeys))
+            ->with('wordClass:id,slug')
+            ->get()
+            ->groupBy('l_word')
+            ->map(fn ($group) => $group
+                ->sortBy(fn (Word $w) => [EntityWordLinker::classPriority($w->wordClass?->slug ?? ''), $w->id])
+                ->first());
+
+        $partIpa = $this->ipaByWordId($partWords->pluck('id')->values());
+
+        foreach ($keys as $key) {
+            if (! str_contains($key, '-') || ! empty($byKey[$key]['ipa'])) {
+                continue;
+            }
+
+            $parts = [];
+
+            foreach (explode('-', $key) as $part) {
+                $word = $partWords[$part] ?? null;
+                $parts[] = [
+                    'surface' => $part,
+                    'ipa' => $word !== null ? ($partIpa[$word->id] ?? null) : null,
+                ];
+            }
+
+            if (collect($parts)->contains(fn (array $p): bool => $p['ipa'] !== null && $p['ipa'] !== [])) {
+                $byKey[$key]['parts'] = $parts;
+            }
+        }
     }
 
     /**

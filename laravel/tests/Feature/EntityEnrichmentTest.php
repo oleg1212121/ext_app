@@ -316,3 +316,36 @@ it('prefers stress-bearing ipa variants when capping variants per word', functio
         '/dɪkʃəneri/',
     ]);
 });
+
+it('sends per-part ipa for hyphenated compounds the dictionary lacks', function () {
+    $captured = null;
+    Http::fake(function (Request $request) use (&$captured) {
+        $captured = $request->data();
+
+        return Http::response(['results' => []]);
+    });
+
+    $entity = enrichableEntity('en', ['A seven-sided die.']);
+    $seven = createWord('en', 'seven', 'noun');
+    $type = TranscriptionType::query()->firstOrCreate(
+        ['language_id' => $seven->language_id, 'slug' => 'ipa'],
+        ['title' => 'IPA', 'description' => 'test'],
+    );
+    Transcription::query()->create([
+        'word_id' => $seven->id,
+        'transcription_type_id' => $type->id,
+        'transcription' => '/ˈsɛvən/',
+    ]);
+
+    SentenceEnrichmentService::create()->enrichChunk(
+        $entity,
+        EntitySentence::query()->where('entity_id', $entity->id)->get(),
+    );
+
+    $token = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'seven-sided');
+    expect($token['ipa'])->toBeNull()
+        ->and($token['parts'])->toBe([
+            ['surface' => 'seven', 'ipa' => ['/ˈsɛvən/']],
+            ['surface' => 'sided', 'ipa' => null],
+        ]);
+});

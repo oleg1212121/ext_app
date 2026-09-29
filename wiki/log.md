@@ -1,5 +1,38 @@
 # Directory Update Log
 
+## 2026-09-29 (feat: English stress marking v2 — syllable-aligned placement + CMUdict; ADR 0053)
+
+Real-text review of ADR 0052's English marks exposed three defect classes:
+proportional vowel-letter mapping saturating onto word-final silent "e"
+(*advancé/becausé* — 411 tokens, ~8% of all marks; digraphs *aroúnd,
+afraí­d* similarly misplaced), Wiktionary inflected-form rows importing
+without IPA (*gamblers* — plurals are "form-of" pages), and hyphenated
+compounds with no dictionary row (*seven-sided*, 55 tokens). Fixes: (1)
+`en_stress.py` placement rewritten — pyphen orthographic syllables aligned
+by count with IPA nuclei as primary path, fallback proportional map that
+excludes word-final silent "e" (while ≥2 other vowels remain, so *café*
+keeps it) and anchors final-nucleus stress on the last vowel-letter run;
+monosyllables with ˈ-carrying variants are now marked (*cát, túrned, twó*)
+per user decision. (2) New `dictionary:import-cmudict` command imports
+CMUdict (BSD, cmusphinx master, 135k lines) as ARPAbet→IPA-converted
+transcriptions: skips word rows already carrying a ˈ-marked transcription
+(kaikki wins), adds to rows with only unstressed IPA (*turned /tɜːnd/ →
++tˈɜːnd/*) and to all class rows of a word (die noun/verb), creates missing
+words under the `unknown` class, and drops citation-form stressed variants
+of closed-class function words ("of AH1 V") so they never carry a mark. (3)
+Laravel sends a per-part `parts` hint ({surface, ipa}) for hyphenated
+compounds the whole-token lookup can't resolve; python marks each part
+(*SÉVEN-SÍDED*). Dev effect on entity 17: marks-per-token 32.7% → **59.4%**
+(acutes 5,051 → 9,176; marked sentences 1,351 → 1,522 of 1,545); the three
+reported defects all verified fixed. Homograph POS disambiguation (record
+noun/verb) deferred. Tests: python `test_enrichment.py` gains 12 en cases
+(silent-e, digraph/final-run, monosyllables, uppercase, parts); Laravel
+`CmudictImportTest` (conversion, skip/merge rules, function-word drop,
+multi-class rows, idempotency) and an `EntityEnrichmentTest` parts-payload
+case. `pyphen>=0.18` added to python requirements (image rebuilt); ADR 0053,
+`wiki/domains/sentence-enrichment.md` engines/deployment sections updated;
+command reference regenerated via `wiki:sync`.
+
 ## 2026-09-29 (fix: English IPA hints — stress-first variant selection under the 3-variant cap)
 
 `SentenceEnrichmentService::ipaByWordId()` kept the first 3 IPA variants per

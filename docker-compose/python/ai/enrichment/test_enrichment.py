@@ -74,6 +74,74 @@ check(
     "be" + ACUTE + "autiful",
 )
 
+# --- en_stress: ADR 0053 (pyphen alignment, silent-e, monosyllables, parts) --
+# advánce/becáuse: the old proportional map saturated onto the silent final e.
+check(
+    "en: final-silent-e excluded (advance)",
+    en_stress.mark_word("advance", ["/ədˈvɑːns/"]),
+    "adv" + "a" + ACUTE + "nce",
+)
+check(
+    "en: final-silent-e excluded (because)",
+    en_stress.mark_word("because", ["/bɪˈkɒz/"]),
+    "bec" + "a" + ACUTE + "use",
+)
+check(
+    "en: believe (pyphen syllable alignment)",
+    en_stress.mark_word("believe", ["/bɪˈliːv/"]),
+    "bel" + "i" + ACUTE + "eve",
+)
+check(
+    "en: final-stress word keeps the final syllable (referee)",
+    en_stress.mark_word("referee", ["/ˌɹɛf.əˈɹiː/"]),
+    "refer" + "e" + ACUTE + "e",
+)
+# CMUdict-style variants: monosyllables carry ˈ, inflected forms are present.
+check(
+    "en: monosyllable marked (turned)",
+    en_stress.mark_word("turned", ["/tˈɜːnd/"]),
+    "t" + "u" + ACUTE + "rned",
+)
+check(
+    "en: monosyllable marked (cat)",
+    en_stress.mark_word("cat", ["/kˈæt/"]),
+    "c" + "a" + ACUTE + "t",
+)
+check(
+    "en: inflected form with own variant (smiled)",
+    en_stress.mark_word("smiled", ["/smˈaɪld/"]),
+    "sm" + "i" + ACUTE + "led",
+)
+check(
+    "en: uppercase surface marks the uppercase vowel",
+    en_stress.mark_word("GAMBLERS", ["/ɡˈæmblɚz/"]),
+    "G" + "A" + ACUTE + "MBLERS",
+)
+check(
+    "en: hyphenated compound marked per part",
+    en_stress.mark_word("seven-sided", None, [
+        {"surface": "seven", "ipa": ["/ˈsɛvən/"]},
+        {"surface": "sided", "ipa": ["/sˈaɪdɪd/"]},
+    ]),
+    "s" + "e" + ACUTE + "ven-s" + "i" + ACUTE + "ded",
+)
+check(
+    "en: hyphenated compound with unresolvable part stays plain there",
+    en_stress.mark_word("seven-sided", None, [
+        {"surface": "seven", "ipa": ["/ˈsɛvən/"]},
+        {"surface": "sided", "ipa": None},
+    ]),
+    "s" + "e" + ACUTE + "ven-sided",
+)
+check(
+    "en: parts ignored when whole-token variant resolves",
+    en_stress.mark_word("well-known", ["/ˌwɛlˈnəʊn/"], [
+        {"surface": "well", "ipa": ["/wɛl/"]},
+        {"surface": "known", "ipa": ["/nəʊn/"]},
+    ]),
+    "well-kn" + "o" + ACUTE + "wn",
+)
+
 # --- en_stress.mark_sentence (span rebuild) ---------------------------------
 import regex as _regex
 

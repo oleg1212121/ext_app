@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Sentence enrichment (stress marks, phrasal verbs, intonation)
-description: Local-only per-sentence enrichment — Russian/English stress marks, English phrasal-verb hits and heuristic intonation — computed by the Python service (Silero Stress + caller-supplied dictionary data), stored beside sentence content, refreshed by staleness sweeps, and rendered behind a per-user reader toggle (ADR 0052).
+description: Local-only per-sentence enrichment — Russian/English stress marks, English phrasal-verb hits and heuristic intonation — computed by the Python service (Silero Stress + caller-supplied dictionary data incl. CMUdict), stored beside sentence content, refreshed by staleness sweeps, and rendered behind a per-user reader toggle (ADR 0052, ADR 0053).
 tags: [enrichment, stress-marks, phrasal-verbs, intonation, python-service, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-29
-generated: { by: agent:zcode, at: 2026-09-29T21:30:00Z }
+generated: { by: agent:zcode, at: 2026-09-29T22:50:00Z }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -71,10 +71,25 @@ nothing anywhere — the same split as `/split` and `/align`.
   span, keeping offsets stable. Tokens Silero leaves unmarked fall back to
   the dictionary candidates, applied only when all candidates agree on the
   stress position (ambiguous homograph ⇒ unmarked).
-- **en stress** (`ai/enrichment/en_stress.py`): pure string work over the
-  Wiktionary IPA hint — nuclei before ˈ give the stressed syllable index,
-  mapped proportionally onto the word's vowel letters (digraph-aware: "ay"
-  marks the a). Words without a ˈ-carrying transcription stay plain.
+- **en stress** (`ai/enrichment/en_stress.py`): the ˈ in a hint variant gives
+  the stressed-syllable index (vowel nuclei before it). Placement walks two
+  paths (ADR 0053): **pyphen** orthographic syllables aligned by count with
+  the IPA nuclei — acute on the stressed syllable's first vowel letter —
+  then a fallback proportional map that excludes a word-final silent "e" and
+  anchors final-nucleus stress on the last vowel-letter run (*advánce,
+  becáuse, afráid* instead of the old *advancé/becausé* saturation).
+  Monosyllables ARE marked when a variant carries ˈ (CMUdict: *cát, túrned*).
+  Hyphenated compounds with no whole-token IPA are marked per part from the
+  caller's `parts` hint (*SÉVEN-SÍDED*). Words with no ˈ in any variant
+  (unstressed function words) stay plain.
+- **English stress sources** (ADR 0053): Wiktionary/kaikki IPA **plus**
+  CMUdict imported by `dictionary:import-cmudict` (BSD, ARPAbet→IPA at
+  import). Rows already carrying a ˈ-marked transcription are skipped
+  (kaikki wins); rows with only unstressed IPA gain the CMUdict variant;
+  all class rows of a word get it (the entity link may point at any);
+  missing words are created under the `unknown` class; function-word
+  citation-form stressed variants ("of AH1 V") are dropped so closed-class
+  words never carry a mark.
 - **phrasal verbs** (`ai/enrichment/phrasal.py`): 3- then 2-token windows
   whose lead is verb-classed and whose `lemma + surfaces` match a multi-word
   verb headword (the dictionary's previously-inert phrasal rows). Longest
@@ -135,7 +150,11 @@ notice when the package is absent).
 
 ## Deployment note
 
-`silero-stress==1.5` was added to `docker-compose/python/requirements.txt` —
-a container-definition change: rebuild the python image
+`silero-stress==1.5` (ADR 0052) and `pyphen>=0.18` (ADR 0053) are in
+`docker-compose/python/requirements.txt` — container-definition changes:
+rebuild the python image
 (`docker compose build python && docker compose up -d python`) and
-`./deploy.sh --stamp` on the prod machine.
+`./deploy.sh --stamp` on the prod machine. After a prod deploy the CMUdict
+file (`laravel/kaikki/cmudict.dict`) must be fetched once and
+`dictionary:import-cmudict` run (kaikki-sourced rows are preserved on
+re-import).
