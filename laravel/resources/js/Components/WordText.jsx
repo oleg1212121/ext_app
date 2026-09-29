@@ -48,12 +48,24 @@ function tierClass(familiarity, highlight) {
  * the index is exact. rowKey's prefix selects the backend source: "mm:{id}"
  * is a meaning match row (side required), anything else ("es:{id}") is a
  * bare entity sentence (side unused).
+ *
+ * Stress marks (ADR 0052): `stressed` is the same side's "\n"-joined
+ * stressed variant (sentence-aligned 1:1, or null), `intonations` the
+ * per-sentence terminal markers ('rise'|'fall'|null). When showStress is on
+ * and a sentence has a variant, the variant is displayed instead — the word
+ * map still resolves because keys strip combining marks.
  */
-function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, explain}) {
+function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, explain, stressed = null, intonations = null, showStress = false}) {
     const sentences = useMemo(() => String(text ?? '').split('\n'), [text]);
+    const stressedSentences = useMemo(() => (stressed !== null ? String(stressed).split('\n') : null), [stressed]);
+    const useStressed = showStress && stressedSentences !== null && stressedSentences.length === sentences.length;
+    const displaySentences = useMemo(
+        () => sentences.map((sentence, index) => (useStressed ? (stressedSentences[index] ?? sentence) : sentence)),
+        [sentences, stressedSentences, useStressed],
+    );
     const sentenceSegments = useMemo(
-        () => sentences.map((sentence) => segmentText(sentence)),
-        [sentences],
+        () => displaySentences.map((sentence) => segmentText(sentence)),
+        [displaySentences],
     );
     const [popup, setPopup] = useState(null);
 
@@ -141,6 +153,14 @@ function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress,
                                 <React.Fragment key={index}>{segment.text}</React.Fragment>
                             )
                         ))}
+                        {useStressed && intonations?.[sentenceIndex] ? (
+                            <span
+                                aria-hidden="true"
+                                style={{color: 'var(--color-ink-soft)', fontSize: '0.75em', marginLeft: '0.15em'}}
+                            >
+                                {intonations[sentenceIndex] === 'rise' ? '↗' : '↘'}
+                            </span>
+                        ) : null}
                     </span>
                 </React.Fragment>
             ))}

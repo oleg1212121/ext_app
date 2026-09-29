@@ -54,6 +54,11 @@ function ReaderRow({
     translationExplainable = false,
     primarySide = null,
     explain = null,
+    primaryStressed = null,
+    translationStressed = null,
+    primaryIntonations = null,
+    translationIntonations = null,
+    showStress = false,
 }) {
     // The translation column lives on the other entity match side than the
     // primary one; without a primary side (single-language text) it has none.
@@ -141,8 +146,11 @@ function ReaderRow({
                             popupFontSize={popupFontSize}
                             side={primarySide ?? undefined}
                             explain={primaryExplainPayload}
+                            stressed={primaryStressed}
+                            intonations={primaryIntonations}
+                            showStress={showStress}
                         />
-                    ) : primary.replaceAll('\n', ' ')}
+                    ) : (showStress && primaryStressed ? primaryStressed : primary).replaceAll('\n', ' ')}
                 </div>
 
                 {sideBySide && hasTranslation && (
@@ -184,8 +192,11 @@ function ReaderRow({
                                     popupFontSize={popupFontSize}
                                     side={translationSide ?? undefined}
                                     explain={translationExplainPayload}
+                                    stressed={translationStressed}
+                                    intonations={translationIntonations}
+                                    showStress={showStress}
                                 />
-                            ) : translation.replaceAll('\n', ' ')}
+                            ) : (showStress && translationStressed ? translationStressed : translation).replaceAll('\n', ' ')}
                         </div>
                     </div>
                 )}

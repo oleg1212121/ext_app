@@ -32,6 +32,7 @@ return [
     'reader.page_of' => ['en' => 'of :last', 'ru' => 'из :last'],
     'reader.hint' => ['en' => 'Tap a line to reveal its translation · Spacebar toggles audio playback', 'ru' => 'Нажмите на строку, чтобы увидеть перевод · Пробел включает и выключает аудио'],
     'reader.highlights' => ['en' => 'Highlights', 'ru' => 'Подсветка слов'],
+    'reader.stress_marks' => ['en' => 'á Stress', 'ru' => 'á Ударения'],
     'reader.reading_language' => ['en' => 'Reading language', 'ru' => 'Язык чтения'],
     // Reader index (ReaderIndexApp.jsx) — the Practice → Reader browse page.
     'reader.reader_heading' => ['en' => 'Reader', 'ru' => 'Читалка'],

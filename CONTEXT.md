@@ -779,3 +779,35 @@ _Avoid_: offset (the column name), checkpoint, watermark, cache.
 The per-sweep maximum number of jobs a scheduled command dispatches; work
 beyond it waits for the next tick of the same sweep. See ADR 0043.
 _Avoid_: rate limit, throttle, batch.
+
+# Sentence Enrichment Context
+
+**Stress marks**:
+The pronunciation aid drawn over a sentence's words: a combining acute on the
+stressed vowel (Russian also places proper ё). Display-only — a property of
+the sentence's presentation, never of its text.
+
+**Stressed variant**:
+The sentence with stress marks applied, kept beside the original sentence
+text as its display substitute when the reader turns stress marks on. Always
+sentence-aligned one-to-one with the original. See ADR 0052.
+_Avoid_: stressed content (the text itself is never stressed), accent text.
+
+**Phrasal verb hit**:
+A detected multi-word verb ("gave up") inside a sentence: the verb with its
+particle(s) and where they sit in the sentence. Detected from dictionary
+multi-word headwords, not from word linking.
+_Avoid_: phrasal link (nothing is linked), verb phrase (broader).
+
+**Intonation annotation**:
+An approximate sentence-level pronunciation hint: the nuclear-stressed word
+(the sentence's most prominent one) and the terminal contour (rising or
+falling). Heuristic guidance, not authoritative prosody. See ADR 0052.
+_Avoid_: prosody (implies model quality), tone marks.
+
+**Enrichment staleness**:
+Whether a sentence set needs (re-)enrichment: never enriched, or any sentence
+changed since it was. Entities enrichment cannot apply to count as enriched,
+not stale. See ADR 0052.
+_Avoid_: enrichment status (there is no processing state, only staleness),
+dirty.

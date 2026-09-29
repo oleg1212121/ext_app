@@ -1,5 +1,36 @@
 # Directory Update Log
 
+## 2026-09-29 (feat: sentence enrichment — local stress marks, phrasal verbs, intonation; ADR 0052)
+
+Every ru/en sentence now carries three enrichment payloads computed entirely
+locally (no LLM/paid calls): a stress-marked display variant
+(`entity_sentences.stressed_content`, U+0301 + е→ё via Silero Stress for
+Russian, Wiktionary-IPA-derived acute for English), English phrasal-verb hits
+(`phrasal_verbs` jsonb with char spans into `content` — the dictionary's
+multi-word verb headwords, previously inert, matched by lemma-aware n-grams),
+and heuristic intonation (`intonation` jsonb: nuclear word + terminal
+rise/fall). `content` is never mutated; staleness is tracked by
+`entities.enriched_at` against `sentences_updated_at`, with quiet base-builder
+writes so enrichment itself never re-stales the entity (regression-tested).
+
+Python service gained `POST /enrich` (`ai/api/enrich.py` +
+`ai/enrichment/{ru_stress,en_stress,phrasal,intonation}.py`, tests in
+`ai/enrichment/test_enrichment.py`); `silero-stress==1.5` joined
+`requirements.txt` (container rebuild + `./deploy.sh --stamp` on deploy).
+Laravel: `SentenceEnrichmentService`, `EnrichEntitySentences` job (low lane,
+self-re-dispatching), `entities:enrich` sweep (5 min), Filament action +
+sentence preview columns, dispatch at the end of
+`FinalizeEntityDerivations`. Reader + simulator render a per-user
+`stress_marks` toggle (`stressedRows`/`intonationRows` ride beside the rows);
+tokenizer keys now strip combining marks on BOTH sides
+(`WordTokenizer::lookupKey`, `wordTokenizer.mjs`) so stressed tokens still
+resolve the word map — `TokenizerParityTest` gained stress-marked samples.
+ADR: `docs/adr/0052-local-sentence-enrichment.md`. New concept
+`wiki/domains/sentence-enrichment.md`; CONTEXT.md gained a Sentence
+Enrichment Context section. Tests: `EntityEnrichmentTest` (10),
+`EntityTextHashRefreshTest` fakes updated for the trailing enrichment
+dispatch.
+
 ## 2026-09-28 (fix: alignable-totals writers missed by the illustrations commit)
 
 Post-review follow-up to the illustrations entry below: three writers of

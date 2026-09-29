@@ -30,7 +30,10 @@ class WordController extends Controller
      */
     public function show(Request $request, Word $word): JsonResponse
     {
-        $surface = mb_strtolower((string) $request->query('surface', ''));
+        // Lowercase + strip combining marks (stress marks, U+0301): stressed
+        // surfaces from the reader's stress toggle must compare against the
+        // mark-free l_word keys (ADR 0052).
+        $surface = preg_replace('/\p{M}/u', '', mb_strtolower((string) $request->query('surface', ''))) ?? '';
 
         $family = WordFamily::resolve($word, $surface);
         $headwords = $family->entries();

@@ -83,6 +83,11 @@ class FinalizeEntityDerivations implements ShouldQueue
             'copied_signature' => $copiedSignature,
             'copied_words' => $copiedWords,
         ]);
+
+        // Sentence enrichment rides behind the upload pipeline (ADR 0052);
+        // sentence edits later flip enriched_at stale and the entities:enrich
+        // sweep re-picks the entity.
+        EnrichEntitySentences::begin($entity->id);
     }
 
     /**

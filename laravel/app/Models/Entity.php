@@ -30,6 +30,7 @@ class Entity extends Model
         'is_approved',
         'words_indexed_at',
         'frequency_counted_at',
+        'enriched_at',
     ];
 
     protected function casts(): array
@@ -42,6 +43,7 @@ class Entity extends Model
             'sentences_updated_at' => 'datetime',
             'words_indexed_at' => 'datetime',
             'frequency_counted_at' => 'datetime',
+            'enriched_at' => 'datetime',
         ];
     }
 

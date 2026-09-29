@@ -69,10 +69,13 @@ export default function ReaderApp({
     rows = [],
     rowImages = [],
     rowKeys = [],
+    stressedRows = [],
+    intonationRows = [],
     meta = null,
     positionKey = null,
     fontSize: savedFontSize,
     highlight: savedHighlight = true,
+    stressMarks: savedStressMarks = false,
     wordMap: initialWordMap = {},
     primaryHighlightable = false,
     translationWordMap: initialTranslationWordMap = {},
@@ -87,7 +90,10 @@ export default function ReaderApp({
     // Word-popup typography follows the page's font setting (ADR 0031).
     const popupFontSize = popupFontSizeFor(fontSize);
     const [highlight, setHighlight] = useState(savedHighlight);
-    useUiSettingsAutosave('reader', {font_size: fontSize, highlight});
+    // Stress marks toggle (ADR 0052): swaps each sentence for its stored
+    // stressed variant and shows the terminal intonation marker.
+    const [showStress, setShowStress] = useState(savedStressMarks);
+    useUiSettingsAutosave('reader', {font_size: fontSize, highlight, stress_marks: showStress});
     const [wordMap, setWordMap] = useState(initialWordMap);
     const [translationWordMap, setTranslationWordMap] = useState(initialTranslationWordMap);
     // Language toggle (Working state, per device + positionKey): when true,
@@ -163,6 +169,21 @@ export default function ReaderApp({
             : rowImages),
         [rowImages, effectiveFlipped],
     );
+
+    // Stressed variants and intonation markers flip with the text pairs.
+    const displayStressedRows = useMemo(
+        () => (effectiveFlipped
+            ? stressedRows.map(([primary, translation]) => [translation, primary])
+            : stressedRows),
+        [stressedRows, effectiveFlipped],
+    );
+    const displayIntonationRows = useMemo(
+        () => (effectiveFlipped
+            ? intonationRows.map(([primary, translation]) => [translation, primary])
+            : intonationRows),
+        [intonationRows, effectiveFlipped],
+    );
+    const hasStressedData = stressedRows.some(([primary, translation]) => primary !== null || translation !== null);
 
     const shownWordMap = effectiveFlipped ? translationWordMap : wordMap;
     const shownTranslationWordMap = effectiveFlipped ? wordMap : translationWordMap;
@@ -483,6 +504,11 @@ export default function ReaderApp({
                         <ToggleButton active={highlight} onClick={() => setHighlight((v) => !v)}>
                             {t('reader.highlights')}
                         </ToggleButton>
+                        {hasStressedData ? (
+                            <ToggleButton active={showStress} onClick={() => setShowStress((v) => !v)}>
+                                {t('reader.stress_marks')}
+                            </ToggleButton>
+                        ) : null}
                         <ToggleButton active={sideBySide} onClick={() => setSideBySide((v) => !v)}>
                             {sideBySide ? t('reader.stacked') : t('reader.side_by_side')}
                         </ToggleButton>
@@ -598,6 +624,11 @@ export default function ReaderApp({
                                 rowKey={rowKeys[index]}
                                 primaryImages={displayRowImages[index]?.[0]}
                                 translationImages={displayRowImages[index]?.[1]}
+                                primaryStressed={displayStressedRows[index]?.[0] ?? null}
+                                translationStressed={displayStressedRows[index]?.[1] ?? null}
+                                primaryIntonations={displayIntonationRows[index]?.[0] ?? null}
+                                translationIntonations={displayIntonationRows[index]?.[1] ?? null}
+                                showStress={showStress}
                                 showAll={showAll}
                                 sideBySide={sideBySide}
                                 fontSize={fontSize}

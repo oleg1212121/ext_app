@@ -77,19 +77,85 @@ class MeaningMatchPresenter
             ->all();
     }
 
-    private function sideText(MeaningMatch $meaningMatch, string $side): string
+    /**
+     * Stressed variants row-aligned with toSimulatorRows (ADR 0052): same
+     * sides, same sentence selection and order. A side is null when none of
+     * its sentences has a stressed variant; sentences without one fall back
+     * to their plain content so the sides stay "\n"-aligned with rows.
+     *
+     * @param  Collection<int, MeaningMatch>  $meaningMatches
+     * @return list<array{0: ?string, 1: ?string}>
+     */
+    public function toSimulatorStressedRows(Collection $meaningMatches): array
+    {
+        $rows = [];
+
+        foreach ($meaningMatches as $meaningMatch) {
+            $rows[] = [
+                $this->sideStressed($meaningMatch, 'a'),
+                $this->sideStressed($meaningMatch, 'b'),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Terminal intonation markers row- and sentence-aligned with
+     * toSimulatorRows: 'rise'|'fall'|null per sentence of each side.
+     *
+     * @param  Collection<int, MeaningMatch>  $meaningMatches
+     * @return list<array{0: list<?string>, 1: list<?string>}>
+     */
+    public function toSimulatorIntonationRows(Collection $meaningMatches): array
+    {
+        $rows = [];
+
+        foreach ($meaningMatches as $meaningMatch) {
+            $rows[] = [
+                $this->sideSentences($meaningMatch, 'a')
+                    ->map(fn (EntitySentence $sentence): ?string => $sentence->intonation['terminal'] ?? null)
+                    ->all(),
+                $this->sideSentences($meaningMatch, 'b')
+                    ->map(fn (EntitySentence $sentence): ?string => $sentence->intonation['terminal'] ?? null)
+                    ->all(),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return Collection<int, EntitySentence>
+     */
+    private function sideSentences(MeaningMatch $meaningMatch, string $side): Collection
     {
         return $meaningMatch->sentenceMeaningMatches
             ->where('side', $side)
-            ->map(fn ($match) => [
-                'order' => $match->entitySentence?->order ?? 0,
-                'content' => $match->entitySentence?->content ?? '',
-                'is_illustration' => $match->entitySentence?->image_path !== null,
-            ])
-            ->sortBy('order')
-            ->reject(fn (array $item): bool => $item['is_illustration'])
+            ->sortBy(fn ($match) => $match->entitySentence?->order ?? 0)
+            ->map(fn ($match) => $match->entitySentence)
+            ->filter(fn (?EntitySentence $sentence): bool => $sentence !== null
+                && $sentence->image_path === null
+                && $sentence->content !== '');
+    }
+
+    private function sideText(MeaningMatch $meaningMatch, string $side): string
+    {
+        return $this->sideSentences($meaningMatch, $side)
             ->pluck('content')
-            ->filter()
+            ->implode("\n");
+    }
+
+    private function sideStressed(MeaningMatch $meaningMatch, string $side): ?string
+    {
+        $sentences = $this->sideSentences($meaningMatch, $side);
+
+        if (! $sentences->contains(fn (EntitySentence $sentence): bool => $sentence->stressed_content !== null)) {
+            return null;
+        }
+
+        return $sentences
+            ->map(fn (EntitySentence $sentence): string => $sentence->stressed_content ?? $sentence->content)
             ->implode("\n");
     }
 
