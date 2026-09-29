@@ -318,10 +318,15 @@ class SentenceEnrichmentService
             return [];
         }
 
+        // Stress-bearing variants first (Postgres sorts false before true) so
+        // the per-word cap below can't cut off the only variant with a primary
+        // stress mark; id order keeps the selection deterministic.
         $rows = DB::table('transcriptions')
             ->join('transcription_types', 'transcription_types.id', '=', 'transcriptions.transcription_type_id')
             ->whereIn('transcriptions.word_id', $wordIds)
             ->where('transcription_types.slug', 'ipa')
+            ->orderByRaw('(transcriptions.transcription NOT LIKE ?)', ['%ˈ%'])
+            ->orderBy('transcriptions.id')
             ->select('transcriptions.word_id', 'transcriptions.transcription')
             ->get();
 

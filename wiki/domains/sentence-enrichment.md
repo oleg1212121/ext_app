@@ -5,7 +5,7 @@ description: Local-only per-sentence enrichment — Russian/English stress marks
 tags: [enrichment, stress-marks, phrasal-verbs, intonation, python-service, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-29
-generated: { by: agent:zcode, at: 2026-09-29T19:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-29T21:30:00Z }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -94,7 +94,11 @@ notice when the package is absent).
   clients): builds token spans via `WordTokenizer::tokenizeWithSpans`,
   resolves dictionary hints (entity link wins, then class-priority direct
   match; linked headwords outside the token window are pulled in), calls
-  `/enrich` with `Http::retry` on connection errors, and persists.
+  `/enrich` with `Http::retry` on connection errors, and persists. English
+  IPA hints are selected stress-first: `ipaByWordId()` orders variants
+  containing the primary-stress mark ˈ before the rest (deterministic
+  `transcriptions.id` tiebreak) before applying the 3-variant cap, so the
+  cap can never cut off the only variant python could mark with.
 - **Quiet writes**: `EntitySentence::query()->whereKey()->toBase()->update()`
   — no model events, no `updated_at`. Model events would `touchSentencesFor`
   and make enrichment mark the entity stale forever (infinite re-enrich

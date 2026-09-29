@@ -1,5 +1,25 @@
 # Directory Update Log
 
+## 2026-09-29 (fix: English IPA hints — stress-first variant selection under the 3-variant cap)
+
+`SentenceEnrichmentService::ipaByWordId()` kept the first 3 IPA variants per
+word in arbitrary DB order (no ORDER BY), so for words with more variants
+("a" has ~25) the only ˈ-carrying one could be randomly cut off and python's
+en marker (requires ˈ, `en_stress.py`) left the word unmarked. Variants are
+now ordered stress-first (`transcription NOT LIKE '%ˈ%'` — Postgres sorts
+false before true) with a deterministic `transcriptions.id` tiebreak, so the
+cap can never drop the only markable variant. Re-enrichment of the dev
+entities moved English acutes/token 32.1% → 32.7% (ru byte-identical): the
+cap was a minor contributor — the dominant causes of unmarked English words
+are monosyllables/function words with no ˈ in any variant (by design) and
+words with no imported IPA (verified by sampling: unmarked
+polysyllable-ish tokens split into 59 no-IPA vs 131 IPA-without-ˈ, the
+latter nearly all monosyllables). Tests: `EntityEnrichmentTest` gains
+"prefers stress-bearing ipa variants when capping variants per word"
+(4 variants, stress one inserted last, asserts the exact capped array).
+`wiki/domains/sentence-enrichment.md` Orchestration section and ADR 0052
+consequences updated.
+
 ## 2026-09-29 (feat: sentence enrichment — local stress marks, phrasal verbs, intonation; ADR 0052)
 
 Every ru/en sentence now carries three enrichment payloads computed entirely

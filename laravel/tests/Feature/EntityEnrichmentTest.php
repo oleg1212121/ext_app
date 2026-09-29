@@ -277,3 +277,42 @@ it('enriches english ipa hints through transcriptions', function () {
         ->and($token['cls'])->toBe('noun')
         ->and($token['lemma'])->toBe('dictionary');
 });
+
+it('prefers stress-bearing ipa variants when capping variants per word', function () {
+    $captured = null;
+    Http::fake(function (Request $request) use (&$captured) {
+        $captured = $request->data();
+
+        return Http::response(['results' => []]);
+    });
+
+    $entity = enrichableEntity('en', ['Dictionary.']);
+    $dictionary = createWord('en', 'dictionary', 'noun');
+    $type = TranscriptionType::query()->firstOrCreate(
+        ['language_id' => $dictionary->language_id, 'slug' => 'ipa'],
+        ['title' => 'IPA', 'description' => 'test'],
+    );
+
+    // Only the last-inserted variant carries the primary stress mark: the
+    // stress-first ordering must surface it despite the 3-variant cap, with
+    // the unstressed variants following in id order.
+    foreach (['/dɪkʃənəɹi/', '/dɪkʃəneri/', '/dɪk.ʃə.nə.ɹi/', '/ˈdɪk.ʃə.nə.ɹi/'] as $transcription) {
+        Transcription::query()->create([
+            'word_id' => $dictionary->id,
+            'transcription_type_id' => $type->id,
+            'transcription' => $transcription,
+        ]);
+    }
+
+    SentenceEnrichmentService::create()->enrichChunk(
+        $entity,
+        EntitySentence::query()->where('entity_id', $entity->id)->get(),
+    );
+
+    $token = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'Dictionary');
+    expect($token['ipa'])->toBe([
+        '/ˈdɪk.ʃə.nə.ɹi/',
+        '/dɪkʃənəɹi/',
+        '/dɪkʃəneri/',
+    ]);
+});

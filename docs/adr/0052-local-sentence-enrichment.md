@@ -92,7 +92,10 @@ heuristic, not model output.
   `./deploy.sh --stamp` on deploy.
 - English stress quality is bounded by the imported Wiktionary IPA; words
   without a transcription render unmarked (dictionary import growth quietly
-  improves them after re-enrichment). Dictionary fallback for Russian only
+  improves them after re-enrichment). The caller-side variant hint therefore
+  orders ˈ-bearing variants first (deterministic id tiebreak) before its
+  3-variant cap, so the cap never drops the only markable variant.
+  Dictionary fallback for Russian only
   fires when the dev dictionary actually carries stressed forms — with the
   current 3-word Russian dictionary, Silero carries everything.
 - Intonation annotations are heuristics and must not be presented as
