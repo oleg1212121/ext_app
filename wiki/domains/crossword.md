@@ -5,7 +5,7 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-09-26T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-29T19:54:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/CrosswordController.php
@@ -19,6 +19,9 @@ sources:
   - id: linker
     resource: laravel/app/Classes/EntityWordLinker.php
     title: EntityWordLinker
+  - id: adoption
+    resource: laravel/app/Classes/EntityWordAdoption.php
+    title: EntityWordAdoption (unmatchable tokens become dictionary words)
   - id: accrual
     resource: laravel/app/Classes/WordFrequencyAccrual.php
     title: WordFrequencyAccrual (entity frequency correction)
@@ -74,8 +77,15 @@ index (never built, or a sentence `updated_at` after
 stamped unmatchable, and dispatches one `RefreshEntityWords` queue job per
 entity (`ShouldBeUnique` keyed by entity id; see ADR
 [0026](../../docs/adr/0026-background-word-list-refresh.md)). The job
-re-indexes when stale and always runs the link pass, then logs per-entity
-stats. The link pass (ADR 0043) examines a per-run budget of the entity's
+re-indexes when stale and always runs the link pass, then runs
+`EntityWordAdoption`: stamped unmatchable tokens get a `words` row of their
+own (class `unknown`) with `entity_words.word_id` pointed at it, and every
+entity word still lacking translations gets a background translation fetch
+queued (Yandex → Google; ledger-deduped — see
+[Interactive words](/domains/interactive-words.md) and
+[Dictionary](/database/dictionary.md)), then logs per-entity stats. The same
+adoption pass runs by hand via `words:adopt-from-entities {--entity=*}
+{--language=} {--to=}`. The link pass (ADR 0043) examines a per-run budget of the entity's
 first 20 000 unlinked, unstamped rows, fetches dictionary candidates in
 batches (one exact + one capped form query per 500-row batch, not per word),
 and stamps tokens with no match `unmatchable_at` so sweeps terminate.

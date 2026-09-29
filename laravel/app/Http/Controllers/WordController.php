@@ -4,11 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Classes\WordFamiliarityService;
 use App\Classes\WordFamily;
+use App\Classes\WordTranslationFetchService;
+use App\Classes\WordTranslations\WordTranslationResolver;
 use App\Http\Requests\RecordWordEventsRequest;
 use App\Http\Requests\UpdateWordProgressRequest;
 use App\Models\Transcription;
 use App\Models\UserWord;
 use App\Models\Word;
+use App\Models\WordTranslation;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -38,6 +41,12 @@ class WordController extends Controller
         $bound = $headwords->firstWhere('id', $word->id) ?? $word;
         $isForm = $surface !== '' && $surface !== $bound->l_word;
 
+        $entries = $headwords
+            ->map(fn (Word $entry): array => $this->entry($entry, $request->user()))
+            ->all();
+
+        $this->maybeFetchTranslations($word, $headwords, $request->user());
+
         return response()->json([
             'data' => [
                 'id' => $bound->id,
@@ -47,11 +56,39 @@ class WordController extends Controller
                 'is_form' => $isForm,
                 'form_of' => $family->formOf(),
                 'frequency' => $this->frequencyRank($bound),
-                'entries' => $headwords
-                    ->map(fn (Word $entry): array => $this->entry($entry, $request->user()))
-                    ->all(),
+                'entries' => $entries,
             ],
         ]);
+    }
+
+    /**
+     * When no part of speech of the popup's word family carries a single
+     * translation, quietly queue a provider fetch (Yandex, then Google) into
+     * the user's native language. The response stays exactly as it would
+     * have been; fetched translations appear the next time the popup opens.
+     * The fetch ledger dedupes repeats and permanently skips excluded words.
+     */
+    private function maybeFetchTranslations(Word $word, Collection $headwords, Authenticatable $user): void
+    {
+        $nativeLanguage = $user->nativeLanguage();
+
+        if ($nativeLanguage === null
+            || (int) $nativeLanguage->id === (int) $word->language_id
+            || ! app(WordTranslationResolver::class)->hasProvider()) {
+            return;
+        }
+
+        $hasTranslations = WordTranslation::query()
+            ->where(function ($query) use ($headwords): void {
+                $query
+                    ->whereIn('word_a_id', $headwords->pluck('id'))
+                    ->orWhereIn('word_b_id', $headwords->pluck('id'));
+            })
+            ->exists();
+
+        if (! $hasTranslations) {
+            app(WordTranslationFetchService::class)->dispatchIfEligible($word, $nativeLanguage);
+        }
     }
 
     /**
