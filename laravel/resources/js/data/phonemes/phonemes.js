@@ -135,7 +135,7 @@ const EN = {
             ipa: 'ɔ', spell: 'aw, o', art: [ST.ɔ], anim: null,
             desc: {en: 'Mid-low back vowel, slightly rounded, with the tongue pulled back.', ru: 'Задний гласный средне-нижнего подъёма, слегка огубленный, язык отодвинут назад.'},
             hint: {ru: 'похоже на русское [о] в «дóм», но короче и с меньшим округлением губ.'},
-            rp: {en: 'In much of American English saw and dawn merge toward /ɑ/ (cot–caught merger).', ru: 'Во многих диалектах США don и dawn звучат одинаково (cot–caught merger).'},
+            rp: {en: 'RP keeps a long rounded /ɔː/ here; in much of the US saw and dawn merge toward /ɑ/ (cot–caught merger).', ru: 'В RP здесь долгое округлённое [ɔː]; во многих диалектах США saw и dawn сливаются в [ɑ] (cot–caught merger).'},
             examples: [{w: 'dog', m: 'o'}, {w: 'saw', m: 'aw'}, {w: 'thought', m: 'ough'}],
         },
         {
@@ -284,13 +284,13 @@ const EN = {
             ipa: 's', spell: 's, c(e)', art: [ST.s], anim: null,
             desc: {en: 'Voiceless alveolar sibilant: a narrow groove along the tongue focuses the hiss.', ru: 'Глухой альвеолярный свистящий: узкая бороздка вдоль языка фокусирует шум.'},
             hint: {ru: 'как [с], но язык чуть выше и шум резче.'},
-            examples: [{w: 'sun', m: 's'}, {w: 'city', m: 'c'}, {w: 'books', m: 'ks'}],
+            examples: [{w: 'sun', m: 's'}, {w: 'city', m: 'c'}, {w: 'books', m: 's'}],
         },
         {
             ipa: 'z', spell: 'z, s', art: [ST.z], anim: null,
             desc: {en: 'Voiced alveolar sibilant: like /s/ but with voice.', ru: 'Звонкий альвеолярный свистящий: как /s/, но с голосом.'},
             hint: {ru: 'как [з]; часто в окончании множественного числа: dogs, roses.'},
-            examples: [{w: 'zoo', m: 'z'}, {w: 'nose', m: 's'}, {w: 'dogs', m: 'gs'}],
+            examples: [{w: 'zoo', m: 'z'}, {w: 'nose', m: 's'}, {w: 'dogs', m: 's'}],
         },
         {
             ipa: 'ʃ', spell: 'sh, ti, ci', art: [ST.ʃ], anim: null,
@@ -349,7 +349,7 @@ const EN = {
             ipa: 'j', spell: 'y, u(e)', art: [ST.j], anim: null,
             desc: {en: 'Palatal approximant: the front of the tongue rises toward the hard palate, like a quick /i/ glide.', ru: 'Палатальный аппроксимант: передняя часть языка поднимается к твёрдому нёбу — короткое скольжение от [и].'},
             hint: {ru: 'это русский [й]: yes ≈ [йес].'},
-            examples: [{w: 'yes', m: 'y'}, {w: 'music', m: 'ic'}, {w: 'computer', m: 'u'}],
+            examples: [{w: 'yes', m: 'y'}, {w: 'music', m: 'u'}, {w: 'computer', m: 'u'}],
         },
         {
             ipa: 'w', spell: 'w, u', art: [ST.w], anim: null,

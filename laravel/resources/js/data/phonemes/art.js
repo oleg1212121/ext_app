@@ -275,18 +275,3 @@ export function buildDiagram(state) {
         ...tongue(state),
     ];
 }
-
-export function diagramSvgString(state, {width = 260} = {}) {
-    const shapes = buildDiagram(state);
-    const body = shapes.map((s) => {
-        const stroke = s.width ? `stroke="currentColor" stroke-width="${s.width}" stroke-linecap="round" stroke-linejoin="round"` : '';
-        const fill = s.fill ? `currentColor` : 'none';
-        const fillOp = s.fill ? ` fill-opacity="${s.fill}"` : '';
-        const op = s.opacity ? ` opacity="${s.opacity}"` : '';
-        if (s.smallCircle) {
-            return `<circle cx="${s.smallCircle.cx}" cy="${s.smallCircle.cy}" r="${s.smallCircle.r}" fill="none" stroke="currentColor" stroke-width="1.6"/>`;
-        }
-        return `<path d="${s.d}" fill="${fill}"${fillOp} ${stroke}${op}/>`;
-    }).join('\n  ');
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEW.w} ${VIEW.h}" width="${width}" height="${Math.round(width * VIEW.h / VIEW.w)}">\n  ${body}\n</svg>`;
-}

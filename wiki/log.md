@@ -1,5 +1,29 @@
 # Directory Update Log
 
+## 2026-09-30 (fix: phoneme reference review — Gentium @font-face dropped from build; parallel test helpers; a11y)
+
+Two-axis review of `feature/phoneme-reference` found one shipping bug: the
+`//` line comment above the Gentium Plus `@font-face` in
+`resources/css/fonts.css` made the Tailwind/Lightning CSS parser silently
+drop that rule — the built stylesheet had 68 font-faces instead of 69, so
+the IPA font never loaded (built CSS now verified to carry it, and nginx
+serves `/fonts/GentiumPlus-Regular.woff2` as `font/woff2`). The rule is now
+a `/* */` block comment with the pitfall recorded in
+`wiki/domains/phoneme-reference.md`. Content fixes in `phonemes.js`: the /j/
+card highlighted `ic` in *music* (now `u`), /s/ *books* marked `ks` and /z/
+*dogs* marked `gs` (both now `s`), and the /ɔ/ RP note's en/ru wording
+disagreed (don vs saw; now both say saw/dawn, RP-lead framing). Modal
+hardening: focus moves into the dialog on open, the default tab recomputes
+when the shared `native_language` prop changes (login/logout without
+reload), and the example-word mark highlight is one `MarkedWord` component
+instead of two copies. Dead `diagramSvgString` export removed from `art.js`.
+New `tests/Feature/PhonemeReferenceTest.php` pins the shared prop and seeded
+UI strings. Also fixed the two "pre-existing" AdoptEntityWordsTest failures:
+`enableTranslationProviders()`/`nativeRuUser()`/`ruLanguageId()` were defined
+inside `WordTranslationFetchTest.php` but used by other files — under
+`--parallel` workers load file subsets, so cross-file helpers now live in
+`tests/Pest.php`. Suite: 876 passed, 0 failed.
+
 ## 2026-09-30 (feat: phoneme reference — navbar pronunciation guide with parametric articulation diagrams; ADR 0054)
 
 New site-wide pronunciation chart: a navbar icon beside `DarkThemeToggle`

@@ -4,7 +4,7 @@ title: "Phoneme Reference"
 description: "Navbar pronunciation guide: grouped sound cards with parametric articulation diagrams for English and Russian"
 tags: [frontend, phonetics, reference]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-30T22:40:00Z }
+generated: { by: agent:zcode, at: 2026-09-30T20:10:00Z }
 ---
 
 # Phoneme Reference
@@ -24,12 +24,14 @@ hint**, **RP note**). Decision record: `docs/adr/0054-cc0-sagittal-phoneme-diagr
 - Entry: `NavBar.jsx` — icon button after `<DarkThemeToggle/>`, visible to
   guests and authenticated users alike.
 - Modal: `resources/js/Components/Phonemes/PronunciationReferenceModal.jsx`
-  (portal, Escape/backdrop close, scroll lock — same shell as
-  `ModelsUsedPopup.jsx`). Two tabs (English / Russian); the default tab is the
-  user's **learning target**: native English speakers land on Russian,
-  everyone else on English. The user's native language code reaches the
-  client via the shared `auth.user.native_language` prop
-  (`HandleInertiaRequests.php`).
+  (portal, Escape/backdrop close, scroll lock, focus moved into the dialog on
+  open — same shell as `ModelsUsedPopup.jsx`). Two tabs (English / Russian);
+  the default tab is the user's **learning target**: native English speakers
+  land on Russian, everyone else on English, recomputed when the shared prop
+  changes (login/logout without reload). The user's native language code
+  reaches the client via the shared `auth.user.native_language` prop
+  (`HandleInertiaRequests.php` — note the method call, not property access:
+  `nativeLanguage()` is not a relation).
 - Cards → detail view inside the same modal (back button, no routing).
 
 ## Content model
@@ -66,6 +68,11 @@ Only the symbols use it (`font-['Gentium_Plus']`); body text stays in the
 page fonts. Note for the reader: this font is scoped to the modal, it does
 not touch `--font-reading` (see `wiki/domains/reader.md`).
 
+Comments in `resources/css/fonts.css` must stay `/* */` block comments: the
+Tailwind/Lightning parser silently drops the rule that follows a `//` line
+comment — a `//` note before the Gentium `@font-face` shipped the feature
+with the font missing from the built CSS.
+
 ## i18n
 
 Modal chrome (title, group names, pair labels, phase labels) lives in
@@ -83,5 +90,8 @@ hints are keyed `en`/`ru` inside `phonemes.js` — they are content, not chrome.
 
 ## Tests
 
-`composer run test:tia` covers the suite; the feature adds no routes, models
-or commands (no `wiki:sync` artifacts changed).
+`tests/Feature/PhonemeReferenceTest.php` pins the Laravel-side contract: the
+`auth.user.native_language` shared prop (set, and null) and the seeded
+`sounds.*` / `nav.pronunciation_reference` UI strings in both locales. The
+modal itself is frontend-only (no JS test runner in the repo); the feature
+adds no routes, models or commands (no `wiki:sync` artifacts changed).

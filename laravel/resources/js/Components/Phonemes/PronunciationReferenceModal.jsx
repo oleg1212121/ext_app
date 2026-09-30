@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {useI18n} from '../../i18n';
 import {PHONEME_CHART, PHONEME_LANGUAGES, DIAGRAM_CREDITS} from '../../data/phonemes/phonemes.js';
@@ -23,17 +23,21 @@ const cardButtonClass = [
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
 ].join(' ');
 
-function ExampleWord({word, mark}) {
+function MarkedWord({word, mark, markClass = 'font-medium'}) {
     const index = mark ? word.indexOf(mark) : -1;
+    return index >= 0 ? (
+        <>
+            {word.slice(0, index)}
+            <b className={markClass}>{word.slice(index, index + mark.length)}</b>
+            {word.slice(index + mark.length)}
+        </>
+    ) : word;
+}
+
+function ExampleWord({word, mark}) {
     return (
         <li className="font-serif text-[15px] leading-snug">
-            {index >= 0 ? (
-                <>
-                    {word.slice(0, index)}
-                    <b className="font-medium text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{word.slice(index, index + mark.length)}</b>
-                    {word.slice(index + mark.length)}
-                </>
-            ) : word}
+            <MarkedWord word={word} mark={mark} markClass="font-medium text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]"/>
         </li>
     );
 }
@@ -50,12 +54,7 @@ function SoundCard({sound, onSelect, pairLabel}) {
                 {sound.examples.slice(0, 2).map((ex, i) => (
                     <span key={i}>
                         {i > 0 && ', '}
-                        {(() => {
-                            const index = ex.m ? ex.w.indexOf(ex.m) : -1;
-                            return index >= 0
-                                ? <>{ex.w.slice(0, index)}<b className="font-medium">{ex.w.slice(index, index + ex.m.length)}</b>{ex.w.slice(index + ex.m.length)}</>
-                                : ex.w;
-                        })()}
+                        <MarkedWord word={ex.w} mark={ex.m}/>
                     </span>
                 ))}
             </span>
@@ -159,11 +158,19 @@ export default function PronunciationReferenceModal({open, onClose, defaultLangu
     // else (incl. guests) on English
     const [lang, setLang] = useState(defaultLanguage === 'en' ? 'ru' : 'en');
     const [selected, setSelected] = useState(null); // {sound, pair}
+    const dialogRef = useRef(null);
+
+    // default tab tracks the shared native-language code so a login or
+    // logout without a full reload still lands on the learning target
+    useEffect(() => {
+        setLang(defaultLanguage === 'en' ? 'ru' : 'en');
+    }, [defaultLanguage]);
 
     useEffect(() => {
         if (!open) {
             return undefined;
         }
+        dialogRef.current?.focus();
         const onKey = (event) => {
             if (event.key === 'Escape') {
                 onClose();
@@ -194,6 +201,8 @@ export default function PronunciationReferenceModal({open, onClose, defaultLangu
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-black/50" onClick={onClose} aria-hidden="true"/>
             <div
+                ref={dialogRef}
+                tabIndex={-1}
                 role="dialog"
                 aria-modal="true"
                 aria-label={t('sounds.title')}
