@@ -53,7 +53,10 @@ defines what a sentence index means), and the frontend's three iteration
 sites (`hasIntonationData` on both pages, `ReaderRow`'s plain-text fallback)
 guard with `Array.isArray` so a stray sparse payload degrades instead of
 crashing. Regression test pins the sequential-list shape through the reader
-page with an empty-sentence junction.
+page with an empty-sentence junction. (3) The simulator showed no intonation
+marks at all: `TextContent.jsx` — the alignment-table hop between
+`Bilinguals` and `WordText` — never forwarded `showIntonation`, so the
+component kept its off default regardless of the toggle.
 
 ## 2026-09-29 (feat: English stress marking v2 — syllable-aligned placement + CMUdict; ADR 0053)
 

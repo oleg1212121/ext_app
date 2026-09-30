@@ -146,6 +146,7 @@ export default function TextContent(props) {
                                     stressed={props.stressedRows?.[i]?.[0] ?? null}
                                     intonations={props.intonationRows?.[i]?.[0] ?? null}
                                     showStress={props.showStress}
+                                    showIntonation={props.showIntonation}
                                 />
                             </span>
                         </td>
@@ -182,6 +183,7 @@ export default function TextContent(props) {
                                         stressed={props.stressedRows?.[i]?.[1] ?? null}
                                         intonations={props.intonationRows?.[i]?.[1] ?? null}
                                         showStress={props.showStress}
+                                        showIntonation={props.showIntonation}
                                     />
                                 </span>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
