@@ -127,6 +127,7 @@ class SimulatorController extends Controller
             'workplaceHeight' => $this->clampInt($saved['workplace_height'] ?? null, 80, 800, 168),
             'highlightWords' => (bool) ($saved['highlight_words'] ?? true),
             'stressMarks' => (bool) ($saved['stress_marks'] ?? false),
+            'intonation' => (bool) ($saved['intonation'] ?? false),
         ]);
     }
 

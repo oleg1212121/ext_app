@@ -86,6 +86,7 @@ class ReaderController extends Controller
             'fontSize' => $this->savedReaderFontSize(),
             'highlight' => $this->savedHighlight(),
             'stressMarks' => $this->savedStressMarks(),
+            'intonation' => $this->savedIntonation(),
             'wordMap' => $this->wordMapForRows($wordMap->forEntity($readingEntity, $userId), $rows, 0),
             'primaryHighlightable' => $readingEntity->language_id !== $nativeLanguageId,
             'translationWordMap' => $translationEntity !== null
@@ -128,8 +129,13 @@ class ReaderController extends Controller
         return (bool) (auth()->user()->settings?->ui_settings['reader']['stress_marks'] ?? false);
     }
 
+    private function savedIntonation(): bool
+    {
+        return (bool) (auth()->user()->settings?->ui_settings['reader']['intonation'] ?? false);
+    }
+
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, stressedRows: list<array{0: ?string, 1: ?string}>, intonationRows: list<array{0: list<?string>, 1: list<?string>}>, readingEntity: Entity, translationEntity: Entity|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
+     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, stressedRows: list<array{0: ?string, 1: ?string}>, intonationRows: list<array{0: list<array{terminal: string, nuclear: array{start: int, end: int}|null}|null>, 1: list<array{terminal: string, nuclear: array{start: int, end: int}|null>|null}>, readingEntity: Entity, translationEntity: Entity|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
      */
     private function buildRows(Entity $entity, ?int $nativeLanguageId, int $page): array
     {
@@ -198,7 +204,7 @@ class ReaderController extends Controller
      * translation side. An illustration sentence's row carries no text —
      * its image (with the caption) rides the aligned rowImages entry.
      *
-     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, stressedRows: list<array{0: ?string, 1: ?string}>, intonationRows: list<array{0: list<?string>, 1: list<?string>}>, readingEntity: Entity, translationEntity: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
+     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, stressedRows: list<array{0: ?string, 1: ?string}>, intonationRows: list<array{0: list<array{terminal: string, nuclear: array{start: int, end: int}|null}|null>, 1: list<array{terminal: string, nuclear: array{start: int, end: int}|null>|null}>, readingEntity: Entity, translationEntity: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
      */
     private function singleLanguageRows(Entity $entity, int $page): array
     {
@@ -230,7 +236,7 @@ class ReaderController extends Controller
                 ->all(),
             'intonationRows' => $collection
                 ->map(fn (EntitySentence $sentence): array => [
-                    [$sentence->intonation['terminal'] ?? null],
+                    [$this->presenter->intonationAnnotation($sentence)],
                     [],
                 ])
                 ->all(),

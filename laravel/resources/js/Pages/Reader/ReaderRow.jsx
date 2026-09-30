@@ -3,6 +3,26 @@ import WordText from '../../Components/WordText.jsx';
 
 const NO_IMAGES = [];
 
+// Plain-text fallback rendering (no word map for the side): sentence arrows
+// still follow the intonation toggle. WordText joins sentences with spaces,
+// so the fallback keeps replacing newlines the same way.
+function fallbackText(base, intonations, showIntonation) {
+    const flat = base.replaceAll('\n', ' ');
+    if (!showIntonation || !intonations?.some(Boolean)) {
+        return flat;
+    }
+    const sentences = base.split('\n');
+    return sentences.length === 1
+        ? flat
+        : sentences
+            .map((sentence, index) => {
+                const annotation = intonations[index];
+                const terminal = typeof annotation === 'string' ? annotation : annotation?.terminal;
+                return terminal ? `${sentence} ${terminal === 'rise' ? '↗' : '↘'}` : sentence;
+            })
+            .join(' ');
+}
+
 // A book illustration: the picture with its optional caption beneath. No
 // transitions or hover styling — the reader's row perf contract (fixed
 // identity, memo-friendly, no layout thrash) applies.
@@ -59,6 +79,7 @@ function ReaderRow({
     primaryIntonations = null,
     translationIntonations = null,
     showStress = false,
+    showIntonation = false,
 }) {
     // The translation column lives on the other entity match side than the
     // primary one; without a primary side (single-language text) it has none.
@@ -146,11 +167,12 @@ function ReaderRow({
                             popupFontSize={popupFontSize}
                             side={primarySide ?? undefined}
                             explain={primaryExplainPayload}
-                            stressed={primaryStressed}
-                            intonations={primaryIntonations}
-                            showStress={showStress}
-                        />
-                    ) : (showStress && primaryStressed ? primaryStressed : primary).replaceAll('\n', ' ')}
+                                stressed={primaryStressed}
+                                intonations={primaryIntonations}
+                                showStress={showStress}
+                                showIntonation={showIntonation}
+                            />
+                        ) : fallbackText(showStress && primaryStressed ? primaryStressed : primary, primaryIntonations, showIntonation)}
                 </div>
 
                 {sideBySide && hasTranslation && (
@@ -195,8 +217,9 @@ function ReaderRow({
                                     stressed={translationStressed}
                                     intonations={translationIntonations}
                                     showStress={showStress}
+                                    showIntonation={showIntonation}
                                 />
-                            ) : (showStress && translationStressed ? translationStressed : translation).replaceAll('\n', ' ')}
+                            ) : fallbackText(showStress && translationStressed ? translationStressed : translation, translationIntonations, showIntonation)}
                         </div>
                     </div>
                 )}

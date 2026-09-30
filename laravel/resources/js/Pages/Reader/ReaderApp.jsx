@@ -2,6 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {router} from '@inertiajs/react';
 import ReaderRow from './ReaderRow.jsx';
 import {popupFontSizeFor} from '../../Components/WordPopup.jsx';
+import {Icon} from '../../Components/icons.jsx';
 import {useI18n} from '../../i18n';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 import {loadReadingPositions, saveReadingPositions} from '../../lib/readingPosition';
@@ -41,12 +42,15 @@ const IconButton = ({onClick, disabled, label, children}) => (
     </button>
 );
 
-const ToggleButton = ({onClick, active, children}) => (
+const ToggleButton = ({onClick, active, label, children}) => (
     <button
         type="button"
         onClick={onClick}
+        aria-label={label}
+        aria-pressed={active}
+        title={label}
         className={[
-            'px-2.5 h-8 inline-flex items-center font-sans text-xs tracking-wide rounded-sm',
+            'w-8 h-8 inline-flex items-center justify-center rounded-sm',
             'border transition-colors duration-150',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
             active
@@ -76,6 +80,7 @@ export default function ReaderApp({
     fontSize: savedFontSize,
     highlight: savedHighlight = true,
     stressMarks: savedStressMarks = false,
+    intonation: savedIntonation = false,
     wordMap: initialWordMap = {},
     primaryHighlightable = false,
     translationWordMap: initialTranslationWordMap = {},
@@ -91,9 +96,12 @@ export default function ReaderApp({
     const popupFontSize = popupFontSizeFor(fontSize);
     const [highlight, setHighlight] = useState(savedHighlight);
     // Stress marks toggle (ADR 0052): swaps each sentence for its stored
-    // stressed variant and shows the terminal intonation marker.
+    // stressed variant.
     const [showStress, setShowStress] = useState(savedStressMarks);
-    useUiSettingsAutosave('reader', {font_size: fontSize, highlight, stress_marks: showStress});
+    // Intonation toggle: independent of stress marks — the terminal arrow and
+    // the nuclear-word caret show wherever the annotation data exists.
+    const [showIntonation, setShowIntonation] = useState(savedIntonation);
+    useUiSettingsAutosave('reader', {font_size: fontSize, highlight, stress_marks: showStress, intonation: showIntonation});
     const [wordMap, setWordMap] = useState(initialWordMap);
     const [translationWordMap, setTranslationWordMap] = useState(initialTranslationWordMap);
     // Language toggle (Working state, per device + positionKey): when true,
@@ -184,6 +192,10 @@ export default function ReaderApp({
         [intonationRows, effectiveFlipped],
     );
     const hasStressedData = stressedRows.some(([primary, translation]) => primary !== null || translation !== null);
+    const hasIntonationData = useMemo(
+        () => intonationRows.some(([primary, translation]) => (primary ?? []).some(Boolean) || (translation ?? []).some(Boolean)),
+        [intonationRows],
+    );
 
     const shownWordMap = effectiveFlipped ? translationWordMap : wordMap;
     const shownTranslationWordMap = effectiveFlipped ? wordMap : translationWordMap;
@@ -431,13 +443,9 @@ export default function ReaderApp({
         >
             <header className="flex-none border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]">
                 <div className="px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-                    <button
-                        type="button"
-                        onClick={() => history.length > 1 ? history.back() : null}
-                        className="font-sans text-xs tracking-wide text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm"
-                    >
-                        {t('reader.back_to_library')}
-                    </button>
+                    <IconButton label={t('reader.back_to_library')} onClick={() => history.length > 1 ? history.back() : null}>
+                        <Icon name="arrowLeft" className="h-4 w-4"/>
+                    </IconButton>
 
                     <Divider/>
 
@@ -482,7 +490,7 @@ export default function ReaderApp({
 
                         <div className="flex items-center gap-0.5 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm">
                             <IconButton label={t('reader.decrease_text_size')} onClick={() => adjustFontSize(-FONT_STEP)}>
-                                −
+                                <Icon name="minus" className="h-4 w-4"/>
                             </IconButton>
                             <span
                                 id="fontSizeValue"
@@ -492,28 +500,33 @@ export default function ReaderApp({
                                 {fontSize}
                             </span>
                             <IconButton label={t('reader.increase_text_size')} onClick={() => adjustFontSize(FONT_STEP)}>
-                                +
+                                <Icon name="plus" className="h-4 w-4"/>
                             </IconButton>
                         </div>
 
                         <Divider/>
 
-                        <ToggleButton active={showAll} onClick={() => setShowAll((v) => !v)}>
-                            {t('reader.show_all')}
+                        <ToggleButton active={showAll} label={t('reader.show_all')} onClick={() => setShowAll((v) => !v)}>
+                            <Icon name="eye" className="h-4 w-4"/>
                         </ToggleButton>
-                        <ToggleButton active={highlight} onClick={() => setHighlight((v) => !v)}>
-                            {t('reader.highlights')}
+                        <ToggleButton active={highlight} label={t('reader.highlights')} onClick={() => setHighlight((v) => !v)}>
+                            <Icon name="highlighter" className="h-4 w-4"/>
                         </ToggleButton>
                         {hasStressedData ? (
-                            <ToggleButton active={showStress} onClick={() => setShowStress((v) => !v)}>
-                                {t('reader.stress_marks')}
+                            <ToggleButton active={showStress} label={t('reader.stress_marks')} onClick={() => setShowStress((v) => !v)}>
+                                <Icon name="stress" className="h-4 w-4"/>
                             </ToggleButton>
                         ) : null}
-                        <ToggleButton active={sideBySide} onClick={() => setSideBySide((v) => !v)}>
-                            {sideBySide ? t('reader.stacked') : t('reader.side_by_side')}
+                        {hasIntonationData ? (
+                            <ToggleButton active={showIntonation} label={t('reader.intonation')} onClick={() => setShowIntonation((v) => !v)}>
+                                <Icon name="trendingUp" className="h-4 w-4"/>
+                            </ToggleButton>
+                        ) : null}
+                        <ToggleButton active={sideBySide} label={sideBySide ? t('reader.stacked') : t('reader.side_by_side')} onClick={() => setSideBySide((v) => !v)}>
+                            <Icon name="columns" className="h-4 w-4"/>
                         </ToggleButton>
-                        <ToggleButton active={wideMode} onClick={() => setWideMode((v) => !v)}>
-                            {wideMode ? t('reader.normal_width') : t('reader.wide')}
+                        <ToggleButton active={wideMode} label={wideMode ? t('reader.normal_width') : t('reader.wide')} onClick={() => setWideMode((v) => !v)}>
+                            <Icon name="expand" className="h-4 w-4"/>
                         </ToggleButton>
 
                         <Divider/>
@@ -527,14 +540,13 @@ export default function ReaderApp({
                                 className="hidden"
                                 onChange={handleAudioFileChange}
                             />
-                            <button
+                            <IconButton
                                 id="pickAudioBtn"
-                                type="button"
+                                label={t('reader.pick_audio')}
                                 onClick={handlePickAudio}
-                                className="px-2.5 h-8 font-sans text-xs tracking-wide rounded-sm border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:border-[var(--color-ink)] dark:hover:border-[var(--color-vellum-night)] hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
                             >
-                                {t('reader.pick_audio')}
-                            </button>
+                                <Icon name="speakerWave" className="h-4 w-4"/>
+                            </IconButton>
                             <div className="flex items-center gap-0.5 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm">
                                 <IconButton
                                     id="audioPlay"
@@ -542,7 +554,7 @@ export default function ReaderApp({
                                     disabled={!audioReady}
                                     onClick={handleAudioPlay}
                                 >
-                                    ▶
+                                    <Icon name="play" className="h-4 w-4"/>
                                 </IconButton>
                                 <IconButton
                                     id="audioPause"
@@ -550,7 +562,7 @@ export default function ReaderApp({
                                     disabled={!audioReady}
                                     onClick={handleAudioPause}
                                 >
-                                    ❚❚
+                                    <Icon name="pause" className="h-4 w-4"/>
                                 </IconButton>
                                 <IconButton
                                     id="audioStop"
@@ -558,7 +570,7 @@ export default function ReaderApp({
                                     disabled={!audioReady}
                                     onClick={handleAudioStop}
                                 >
-                                    ■
+                                    <Icon name="stop" className="h-4 w-4"/>
                                 </IconButton>
                             </div>
                             <span
@@ -629,6 +641,7 @@ export default function ReaderApp({
                                 primaryIntonations={displayIntonationRows[index]?.[0] ?? null}
                                 translationIntonations={displayIntonationRows[index]?.[1] ?? null}
                                 showStress={showStress}
+                                showIntonation={showIntonation}
                                 showAll={showAll}
                                 sideBySide={sideBySide}
                                 fontSize={fontSize}
@@ -666,7 +679,7 @@ export default function ReaderApp({
                             disabled={currentPage <= 1}
                             onClick={() => goToPage(currentPage - 1)}
                         >
-                            ‹
+                            <Icon name="chevronLeft" className="h-4 w-4"/>
                         </IconButton>
                         <span className="flex items-center gap-1.5 font-sans text-xs tabular-nums text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
                             <input
@@ -697,7 +710,7 @@ export default function ReaderApp({
                             disabled={currentPage >= lastPage}
                             onClick={() => goToPage(currentPage + 1)}
                         >
-                            ›
+                            <Icon name="chevronRight" className="h-4 w-4"/>
                         </IconButton>
                     </div>
                 </nav>

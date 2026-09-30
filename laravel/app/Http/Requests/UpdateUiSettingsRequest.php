@@ -27,10 +27,12 @@ class UpdateUiSettingsRequest extends FormRequest
             'simulator.workplace_height' => ['integer', 'min:80', 'max:800'],
             'simulator.highlight_words' => ['boolean'],
             'simulator.stress_marks' => ['boolean'],
+            'simulator.intonation' => ['boolean'],
             'reader' => ['nullable', 'array'],
             'reader.font_size' => ['integer', 'min:16', 'max:38'],
             'reader.highlight' => ['boolean'],
             'reader.stress_marks' => ['boolean'],
+            'reader.intonation' => ['boolean'],
             // Word popup section visibility (the profile's Popups tab): a key
             // absent from the saved map means visible, so only explicit
             // opt-outs travel.

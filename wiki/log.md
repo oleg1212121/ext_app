@@ -1,5 +1,43 @@
 # Directory Update Log
 
+## 2026-09-30 (feat: intonation unbundled from stress marks; nuclear stress surfaced; icon toolbars)
+
+The reading surfaces bundled intonation's terminal ↗/↘ marker behind the
+stress-marks toggle, and the only feedback on a long sentence was a single
+arrow. Changes: (1) **Intonation is its own per-user preference** —
+`intonation` boolean in the reader + simulator `ui_settings` sections
+(validated in `UpdateUiSettingsRequest`, autosaved, default off), with its
+own toolbar toggle rendered only when the page carries annotation data;
+`WordText` gates the marker on the new `showIntonation` prop instead of the
+stress state. (2) **The nuclear-stress word is finally shown** — it was
+computed and stored (`intonation.nuclear` span into `content`) but never
+sent to the frontend. `MeaningMatchPresenter::toSimulatorIntonationRows()`
+now emits `{terminal, nuclear}` per sentence (null = not enriched;
+`intonationAnnotation()` shared with the reader's single-language rows), and
+`WordText` maps the span through the plain sentence's segmentation — the
+stressed variant (combining marks inside word tokens only) segments 1:1, so
+the caret sits on the right word regardless of the stress toggle — and
+floats a small accent caret above it (null nuclear degrades to arrow-only;
+the plain-text fallback in `ReaderRow` renders arrows only). (3) **Russian
+quality**: `intonation.py` aux-skip is no longer English-gated — an `AUX_RU`
+set (быть paradigm) stops быть-forms being picked as the nuclear word. (4)
+**Grey line-art icons**: the simulator's stress toggle was the only filled
+text glyph (`á`, accent-blue when active) in a strip of stroke SVGs — the
+new shared `resources/js/Components/icons.jsx` set (Heroicons-style stroke
+paths incl. a drawn A-with-acute for stress and arrow-trending-up for
+intonation) replaces every inline SVG on both pages, and the reader toolbar
+is fully iconified (Back, font −/+, Show all, Highlights, Stress,
+Intonation, Side-by-side, Wide, Pick audio, transport, pager) with the
+existing i18n strings as tooltips; `reader.stress_marks` seed text drops its
+"á" prefix. Glossary: **Terminal contour** / **Nuclear stress** added to
+`CONTEXT.md` (Sentence Enrichment Context). Tests: `EntityEnrichmentTest`
+reader-props case asserts the `{terminal, nuclear}` payload (jsonb reorders
+keys — assert field-wise) and both preferences round-trip; python
+`test_enrichment.py` gains a ru be-form case. `wiki/domains/
+sentence-enrichment.md` rendering/engine sections updated. Pre-existing,
+unrelated: `AdoptEntityWordsTest` fails on dev itself (undefined
+`enableTranslationProviders()` helper).
+
 ## 2026-09-29 (feat: English stress marking v2 — syllable-aligned placement + CMUdict; ADR 0053)
 
 Real-text review of ADR 0052's English marks exposed three defect classes:

@@ -800,10 +800,22 @@ multi-word headwords, not from word linking.
 _Avoid_: phrasal link (nothing is linked), verb phrase (broader).
 
 **Intonation annotation**:
-An approximate sentence-level pronunciation hint: the nuclear-stressed word
-(the sentence's most prominent one) and the terminal contour (rising or
-falling). Heuristic guidance, not authoritative prosody. See ADR 0052.
+An approximate sentence-level pronunciation hint shown under its own
+toggle, independent of **Stress marks**: the **Nuclear stress** word and the
+**Terminal contour**. Heuristic guidance, not authoritative prosody.
 _Avoid_: prosody (implies model quality), tone marks.
+
+**Terminal contour**:
+The terminal intonation marker — rise (yes/no questions) or fall
+(everything else) — drawn after the sentence's last word. Heuristic
+guidance, not authoritative prosody. See ADR 0052.
+_Avoid_: arrow alone (the annotation also carries nuclear stress), pitch.
+
+**Nuclear stress**:
+The sentence's most prominent word — where the pitch peaks — marked with a
+small caret above it when intonation is on. A heuristic choice of the last
+content word; absent when no content word can be resolved.
+_Avoid_: accent (that is Stress marks), emphasis mark.
 
 **Enrichment staleness**:
 Whether a sentence set needs (re-)enrichment: never enriched, or any sentence

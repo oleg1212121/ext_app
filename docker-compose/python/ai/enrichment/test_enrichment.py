@@ -234,6 +234,12 @@ check(
     intonation.annotate(toks(("Okay", 0, 4, "intj", None)), "Okay?", "en"),
     {"nuclear": None, "terminal": "rise"},
 )
+t = toks(("Он", 0, 2, "pron", None), ("был", 3, 6, "verb", None), ("дома", 7, 11, "adverb", None))
+check(
+    "intonation: russian быть skipped for nucleus",
+    intonation.annotate(t, "Он был дома?", "ru"),
+    {"nuclear": {"start": 7, "end": 11}, "terminal": "rise"},
+)
 
 # --- ru_stress (Silero; skipped when unavailable) -----------------------------
 try:

@@ -25,6 +25,13 @@ AUX_EN = {
     "can", "could", "may", "might", "must",
 }
 
+# Russian быть paradigm (past, future, infinitive, copular есть) — clitic-like
+# and never nuclear-stressed.
+AUX_RU = {
+    "быть", "есть", "был", "была", "было", "были", "был",
+    "буду", "будешь", "будет", "будем", "будете", "будут",
+}
+
 WH_EN = {"who", "what", "where", "when", "why", "how", "which", "whose", "whom"}
 WH_RU = {
     "кто", "что", "где", "куда", "откуда", "когда", "почему", "зачем",
@@ -41,7 +48,7 @@ def annotate(tokens: list[dict], text: str, language: str) -> dict:
         surface = token["surface"].lower()
         if cls not in CONTENT_CLASSES:
             continue
-        if language == "en" and cls == "verb" and surface in AUX_EN:
+        if cls == "verb" and surface in (AUX_EN if language == "en" else AUX_RU):
             continue
         nuclear = {"start": token["start"], "end": token["end"]}
         break

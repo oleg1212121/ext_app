@@ -210,26 +210,34 @@ it('ships stressed variants and intonation to the reader page', function () {
     $sentence = EntitySentence::query()->where('entity_id', $entity->id)->first();
     EntitySentence::query()->whereKey($sentence->id)->toBase()->update([
         'stressed_content' => 'Она́ произно́сит э́то краси́во.',
-        'intonation' => json_encode(['nuclear' => null, 'terminal' => 'fall']),
+        'intonation' => json_encode(['nuclear' => ['start' => 0, 'end' => 3], 'terminal' => 'fall']),
     ]);
 
     $response = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk();
 
     $props = $response->inertiaPage()['props'];
+    // The annotation carries the terminal contour and the nuclear span into
+    // the sentence's plain content, not the bare terminal marker. Asserted
+    // key-by-key: jsonb does not preserve object key order.
+    $annotation = $props['intonationRows'][0][0][0];
     expect($props['stressedRows'][0][0])->toBe('Она́ произно́сит э́то краси́во.')
-        ->and($props['intonationRows'][0][0])->toBe(['fall'])
-        ->and($props['stressMarks'])->toBeFalse();
+        ->and($annotation['terminal'])->toBe('fall')
+        ->and($annotation['nuclear']['start'])->toBe(0)
+        ->and($annotation['nuclear']['end'])->toBe(3)
+        ->and($props['stressMarks'])->toBeFalse()
+        ->and($props['intonation'])->toBeFalse();
 
-    // Saved preference rides along.
+    // Saved preferences ride along.
     $user->settings()->updateOrCreate(
         ['user_id' => $user->id],
-        ['ui_settings' => ['reader' => ['stress_marks' => true]]],
+        ['ui_settings' => ['reader' => ['stress_marks' => true, 'intonation' => true]]],
     );
     // The factory pre-loads the settings relation; drop the stale copy so the
     // request resolves the just-updated row.
     $user->unsetRelation('settings');
-    $saved = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk()->inertiaPage()['props']['stressMarks'];
-    expect($saved)->toBeTrue();
+    $props = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk()->inertiaPage()['props'];
+    expect($props['stressMarks'])->toBeTrue()
+        ->and($props['intonation'])->toBeTrue();
 });
 
 it('strips stress marks from word popup surfaces', function () {

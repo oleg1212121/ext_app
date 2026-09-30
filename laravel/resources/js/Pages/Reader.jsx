@@ -15,6 +15,7 @@ const Reader = ({
     fontSize,
     highlight,
     stressMarks = false,
+    intonation = false,
     wordMap,
     primaryHighlightable,
     translationWordMap,
@@ -38,6 +39,7 @@ const Reader = ({
         fontSize={fontSize}
         highlight={highlight}
         stressMarks={stressMarks}
+        intonation={intonation}
         wordMap={wordMap}
         primaryHighlightable={primaryHighlightable}
         translationWordMap={translationWordMap}

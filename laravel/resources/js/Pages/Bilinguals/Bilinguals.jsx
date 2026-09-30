@@ -7,6 +7,7 @@ import Button from "../../Components/Forms/Button.jsx";
 import Workplace from "./Components/Workplace.jsx";
 import AI from "./Components/AI.jsx";
 import TextContent from "./Components/TextContent.jsx";
+import {Icon} from "../../Components/icons.jsx";
 import {popupFontSizeFor} from "../../Components/WordPopup.jsx";
 import {useI18n} from '../../i18n';
 import {getCsrfToken} from '../../lib/http';
@@ -190,6 +191,9 @@ const Bilinguals = (props) => {
     let [highlightWords, setHighlightWords] = React.useState(props.highlightWords ?? true)
     // Stress marks toggle (ADR 0052), same family as highlight words.
     let [showStress, setShowStress] = React.useState(props.stressMarks ?? false)
+    // Intonation toggle: independent of stress marks (ADR 0052) — arrows and
+    // the nuclear-word caret show wherever the annotation data exists.
+    let [showIntonation, setShowIntonation] = React.useState(props.intonation ?? false)
     let [currentText, setCurrentText] = React.useState(initialText)
     const [pending, setPending] = React.useState(false);
     const [aiAnswer, setAiAnswer] = React.useState('');
@@ -243,6 +247,7 @@ const Bilinguals = (props) => {
         show_ai: showAI,
         highlight_words: highlightWords,
         stress_marks: showStress,
+        intonation: showIntonation,
         question: customTasks,
         ai_panel_width: aiPanelWidth,
         workplace_height: workplaceHeight,
@@ -444,6 +449,7 @@ const Bilinguals = (props) => {
     ), [intonationRows, learningSide]);
 
     const hasStressedData = stressedRows.some(([a, b]) => a !== null || b !== null);
+    const hasIntonationData = intonationRows.some(([a, b]) => (a ?? []).some(Boolean) || (b ?? []).some(Boolean));
 
     // Word maps stay keyed by the match's actual sides; the display columns
     // index into them by the side currently playing each role.
@@ -703,9 +709,7 @@ const Bilinguals = (props) => {
                             title={t('bilinguals.text')}
                             onClick={() => setShowText(!showText)}
                         >
-                            <svg className={panelToggleIconClass(showText)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.03v13m0-13c-2.819-.831-4.715-1.076-8.029-1.023A.99.99 0 0 0 3 6v11c0 .563.466 1.014 1.03 1.007 3.122-.043 5.018.212 7.97 1.023m0-13c2.819-.831 4.715-1.076 8.029-1.023A.99.99 0 0 1 21 6v11c0 .563-.466 1.014-1.03 1.007-3.122-.043-5.018.212-7.97 1.023"/>
-                            </svg>
+                            <Icon name="bookOpen" className={panelToggleIconClass(showText)}/>
                             <Underline isActive={showText}/>
                         </button>
                         <button
@@ -716,9 +720,7 @@ const Bilinguals = (props) => {
                             title={t('bilinguals.workplace')}
                             onClick={() => setShowWorkplace(!showWorkplace)}
                         >
-                            <svg className={panelToggleIconClass(showWorkplace)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m14.304 4.844 2.852 2.852M7 7H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-4.5m2.409-9.91a2.017 2.017 0 0 1 0 2.853l-6.844 6.844L8 14l.713-3.565 6.844-6.844a2.015 2.015 0 0 1 2.852 0Z"/>
-                            </svg>
+                            <Icon name="pencil" className={panelToggleIconClass(showWorkplace)}/>
                             <Underline isActive={showWorkplace}/>
                         </button>
                         {canUseAi && (
@@ -730,9 +732,7 @@ const Bilinguals = (props) => {
                                 title={t('bilinguals.question')}
                                 onClick={() => setShowQuestion(!showQuestion)}
                             >
-                                <svg className={panelToggleIconClass(showQuestion)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.529 9.988a2.502 2.502 0 1 1 5 .191A2.441 2.441 0 0 1 12 12.582V14m-.01 3.008H12M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
-                                </svg>
+                                <Icon name="questionMarkCircle" className={panelToggleIconClass(showQuestion)}/>
                                 <Underline isActive={showQuestion}/>
                             </button>
                         )}
@@ -744,9 +744,7 @@ const Bilinguals = (props) => {
                             title={t('bilinguals.highlight_words')}
                             onClick={() => setHighlightWords(!highlightWords)}
                         >
-                            <svg className={panelToggleIconClass(highlightWords)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m14.613 3.514 5.873 5.874a1 1 0 0 1 0 1.414l-7.172 7.172a1 1 0 0 1-.707.293H8.414a1 1 0 0 1-.707-.293L2.939 13.2a1 1 0 0 1 0-1.414L10.2 4.46a1 1 0 0 1 1.414 0Zm-2.6 11.5L19.5 7.5m-13 13H20"/>
-                            </svg>
+                            <Icon name="highlighter" className={panelToggleIconClass(highlightWords)}/>
                             <Underline isActive={highlightWords}/>
                         </button>
                         {hasStressedData && (
@@ -758,8 +756,21 @@ const Bilinguals = (props) => {
                                 title={t('bilinguals.stress_marks')}
                                 onClick={() => setShowStress(!showStress)}
                             >
-                                <span className={panelToggleIconClass(showStress)} aria-hidden="true">á</span>
+                                <Icon name="stress" className={panelToggleIconClass(showStress)}/>
                                 <Underline isActive={showStress}/>
+                            </button>
+                        )}
+                        {hasIntonationData && (
+                            <button
+                                type="button"
+                                className={tabClass(showIntonation)}
+                                aria-label={t('bilinguals.intonation')}
+                                aria-pressed={showIntonation}
+                                title={t('bilinguals.intonation')}
+                                onClick={() => setShowIntonation(!showIntonation)}
+                            >
+                                <Icon name="trendingUp" className={panelToggleIconClass(showIntonation)}/>
+                                <Underline isActive={showIntonation}/>
                             </button>
                         )}
                         <button
@@ -770,9 +781,7 @@ const Bilinguals = (props) => {
                             title={t('bilinguals.ai')}
                             onClick={() => setShowAI(!showAI)}
                         >
-                            <svg className={panelToggleIconClass(showAI)} aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m8 8-4 4 4 4m8 0 4-4-4-4m-2-3-4 14"/>
-                            </svg>
+                            <Icon name="codeBracket" className={panelToggleIconClass(showAI)}/>
                             <Underline isActive={showAI}/>
                         </button>
                     </div>
@@ -845,6 +854,7 @@ const Bilinguals = (props) => {
                                 stressedRows={shownStressedRows}
                                 intonationRows={shownIntonationRows}
                                 showStress={showStress}
+                                showIntonation={showIntonation}
                                 onWordProgress={handleWordProgress}
                                 rowKeys={rowKeys}
                                 allTarget={allTarget}

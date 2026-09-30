@@ -23,6 +23,28 @@ function tierClass(familiarity, highlight) {
     return 'word-token word-unknown';
 }
 
+// Intonation annotations arrive as {terminal, nuclear}; older payloads (and
+// any hand-built ones) may carry the bare terminal string.
+function normalizeAnnotation(value) {
+    if (typeof value === 'string') {
+        return {terminal: value, nuclear: null};
+    }
+    return value ?? null;
+}
+
+// The pitch-peak caret floating above the nuclear-stressed word. Accent color
+// with a per-page fallback: the simulator defines --wbench-accent, the reader
+// --color-vermilion; one rule serves both token sets.
+const NuclearCaret = () => (
+    <span
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-[-0.95em] -translate-x-1/2 text-[0.55em] leading-none"
+        style={{color: 'var(--wbench-accent, var(--color-vermilion))'}}
+    >
+        ∧
+    </span>
+);
+
 /**
  * Renders text split into interactive dictionary words. Only tokens present
  * in the word map ({l_word: {w: wordId, s: familiarity|null}}) become
@@ -51,11 +73,21 @@ function tierClass(familiarity, highlight) {
  *
  * Stress marks (ADR 0052): `stressed` is the same side's "\n"-joined
  * stressed variant (sentence-aligned 1:1, or null), `intonations` the
- * per-sentence terminal markers ('rise'|'fall'|null). When showStress is on
- * and a sentence has a variant, the variant is displayed instead — the word
- * map still resolves because keys strip combining marks.
+ * per-sentence intonation annotations ({terminal: 'rise'|'fall',
+ * nuclear: {start, end}|null} — legacy bare 'rise'/'fall' strings are
+ * accepted). When showStress is on and a sentence has a variant, the
+ * variant is displayed instead — the word map still resolves because keys
+ * strip combining marks.
+ *
+ * Intonation is independent of stress marks (shown when `showIntonation` is
+ * on): the terminal arrow trails the sentence, and the nuclear-stressed
+ * word — the pitch peak — carries a small caret above it. The stored
+ * nuclear span points into the sentence's plain content, so it is mapped
+ * through the plain sentence's segmentation; the stressed variant (combining
+ * marks inside word tokens only) segments 1:1 with the plain text, so the
+ * segment index transfers unchanged. A null nuclear degrades to arrow-only.
  */
-function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, explain, stressed = null, intonations = null, showStress = false}) {
+function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, explain, stressed = null, intonations = null, showStress = false, showIntonation = false}) {
     const sentences = useMemo(() => String(text ?? '').split('\n'), [text]);
     const stressedSentences = useMemo(() => (stressed !== null ? String(stressed).split('\n') : null), [stressed]);
     const useStressed = showStress && stressedSentences !== null && stressedSentences.length === sentences.length;
@@ -66,6 +98,29 @@ function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress,
     const sentenceSegments = useMemo(
         () => displaySentences.map((sentence) => segmentText(sentence)),
         [displaySentences],
+    );
+    // Per sentence: the index of the display segment carrying the nuclear
+    // caret (-1 = none). Computed against the plain sentence's segmentation
+    // (the span is offset into plain content, not the stressed variant).
+    const nuclearIndices = useMemo(
+        () => sentences.map((sentence, index) => {
+            const nuclear = normalizeAnnotation(intonations?.[index])?.nuclear;
+            if (!nuclear) {
+                return -1;
+            }
+            let offset = 0;
+            const segments = segmentText(sentence);
+            for (let s = 0; s < segments.length; s++) {
+                const end = offset + segments[s].text.length;
+                const covers = offset < nuclear.end && end > nuclear.start;
+                offset = end;
+                if (covers && segments[s].key !== null) {
+                    return s;
+                }
+            }
+            return -1;
+        }),
+        [sentences, intonations],
     );
     const [popup, setPopup] = useState(null);
 
@@ -121,49 +176,61 @@ function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress,
 
     return (
         <span className={className}>
-            {sentenceSegments.map((segments, sentenceIndex) => (
+            {sentenceSegments.map((segments, sentenceIndex) => {
+                const annotation = showIntonation ? normalizeAnnotation(intonations?.[sentenceIndex]) : null;
+                return (
                 <React.Fragment key={sentenceIndex}>
                     {sentenceIndex > 0 && ' '}
                     <span className="inline">
-                        {segments.map((segment, index) => (
-                            wordMap[segment.key]?.w ? (
-                                <span
-                                    key={index}
-                                    role="button"
-                                    tabIndex={0}
-                                    className={tierClass(wordMap[segment.key].s, highlight)}
-                                    onClick={(event) => openPopup(event, segment, sentenceIndex)}
-                                    onKeyDown={(event) => {
-                                        if (event.key !== 'Enter' && event.key !== ' ') {
-                                            return;
-                                        }
-                                        // Mirror the <button> this replaced: Enter/Space
-                                        // synthesized a click (swallowed by openPopup), and
-                                        // only Ctrl+that click opened the popup.
-                                        event.stopPropagation();
-                                        if (event.ctrlKey) {
-                                            event.preventDefault();
-                                            openPopup(event, segment, sentenceIndex);
-                                        }
-                                    }}
-                                >
+                        {segments.map((segment, index) => {
+                            const entry = segment.key !== null ? wordMap[segment.key] : undefined;
+                            const caret = nuclearIndices[sentenceIndex] === index ? <NuclearCaret/> : null;
+                            if (entry?.w) {
+                                return (
+                                    <span
+                                        key={index}
+                                        role="button"
+                                        tabIndex={0}
+                                        className={caret !== null ? `relative ${tierClass(entry.s, highlight)}` : tierClass(entry.s, highlight)}
+                                        onClick={(event) => openPopup(event, segment, sentenceIndex)}
+                                        onKeyDown={(event) => {
+                                            if (event.key !== 'Enter' && event.key !== ' ') {
+                                                return;
+                                            }
+                                            // Mirror the <button> this replaced: Enter/Space
+                                            // synthesized a click (swallowed by openPopup), and
+                                            // only Ctrl+that click opened the popup.
+                                            event.stopPropagation();
+                                            if (event.ctrlKey) {
+                                                event.preventDefault();
+                                                openPopup(event, segment, sentenceIndex);
+                                            }
+                                        }}
+                                    >
+                                        {segment.text}
+                                        {caret}
+                                    </span>
+                                );
+                            }
+                            if (caret === null) {
+                                return <React.Fragment key={index}>{segment.text}</React.Fragment>;
+                            }
+                            return (
+                                <span key={index} className="relative">
                                     {segment.text}
+                                    {caret}
                                 </span>
-                            ) : (
-                                <React.Fragment key={index}>{segment.text}</React.Fragment>
-                            )
-                        ))}
-                        {useStressed && intonations?.[sentenceIndex] ? (
-                            <span
-                                aria-hidden="true"
-                                style={{color: 'var(--color-ink-soft)', fontSize: '0.75em', marginLeft: '0.15em'}}
-                            >
-                                {intonations[sentenceIndex] === 'rise' ? '↗' : '↘'}
+                            );
+                        })}
+                        {annotation?.terminal ? (
+                            <span aria-hidden="true" className="ml-[0.15em] text-[0.75em] opacity-70">
+                                {annotation.terminal === 'rise' ? '↗' : '↘'}
                             </span>
                         ) : null}
                     </span>
                 </React.Fragment>
-            ))}
+                );
+            })}
             {popup && createPortal(
                 <WordPopup
                     wordId={popup.wordId}
