@@ -11,38 +11,8 @@ use App\Models\WordTranslationFetch;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
-if (! function_exists('enableTranslationProviders')) {
-    function enableTranslationProviders(): void
-    {
-        config([
-            'services.yandex_translate.key' => 'yandex-test-key',
-            'services.yandex_translate.url' => 'https://yandex.test/translate/v2',
-            'services.google_translate.key' => 'google-test-key',
-            'services.google_translate.url' => 'https://google.test/language/translate/v2',
-        ]);
-    }
-}
-
-if (! function_exists('nativeRuUser')) {
-    function nativeRuUser(): User
-    {
-        createLanguages();
-
-        $user = User::factory()->create();
-        $user->settings()->updateOrCreate([], [
-            'native_language_id' => Language::query()->where('code', 'ru')->value('id'),
-        ]);
-
-        return $user;
-    }
-}
-
-if (! function_exists('ruLanguageId')) {
-    function ruLanguageId(): int
-    {
-        return (int) Language::query()->where('code', 'ru')->value('id');
-    }
-}
+// enableTranslationProviders(), nativeRuUser() and ruLanguageId() live in
+// tests/Pest.php — parallel workers don't load this file for other tests.
 
 it('queues a translation fetch when the popup word has no translations', function () {
     Queue::fake();
