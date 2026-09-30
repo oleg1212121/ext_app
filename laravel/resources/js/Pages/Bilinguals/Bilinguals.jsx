@@ -29,6 +29,11 @@ function panelToggleIconClass(active) {
     return `h-4 w-4 shrink-0 transition-colors ${active ? 'text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]' : 'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]'}`;
 }
 
+// The stress/intonation toggles stay on persistently (autosaved preference),
+// so an accent fill would read as a plain accent-colored icon — they keep
+// grey line-art always and the accent underline alone carries the on-state.
+const pronunciationIconClass = panelToggleIconClass(false);
+
 const tabClass = (isActive) => [
     'relative inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium tracking-wide transition-colors duration-200 rounded-sm',
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]',
@@ -759,7 +764,7 @@ const Bilinguals = (props) => {
                                 title={t('bilinguals.stress_marks')}
                                 onClick={() => setShowStress(!showStress)}
                             >
-                                <Icon name="stress" className={panelToggleIconClass(showStress)}/>
+                                <Icon name="stress" className={pronunciationIconClass}/>
                                 <Underline isActive={showStress}/>
                             </button>
                         )}
@@ -772,7 +777,7 @@ const Bilinguals = (props) => {
                                 title={t('bilinguals.intonation')}
                                 onClick={() => setShowIntonation(!showIntonation)}
                             >
-                                <Icon name="trendingUp" className={panelToggleIconClass(showIntonation)}/>
+                                <Icon name="trendingUp" className={pronunciationIconClass}/>
                                 <Underline isActive={showIntonation}/>
                             </button>
                         )}

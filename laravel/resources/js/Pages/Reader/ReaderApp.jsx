@@ -42,7 +42,7 @@ const IconButton = ({onClick, disabled, label, children}) => (
     </button>
 );
 
-const ToggleButton = ({onClick, active, label, children}) => (
+const ToggleButton = ({onClick, active, label, monochrome = false, children}) => (
     <button
         type="button"
         onClick={onClick}
@@ -54,7 +54,12 @@ const ToggleButton = ({onClick, active, label, children}) => (
             'border transition-colors duration-150',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
             active
-                ? 'border-[var(--color-vermilion)] text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] dark:text-[var(--color-vermilion-night)]'
+                ? monochrome
+                    ? // The stress/intonation toggles stay on persistently
+                      // (autosaved preference), so a tinted fill reads as a
+                      // colored icon — the border alone carries the on-state.
+                      'border-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70'
+                    : 'border-[var(--color-vermilion)] text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] dark:text-[var(--color-vermilion-night)]'
                 : 'border-[var(--color-hairline)] text-[var(--color-ink-soft)] dark:border-[var(--color-hairline-night)] dark:text-[var(--color-vellum-night)]/70 hover:border-[var(--color-ink)] dark:hover:border-[var(--color-vellum-night)] hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
         ].join(' ')}
     >
@@ -516,12 +521,12 @@ export default function ReaderApp({
                             <Icon name="highlighter" className="h-4 w-4"/>
                         </ToggleButton>
                         {hasStressedData ? (
-                            <ToggleButton active={showStress} label={t('reader.stress_marks')} onClick={() => setShowStress((v) => !v)}>
+                            <ToggleButton active={showStress} monochrome label={t('reader.stress_marks')} onClick={() => setShowStress((v) => !v)}>
                                 <Icon name="stress" className="h-4 w-4"/>
                             </ToggleButton>
                         ) : null}
                         {hasIntonationData ? (
-                            <ToggleButton active={showIntonation} label={t('reader.intonation')} onClick={() => setShowIntonation((v) => !v)}>
+                            <ToggleButton active={showIntonation} monochrome label={t('reader.intonation')} onClick={() => setShowIntonation((v) => !v)}>
                                 <Icon name="trendingUp" className="h-4 w-4"/>
                             </ToggleButton>
                         ) : null}

@@ -58,6 +58,13 @@ marks at all: `TextContent.jsx` — the alignment-table hop between
 `Bilinguals` and `WordText` — never forwarded `showIntonation`, so the
 component kept its off default regardless of the toggle.
 
+User decision, superseding the earlier "accent-when-on" call: the
+stress/intonation toggle icons stay **grey line-art even when active** —
+they persist on (autosaved), so the accent fill read as a plain colored
+icon. The accent underline (simulator) / vermilion border (reader) alone
+carries the on-state; the other, session-scoped view toggles keep the
+accent-when-on treatment.
+
 ## 2026-09-29 (feat: English stress marking v2 — syllable-aligned placement + CMUdict; ADR 0053)
 
 Real-text review of ADR 0052's English marks exposed three defect classes:
