@@ -1,10 +1,12 @@
 <?php
 
+use App\Classes\EntityWordAdoption;
 use App\Classes\EntityWordIndexer;
 use App\Classes\EntityWordLinker;
 use App\Jobs\RefreshEntityWords;
 use App\Models\EntitySentence;
 use App\Models\EntityWord;
+use App\Models\Word;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -12,7 +14,7 @@ uses(RefreshDatabase::class);
 function runRefreshJob($entity): void
 {
     (new RefreshEntityWords($entity->id))
-        ->handle(app(EntityWordIndexer::class), app(EntityWordLinker::class));
+        ->handle(app(EntityWordIndexer::class), app(EntityWordLinker::class), app(EntityWordAdoption::class));
 }
 
 function refreshSentence($entity, string $content): EntitySentence
@@ -38,7 +40,11 @@ it('builds and links the word list for a stale entity', function () {
     // Noun wins over the same lowercase form's other word classes.
     expect($rows['cat']->word_id)->toBe($catNoun->id);
     expect($rows['dog']->word_id)->not->toBeNull();
-    expect($rows['the']->word_id)->toBeNull();
+    // 'the' has no dictionary entry: the linker stamps it unmatchable and
+    // the adoption pass creates an 'unknown'-class word so the token is
+    // still clickable in the simulator.
+    expect($rows['the']->word_id)->not->toBeNull();
+    expect(Word::query()->findOrFail($rows['the']->word_id)->wordClass->slug)->toBe('unknown');
     expect($entity->refresh()->words_indexed_at)->not->toBeNull();
 });
 
@@ -73,7 +79,7 @@ it('is idempotent on a second run', function () {
 });
 
 it('skips a missing entity without failing', function () {
-    (new RefreshEntityWords(999999))->handle(app(EntityWordIndexer::class), app(EntityWordLinker::class));
+    (new RefreshEntityWords(999999))->handle(app(EntityWordIndexer::class), app(EntityWordLinker::class), app(EntityWordAdoption::class));
 
     expect(EntityWord::query()->count())->toBe(0);
 });

@@ -1,15 +1,27 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events.
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-09-27T23:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-09-29T19:54:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
     title: WordController (word details + familiarity + events)
+  - id: fetch-job
+    resource: laravel/app/Jobs/FetchWordTranslations.php
+    title: FetchWordTranslations (provider-chain translation job)
+  - id: fetch-service
+    resource: laravel/app/Classes/WordTranslationFetchService.php
+    title: WordTranslationFetchService (dispatch gate + exclusions)
+  - id: resolver
+    resource: laravel/app/Classes/WordTranslations/WordTranslationResolver.php
+    title: WordTranslationResolver (Yandex → Google chain)
+  - id: adoption
+    resource: laravel/app/Classes/EntityWordAdoption.php
+    title: EntityWordAdoption (entity tokens become dictionary words)
   - id: word-explain-endpoint
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
     title: SimulatorController::explainWord (AI Context explanation)
@@ -135,6 +147,49 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    know this word" / "Remove mark" (deletes the row). The popup
    reports the change up to the page, which recolors the word in every
    rendered row, and shows the current score ("Familiarity: 12/100").
+
+# Auto-fetched translations
+
+When a popup would render **without a single translation** — no entry of the
+word family carries any `word_translations` link — `GET /words/{word}` also
+queues a background fetch into the user's native language. The response is
+unchanged (silent background): fetched translations appear the next time the
+popup opens.
+
+* **Provider chain.** `FetchWordTranslations` walks the
+  `WordTranslationResolver` chain — **Yandex Cloud Dictionary Lookup** first
+  (dictionary-grade candidates with parts of speech), **Google Translate v2**
+  as the fallback (a single machine-translation candidate). Both implement
+  the shared `WordTranslationProvider` interface
+  (`app/Classes/WordTranslations/`), so they are interchangeable; either or
+  both can be configured (`YANDEX_TRANSLATE_API_KEY` +
+  `YANDEX_FOLDER_ID` / `GOOGLE_TRANSLATE_API_KEY`; with neither set, nothing
+  changes anywhere). A failing provider is skipped — but if no provider
+  produced a translation and one could not answer, the job fails and retries
+  rather than excluding the word.
+* **What it writes.** The target-language `words` rows (class from the
+  candidate pos slug, else the source word's class slug mapped into the
+  target language, else the target's first class; ru stress marks stripped;
+  candidates with sentence punctuation or over 256 chars dropped) and the
+  `word_translations` links — all idempotent
+  (`firstOrCreate` + `WordTranslation::link`).
+* **Ledger and exclusions.** One `word_translation_fetches` row per
+  (word, target language) is the dedupe ledger: `status='empty'` — every
+  provider answered "no translation" — is the permanent **exclusions list**
+  (the pair is never looked up again), `failed` retries up to 6 attempts
+  behind a 24h cooldown (`WordTranslationFetchService::dispatchIfEligible`).
+* **Entity-word adoption.** `EntityWordAdoption` — run by the 5-minute
+  word-list refresh after its link pass (`RefreshEntityWords`), or by
+  `words:adopt-from-entities {--entity=*} {--language=} {--to=}` — creates
+  `words` rows (class `unknown`) for linker-stamped unmatchable tokens,
+  points `entity_words.word_id` at them, and queues the same fetch for every
+  entity word still lacking translations. Every entity token ends up
+  clickable and eventually translated; junk tokens land in the exclusions
+  after one lookup. See [Crossword](/domains/crossword.md) and
+  [Dictionary](/database/dictionary.md).
+* Tests: `tests/Feature/WordTranslationFetchTest.php` (trigger, job,
+  fallback, exclusion, cooldown), `tests/Feature/AdoptEntityWordsTest.php`,
+  `tests/Unit/WordTranslationProvidersTest.php` (parsing, caps, chain order).
 
 # Context explanation tab
 

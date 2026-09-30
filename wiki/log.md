@@ -84,6 +84,37 @@ Enrichment Context section. Tests: `EntityEnrichmentTest` (10),
 `EntityTextHashRefreshTest` fakes updated for the trailing enrichment
 dispatch.
 
+## 2026-09-29 (feat: auto-fetched word translations — Yandex→Google providers, fetch ledger/exclusions, entity-word adoption)
+
+Missing popup translations now fill themselves in. `GET /words/{word}`
+quietly queues `FetchWordTranslations` when the word family carries no
+translation link at all and the user's native language differs (response
+unchanged — silent background; providers optional). The job walks the new
+`WordTranslationResolver` chain — Yandex Cloud Dictionary Lookup first
+(dictionary-grade candidates with pos), Google Translate v2 fallback (single
+candidate) — both implementing the shared `WordTranslationProvider` interface
+(`app/Classes/WordTranslations/`, `config/services.php`
+`yandex_translate`/`google_translate` keys), then creates the target-language
+`words` rows and `word_translations` links (class from the candidate pos
+slug, else the source word's class slug, else the target's first class; ru
+stress marks stripped; sentence-punctuation candidates dropped). New
+`word_translation_fetches` table (unique `word_id, target_language_id`): one
+row per pair is the dedupe ledger **and the exclusions list** —
+`status='empty'` (every provider answered "no translation") is never
+re-checked; `failed` retries up to 6 attempts behind a 24h cooldown
+(`WordTranslationFetchService::dispatchIfEligible`). Entity words:
+`EntityWordAdoption` creates `words` rows (class `unknown`) for
+linker-stamped unmatchable tokens and queues fetches for translation-less
+entity words — automatically by `RefreshEntityWords` after its link pass
+(5-minute sweep) and manually via `words:adopt-from-entities {--entity=*}
+{--language=} {--to=}`. `RefreshEntityWordsJobTest` updated for the new
+contract (stamped tokens are adopted, `word_id` set, instead of staying
+NULL). New tests: `tests/Feature/WordTranslationFetchTest.php`,
+`tests/Feature/AdoptEntityWordsTest.php`,
+`tests/Unit/WordTranslationProvidersTest.php`. Concepts updated:
+`domains/interactive-words.md`, `database/dictionary.md`,
+`domains/crossword.md`; references regenerated via `wiki:sync`.
+
 ## 2026-09-28 (fix: alignable-totals writers missed by the illustrations commit)
 
 Post-review follow-up to the illustrations entry below: three writers of
