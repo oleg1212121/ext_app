@@ -1,11 +1,11 @@
 ---
 type: Pipeline
-title: Sentence enrichment (stress marks, phrasal verbs, intonation)
-description: Local-only per-sentence enrichment — Russian/English stress marks, English phrasal-verb hits and heuristic intonation — computed by the Python service (Silero Stress + caller-supplied dictionary data incl. CMUdict), stored beside sentence content, refreshed by staleness sweeps, and rendered behind independent per-user stress/intonation toggles on the reading surfaces (ADR 0052, ADR 0053).
-tags: [enrichment, stress-marks, phrasal-verbs, intonation, python-service, reader, simulator, silero]
+title: Sentence enrichment (stress marks, phrasal verbs)
+description: Local-only per-sentence enrichment — Russian/English stress marks and English phrasal-verb hits — computed by the Python service (Silero Stress + caller-supplied dictionary data incl. CMUdict), stored beside sentence content, refreshed by staleness sweeps, and rendered behind a per-user stress-marks toggle on the reading surfaces (ADR 0052, ADR 0053).
+tags: [enrichment, stress-marks, phrasal-verbs, python-service, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-29
-generated: { by: agent:zcode, at: 2026-09-30T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-09-30T12:00:00Z }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -28,17 +28,14 @@ sources:
    - id: phrasal
      resource: docker-compose/python/ai/enrichment/phrasal.py
      title: phrasal
-   - id: intonation
-     resource: docker-compose/python/ai/enrichment/intonation.py
-     title: intonation
    - id: adr
      resource: docs/adr/0052-local-sentence-enrichment.md
      title: ADR 0052
 ---
 
-# Sentence enrichment (stress marks, phrasal verbs, intonation)
+# Sentence enrichment (stress marks, phrasal verbs)
 
-Every sentence of a ru/en entity gets three enrichment payloads, computed
+Every sentence of a ru/en entity gets two enrichment payloads, computed
 **entirely locally** (ADR 0052: no LLM, no paid calls — Silero Stress +
 dictionary data only):
 
@@ -46,7 +43,6 @@ dictionary data only):
 |---|---|---|
 | Stressed variant | `entity_sentences.stressed_content` | Sentence with U+0301 combining acutes on stressed vowels (Russian also е→ё); acute omitted on ё |
 | Phrasal verbs | `entity_sentences.phrasal_verbs` (jsonb) | English hits `{verb, particles[], start, end}` — char spans into `content` |
-| Intonation | `entity_sentences.intonation` (jsonb) | Heuristic `{nuclear: {start,end}\|null, terminal: rise\|fall}` — spans into `content` |
 
 `content` is **never mutated**: enrichment that wrote into content would bump
 `sentences_updated_at` (staling word index/frequency/text hash), change the
@@ -57,7 +53,7 @@ text hash under exact-copy detection, and flip entity matches to `pending`
 
 `{language: ru|en, phrasal_lexicon: [headwords], sentences: [{id, text,
 tokens: [{surface, start, end, cls, lemma, ipa, stressed}]}]}` →
-`{results: [{id, stressed, phrasal_verbs, intonation}]}`. Laravel owns the
+`{results: [{id, stressed, phrasal_verbs}]}`. Laravel owns the
 dictionary and sends everything the service needs as per-token hints
 (word-class slug from `entity_words` links, dictionary lemma, IPA variants,
 Russian stressed-form candidates); Python owns model inference and writes
@@ -94,10 +90,6 @@ nothing anywhere — the same split as `/split` and `/align`.
   whose lead is verb-classed and whose `lemma + surfaces` match a multi-word
   verb headword (the dictionary's previously-inert phrasal rows). Longest
   match wins; hits never overlap.
-- **intonation** (`ai/enrichment/intonation.py`): heuristic — nuclear = last
-  content word (English and Russian auxiliary/modal/be-form verbs skipped),
-  terminal = rise for yes/no questions (final `?`, no wh-initial), fall
-  otherwise. No local text→prosody model exists; treat as approximate.
 
 Plain-python tests: `docker exec ext_python python
 /app/ai/enrichment/test_enrichment.py` (Silero-dependent ru tests skip with a
@@ -135,21 +127,14 @@ notice when the package is absent).
 ## Rendering
 
 - Reader (`ReaderController`) and simulator (`SimulatorController::text`)
-  ship `stressedRows` / `intonationRows` parallel to the rows — same
-  "\n"-joined per-side shape, flipped with the reading/learning side. Stress
-  marks and intonation are **independent per-user preferences**
-  (`stress_marks`, `intonation` in the reader + simulator `ui_settings`
-  sections, autosaved, both default off): `stress_marks` swaps
-  `content` → `stressed_content`; `intonation` shows the terminal ↗/↘
-  marker after each sentence plus a caret above the **nuclear-stress** word —
-  the stored `nuclear` span indexes plain `content`, and the client maps it
-  through the plain sentence's segmentation (the stressed variant, with
-  combining marks inside word tokens only, segments 1:1, so the caret is
-  immune to the swap). Each toggle renders only when its data exists; the
-  annotation payload per sentence is `{terminal, nuclear}` or null. Both
-  pages draw their toolbar controls from the shared grey line-art icon set
-  (`resources/js/Components/icons.jsx`). Phrasal-verb data is DB + Filament
-  preview only (SentencesRelationManager columns).
+  ship `stressedRows` parallel to the rows — same "\n"-joined per-side
+  shape, flipped with the reading/learning side. Stress marks are a
+  **per-user preference** (`stress_marks` in the reader + simulator
+  `ui_settings` sections, autosaved, default off): it swaps `content` →
+  `stressed_content`. The toggle renders only when stressed data exists;
+  both pages draw their toolbar controls from the shared grey line-art icon
+  set (`resources/js/Components/icons.jsx`). Phrasal-verb data is DB +
+  Filament preview only (SentencesRelationManager columns).
 - **Tokenizer keys strip combining marks** on both sides (`WordTokenizer::
   lookupKey`, `wordTokenizer.mjs`) — the dictionary's `l_word` normalization
   — so stressed tokens still resolve the word map and popups.

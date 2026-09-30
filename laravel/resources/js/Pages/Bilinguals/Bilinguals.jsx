@@ -29,9 +29,9 @@ function panelToggleIconClass(active) {
     return `h-4 w-4 shrink-0 transition-colors ${active ? 'text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]' : 'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]'}`;
 }
 
-// The stress/intonation toggles stay on persistently (autosaved preference),
-// so an accent fill would read as a plain accent-colored icon — they keep
-// grey line-art always and the accent underline alone carries the on-state.
+// The stress-marks toggle stays on persistently (autosaved preference), so
+// an accent fill would read as a plain accent-colored icon — it keeps grey
+// line-art always and the accent underline alone carries the on-state.
 const pronunciationIconClass = panelToggleIconClass(false);
 
 const tabClass = (isActive) => [
@@ -124,7 +124,6 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
         rowImages: payload.row_images ?? [],
         rowKeys: payload.row_keys ?? null,
         stressedRows: payload.stressed_rows ?? [],
-        intonationRows: payload.intonation_rows ?? [],
         wordMaps: payload.word_maps ?? null,
         languages: payload.languages ?? null,
         defaultLearningSide: payload.default_learning_side ?? null,
@@ -196,9 +195,6 @@ const Bilinguals = (props) => {
     let [highlightWords, setHighlightWords] = React.useState(props.highlightWords ?? true)
     // Stress marks toggle (ADR 0052), same family as highlight words.
     let [showStress, setShowStress] = React.useState(props.stressMarks ?? false)
-    // Intonation toggle: independent of stress marks (ADR 0052) — arrows and
-    // the nuclear-word caret show wherever the annotation data exists.
-    let [showIntonation, setShowIntonation] = React.useState(props.intonation ?? false)
     let [currentText, setCurrentText] = React.useState(initialText)
     const [pending, setPending] = React.useState(false);
     const [aiAnswer, setAiAnswer] = React.useState('');
@@ -212,7 +208,6 @@ const Bilinguals = (props) => {
     const [rowImages, setRowImages] = React.useState([]);
     const [rowKeys, setRowKeys] = React.useState(null);
     const [stressedRows, setStressedRows] = React.useState([]);
-    const [intonationRows, setIntonationRows] = React.useState([]);
     const [wordMaps, setWordMaps] = React.useState(null);
     const [allTarget, setAllTarget] = React.useState(false);
     const [textMeta, setTextMeta] = React.useState(null);
@@ -252,7 +247,6 @@ const Bilinguals = (props) => {
         show_ai: showAI,
         highlight_words: highlightWords,
         stress_marks: showStress,
-        intonation: showIntonation,
         question: customTasks,
         ai_panel_width: aiPanelWidth,
         workplace_height: workplaceHeight,
@@ -289,12 +283,11 @@ const Bilinguals = (props) => {
         setLoadError(null);
         setPending(true);
         try {
-            const {rows: nextRows, rowImages: nextRowImages, rowKeys: nextRowKeys, stressedRows: nextStressedRows, intonationRows: nextIntonationRows, wordMaps: nextWordMaps, languages: nextLanguages, defaultLearningSide: nextDefaultSide, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
+            const {rows: nextRows, rowImages: nextRowImages, rowKeys: nextRowKeys, stressedRows: nextStressedRows, wordMaps: nextWordMaps, languages: nextLanguages, defaultLearningSide: nextDefaultSide, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
             setRows(nextRows);
             setRowImages(nextRowImages);
             setRowKeys(nextRowKeys);
             setStressedRows(nextStressedRows);
-            setIntonationRows(nextIntonationRows);
             setWordMaps(nextWordMaps);
             if (nextLanguages) {
                 setLanguages(nextLanguages);
@@ -318,7 +311,6 @@ const Bilinguals = (props) => {
             setRowImages([]);
             setRowKeys(null);
             setStressedRows([]);
-            setIntonationRows([]);
             setWordMaps(null);
             setAllTarget(false);
             setTextMeta(null);
@@ -444,20 +436,12 @@ const Bilinguals = (props) => {
         learningSide === 'a' ? rowImages : rowImages.map(([a, b]) => [b, a])
     ), [rowImages, learningSide]);
 
-    // Stress variants and intonation markers flip with the text pairs.
+    // Stress variants flip with the text pairs.
     const shownStressedRows = React.useMemo(() => (
         learningSide === 'a' ? stressedRows : stressedRows.map(([a, b]) => [b, a])
     ), [stressedRows, learningSide]);
 
-    const shownIntonationRows = React.useMemo(() => (
-        learningSide === 'a' ? intonationRows : intonationRows.map(([a, b]) => [b, a])
-    ), [intonationRows, learningSide]);
-
     const hasStressedData = stressedRows.some(([a, b]) => a !== null || b !== null);
-    // Array.isArray: a sparse side list encodes as an object with numeric
-    // keys (older payloads) — skip it rather than crash on .some().
-    const hasIntonationData = intonationRows.some(([a, b]) => (Array.isArray(a) && a.some(Boolean))
-        || (Array.isArray(b) && b.some(Boolean)));
 
     // Word maps stay keyed by the match's actual sides; the display columns
     // index into them by the side currently playing each role.
@@ -768,19 +752,6 @@ const Bilinguals = (props) => {
                                 <Underline isActive={showStress}/>
                             </button>
                         )}
-                        {hasIntonationData && (
-                            <button
-                                type="button"
-                                className={tabClass(showIntonation)}
-                                aria-label={t('bilinguals.intonation')}
-                                aria-pressed={showIntonation}
-                                title={t('bilinguals.intonation')}
-                                onClick={() => setShowIntonation(!showIntonation)}
-                            >
-                                <Icon name="trendingUp" className={pronunciationIconClass}/>
-                                <Underline isActive={showIntonation}/>
-                            </button>
-                        )}
                         <button
                             type="button"
                             className={tabClass(showAI)}
@@ -860,9 +831,7 @@ const Bilinguals = (props) => {
                                 baseExplainable={baseExplainable}
                                 highlightWords={highlightWords}
                                 stressedRows={shownStressedRows}
-                                intonationRows={shownIntonationRows}
                                 showStress={showStress}
-                                showIntonation={showIntonation}
                                 onWordProgress={handleWordProgress}
                                 rowKeys={rowKeys}
                                 allTarget={allTarget}

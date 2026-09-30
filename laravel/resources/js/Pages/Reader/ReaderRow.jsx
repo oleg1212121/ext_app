@@ -3,28 +3,6 @@ import WordText from '../../Components/WordText.jsx';
 
 const NO_IMAGES = [];
 
-// Plain-text fallback rendering (no word map for the side): sentence arrows
-// still follow the intonation toggle. WordText joins sentences with spaces,
-// so the fallback keeps replacing newlines the same way.
-function fallbackText(base, intonations, showIntonation) {
-    const flat = base.replaceAll('\n', ' ');
-    // Array.isArray: a sparse side list encodes as an object with numeric
-    // keys (older payloads) — skip the arrows rather than crash.
-    if (!showIntonation || !Array.isArray(intonations) || !intonations.some(Boolean)) {
-        return flat;
-    }
-    const sentences = base.split('\n');
-    return sentences.length === 1
-        ? flat
-        : sentences
-            .map((sentence, index) => {
-                const annotation = intonations[index];
-                const terminal = typeof annotation === 'string' ? annotation : annotation?.terminal;
-                return terminal ? `${sentence} ${terminal === 'rise' ? '↗' : '↘'}` : sentence;
-            })
-            .join(' ');
-}
-
 // A book illustration: the picture with its optional caption beneath. No
 // transitions or hover styling — the reader's row perf contract (fixed
 // identity, memo-friendly, no layout thrash) applies.
@@ -78,10 +56,7 @@ function ReaderRow({
     explain = null,
     primaryStressed = null,
     translationStressed = null,
-    primaryIntonations = null,
-    translationIntonations = null,
     showStress = false,
-    showIntonation = false,
 }) {
     // The translation column lives on the other entity match side than the
     // primary one; without a primary side (single-language text) it has none.
@@ -152,7 +127,7 @@ function ReaderRow({
                     style={{
                         lineHeight: 1.7,
                         fontSize: `${fontSize}px`,
-                        fontFamily: 'var(--font-serif)',
+                        fontFamily: 'var(--font-reading)',
                     }}
                 >
                     {primaryImages.map((image) => (
@@ -169,12 +144,10 @@ function ReaderRow({
                             popupFontSize={popupFontSize}
                             side={primarySide ?? undefined}
                             explain={primaryExplainPayload}
-                                stressed={primaryStressed}
-                                intonations={primaryIntonations}
-                                showStress={showStress}
-                                showIntonation={showIntonation}
-                            />
-                        ) : fallbackText(showStress && primaryStressed ? primaryStressed : primary, primaryIntonations, showIntonation)}
+                            stressed={primaryStressed}
+                            showStress={showStress}
+                        />
+                    ) : showStress && primaryStressed ? primaryStressed : primary}
                 </div>
 
                 {sideBySide && hasTranslation && (
@@ -191,7 +164,7 @@ function ReaderRow({
                         style={{
                             lineHeight: 1.7,
                             fontSize: `${Math.round(fontSize * 0.95)}px`,
-                            fontFamily: 'var(--font-serif)',
+                            fontFamily: 'var(--font-reading)',
                             color: 'var(--color-verdigris)',
                         }}
                         aria-hidden={!isVisible}
@@ -217,11 +190,9 @@ function ReaderRow({
                                     side={translationSide ?? undefined}
                                     explain={translationExplainPayload}
                                     stressed={translationStressed}
-                                    intonations={translationIntonations}
                                     showStress={showStress}
-                                    showIntonation={showIntonation}
                                 />
-                            ) : fallbackText(showStress && translationStressed ? translationStressed : translation, translationIntonations, showIntonation)}
+                            ) : showStress && translationStressed ? translationStressed : translation}
                         </div>
                     </div>
                 )}

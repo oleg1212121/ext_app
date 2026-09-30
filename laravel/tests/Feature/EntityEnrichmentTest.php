@@ -53,7 +53,6 @@ function fakeEnrichResponse(): void
                 'id' => $sentence['id'],
                 'stressed' => $sentence['text'].'́',
                 'phrasal_verbs' => $request->data()['language'] === 'en' ? [] : null,
-                'intonation' => ['nuclear' => null, 'terminal' => 'fall'],
             ])
             ->all();
 
@@ -80,7 +79,6 @@ it('enriches a chunk without bumping sentence timestamps or entity staleness mar
     $after = $before->refresh();
     expect($after->stressed_content)->toBe('Она произносит это красиво.́')
         ->and($after->phrasal_verbs)->toBeNull()
-        ->and($after->intonation)->toBe(['nuclear' => null, 'terminal' => 'fall'])
         // Quiet writes: no updated_at bump, no sentences_updated_at bump, no
         // text_hash change — content itself is never touched.
         ->and($after->updated_at->equalTo($sentenceUpdatedAt))->toBeTrue()
@@ -205,48 +203,37 @@ it('sends dictionary hints with the enrichment request', function () {
         ->and($gave['lemma'])->toBe('give');
 });
 
-it('ships stressed variants and intonation to the reader page', function () {
+it('ships stressed variants to the reader page', function () {
     $user = approvedUser();
 
     $entity = enrichableEntity('ru', ['Она произносит это красиво.']);
     $sentence = EntitySentence::query()->where('entity_id', $entity->id)->first();
     EntitySentence::query()->whereKey($sentence->id)->toBase()->update([
         'stressed_content' => 'Она́ произно́сит э́то краси́во.',
-        'intonation' => json_encode(['nuclear' => ['start' => 0, 'end' => 3], 'terminal' => 'fall']),
     ]);
 
     $response = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk();
 
     $props = $response->inertiaPage()['props'];
-    // The annotation carries the terminal contour and the nuclear span into
-    // the sentence's plain content, not the bare terminal marker. Asserted
-    // key-by-key: jsonb does not preserve object key order.
-    $annotation = $props['intonationRows'][0][0][0];
     expect($props['stressedRows'][0][0])->toBe('Она́ произно́сит э́то краси́во.')
-        ->and($annotation['terminal'])->toBe('fall')
-        ->and($annotation['nuclear']['start'])->toBe(0)
-        ->and($annotation['nuclear']['end'])->toBe(3)
-        ->and($props['stressMarks'])->toBeFalse()
-        ->and($props['intonation'])->toBeFalse();
+        ->and($props['stressMarks'])->toBeFalse();
 
     // Saved preferences ride along.
     $user->settings()->updateOrCreate(
         ['user_id' => $user->id],
-        ['ui_settings' => ['reader' => ['stress_marks' => true, 'intonation' => true]]],
+        ['ui_settings' => ['reader' => ['stress_marks' => true]]],
     );
     // The factory pre-loads the settings relation; drop the stale copy so the
     // request resolves the just-updated row.
     $user->unsetRelation('settings');
     $props = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk()->inertiaPage()['props'];
-    expect($props['stressMarks'])->toBeTrue()
-        ->and($props['intonation'])->toBeTrue();
+    expect($props['stressMarks'])->toBeTrue();
 });
 
-it('ships intonation side lists as sequential arrays when a row junctions an empty sentence', function () {
+it('ships side lists as sequential arrays when a row junctions an empty sentence', function () {
     // Regression: sideSentences filtered without reindexing, so a row whose
     // first junction was an empty/illustration sentence produced sparse keys
-    // that json_encode turned into an object — crashing the readers' .some()
-    // iteration and misaligning sentence indexes.
+    // that desynced the readers' sentence indexes from the shipped lists.
     $user = approvedUser();
     $work = createWork();
     $enEntity = createEntity('en', $work);
@@ -255,8 +242,8 @@ it('ships intonation side lists as sequential arrays when a row junctions an emp
     $empty = EntitySentence::create(['entity_id' => $enEntity->id, 'content' => '', 'order' => 1]);
     $hello = EntitySentence::create(['entity_id' => $enEntity->id, 'content' => 'Hello there.', 'order' => 2]);
     $privet = EntitySentence::create(['entity_id' => $ruEntity->id, 'content' => 'Привет.', 'order' => 1]);
-    $hello->forceFill(['intonation' => ['nuclear' => null, 'terminal' => 'fall']])->saveQuietly();
-    $privet->forceFill(['intonation' => ['nuclear' => null, 'terminal' => 'rise']])->saveQuietly();
+    $hello->forceFill(['stressed_content' => "He\u{0301}llo the\u{0301}re."])->saveQuietly();
+    $privet->forceFill(['stressed_content' => 'При́вет.'])->saveQuietly();
 
     $entityMatch = createEntityMatch($enEntity, $ruEntity);
     $row = MeaningMatch::create(['entity_match_id' => $entityMatch->id, 'order' => 0, 'similarity' => 0.95, 'alignment_chunk' => 0]);
@@ -266,15 +253,14 @@ it('ships intonation side lists as sequential arrays when a row junctions an emp
 
     $props = $this->actingAs($user)->get("/reader/{$enEntity->id}")->assertOk()->inertiaPage()['props'];
 
-    // The empty sentence is filtered from the text; the annotation side
-    // lists must stay sequential arrays aligned with the remaining sentences.
+    // The empty sentence is filtered from the text; the row and stressed
+    // lists must stay sequential and aligned with the remaining sentences.
     // Reading side is ru (the en side is the native-language translation).
     expect($props['rows'][0][0])->toBe('Привет.')
-        ->and(array_is_list($props['intonationRows'][0][0]))->toBeTrue()
-        ->and(count($props['intonationRows'][0][0]))->toBe(1)
-        ->and($props['intonationRows'][0][0][0]['terminal'])->toBe('rise')
-        ->and(array_is_list($props['intonationRows'][0][1]))->toBeTrue()
-        ->and($props['intonationRows'][0][1][0]['terminal'])->toBe('fall');
+        ->and(array_is_list($props['stressedRows']))->toBeTrue()
+        ->and(count($props['stressedRows']))->toBe(1)
+        ->and($props['stressedRows'][0][0])->toBe('При́вет.')
+        ->and($props['stressedRows'][0][1])->toBe("He\u{0301}llo the\u{0301}re.");
 });
 
 it('strips stress marks from word popup surfaces', function () {

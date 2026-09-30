@@ -61,7 +61,7 @@ class ReaderController extends Controller
 
         $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
 
-        ['rows' => $rows, 'rowImages' => $rowImages, 'rowKeys' => $rowKeys, 'stressedRows' => $stressedRows, 'intonationRows' => $intonationRows, 'readingEntity' => $readingEntity, 'translationEntity' => $translationEntity, 'meta' => $meta, 'positionKey' => $positionKey, 'readingSide' => $readingSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
+        ['rows' => $rows, 'rowImages' => $rowImages, 'rowKeys' => $rowKeys, 'stressedRows' => $stressedRows, 'readingEntity' => $readingEntity, 'translationEntity' => $translationEntity, 'meta' => $meta, 'positionKey' => $positionKey, 'readingSide' => $readingSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
 
         $userId = (int) auth()->id();
         $wordMap = new EntityWordMap;
@@ -80,13 +80,11 @@ class ReaderController extends Controller
             'rowImages' => $rowImages,
             'rowKeys' => $rowKeys,
             'stressedRows' => $stressedRows,
-            'intonationRows' => $intonationRows,
             'meta' => $meta,
             'positionKey' => $positionKey,
             'fontSize' => $this->savedReaderFontSize(),
             'highlight' => $this->savedHighlight(),
             'stressMarks' => $this->savedStressMarks(),
-            'intonation' => $this->savedIntonation(),
             'wordMap' => $this->wordMapForRows($wordMap->forEntity($readingEntity, $userId), $rows, 0),
             'primaryHighlightable' => $readingEntity->language_id !== $nativeLanguageId,
             'translationWordMap' => $translationEntity !== null
@@ -129,13 +127,8 @@ class ReaderController extends Controller
         return (bool) (auth()->user()->settings?->ui_settings['reader']['stress_marks'] ?? false);
     }
 
-    private function savedIntonation(): bool
-    {
-        return (bool) (auth()->user()->settings?->ui_settings['reader']['intonation'] ?? false);
-    }
-
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, stressedRows: list<array{0: ?string, 1: ?string}>, intonationRows: list<array{0: list<array{terminal: string, nuclear: array{start: int, end: int}|null}|null>, 1: list<array{terminal: string, nuclear: array{start: int, end: int}|null>|null}>, readingEntity: Entity, translationEntity: Entity|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
+     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, stressedRows: list<array{0: ?string, 1: ?string}>, readingEntity: Entity, translationEntity: Entity|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
      */
     private function buildRows(Entity $entity, ?int $nativeLanguageId, int $page): array
     {
@@ -180,14 +173,10 @@ class ReaderController extends Controller
             // Image pairs flip columns with the text pairs, so row i's images
             // always line up with row i's [primary, translation] texts.
             'rowImages' => $this->normalizeRowsForReadingSide($bilingualImages, $readingSide),
-            // Stressed variants and intonation markers flip with the text
-            // pairs for the same reason (ADR 0052).
+            // Stressed variants flip with the text pairs for the same reason
+            // (ADR 0052).
             'stressedRows' => $this->normalizeRowsForReadingSide(
                 $this->presenter->toSimulatorStressedRows($paginator->getCollection()),
-                $readingSide,
-            ),
-            'intonationRows' => $this->normalizeRowsForReadingSide(
-                $this->presenter->toSimulatorIntonationRows($paginator->getCollection()),
                 $readingSide,
             ),
             'rowKeys' => $this->presenter->toSimulatorRowKeys($paginator->getCollection()),
@@ -204,14 +193,14 @@ class ReaderController extends Controller
      * translation side. An illustration sentence's row carries no text —
      * its image (with the caption) rides the aligned rowImages entry.
      *
-     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, stressedRows: list<array{0: ?string, 1: ?string}>, intonationRows: list<array{0: list<array{terminal: string, nuclear: array{start: int, end: int}|null}|null>, 1: list<array{terminal: string, nuclear: array{start: int, end: int}|null>|null}>, readingEntity: Entity, translationEntity: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
+     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, stressedRows: list<array{0: ?string, 1: ?string}>, readingEntity: Entity, translationEntity: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
      */
     private function singleLanguageRows(Entity $entity, int $page): array
     {
         $paginator = $this->paginateRows(
             $entity->sentences()->orderBy('order')->getQuery(),
             $page,
-            ['id', 'content', 'image_path', 'image_width', 'image_height', 'stressed_content', 'intonation'],
+            ['id', 'content', 'image_path', 'image_width', 'image_height', 'stressed_content'],
         );
 
         $collection = $paginator->getCollection();
@@ -232,12 +221,6 @@ class ReaderController extends Controller
                         ? null
                         : $sentence->stressed_content,
                     null,
-                ])
-                ->all(),
-            'intonationRows' => $collection
-                ->map(fn (EntitySentence $sentence): array => [
-                    [$this->presenter->intonationAnnotation($sentence)],
-                    [],
                 ])
                 ->all(),
             'rowImages' => $collection

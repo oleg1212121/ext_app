@@ -9,13 +9,11 @@ const Reader = ({
     rowImages = [],
     rowKeys = [],
     stressedRows = [],
-    intonationRows = [],
     meta = null,
     positionKey = null,
     fontSize,
     highlight,
     stressMarks = false,
-    intonation = false,
     wordMap,
     primaryHighlightable,
     translationWordMap,
@@ -33,13 +31,11 @@ const Reader = ({
         rowImages={rowImages}
         rowKeys={rowKeys}
         stressedRows={stressedRows}
-        intonationRows={intonationRows}
         meta={meta}
         positionKey={positionKey}
         fontSize={fontSize}
         highlight={highlight}
         stressMarks={stressMarks}
-        intonation={intonation}
         wordMap={wordMap}
         primaryHighlightable={primaryHighlightable}
         translationWordMap={translationWordMap}

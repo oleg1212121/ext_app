@@ -132,11 +132,6 @@ class EnrichRequest(BaseModel):
     sentences: list[EnrichSentence] = Field(..., min_length=1, max_length=config.ENRICH_MAX_SENTENCES)
 
 
-class EnrichSpan(BaseModel):
-    start: int
-    end: int
-
-
 class EnrichPhrasalHit(BaseModel):
     verb: str
     particles: list[str]
@@ -144,16 +139,10 @@ class EnrichPhrasalHit(BaseModel):
     end: int
 
 
-class EnrichIntonation(BaseModel):
-    nuclear: EnrichSpan | None
-    terminal: str
-
-
 class EnrichResult(BaseModel):
     id: int
     stressed: str | None = None
     phrasal_verbs: list[EnrichPhrasalHit] | None = None
-    intonation: EnrichIntonation | None = None
 
 
 class EnrichResponse(BaseModel):

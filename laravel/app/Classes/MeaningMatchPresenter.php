@@ -101,59 +101,6 @@ class MeaningMatchPresenter
     }
 
     /**
-     * Intonation annotations row- and sentence-aligned with toSimulatorRows
-     * (ADR 0052): {terminal, nuclear} per sentence of each side — the
-     * terminal contour ('rise'|'fall') and the nuclear-stressed word's char
-     * span into the sentence's content (null when unresolvable). Null for a
-     * sentence with no annotation. The client maps the span onto its own
-     * word segmentation, so the stressed variant's combining marks don't
-     * shift it.
-     *
-     * @param  Collection<int, MeaningMatch>  $meaningMatches
-     * @return list<array{0: list<?array{terminal: string, nuclear: array{start: int, end: int}|null}>, 1: list<?array{terminal: string, nuclear: array{start: int, end: int}|null}>}>
-     */
-    public function toSimulatorIntonationRows(Collection $meaningMatches): array
-    {
-        $rows = [];
-
-        foreach ($meaningMatches as $meaningMatch) {
-            $rows[] = [
-                $this->sideSentences($meaningMatch, 'a')
-                    ->map(fn (EntitySentence $sentence): ?array => $this->intonationAnnotation($sentence))
-                    ->all(),
-                $this->sideSentences($meaningMatch, 'b')
-                    ->map(fn (EntitySentence $sentence): ?array => $this->intonationAnnotation($sentence))
-                    ->all(),
-            ];
-        }
-
-        return $rows;
-    }
-
-    /**
-     * The sentence's intonation annotation for display: null when never
-     * enriched, otherwise the terminal contour with the (nullable) nuclear
-     * span.
-     *
-     * @return array{terminal: string, nuclear: array{start: int, end: int}|null}|null
-     */
-    public function intonationAnnotation(EntitySentence $sentence): ?array
-    {
-        $terminal = $sentence->intonation['terminal'] ?? null;
-
-        if ($terminal === null) {
-            return null;
-        }
-
-        $nuclear = $sentence->intonation['nuclear'] ?? null;
-
-        return [
-            'terminal' => $terminal,
-            'nuclear' => is_array($nuclear) ? $nuclear : null,
-        ];
-    }
-
-    /**
      * @return Collection<int, EntitySentence>
      */
     private function sideSentences(MeaningMatch $meaningMatch, string $side): Collection

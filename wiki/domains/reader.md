@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-09-28T22:30:00Z }
+generated: { by: agent:zcode, at: 2026-09-30T00:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -164,7 +164,12 @@ gets the row's `rowKey`, so clicking a word fires a ledger-deduplicated
 **lookup** event — the reader never credits reads); the primary line is a
 `role="button"` div (not a `<button>`) so word buttons inside it stay valid
 HTML — activating the line itself still toggles the translation, word clicks
-stop propagation.
+stop propagation. Both reading lines style themselves with
+`var(--font-reading)` — `'Source Serif 4', Georgia, …` (see
+`conventions/design-system.md`): the stack must put a single font covering
+Latin + Cyrillic + U+0301 first, or combining stress marks can't attach to
+their base letter and render as spacing glyphs (gaps after stressed vowels;
+the old Fraunces-first `--font-serif` had exactly that defect).
 
 # Rendering cost
 

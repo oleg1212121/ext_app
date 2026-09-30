@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 
 from ai.api.schemas import EnrichRequest, EnrichResponse, EnrichResult
-from ai.enrichment import en_stress, intonation, phrasal, ru_stress
+from ai.enrichment import en_stress, phrasal, ru_stress
 from ai.models_cache import ModelCache
 
 router = APIRouter()
@@ -30,14 +30,12 @@ def enrich(req: EnrichRequest, request: Request):
         phrasal_verbs = (
             phrasal.find_phrasal_verbs(tokens, lexicon) if req.language == "en" else None
         )
-        tone = intonation.annotate(tokens, sentence.text, req.language)
 
         results.append(
             EnrichResult(
                 id=sentence.id,
                 stressed=stressed,
                 phrasal_verbs=phrasal_verbs,
-                intonation=tone,
             )
         )
     return EnrichResponse(results=results)

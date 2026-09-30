@@ -15,9 +15,9 @@ use Illuminate\Support\Facades\Http;
 use Throwable;
 
 /**
- * Sentence enrichment: stress marks (ru/en), phrasal verbs (en) and heuristic
- * intonation, computed entirely locally by the python service (Silero Stress +
- * dictionary data passed through from Laravel — ADR 0052).
+ * Sentence enrichment: stress marks (ru/en) and phrasal verbs (en), computed
+ * entirely locally by the python service (Silero Stress + dictionary data
+ * passed through from Laravel — ADR 0052).
  *
  * Results are stored BESIDE content; the invariant that makes that mandatory:
  * mutating entity_sentences.content would bump sentences_updated_at (stale
@@ -134,7 +134,7 @@ class SentenceEnrichmentService
         $results = $this->callEnrich($payload);
 
         foreach ($empty as $id) {
-            $results[] = ['id' => $id, 'stressed' => null, 'phrasal_verbs' => null, 'intonation' => null];
+            $results[] = ['id' => $id, 'stressed' => null, 'phrasal_verbs' => null];
         }
 
         $written = 0;
@@ -149,9 +149,6 @@ class SentenceEnrichmentService
                         'phrasal_verbs' => $result['phrasal_verbs'] !== null
                             ? json_encode($result['phrasal_verbs'], JSON_UNESCAPED_UNICODE)
                             : null,
-                        'intonation' => $result['intonation'] !== null
-                            ? json_encode($result['intonation'], JSON_UNESCAPED_UNICODE)
-                            : null,
                     ]);
                 $written++;
             }
@@ -161,7 +158,7 @@ class SentenceEnrichmentService
     }
 
     /**
-     * @return list<array{id: int, stressed: ?string, phrasal_verbs: ?array, intonation: ?array}>
+     * @return list<array{id: int, stressed: ?string, phrasal_verbs: ?array}>
      */
     private function callEnrich(array $payload): array
     {
@@ -189,7 +186,6 @@ class SentenceEnrichmentService
                 'id' => (int) ($raw['id'] ?? 0),
                 'stressed' => isset($raw['stressed']) ? (string) $raw['stressed'] : null,
                 'phrasal_verbs' => is_array($raw['phrasal_verbs'] ?? null) ? $raw['phrasal_verbs'] : null,
-                'intonation' => is_array($raw['intonation'] ?? null) ? $raw['intonation'] : null,
             ];
         }
 

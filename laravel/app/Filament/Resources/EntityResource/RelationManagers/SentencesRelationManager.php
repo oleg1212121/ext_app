@@ -107,10 +107,6 @@ class SentencesRelationManager extends RelationManager
                         ->implode(', '))
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->placeholder('—'),
-                TextColumn::make('intonation.terminal')
-                    ->label('Intonation')
-                    ->formatStateUsing(fn ($state) => $state === 'rise' ? '↗ rise' : ($state === 'fall' ? '↘ fall' : '—'))
-                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 //

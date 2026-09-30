@@ -16,6 +16,12 @@
 @theme {
     --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     --font-serif: 'Fraunces', 'Figtree', Georgia, 'Times New Roman', serif;
+    /* Reading text only: must be a single font covering Latin + Cyrillic +
+       U+0301 — if a combining stress mark and its base letter resolve from
+       different fonts, mark attachment breaks and the acute renders as a
+       spacing glyph (huge gaps after stressed vowels). Fraunces has no
+       Cyrillic subset, so it must not lead this stack. */
+    --font-reading: 'Source Serif 4', Georgia, 'Times New Roman', serif;
 
     --color-vellum: #ECE4D0;
     --color-vellum-deep: #E2D7BC;

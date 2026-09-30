@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-09-29T19:10:00Z }
+generated: { by: agent:zcode, at: 2026-09-30T12:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -184,7 +184,7 @@ upload never fails because of the embedding service**):
   re-dispatches itself until the file is consumed; `FinalizeEntityDerivations`
   is dispatched only at end-of-file, so a retry resumes from the last
   committed chunk instead of re-splitting. Finalization then dispatches
-  `EnrichEntitySentences` (sentence stress marks / phrasal verbs / intonation,
+  `EnrichEntitySentences` (sentence stress marks / phrasal verbs,
   ADR 0052 — see [Sentence Enrichment](sentence-enrichment.md)); like the
   other derivations it never re-enters `processing`. Uploads are capped at
   10 MB on every path (form requests `max:10240`, Filament `FileUpload

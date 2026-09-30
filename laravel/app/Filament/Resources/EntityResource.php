@@ -232,13 +232,13 @@ class EntityResource extends Resource
                     ->icon('heroicon-o-sparkles')
                     ->color('gray')
                     ->action(function (Entity $record) {
-                        // Stress marks / phrasal verbs / intonation run locally
-                        // in the background pipeline (ADR 0052).
+                        // Stress marks / phrasal verbs run locally in the
+                        // background pipeline (ADR 0052).
                         EnrichEntitySentences::begin($record->id);
 
                         Notification::make()
                             ->title('Enrichment started')
-                            ->body('Computing stress marks, phrasal verbs and intonation')
+                            ->body('Computing stress marks and phrasal verbs')
                             ->success()
                             ->send();
                     })

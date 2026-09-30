@@ -1,7 +1,16 @@
 # ADR 0052: Local-only sentence enrichment stored beside content
 
 Date: 2026-09-29
-Status: Accepted
+Status: Accepted (amended 2026-09-30)
+
+> **Amendment (2026-09-30):** the intonation engine was removed entirely —
+> the heuristic (`intonation.py`, nuclear-stress caret + terminal ↗/↘
+> arrows) proved useless in practice and was judged not worth its surface
+> area. The `entity_sentences.intonation` column, the `intonation`
+> ui_settings preference, the reader/simulator toggles and payloads
+> (`intonationRows` / `intonation_rows`), and the Filament column are gone.
+> Stress marks and phrasal verbs — this ADR's core decision of local-only
+> enrichment stored beside content — are unaffected and remain in force.
 
 ## Context
 

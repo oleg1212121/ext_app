@@ -1,5 +1,46 @@
 # Directory Update Log
 
+## 2026-09-30 (fix: reader stress-mark gaps — reading lines moved to `--font-reading`)
+
+On the reader, stress-marked Russian text showed huge gaps after stressed
+vowels. Root cause was a font-stack split, not data: reading lines used
+`var(--font-serif)` (Fraunces-first), Fraunces has no Cyrillic subset but its
+Vietnamese subset's `unicode-range` claims U+0300-0301 — so Cyrillic base
+letters fell back to Georgia while the combining acute rendered from Fraunces,
+whose `acutecmb` glyph has a 550-unit advance when it cannot attach to a base
+in the same font (cross-font clusters get no GPOS mark-to-base). Fix: new
+`--font-reading: 'Source Serif 4', Georgia, 'Times New Roman', serif` token in
+`app.css` (SS4's cyrillic subsets carry U+0301 + `U+0400-045F…` with a
+zero-advance `acutecomb` and mark-to-base GPOS — verified with fontTools;
+same font the Bilinguals simulator already reads in), applied to both
+`ReaderRow` reading lines and the `WordPopup` headword (`font-reading`
+utility; RU dictionary headwords carry U+0301 too). Fraunces stays on
+`--font-serif` for chrome/headings. `fonts.css` untouched (generated file).
+`wiki/conventions/design-system.md` gains the token + the single-font
+combining-mark constraint (and its stale "Google Fonts" line fixed);
+`wiki/domains/reader.md` notes the reading-line font rule.
+
+## 2026-09-30 (feat: intonation marks removed from the app)
+
+Reversal of today's unbundle work and of the ADR 0052 intonation engine: the
+heuristic intonation annotations (terminal ↗/↘ arrow, nuclear-stress ∧ caret)
+were judged useless and are gone completely. Removed: the python heuristic
+(`ai/enrichment/intonation.py`, `EnrichSpan`/`EnrichIntonation` schemas,
+`/enrich` wiring + its tests), the `entity_sentences.intonation` jsonb
+column (dropped from the still-unshipped migration in place — the feature
+never reached master — and from the dev DB), `SentenceEnrichmentService`
+and `MeaningMatchPresenter` intonation handling
+(`toSimulatorIntonationRows()`/`intonationAnnotation()`), the reader/simulator
+`intonationRows`/`intonation` props and `intonation_rows` payload key, the
+`ui_settings` `reader.intonation`/`simulator.intonation` rules + saved
+booleans, the toolbar toggles + `trendingUp` icon, the Filament
+Intonation column, and the `bilinguals.intonation`/`reader.intonation`
+UI strings (keys deleted from the DB). `EntityEnrichmentTest` lost its
+intonation assertions; the sparse-side-list regression test was re-anchored
+onto `stressedRows`. Stress marks and phrasal verbs are untouched. Concepts
+updated: sentence-enrichment, entities, entities-alignment, index; ADR 0052
+carries an amendment note.
+
 ## 2026-09-30 (feat: intonation unbundled from stress marks; nuclear stress surfaced; icon toolbars)
 
 The reading surfaces bundled intonation's terminal ↗/↘ marker behind the

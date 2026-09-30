@@ -55,9 +55,9 @@ const ToggleButton = ({onClick, active, label, monochrome = false, children}) =>
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
             active
                 ? monochrome
-                    ? // The stress/intonation toggles stay on persistently
-                      // (autosaved preference), so a tinted fill reads as a
-                      // colored icon — the border alone carries the on-state.
+                    ? // The stress-marks toggle stays on persistently (autosaved
+                      // preference), so a tinted fill reads as a colored icon —
+                      // the border alone carries the on-state.
                       'border-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70'
                     : 'border-[var(--color-vermilion)] text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] dark:text-[var(--color-vermilion-night)]'
                 : 'border-[var(--color-hairline)] text-[var(--color-ink-soft)] dark:border-[var(--color-hairline-night)] dark:text-[var(--color-vellum-night)]/70 hover:border-[var(--color-ink)] dark:hover:border-[var(--color-vellum-night)] hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
@@ -79,13 +79,11 @@ export default function ReaderApp({
     rowImages = [],
     rowKeys = [],
     stressedRows = [],
-    intonationRows = [],
     meta = null,
     positionKey = null,
     fontSize: savedFontSize,
     highlight: savedHighlight = true,
     stressMarks: savedStressMarks = false,
-    intonation: savedIntonation = false,
     wordMap: initialWordMap = {},
     primaryHighlightable = false,
     translationWordMap: initialTranslationWordMap = {},
@@ -103,10 +101,7 @@ export default function ReaderApp({
     // Stress marks toggle (ADR 0052): swaps each sentence for its stored
     // stressed variant.
     const [showStress, setShowStress] = useState(savedStressMarks);
-    // Intonation toggle: independent of stress marks — the terminal arrow and
-    // the nuclear-word caret show wherever the annotation data exists.
-    const [showIntonation, setShowIntonation] = useState(savedIntonation);
-    useUiSettingsAutosave('reader', {font_size: fontSize, highlight, stress_marks: showStress, intonation: showIntonation});
+    useUiSettingsAutosave('reader', {font_size: fontSize, highlight, stress_marks: showStress});
     const [wordMap, setWordMap] = useState(initialWordMap);
     const [translationWordMap, setTranslationWordMap] = useState(initialTranslationWordMap);
     // Language toggle (Working state, per device + positionKey): when true,
@@ -183,27 +178,14 @@ export default function ReaderApp({
         [rowImages, effectiveFlipped],
     );
 
-    // Stressed variants and intonation markers flip with the text pairs.
+    // Stressed variants flip with the text pairs.
     const displayStressedRows = useMemo(
         () => (effectiveFlipped
             ? stressedRows.map(([primary, translation]) => [translation, primary])
             : stressedRows),
         [stressedRows, effectiveFlipped],
     );
-    const displayIntonationRows = useMemo(
-        () => (effectiveFlipped
-            ? intonationRows.map(([primary, translation]) => [translation, primary])
-            : intonationRows),
-        [intonationRows, effectiveFlipped],
-    );
     const hasStressedData = stressedRows.some(([primary, translation]) => primary !== null || translation !== null);
-    // Array.isArray: a sparse side list from an older payload encodes as a
-    // JSON object with numeric keys — skip it rather than crash on .some().
-    const hasIntonationData = useMemo(
-        () => intonationRows.some(([primary, translation]) => (Array.isArray(primary) && primary.some(Boolean))
-            || (Array.isArray(translation) && translation.some(Boolean))),
-        [intonationRows],
-    );
 
     const shownWordMap = effectiveFlipped ? translationWordMap : wordMap;
     const shownTranslationWordMap = effectiveFlipped ? wordMap : translationWordMap;
@@ -525,11 +507,6 @@ export default function ReaderApp({
                                 <Icon name="stress" className="h-4 w-4"/>
                             </ToggleButton>
                         ) : null}
-                        {hasIntonationData ? (
-                            <ToggleButton active={showIntonation} monochrome label={t('reader.intonation')} onClick={() => setShowIntonation((v) => !v)}>
-                                <Icon name="trendingUp" className="h-4 w-4"/>
-                            </ToggleButton>
-                        ) : null}
                         <ToggleButton active={sideBySide} label={sideBySide ? t('reader.stacked') : t('reader.side_by_side')} onClick={() => setSideBySide((v) => !v)}>
                             <Icon name="columns" className="h-4 w-4"/>
                         </ToggleButton>
@@ -646,10 +623,7 @@ export default function ReaderApp({
                                 translationImages={displayRowImages[index]?.[1]}
                                 primaryStressed={displayStressedRows[index]?.[0] ?? null}
                                 translationStressed={displayStressedRows[index]?.[1] ?? null}
-                                primaryIntonations={displayIntonationRows[index]?.[0] ?? null}
-                                translationIntonations={displayIntonationRows[index]?.[1] ?? null}
                                 showStress={showStress}
-                                showIntonation={showIntonation}
                                 showAll={showAll}
                                 sideBySide={sideBySide}
                                 fontSize={fontSize}

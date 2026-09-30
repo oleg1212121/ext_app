@@ -1,6 +1,6 @@
 """Tests for the enrichment package (plain python, no pytest).
 
-Deterministic parts (en_stress, phrasal, intonation) always run; the Silero
+Deterministic parts (en_stress, phrasal) always run; the Silero
 dependent ru_stress tests are skipped with a notice when the package or model
 data is unavailable.
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from ai.enrichment import en_stress, intonation, phrasal  # noqa: E402
+from ai.enrichment import en_stress, phrasal  # noqa: E402
 from ai.enrichment.ru_stress import COMBINING_ACUTE as ACUTE  # noqa: E402
 
 A = "\\u0301"  # combining acute, escaped to keep expectations unambiguous
@@ -209,37 +209,6 @@ hits = phrasal.find_phrasal_verbs(
     {"give up"},
 )
 check("phrasal: hits consume their tokens (no inner re-match)", hits, [{"verb": "give", "particles": ["up"], "start": 3, "end": 10}])
-
-# --- intonation --------------------------------------------------------------
-t = toks(("She", 0, 3, "pron", None), ("has", 4, 7, "verb", None), ("finished", 8, 16, "verb", None), ("it", 17, 19, "pron", None))
-check(
-    "intonation: declarative, aux skipped for nucleus",
-    intonation.annotate(t, "She has finished it.", "en"),
-    {"nuclear": {"start": 8, "end": 16}, "terminal": "fall"},
-)
-t = toks(("Do", 0, 2, "verb", None), ("you", 3, 6, "pron", None), ("know", 7, 11, "verb", None), ("her", 12, 15, "pron", None))
-check(
-    "intonation: yes/no question rises",
-    intonation.annotate(t, "Do you know her?", "en"),
-    {"nuclear": {"start": 7, "end": 11}, "terminal": "rise"},
-)
-t = toks(("Where", 0, 5, "adverb", None), ("is", 6, 8, "verb", None), ("he", 9, 11, "pron", None))
-check(
-    "intonation: wh-question falls",
-    intonation.annotate(t, "Where is he?", "en"),
-    {"nuclear": {"start": 0, "end": 5}, "terminal": "fall"},
-)
-check(
-    "intonation: no content word -> nuclear None",
-    intonation.annotate(toks(("Okay", 0, 4, "intj", None)), "Okay?", "en"),
-    {"nuclear": None, "terminal": "rise"},
-)
-t = toks(("Он", 0, 2, "pron", None), ("был", 3, 6, "verb", None), ("дома", 7, 11, "adverb", None))
-check(
-    "intonation: russian быть skipped for nucleus",
-    intonation.annotate(t, "Он был дома?", "ru"),
-    {"nuclear": {"start": 7, "end": 11}, "terminal": "rise"},
-)
 
 # --- ru_stress (Silero; skipped when unavailable) -----------------------------
 try:

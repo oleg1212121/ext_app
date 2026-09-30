@@ -15,15 +15,11 @@ return new class extends Migration
             $table->text('stressed_content')
                 ->nullable()
                 ->after('content')
-                ->comment('Stress-marked display variant (U+0301, ru also е→ё); spans in phrasal_verbs/intonation index content, not this column.');
+                ->comment('Stress-marked display variant (U+0301, ru also е→ё); spans in phrasal_verbs index content, not this column.');
             $table->jsonb('phrasal_verbs')
                 ->nullable()
                 ->after('stressed_content')
                 ->comment('English phrasal-verb hits: [{verb, particles[], start, end}] with char spans into content.');
-            $table->jsonb('intonation')
-                ->nullable()
-                ->after('phrasal_verbs')
-                ->comment('Heuristic intonation: {nuclear: {start, end}|null, terminal: rise|fall}; spans into content.');
         });
 
         Schema::table('entities', function (Blueprint $table) {
@@ -37,7 +33,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('entity_sentences', function (Blueprint $table) {
-            $table->dropColumn(['stressed_content', 'phrasal_verbs', 'intonation']);
+            $table->dropColumn(['stressed_content', 'phrasal_verbs']);
         });
 
         Schema::table('entities', function (Blueprint $table) {
