@@ -19,4 +19,5 @@ return [
     'nav.dashboard' => ['en' => 'Dashboard', 'ru' => 'Панель'],
     'nav.crossword' => ['en' => 'Crossword', 'ru' => 'Кроссворд'],
     'nav.toggle_dark_mode' => ['en' => 'Toggle dark mode', 'ru' => 'Переключить тёмную тему'],
+    'nav.pronunciation_reference' => ['en' => 'Pronunciation guide', 'ru' => 'Справочник произношения'],
 ];

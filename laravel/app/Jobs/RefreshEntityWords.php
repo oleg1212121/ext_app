@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Classes\EntityWordAdoption;
 use App\Classes\EntityWordIndexer;
 use App\Classes\EntityWordLinker;
 use App\Models\Entity;
@@ -43,7 +44,7 @@ class RefreshEntityWords implements ShouldBeUnique, ShouldQueue
         return [60, 300];
     }
 
-    public function handle(EntityWordIndexer $indexer, EntityWordLinker $linker): void
+    public function handle(EntityWordIndexer $indexer, EntityWordLinker $linker, EntityWordAdoption $adoption): void
     {
         $entity = Entity::query()->find($this->entityId);
 
@@ -67,12 +68,16 @@ class RefreshEntityWords implements ShouldBeUnique, ShouldQueue
 
         $stats = $linker->link($entity);
 
+        $adoptionStats = $adoption->adoptForEntity($entity);
+
         Log::info('RefreshEntityWords completed', array_filter([
             'entity_id' => $this->entityId,
             'reindexed' => $reindexed,
             'unique_words' => $reindexed ? $uniqueWords : null,
             'linked' => $stats['linked'],
             'unmatched' => $stats['unmatched'],
+            'adopted' => $adoptionStats['adopted'] ?: null,
+            'fetches_dispatched' => $adoptionStats['dispatched'] ?: null,
             'total_ms' => (int) round((microtime(true) - $t0) * 1000),
         ]));
     }

@@ -341,7 +341,9 @@ export function PopupContent({
         <>
             <div className="shrink-0 px-3.5 pb-1 pt-3">
                 <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="font-serif text-[1.286em] leading-tight">{data.word}</span>
+                    {/* Reading font: RU headwords carry U+0301, which gaps when
+                        base and mark come from different fonts (see --font-reading). */}
+                    <span className="font-reading text-[1.286em] leading-tight">{data.word}</span>
                     {data.word_class && (
                         <span className="text-[0.786em] uppercase tracking-wider opacity-60">{data.word_class}</span>
                     )}

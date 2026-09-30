@@ -2,6 +2,7 @@ import {Link, router, usePage} from '@inertiajs/react'
 import {useEffect, useMemo, useState} from 'react'
 import {DarkThemeToggle} from "flowbite-react";
 import {useI18n} from '../i18n'
+import PronunciationReferenceModal from './Phonemes/PronunciationReferenceModal.jsx'
 
 const tabClass = (isActive) => [
     'relative inline-flex items-center px-2 py-2 text-sm font-medium tracking-wide transition-colors duration-200',
@@ -34,6 +35,7 @@ export default function NavBar() {
 
     const [userMenuOpen, setUserMenuOpen] = useState(false)
     const [mobileOpen, setMobileOpen] = useState(false)
+    const [pronunciationOpen, setPronunciationOpen] = useState(false)
     // One dropdown open at a time, keyed by the item's label.
     const [openMenu, setOpenMenu] = useState(null)
     const [expandedMenu, setExpandedMenu] = useState(null)
@@ -106,6 +108,7 @@ export default function NavBar() {
     const brand = props?.appName ?? 'Abibook'
 
     return (
+        <>
         <nav className="sticky top-0 z-40 bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)]">
             <div className="px-4 sm:px-6 lg:px-10">
                 <div className="flex items-center justify-between h-14 sm:h-16">
@@ -180,6 +183,23 @@ export default function NavBar() {
 
                     <div className="flex items-center gap-3 sm:gap-4">
                         <DarkThemeToggle/>
+
+                        <button
+                            type="button"
+                            onClick={() => setPronunciationOpen(true)}
+                            aria-haspopup="dialog"
+                            aria-label={t('nav.pronunciation_reference')}
+                            title={t('nav.pronunciation_reference')}
+                            className="inline-flex h-9 w-9 items-center justify-center text-[var(--color-ink)] dark:text-[var(--color-vellum-night)] hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm"
+                        >
+                            {/* open mouth with escaping sound waves */}
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <ellipse cx="16.5" cy="9.5" rx="5" ry="3.75" transform="rotate(-18 16.5 9.5)"/>
+                                <path d="M14.2 7.6c.9 1.4.9 2.7-.2 4"/>
+                                <path d="M9.5 5.8a9.5 9.5 0 0 1 0 7.6"/>
+                                <path d="M5.5 3.9a13.5 13.5 0 0 1 0 11.4"/>
+                            </svg>
+                        </button>
 
                         {isAuthenticated ? (
                             <div className="relative" data-user-menu>
@@ -268,6 +288,7 @@ export default function NavBar() {
                     data-mobile-menu
                     className="md:hidden border-t border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)]"
                 >
+
                     <ul role="list" className="px-4 sm:px-6 py-2 divide-y divide-[var(--color-hairline)] dark:divide-[var(--color-hairline-night)]">
                         {navLinks.map((l) => {
                             if (l.children) {
@@ -354,6 +375,13 @@ export default function NavBar() {
                     </ul>
                 </div>
             )}
-        </nav>
+            </nav>
+
+            <PronunciationReferenceModal
+                open={pronunciationOpen}
+                onClose={() => setPronunciationOpen(false)}
+                defaultLanguage={user?.native_language ?? null}
+            />
+        </>
     )
 }

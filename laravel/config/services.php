@@ -95,6 +95,21 @@ return [
         'sentence_split_chunks_per_run' => (int) env('PYTHON_SPLIT_CHUNKS_PER_RUN', 8),
     ],
 
+    // Dictionary-translation providers behind the word popup's auto-fetch
+    // (WordTranslationResolver: Yandex first, Google as the fallback).
+    'yandex_translate' => [
+        'key' => env('YANDEX_TRANSLATE_API_KEY'),
+        'folder_id' => env('YANDEX_FOLDER_ID'),
+        'url' => env('YANDEX_TRANSLATE_URL', 'https://translate.api.cloud.yandex.net/translate/v2'),
+        'timeout' => (int) env('YANDEX_TRANSLATE_TIMEOUT', 30),
+    ],
+
+    'google_translate' => [
+        'key' => env('GOOGLE_TRANSLATE_API_KEY'),
+        'url' => env('GOOGLE_TRANSLATE_URL', 'https://translation.googleapis.com/language/translate/v2'),
+        'timeout' => (int) env('GOOGLE_TRANSLATE_TIMEOUT', 30),
+    ],
+
     // Downloadable word-frequency lists for words:import-frequency. Each
     // named source fixes the language it belongs to. The ru file is a
     // mirror of the Lyashevskaya & Sharoff (2009) RNC lemma dictionary —

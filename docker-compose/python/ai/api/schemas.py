@@ -92,3 +92,58 @@ class AlignResponse(BaseModel):
     matches: list[AlignMatch]
     unmatched_a: list[int]
     unmatched_b: list[int]
+
+
+class EnrichTokenPart(BaseModel):
+    """Hyphenated-compound part with its own IPA variants (English)."""
+
+    surface: str
+    ipa: list[str] | None = None
+
+
+class EnrichToken(BaseModel):
+    surface: str
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    # Word-class slug from the dictionary link (e.g. "verb", "noun").
+    cls: str | None = None
+    # Dictionary headword for the token (lemma); used for inflected phrasal
+    # leads ("gave up" -> lead lemma "give").
+    lemma: str | None = None
+    # English: Wiktionary IPA variants for this token, with ˈ kept.
+    ipa: list[str] | None = None
+    # English: per-part IPA for hyphenated compounds the whole-token lookup
+    # could not resolve ("seven-sided" -> seven + sided).
+    parts: list[EnrichTokenPart] | None = None
+    # Russian: dictionary stressed-form candidates carrying U+0301.
+    stressed: list[str] | None = None
+
+
+class EnrichSentence(BaseModel):
+    id: int
+    text: str = Field(min_length=1, max_length=20000)
+    tokens: list[EnrichToken] = Field(default_factory=list, max_length=500)
+
+
+class EnrichRequest(BaseModel):
+    language: str = Field(pattern="^(ru|en)$")
+    # Multi-word verb headwords from the dictionary (English phrasal verbs).
+    phrasal_lexicon: list[str] = Field(default_factory=list, max_length=50000)
+    sentences: list[EnrichSentence] = Field(..., min_length=1, max_length=config.ENRICH_MAX_SENTENCES)
+
+
+class EnrichPhrasalHit(BaseModel):
+    verb: str
+    particles: list[str]
+    start: int
+    end: int
+
+
+class EnrichResult(BaseModel):
+    id: int
+    stressed: str | None = None
+    phrasal_verbs: list[EnrichPhrasalHit] | None = None
+
+
+class EnrichResponse(BaseModel):
+    results: list[EnrichResult]

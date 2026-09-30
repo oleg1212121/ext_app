@@ -1,15 +1,18 @@
 ---
 type: Database Schema
 title: Unified Dictionary Tables
-description: One words table (+ satellites) keyed by language, per-language word classes and transcription types, and a symmetric word_translations pivot (one row per pair).
+description: One words table (+ satellites) keyed by language, per-language word classes and transcription types, a symmetric word_translations pivot (one row per pair), and the word_translation_fetches ledger driving auto-fetched translations (Yandex→Google) that doubles as the exclusions list.
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2026-12-27
-generated: { by: agent:zcode, at: 2026-09-27T18:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-09-29T19:54:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
      title: Unified dictionary creation (squashed baseline)
+   - id: fetch-migration
+     resource: laravel/database/migrations/2026_09_29_000001_create_word_translation_fetches_table.php
+     title: Auto-fetch ledger creation
    - id: importer
      resource: laravel/app/Classes/WiktionaryParser.php
      title: Wiktionary (Kaikki) import writer
@@ -27,6 +30,7 @@ sources:
 | `pronunciations` | Audio files with pronunciation examples per word (`path` on the public disk, unique `(path, word_id)`); uploaded via the admin |
 | `tags` / `word_tags` | Word tags (e.g. most-used) and the pivot |
 | `word_translations` | **One row per word pair** (symmetric, ADR 0020): `word_a_id`, `word_b_id` with canonical order `a < b` (entity-match convention), unique `(word_a_id, word_b_id)`, index on `word_b_id`. A link is usable from either word; links connect words of **different languages** only (enforced in the admin attach action). Supersedes the directed pivot of ADR 0018 |
+| `word_translation_fetches` | Auto-fetch ledger, one row per `(word_id, target_language_id)` (unique): `provider` (yandex/google), `status` (`pending`/`succeeded`/`empty`/`failed`), `attempts`, `last_attempted_at` (migration `2026_09_29_000001`). `status = 'empty'` is the **exclusions list** — every provider answered "no translation", so the pair is never looked up again |
 
 # Notes
 
@@ -66,6 +70,23 @@ sources:
   (`свобо́дный`), and every matcher (the entity-word linker's exact pass,
   `words:import-frequency`) compares against unstressed text. The display
   `word` keeps its marks.
+* **Auto-fetched translations** (2026-09-29): when a popup word family has no
+  translation link at all, `WordController::show` quietly queues
+  `FetchWordTranslations` through the
+  `WordTranslationFetchService::dispatchIfEligible` gate; the job walks the
+  `WordTranslationResolver` chain — Yandex Cloud Dictionary Lookup first
+  (dictionary-grade candidates with parts of speech), Google Translate v2 as
+  a single-candidate fallback (`config/services.php`
+  `yandex_translate`/`google_translate`, both optional) — then creates the
+  target-language `words` rows (class from the candidate pos slug, else the
+  source word's class slug mapped into the target language, else the target's
+  first class; ru stress marks stripped; sentence-punctuation candidates
+  dropped) and the `word_translations` links. `failed` lookups retry up to
+  `MAX_ATTEMPTS` (6) behind a 24h cooldown; `empty` never re-checks. The
+  `EntityWordAdoption` pass (the 5-minute word-list refresh, or
+  `words:adopt-from-entities`) feeds the same pipeline with entity tokens —
+  see [Interactive words](/domains/interactive-words.md) and
+  [Crossword](/domains/crossword.md).
 * The legacy 2025 vocabulary domain (`words` in the old shape, `books`,
   `book_word`, `saved_phrases`) was deleted with the 2026-09 rework.
 * `words.frequency` is populated by `words:import-frequency {source}`

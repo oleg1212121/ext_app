@@ -126,6 +126,7 @@ class SimulatorController extends Controller
             'aiPanelWidth' => $this->clampInt($saved['ai_panel_width'] ?? null, 280, 1200, 560),
             'workplaceHeight' => $this->clampInt($saved['workplace_height'] ?? null, 80, 800, 168),
             'highlightWords' => (bool) ($saved['highlight_words'] ?? true),
+            'stressMarks' => (bool) ($saved['stress_marks'] ?? false),
         ]);
     }
 
@@ -237,6 +238,9 @@ class SimulatorController extends Controller
             // pair here (illustrations, ADR 0050).
             'row_images' => $this->presenter->toSimulatorImages($paginator->getCollection()),
             'row_keys' => $this->presenter->toSimulatorRowKeys($paginator->getCollection()),
+            // Stress-mark variants, row-aligned with rows in the same [a, b]
+            // order (ADR 0052).
+            'stressed_rows' => $this->presenter->toSimulatorStressedRows($paginator->getCollection()),
             'word_maps' => $this->wordMapsFor($match),
             // The picker page's language toggle tracks the loaded match: the
             // same shapes the pinned route ships at render time.

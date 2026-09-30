@@ -82,6 +82,21 @@ class ModelCache:
             self._set("align_model_path", current_path)
         return m
 
+    def stress_model(self):
+        """Silero Stress accentor for Russian stress marking (/enrich).
+
+        Imported lazily so the English enrichment path keeps working even if
+        the silero-stress package is absent.
+        """
+        m = self._get("stress_model")
+        if m is None:
+            from silero_stress import load_accentor
+
+            logger.info("Lazy-loading Silero stress accentor")
+            m = load_accentor()
+            self._set("stress_model", m)
+        return m
+
     def reload_aligner(self) -> SentenceTransformer:
         """Drop the cached aligner so the next call re-reads env and re-loads."""
         self._set("align_model", None)

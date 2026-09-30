@@ -2,10 +2,12 @@
 
 namespace App\Filament\Resources;
 
+use App\Classes\SentenceEnrichmentService;
 use App\Classes\TextSignatureService;
 use App\Filament\Resources\EntityResource\Pages;
 use App\Filament\Resources\EntityResource\RelationManagers;
 use App\Jobs\AlignEntitySentences;
+use App\Jobs\EnrichEntitySentences;
 use App\Jobs\GenerateEntitySignature;
 use App\Models\Entity;
 use App\Models\EntityMatch;
@@ -225,6 +227,23 @@ class EntityResource extends Resource
                             ->send();
                     })
                     ->visible(fn (Entity $record) => $record->signature !== null && $record->sentences()->exists()),
+                Actions\Action::make('enrichSentences')
+                    ->label('Enrich')
+                    ->icon('heroicon-o-sparkles')
+                    ->color('gray')
+                    ->action(function (Entity $record) {
+                        // Stress marks / phrasal verbs run locally in the
+                        // background pipeline (ADR 0052).
+                        EnrichEntitySentences::begin($record->id);
+
+                        Notification::make()
+                            ->title('Enrichment started')
+                            ->body('Computing stress marks and phrasal verbs')
+                            ->success()
+                            ->send();
+                    })
+                    ->visible(fn (Entity $record) => $record->sentences()->exists()
+                        && in_array($record->language?->code ?? '', SentenceEnrichmentService::ENRICHABLE_LANGUAGES, true)),
             ])
             ->toolbarActions([
                 Actions\BulkActionGroup::make([

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from ai import config
-from ai.api import align, cosine, embed, health, split
+from ai.api import align, cosine, embed, enrich, health, split
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,3 +27,4 @@ app.include_router(embed.router)
 app.include_router(cosine.router)
 app.include_router(split.router)
 app.include_router(align.router)
+app.include_router(enrich.router)

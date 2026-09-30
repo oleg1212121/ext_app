@@ -95,6 +95,18 @@ class SentencesRelationManager extends RelationManager
                     ->searchable(),
                 TextColumn::make('sentenceType.name')
                     ->label('Type'),
+                TextColumn::make('stressed_content')
+                    ->label('Stress marks')
+                    ->wrap()
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->placeholder('—'),
+                TextColumn::make('phrasal_verbs.label')
+                    ->label('Phrasal verbs')
+                    ->state(fn (EntitySentence $record): string => collect($record->phrasal_verbs ?? [])
+                        ->map(fn (array $hit) => $hit['verb'].' '.implode(' ', $hit['particles'] ?? []))
+                        ->implode(', '))
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->placeholder('—'),
             ])
             ->filters([
                 //

@@ -10,12 +10,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EntitySentence extends Model
 {
-    protected $fillable = ['entity_id', 'sentence_type_id', 'content', 'order', 'image_path', 'image_hash', 'image_width', 'image_height', 'image_mime'];
+    protected $fillable = ['entity_id', 'sentence_type_id', 'content', 'order', 'image_path', 'image_hash', 'image_width', 'image_height', 'image_mime', 'stressed_content', 'phrasal_verbs'];
 
     protected function casts(): array
     {
         return [
             'order' => 'integer',
+            'phrasal_verbs' => 'array',
         ];
     }
 

@@ -779,3 +779,71 @@ _Avoid_: offset (the column name), checkpoint, watermark, cache.
 The per-sweep maximum number of jobs a scheduled command dispatches; work
 beyond it waits for the next tick of the same sweep. See ADR 0043.
 _Avoid_: rate limit, throttle, batch.
+
+# Sentence Enrichment Context
+
+**Stress marks**:
+The pronunciation aid drawn over a sentence's words: a combining acute on the
+stressed vowel (Russian also places proper ё). Display-only — a property of
+the sentence's presentation, never of its text.
+
+**Stressed variant**:
+The sentence with stress marks applied, kept beside the original sentence
+text as its display substitute when the reader turns stress marks on. Always
+sentence-aligned one-to-one with the original. See ADR 0052.
+_Avoid_: stressed content (the text itself is never stressed), accent text.
+
+**Phrasal verb hit**:
+A detected multi-word verb ("gave up") inside a sentence: the verb with its
+particle(s) and where they sit in the sentence. Detected from dictionary
+multi-word headwords, not from word linking.
+_Avoid_: phrasal link (nothing is linked), verb phrase (broader).
+
+**Enrichment staleness**:
+Whether a sentence set needs (re-)enrichment: never enriched, or any sentence
+changed since it was. Entities enrichment cannot apply to count as enriched,
+not stale. See ADR 0052.
+_Avoid_: enrichment status (there is no processing state, only staleness),
+dirty.
+
+# Phoneme Reference Context
+
+**Phoneme reference**:
+The site-wide pronunciation chart: every sound of English and Russian as a
+card with an articulation diagram, opened from the navbar. Reference content
+shipped with the app (static data + inline SVG), not user- or DB-derived.
+English is taught as General American; Russian as the practical hard/soft
+inventory. See ADR 0054.
+_Avoid_: transcription table (that names the word-level **Transcription**
+records of the Dictionary Context), sounds table, IPA chart.
+
+**Phoneme card**:
+One sound's entry in the reference: IPA symbol, common spellings, articulation
+diagram, bilingual production description, example words with the sound
+marked, and a **cross-language hint**. Clicking a card opens the enlarged
+detail view.
+
+**Articulation diagram**:
+The mid-sagittal mouth drawing on a phoneme card: tongue, lips, teeth, palate
+and velum positions for that sound. Rendered parametrically from a state
+description (framework-free geometry code), not from image files; two states
+side by side (start → end) for diphthongs and affricates.
+_Avoid_: mouth picture, GIF (nothing animated ships yet).
+
+**Sound group**:
+The section a phoneme card belongs to within a language tab: English groups
+by manner (vowels, diphthongs, stops, …); Russian groups as six vowels, the
+hard/soft pairs, always-hard and always-soft consonants.
+
+**Cross-language hint**:
+The per-sound tip that anchors a sound in the learner's other language
+(English cards hint against Russian and vice versa). Shown in the interface
+language. Distinct from the production description, which only says how the
+sound is made.
+_Avoid_: tip (too generic), translation.
+
+**RP note**:
+An English card's note where British Received Pronunciation differs from the
+taught General American form (a different symbol, a non-rhotic realization).
+Never a second chart — one variant per note.
+_Avoid_: British chart, RP tab.

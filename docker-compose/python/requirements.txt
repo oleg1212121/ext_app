@@ -12,3 +12,7 @@ scikit-learn==1.9.0
 pysbd==0.3.4
 razdel>=0.5
 regex==2026.7.19
+# Russian stress marks (/enrich ru): bundled dictionary + homograph solver.
+silero-stress==1.5
+# English stress marks (/enrich en): orthographic syllable alignment.
+pyphen>=0.18,<1.0

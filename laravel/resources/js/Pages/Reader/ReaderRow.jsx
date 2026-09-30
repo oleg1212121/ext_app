@@ -54,6 +54,9 @@ function ReaderRow({
     translationExplainable = false,
     primarySide = null,
     explain = null,
+    primaryStressed = null,
+    translationStressed = null,
+    showStress = false,
 }) {
     // The translation column lives on the other entity match side than the
     // primary one; without a primary side (single-language text) it has none.
@@ -124,7 +127,7 @@ function ReaderRow({
                     style={{
                         lineHeight: 1.7,
                         fontSize: `${fontSize}px`,
-                        fontFamily: 'var(--font-serif)',
+                        fontFamily: 'var(--font-reading)',
                     }}
                 >
                     {primaryImages.map((image) => (
@@ -141,8 +144,10 @@ function ReaderRow({
                             popupFontSize={popupFontSize}
                             side={primarySide ?? undefined}
                             explain={primaryExplainPayload}
+                            stressed={primaryStressed}
+                            showStress={showStress}
                         />
-                    ) : primary.replaceAll('\n', ' ')}
+                    ) : showStress && primaryStressed ? primaryStressed : primary}
                 </div>
 
                 {sideBySide && hasTranslation && (
@@ -159,7 +164,7 @@ function ReaderRow({
                         style={{
                             lineHeight: 1.7,
                             fontSize: `${Math.round(fontSize * 0.95)}px`,
-                            fontFamily: 'var(--font-serif)',
+                            fontFamily: 'var(--font-reading)',
                             color: 'var(--color-verdigris)',
                         }}
                         aria-hidden={!isVisible}
@@ -184,8 +189,10 @@ function ReaderRow({
                                     popupFontSize={popupFontSize}
                                     side={translationSide ?? undefined}
                                     explain={translationExplainPayload}
+                                    stressed={translationStressed}
+                                    showStress={showStress}
                                 />
-                            ) : translation.replaceAll('\n', ' ')}
+                            ) : showStress && translationStressed ? translationStressed : translation}
                         </div>
                     </div>
                 )}

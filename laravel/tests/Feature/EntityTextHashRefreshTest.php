@@ -7,6 +7,7 @@ use App\Models\Entity;
 use App\Models\EntitySentence;
 use App\Models\SentenceType;
 use App\Models\User;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -139,6 +140,9 @@ test('FinalizeEntityDerivations computes the hash and embeds when no exact copy 
 
     Http::fake([
         '*/embed' => Http::response(['vector' => [0.1, 0.2, 0.3]]),
+        // The enrichment pipeline rides behind finalization (ADR 0052) and
+        // runs inline on the sync test queue.
+        '*/enrich' => Http::response(['results' => []]),
         '*' => Http::response(['error' => 'unexpected'], 500),
     ]);
 
@@ -175,6 +179,9 @@ test('FinalizeEntityDerivations copies signature and word statistics from an exa
 
     Http::fake([
         '*/embed' => Http::response(['error' => 'must not embed'], 500),
+        // Enrichment rides behind finalization even on the exact-copy path
+        // (ADR 0052); only the embed call is forbidden here.
+        '*/enrich' => Http::response(['results' => []]),
         '*' => Http::response(['error' => 'unexpected'], 500),
     ]);
 
@@ -186,5 +193,5 @@ test('FinalizeEntityDerivations copies signature and word statistics from an exa
         ->and($target->entityWords()->count())->toBe(1)
         ->and($target->words_indexed_at)->not->toBeNull();
 
-    Http::assertSentCount(0);
+    Http::assertNotSent(fn (Request $request) => str_contains($request->url(), '/embed'));
 });

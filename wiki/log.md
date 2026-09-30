@@ -1,5 +1,274 @@
 # Directory Update Log
 
+## 2026-09-30 (fix: phoneme reference review — Gentium @font-face dropped from build; parallel test helpers; a11y)
+
+Two-axis review of `feature/phoneme-reference` found one shipping bug: the
+`//` line comment above the Gentium Plus `@font-face` in
+`resources/css/fonts.css` made the Tailwind/Lightning CSS parser silently
+drop that rule — the built stylesheet had 68 font-faces instead of 69, so
+the IPA font never loaded (built CSS now verified to carry it, and nginx
+serves `/fonts/GentiumPlus-Regular.woff2` as `font/woff2`). The rule is now
+a `/* */` block comment with the pitfall recorded in
+`wiki/domains/phoneme-reference.md`. Content fixes in `phonemes.js`: the /j/
+card highlighted `ic` in *music* (now `u`), /s/ *books* marked `ks` and /z/
+*dogs* marked `gs` (both now `s`), and the /ɔ/ RP note's en/ru wording
+disagreed (don vs saw; now both say saw/dawn, RP-lead framing). Modal
+hardening: focus moves into the dialog on open, the default tab recomputes
+when the shared `native_language` prop changes (login/logout without
+reload), and the example-word mark highlight is one `MarkedWord` component
+instead of two copies. Dead `diagramSvgString` export removed from `art.js`.
+New `tests/Feature/PhonemeReferenceTest.php` pins the shared prop and seeded
+UI strings. Also fixed the two "pre-existing" AdoptEntityWordsTest failures:
+`enableTranslationProviders()`/`nativeRuUser()`/`ruLanguageId()` were defined
+inside `WordTranslationFetchTest.php` but used by other files — under
+`--parallel` workers load file subsets, so cross-file helpers now live in
+`tests/Pest.php`. Suite: 876 passed, 0 failed.
+
+## 2026-09-30 (feat: phoneme reference — navbar pronunciation guide with parametric articulation diagrams; ADR 0054)
+
+New site-wide pronunciation chart: a navbar icon beside `DarkThemeToggle`
+opens a modal (`Components/Phonemes/PronunciationReferenceModal.jsx`) with
+English/Russian tabs over grouped sound cards (82 sounds: GA English ~40
+incl. two-panel diphthongs/affricates; Russian 6 vowels + 15 hard/soft pairs +
+always-hard/always-soft). Default tab is the learning target from the shared
+`auth.user.native_language` prop (new in `HandleInertiaRequests.php`; native
+English speakers land on Russian, others on English). Diagrams are generated
+parametrically by `resources/js/data/phonemes/art.js` (state → currentColor
+SVG paths, theme-correct, no image assets; proportions descend from the CC0
+Wright & McCloy sagittal set, credited in-modal — no Sounds of Speech/Commons
+GIFs: licensing). Sound content is static data in
+`resources/js/data/phonemes/phonemes.js` (bilingual descriptions, cross-
+language hints, examples, RP notes; `anim: null` reserved for animation).
+IPA glyphs render in self-hosted Gentium Plus 400 woff2 (OFL,
+`fonts/GentiumPlus-OFL.txt`) — the app families lack the core IPA glyphs and
+Google's subsets omit ʲ ˈ ː (verified via cmap union over shipped files).
+Modal chrome strings: new `ui-strings/sounds.php` + `nav.pronunciation_reference`
+(seeded via `UiStringSeeder`). New `wiki/domains/phoneme-reference.md`,
+`docs/adr/0054-cc0-sagittal-phoneme-diagrams.md`, CONTEXT.md
+*Phoneme Reference Context*. No routes/models/commands changed (no
+`wiki:sync`).
+
+## 2026-09-30 (fix: reader stress-mark gaps — reading lines moved to `--font-reading`)
+
+On the reader, stress-marked Russian text showed huge gaps after stressed
+vowels. Root cause was a font-stack split, not data: reading lines used
+`var(--font-serif)` (Fraunces-first), Fraunces has no Cyrillic subset but its
+Vietnamese subset's `unicode-range` claims U+0300-0301 — so Cyrillic base
+letters fell back to Georgia while the combining acute rendered from Fraunces,
+whose `acutecmb` glyph has a 550-unit advance when it cannot attach to a base
+in the same font (cross-font clusters get no GPOS mark-to-base). Fix: new
+`--font-reading: 'Source Serif 4', Georgia, 'Times New Roman', serif` token in
+`app.css` (SS4's cyrillic subsets carry U+0301 + `U+0400-045F…` with a
+zero-advance `acutecomb` and mark-to-base GPOS — verified with fontTools;
+same font the Bilinguals simulator already reads in), applied to both
+`ReaderRow` reading lines and the `WordPopup` headword (`font-reading`
+utility; RU dictionary headwords carry U+0301 too). Fraunces stays on
+`--font-serif` for chrome/headings. `fonts.css` untouched (generated file).
+`wiki/conventions/design-system.md` gains the token + the single-font
+combining-mark constraint (and its stale "Google Fonts" line fixed);
+`wiki/domains/reader.md` notes the reading-line font rule.
+
+## 2026-09-30 (feat: intonation marks removed from the app)
+
+Reversal of today's unbundle work and of the ADR 0052 intonation engine: the
+heuristic intonation annotations (terminal ↗/↘ arrow, nuclear-stress ∧ caret)
+were judged useless and are gone completely. Removed: the python heuristic
+(`ai/enrichment/intonation.py`, `EnrichSpan`/`EnrichIntonation` schemas,
+`/enrich` wiring + its tests), the `entity_sentences.intonation` jsonb
+column (dropped from the still-unshipped migration in place — the feature
+never reached master — and from the dev DB), `SentenceEnrichmentService`
+and `MeaningMatchPresenter` intonation handling
+(`toSimulatorIntonationRows()`/`intonationAnnotation()`), the reader/simulator
+`intonationRows`/`intonation` props and `intonation_rows` payload key, the
+`ui_settings` `reader.intonation`/`simulator.intonation` rules + saved
+booleans, the toolbar toggles + `trendingUp` icon, the Filament
+Intonation column, and the `bilinguals.intonation`/`reader.intonation`
+UI strings (keys deleted from the DB). `EntityEnrichmentTest` lost its
+intonation assertions; the sparse-side-list regression test was re-anchored
+onto `stressedRows`. Stress marks and phrasal verbs are untouched. Concepts
+updated: sentence-enrichment, entities, entities-alignment, index; ADR 0052
+carries an amendment note.
+
+## 2026-09-30 (feat: intonation unbundled from stress marks; nuclear stress surfaced; icon toolbars)
+
+The reading surfaces bundled intonation's terminal ↗/↘ marker behind the
+stress-marks toggle, and the only feedback on a long sentence was a single
+arrow. Changes: (1) **Intonation is its own per-user preference** —
+`intonation` boolean in the reader + simulator `ui_settings` sections
+(validated in `UpdateUiSettingsRequest`, autosaved, default off), with its
+own toolbar toggle rendered only when the page carries annotation data;
+`WordText` gates the marker on the new `showIntonation` prop instead of the
+stress state. (2) **The nuclear-stress word is finally shown** — it was
+computed and stored (`intonation.nuclear` span into `content`) but never
+sent to the frontend. `MeaningMatchPresenter::toSimulatorIntonationRows()`
+now emits `{terminal, nuclear}` per sentence (null = not enriched;
+`intonationAnnotation()` shared with the reader's single-language rows), and
+`WordText` maps the span through the plain sentence's segmentation — the
+stressed variant (combining marks inside word tokens only) segments 1:1, so
+the caret sits on the right word regardless of the stress toggle — and
+floats a small accent caret above it (null nuclear degrades to arrow-only;
+the plain-text fallback in `ReaderRow` renders arrows only). (3) **Russian
+quality**: `intonation.py` aux-skip is no longer English-gated — an `AUX_RU`
+set (быть paradigm) stops быть-forms being picked as the nuclear word. (4)
+**Grey line-art icons**: the simulator's stress toggle was the only filled
+text glyph (`á`, accent-blue when active) in a strip of stroke SVGs — the
+new shared `resources/js/Components/icons.jsx` set (Heroicons-style stroke
+paths incl. a drawn A-with-acute for stress and arrow-trending-up for
+intonation) replaces every inline SVG on both pages, and the reader toolbar
+is fully iconified (Back, font −/+, Show all, Highlights, Stress,
+Intonation, Side-by-side, Wide, Pick audio, transport, pager) with the
+existing i18n strings as tooltips; `reader.stress_marks` seed text drops its
+"á" prefix. Glossary: **Terminal contour** / **Nuclear stress** added to
+`CONTEXT.md` (Sentence Enrichment Context). Tests: `EntityEnrichmentTest`
+reader-props case asserts the `{terminal, nuclear}` payload (jsonb reorders
+keys — assert field-wise) and both preferences round-trip; python
+`test_enrichment.py` gains a ru be-form case. `wiki/domains/
+sentence-enrichment.md` rendering/engine sections updated. Pre-existing,
+unrelated: `AdoptEntityWordsTest` fails on dev itself (undefined
+`enableTranslationProviders()` helper).
+
+Follow-up fixes after real-use testing: (1) the nuclear caret rendered
+whenever annotation data existed, ignoring the intonation toggle — `WordText`
+now gates it on `showIntonation` like the terminal arrow. (2) The reader page
+crashed (`Uncaught TypeError: …?.some is not a function`) whenever a meaning
+match row's first junction was an illustration/empty sentence:
+`MeaningMatchPresenter::sideSentences()` filtered without reindexing, so
+sparse collection keys (`[1 => …]`) json_encode'd the intonation side list
+into an object with numeric keys — tolerable to the old `intonations[i]`
+lookup, fatal to the new iteration, and silently misaligning arrows on
+mid-row gaps all along. The presenter now ends the chain with `->values()`
+(matching `SimulatorController::explainWord`'s existing reindexing, which
+defines what a sentence index means), and the frontend's three iteration
+sites (`hasIntonationData` on both pages, `ReaderRow`'s plain-text fallback)
+guard with `Array.isArray` so a stray sparse payload degrades instead of
+crashing. Regression test pins the sequential-list shape through the reader
+page with an empty-sentence junction. (3) The simulator showed no intonation
+marks at all: `TextContent.jsx` — the alignment-table hop between
+`Bilinguals` and `WordText` — never forwarded `showIntonation`, so the
+component kept its off default regardless of the toggle.
+
+User decision, superseding the earlier "accent-when-on" call: the
+stress/intonation toggle icons stay **grey line-art even when active** —
+they persist on (autosaved), so the accent fill read as a plain colored
+icon. The accent underline (simulator) / vermilion border (reader) alone
+carries the on-state; the other, session-scoped view toggles keep the
+accent-when-on treatment.
+
+## 2026-09-29 (feat: English stress marking v2 — syllable-aligned placement + CMUdict; ADR 0053)
+
+Real-text review of ADR 0052's English marks exposed three defect classes:
+proportional vowel-letter mapping saturating onto word-final silent "e"
+(*advancé/becausé* — 411 tokens, ~8% of all marks; digraphs *aroúnd,
+afraí­d* similarly misplaced), Wiktionary inflected-form rows importing
+without IPA (*gamblers* — plurals are "form-of" pages), and hyphenated
+compounds with no dictionary row (*seven-sided*, 55 tokens). Fixes: (1)
+`en_stress.py` placement rewritten — pyphen orthographic syllables aligned
+by count with IPA nuclei as primary path, fallback proportional map that
+excludes word-final silent "e" (while ≥2 other vowels remain, so *café*
+keeps it) and anchors final-nucleus stress on the last vowel-letter run;
+monosyllables with ˈ-carrying variants are now marked (*cát, túrned, twó*)
+per user decision. (2) New `dictionary:import-cmudict` command imports
+CMUdict (BSD, cmusphinx master, 135k lines) as ARPAbet→IPA-converted
+transcriptions: skips word rows already carrying a ˈ-marked transcription
+(kaikki wins), adds to rows with only unstressed IPA (*turned /tɜːnd/ →
++tˈɜːnd/*) and to all class rows of a word (die noun/verb), creates missing
+words under the `unknown` class, and drops citation-form stressed variants
+of closed-class function words ("of AH1 V") so they never carry a mark. (3)
+Laravel sends a per-part `parts` hint ({surface, ipa}) for hyphenated
+compounds the whole-token lookup can't resolve; python marks each part
+(*SÉVEN-SÍDED*). Dev effect on entity 17: marks-per-token 32.7% → **59.4%**
+(acutes 5,051 → 9,176; marked sentences 1,351 → 1,522 of 1,545); the three
+reported defects all verified fixed. Homograph POS disambiguation (record
+noun/verb) deferred. Tests: python `test_enrichment.py` gains 12 en cases
+(silent-e, digraph/final-run, monosyllables, uppercase, parts); Laravel
+`CmudictImportTest` (conversion, skip/merge rules, function-word drop,
+multi-class rows, idempotency) and an `EntityEnrichmentTest` parts-payload
+case. `pyphen>=0.18` added to python requirements (image rebuilt); ADR 0053,
+`wiki/domains/sentence-enrichment.md` engines/deployment sections updated;
+command reference regenerated via `wiki:sync`.
+
+## 2026-09-29 (fix: English IPA hints — stress-first variant selection under the 3-variant cap)
+
+`SentenceEnrichmentService::ipaByWordId()` kept the first 3 IPA variants per
+word in arbitrary DB order (no ORDER BY), so for words with more variants
+("a" has ~25) the only ˈ-carrying one could be randomly cut off and python's
+en marker (requires ˈ, `en_stress.py`) left the word unmarked. Variants are
+now ordered stress-first (`transcription NOT LIKE '%ˈ%'` — Postgres sorts
+false before true) with a deterministic `transcriptions.id` tiebreak, so the
+cap can never drop the only markable variant. Re-enrichment of the dev
+entities moved English acutes/token 32.1% → 32.7% (ru byte-identical): the
+cap was a minor contributor — the dominant causes of unmarked English words
+are monosyllables/function words with no ˈ in any variant (by design) and
+words with no imported IPA (verified by sampling: unmarked
+polysyllable-ish tokens split into 59 no-IPA vs 131 IPA-without-ˈ, the
+latter nearly all monosyllables). Tests: `EntityEnrichmentTest` gains
+"prefers stress-bearing ipa variants when capping variants per word"
+(4 variants, stress one inserted last, asserts the exact capped array).
+`wiki/domains/sentence-enrichment.md` Orchestration section and ADR 0052
+consequences updated.
+
+## 2026-09-29 (feat: sentence enrichment — local stress marks, phrasal verbs, intonation; ADR 0052)
+
+Every ru/en sentence now carries three enrichment payloads computed entirely
+locally (no LLM/paid calls): a stress-marked display variant
+(`entity_sentences.stressed_content`, U+0301 + е→ё via Silero Stress for
+Russian, Wiktionary-IPA-derived acute for English), English phrasal-verb hits
+(`phrasal_verbs` jsonb with char spans into `content` — the dictionary's
+multi-word verb headwords, previously inert, matched by lemma-aware n-grams),
+and heuristic intonation (`intonation` jsonb: nuclear word + terminal
+rise/fall). `content` is never mutated; staleness is tracked by
+`entities.enriched_at` against `sentences_updated_at`, with quiet base-builder
+writes so enrichment itself never re-stales the entity (regression-tested).
+
+Python service gained `POST /enrich` (`ai/api/enrich.py` +
+`ai/enrichment/{ru_stress,en_stress,phrasal,intonation}.py`, tests in
+`ai/enrichment/test_enrichment.py`); `silero-stress==1.5` joined
+`requirements.txt` (container rebuild + `./deploy.sh --stamp` on deploy).
+Laravel: `SentenceEnrichmentService`, `EnrichEntitySentences` job (low lane,
+self-re-dispatching), `entities:enrich` sweep (5 min), Filament action +
+sentence preview columns, dispatch at the end of
+`FinalizeEntityDerivations`. Reader + simulator render a per-user
+`stress_marks` toggle (`stressedRows`/`intonationRows` ride beside the rows);
+tokenizer keys now strip combining marks on BOTH sides
+(`WordTokenizer::lookupKey`, `wordTokenizer.mjs`) so stressed tokens still
+resolve the word map — `TokenizerParityTest` gained stress-marked samples.
+ADR: `docs/adr/0052-local-sentence-enrichment.md`. New concept
+`wiki/domains/sentence-enrichment.md`; CONTEXT.md gained a Sentence
+Enrichment Context section. Tests: `EntityEnrichmentTest` (10),
+`EntityTextHashRefreshTest` fakes updated for the trailing enrichment
+dispatch.
+
+## 2026-09-29 (feat: auto-fetched word translations — Yandex→Google providers, fetch ledger/exclusions, entity-word adoption)
+
+Missing popup translations now fill themselves in. `GET /words/{word}`
+quietly queues `FetchWordTranslations` when the word family carries no
+translation link at all and the user's native language differs (response
+unchanged — silent background; providers optional). The job walks the new
+`WordTranslationResolver` chain — Yandex Cloud Dictionary Lookup first
+(dictionary-grade candidates with pos), Google Translate v2 fallback (single
+candidate) — both implementing the shared `WordTranslationProvider` interface
+(`app/Classes/WordTranslations/`, `config/services.php`
+`yandex_translate`/`google_translate` keys), then creates the target-language
+`words` rows and `word_translations` links (class from the candidate pos
+slug, else the source word's class slug, else the target's first class; ru
+stress marks stripped; sentence-punctuation candidates dropped). New
+`word_translation_fetches` table (unique `word_id, target_language_id`): one
+row per pair is the dedupe ledger **and the exclusions list** —
+`status='empty'` (every provider answered "no translation") is never
+re-checked; `failed` retries up to 6 attempts behind a 24h cooldown
+(`WordTranslationFetchService::dispatchIfEligible`). Entity words:
+`EntityWordAdoption` creates `words` rows (class `unknown`) for
+linker-stamped unmatchable tokens and queues fetches for translation-less
+entity words — automatically by `RefreshEntityWords` after its link pass
+(5-minute sweep) and manually via `words:adopt-from-entities {--entity=*}
+{--language=} {--to=}`. `RefreshEntityWordsJobTest` updated for the new
+contract (stamped tokens are adopted, `word_id` set, instead of staying
+NULL). New tests: `tests/Feature/WordTranslationFetchTest.php`,
+`tests/Feature/AdoptEntityWordsTest.php`,
+`tests/Unit/WordTranslationProvidersTest.php`. Concepts updated:
+`domains/interactive-words.md`, `database/dictionary.md`,
+`domains/crossword.md`; references regenerated via `wiki:sync`.
+
 ## 2026-09-28 (fix: alignable-totals writers missed by the illustrations commit)
 
 Post-review follow-up to the illustrations entry below: three writers of

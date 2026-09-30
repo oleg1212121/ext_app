@@ -4,7 +4,7 @@ title: Design System
 description: Visual language for the app — colors, type, layout, and signature patterns to keep new pages consistent with the Bilinguals simulator redesign.
 tags: [design, frontend, ui, tailwind, tokens]
 status: stable
-generated: { by: agent:ox-alpha, at: 2026-08-23T20:25:00Z }
+generated: { by: agent:zcode, at: 2026-09-30T00:00:00Z }
 ---
 
 # Design System
@@ -53,18 +53,21 @@ needed, re-read the layout; an accent is a signal, not decoration.
 > `app.css` for backward compatibility with other pages and Blade/Alpine views.
 > New Inertia/React pages should use `--wbench-*`, not `--color-*`.
 
-## Type — three roles, each full Latin + Cyrillic
+## Type — three roles (serif reading, sans chrome, mono data), each full Latin + Cyrillic
 
-Loaded in `laravel/resources/views/app.blade.php` from Google Fonts.
+Self-hosted in `laravel/public/fonts/` via `resources/css/fonts.css`
+(same five families the former Google css2 link provided; since 2026-09-23).
 
 | Role | Family | Tailwind utility | Use |
 |------|--------|-----------------|-----|
 | Reading body | **Source Serif 4** | `font-[var(--font-wbench-serif)]` | Long-form content: text rows, AI prose, translation textarea content |
+| Reader reading text | **Source Serif 4** | `font-reading` (`var(--font-reading)`) | Reader page reading lines (primary + translation) and the word popup headword |
 | Chrome | **IBM Plex Sans** | `font-[var(--font-wbench-sans)]` | Toolbar, buttons, dropdowns, page chrome, body fallback |
 | Marginalia / data | **JetBrains Mono** | `font-[var(--font-wbench-mono)]` | Eyebrows, row numbers, column markers (`EN # RU`), counters, `§` stamp |
 
 | Token | Light | Dark |
 |-------|-------|------|
+| `--font-reading` | `'Source Serif 4', Georgia, 'Times New Roman', serif` | — |
 | `--font-wbench-serif` | `'Source Serif 4', 'Fraunces', Georgia, serif` | — |
 | `--font-wbench-sans` | `'IBM Plex Sans', 'Figtree', system-ui, sans-serif` | — |
 | `--font-wbench-mono` | `'JetBrains Mono', ui-monospace, Menlo, monospace` | — |
@@ -72,6 +75,16 @@ Loaded in `laravel/resources/views/app.blade.php` from Google Fonts.
 Pair deliberately; do not reach for the same families on every page. The serif
 carries the content's personality; the sans is invisible infrastructure; the
 mono is the only flourish and it signals "data / instrument".
+
+**Single-font constraint for text carrying combining marks.** Anything that can
+render a combining stress mark (U+0301) must set one font that covers both the
+Cyrillic base letters and U+0301 (`--font-reading` exists for exactly this).
+Cross-font clusters break GPOS mark-to-base attachment: the reader used to lead
+its stack with Fraunces, which has no Cyrillic subset but claims U+0300-0301 in
+its Vietnamese subset — Russian bases fell back to Georgia while the acute came
+from Fraunces, whose `acutecmb` has a 550-unit advance when unattached (huge
+gaps after stressed vowels). Source Serif 4's cyrillic subsets cover
+`U+0301, U+0400-045F…` with a zero-advance `acutecomb` and mark-to-base GPOS.
 
 ## Compact scale
 

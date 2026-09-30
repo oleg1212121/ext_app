@@ -20,6 +20,10 @@ it('produces the same tokens as the browser tokenizer', function () {
         'It\'s the dogs\' bones, Ampère\'s law.',
         'Один-два-три… Слова с\' апострофом и дефис-черточка.',
         'Mix: кофейня, coexist, über, 单词.',
+        // Stressed variants (ADR 0052): combining marks ride inside tokens for
+        // display but keys must strip them so the word map still resolves.
+        'Она́ произно́сит э́то краси́во, ещё не всё.',
+        'She pronóunces it béautifully, gáve úp — свобо́дный.',
     ];
 
     $cli = base_path('resources/js/lib/wordTokenizer.cli.mjs');

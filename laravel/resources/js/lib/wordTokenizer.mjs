@@ -4,6 +4,13 @@
 // tests/Unit/TokenizerParityTest.php.
 const TOKEN_PATTERN = /[\p{L}\p{M}]+(?:['’\-][\p{L}\p{M}]+)*/gu;
 
+// Keys strip combining marks (stress marks, U+0301) after lowercasing: the
+// dictionary's l_word keys are mark-free (WiktionaryParser::normalizeLookupKey),
+// so a stressed token must lose its marks to resolve — and stressed_content
+// is rendered through this same key when the reader's stress toggle is on
+// (ADR 0052).
+const MARK_PATTERN = /\p{M}/gu;
+
 const MIN_LENGTH = 2;
 
 function trimEdgePunctuation(surface) {
@@ -40,7 +47,7 @@ export function segmentText(text) {
         if (match.index > cursor) {
             segments.push({text: text.slice(cursor, match.index), key: null});
         }
-        segments.push({text: match[0], key: surface.toLowerCase()});
+        segments.push({text: match[0], key: surface.toLowerCase().replace(MARK_PATTERN, '')});
         cursor = match.index + match[0].length;
     }
     if (cursor < text.length) {

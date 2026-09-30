@@ -9,8 +9,10 @@ class WordTokenizer
     private const MIN_LENGTH = 2;
 
     /**
-     * Split text into unique lowercase tokens with occurrence counts and the
-     * first-seen surface form.
+     * Split text into unique tokens keyed by the dictionary lookup form:
+     * lowercased and stripped of combining marks (U+0301 stress marks) —
+     * the same normalization as WiktionaryParser::normalizeLookupKey, so
+     * tokens from stressed text resolve against l_word keys (ADR 0052).
      *
      * @return array<string, array{token: string, count: int}>
      */
@@ -29,7 +31,7 @@ class WordTokenizer
                 continue;
             }
 
-            $key = mb_strtolower($surface);
+            $key = $this->lookupKey($surface);
 
             if (isset($words[$key])) {
                 $words[$key]['count']++;
@@ -39,6 +41,45 @@ class WordTokenizer
         }
 
         return $words;
+    }
+
+    /**
+     * The dictionary lookup key of a surface form: lowercase + no combining
+     * marks. Kept in lockstep with the browser tokenizer (wordTokenizer.mjs)
+     * via TokenizerParityTest.
+     */
+    public function lookupKey(string $surface): string
+    {
+        return preg_replace('/\p{M}/u', '', mb_strtolower($surface)) ?? mb_strtolower($surface);
+    }
+
+    /**
+     * Split text into tokens with their character spans, per occurrence.
+     *
+     * Unlike tokenize() this keeps single-character tokens (я, a, I) and does
+     * not dedupe — the enrichment pipeline sends every occurrence to the
+     * python service with spans into the sentence content. Spans follow the
+     * raw TOKEN_PATTERN matches; the python WORD_RE is the same regex, so the
+     * services' tokenization stays in lockstep (TokenizerParityTest).
+     *
+     * @return list<array{surface: string, start: int, end: int}>
+     */
+    public function tokenizeWithSpans(string $text): array
+    {
+        $tokens = [];
+
+        if (preg_match_all(self::TOKEN_PATTERN, $text, $matches, PREG_OFFSET_CAPTURE) === false) {
+            return $tokens;
+        }
+
+        foreach ($matches[0] as [$surface, $byteOffset]) {
+            // PREG_OFFSET_CAPTURE reports byte offsets; the python service
+            // works on character positions.
+            $start = mb_strlen(substr($text, 0, $byteOffset));
+            $tokens[] = ['surface' => $surface, 'start' => $start, 'end' => $start + mb_strlen($surface)];
+        }
+
+        return $tokens;
     }
 
     private function trimEdgePunctuation(string $surface): string

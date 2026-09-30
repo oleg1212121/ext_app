@@ -8,10 +8,12 @@ const Reader = ({
     rows = [],
     rowImages = [],
     rowKeys = [],
+    stressedRows = [],
     meta = null,
     positionKey = null,
     fontSize,
     highlight,
+    stressMarks = false,
     wordMap,
     primaryHighlightable,
     translationWordMap,
@@ -28,10 +30,12 @@ const Reader = ({
         rows={rows}
         rowImages={rowImages}
         rowKeys={rowKeys}
+        stressedRows={stressedRows}
         meta={meta}
         positionKey={positionKey}
         fontSize={fontSize}
         highlight={highlight}
+        stressMarks={stressMarks}
         wordMap={wordMap}
         primaryHighlightable={primaryHighlightable}
         translationWordMap={translationWordMap}

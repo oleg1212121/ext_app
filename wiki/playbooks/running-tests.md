@@ -81,6 +81,12 @@ sources:
   `--drop-databases` to Pest, so each parallel worker drops its temporary
   `ext_app_test_test_{N}` database after the run and orphaned test DBs must
   not accumulate.
+* **Cross-file helpers live in `tests/Pest.php`:** parallel workers each
+  load only a subset of test files, so a helper defined (even under
+  `function_exists`) in one test file but called from another works in
+  serial runs and fails with "Call to undefined function" under `--parallel`
+  when the two files land in different workers. If more than one file uses
+  a helper, define it in `tests/Pest.php`.
 
 # Commands
 

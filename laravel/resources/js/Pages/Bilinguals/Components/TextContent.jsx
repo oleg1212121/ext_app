@@ -143,6 +143,8 @@ export default function TextContent(props) {
                                     popupFontSize={props.popupFontSize}
                                     side={props.targetSide}
                                     explain={targetExplain}
+                                    stressed={props.stressedRows?.[i]?.[0] ?? null}
+                                    showStress={props.showStress}
                                 />
                             </span>
                         </td>
@@ -176,6 +178,8 @@ export default function TextContent(props) {
                                         popupFontSize={props.popupFontSize}
                                         side={props.baseSide}
                                         explain={baseExplain}
+                                        stressed={props.stressedRows?.[i]?.[1] ?? null}
+                                        showStress={props.showStress}
                                     />
                                 </span>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">

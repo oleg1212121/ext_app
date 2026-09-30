@@ -78,6 +78,7 @@ def splitter_engine() -> str:
     return value if value in ("razdel", "pysbd") else "razdel"
 ALIGN_MAX_SENTENCES = _env_int("ALIGN_MAX_SENTENCES", 500)
 ALIGN_MAX_WINDOW = _env_int("ALIGN_MAX_WINDOW", 8)
+ENRICH_MAX_SENTENCES = _env_int("ENRICH_MAX_SENTENCES", 75)
 
 
 # --- Live per-request accessors (edits to /app/.env apply without restart) ---

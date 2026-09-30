@@ -3,6 +3,7 @@
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\Language;
+use App\Models\User;
 use App\Models\Word;
 use App\Models\WordClass;
 use App\Models\Work;
@@ -204,4 +205,42 @@ function createWord(string $languageCode, string $word, string $classSlug = 'nou
         'word_class_id' => $classes[$languageCode][$classSlug],
         ...$attributes,
     ]);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Word-translation fetch fixtures
+|--------------------------------------------------------------------------
+|
+| Defined here — not inside a single test file — because Pest's parallel
+| workers each load a subset of files, and AdoptEntityWordsTest,
+| CrosswordGeneratorTest and WordEndpointTest all call these without
+| loading WordTranslationFetchTest.php.
+*/
+
+function enableTranslationProviders(): void
+{
+    config([
+        'services.yandex_translate.key' => 'yandex-test-key',
+        'services.yandex_translate.url' => 'https://yandex.test/translate/v2',
+        'services.google_translate.key' => 'google-test-key',
+        'services.google_translate.url' => 'https://google.test/language/translate/v2',
+    ]);
+}
+
+function nativeRuUser(): User
+{
+    createLanguages();
+
+    $user = User::factory()->create();
+    $user->settings()->updateOrCreate([], [
+        'native_language_id' => Language::query()->where('code', 'ru')->value('id'),
+    ]);
+
+    return $user;
+}
+
+function ruLanguageId(): int
+{
+    return (int) Language::query()->where('code', 'ru')->value('id');
 }

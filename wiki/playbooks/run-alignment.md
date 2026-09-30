@@ -5,7 +5,7 @@ description: End-to-end workflow for aligning two same-work entities (any langua
 tags: [alignment, embeddings, jobs, howto]
 status: stable
 stale_after: 2026-12-22
-generated: { by: agent:zcode, at: 2026-09-28T23:59:00Z }
+generated: { by: agent:zcode, at: 2026-09-29T19:20:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -24,7 +24,7 @@ sources:
     title: alignments:resume (5-minute scheduled picker)
   - id: console-routes
     resource: laravel/routes/console.php
-    title: Scheduler (daily rebalance + 5-minute alignments:resume + crossword:refresh)
+    title: Scheduler (daily rebalance + 5-minute alignments:resume + crossword:refresh + entities:enrich)
 ---
 
 # Prerequisites
