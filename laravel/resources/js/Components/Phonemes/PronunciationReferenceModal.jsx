@@ -154,7 +154,7 @@ function SoundDetail({sound, pair, onBack}) {
  * back to English.
  */
 export default function PronunciationReferenceModal({open, onClose, defaultLanguage = null}) {
-    const {t} = useI18n();
+    const {t, locale} = useI18n();
     // learning target: a native English speaker starts on Russian, everyone
     // else (incl. guests) on English
     const [lang, setLang] = useState(defaultLanguage === 'en' ? 'ru' : 'en');
