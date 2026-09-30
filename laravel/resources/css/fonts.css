@@ -639,3 +639,14 @@
   src: url(/fonts/vEFI2_tTDB4M7-auWDN0ahZJW1gb8tc.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+
+// Gentium Plus — IPA symbols for the pronunciation reference (OFL, see
+// fonts/GentiumPlus-OFL.txt). Full font converted to woff2: the Google
+// unicode-range subsets omit IPA spacing modifiers (ʲ ˈ ː).
+@font-face {
+  font-family: 'Gentium Plus';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/fonts/GentiumPlus-Regular.woff2) format('woff2');
+}

@@ -1,5 +1,29 @@
 # Directory Update Log
 
+## 2026-09-30 (feat: phoneme reference — navbar pronunciation guide with parametric articulation diagrams; ADR 0054)
+
+New site-wide pronunciation chart: a navbar icon beside `DarkThemeToggle`
+opens a modal (`Components/Phonemes/PronunciationReferenceModal.jsx`) with
+English/Russian tabs over grouped sound cards (82 sounds: GA English ~40
+incl. two-panel diphthongs/affricates; Russian 6 vowels + 15 hard/soft pairs +
+always-hard/always-soft). Default tab is the learning target from the shared
+`auth.user.native_language` prop (new in `HandleInertiaRequests.php`; native
+English speakers land on Russian, others on English). Diagrams are generated
+parametrically by `resources/js/data/phonemes/art.js` (state → currentColor
+SVG paths, theme-correct, no image assets; proportions descend from the CC0
+Wright & McCloy sagittal set, credited in-modal — no Sounds of Speech/Commons
+GIFs: licensing). Sound content is static data in
+`resources/js/data/phonemes/phonemes.js` (bilingual descriptions, cross-
+language hints, examples, RP notes; `anim: null` reserved for animation).
+IPA glyphs render in self-hosted Gentium Plus 400 woff2 (OFL,
+`fonts/GentiumPlus-OFL.txt`) — the app families lack the core IPA glyphs and
+Google's subsets omit ʲ ˈ ː (verified via cmap union over shipped files).
+Modal chrome strings: new `ui-strings/sounds.php` + `nav.pronunciation_reference`
+(seeded via `UiStringSeeder`). New `wiki/domains/phoneme-reference.md`,
+`docs/adr/0054-cc0-sagittal-phoneme-diagrams.md`, CONTEXT.md
+*Phoneme Reference Context*. No routes/models/commands changed (no
+`wiki:sync`).
+
 ## 2026-09-30 (fix: reader stress-mark gaps — reading lines moved to `--font-reading`)
 
 On the reader, stress-marked Russian text showed huge gaps after stressed

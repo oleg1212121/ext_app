@@ -805,3 +805,45 @@ changed since it was. Entities enrichment cannot apply to count as enriched,
 not stale. See ADR 0052.
 _Avoid_: enrichment status (there is no processing state, only staleness),
 dirty.
+
+# Phoneme Reference Context
+
+**Phoneme reference**:
+The site-wide pronunciation chart: every sound of English and Russian as a
+card with an articulation diagram, opened from the navbar. Reference content
+shipped with the app (static data + inline SVG), not user- or DB-derived.
+English is taught as General American; Russian as the practical hard/soft
+inventory. See ADR 0054.
+_Avoid_: transcription table (that names the word-level **Transcription**
+records of the Dictionary Context), sounds table, IPA chart.
+
+**Phoneme card**:
+One sound's entry in the reference: IPA symbol, common spellings, articulation
+diagram, bilingual production description, example words with the sound
+marked, and a **cross-language hint**. Clicking a card opens the enlarged
+detail view.
+
+**Articulation diagram**:
+The mid-sagittal mouth drawing on a phoneme card: tongue, lips, teeth, palate
+and velum positions for that sound. Rendered parametrically from a state
+description (framework-free geometry code), not from image files; two states
+side by side (start → end) for diphthongs and affricates.
+_Avoid_: mouth picture, GIF (nothing animated ships yet).
+
+**Sound group**:
+The section a phoneme card belongs to within a language tab: English groups
+by manner (vowels, diphthongs, stops, …); Russian groups as six vowels, the
+hard/soft pairs, always-hard and always-soft consonants.
+
+**Cross-language hint**:
+The per-sound tip that anchors a sound in the learner's other language
+(English cards hint against Russian and vice versa). Shown in the interface
+language. Distinct from the production description, which only says how the
+sound is made.
+_Avoid_: tip (too generic), translation.
+
+**RP note**:
+An English card's note where British Received Pronunciation differs from the
+taught General American form (a different symbol, a non-rhotic realization).
+Never a second chart — one variant per note.
+_Avoid_: British chart, RP tab.

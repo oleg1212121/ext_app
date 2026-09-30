@@ -48,6 +48,11 @@ class HandleInertiaRequests extends Middleware
                         'email' => $request->user()->email,
                         'role' => $request->user()->role,
                         'is_approved' => $request->user()->is_approved,
+                        // code of the user's native language; the pronunciation
+                        // reference uses it to pick the default chart tab.
+                        // Method call on purpose: property access would route
+                        // through Eloquent magic and trip the relation check.
+                        'native_language' => $request->user()->nativeLanguage()?->code,
                     ]
                     : null,
                 'can' => [
