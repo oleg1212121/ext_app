@@ -38,6 +38,23 @@ sentence-enrichment.md` rendering/engine sections updated. Pre-existing,
 unrelated: `AdoptEntityWordsTest` fails on dev itself (undefined
 `enableTranslationProviders()` helper).
 
+Follow-up fixes after real-use testing: (1) the nuclear caret rendered
+whenever annotation data existed, ignoring the intonation toggle — `WordText`
+now gates it on `showIntonation` like the terminal arrow. (2) The reader page
+crashed (`Uncaught TypeError: …?.some is not a function`) whenever a meaning
+match row's first junction was an illustration/empty sentence:
+`MeaningMatchPresenter::sideSentences()` filtered without reindexing, so
+sparse collection keys (`[1 => …]`) json_encode'd the intonation side list
+into an object with numeric keys — tolerable to the old `intonations[i]`
+lookup, fatal to the new iteration, and silently misaligning arrows on
+mid-row gaps all along. The presenter now ends the chain with `->values()`
+(matching `SimulatorController::explainWord`'s existing reindexing, which
+defines what a sentence index means), and the frontend's three iteration
+sites (`hasIntonationData` on both pages, `ReaderRow`'s plain-text fallback)
+guard with `Array.isArray` so a stray sparse payload degrades instead of
+crashing. Regression test pins the sequential-list shape through the reader
+page with an empty-sentence junction.
+
 ## 2026-09-29 (feat: English stress marking v2 — syllable-aligned placement + CMUdict; ADR 0053)
 
 Real-text review of ADR 0052's English marks exposed three defect classes:

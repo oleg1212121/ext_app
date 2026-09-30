@@ -8,7 +8,9 @@ const NO_IMAGES = [];
 // so the fallback keeps replacing newlines the same way.
 function fallbackText(base, intonations, showIntonation) {
     const flat = base.replaceAll('\n', ' ');
-    if (!showIntonation || !intonations?.some(Boolean)) {
+    // Array.isArray: a sparse side list encodes as an object with numeric
+    // keys (older payloads) — skip the arrows rather than crash.
+    if (!showIntonation || !Array.isArray(intonations) || !intonations.some(Boolean)) {
         return flat;
     }
     const sentences = base.split('\n');

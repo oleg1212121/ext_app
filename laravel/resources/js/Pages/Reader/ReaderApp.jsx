@@ -192,8 +192,11 @@ export default function ReaderApp({
         [intonationRows, effectiveFlipped],
     );
     const hasStressedData = stressedRows.some(([primary, translation]) => primary !== null || translation !== null);
+    // Array.isArray: a sparse side list from an older payload encodes as a
+    // JSON object with numeric keys — skip it rather than crash on .some().
     const hasIntonationData = useMemo(
-        () => intonationRows.some(([primary, translation]) => (primary ?? []).some(Boolean) || (translation ?? []).some(Boolean)),
+        () => intonationRows.some(([primary, translation]) => (Array.isArray(primary) && primary.some(Boolean))
+            || (Array.isArray(translation) && translation.some(Boolean))),
         [intonationRows],
     );
 

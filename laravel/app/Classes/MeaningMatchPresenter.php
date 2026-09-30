@@ -164,7 +164,13 @@ class MeaningMatchPresenter
             ->map(fn ($match) => $match->entitySentence)
             ->filter(fn (?EntitySentence $sentence): bool => $sentence !== null
                 && $sentence->image_path === null
-                && $sentence->content !== '');
+                && $sentence->content !== '')
+            // filter() keeps the junction keys, so a row whose first junction
+            // is an illustration/empty sentence would yield sparse keys
+            // ([1 => …]) that json_encode turns into an object — and the
+            // readers' sentence indexes are positions in this reindexed
+            // list, never junction offsets.
+            ->values();
     }
 
     private function sideText(MeaningMatch $meaningMatch, string $side): string

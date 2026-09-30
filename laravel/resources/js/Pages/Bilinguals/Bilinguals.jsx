@@ -449,7 +449,10 @@ const Bilinguals = (props) => {
     ), [intonationRows, learningSide]);
 
     const hasStressedData = stressedRows.some(([a, b]) => a !== null || b !== null);
-    const hasIntonationData = intonationRows.some(([a, b]) => (a ?? []).some(Boolean) || (b ?? []).some(Boolean));
+    // Array.isArray: a sparse side list encodes as an object with numeric
+    // keys (older payloads) — skip it rather than crash on .some().
+    const hasIntonationData = intonationRows.some(([a, b]) => (Array.isArray(a) && a.some(Boolean))
+        || (Array.isArray(b) && b.some(Boolean)));
 
     // Word maps stay keyed by the match's actual sides; the display columns
     // index into them by the side currently playing each role.

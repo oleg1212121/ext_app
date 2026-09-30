@@ -184,7 +184,7 @@ function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress,
                     <span className="inline">
                         {segments.map((segment, index) => {
                             const entry = segment.key !== null ? wordMap[segment.key] : undefined;
-                            const caret = nuclearIndices[sentenceIndex] === index ? <NuclearCaret/> : null;
+                            const caret = showIntonation && nuclearIndices[sentenceIndex] === index ? <NuclearCaret/> : null;
                             if (entry?.w) {
                                 return (
                                     <span

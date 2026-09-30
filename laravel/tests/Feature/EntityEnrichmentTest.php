@@ -9,6 +9,8 @@ use App\Models\EntitySentence;
 use App\Models\EntityWord;
 use App\Models\Form;
 use App\Models\Language;
+use App\Models\MeaningMatch;
+use App\Models\SentenceMeaningMatch;
 use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\User;
@@ -238,6 +240,41 @@ it('ships stressed variants and intonation to the reader page', function () {
     $props = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk()->inertiaPage()['props'];
     expect($props['stressMarks'])->toBeTrue()
         ->and($props['intonation'])->toBeTrue();
+});
+
+it('ships intonation side lists as sequential arrays when a row junctions an empty sentence', function () {
+    // Regression: sideSentences filtered without reindexing, so a row whose
+    // first junction was an empty/illustration sentence produced sparse keys
+    // that json_encode turned into an object — crashing the readers' .some()
+    // iteration and misaligning sentence indexes.
+    $user = approvedUser();
+    $work = createWork();
+    $enEntity = createEntity('en', $work);
+    $ruEntity = createEntity('ru', $work);
+
+    $empty = EntitySentence::create(['entity_id' => $enEntity->id, 'content' => '', 'order' => 1]);
+    $hello = EntitySentence::create(['entity_id' => $enEntity->id, 'content' => 'Hello there.', 'order' => 2]);
+    $privet = EntitySentence::create(['entity_id' => $ruEntity->id, 'content' => 'Привет.', 'order' => 1]);
+    $hello->forceFill(['intonation' => ['nuclear' => null, 'terminal' => 'fall']])->saveQuietly();
+    $privet->forceFill(['intonation' => ['nuclear' => null, 'terminal' => 'rise']])->saveQuietly();
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity);
+    $row = MeaningMatch::create(['entity_match_id' => $entityMatch->id, 'order' => 0, 'similarity' => 0.95, 'alignment_chunk' => 0]);
+    foreach ([[$empty, 'a'], [$hello, 'a'], [$privet, 'b']] as [$sentence, $side]) {
+        SentenceMeaningMatch::create(['entity_sentence_id' => $sentence->id, 'meaning_match_id' => $row->id, 'side' => $side]);
+    }
+
+    $props = $this->actingAs($user)->get("/reader/{$enEntity->id}")->assertOk()->inertiaPage()['props'];
+
+    // The empty sentence is filtered from the text; the annotation side
+    // lists must stay sequential arrays aligned with the remaining sentences.
+    // Reading side is ru (the en side is the native-language translation).
+    expect($props['rows'][0][0])->toBe('Привет.')
+        ->and(array_is_list($props['intonationRows'][0][0]))->toBeTrue()
+        ->and(count($props['intonationRows'][0][0]))->toBe(1)
+        ->and($props['intonationRows'][0][0][0]['terminal'])->toBe('rise')
+        ->and(array_is_list($props['intonationRows'][0][1]))->toBeTrue()
+        ->and($props['intonationRows'][0][1][0]['terminal'])->toBe('fall');
 });
 
 it('strips stress marks from word popup surfaces', function () {
