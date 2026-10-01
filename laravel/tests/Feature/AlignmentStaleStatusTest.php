@@ -10,6 +10,7 @@ use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 
@@ -36,7 +37,7 @@ beforeEach(fn () => Http::preventStrayRequests());
  * A completed match with a human landmark (en1-ru1) and a low-confidence
  * machine row (en2-ru2) — the shape a re-align acts on (ADR 0055).
  *
- * @return array{entityMatch: EntityMatch, enSentences: Illuminate\Support\Collection<int, EntitySentence>}
+ * @return array{entityMatch: EntityMatch, enSentences: Collection<int, EntitySentence>}
  */
 function createStaleRunFixture(): array
 {

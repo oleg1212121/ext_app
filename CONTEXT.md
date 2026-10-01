@@ -816,12 +816,18 @@ dirty.
 
 # Phoneme Reference Context
 
+**Resources menu**:
+The navbar dropdown holding reference surfaces — content that supports study
+but is not itself a practice flow. The **Phoneme reference** is its first
+entry. See ADR 0056. _Avoid_: tools, extras, reference section (ambiguous
+with the word-level reference material of the Dictionary Context).
+
 **Phoneme reference**:
 The site-wide pronunciation chart: every sound of English and Russian as a
-card with an articulation diagram, opened from the navbar. Reference content
-shipped with the app (static data + inline SVG), not user- or DB-derived.
-English is taught as General American; Russian as the practical hard/soft
-inventory. See ADR 0054.
+card with an articulation diagram, reached from the navbar's **Resources
+menu**. Reference content shipped with the app (static data + inline SVG),
+not user- or DB-derived. English is taught as General American; Russian as
+the practical hard/soft inventory. See ADR 0054, ADR 0056.
 _Avoid_: transcription table (that names the word-level **Transcription**
 records of the Dictionary Context), sounds table, IPA chart.
 
