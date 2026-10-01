@@ -4,7 +4,7 @@ title: Docker & Services
 description: Containers, ports, mounts, and the rule that all PHP/Composer/NPM commands run inside the app container.
 tags: [docker, infrastructure, devops]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-26T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-01T00:00:00Z }
 sources:
   - id: compose
     resource: docker-compose.yml
@@ -106,9 +106,15 @@ worker flags (composer `dev` script, prod overlay, systemd unit).
 stack as systemd units — `ext-queue@.service` (templated worker, instances
 `ext-queue@1`/`ext-queue@2`, same `queue:work` flags as the overlay),
 `ext-scheduler.service`, `ext-python.service` — shipped by `./deploy-native.sh`
-(git pull → build → migrate → seeds → `daemon-reload` → unit restarts; the
-`daemon-reload` is required for unit-file changes to take effect). Both paths
-end with the same deploy guarantees as `deploy.sh`.
+(git pull → python venv sync → build → migrate → seeds → `daemon-reload` →
+unit restarts; the `daemon-reload` is required for unit-file changes to take
+effect). The venv at `docker-compose/python/ai/ai_env/` is git-ignored
+(machine-local), so the script pip-syncs it from `requirements.txt` on every
+deploy; it restarts `ext-python` only when the pull touched
+`docker-compose/python/` or `ext-python.service` (uvicorn serves the checkout
+without `--reload`), then polls `/health` for up to 60s and fails the deploy
+if the service doesn't come back. Both paths end with the same deploy
+guarantees as `deploy.sh`.
 
 Shipping code is `./deploy.sh` on the prod machine: fast-forward `git pull`,
 then `composer install` / `npm ci` / `npm run build` / `storage:link` / cache

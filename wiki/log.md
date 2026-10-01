@@ -1,5 +1,30 @@
 # Directory Update Log
 
+## 2026-10-01 (fix: deploy-native.sh syncs the python venv + restarts ext-python; UiStringSeeder joins the deploy seed lists)
+
+Yesterday's prod deploy shipped the English stress v2 requirements
+(`pyphen`) without the python service ever seeing them: prod runs the native
+systemd path (`.github/workflows/deploy.yml` → `deploy-native.sh`), and that
+script had no python handling at all. The venv at
+`docker-compose/python/ai/ai_env/` is git-ignored (machine-local), so repo
+requirements changes only ever reached the Docker image path, and uvicorn
+serves the checkout without `--reload`, so even pure `ai/` code changes
+silently stayed on the old process until a manual restart. `deploy-native.sh`
+now pip-syncs the venv from `requirements.txt` on every deploy
+(unconditional — pip is a no-op when satisfied, and this self-heals a
+drifted venv), restarts `ext-python` only when the pull touched
+`docker-compose/python/` or `ext-python.service`, then polls `/health` for
+up to 60s and fails the deploy (journalctl tail to stderr) if the service
+doesn't come back — a broken import graph now turns the GitHub Deploy run
+red instead of surfacing as broken features. `UiStringSeeder` (idempotent
+updateOrCreate + cache flush, in DatabaseSeeder but never in the deploy
+seed lists) joined the seed list in both `deploy-native.sh` and
+`deploy.sh`, so new ui-strings partials reach prod without manual seeding.
+Docs updated: `wiki/architecture/docker-services.md` (native-path step
+list) and `wiki/domains/sentence-enrichment.md` (its deployment note was
+Docker-only). `wiki/playbooks/production-deployment.md` stays
+Docker-era/stale on purpose (not rewritten here).
+
 ## 2026-09-30 (fix: phoneme reference review — Gentium @font-face dropped from build; parallel test helpers; a11y)
 
 Two-axis review of `feature/phoneme-reference` found one shipping bug: the

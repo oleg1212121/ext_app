@@ -5,7 +5,7 @@ description: Local-only per-sentence enrichment — Russian/English stress marks
 tags: [enrichment, stress-marks, phrasal-verbs, python-service, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-29
-generated: { by: agent:zcode, at: 2026-09-30T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-01T00:00:00Z }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -147,7 +147,11 @@ notice when the package is absent).
 `docker-compose/python/requirements.txt` — container-definition changes:
 rebuild the python image
 (`docker compose build python && docker compose up -d python`) and
-`./deploy.sh --stamp` on the prod machine. After a prod deploy the CMUdict
-file (`laravel/kaikki/cmudict.dict`) must be fetched once and
-`dictionary:import-cmudict` run (kaikki-sourced rows are preserved on
-re-import).
+`./deploy.sh --stamp` on the Docker-era prod path. On the native prod path
+(the one `.github/workflows/deploy.yml` actually runs) `deploy-native.sh`
+handles this automatically: it pip-syncs the machine-local venv from
+`requirements.txt` on every deploy and restarts + health-checks
+`ext-python` whenever the pull touched `docker-compose/python/`. After a
+prod deploy the CMUdict file (`laravel/kaikki/cmudict.dict`) must be fetched
+once and `dictionary:import-cmudict` run (kaikki-sourced rows are preserved
+on re-import).
