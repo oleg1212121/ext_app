@@ -16,6 +16,7 @@ return [
     'nav.register' => ['en' => 'Register', 'ru' => 'Регистрация'],
     'nav.toggle_menu' => ['en' => 'Toggle menu', 'ru' => 'Показать или скрыть меню'],
     'nav.puzzles' => ['en' => 'Puzzles', 'ru' => 'Головоломки'],
+    'nav.resources' => ['en' => 'Resources', 'ru' => 'Ресурсы'],
     'nav.dashboard' => ['en' => 'Dashboard', 'ru' => 'Панель'],
     'nav.crossword' => ['en' => 'Crossword', 'ru' => 'Кроссворд'],
     'nav.toggle_dark_mode' => ['en' => 'Toggle dark mode', 'ru' => 'Переключить тёмную тему'],

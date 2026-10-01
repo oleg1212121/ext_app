@@ -1,5 +1,38 @@
 # Directory Update Log
 
+## 2026-10-01 (feat: pronunciation guide moves from navbar modal to a page under a new Resources dropdown, ADR 0056)
+
+The ADR 0054 phoneme reference shipped as a modal behind an unlabeled icon
+beside the theme toggle — a weak affordance, invisible to the information
+architecture, not linkable, and incidentally visible to guests. The user
+asked to move it into the main navbar as a dropdown option after Puzzles and
+put its content on a dedicated page. Grilled decisions: the menu is named
+**Resources** (EN) / Ресурсы (RU) — a new `nav.resources` UI string, chosen
+over "Reference"/"Guides" as the umbrella for study-support surfaces; the
+child reuses the existing `nav.pronunciation_reference` string (no
+"Ресурсы → Справочник произношения" redundancy problem, unlike the
+Reference alternative); the page lives at `/resources/pronunciation-guide`
+(route name `resources.pronunciation-guide`, page
+`Resources/PronunciationGuide`) — no `public/` collision; access moves to
+the standard `auth`+`approved` group (guests lose the chart, accepted per
+ADR 0056); tabs and the open card keep client-side state, no URL state.
+Implementation: `PronunciationReferenceModal.jsx` and the navbar icon
+button are deleted; the content (tabs, `SoundCard`/`PairUnit`/`SoundDetail`,
+credits) moved verbatim into the new page (modal shell — portal, focus
+trap, scroll lock, Escape — dropped; `aria-haspopup="dialog"` removed from
+cards since the detail view swaps in place); NavBar's data-driven `navLinks`
+gained the Resources entry (desktop dropdown + mobile accordion render for
+free) and `layouts/navigation.blade.php` got the Alpine mirror on both
+surfaces. Route is a closure in the auth+approved group (no controller —
+the page needs only shared props). `UiStringSeeder` re-seeded for
+`nav.resources`. Tests: PhonemeReferenceTest +2 (page component for
+approved users; guest → login / unapproved → pending-approval redirects)
+and the strings test now pins `nav.resources` in both locales — 5 passed.
+Docs: ADR 0056, CONTEXT.md Phoneme Reference Context (new **Resources
+menu** term; **Phoneme reference** now "reached from the navbar's Resources
+menu"), this concept rewritten (Surfaces & flow, Typography scoping, i18n,
+Tests); `wiki:sync` regenerated the routes reference for the new route.
+
 ## 2026-10-01 (fix: sentence edits mark matches stale — only an explicit Re-align re-aligns, ADR 0055)
 
 Second prod incident in the same family (2026-09-30 ~20:50 UTC, after the

@@ -116,6 +116,36 @@
                                 </x-nav-link>
                             </div>
                         </div>
+                        <div x-data="{ open: false }" @mouseleave="open = false" class="relative">
+                            <button
+                                @click="open = !open"
+                                @mouseenter="open = true"
+                                class="relative inline-flex items-center px-2 py-2 text-sm font-medium tracking-wide transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] rounded-sm {{ request()->routeIs('resources.pronunciation-guide') ? 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]' : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]' }}"
+                                aria-haspopup="menu"
+                                :aria-expanded="open.toString()">
+                                {{ __('nav.resources') }}
+                                <svg class="ml-0.5 h-3 w-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                                <span aria-hidden="true" class="absolute left-1 right-1 -bottom-px h-px bg-[var(--color-vermilion)] dark:bg-[var(--color-vermilion-night)] transition-transform duration-300 origin-left {{ request()->routeIs('resources.pronunciation-guide') ? 'scale-x-100' : 'scale-x-0' }}" style="transform-origin: left center;"></span>
+                            </button>
+                            <div
+                                x-show="open"
+                                x-transition:enter="transition ease-out duration-150"
+                                x-transition:enter-start="opacity-0 -translate-y-1"
+                                x-transition:enter-end="opacity-100 translate-y-0"
+                                x-transition:leave="transition ease-in duration-100"
+                                x-transition:leave-start="opacity-100 translate-y-0"
+                                x-transition:leave-end="opacity-0 -translate-y-1"
+                                @click="open = false"
+                                class="absolute left-0 mt-2 w-48 bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] shadow-lg overflow-hidden"
+                                style="display: none;"
+                                role="menu">
+                                <x-nav-link :href="route('resources.pronunciation-guide')" :active="request()->routeIs('resources.pronunciation-guide')" class="block px-4 py-2.5 text-sm rounded-none">
+                                    {{ __('nav.pronunciation_reference') }}
+                                </x-nav-link>
+                            </div>
+                        </div>
                         @if(Auth::user()->isAdmin())
                         <x-nav-link href="/admin">
                             {{ __('nav.admin') }}
@@ -295,6 +325,29 @@
                             <li>
                                 <x-responsive-nav-link :href="route('crossword')" :active="request()->routeIs('crossword')" class="ps-2">
                                     {{ __('nav.crossword') }}
+                                </x-responsive-nav-link>
+                            </li>
+                        </ul>
+                    </li>
+                    <li x-data="{ expanded: {{ request()->routeIs('resources.pronunciation-guide') ? 'true' : 'false' }} }">
+                        <button
+                            @click="expanded = !expanded"
+                            class="w-full flex items-center justify-between py-3 ps-3 pe-4 font-serif text-lg tracking-tight transition-colors {{ request()->routeIs('resources.pronunciation-guide') ? 'text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]' : 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]/80 hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)]' }}">
+                            {{ __('nav.resources') }}
+                            <svg
+                                class="h-4 w-4 opacity-60 transition-transform duration-200"
+                                :class="expanded ? 'rotate-180' : ''"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <ul x-show="expanded" x-collapse class="pl-4 pb-1 divide-y divide-[var(--color-hairline)]/50 dark:divide-[var(--color-hairline-night)]/50">
+                            <li>
+                                <x-responsive-nav-link :href="route('resources.pronunciation-guide')" :active="request()->routeIs('resources.pronunciation-guide')" class="ps-2">
+                                    {{ __('nav.pronunciation_reference') }}
                                 </x-responsive-nav-link>
                             </li>
                         </ul>

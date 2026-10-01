@@ -67,6 +67,12 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');
     Route::post('/crossword/complete', [CrosswordController::class, 'complete'])->name('crossword.complete');
 
+    // Resources → Pronunciation guide: a static client-side chart (ADR 0054);
+    // no props beyond the shared auth/uiStrings payload (ADR 0056).
+    Route::get('/resources/pronunciation-guide', function () {
+        return Inertia::render('Resources/PronunciationGuide');
+    })->name('resources.pronunciation-guide');
+
     Route::get('/words/{word}', [WordController::class, 'show'])
         ->whereNumber('word')
         ->name('words.show');

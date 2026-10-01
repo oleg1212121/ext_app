@@ -1,8 +1,9 @@
-import {useEffect, useRef, useState} from 'react';
-import {createPortal} from 'react-dom';
+import {useEffect, useState} from 'react';
+import {usePage} from '@inertiajs/react';
+import Main from '../../Layouts/Main.jsx';
 import {useI18n} from '../../i18n';
 import {PHONEME_CHART, PHONEME_LANGUAGES, DIAGRAM_CREDITS} from '../../data/phonemes/phonemes.js';
-import ArticulationDiagram from './ArticulationDiagram.jsx';
+import ArticulationDiagram from '../../Components/Phonemes/ArticulationDiagram.jsx';
 
 // IPA symbols render in Gentium Plus (self-hosted, OFL): the app's own
 // families don't cover the full IPA vowel/sibilant set.
@@ -45,7 +46,7 @@ function ExampleWord({word, mark}) {
 function SoundCard({sound, onSelect, pairLabel}) {
     const {t, locale} = useI18n();
     return (
-        <button type="button" onClick={onSelect} className={cardButtonClass} aria-haspopup="dialog">
+        <button type="button" onClick={onSelect} className={cardButtonClass}>
             {pairLabel && <span className="text-[10px] uppercase tracking-[0.14em] opacity-50">{pairLabel}</span>}
             <span className={`${ipaClass} text-2xl leading-none`}>{sound.ipa}</span>
             <ArticulationDiagram art={sound.art} className="h-20 w-full"/>
@@ -144,74 +145,35 @@ function SoundDetail({sound, pair, onBack}) {
 }
 
 /**
- * The pronunciation reference: a modal with per-language tabs over grouped
- * sound cards. The default tab is the user's learning target — the language
- * they are NOT a native speaker of (native English speakers start on
- * Russian, everyone else on English). The selected card's enlarged view
- * shows the articulation diagram, description, examples and cross-language
- * hints. `defaultLanguage` is the shared native language code; null falls
- * back to English.
+ * The pronunciation reference page: per-language tabs over grouped sound
+ * cards, reached from the navbar's Resources menu. The default tab is the
+ * user's learning target — the language they are NOT a native speaker of
+ * (native English speakers start on Russian, everyone else on English). The
+ * selected card's enlarged view swaps in place — no routing, no URL state.
  */
-export default function PronunciationReferenceModal({open, onClose, defaultLanguage = null}) {
+export default function PronunciationGuide() {
+    const {props} = usePage();
     const {t, locale} = useI18n();
+    const nativeLanguage = props?.auth?.user?.native_language ?? null;
     // learning target: a native English speaker starts on Russian, everyone
-    // else (incl. guests) on English
-    const [lang, setLang] = useState(defaultLanguage === 'en' ? 'ru' : 'en');
+    // else on English
+    const [lang, setLang] = useState(nativeLanguage === 'en' ? 'ru' : 'en');
     const [selected, setSelected] = useState(null); // {sound, pair}
-    const dialogRef = useRef(null);
 
     // default tab tracks the shared native-language code so a login or
     // logout without a full reload still lands on the learning target
     useEffect(() => {
-        setLang(defaultLanguage === 'en' ? 'ru' : 'en');
-    }, [defaultLanguage]);
-
-    useEffect(() => {
-        if (!open) {
-            return undefined;
-        }
-        dialogRef.current?.focus();
-        const onKey = (event) => {
-            if (event.key === 'Escape') {
-                onClose();
-            }
-        };
-        document.addEventListener('keydown', onKey);
-        const previousOverflow = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
-        return () => {
-            document.removeEventListener('keydown', onKey);
-            document.body.style.overflow = previousOverflow;
-        };
-    }, [open, onClose]);
-
-    useEffect(() => {
-        if (!open) {
-            setSelected(null);
-        }
-    }, [open]);
-
-    if (!open) {
-        return null;
-    }
+        setLang(nativeLanguage === 'en' ? 'ru' : 'en');
+    }, [nativeLanguage]);
 
     const chart = PHONEME_CHART[lang];
 
-    return createPortal(
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/50" onClick={onClose} aria-hidden="true"/>
-            <div
-                ref={dialogRef}
-                tabIndex={-1}
-                role="dialog"
-                aria-modal="true"
-                aria-label={t('sounds.title')}
-                data-pronunciation-modal
-                className="relative z-10 flex max-h-[88vh] w-full max-w-3xl flex-col rounded-sm border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] shadow-lg font-sans text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]"
-            >
-                <div className="flex items-center justify-between gap-3 border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] px-5 pt-3">
-                    <div className="flex items-end gap-4">
-                        <h2 className="hidden font-serif text-base leading-tight sm:block">{t('sounds.title')}</h2>
+    return (
+        <div className="flex-1 min-h-0 flex flex-col bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+            <div className="flex-1 min-h-0 overflow-y-auto">
+                <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
+                    <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] pb-3">
+                        <h1 className="font-serif text-xl tracking-tight">{t('sounds.title')}</h1>
                         <div className="flex" role="tablist" aria-label={t('sounds.title')}>
                             {PHONEME_LANGUAGES.map((code) => (
                                 <button
@@ -238,47 +200,38 @@ export default function PronunciationReferenceModal({open, onClose, defaultLangu
                             ))}
                         </div>
                     </div>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        aria-label={t('sounds.close')}
-                        className="rounded-sm p-1 opacity-60 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
-                    >
-                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                            <path d="M6 18 18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
-                </div>
 
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                    {selected ? (
-                        <SoundDetail sound={selected.sound} pair={selected.pair} onBack={() => setSelected(null)}/>
-                    ) : (
-                        <div className="flex flex-col gap-6">
-                            {chart.groups.map((group) => (
-                                <section key={group.id}>
-                                    <h3 className="text-[10px] uppercase tracking-[0.18em] opacity-60">{t(`sounds.group_${group.id}`)}</h3>
-                                    {group.id === 'pairs' ? (
-                                        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                            {group.items.map((pair, i) => (
-                                                <PairUnit key={i} pair={pair} onSelect={(sound, pair_) => setSelected({sound, pair: pair_})}/>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                                            {group.items.map((sound, i) => (
-                                                <SoundCard key={i} sound={sound} onSelect={() => setSelected({sound, pair: null})}/>
-                                            ))}
-                                        </div>
-                                    )}
-                                </section>
-                            ))}
-                            <p className="text-[11px] leading-relaxed opacity-40">{DIAGRAM_CREDITS}</p>
-                        </div>
-                    )}
+                    <div className="mt-6">
+                        {selected ? (
+                            <SoundDetail sound={selected.sound} pair={selected.pair} onBack={() => setSelected(null)}/>
+                        ) : (
+                            <div className="flex flex-col gap-6">
+                                {chart.groups.map((group) => (
+                                    <section key={group.id}>
+                                        <h3 className="text-[10px] uppercase tracking-[0.18em] opacity-60">{t(`sounds.group_${group.id}`)}</h3>
+                                        {group.id === 'pairs' ? (
+                                            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                                {group.items.map((pair, i) => (
+                                                    <PairUnit key={i} pair={pair} onSelect={(sound, pair_) => setSelected({sound, pair: pair_})}/>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                                                {group.items.map((sound, i) => (
+                                                    <SoundCard key={i} sound={sound} onSelect={() => setSelected({sound, pair: null})}/>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </section>
+                                ))}
+                                <p className="text-[11px] leading-relaxed opacity-40">{DIAGRAM_CREDITS}</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
-        </div>,
-        document.body,
+        </div>
     );
 }
+
+PronunciationGuide.layout = (page) => <Main>{page}</Main>;
