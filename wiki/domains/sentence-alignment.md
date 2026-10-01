@@ -4,8 +4,8 @@ title: Sentence Alignment Pipeline
 description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse. Illustrations are excluded from the aligner's sentence space (ADR 0050).
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
-stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-09-28T23:59:00Z }
+stale_after: 2026-12-31
+generated: { by: agent:zcode, at: 2026-10-01T00:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -79,8 +79,9 @@ hold at most `limits.alignments_processing_per_user` (default 1) matches with
 `status IN ('pending','aligning')`; the count-then-create runs under the
 creator's locked user row in `LibraryController::storeAlignment`, rejecting
 with a `limit` validation error (banner on the create form). The limit gates
-creation only: sentence-mutation re-pending, `alignments:resume`, and the
-admin re-align actions skip it. Accepted exposure: a match frozen by the
+creation only: sentence-mutation staleness, `alignments:resume`, and the
+admin re-align actions skip it (a stale match holds no slot — ADR 0055).
+Accepted exposure: a match frozen by the
 ADR 0034 approved-entity freeze stays `pending` and holds its owner's slot
 until approval, and a match stuck `aligning` (job chain died before
 `failed()`) holds it too. The exact-copy reuse fast path is born `completed`
@@ -309,7 +310,13 @@ editor-shaped row.
     `alignment_chunk` id), ordered positionally
     (`SparseOrderService::spreadOrders` between the neighbouring junctioned
     anchors) so the reader's meaning-match sequence preserves the original
-    document order. This is the **total completeness** invariant (ADR 0048,
+    document order. The `completed` write itself happens **only when the
+    match is still `aligning`** at completion time (the gate re-reads the
+    status from the DB): if a sentence edit flipped the match to `stale`
+    mid-run, the repairs and `linked_count` update still run but the stale
+    flag survives — an in-flight run cannot silently complete over it
+    (ADR 0055). `failed()` carries the same guard. This is the **total
+    completeness** invariant (ADR 0048,
     Sept 2026): `skipSides()` returns both sides unconditionally — it
     superseded the original-side-only scope (which left translation-side
     sentences invisible in the reader; the editor's live unmatched pools were
@@ -672,7 +679,7 @@ editor-shaped row.
 3. **Align (split Filament actions, Plan 09, Aug 2026)** — the single
     destructive **Re-run** table action on the `EntityMatch` resource is
     replaced by two explicit confirmation actions, both visible only for
-    `status ∈ {completed, failed}`:
+    `status ∈ {stale, completed, failed}`:
     - **Re-align** (`realign`, warning) — calls `begin()`: preserves
       human-made rows (`alignment_chunk = -1`) and confident landmarks
       (`similarity >= LANDMARK_THRESHOLD`, 0.90) and re-aligns only the
@@ -708,13 +715,36 @@ editor-shaped row.
     Tests: `ReAlignPreservesLandmarksTest` (snapshot refresh, row-less
     delegation) and `AlignmentsResumeCommandTest` (the incident end-to-end:
     sentence edit → pending → `alignments:resume` → human row survives).
+    Tests: `ReAlignPreservesLandmarksTest` (snapshot refresh, row-less
+    delegation) and `AlignmentsResumeCommandTest` (the incident end-to-end:
+    sentence edit → stale → `alignments:resume` → no-op, rows byte-identical).
+3. **Align (stale status, ADR 0055, Oct 2026)** — a 2026-09-30 prod incident
+    (a sentence edit on a hand-tuned match let the scheduler re-derive every
+    weak machine row in a new order five minutes later) ended the
+    sentence-mutation → `pending` rule of ADR 0015:
+    - Sentence mutations on the entity page flip affected matches to a
+      **display-only `stale`** status (`EntityController::markMatchesStale()`:
+      `aligning`/`completed`/`failed` → `stale`; a `pending` fresh match stays
+      pending). `pending` now means only "fresh match awaiting its one
+      automatic run".
+    - The scheduler is unchanged — it picks only `pending`, so stale matches
+      are invisible to it forever. **Only an explicit human action re-aligns
+      or clears the flag**: Re-align / Run from scratch (→ `aligning`), a full
+      Filament editor save (→ `completed`), a sentence re-import (→
+      `completed`). React editor row edits leave `stale` untouched. To protect
+      a weak row from a future Re-align, approve it in the alignment editor —
+      the approve action pins it as a human landmark (`similarity = 1.0`,
+      `alignment_chunk = -1`).
+    - `finalize()`/`failed()` complete or fail the match only from `aligning`
+      (see the completion gate above); stale holds no processing slot.
 4. **Schedule** — `Schedule::command('alignments:resume')->everyFiveMinutes()
    ->withoutOverlapping()` picks up to 10 `status='pending'` matches per tick
    and runs them through `AlignEntitySentences::begin()` (ADR 0051): a match
    that already has meaning-match rows keeps its human edits and landmarks
    (the scheduler never wipes existing rows), a row-less match takes the
    from-scratch path with its verify pass; dry-run and dispatch output report
-   which. Without-overlap prevents concurrent ticks colliding with each
+   which. Only **fresh** matches are ever picked: sentence edits mark existing
+   matches `stale` (ADR 0055), which the scheduler never touches. Without-overlap prevents concurrent ticks colliding with each
    other. Set `DB_QUEUE_RETRY_AFTER=900` so the database queue does not
    re-lease a long-running chunk to a second worker mid-flight.
 5. **Order** — sentences and matches carry sparse order values managed by

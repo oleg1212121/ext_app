@@ -21,7 +21,10 @@ beforeEach(fn () => Http::fake());
  */
 function createFilamentReAlignFixture(): EntityMatch
 {
-    $sentenceType = SentenceType::create(['name' => 'sentence']);
+    $sentenceType = SentenceType::firstOrCreate(
+        ['name' => 'sentence'],
+        ['description' => 'A standard sentence'],
+    );
 
     $work = createWork();
     $enEntity = createEntity('en', $work, [
@@ -82,7 +85,7 @@ function createFilamentReAlignFixture(): EntityMatch
     return $entityMatch;
 }
 
-test('re-align and run-from-scratch actions are visible for completed matches and hidden while aligning', function () {
+test('re-align and run-from-scratch actions are visible for completed and stale matches and hidden while aligning', function () {
     $user = User::factory()->create();
     $entityMatch = createFilamentReAlignFixture();
 
@@ -96,12 +99,33 @@ test('re-align and run-from-scratch actions are visible for completed matches an
         'b_total_sentences' => 1,
     ]);
 
+    $staleMatch = createFilamentReAlignFixture();
+    $staleMatch->update(['status' => 'stale']);
+
     Livewire::actingAs($user)
         ->test(ListEntityMatches::class)
         ->assertTableActionVisible('realign', $entityMatch)
         ->assertTableActionVisible('rerunScratch', $entityMatch)
+        ->assertTableActionVisible('realign', $staleMatch)
+        ->assertTableActionVisible('rerunScratch', $staleMatch)
         ->assertTableActionHidden('realign', $aligningMatch)
         ->assertTableActionHidden('rerunScratch', $aligningMatch);
+});
+
+test('re-align on a stale match dispatches begin (ADR 0055)', function () {
+    Bus::fake();
+    $user = User::factory()->create();
+    $entityMatch = createFilamentReAlignFixture();
+    $entityMatch->update(['status' => 'stale']);
+
+    Livewire::actingAs($user)
+        ->test(ListEntityMatches::class)
+        ->mountTableAction('realign', $entityMatch)
+        ->callMountedTableAction();
+
+    Bus::assertDispatched(AlignEntitySentences::class);
+
+    expect($entityMatch->refresh()->status)->toBe('aligning');
 });
 
 test('re-align modal counts preserved rows and dispatches begin', function () {

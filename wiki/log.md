@@ -1,5 +1,63 @@
 # Directory Update Log
 
+## 2026-10-01 (fix: sentence edits mark matches stale — only an explicit Re-align re-aligns, ADR 0055)
+
+Second prod incident in the same family (2026-09-30 ~20:50 UTC, after the
+2026-09-28 ADR 0051 fix): editing a sentence on the entity page flipped a
+fully hand-tuned match to `pending`, and the 5-minute `alignments:resume`
+picked it up and re-aligned it — landmark-preserving now, but still deleting
+and re-deriving every machine row below similarity 0.90 in a new order
+(4 en + 4 ru weak rows scrambled). Root cause: `pending` meant both "fresh
+match awaiting its first automatic run" and "existing match whose rows must
+be re-derived", and the scheduler fed on both. ADR 0055 splits the meaning:
+sentence mutations now flip affected matches to a **display-only `stale`**
+status (`EntityController::setMatchesPending()` → `markMatchesStale()`,
+flipping `aligning`/`completed`/`failed` → `stale`, leaving fresh `pending`
+alone); the scheduler is untouched and therefore never sees stale. Only
+explicit human actions re-align or clear the flag: Re-align / Run from
+scratch (visible on stale too), a full Filament editor save, a sentence
+re-import. `AlignEntitySentences::finalize()`/`failed()` now complete or
+fail only from `aligning` (mid-run edits keep the stale flag; repairs still
+run). React surfaces got the `stale` badge (Entities/Show, the shared
+STATUS_BADGE — phantom `verifying` retired); Filament badge + view-page
+blade got warning coloring and stale copy. Tests: EntityEditingTest (4
+mutation tests now assert stale + a fresh-pinned-pending test), a rebuilt
+AlignmentsResumeCommandTest incident regression (edit → stale → resume ×2 →
+rows byte-identical), FilamentReAlignActionTest stale visibility/dispatch,
+new AlignmentStaleStatusTest (mid-run stale survival through finalize and
+failed(), stale holds no processing slot), persister/import clear stale.
+Docs: ADR 0055 (supersedes ADR 0015's pending-on-edit rule), CONTEXT.md
+Edit rule + new **Stale** term, sentence-alignment.md (completion gate,
+Schedule stage, new ADR 0055 stage bullet), entities-alignment.md (status
+lifecycle bullet — the status column was previously undocumented here),
+run-alignment.md (steps 4-5: fresh-only pickup, stale handling,
+approve-before-re-align workflow).
+
+## 2026-10-01 (fix: deploy-native.sh syncs the python venv + restarts ext-python; UiStringSeeder joins the deploy seed lists)
+
+Yesterday's prod deploy shipped the English stress v2 requirements
+(`pyphen`) without the python service ever seeing them: prod runs the native
+systemd path (`.github/workflows/deploy.yml` → `deploy-native.sh`), and that
+script had no python handling at all. The venv at
+`docker-compose/python/ai/ai_env/` is git-ignored (machine-local), so repo
+requirements changes only ever reached the Docker image path, and uvicorn
+serves the checkout without `--reload`, so even pure `ai/` code changes
+silently stayed on the old process until a manual restart. `deploy-native.sh`
+now pip-syncs the venv from `requirements.txt` on every deploy
+(unconditional — pip is a no-op when satisfied, and this self-heals a
+drifted venv), restarts `ext-python` only when the pull touched
+`docker-compose/python/` or `ext-python.service`, then polls `/health` for
+up to 60s and fails the deploy (journalctl tail to stderr) if the service
+doesn't come back — a broken import graph now turns the GitHub Deploy run
+red instead of surfacing as broken features. `UiStringSeeder` (idempotent
+updateOrCreate + cache flush, in DatabaseSeeder but never in the deploy
+seed lists) joined the seed list in both `deploy-native.sh` and
+`deploy.sh`, so new ui-strings partials reach prod without manual seeding.
+Docs updated: `wiki/architecture/docker-services.md` (native-path step
+list) and `wiki/domains/sentence-enrichment.md` (its deployment note was
+Docker-only). `wiki/playbooks/production-deployment.md` stays
+Docker-era/stale on purpose (not rewritten here).
+
 ## 2026-09-30 (fix: phoneme reference review — Gentium @font-face dropped from build; parallel test helpers; a11y)
 
 Two-axis review of `feature/phoneme-reference` found one shipping bug: the

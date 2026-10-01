@@ -15,6 +15,7 @@
                 @php
                     $statusColor = match($run->status) {
                         'pending' => 'gray',
+                        'stale' => 'warning',
                         'aligning' => 'warning',
                         'completed' => 'success',
                         'failed' => 'danger',
@@ -59,6 +60,8 @@
                     Alignment is in progress. Sentences will appear here as they are processed.
                 @elseif($run->status === 'failed')
                     Alignment failed. No results to display.
+                @elseif($run->status === 'stale')
+                    Alignment needs re-align — sentences changed since the last run. Run Re-align to refresh it.
                 @else
                     No alignment data available.
                 @endif

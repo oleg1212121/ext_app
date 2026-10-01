@@ -4,8 +4,8 @@ title: Running an Alignment
 description: End-to-end workflow for aligning two same-work entities (any language pair) into sentence meaning matches.
 tags: [alignment, embeddings, jobs, howto]
 status: stable
-stale_after: 2026-12-22
-generated: { by: agent:zcode, at: 2026-09-29T19:20:00Z }
+stale_after: 2026-12-31
+generated: { by: agent:zcode, at: 2026-10-01T00:00:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -153,7 +153,9 @@ sources:
     that already has meaning-match rows keeps its human edits and landmarks
     (the scheduler never wipes existing rows), a row-less match takes the
     from-scratch path with its verify pass; the dry-run and dispatch output
-    report which path. Run it
+    report which path. Only **fresh** matches are picked: sentence edits on
+    the entity page mark existing matches `stale`, which the scheduler never
+    touches — re-align those manually (step 5, ADR 0055). Run it
     manually for
     testing: `docker exec ext_app_laravel php artisan alignments:resume`
     (`--limit=N` to override the batch size, `--dry-run` to report without
@@ -162,13 +164,18 @@ sources:
     custom `EditEntityAlignment` page (draft store → persister → presenter
     classes in `app/Classes/AlignmentEditor*`). Web view: the work's
     Alignments page and `/alignments/{entityMatch}` (ADR 0036). The Filament table offers two explicit
-    restart actions (visible only on `status ∈ {completed, failed}`):
+    restart actions (visible on `status ∈ {stale, completed, failed}`):
     **Re-align** calls the landmark-aware `begin()` — preserving human
     `alignment_chunk=-1` rows and high-confidence landmarks, deleting only
     lower-confidence machine rows, and restarting the cursor from 0; **Run
     from scratch** calls `beginFromScratch()` and deletes **all** meaning
     matches including human-made ones. Both confirmation modals state exactly
-    what will be kept or wiped.
+    what will be kept or wiped. To keep a weak machine row through a future
+    Re-align, approve it in the alignment editor first — approval pins it as
+    a human landmark (`similarity = 1.0`, `alignment_chunk = -1`). A match
+    showing **stale** needs this manual Re-align (or a full editor save /
+    re-import) before its rows reflect the current sentences; nothing runs
+    on it automatically.
 6. **Rebalance** sparse ordering — runs automatically:
    `entity-orders:rebalance` is scheduled **daily** in `routes/console.php`
    (`SparseOrderService`; language-agnostic — it scopes `entity_sentences`

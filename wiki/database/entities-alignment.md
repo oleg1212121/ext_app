@@ -4,8 +4,8 @@ title: Works, Entities & Alignment Tables
 description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20; strict junction uniqueness 2026_09_28; illustration columns 2026_09_28).
 tags: [database, schema, alignment, entities, works, hash, illustrations]
 status: stable
-stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-09-30T12:00:00Z }
+stale_after: 2026-12-31
+generated: { by: agent:zcode, at: 2026-10-01T00:00:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
@@ -35,7 +35,7 @@ sources:
 | `entities` | `Entity` | A text (book/story/file) in one language — the original or a translation of its work. Carries `work_id`, `language_id`, `created_by` (nullable uploader), an optional translator/edition `label`, a BGE-M3 embedding `signature`, `is_restricted` gating read access, `is_approved` (edit lock), `file_hash` (raw upload bytes) and `text_hash`/`text_hashed_at`/`sentences_updated_at` (exact-copy detection, ADR 0033) |
 | `sentence_types` | `SentenceType` | Classification for sentences; seeded with `sentence`, `title`, `quote`, `subtitle`, `footnote`, `caption`, `illustration` |
 | `entity_sentences` | `EntitySentence` | Split sentences with **sparse order** values; unique `(entity_id, order)`. Image-bearing rows (illustrations, ADR 0050) additionally carry `image_path`/`image_hash`/`image_width`/`image_height`/`image_mime` — `image_path` non-null is the illustration marker, `content` is the optional caption. Enrichment columns (ADR 0052): `stressed_content` (stress-marked display variant, kept beside `content` which is never mutated), `phrasal_verbs` jsonb (hits with char spans into `content`) |
-| `entity_matches` | `EntityMatch` | Pairing of two distinct same-work entities ("same text, two versions"; same-language companions like exercises + answers included), stored canonically `a_entity_id < b_entity_id` |
+| `entity_matches` | `EntityMatch` | Pairing of two distinct same-work entities ("same text, two versions"; same-language companions like exercises + answers included), stored canonically `a_entity_id < b_entity_id`. `status` (varchar): `pending \| stale \| aligning \| completed \| failed` — see the lifecycle bullet below |
 | `meaning_matches` | `MeaningMatch` | Sentence-group level alignment result within a match |
 | `sentence_meaning_matches` | `SentenceMeaningMatch` | Per-sentence membership in a meaning match, with a `side` char(1) (`'a'`/`'b'`) naming which entity of the match the sentence belongs to, plus a denormalized NOT NULL `entity_match_id` backing the strict `unique(entity_match_id, entity_sentence_id)` junction-uniqueness index (ADR 0048; auto-filled from the parent meaning match by a model `creating` hook) |
 | `entity_user` | (pivot) | Access grants: which users may read a Restricted entity, with a nullable `similarity` (null = creator grant; non-null = legacy Signature match grant — no longer produced, ADR 0033) |
@@ -96,6 +96,17 @@ sources:
   `finalize()` completion gate, and in the alignment-copy transaction
   (`AlignmentCopyService`). Details: the order-preservation invariant in
   [Sentence Alignment Pipeline](/domains/sentence-alignment.md).
+* **Match status lifecycle (ADR 0055)**: `entity_matches.status` is a plain
+  varchar with five live values — `pending` (fresh match awaiting its one
+  automatic scheduler run), `stale` (sentences changed since the last run;
+  **display-only**, the scheduler never picks it up — only an explicit
+  Re-align / Run from scratch / full editor save / re-import acts on or
+  clears it), `aligning`, `completed`, `failed`. Sentence mutations on the
+  entity page flip `aligning`/`completed`/`failed` → `stale`
+  (`EntityController::markMatchesStale()`); a `pending` match is left alone.
+  A `stale` match holds no processing slot (ADR 0044 counts only
+  `pending`/`aligning`). The historical `verifying` value was never written
+  by any code and is retired.
 * **Landmarks**: `meaning_matches.alignment_chunk = -1` marks human-made rows
   (always `similarity = 1.0`); machine rows carry a monotonic per-run chunk
   id. Machine rows with `similarity >= 0.90` are auto-landmarks. Both tiers
