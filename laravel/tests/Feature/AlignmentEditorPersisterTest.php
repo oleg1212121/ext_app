@@ -119,6 +119,37 @@ it('persists updated sentence content and order', function () {
         ->and($entityMatch->status)->toBe('completed');
 });
 
+// A full editor save is an explicit human re-assertion of the alignment, so it
+// clears the stale flag (ADR 0055).
+it('an editor save clears a stale match to completed', function () {
+    ['entityMatch' => $entityMatch, 'en1' => $en1, 'ru1' => $ru1, 'meaningMatch' => $meaningMatch] = createAlignmentFixture();
+    $entityMatch->update(['status' => 'stale']);
+
+    $presenter = app(AlignmentEditorPresenter::class);
+
+    $draft = [
+        'meaning_rows' => [
+            [
+                'key' => 'mm-'.$meaningMatch->id,
+                'id' => $meaningMatch->id,
+                'order' => 0,
+                'a_sentences' => [
+                    $presenter->sentencePayload($en1->id, 'First EN.', 1),
+                ],
+                'b_sentences' => [
+                    $presenter->sentencePayload($ru1->id, 'First RU.', 1),
+                ],
+            ],
+        ],
+        'unmatched_a' => [],
+        'unmatched_b' => [],
+    ];
+
+    app(AlignmentEditorPersister::class)->persist($entityMatch->fresh(), $draft);
+
+    expect($entityMatch->refresh()->status)->toBe('completed');
+});
+
 it('creates new sentences and meaning rows on persist', function () {
     ['entityMatch' => $entityMatch, 'en1' => $en1, 'ru1' => $ru1, 'meaningMatch' => $meaningMatch] = createAlignmentFixture();
 

@@ -1097,19 +1097,48 @@ class AlignEntitySentences implements ShouldQueue
             ]);
         }
 
-        $entityMatch->update([
-            'status' => 'completed',
-            'error_message' => null,
-            'completed_at' => now(),
+        // The repairs above ran regardless; completion itself only applies to
+        // a still-running chain. If a sentence edit flipped the match to
+        // stale mid-run, that signal survives — the user decides via
+        // Re-align (ADR 0055).
+        $entityMatch->refresh();
+
+        $attributes = [
             'linked_count' => MeaningMatch::query()
                 ->where('entity_match_id', $entityMatch->id)
                 ->count(),
-        ]);
+        ];
+
+        if ($entityMatch->status === 'aligning') {
+            $attributes['status'] = 'completed';
+            $attributes['error_message'] = null;
+            $attributes['completed_at'] = now();
+        }
+
+        $entityMatch->update($attributes);
     }
 
     public function failed(Throwable $exception): void
     {
-        EntityMatch::whereKey($this->entityMatchId)->update([
+        $entityMatch = EntityMatch::find($this->entityMatchId);
+
+        if ($entityMatch === null) {
+            return;
+        }
+
+        // Same rule as finalize(): only a still-running chain can fail the
+        // match; a stale flag flipped in mid-run survives the chain dying.
+        if ($entityMatch->status !== 'aligning') {
+            Log::warning('Alignment chain failed but the match was no longer aligning; status left untouched', [
+                'entity_match_id' => $this->entityMatchId,
+                'status' => $entityMatch->status,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return;
+        }
+
+        $entityMatch->update([
             'status' => 'failed',
             'error_message' => $exception->getMessage(),
             'completed_at' => now(),

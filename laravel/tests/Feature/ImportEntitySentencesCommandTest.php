@@ -196,6 +196,30 @@ it('replaces existing sentences and meaning matches on re-import', function () {
     }
 });
 
+// A full re-import is an explicit human re-assertion of the alignment, so it
+// clears the stale flag (ADR 0055).
+it('an import clears a stale match to completed', function () {
+    [$en, $ru] = createImportEntities();
+
+    $entityMatch = createEntityMatch($en, $ru, [
+        'status' => 'stale',
+    ]);
+
+    $path = writeTempTextFile("New EN.\n\nNew RU.\n");
+
+    try {
+        $this->artisan('entities:import-sentences', [
+            'file' => $path,
+            'first_entity_id' => $en->id,
+            'second_entity_id' => $ru->id,
+        ])->assertSuccessful();
+
+        expect($entityMatch->refresh()->status)->toBe('completed');
+    } finally {
+        @unlink($path);
+    }
+});
+
 it('fails when entity id is missing', function () {
     [$en, $ru] = createImportEntities();
     $path = writeTempTextFile("EN.\n\nRU.\n");
