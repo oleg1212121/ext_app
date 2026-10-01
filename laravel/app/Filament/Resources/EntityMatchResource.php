@@ -124,6 +124,7 @@ class EntityMatchResource extends Resource
                     ->badge()
                     ->color(fn (string $state) => match ($state) {
                         'pending' => 'gray',
+                        'stale' => 'warning',
                         'aligning' => 'warning',
                         'completed' => 'success',
                         'failed' => 'danger',
@@ -164,7 +165,7 @@ class EntityMatchResource extends Resource
                         return "{$humanMade} human-made + {$confident} confident row(s) preserved; only low-confidence rows will be re-aligned.";
                     })
                     ->action(fn (EntityMatch $record) => AlignEntitySentences::begin($record->id))
-                    ->visible(fn (EntityMatch $record) => in_array($record->status, ['completed', 'failed'])),
+                    ->visible(fn (EntityMatch $record) => in_array($record->status, ['stale', 'completed', 'failed'])),
                 Actions\Action::make('rerunScratch')
                     ->label('Run from scratch')
                     ->icon('heroicon-o-trash')
@@ -185,7 +186,7 @@ class EntityMatchResource extends Resource
                         return $description;
                     })
                     ->action(fn (EntityMatch $record) => AlignEntitySentences::beginFromScratch($record->id))
-                    ->visible(fn (EntityMatch $record) => in_array($record->status, ['completed', 'failed'])),
+                    ->visible(fn (EntityMatch $record) => in_array($record->status, ['stale', 'completed', 'failed'])),
                 Actions\DeleteAction::make(),
             ])
             ->toolbarActions([

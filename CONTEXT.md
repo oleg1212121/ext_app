@@ -110,6 +110,14 @@ The cursor — the per-side sentence offsets where the next chunk starts — is 
 only state a resume reads, so a stopped run can continue without wiping
 already-aligned chunks. _Avoid_: restart, retry.
 
+**Stale**:
+The display-only state of an entity match whose sentences changed (insert /
+update / delete / reorder) after its last alignment run. Purely a signal —
+the scheduler never picks it up; only an explicit human action (Re-align,
+Run from scratch, a full editor save, a sentence re-import) acts on it or
+clears it. Holds no processing slot. See ADR 0055. _Avoid_: pending (that is
+the fresh-match state), outdated.
+
 **Alignment copy**:
 Satisfying a newly created Entity match by cloning a completed alignment that
 already exists between an **Exact copy** of each side (same texts, same
@@ -422,10 +430,10 @@ entity is editable by any approved user. The rule mirrors read —
 `EntityAccessService::canEdit` is structurally identical to `canRead` — except
 that an **Approved entity** is editable by admin only. Sentence mutations
 (insert / update / delete / reorder) flip every entity match involving the
-entity to `status = 'pending'`. Deleting a junctioned sentence cascades
+entity to **Stale**. Deleting a junctioned sentence cascades
 (junctions removed, emptied meaning matches deleted, `linked_count` updated)
 — a deliberate divergence from the alignment editor's unlink-before-delete
-rule. See ADR 0015 and ADR 0034.
+rule. See ADR 0015, ADR 0034 and ADR 0055.
 
 **Creator grant**:
 An Access grant with a null `similarity`, recording that the user's upload

@@ -7,7 +7,6 @@ use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 
@@ -44,6 +43,8 @@ it('picks pending entity matches and dispatches alignment starts', function () {
     $alreadyAligning->update(['status' => 'aligning']);
     $completed = createVerifiablePair('En C', 'Ru C');
     $completed->update(['status' => 'completed']);
+    $stale = createVerifiablePair('En D', 'Ru D');
+    $stale->update(['status' => 'stale']);
 
     $this->artisan('alignments:resume')
         ->assertSuccessful()
@@ -52,10 +53,12 @@ it('picks pending entity matches and dispatches alignment starts', function () {
     $pending->refresh();
     $alreadyAligning->refresh();
     $completed->refresh();
+    $stale->refresh();
 
     expect($pending->status)->toBe('aligning')
         ->and($alreadyAligning->status)->toBe('aligning')
-        ->and($completed->status)->toBe('completed');
+        ->and($completed->status)->toBe('completed')
+        ->and($stale->status)->toBe('stale');
 });
 
 it('respects the limit option', function () {
@@ -118,29 +121,12 @@ it('reports when there are no pending entity matches', function () {
         ->expectsOutput('No pending entity matches to resume.');
 });
 
-// The 2026-09-28 prod incident: editing a sentence on the entity page flips a
-// completed match to pending, and the 5-minute scheduler used to wipe every
-// meaning-match row — including human alignment_chunk=-1 landmarks — by
-// routing re-pended matches through beginFromScratch (ADR 0051).
-it('preserves human rows when a sentence edit re-pends a completed match', function () {
-    $calls = [];
-    Http::fake(function (Request $request) use (&$calls) {
-        $a = $request->data()['a_sentences'] ?? [];
-        $b = $request->data()['b_sentences'] ?? [];
-        $calls[] = ['a' => $a, 'b' => $b];
-
-        $count = min(count($a), count($b));
-        $matches = [];
-
-        for ($i = 0; $i < $count; $i++) {
-            $matches[] = ['a_start' => $i, 'a_end' => $i + 1, 'b_start' => $i, 'b_end' => $i + 1, 'score' => 0.9];
-        }
-
-        return Http::response(['matches' => $matches, 'unmatched_a' => [], 'unmatched_b' => []]);
-    });
-
-    Bus::fake();
-
+// The 2026-09-28 prod incident (ADR 0051) and its 2026-09-30 repeat (ADR 0055):
+// editing a sentence on the entity page used to flip a completed match to
+// pending, and the 5-minute scheduler picked it up and re-aligned it,
+// re-deriving every machine row in a new order. The edit now produces a
+// display-only stale status the scheduler never picks up.
+it('never re-aligns a match that a sentence edit made stale', function () {
     $typeId = SentenceType::firstOrCreate(
         ['name' => 'sentence'],
         ['description' => 'A standard sentence'],
@@ -191,7 +177,10 @@ it('preserves human rows when a sentence edit re-pends a completed match', funct
     SentenceMeaningMatch::create(['entity_sentence_id' => $enSentences[1]->id, 'meaning_match_id' => $machineRow->id, 'side' => 'a']);
     SentenceMeaningMatch::create(['entity_sentence_id' => $ruSentences[1]->id, 'meaning_match_id' => $machineRow->id, 'side' => 'b']);
 
-    // The user edits a sentence on the entity page; the match flips to pending.
+    $rowsBefore = matchRowsSnapshot($entityMatch->id);
+    $junctionsBefore = junctionSnapshot($entityMatch->id);
+
+    // The user edits a sentence on the entity page; the match flips to stale.
     $this->actingAs(approvedUser())
         ->patchJson("/entities/en/{$enEntity->id}/sentences/{$enSentences[0]->id}", [
             'content' => 'English 1 edited.',
@@ -199,44 +188,43 @@ it('preserves human rows when a sentence edit re-pends a completed match', funct
         ])
         ->assertOk();
 
-    expect($entityMatch->refresh()->status)->toBe('pending');
+    expect($entityMatch->refresh()->status)->toBe('stale');
 
+    // The scheduler only picks fresh pending matches: stale is invisible to
+    // it, in dry-run and for real, however many ticks pass.
     $this->artisan('alignments:resume --dry-run')
         ->assertSuccessful()
-        ->expectsOutput("Would resume entity match #{$entityMatch->id} (a_entity_id={$entityMatch->a_entity_id}, b_entity_id={$entityMatch->b_entity_id}, landmarks preserved)");
+        ->expectsOutput('No pending entity matches to resume.');
 
     $this->artisan('alignments:resume')
         ->assertSuccessful()
-        ->expectsOutput("Dispatched alignment for entity match #{$entityMatch->id} (landmarks preserved)");
+        ->expectsOutput('No pending entity matches to resume.');
 
-    // The landmark survived the resume begin; only the low-confidence row went.
-    expect(MeaningMatch::find($humanRow->id))->not->toBeNull()
-        ->and(MeaningMatch::find($machineRow->id))->toBeNull();
+    $this->artisan('alignments:resume')
+        ->assertSuccessful()
+        ->expectsOutput('No pending entity matches to resume.');
 
-    (new AlignEntitySentences($entityMatch->id))->handle();
-
-    $guard = 0;
-
-    while ($entityMatch->refresh()->status === 'aligning' && $guard < 10) {
-        (new AlignEntitySentences($entityMatch->id))->handle();
-        $guard++;
-    }
-
-    expect($guard)->toBeLessThan(10)
-        ->and($entityMatch->status)->toBe('completed')
-        ->and($entityMatch->a_last_sentence_offset)->toBe(3)
-        ->and($entityMatch->b_last_sentence_offset)->toBe(3)
-        ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(3);
-
-    $humanRow->refresh();
-
-    expect($humanRow->alignment_chunk)->toBe(-1)
-        ->and($humanRow->similarity)->toBe('1.0000')
-        ->and($humanRow->sideSentenceMeaningMatches('a')->pluck('entity_sentence_id')->all())->toEqual([$enSentences[0]->id])
-        ->and($humanRow->sideSentenceMeaningMatches('b')->pluck('entity_sentence_id')->all())->toEqual([$ruSentences[0]->id]);
-
-    // The re-align pool spans the sentences after the landmark, machine-derived at 0.9.
-    expect($calls)->toHaveCount(1)
-        ->and($calls[0]['a'])->toBe(['English 2.', 'English 3.'])
-        ->and($calls[0]['b'])->toBe(['Russian 2.', 'Russian 3.']);
+    expect($entityMatch->refresh()->status)->toBe('stale')
+        ->and(matchRowsSnapshot($entityMatch->id))->toBe($rowsBefore)
+        ->and(junctionSnapshot($entityMatch->id))->toBe($junctionsBefore)
+        ->and(MeaningMatch::find($humanRow->id))->not->toBeNull()
+        ->and(MeaningMatch::find($machineRow->id))->not->toBeNull();
 });
+
+function matchRowsSnapshot(int $entityMatchId): string
+{
+    return MeaningMatch::query()
+        ->where('entity_match_id', $entityMatchId)
+        ->orderBy('id')
+        ->get(['id', 'order', 'similarity', 'alignment_chunk'])
+        ->toJson();
+}
+
+function junctionSnapshot(int $entityMatchId): string
+{
+    return SentenceMeaningMatch::query()
+        ->whereIn('meaning_match_id', MeaningMatch::query()->where('entity_match_id', $entityMatchId)->pluck('id'))
+        ->orderBy('id')
+        ->get(['id', 'meaning_match_id', 'entity_sentence_id', 'side'])
+        ->toJson();
+}

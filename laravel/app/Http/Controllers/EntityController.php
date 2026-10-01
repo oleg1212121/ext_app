@@ -297,7 +297,7 @@ class EntityController extends Controller
             ]);
         });
 
-        $this->setMatchesPending($entity->id);
+        $this->markMatchesStale($entity->id);
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
@@ -350,7 +350,7 @@ class EntityController extends Controller
             $sentenceModel->update($updates);
         }
 
-        $this->setMatchesPending($entity->id);
+        $this->markMatchesStale($entity->id);
 
         return response()->json([
             'sentence' => $this->sentencePayload($sentenceModel->refresh()),
@@ -371,7 +371,7 @@ class EntityController extends Controller
 
         DB::transaction(fn () => $sentenceModel->delete());
 
-        $this->setMatchesPending($entity->id);
+        $this->markMatchesStale($entity->id);
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
@@ -421,7 +421,7 @@ class EntityController extends Controller
         // the hash covers content in order — mark the sentence set changed.
         $entity->touchSentences();
 
-        $this->setMatchesPending($entity->id);
+        $this->markMatchesStale($entity->id);
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
@@ -575,18 +575,21 @@ class EntityController extends Controller
     }
 
     /**
-     * Flip every EntityMatch involving this entity to status = 'pending',
-     * surfacing the need to re-align. See ADR 0015.
+     * Flip every EntityMatch involving this entity to status = 'stale',
+     * surfacing the need to re-align. Stale is display-only: the scheduler
+     * never picks it up, so only an explicit Re-align re-aligns. Fresh
+     * matches stay 'pending' (their one automatic run is the feature). See
+     * ADR 0055, superseding ADR 0015's pending-on-edit rule.
      */
-    private function setMatchesPending(int $entityId): void
+    private function markMatchesStale(int $entityId): void
     {
         EntityMatch::query()
             ->where(function (Builder $query) use ($entityId): void {
                 $query->where('a_entity_id', $entityId)
                     ->orWhere('b_entity_id', $entityId);
             })
-            ->where('status', '!=', 'pending')
-            ->update(['status' => 'pending']);
+            ->whereIn('status', ['aligning', 'completed', 'failed'])
+            ->update(['status' => 'stale']);
     }
 
     private function alignmentCount(int $entityId): int

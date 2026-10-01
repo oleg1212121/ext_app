@@ -234,7 +234,7 @@ it('granted user can insert a sentence at the beginning', function () {
     expect($newSentence->order)->toBeLessThan($existing->order);
 });
 
-it('insert sentence flips the match status to pending', function () {
+it('insert sentence flips the match status to stale', function () {
     $work = createWork();
     $entity = createEntity('en', $work, ['name' => 'Aligned', 'is_restricted' => true]);
     $user = approvedUser();
@@ -253,7 +253,7 @@ it('insert sentence flips the match status to pending', function () {
             'after_sentence_id' => null,
         ]);
 
-    expect($match->refresh()->status)->toBe('pending');
+    expect($match->refresh()->status)->toBe('stale');
 });
 
 it('non-granted user cannot insert a sentence', function () {
@@ -301,7 +301,7 @@ it('granted user can update sentence content and type', function () {
     expect($sentence->refresh()->content)->toBe('Updated text');
 });
 
-it('update sentence flips the match status to pending', function () {
+it('update sentence flips the match status to stale', function () {
     $work = createWork();
     $entity = createEntity('en', $work, ['name' => 'Edit aligned', 'is_restricted' => true]);
     $user = approvedUser();
@@ -312,6 +312,29 @@ it('update sentence flips the match status to pending', function () {
 
     $match = createEntityMatch($entity, createEntity('ru', $work, ['name' => 'Pair']), [
         'status' => 'completed',
+        'linked_count' => 0,
+    ]);
+
+    $this->actingAs($user)
+        ->patchJson("/entities/en/{$entity->id}/sentences/{$sentence->id}", [
+            'content' => 'Changed',
+            'sentence_type_id' => $typeId,
+        ]);
+
+    expect($match->refresh()->status)->toBe('stale');
+});
+
+it('sentence edit leaves a fresh pending match pending for the scheduler (ADR 0055)', function () {
+    $work = createWork();
+    $entity = createEntity('en', $work, ['name' => 'Fresh aligned', 'is_restricted' => true]);
+    $user = approvedUser();
+    grantAccess($user, $entity);
+    $typeId = SentenceType::where('name', 'sentence')->value('id');
+
+    $sentence = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'X', 'order' => 0, 'sentence_type_id' => $typeId]);
+
+    $match = createEntityMatch($entity, createEntity('ru', $work, ['name' => 'Pair']), [
+        'status' => 'pending',
         'linked_count' => 0,
     ]);
 
@@ -387,7 +410,7 @@ it('deleting a junctioned sentence cascades to meaning matches and updates linke
     expect(EntitySentence::find($sentence->id))->toBeNull()
         ->and(MeaningMatch::find($meaningMatch->id))->toBeNull()
         ->and($match->refresh()->linked_count)->toBe(0)
-        ->and($match->refresh()->status)->toBe('pending');
+        ->and($match->refresh()->status)->toBe('stale');
 });
 
 it('non-granted user cannot delete a sentence', function () {
@@ -422,7 +445,7 @@ it('granted user can reorder a sentence to the beginning', function () {
     expect($third->refresh()->order)->toBeLessThan($first->refresh()->order);
 });
 
-it('reorder flips the match status to pending', function () {
+it('reorder flips the match status to stale', function () {
     $work = createWork();
     $entity = createEntity('en', $work, ['name' => 'Reorder aligned', 'is_restricted' => true]);
     $user = approvedUser();
@@ -443,7 +466,7 @@ it('reorder flips the match status to pending', function () {
             'after_sentence_id' => 0,
         ]);
 
-    expect($match->refresh()->status)->toBe('pending');
+    expect($match->refresh()->status)->toBe('stale');
 });
 
 it('non-granted user cannot reorder sentences', function () {

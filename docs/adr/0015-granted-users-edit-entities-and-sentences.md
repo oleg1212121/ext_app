@@ -26,7 +26,7 @@ update content+type, cascade delete, drag reorder) on a combined edit page at
   empty, and updates `linked_count`. The sentence models' `deleting`/`deleted`
   hooks already perform this cascade. Original-completeness no longer holds
   after a junctioned original-text sentence is deleted here; the match is
-  flagged `pending` so a re-align restores it. This divergence from the
+  flagged `stale` so a re-align restores it (ADR 0055). This divergence from the
   alignment editor is deliberate.
 - **Document order is now mutable by non-admins.** Drag-to-reorder is a fourth
   mutator of `*_entity_sentences.order`, alongside the admin Sentences tab,
@@ -37,6 +37,10 @@ update content+type, cascade delete, drag reorder) on a combined edit page at
   the entity, surfacing the need to re-align via Re-run / `alignments:resume`.
   The entity `signature` (an upload-time dedup artifact) is intentionally left
   stale — it is not an ongoing-integrity signal.
+  > **Superseded by ADR 0055 (2026-10-01):** mutations now flip matches to a
+  > display-only `stale` status that the scheduler never picks up; `pending`
+  > is reserved for fresh matches, and only an explicit Re-align (or a full
+  > editor save / re-import) re-aligns.
 - **Sentence CRUD is JSON-driven**, mirroring `AlignmentEditorController`:
   endpoints return the updated sentence list rather than issuing Inertia
   redirects, because drag-and-drop requires JSON. The metadata form stays
