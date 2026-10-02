@@ -3742,3 +3742,29 @@ ui_settings preference (reader + simulator, default off, autosaved; new
 by default. `wiki/domains/sentence-enrichment.md` rewritten for the
 registry/stamps/rendering; ADR 0052 unaffected (its phrasal "Filament-only"
 scope is superseded by 0057).
+
+## 2026-10-02 (phrasal lead verb-lemma candidates)
+
+"came forward" went unflagged: the matcher trusted the single `cls` hint,
+but `CLASS_PRIORITY` ranks noun above verb, so POS-ambiguous leads ("came",
+"went", "turn", "cut"…) resolved to their noun page and never led a match;
+a second miss class had verb leads whose imported headword is the inflected
+form itself ("looked"), making the single lemma hint useless. A classified
+probe of entity 17 (read-only, script since deleted) measured 93 windows
+whose phrase IS a stored multi-word verb headword against 6 stored hits —
+62 class-hijacked, 31 bad-lemma, the rest literal uses / dictionary gaps.
+Fix (ADR 0058): `EnglishPhrasalVerbEnricher` contributes a `verb_lemmas`
+per-token hint (every verb-class headword for the surface: direct rows +
+forms-table bases, deduped, cap 8; only when en_phrasal runs), python
+`phrasal.find_phrasal_verbs` tries linked-lemma + verb_lemmas candidates
+with longest-window-first preference; `EnrichToken.verb_lemmas` added.
+Re-run of en_phrasal only (ADR 0057's per-enricher staleness in action;
+en_stress untouched): entity 17 went 6 → 243 hits, all with `phrase`.
+Coverage is now bounded by lexicon completeness — a data matter (the dev
+dictionary predates part of the dump; "come forward" is importable but
+absent; re-running the dictionary import widens detection, then
+`entities:enrich --enricher=en_phrasal` applies it). Review fixes riding
+along: the enrich sweep pre-filters languages in SQL (`EnricherRegistry::
+languages()`), `keys()` replaces a hardcoded key list in `--enricher=`
+errors, unused `SentenceEnrichmentService::registry()` removed, and the
+`phrasal_verbs` ui-settings toggles gained endpoint tests.

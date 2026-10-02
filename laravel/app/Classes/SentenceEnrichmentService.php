@@ -50,11 +50,6 @@ class SentenceEnrichmentService
         );
     }
 
-    public function registry(): EnricherRegistry
-    {
-        return $this->registry;
-    }
-
     /**
      * The entity's language enrichers that currently need to run (never
      * enriched, a newly registered enricher, or sentence changes since).
@@ -257,6 +252,7 @@ class SentenceEnrichmentService
             'ipa' => $hint['ipa'] ?? null,
             'parts' => $hint['parts'] ?? null,
             'stressed' => $hint['stressed'] ?? null,
+            'verb_lemmas' => $hint['verb_lemmas'] ?? null,
         ];
     }
 

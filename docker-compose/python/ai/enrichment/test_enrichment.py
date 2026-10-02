@@ -210,6 +210,60 @@ hits = phrasal.find_phrasal_verbs(
 )
 check("phrasal: hits consume their tokens (no inner re-match)", hits, [{"verb": "give", "particles": ["up"], "start": 3, "end": 10, "phrase": "give up"}])
 
+# --- phrasal: verb-lemma candidates (ADR 0058) --------------------------------
+# The lead's class hint can say noun (the stained-glass "came" outranks the
+# verb in CLASS_PRIORITY); the caller's verb_lemmas rescue the match.
+hits = phrasal.find_phrasal_verbs(
+    [
+        {"surface": "She", "start": 0, "end": 3, "cls": "pron"},
+        {"surface": "came", "start": 4, "end": 8, "cls": "noun", "verb_lemmas": ["come"]},
+        {"surface": "forward", "start": 9, "end": 16, "cls": "prep"},
+        {"surface": "slowly", "start": 17, "end": 23, "cls": "adv"},
+    ],
+    {"come forward"},
+)
+check(
+    "phrasal: noun-hijacked lead matches via verb_lemmas",
+    hits,
+    [{"verb": "came", "particles": ["forward"], "start": 4, "end": 16, "phrase": "come forward"}],
+)
+hits = phrasal.find_phrasal_verbs(
+    [
+        {"surface": "came", "start": 0, "end": 4, "cls": "noun"},
+        {"surface": "forward", "start": 5, "end": 12, "cls": "prep"},
+    ],
+    {"come forward"},
+)
+check("phrasal: non-verb lead without verb_lemmas stays a miss", hits, [])
+# The linked lemma wins over a verb_lemmas entry when both are candidates.
+hits = phrasal.find_phrasal_verbs(
+    [
+        {"surface": "gave", "start": 0, "end": 4, "cls": "verb", "lemma": "give", "verb_lemmas": ["give", "gave"]},
+        {"surface": "up", "start": 5, "end": 7, "cls": "prep"},
+    ],
+    {"gave up", "give up"},
+)
+check(
+    "phrasal: linked lemma is the first candidate",
+    hits,
+    [{"verb": "gave", "particles": ["up"], "start": 0, "end": 7, "phrase": "give up"}],
+)
+# Longest window wins across candidates: a 3-window on the first candidate
+# beats a 2-window on a later one.
+hits = phrasal.find_phrasal_verbs(
+    [
+        {"surface": "came", "start": 0, "end": 4, "cls": "noun", "verb_lemmas": ["come"]},
+        {"surface": "up", "start": 5, "end": 7, "cls": "prep"},
+        {"surface": "with", "start": 8, "end": 12, "cls": "prep"},
+    ],
+    {"come up", "come up with"},
+)
+check(
+    "phrasal: longest window wins across candidates",
+    hits,
+    [{"verb": "came", "particles": ["up", "with"], "start": 0, "end": 12, "phrase": "come up with"}],
+)
+
 # --- ru_stress (Silero; skipped when unavailable) -----------------------------
 try:
     from silero_stress import load_accentor

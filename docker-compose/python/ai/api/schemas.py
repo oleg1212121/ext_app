@@ -119,6 +119,10 @@ class EnrichToken(BaseModel):
     parts: list[EnrichTokenPart] | None = None
     # Russian: dictionary stressed-form candidates carrying U+0301.
     stressed: list[str] | None = None
+    # English: all verb-class headwords for the surface (direct rows + forms
+    # table), so a phrasal lead buried under another class's page ("came" ->
+    # the stained-glass noun) still matches (ADR 0058).
+    verb_lemmas: list[str] | None = None
 
 
 class EnrichSentence(BaseModel):

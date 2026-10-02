@@ -5,7 +5,7 @@ description: Local-only per-sentence enrichment — Russian/English stress marks
 tags: [enrichment, stress-marks, phrasal-verbs, enrichers, python-service, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-02T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-02T15:00:00Z }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -40,6 +40,9 @@ sources:
    - id: adr57
      resource: docs/adr/0057-enricher-registry.md
      title: ADR 0057
+   - id: adr58
+     resource: docs/adr/0058-phrasal-lead-verb-lemmas.md
+     title: ADR 0058
 ---
 
 # Sentence enrichment (stress marks, phrasal verbs)
@@ -77,7 +80,7 @@ contributions into one python payload.
 
 `{language, enrichers: ["ru_stress"|"en_stress"|"en_phrasal"], phrasal_lexicon:
 [headwords], sentences: [{id, text, tokens: [{surface, start, end, cls, lemma,
-ipa, parts, stressed}]}]}` → `{results: [{id, output: {[key]: value}]}}` —
+ipa, parts, stressed, verb_lemmas}]}]}` → `{results: [{id, output: {[key]: value}]}}` —
 the request's `enrichers` (pydantic `Literal`, validity = dispatchability)
 selects the modules and each result's output is keyed by enricher key. One
 HTTP round trip per batch; a partial run (only the stale enrichers) skips the
@@ -116,10 +119,15 @@ the same split as `/split` and `/align`.
   (`ipaByWordId()`: ˈ-bearing variants before the rest, deterministic
   `transcriptions.id` tiebreak) before applying the 3-variant cap.
 - **phrasal verbs** (`ai/enrichment/phrasal.py`): 3- then 2-token windows
-  whose lead is verb-classed and whose `lemma + surfaces` match a multi-word
-  verb headword (the dictionary's previously-inert phrasal rows; the
-  lexicon rides `requestExtras()`). Longest match wins; hits never overlap;
-  each hit carries the matched `phrase`.
+  whose lead is a verb candidate and whose `lead candidate + surfaces` match
+  a multi-word verb headword (the dictionary's previously-inert phrasal rows;
+  the lexicon rides `requestExtras()`). Lead candidates (ADR 0058): the
+  linked lemma when the class hint says verb, plus `verb_lemmas` — every
+  verb-class headword for the surface (direct rows + forms table) — because
+  another class's page can outrank the verb (the stained-glass noun "came"
+  hides the verb in "came forward"). Longest window wins; candidates break
+  ties within a length; hits never overlap; each hit carries the matched
+  `phrase`.
 
 Plain-python tests: `docker exec ext_python python
 /app/ai/enrichment/test_enrichment.py` (Silero-dependent ru tests skip with a

@@ -317,6 +317,51 @@ it('sends dictionary hints with the enrichment request', function () {
         ->and($gave['lemma'])->toBe('give');
 });
 
+it('sends verb-lemma candidates for leads buried under another class', function () {
+    $captured = null;
+    Http::fake(function (Request $request) use (&$captured) {
+        $captured = $request->data();
+
+        return Http::response(['results' => []]);
+    });
+
+    $entity = enrichableEntity('en', ['She came forward.']);
+
+    // The stained-glass noun outranks the verb (CLASS_PRIORITY: noun > verb),
+    // so the entity link classifies "came" as a noun — yet "came forward" is
+    // a phrasal verb (ADR 0058).
+    $came = createWord('en', 'came', 'noun');
+    EntityWord::query()->create([
+        'entity_id' => $entity->id,
+        'l_word' => 'came',
+        'token' => 'came',
+        'count' => 1,
+        'word_id' => $came->id,
+    ]);
+
+    // The dictionary's verb pages for the surface: the imported form-of page
+    // keeps the inflected headword itself (l_word "came", word "came" — the
+    // shape the real data has, see "looked"), and the forms table reaches
+    // the base verb "come". Both become candidates, in that order.
+    $inflected = createWord('en', 'came', 'verb');
+    $base = createWord('en', 'come', 'verb');
+    Form::query()->create(['word_id' => $base->id, 'form' => 'came', 'l_word' => 'came']);
+
+    SentenceEnrichmentService::create()->enrichChunk(
+        $entity->refresh(),
+        EntitySentence::query()->where('entity_id', $entity->id)->get(),
+    );
+
+    $cameToken = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'came');
+    expect($cameToken['cls'])->toBe('noun')
+        ->and($cameToken['lemma'])->toBe('came')
+        ->and($cameToken['verb_lemmas'])->toBe(['came', 'come'])
+        // A surface with no verb pages ships none.
+        ->and(collect($captured['sentences'][0]['tokens'])->firstWhere('surface', 'forward')['verb_lemmas'])->toBeNull()
+        // The inflected page and the noun page are distinct dictionary rows.
+        ->and($inflected->id)->not->toBe($came->id);
+});
+
 it('ships stressed variants and phrasal hits to the reader page', function () {
     $user = approvedUser();
 

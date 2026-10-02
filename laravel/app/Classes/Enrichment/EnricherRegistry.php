@@ -89,6 +89,16 @@ class EnricherRegistry
     }
 
     /**
+     * Every registered enricher key, manifest order.
+     *
+     * @return list<string>
+     */
+    public function keys(): array
+    {
+        return array_map(fn (Enricher $enricher): string => $enricher->key(), $this->enrichers);
+    }
+
+    /**
      * The entity's language enrichers whose completion stamp is missing (a
      * newly registered enricher is automatically stale) or older than the
      * last sentence change. Entities of languages with no enrichers are

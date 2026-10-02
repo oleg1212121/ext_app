@@ -31,6 +31,9 @@ class EnrichEntitiesCommand extends Command
 
         $stale = Entity::query()
             ->with('language')
+            // SQL-side filter: a language no enricher applies to can never
+            // be stale, so its entities are not even loaded.
+            ->whereHas('language', fn ($query) => $query->whereIn('code', $registry->languages()))
             ->orderBy('id')
             ->get()
             ->filter(fn (Entity $entity) => $enrichment->staleEnrichers($entity) !== [])
@@ -68,9 +71,7 @@ class EnrichEntitiesCommand extends Command
         $enricher = $registry->forKey($key);
 
         if ($enricher === null) {
-            $this->error("Unknown enricher '{$key}'. Registered keys: ".implode(', ', [
-                'ru_stress', 'en_stress', 'en_phrasal',
-            ]));
+            $this->error("Unknown enricher '{$key}'. Registered keys: ".implode(', ', $registry->keys()));
 
             return self::FAILURE;
         }
