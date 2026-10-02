@@ -47,4 +47,5 @@ return [
     'bilinguals.ai_empty_hint' => ['en' => 'Open a row, write your translation to the left, then send. The reader will answer here.', 'ru' => 'Откройте строку, напишите свой перевод слева и отправьте. Читатель ответит здесь.'],
     'bilinguals.highlight_words' => ['en' => 'Highlight words', 'ru' => 'Подсветка слов'],
     'bilinguals.stress_marks' => ['en' => 'Stress marks', 'ru' => 'Ударения'],
+    'bilinguals.phrasal_verbs' => ['en' => 'Phrasal verbs', 'ru' => 'Фразовые глаголы'],
 ];

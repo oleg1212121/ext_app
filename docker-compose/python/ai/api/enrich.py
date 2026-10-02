@@ -10,7 +10,7 @@ router = APIRouter()
 @router.post("/enrich", response_model=EnrichResponse)
 def enrich(req: EnrichRequest, request: Request):
     accentor = None
-    if req.language == "ru":
+    if "ru_stress" in req.enrichers:
         try:
             accentor = ModelCache(request.app.state).stress_model()
         except Exception as exc:
@@ -21,21 +21,13 @@ def enrich(req: EnrichRequest, request: Request):
     for sentence in req.sentences:
         tokens = [t.model_dump() for t in sentence.tokens]
 
-        stressed = None
-        if req.language == "ru":
-            stressed = ru_stress.mark_sentence(sentence.text, tokens, accentor)
-        elif req.language == "en":
-            stressed = en_stress.mark_sentence(sentence.text, tokens)
+        output: dict[str, object] = {}
+        if "ru_stress" in req.enrichers:
+            output["ru_stress"] = ru_stress.mark_sentence(sentence.text, tokens, accentor)
+        if "en_stress" in req.enrichers:
+            output["en_stress"] = en_stress.mark_sentence(sentence.text, tokens)
+        if "en_phrasal" in req.enrichers:
+            output["en_phrasal"] = phrasal.find_phrasal_verbs(tokens, lexicon)
 
-        phrasal_verbs = (
-            phrasal.find_phrasal_verbs(tokens, lexicon) if req.language == "en" else None
-        )
-
-        results.append(
-            EnrichResult(
-                id=sentence.id,
-                stressed=stressed,
-                phrasal_verbs=phrasal_verbs,
-            )
-        )
+        results.append(EnrichResult(id=sentence.id, output=output))
     return EnrichResponse(results=results)

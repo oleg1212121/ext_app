@@ -85,8 +85,8 @@ class FinalizeEntityDerivations implements ShouldQueue
         ]);
 
         // Sentence enrichment rides behind the upload pipeline (ADR 0052);
-        // sentence edits later flip enriched_at stale and the entities:enrich
-        // sweep re-picks the entity.
+        // sentence edits later flip the enrichment stamps stale and the
+        // entities:enrich sweep re-picks the entity (ADR 0057).
         EnrichEntitySentences::begin($entity->id);
     }
 

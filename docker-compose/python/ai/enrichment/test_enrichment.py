@@ -183,7 +183,7 @@ hits = phrasal.find_phrasal_verbs(
 check(
     "phrasal: inflected lead matches lemma headword",
     hits,
-    [{"verb": "gave", "particles": ["up"], "start": 4, "end": 11}],
+    [{"verb": "gave", "particles": ["up"], "start": 4, "end": 11, "phrase": "give up"}],
 )
 hits = phrasal.find_phrasal_verbs(
     toks(("He", 0, 2, "pron", None), ("kicked", 3, 9, "verb", "kick"), ("the", 10, 13, "det", None), ("bucket", 14, 20, "noun", None)),
@@ -192,7 +192,7 @@ hits = phrasal.find_phrasal_verbs(
 check(
     "phrasal: three-word idiom wins over shorter/none",
     hits,
-    [{"verb": "kicked", "particles": ["the", "bucket"], "start": 3, "end": 20}],
+    [{"verb": "kicked", "particles": ["the", "bucket"], "start": 3, "end": 20, "phrase": "kick the bucket"}],
 )
 hits = phrasal.find_phrasal_verbs(
     toks(("The", 0, 3, "det", None), ("setup", 4, 9, "noun", "set up"), ("failed", 10, 16, "verb", "fail")),
@@ -208,7 +208,7 @@ hits = phrasal.find_phrasal_verbs(
     toks(("Do", 0, 2, "verb", "do"), ("give", 3, 7, "verb", "give"), ("up", 8, 10, "prep", None)),
     {"give up"},
 )
-check("phrasal: hits consume their tokens (no inner re-match)", hits, [{"verb": "give", "particles": ["up"], "start": 3, "end": 10}])
+check("phrasal: hits consume their tokens (no inner re-match)", hits, [{"verb": "give", "particles": ["up"], "start": 3, "end": 10, "phrase": "give up"}])
 
 # --- ru_stress (Silero; skipped when unavailable) -----------------------------
 try:

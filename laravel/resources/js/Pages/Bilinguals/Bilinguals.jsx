@@ -124,6 +124,7 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
         rowImages: payload.row_images ?? [],
         rowKeys: payload.row_keys ?? null,
         stressedRows: payload.stressed_rows ?? [],
+        phrasalRows: payload.phrasal_rows ?? [],
         wordMaps: payload.word_maps ?? null,
         languages: payload.languages ?? null,
         defaultLearningSide: payload.default_learning_side ?? null,
@@ -195,6 +196,8 @@ const Bilinguals = (props) => {
     let [highlightWords, setHighlightWords] = React.useState(props.highlightWords ?? true)
     // Stress marks toggle (ADR 0052), same family as highlight words.
     let [showStress, setShowStress] = React.useState(props.stressMarks ?? false)
+    // Phrasal verbs toggle (ADR 0057): dotted underlines on English hits.
+    let [showPhrasal, setShowPhrasal] = React.useState(props.phrasalVerbs ?? false)
     let [currentText, setCurrentText] = React.useState(initialText)
     const [pending, setPending] = React.useState(false);
     const [aiAnswer, setAiAnswer] = React.useState('');
@@ -208,6 +211,7 @@ const Bilinguals = (props) => {
     const [rowImages, setRowImages] = React.useState([]);
     const [rowKeys, setRowKeys] = React.useState(null);
     const [stressedRows, setStressedRows] = React.useState([]);
+    const [phrasalRows, setPhrasalRows] = React.useState([]);
     const [wordMaps, setWordMaps] = React.useState(null);
     const [allTarget, setAllTarget] = React.useState(false);
     const [textMeta, setTextMeta] = React.useState(null);
@@ -247,6 +251,7 @@ const Bilinguals = (props) => {
         show_ai: showAI,
         highlight_words: highlightWords,
         stress_marks: showStress,
+        phrasal_verbs: showPhrasal,
         question: customTasks,
         ai_panel_width: aiPanelWidth,
         workplace_height: workplaceHeight,
@@ -283,11 +288,12 @@ const Bilinguals = (props) => {
         setLoadError(null);
         setPending(true);
         try {
-            const {rows: nextRows, rowImages: nextRowImages, rowKeys: nextRowKeys, stressedRows: nextStressedRows, wordMaps: nextWordMaps, languages: nextLanguages, defaultLearningSide: nextDefaultSide, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
+            const {rows: nextRows, rowImages: nextRowImages, rowKeys: nextRowKeys, stressedRows: nextStressedRows, phrasalRows: nextPhrasalRows, wordMaps: nextWordMaps, languages: nextLanguages, defaultLearningSide: nextDefaultSide, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
             setRows(nextRows);
             setRowImages(nextRowImages);
             setRowKeys(nextRowKeys);
             setStressedRows(nextStressedRows);
+            setPhrasalRows(nextPhrasalRows);
             setWordMaps(nextWordMaps);
             if (nextLanguages) {
                 setLanguages(nextLanguages);
@@ -311,6 +317,7 @@ const Bilinguals = (props) => {
             setRowImages([]);
             setRowKeys(null);
             setStressedRows([]);
+            setPhrasalRows([]);
             setWordMaps(null);
             setAllTarget(false);
             setTextMeta(null);
@@ -442,6 +449,13 @@ const Bilinguals = (props) => {
     ), [stressedRows, learningSide]);
 
     const hasStressedData = stressedRows.some(([a, b]) => a !== null || b !== null);
+
+    // Phrasal hit lists flip with the text pairs.
+    const shownPhrasalRows = React.useMemo(() => (
+        learningSide === 'a' ? phrasalRows : phrasalRows.map(([a, b]) => [b, a])
+    ), [phrasalRows, learningSide]);
+
+    const hasPhrasalData = phrasalRows.some(([a, b]) => a !== null || b !== null);
 
     // Word maps stay keyed by the match's actual sides; the display columns
     // index into them by the side currently playing each role.
@@ -752,6 +766,19 @@ const Bilinguals = (props) => {
                                 <Underline isActive={showStress}/>
                             </button>
                         )}
+                        {hasPhrasalData && (
+                            <button
+                                type="button"
+                                className={tabClass(showPhrasal)}
+                                aria-label={t('bilinguals.phrasal_verbs')}
+                                aria-pressed={showPhrasal}
+                                title={t('bilinguals.phrasal_verbs')}
+                                onClick={() => setShowPhrasal(!showPhrasal)}
+                            >
+                                <Icon name="phrasal" className={pronunciationIconClass}/>
+                                <Underline isActive={showPhrasal}/>
+                            </button>
+                        )}
                         <button
                             type="button"
                             className={tabClass(showAI)}
@@ -832,6 +859,8 @@ const Bilinguals = (props) => {
                                 highlightWords={highlightWords}
                                 stressedRows={shownStressedRows}
                                 showStress={showStress}
+                                phrasalRows={shownPhrasalRows}
+                                showPhrasal={showPhrasal}
                                 onWordProgress={handleWordProgress}
                                 rowKeys={rowKeys}
                                 allTarget={allTarget}

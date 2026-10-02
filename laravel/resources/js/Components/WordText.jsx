@@ -53,8 +53,16 @@ function tierClass(familiarity, highlight) {
  * stressed variant (sentence-aligned 1:1, or null). When showStress is on
  * and a sentence has a variant, the variant is displayed instead — the
  * word map still resolves because keys strip combining marks.
+ *
+ * Phrasal verbs (ADR 0057): `phrasal` is one entry per sentence — the hit
+ * list ({verb, particles, start, end, phrase} char spans indexing content)
+ * or null — or null when the side has no hits. When showPhrasal is on, the
+ * tokens each hit covers get a dotted underline with the matched headword
+ * as tooltip. Hit spans index the plain content, so token indexes are
+ * computed from the original sentence; the stressed variant keeps the token
+ * sequence (marks attach inside tokens), so the indexes transfer.
  */
-function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, explain, stressed = null, showStress = false}) {
+function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, explain, stressed = null, showStress = false, phrasal = null, showPhrasal = false}) {
     const sentences = useMemo(() => String(text ?? '').split('\n'), [text]);
     const stressedSentences = useMemo(() => (stressed !== null ? String(stressed).split('\n') : null), [stressed]);
     const useStressed = showStress && stressedSentences !== null && stressedSentences.length === sentences.length;
@@ -66,6 +74,36 @@ function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress,
         () => displaySentences.map((sentence) => segmentText(sentence)),
         [displaySentences],
     );
+
+    // Per sentence: token index -> matched headword, over the key-bearing
+    // segments of the ORIGINAL text (hit spans index content).
+    const phrasalMarks = useMemo(() => {
+        if (!showPhrasal || !Array.isArray(phrasal)) {
+            return null;
+        }
+        return sentences.map((sentence, sentenceIndex) => {
+            const hits = phrasal[sentenceIndex];
+            if (!Array.isArray(hits) || hits.length === 0) {
+                return null;
+            }
+            const marks = new Map();
+            let offset = 0;
+            let tokenIndex = 0;
+            for (const segment of segmentText(sentence)) {
+                const length = segment.text.length;
+                if (segment.key !== null) {
+                    for (const hit of hits) {
+                        if (hit && offset < hit.end && offset + length > hit.start) {
+                            marks.set(tokenIndex, hit.phrase ?? [hit.verb, ...(hit.particles ?? [])].join(' '));
+                        }
+                    }
+                    tokenIndex += 1;
+                }
+                offset += length;
+            }
+            return marks.size > 0 ? marks : null;
+        });
+    }, [sentences, phrasal, showPhrasal]);
     const [popup, setPopup] = useState(null);
 
     const openPopup = useCallback((event, segment, sentenceIndex) => {
@@ -121,37 +159,52 @@ function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress,
     return (
         <span className={className}>
             {sentenceSegments.map((segments, sentenceIndex) => {
+                const marks = phrasalMarks?.[sentenceIndex] ?? null;
+                let tokenIndex = 0;
                 return (
                 <React.Fragment key={sentenceIndex}>
                     {sentenceIndex > 0 && ' '}
                     <span className="inline">
                         {segments.map((segment, index) => {
-                            const entry = segment.key !== null ? wordMap[segment.key] : undefined;
-                            if (entry?.w) {
-                                return (
-                                    <span
-                                        key={index}
-                                        role="button"
-                                        tabIndex={0}
-                                        className={tierClass(entry.s, highlight)}
-                                        onClick={(event) => openPopup(event, segment, sentenceIndex)}
-                                        onKeyDown={(event) => {
-                                            if (event.key !== 'Enter' && event.key !== ' ') {
-                                                return;
-                                            }
-                                            // Mirror the <button> this replaced: Enter/Space
-                                            // synthesized a click (swallowed by openPopup), and
-                                            // only Ctrl+that click opened the popup.
-                                            event.stopPropagation();
-                                            if (event.ctrlKey) {
-                                                event.preventDefault();
-                                                openPopup(event, segment, sentenceIndex);
-                                            }
-                                        }}
-                                    >
-                                        {segment.text}
-                                    </span>
-                                );
+                            if (segment.key !== null) {
+                                const markLabel = marks !== null ? (marks.get(tokenIndex++) ?? null) : null;
+                                const entry = wordMap[segment.key];
+                                const markClass = markLabel !== null ? ' phrasal-hit' : '';
+                                if (entry?.w) {
+                                    return (
+                                        <span
+                                            key={index}
+                                            role="button"
+                                            tabIndex={0}
+                                            className={tierClass(entry.s, highlight) + markClass}
+                                            title={markLabel ?? undefined}
+                                            onClick={(event) => openPopup(event, segment, sentenceIndex)}
+                                            onKeyDown={(event) => {
+                                                if (event.key !== 'Enter' && event.key !== ' ') {
+                                                    return;
+                                                }
+                                                // Mirror the <button> this replaced: Enter/Space
+                                                // synthesized a click (swallowed by openPopup), and
+                                                // only Ctrl+that click opened the popup.
+                                                event.stopPropagation();
+                                                if (event.ctrlKey) {
+                                                    event.preventDefault();
+                                                    openPopup(event, segment, sentenceIndex);
+                                                }
+                                            }}
+                                        >
+                                            {segment.text}
+                                        </span>
+                                    );
+                                }
+                                if (markLabel !== null) {
+                                    return (
+                                        <span key={index} className={'word-token phrasal-hit'} title={markLabel}>
+                                            {segment.text}
+                                        </span>
+                                    );
+                                }
+                                return <React.Fragment key={index}>{segment.text}</React.Fragment>;
                             }
                             return <React.Fragment key={index}>{segment.text}</React.Fragment>;
                         })}

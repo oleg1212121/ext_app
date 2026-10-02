@@ -3705,3 +3705,40 @@ did* **Change: AI Models admin enable/disable now fires without a confirmation
   delegation cases. New `docs/adr/0051-scheduler-resume-preserves-landmarks.md`;
   `wiki/domains/sentence-alignment.md` Stage 3/4 updated (command reference
   regenerated via `wiki:sync` for the new `alignments:resume` description).
+
+## 2026-10-02 (enricher registry + phrasal verbs on the reading surfaces)
+
+Sentence enrichment restructured from hardcoded language conditionals to
+declaratively scoped **enrichers** (ADR 0057; glossary term added to
+CONTEXT.md): `App\Classes\Enrichment\Enricher` + `EnricherRegistry` with
+`RussianStressEnricher` (ru_stress), `EnglishStressEnricher` (en_stress) and
+`EnglishPhrasalVerbEnricher` (en_phrasal). `SentenceEnrichmentService::enrichChunk`
+now takes the enricher list, resolves shared base hints (cls/lemma/headword/
+word_id per token key) and merges each enricher's token hints + request
+extras into ONE python call; the `/enrich` request carries
+`enrichers: [key]` (pydantic Literal replaces the `^(ru|en)$` language
+pattern) and results return keyed by enricher (`results[].output`), so a
+partial run skips the other modules. Phrasal hits gained a `phrase` field
+(the matched lexicon headword, for tooltips). Staleness moved from the
+single `entities.enriched_at` to per-enricher `entities.enrichment_stamps`
+jsonb (`EnricherRegistry::staleFor`): a newly registered enricher is stale
+on its own — ADR 0053's manual enriched_at reset choreography is gone;
+stamps merge via jsonb `||`; the migration backfills enriched entities,
+leaves never-enriched enrichable ones null (sweep rebuilds) and gives
+languages without enrichers `{}`. `entities:enrich` dispatches only the
+stale set (`beginEnrichers`) and gained `--enricher=` (force one key);
+Filament's Enrich action and FinalizeEntityDerivations keep full runs
+(`begin()`); non-enrichable languages stamp `{}` in the job (the sweep no
+longer needs its bulk not-applicable stamping). Phrasal verbs became
+visible per ADR 0057: reader + simulator ship `phrasalRows`/
+`phrasal_rows` (per side: per-sentence hit lists, side null when no hits;
+flipped with the reading/learning side like stressedRows), `WordText`
+underlines hit-span tokens (dotted `phrasal-hit` class, indexes computed
+from the ORIGINAL sentence so they transfer to the stressed variant) with
+the matched phrase as tooltip, behind a per-user `phrasal_verbs`
+ui_settings preference (reader + simulator, default off, autosaved; new
+`reader.phrasal_verbs` / `bilinguals.phrasal_verbs` UI strings, new
+`phrasal` icon); the Filament Sentences "Phrasal verbs" column is visible
+by default. `wiki/domains/sentence-enrichment.md` rewritten for the
+registry/stamps/rendering; ADR 0052 unaffected (its phrasal "Filament-only"
+scope is superseded by 0057).

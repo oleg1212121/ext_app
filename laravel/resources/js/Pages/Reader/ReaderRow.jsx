@@ -57,6 +57,9 @@ function ReaderRow({
     primaryStressed = null,
     translationStressed = null,
     showStress = false,
+    primaryPhrasal = null,
+    translationPhrasal = null,
+    showPhrasal = false,
 }) {
     // The translation column lives on the other entity match side than the
     // primary one; without a primary side (single-language text) it has none.
@@ -146,6 +149,8 @@ function ReaderRow({
                             explain={primaryExplainPayload}
                             stressed={primaryStressed}
                             showStress={showStress}
+                            phrasal={primaryPhrasal}
+                            showPhrasal={showPhrasal}
                         />
                     ) : showStress && primaryStressed ? primaryStressed : primary}
                 </div>
@@ -191,6 +196,8 @@ function ReaderRow({
                                     explain={translationExplainPayload}
                                     stressed={translationStressed}
                                     showStress={showStress}
+                                    phrasal={translationPhrasal}
+                                    showPhrasal={showPhrasal}
                                 />
                             ) : showStress && translationStressed ? translationStressed : translation}
                         </div>

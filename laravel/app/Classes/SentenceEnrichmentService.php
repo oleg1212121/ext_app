@@ -2,10 +2,11 @@
 
 namespace App\Classes;
 
+use App\Classes\Enrichment\Enricher;
+use App\Classes\Enrichment\EnricherRegistry;
 use App\Models\Entity;
 use App\Models\EntitySentence;
 use App\Models\EntityWord;
-use App\Models\Form;
 use App\Models\Word;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -15,9 +16,11 @@ use Illuminate\Support\Facades\Http;
 use Throwable;
 
 /**
- * Sentence enrichment: stress marks (ru/en) and phrasal verbs (en), computed
- * entirely locally by the python service (Silero Stress + dictionary data
- * passed through from Laravel — ADR 0052).
+ * Sentence enrichment: the per-language analyses (stress marks ru/en, phrasal
+ * verbs en — ADR 0052/0053) orchestrated as registered enrichers (ADR 0057).
+ * All computation is local to the python service (Silero Stress + dictionary
+ * data passed through from Laravel); the registry decides which enrichers an
+ * entity's language gets.
  *
  * Results are stored BESIDE content; the invariant that makes that mandatory:
  * mutating entity_sentences.content would bump sentences_updated_at (stale
@@ -30,19 +33,11 @@ class SentenceEnrichmentService
     /** Sentences per python /enrich call (matches ALIGN chunk sizing). */
     public const CHUNK_SIZE = 75;
 
-    /** Languages the python service can enrich today. */
-    public const ENRICHABLE_LANGUAGES = ['ru', 'en'];
-
-    /** Phrasal-verb lexicon rows passed per request (python schema cap). */
-    private const PHRASAL_LEXICON_LIMIT = 50_000;
-
-    /** IPA transcription variants passed per token. */
-    private const IPA_VARIANTS_LIMIT = 3;
-
     public function __construct(
         private readonly string $apiUrl,
         private readonly int $timeout,
         private readonly WordTokenizer $tokenizer,
+        private readonly EnricherRegistry $registry,
     ) {}
 
     public static function create(): self
@@ -51,46 +46,85 @@ class SentenceEnrichmentService
             apiUrl: config('services.python.url', 'http://ext_python:8000'),
             timeout: (int) config('services.python.timeout', 30),
             tokenizer: app(WordTokenizer::class),
+            registry: app(EnricherRegistry::class),
         );
     }
 
-    /**
-     * Enrichment is stale when it never ran or any sentence changed after it
-     * (words_indexed_at pattern). Enrichment writes are quiet — they never
-     * bump sentences_updated_at — so only real content edits flip this.
-     */
-    public function isStale(Entity $entity): bool
+    public function registry(): EnricherRegistry
     {
-        if ($entity->enriched_at === null) {
-            return true;
-        }
-
-        $lastSentenceChange = EntitySentence::query()
-            ->where('entity_id', $entity->id)
-            ->max('updated_at');
-
-        return $lastSentenceChange !== null && $lastSentenceChange > $entity->enriched_at;
+        return $this->registry;
     }
 
-    public function markEnriched(Entity $entity): void
+    /**
+     * The entity's language enrichers that currently need to run (never
+     * enriched, a newly registered enricher, or sentence changes since).
+     *
+     * @return list<Enricher>
+     */
+    public function staleEnrichers(Entity $entity): array
     {
-        // Base-builder update: no model events, no updated_at.
+        return $this->registry->staleFor($entity);
+    }
+
+    public function isStale(Entity $entity): bool
+    {
+        return $this->staleEnrichers($entity) !== [];
+    }
+
+    /**
+     * Stamp the given enrichers done on entities.enrichment_stamps (quiet
+     * base-builder write, jsonb merge so concurrent stampers can't clobber
+     * each other's keys). Null stamps every enricher of the entity's
+     * language — the whole-run-done stamp; a language with no enrichers ends
+     * as an empty map so it never counts as stale again.
+     *
+     * @param  list<Enricher>|null  $enrichers
+     */
+    public function markEnriched(Entity $entity, ?array $enrichers = null): void
+    {
+        $enrichers ??= $this->registry->forLanguage($entity->language?->code ?? '');
+
+        $stamps = [];
+
+        foreach ($enrichers as $enricher) {
+            $stamps[$enricher->key()] = now()->toISOString();
+        }
+
+        // An empty PHP array would encode as the jsonb LIST [], and
+        // Postgres concatenating an object with an array wraps the result
+        // into [{}] — the empty stamp map is the OBJECT {}.
+        $json = $stamps === [] ? '{}' : json_encode($stamps, JSON_UNESCAPED_UNICODE);
+
         Entity::query()
             ->whereKey($entity->id)
             ->toBase()
-            ->update(['enriched_at' => now()]);
+            ->update([
+                // Base-builder update: no model events, no updated_at.
+                'enrichment_stamps' => DB::raw(
+                    "coalesce(enrichment_stamps, '{}'::jsonb) || '{$json}'::jsonb",
+                ),
+            ]);
     }
 
     /**
      * Enrich one chunk of sentences via the python service and persist the
-     * results. Writes are deliberately quiet (no model events, no timestamps)
-     * so enrichment itself never marks the entity stale again.
+     * results of exactly the given enrichers (defaults to every enricher of
+     * the entity's language). Writes are deliberately quiet (no model
+     * events, no timestamps) so enrichment itself never marks the entity
+     * stale again.
      *
      * @param  Collection<int, EntitySentence>  $sentences
+     * @param  list<Enricher>|null  $enrichers
      * @return int Number of sentences written.
      */
-    public function enrichChunk(Entity $entity, Collection $sentences): int
+    public function enrichChunk(Entity $entity, Collection $sentences, ?array $enrichers = null): int
     {
+        $enrichers ??= $this->registry->forLanguage($entity->language?->code ?? '');
+
+        if ($enrichers === []) {
+            return 0;
+        }
+
         $language = $entity->language?->code ?? '';
         $tokenized = [];
 
@@ -99,15 +133,24 @@ class SentenceEnrichmentService
         }
 
         $keys = collect($tokenized)->flatten(1)->pluck('surface')->map(fn (string $s) => $this->tokenizer->lookupKey($s))->unique()->values()->all();
-        $hints = $this->dictionaryHints($entity, $language, $keys);
+        $resolved = $this->resolveBase($entity, $keys);
+
+        $hintFields = [];
+
+        foreach ($enrichers as $enricher) {
+            foreach ($enricher->tokenHints($entity, $keys, $resolved) as $key => $fields) {
+                $hintFields[$key] = array_merge($hintFields[$key] ?? [], $fields);
+            }
+        }
 
         $payload = [
             'language' => $language,
+            'enrichers' => array_map(fn (Enricher $enricher): string => $enricher->key(), $enrichers),
             'sentences' => [],
         ];
 
-        if ($language === 'en') {
-            $payload['phrasal_lexicon'] = $this->phrasalLexicon($entity);
+        foreach ($enrichers as $enricher) {
+            $payload += $enricher->requestExtras($entity);
         }
 
         $empty = [];
@@ -125,7 +168,7 @@ class SentenceEnrichmentService
                 'id' => $sentence->id,
                 'text' => $sentence->content,
                 'tokens' => array_map(
-                    fn (array $t): array => $this->tokenPayload($t, $hints),
+                    fn (array $t): array => $this->tokenPayload($t, $resolved, $hintFields),
                     $tokenized[$sentence->id],
                 ),
             ];
@@ -134,22 +177,23 @@ class SentenceEnrichmentService
         $results = $this->callEnrich($payload);
 
         foreach ($empty as $id) {
-            $results[] = ['id' => $id, 'stressed' => null, 'phrasal_verbs' => null];
+            $results[] = ['id' => $id, 'output' => []];
         }
 
         $written = 0;
 
-        DB::transaction(function () use ($results, &$written): void {
+        DB::transaction(function () use ($results, $enrichers, &$written): void {
             foreach ($results as $result) {
+                $row = [];
+
+                foreach ($enrichers as $enricher) {
+                    $row[$enricher->column()] = $enricher->toStorage($result['output'][$enricher->key()] ?? null);
+                }
+
                 EntitySentence::query()
                     ->whereKey($result['id'])
                     ->toBase()
-                    ->update([
-                        'stressed_content' => $result['stressed'],
-                        'phrasal_verbs' => $result['phrasal_verbs'] !== null
-                            ? json_encode($result['phrasal_verbs'], JSON_UNESCAPED_UNICODE)
-                            : null,
-                    ]);
+                    ->update($row);
                 $written++;
             }
         });
@@ -158,7 +202,7 @@ class SentenceEnrichmentService
     }
 
     /**
-     * @return list<array{id: int, stressed: ?string, phrasal_verbs: ?array}>
+     * @return list<array{id: int, output: array<string, mixed>}>
      */
     private function callEnrich(array $payload): array
     {
@@ -184,8 +228,7 @@ class SentenceEnrichmentService
 
             $results[] = [
                 'id' => (int) ($raw['id'] ?? 0),
-                'stressed' => isset($raw['stressed']) ? (string) $raw['stressed'] : null,
-                'phrasal_verbs' => is_array($raw['phrasal_verbs'] ?? null) ? $raw['phrasal_verbs'] : null,
+                'output' => is_array($raw['output'] ?? null) ? $raw['output'] : [],
             ];
         }
 
@@ -193,15 +236,17 @@ class SentenceEnrichmentService
     }
 
     /**
-     * Attach dictionary hints to a token: word class, lemma, IPA variants (en)
-     * and stressed-form candidates (ru).
+     * Attach dictionary hints to a token: the shared base resolution (word
+     * class, lemma) plus whatever fields the active enrichers contributed.
      *
      * @param  array{surface: string, start: int, end: int}  $token
+     * @param  array<string, array{cls: ?string, lemma: ?string, headword: ?string, word_id: ?int}>  $resolved
+     * @param  array<string, array<string, mixed>>  $hintFields
      */
-    private function tokenPayload(array $token, array $hints): array
+    private function tokenPayload(array $token, array $resolved, array $hintFields): array
     {
         $key = $this->tokenizer->lookupKey($token['surface']);
-        $hint = $hints['by_key'][$key] ?? null;
+        $hint = array_merge($resolved[$key] ?? [], $hintFields[$key] ?? []);
 
         return [
             'surface' => $token['surface'],
@@ -221,12 +266,12 @@ class SentenceEnrichmentService
      * direct dictionary match ordered by class priority.
      *
      * @param  list<string>  $keys
-     * @return array{by_key: array<string, array{cls: ?string, lemma: ?string, ipa: ?list<string>, stressed: ?list<string>}>}
+     * @return array<string, array{cls: ?string, lemma: ?string, headword: ?string, word_id: ?int}>
      */
-    private function dictionaryHints(Entity $entity, string $language, array $keys): array
+    private function resolveBase(Entity $entity, array $keys): array
     {
         if ($keys === []) {
-            return ['by_key' => []];
+            return [];
         }
 
         $linkedWordIds = EntityWord::query()
@@ -267,165 +312,24 @@ class SentenceEnrichmentService
                 ->each(fn (Word $word) => $wordsById->put($word->id, $word));
         }
 
-        $ipaByWordId = $language === 'en' ? $this->ipaByWordId($wordsById->keys()) : [];
-
-        $stressedByKey = [];
-
-        if ($language === 'ru') {
-            // Inflected forms keep U+0301; headwords too (Wiktionary style).
-            $forms = Form::query()
-                ->whereIn('l_word', $keys)
-                ->select('l_word', 'form')
-                ->get();
-
-            foreach ($forms as $form) {
-                $stressedByKey[$form->l_word][] = $form->form;
-            }
-
-            foreach ($bestByWord as $lWord => $word) {
-                if ($word->word !== null && ($this->hasStressMarks($word->word))) {
-                    $stressedByKey[$lWord][] = $word->word;
-                }
-            }
-        }
-
         $byKey = [];
 
         foreach ($keys as $key) {
             $wordId = $linkedWordIds[$key] ?? null;
             $word = $wordId !== null ? ($wordsById[$wordId] ?? null) : ($bestByWord[$key] ?? null);
+            $best = $bestByWord[$key] ?? null;
 
             $byKey[$key] = [
                 'cls' => $word?->wordClass?->slug,
                 'lemma' => $word?->word,
-                'ipa' => $word !== null ? ($ipaByWordId[$word->id] ?? null) : null,
-                'stressed' => $stressedByKey[$key] ?? null,
+                // The direct dictionary match's own headword — the Russian
+                // stress candidates key off it, not the (possibly linked,
+                // form-resolved) word.
+                'headword' => $best?->word,
+                'word_id' => $word?->id,
             ];
         }
 
-        if ($language === 'en') {
-            $this->attachHyphenParts($entity, $keys, $byKey);
-        }
-
-        return ['by_key' => $byKey];
-    }
-
-    /**
-     * Hyphenated compounds the dictionary has no whole-word entry for
-     * ("seven-sided"): resolve each part's IPA separately so python can mark
-     * the compound per part (ADR 0053). Only fires when the whole-token
-     * lookup came up empty.
-     *
-     * @param  list<string>  $keys
-     * @param  array<string, array{cls: ?string, lemma: ?string, ipa: ?list<string>, parts: ?list<array{surface: string, ipa: ?list<string>}>, stressed: ?list<string>}>  $byKey
-     */
-    private function attachHyphenParts(Entity $entity, array $keys, array &$byKey): void
-    {
-        $partKeys = [];
-
-        foreach ($keys as $key) {
-            if (str_contains($key, '-') && empty($byKey[$key]['ipa'])) {
-                foreach (explode('-', $key) as $part) {
-                    if ($part !== '') {
-                        $partKeys[$part] = true;
-                    }
-                }
-            }
-        }
-
-        if ($partKeys === []) {
-            return;
-        }
-
-        $partWords = Word::query()
-            ->where('language_id', $entity->language_id)
-            ->whereIn('l_word', array_keys($partKeys))
-            ->with('wordClass:id,slug')
-            ->get()
-            ->groupBy('l_word')
-            ->map(fn ($group) => $group
-                ->sortBy(fn (Word $w) => [EntityWordLinker::classPriority($w->wordClass?->slug ?? ''), $w->id])
-                ->first());
-
-        $partIpa = $this->ipaByWordId($partWords->pluck('id')->values());
-
-        foreach ($keys as $key) {
-            if (! str_contains($key, '-') || ! empty($byKey[$key]['ipa'])) {
-                continue;
-            }
-
-            $parts = [];
-
-            foreach (explode('-', $key) as $part) {
-                $word = $partWords[$part] ?? null;
-                $parts[] = [
-                    'surface' => $part,
-                    'ipa' => $word !== null ? ($partIpa[$word->id] ?? null) : null,
-                ];
-            }
-
-            if (collect($parts)->contains(fn (array $p): bool => $p['ipa'] !== null && $p['ipa'] !== [])) {
-                $byKey[$key]['parts'] = $parts;
-            }
-        }
-    }
-
-    /**
-     * @return array<int, list<string>>
-     */
-    private function ipaByWordId(Collection $wordIds): array
-    {
-        if ($wordIds->isEmpty()) {
-            return [];
-        }
-
-        // Stress-bearing variants first (Postgres sorts false before true) so
-        // the per-word cap below can't cut off the only variant with a primary
-        // stress mark; id order keeps the selection deterministic.
-        $rows = DB::table('transcriptions')
-            ->join('transcription_types', 'transcription_types.id', '=', 'transcriptions.transcription_type_id')
-            ->whereIn('transcriptions.word_id', $wordIds)
-            ->where('transcription_types.slug', 'ipa')
-            ->orderByRaw('(transcriptions.transcription NOT LIKE ?)', ['%ˈ%'])
-            ->orderBy('transcriptions.id')
-            ->select('transcriptions.word_id', 'transcriptions.transcription')
-            ->get();
-
-        $byWordId = [];
-
-        foreach ($rows as $row) {
-            if (count($byWordId[$row->word_id] ?? []) >= self::IPA_VARIANTS_LIMIT) {
-                continue;
-            }
-
-            $byWordId[$row->word_id][] = $row->transcription;
-        }
-
-        return $byWordId;
-    }
-
-    /**
-     * Multi-word verb headwords for phrasal-verb matching ("give up", "kick
-     * the bucket") — inert dictionary rows the single-token linker can never
-     * reach (ADR 0052).
-     *
-     * @return list<string>
-     */
-    private function phrasalLexicon(Entity $entity): array
-    {
-        return Word::query()
-            ->where('language_id', $entity->language_id)
-            ->where('l_word', 'like', '% %')
-            ->whereHas('wordClass', fn ($q) => $q->where('slug', 'verb'))
-            ->orderBy('id')
-            ->limit(self::PHRASAL_LEXICON_LIMIT)
-            ->pluck('l_word')
-            ->values()
-            ->all();
-    }
-
-    private function hasStressMarks(string $word): bool
-    {
-        return preg_match('/\p{M}/u', $word) === 1 || mb_strpos($word, 'ё') !== false || mb_strpos($word, 'Ё') !== false;
+        return $byKey;
     }
 }

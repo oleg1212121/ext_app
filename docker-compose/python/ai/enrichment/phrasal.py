@@ -9,7 +9,7 @@ passes that lexicon plus per-token word classes and lemmas; a hit is a 3- or
 covers inflected leads ("gave up" matches the "give up" headword); particles
 never inflect, so surfaces suffice for them. Longest match wins, matches
 never overlap, and hits carry char spans into the original sentence
-``content``.
+``content`` plus the lexicon ``phrase`` the match came through.
 """
 
 
@@ -42,6 +42,7 @@ def find_phrasal_verbs(tokens: list[dict], lexicon: set[str]) -> list[dict]:
                     "particles": [t["surface"] for t in span[1:]],
                     "start": span[0]["start"],
                     "end": span[-1]["end"],
+                    "phrase": phrase,
                 }
             )
             i += matched

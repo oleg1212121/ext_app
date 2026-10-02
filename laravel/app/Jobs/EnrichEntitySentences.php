@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\SentenceEnrichmentService;
 use App\Models\Entity;
 use App\Models\EntitySentence;
@@ -16,12 +17,12 @@ use Illuminate\Support\Facades\Log;
 /**
  * Self-restarting sentence enrichment pipeline (AlignEntitySentences shape):
  * each run enriches a bounded batch of sentences, then re-dispatches itself
- * with the cursor until the entity is done, when enriched_at is stamped.
+ * with the cursor until the entity is done, when the run's enrichers are
+ * stamped on entities.enrichment_stamps (ADR 0057).
  *
  * Enrichment is local-only (python service + dictionary data, ADR 0052), so
  * re-running an entity is cheap and idempotent; after sentence edits the
- * entities:enrich sweep re-picks it because enriched_at goes stale against
- * sentences_updated_at.
+ * entities:enrich sweep re-picks only the enrichers whose stamps went stale.
  */
 #[Queue(QueueLane::LOW)]
 class EnrichEntitySentences implements ShouldQueue
@@ -35,9 +36,14 @@ class EnrichEntitySentences implements ShouldQueue
     /** Sentence batches enriched per run before re-dispatching. */
     private const BATCHES_PER_RUN = 2;
 
+    /**
+     * @param  list<string>  $enricherKeys  the enrichers this run targets; empty
+     *                                      means "resolve the language's full set at handle time"
+     */
     public function __construct(
         public readonly int $entityId,
         private readonly int $cursor = 0,
+        private readonly array $enricherKeys = [],
     ) {}
 
     /**
@@ -49,26 +55,52 @@ class EnrichEntitySentences implements ShouldQueue
     }
 
     /**
-     * Dispatch the pipeline for an entity (idempotent: re-enriching replaces
-     * every sentence's enrichment columns).
+     * Dispatch a FULL re-enrichment: every enricher of the entity's language
+     * runs regardless of stamps. The sweep's targeted variant is
+     * beginEnrichers().
      */
     public static function begin(Entity|int $entity): void
     {
         $entityId = $entity instanceof Entity ? $entity->id : $entity;
 
-        self::dispatch(entityId: $entityId, cursor: 0);
+        self::dispatch(entityId: $entityId);
+    }
+
+    /**
+     * Dispatch enrichment for exactly the given enrichers (their stamps are
+     * written when the run completes); a no-op on an empty set.
+     *
+     * @param  list<string>  $enricherKeys
+     */
+    public static function beginEnrichers(Entity|int $entity, array $enricherKeys): void
+    {
+        if ($enricherKeys === []) {
+            return;
+        }
+
+        $entityId = $entity instanceof Entity ? $entity->id : $entity;
+
+        self::dispatch(entityId: $entityId, enricherKeys: $enricherKeys);
     }
 
     public function handle(): void
     {
         $entity = Entity::with('language')->findOrFail($this->entityId);
         $enrichment = SentenceEnrichmentService::create();
+        $registry = app(EnricherRegistry::class);
         $code = $entity->language?->code ?? '';
 
-        // Languages the service cannot enrich count as done, so the sweep
-        // never re-picks them.
-        if (! in_array($code, SentenceEnrichmentService::ENRICHABLE_LANGUAGES, true)) {
-            $enrichment->markEnriched($entity);
+        // Empty keys = a full run: resolve the language's enrichers here so a
+        // newly registered one is included. Explicit keys survive re-dispatch
+        // untouched (the run retries the same work after a failure).
+        $enrichers = $this->enricherKeys === []
+            ? $registry->forLanguage($code)
+            : $registry->forKeys($this->enricherKeys);
+
+        // Languages the registry cannot enrich count as done (an empty stamp
+        // map) so the sweep never re-picks them.
+        if ($enrichers === []) {
+            $enrichment->markEnriched($entity, []);
 
             return;
         }
@@ -84,19 +116,20 @@ class EnrichEntitySentences implements ShouldQueue
                 ->get();
 
             if ($sentences->isEmpty()) {
-                $enrichment->markEnriched($entity);
+                $enrichment->markEnriched($entity, $enrichers);
                 Log::info('EnrichEntitySentences completed', [
                     'entity_id' => $entity->id,
                     'language' => $code,
+                    'enrichers' => array_map(fn ($enricher) => $enricher->key(), $enrichers),
                 ]);
 
                 return;
             }
 
-            $enrichment->enrichChunk($entity, $sentences);
+            $enrichment->enrichChunk($entity, $sentences, $enrichers);
             $cursor = $sentences->last()->id;
         }
 
-        self::dispatch($entity->id, $cursor);
+        self::dispatch($entity->id, $cursor, $this->enricherKeys);
     }
 }

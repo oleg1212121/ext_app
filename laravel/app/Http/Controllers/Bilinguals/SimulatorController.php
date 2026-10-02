@@ -127,6 +127,7 @@ class SimulatorController extends Controller
             'workplaceHeight' => $this->clampInt($saved['workplace_height'] ?? null, 80, 800, 168),
             'highlightWords' => (bool) ($saved['highlight_words'] ?? true),
             'stressMarks' => (bool) ($saved['stress_marks'] ?? false),
+            'phrasalVerbs' => (bool) ($saved['phrasal_verbs'] ?? false),
         ]);
     }
 
@@ -241,6 +242,8 @@ class SimulatorController extends Controller
             // Stress-mark variants, row-aligned with rows in the same [a, b]
             // order (ADR 0052).
             'stressed_rows' => $this->presenter->toSimulatorStressedRows($paginator->getCollection()),
+            // Phrasal-verb hit lists, row-aligned the same way (ADR 0057).
+            'phrasal_rows' => $this->presenter->toSimulatorPhrasalRows($paginator->getCollection()),
             'word_maps' => $this->wordMapsFor($match),
             // The picker page's language toggle tracks the loaded match: the
             // same shapes the pinned route ships at render time.

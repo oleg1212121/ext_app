@@ -145,6 +145,8 @@ export default function TextContent(props) {
                                     explain={targetExplain}
                                     stressed={props.stressedRows?.[i]?.[0] ?? null}
                                     showStress={props.showStress}
+                                    phrasal={props.phrasalRows?.[i]?.[0] ?? null}
+                                    showPhrasal={props.showPhrasal}
                                 />
                             </span>
                         </td>
@@ -180,6 +182,8 @@ export default function TextContent(props) {
                                         explain={baseExplain}
                                         stressed={props.stressedRows?.[i]?.[1] ?? null}
                                         showStress={props.showStress}
+                                        phrasal={props.phrasalRows?.[i]?.[1] ?? null}
+                                        showPhrasal={props.showPhrasal}
                                     />
                                 </span>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">

@@ -804,13 +804,24 @@ _Avoid_: stressed content (the text itself is never stressed), accent text.
 **Phrasal verb hit**:
 A detected multi-word verb ("gave up") inside a sentence: the verb with its
 particle(s) and where they sit in the sentence. Detected from dictionary
-multi-word headwords, not from word linking.
+multi-word headwords, not from word linking. Underlined on the reading
+surfaces when the reader turns phrasal verbs on. See ADR 0057.
 _Avoid_: phrasal link (nothing is linked), verb phrase (broader).
 
+**Enricher**:
+One enrichment analysis with declared language applicability — the unit that
+answers "what should be included in the enrichment process" for a language
+(stress marks for Russian, stress marks and phrasal verbs for English). Adding
+an analysis means adding an enricher; languages it does not declare never run
+it. See ADR 0057. _Avoid_: processor (collides with entity/alignment
+processing states), algorithm (the code-level notion, not the domain unit),
+pipeline (the whole orchestration, not one analysis).
+
 **Enrichment staleness**:
-Whether a sentence set needs (re-)enrichment: never enriched, or any sentence
-changed since it was. Entities enrichment cannot apply to count as enriched,
-not stale. See ADR 0052.
+Whether a sentence set needs (re-)enrichment, tracked per enricher: an
+enricher is stale when it never ran, when it is newly registered (no stamp),
+or when any sentence changed since it did. A language with no enrichers
+cannot go stale. See ADR 0052, ADR 0057.
 _Avoid_: enrichment status (there is no processing state, only staleness),
 dirty.
 

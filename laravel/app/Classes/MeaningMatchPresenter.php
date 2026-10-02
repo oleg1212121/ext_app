@@ -101,6 +101,29 @@ class MeaningMatchPresenter
     }
 
     /**
+     * Phrasal-verb hits row-aligned with toSimulatorRows (ADR 0052/0057):
+     * same sides, same sentence selection and order. Each side is null when
+     * none of its sentences has hits; otherwise it carries one entry per
+     * sentence — the hit list (char spans index content) or null.
+     *
+     * @param  Collection<int, MeaningMatch>  $meaningMatches
+     * @return list<array{0: ?list<list<array<string, mixed>>>, 1: ?list<list<array<string, mixed>>>}>
+     */
+    public function toSimulatorPhrasalRows(Collection $meaningMatches): array
+    {
+        $rows = [];
+
+        foreach ($meaningMatches as $meaningMatch) {
+            $rows[] = [
+                $this->sidePhrasal($meaningMatch, 'a'),
+                $this->sidePhrasal($meaningMatch, 'b'),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
      * @return Collection<int, EntitySentence>
      */
     private function sideSentences(MeaningMatch $meaningMatch, string $side): Collection
@@ -138,6 +161,27 @@ class MeaningMatchPresenter
         return $sentences
             ->map(fn (EntitySentence $sentence): string => $sentence->stressed_content ?? $sentence->content)
             ->implode("\n");
+    }
+
+    /**
+     * One entry per side sentence: its phrasal-verb hit list, or null when
+     * that sentence has none. The side is null only when no sentence has
+     * hits at all.
+     *
+     * @return list<list<array<string, mixed>>>|null
+     */
+    private function sidePhrasal(MeaningMatch $meaningMatch, string $side): ?array
+    {
+        $perSentence = $this->sideSentences($meaningMatch, $side)
+            ->map(fn (EntitySentence $sentence): ?array => ! empty($sentence->phrasal_verbs)
+                ? array_values($sentence->phrasal_verbs)
+                : null)
+            ->values()
+            ->all();
+
+        return collect($perSentence)->contains(fn (?array $hits): bool => $hits !== null)
+            ? $perSentence
+            : null;
     }
 
     /**

@@ -105,7 +105,7 @@ class SentencesRelationManager extends RelationManager
                     ->state(fn (EntitySentence $record): string => collect($record->phrasal_verbs ?? [])
                         ->map(fn (array $hit) => $hit['verb'].' '.implode(' ', $hit['particles'] ?? []))
                         ->implode(', '))
-                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->toggleable()
                     ->placeholder('—'),
             ])
             ->filters([

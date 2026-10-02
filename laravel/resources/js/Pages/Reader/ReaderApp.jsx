@@ -79,11 +79,13 @@ export default function ReaderApp({
     rowImages = [],
     rowKeys = [],
     stressedRows = [],
+    phrasalRows = [],
     meta = null,
     positionKey = null,
     fontSize: savedFontSize,
     highlight: savedHighlight = true,
     stressMarks: savedStressMarks = false,
+    phrasalVerbs: savedPhrasalVerbs = false,
     wordMap: initialWordMap = {},
     primaryHighlightable = false,
     translationWordMap: initialTranslationWordMap = {},
@@ -101,7 +103,9 @@ export default function ReaderApp({
     // Stress marks toggle (ADR 0052): swaps each sentence for its stored
     // stressed variant.
     const [showStress, setShowStress] = useState(savedStressMarks);
-    useUiSettingsAutosave('reader', {font_size: fontSize, highlight, stress_marks: showStress});
+    // Phrasal verbs toggle (ADR 0057): dotted underlines on English hits.
+    const [showPhrasal, setShowPhrasal] = useState(savedPhrasalVerbs);
+    useUiSettingsAutosave('reader', {font_size: fontSize, highlight, stress_marks: showStress, phrasal_verbs: showPhrasal});
     const [wordMap, setWordMap] = useState(initialWordMap);
     const [translationWordMap, setTranslationWordMap] = useState(initialTranslationWordMap);
     // Language toggle (Working state, per device + positionKey): when true,
@@ -186,6 +190,15 @@ export default function ReaderApp({
         [stressedRows, effectiveFlipped],
     );
     const hasStressedData = stressedRows.some(([primary, translation]) => primary !== null || translation !== null);
+
+    // Phrasal hit lists flip with the text pairs.
+    const displayPhrasalRows = useMemo(
+        () => (effectiveFlipped
+            ? phrasalRows.map(([primary, translation]) => [translation, primary])
+            : phrasalRows),
+        [phrasalRows, effectiveFlipped],
+    );
+    const hasPhrasalData = phrasalRows.some(([primary, translation]) => primary !== null || translation !== null);
 
     const shownWordMap = effectiveFlipped ? translationWordMap : wordMap;
     const shownTranslationWordMap = effectiveFlipped ? wordMap : translationWordMap;
@@ -507,6 +520,11 @@ export default function ReaderApp({
                                 <Icon name="stress" className="h-4 w-4"/>
                             </ToggleButton>
                         ) : null}
+                        {hasPhrasalData ? (
+                            <ToggleButton active={showPhrasal} monochrome label={t('reader.phrasal_verbs')} onClick={() => setShowPhrasal((v) => !v)}>
+                                <Icon name="phrasal" className="h-4 w-4"/>
+                            </ToggleButton>
+                        ) : null}
                         <ToggleButton active={sideBySide} label={sideBySide ? t('reader.stacked') : t('reader.side_by_side')} onClick={() => setSideBySide((v) => !v)}>
                             <Icon name="columns" className="h-4 w-4"/>
                         </ToggleButton>
@@ -624,6 +642,9 @@ export default function ReaderApp({
                                 primaryStressed={displayStressedRows[index]?.[0] ?? null}
                                 translationStressed={displayStressedRows[index]?.[1] ?? null}
                                 showStress={showStress}
+                                primaryPhrasal={displayPhrasalRows[index]?.[0] ?? null}
+                                translationPhrasal={displayPhrasalRows[index]?.[1] ?? null}
+                                showPhrasal={showPhrasal}
                                 showAll={showAll}
                                 sideBySide={sideBySide}
                                 fontSize={fontSize}
