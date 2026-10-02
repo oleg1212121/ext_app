@@ -7,7 +7,9 @@ verb lemma with its adverbial-particle (``prt``) and preposition
 
 - particles alone are evidence: "gave up", "looked it up" hit even when
   the dictionary has no such headword (the parser guarantees the verb +
-  particle structure the old n-gram windows could only guess at);
+  particle structure the old n-gram windows could only guess at) — unless
+  a goal/path preposition right after the particle marks the directional
+  reading ("swung over toward Max");
 - prepositional verbs ("depend on") and phrasal-prepositional verbs
   ("came up with") are dictionary-gated: ``lemma + particles + prep``
   must be in the curated lexicon the caller passes — the parser alone
@@ -27,6 +29,17 @@ the endpoint fails loudly instead of writing empty enrichment (ADR 0059).
 """
 
 MODEL_NAME = "en_core_web_md"
+
+# A particle immediately followed by one of these goal/path prepositions
+# marks the directional reading of the adverb ("swung over toward Max",
+# "followed Max down to the basement") — not a particle of an idiomatic
+# multi-word verb. Locative prepositions are deliberately absent ("looked
+# it up on the network" is a genuine hit), and infinitival "to" is tagged
+# PART, not ADP, so "looked it up to check" stays a hit too. Lexicon
+# combos ("come up to") are tried before this guard and stay unaffected.
+DIRECTIONAL_PREPS = frozenset(
+    {"to", "toward", "towards", "into", "onto", "through", "across", "past"}
+)
 
 _NLP = None
 
@@ -78,6 +91,11 @@ def _build_hit(verb, matched: list, phrase: str) -> dict:
     }
 
 
+def _following_token(doc, token):
+    """The token right after ``token`` in document order, or None."""
+    return doc[token.i + 1] if token.i + 1 < len(doc) else None
+
+
 def _verb_hit(verb, hint: dict | None, lexicon: set[str]) -> dict | None:
     """The hit for one VERB token, or None.
 
@@ -105,6 +123,17 @@ def _verb_hit(verb, hint: dict | None, lexicon: set[str]) -> dict | None:
                 return _build_hit(verb, prt + [prep_token], phrase)
 
     if prt:
+        # The directional reading — a goal/path preposition right after the
+        # particle reads the particle as a path adverb, not as part of a
+        # multi-word verb ("swung over toward Max"; ADR 0059).
+        following = _following_token(verb.doc, prt[-1])
+        if (
+            following is not None
+            and following.pos_ == "ADP"
+            and following.text.lower() in DIRECTIONAL_PREPS
+        ):
+            return None
+
         # Parser evidence alone; the phrase normalizes the spaCy lemma.
         phrase = " ".join([lemmas[0]] + [t.text.lower() for t in prt])
         return _build_hit(verb, prt, phrase)

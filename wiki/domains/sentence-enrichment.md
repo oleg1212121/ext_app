@@ -5,7 +5,7 @@ description: Local-only per-sentence enrichment — Russian/English stress marks
 tags: [enrichment, stress-marks, multi-word-verbs, enrichers, python-service, spacy, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-02T17:30:00Z }
+generated: { by: agent:zcode, at: 2026-10-02T19:00:00Z }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -134,16 +134,23 @@ the same split as `/split` and `/align`.
   parses the raw sentence; the matcher walks VERB tokens (AUX excluded —
   "could have given" can never match) and combines the lemma with
   `prt`/`prep` children. Particle verbs ("gave up", separated "looked
-  it up") hit on parser evidence alone; prepositional ("depend on") and
-  phrasal-prepositional ("come up with") matches are dictionary-gated
-  against the caller's lexicon (the shape-curated multi-word verb
-  headwords riding `requestExtras()`), with ADR 0058's `verb_lemmas` as
-  extra lemma candidates. One hit per verb; the most specific candidate
-  wins; a verb with particles skips bare-prep candidates (the "on" of
-  "looked it up on the network" belongs to a following phrase). A
-  missing model/package fails loudly (503) — empty enrichment is never
-  written and stamped. Sense ambiguity is a documented limitation
-  ("sat in the car" hits when "sit in" is lexiconed).
+  it up") hit on parser evidence alone — unless the particle is
+  immediately followed by a goal/path preposition
+  (to/toward/into/onto/through/across/past), the directional reading
+  ("swung over toward Max", "followed down to the basement"); locative
+  prepositions ("looked it up on the network") and infinitival "to"
+  (tagged PART, not ADP — "looked it up to check") still hit.
+  Prepositional ("depend on") and phrasal-prepositional ("come up with")
+  matches are dictionary-gated against the caller's lexicon (the
+  shape-curated multi-word verb headwords riding `requestExtras()`),
+  tried before the directional guard so lexiconed combos survive it,
+  with ADR 0058's `verb_lemmas` as extra lemma candidates. One hit per
+  verb; the most specific candidate wins; a verb with particles skips
+  bare-prep candidates (the "on" of "looked it up on the network"
+  belongs to a following phrase). A missing model/package fails loudly
+  (503) — empty enrichment is never written and stamped. Sense ambiguity
+  is a documented limitation ("sat in the car" hits when "sit in" is
+  lexiconed).
 
 Plain-python tests: `docker exec ext_python python
 /app/ai/enrichment/test_enrichment.py` (Silero-dependent ru tests skip with a

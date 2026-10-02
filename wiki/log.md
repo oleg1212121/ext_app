@@ -1,5 +1,23 @@
 # Directory Update Log
 
+## 2026-10-02 (fix: directional-adverb guard for multi-word verbs, ADR 0059 v3)
+
+A user report ("Beige-colored skin." flagged as a multi-word verb) did
+not reproduce — no stored hit, and the parse contains no VERB token
+("colored" is ADJ) — but the review it prompted exposed real precision
+misses of the same flavor: "swung OVER TOWARD Max" → `swing over` and
+"followed Max DOWN TO the basement" → `follow down`, where the particle
+slot holds a directional path adverb, not a particle. Fix (ADR 0059
+v3): the parser-evidence particle path skips a particle immediately
+followed by a goal/path preposition (to/toward/towards/into/onto/
+through/across/past). Locative prepositions ("looked it up on the
+network") and infinitival "to" (tagged PART, not ADP — "looked it up to
+check") still hit; dictionary-gated combos ("come up to") are tried
+before the guard and survive it. `EnglishPhrasalVerbEnricher` version
+2 → 3 — the sweep re-stales and re-runs the English corpus with no
+manual step. Python regression tests for all four cases;
+`wiki/domains/sentence-enrichment.md` updated.
+
 ## 2026-10-02 (feat: multi-word verbs via spaCy dependency parsing, ADR 0059)
 
 Real-text review flagged "done, it", "not say" and "could have given" as

@@ -554,8 +554,8 @@ it('re-enriches an entity stamped by an older algorithm version', function () {
     $entity = enrichableEntity('en', ['She gave up smoking.']);
     $service = SentenceEnrichmentService::create();
 
-    // v1-era stamps were bare ISO strings: stale for the v2 phrasal
-    // analysis, fresh for the v1 stress analysis (ADR 0059).
+    // v1-era stamps were bare ISO strings: stale for the current-version
+    // phrasal analysis, fresh for the v1 stress analysis (ADR 0059).
     $entity->update(['enrichment_stamps' => [
         'en_phrasal' => now()->toISOString(),
         'en_stress' => now()->toISOString(),
@@ -563,8 +563,9 @@ it('re-enriches an entity stamped by an older algorithm version', function () {
     expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['en_phrasal']);
 
     // Once re-stamped at the current versions, nothing is stale.
+    $version = (new EnglishPhrasalVerbEnricher)->version();
     $entity->update(['enrichment_stamps' => [
-        'en_phrasal' => ['v' => 2, 'at' => now()->toISOString()],
+        'en_phrasal' => ['v' => $version, 'at' => now()->toISOString()],
         'en_stress' => ['v' => 1, 'at' => now()->toISOString()],
     ]]);
     expect($service->isStale($entity->refresh()))->toBeFalse();
@@ -572,7 +573,7 @@ it('re-enriches an entity stamped by an older algorithm version', function () {
     // markEnriched writes the versioned shape.
     $service->markEnriched($entity, [(new EnricherRegistry)->forKey('en_phrasal')]);
     $stamp = $entity->refresh()->enrichment_stamps['en_phrasal'];
-    expect($stamp['v'])->toBe(2)->and($stamp['at'])->not->toBeNull();
+    expect($stamp['v'])->toBe($version)->and($stamp['at'])->not->toBeNull();
 });
 
 it('gates the phrasal lexicon to the particle/preposition shape', function () {

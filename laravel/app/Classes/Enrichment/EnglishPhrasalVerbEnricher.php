@@ -29,10 +29,10 @@ class EnglishPhrasalVerbEnricher implements Enricher
         return 'en_phrasal';
     }
 
-    /** v2: the spaCy dependency-parse matcher replaced n-gram matching (ADR 0059). */
+    /** v2: spaCy dependency parsing replaced n-gram matching; v3: directional-adverb guard (ADR 0059). */
     public function version(): int
     {
-        return 2;
+        return 3;
     }
 
     public function languages(): array

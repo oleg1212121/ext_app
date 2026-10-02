@@ -231,6 +231,20 @@ if _HAS_SPACY:
     check("mw: negated plain verb is no hit", _find("He did not say a word.", ["say"]), [])
     check("mw: punctuation-adjacent clause is no hit", _find("It was done, it was over.", ["do it"]), [])
     check("mw: passive participle without particle is no hit", _find("The work was done by noon.", ["do"]), [])
+    # Directional adverbs: a goal/path preposition right after the particle
+    # reads as direction, not a multi-word verb (ADR 0059 v3).
+    check("mw: directional over-toward is no hit", _find("The ringmaster swung over toward Max."), [])
+    check("mw: directional down-to is no hit", _find("She followed Max down to the basement."), [])
+    check(
+        "mw: locative preposition after particle still hits",
+        _find("He looked it up on the network."),
+        [{"verb": "looked", "particles": ["up"], "start": 3, "end": 15, "phrase": "look up"}],
+    )
+    check(
+        "mw: infinitival to after particle still hits",
+        _find("She looked it up to check the facts."),
+        [{"verb": "looked", "particles": ["up"], "start": 4, "end": 16, "phrase": "look up"}],
+    )
     # One hit per verb; two verbs give two hits.
     check(
         "mw: two verbs, two hits",
