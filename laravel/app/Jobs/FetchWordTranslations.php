@@ -99,7 +99,13 @@ class FetchWordTranslations implements ShouldBeUnique, ShouldQueue
             $linked = 0;
 
             foreach ($candidates as $candidate) {
-                $classId = $this->classIdFor($candidate['pos'], $classes);
+                // Multi-word candidates are phrases, not inflected parts of
+                // speech: storing them under the provider pos is what once
+                // created junk verb rows like "do it" that polluted the
+                // phrasal-verb lexicon (ADR 0059).
+                $classId = str_contains($candidate['text'], ' ')
+                    ? $this->phraseClassId($target, $classes)
+                    : $this->classIdFor($candidate['pos'], $classes);
 
                 if ($classId === null) {
                     continue;
@@ -188,5 +194,26 @@ class FetchWordTranslations implements ShouldBeUnique, ShouldQueue
         }
 
         return $classes['fromSource'] ?? $classes['fallback'];
+    }
+
+    /**
+     * The target language's phrase class, auto-created after the import's
+     * unseen-class convention when the language has none yet; null only
+     * when even the language row is gone.
+     *
+     * @param  array{bySlug: array<string, int>, fromSource: int|null, fallback: int|null}  $classes
+     */
+    private function phraseClassId(Language $target, array $classes): ?int
+    {
+        if (isset($classes['bySlug']['phrase'])) {
+            return (int) $classes['bySlug']['phrase'];
+        }
+
+        $class = WordClass::query()->firstOrCreate(
+            ['language_id' => $target->id, 'slug' => 'phrase'],
+            ['title' => 'phrase'],
+        );
+
+        return $class->id;
     }
 }

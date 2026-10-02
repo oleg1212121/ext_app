@@ -109,8 +109,8 @@ class EnrichToken(BaseModel):
     end: int = Field(gt=0)
     # Word-class slug from the dictionary link (e.g. "verb", "noun").
     cls: str | None = None
-    # Dictionary headword for the token (lemma); used for inflected phrasal
-    # leads ("gave up" -> lead lemma "give").
+    # Dictionary headword for the token (lemma); available to enrichers as
+    # the linked dictionary base of the surface.
     lemma: str | None = None
     # English: Wiktionary IPA variants for this token, with ˈ kept.
     ipa: list[str] | None = None
@@ -120,8 +120,8 @@ class EnrichToken(BaseModel):
     # Russian: dictionary stressed-form candidates carrying U+0301.
     stressed: list[str] | None = None
     # English: all verb-class headwords for the surface (direct rows + forms
-    # table), so a phrasal lead buried under another class's page ("came" ->
-    # the stained-glass noun) still matches (ADR 0058).
+    # table), extra lemma candidates for the lexicon-gated multi-word-verb
+    # checks (ADR 0058).
     verb_lemmas: list[str] | None = None
 
 

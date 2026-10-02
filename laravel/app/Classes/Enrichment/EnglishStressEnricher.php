@@ -24,6 +24,11 @@ class EnglishStressEnricher implements Enricher
         return 'en_stress';
     }
 
+    public function version(): int
+    {
+        return 1;
+    }
+
     public function languages(): array
     {
         return ['en'];

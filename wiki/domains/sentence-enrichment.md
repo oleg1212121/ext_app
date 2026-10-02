@@ -1,11 +1,11 @@
 ---
 type: Pipeline
-title: Sentence enrichment (stress marks, phrasal verbs)
-description: Local-only per-sentence enrichment — Russian/English stress marks and English phrasal-verb hits — computed by the Python service (Silero Stress + caller-supplied dictionary data incl. CMUdict), orchestrated as declaratively language-scoped enrichers with per-enricher staleness stamps, stored beside sentence content, and rendered behind per-user toggles on the reading surfaces (ADR 0052, ADR 0053, ADR 0057).
-tags: [enrichment, stress-marks, phrasal-verbs, enrichers, python-service, reader, simulator, silero]
+title: Sentence enrichment (stress marks, multi-word verbs)
+description: Local-only per-sentence enrichment — Russian/English stress marks and English multi-word-verb hits — computed by the Python service (Silero Stress, spaCy dependency parsing, caller-supplied dictionary data incl. CMUdict), orchestrated as declaratively language-scoped, version-stamped enrichers with per-enricher staleness, stored beside sentence content, and rendered behind per-user toggles on the reading surfaces (ADR 0052, ADR 0053, ADR 0057, ADR 0059).
+tags: [enrichment, stress-marks, multi-word-verbs, enrichers, python-service, spacy, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-02T15:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-02T17:30:00Z }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -34,6 +34,12 @@ sources:
    - id: phrasal
      resource: docker-compose/python/ai/enrichment/phrasal.py
      title: phrasal
+   - id: shape
+     resource: laravel/app/Classes/MultiwordVerbShape.php
+     title: MultiwordVerbShape
+   - id: reclass
+     resource: laravel/app/Console/Commands/ReclassMultiwordWordsCommand.php
+     title: words:reclass-multiword
    - id: adr
      resource: docs/adr/0052-local-sentence-enrichment.md
      title: ADR 0052
@@ -43,18 +49,21 @@ sources:
    - id: adr58
      resource: docs/adr/0058-phrasal-lead-verb-lemmas.md
      title: ADR 0058
+   - id: adr59
+     resource: docs/adr/0059-spacy-multiword-verb-matching.md
+     title: ADR 0059
 ---
 
-# Sentence enrichment (stress marks, phrasal verbs)
+# Sentence enrichment (stress marks, multi-word verbs)
 
 Every sentence of a ru/en entity gets two enrichment payloads, computed
-**entirely locally** (ADR 0052: no LLM, no paid calls — Silero Stress +
-dictionary data only):
+**entirely locally** (ADR 0052: no LLM, no paid calls — Silero Stress,
+spaCy and dictionary data only):
 
 | Payload | Column | Content |
 |---|---|---|
 | Stressed variant | `entity_sentences.stressed_content` | Sentence with U+0301 combining acutes on stressed vowels (Russian also е→ё); acute omitted on ё |
-| Phrasal verbs | `entity_sentences.phrasal_verbs` (jsonb) | English hits `{verb, particles[], start, end, phrase}` — char spans into `content`, `phrase` the matched headword |
+| Multi-word verbs | `entity_sentences.phrasal_verbs` (jsonb) | English hits `{verb, particles[], start, end, phrase}` — char spans into `content`, `phrase` the matched headword (or the normalized lemma phrase for parser-only particle hits) |
 
 `content` is **never mutated**: enrichment that wrote into content would bump
 `sentences_updated_at` (staling word index/frequency/text hash), change the
@@ -64,7 +73,8 @@ text hash under exact-copy detection, and flip entity matches to `pending`
 ## Enrichers (ADR 0057)
 
 Each analysis is an `Enricher` (`App\Classes\Enrichment`): `key()` (python
-dispatch key + stamp key), `languages()` (declared applicability),
+dispatch key + stamp key), `version()` (algorithm version — a bump re-stales
+the whole corpus; ADR 0059), `languages()` (declared applicability),
 `column()`, `tokenHints()` (per-token dictionary hints), `requestExtras()`
 (request-level payload), `toStorage()`. `EnricherRegistry::forLanguage(code)`
 answers "what should be included in the enrichment process" for a language:
@@ -118,16 +128,22 @@ the same split as `/split` and `/align`.
   words never carry a mark. The enricher orders variants stress-first
   (`ipaByWordId()`: ˈ-bearing variants before the rest, deterministic
   `transcriptions.id` tiebreak) before applying the 3-variant cap.
-- **phrasal verbs** (`ai/enrichment/phrasal.py`): 3- then 2-token windows
-  whose lead is a verb candidate and whose `lead candidate + surfaces` match
-  a multi-word verb headword (the dictionary's previously-inert phrasal rows;
-  the lexicon rides `requestExtras()`). Lead candidates (ADR 0058): the
-  linked lemma when the class hint says verb, plus `verb_lemmas` — every
-  verb-class headword for the surface (direct rows + forms table) — because
-  another class's page can outrank the verb (the stained-glass noun "came"
-  hides the verb in "came forward"). Longest window wins; candidates break
-  ties within a length; hits never overlap; each hit carries the matched
-  `phrase`.
+- **multi-word verbs** (`ai/enrichment/phrasal.py`, ADR 0059): spaCy
+  (`en_core_web_md`, lazy singleton, `nlp.pipe` over the request, ~10k
+  words/sec CPU — a 75-sentence chunk parses well under a second)
+  parses the raw sentence; the matcher walks VERB tokens (AUX excluded —
+  "could have given" can never match) and combines the lemma with
+  `prt`/`prep` children. Particle verbs ("gave up", separated "looked
+  it up") hit on parser evidence alone; prepositional ("depend on") and
+  phrasal-prepositional ("come up with") matches are dictionary-gated
+  against the caller's lexicon (the shape-curated multi-word verb
+  headwords riding `requestExtras()`), with ADR 0058's `verb_lemmas` as
+  extra lemma candidates. One hit per verb; the most specific candidate
+  wins; a verb with particles skips bare-prep candidates (the "on" of
+  "looked it up on the network" belongs to a following phrase). A
+  missing model/package fails loudly (503) — empty enrichment is never
+  written and stamped. Sense ambiguity is a documented limitation
+  ("sat in the car" hits when "sit in" is lexiconed).
 
 Plain-python tests: `docker exec ext_python python
 /app/ai/enrichment/test_enrichment.py` (Silero-dependent ru tests skip with a
@@ -145,13 +161,16 @@ notice when the package is absent).
   and make enrichment mark the entity stale forever (infinite re-enrich
   loop). A regression test pins `updated_at`/`sentences_updated_at`/
   `text_hash` unchanged.
-- **Per-enricher staleness** (ADR 0057): `entities.enrichment_stamps` jsonb
-  `{enricher key: ISO timestamp}`. `EnricherRegistry::staleFor(entity)`
+- **Per-enricher staleness** (ADR 0057, versioned in ADR 0059):
+  `entities.enrichment_stamps` jsonb `{enricher key: {v, at}}` (v1-era
+  bare ISO strings read as version 1). `EnricherRegistry::staleFor(entity)`
   returns the language's enrichers whose stamp is missing (a newly
-  registered enricher backfills itself — no manual reset, the ADR 0053
-  choreography) or older than the last sentence change. A language with no
-  enrichers is never stale; its job run stamps `{}` once. Stamps merge via
-  jsonb `||` so concurrent stampers cannot clobber each other.
+  registered enricher backfills itself), whose recorded version is older
+  than the enricher's `version()` — a bump re-stales the whole corpus so
+  the sweep re-runs the analysis everywhere with no manual reset — or
+  older than the last sentence change. A language with no enrichers is
+  never stale; its job run stamps `{}` once. Stamps merge via jsonb `||`
+  so concurrent stampers cannot clobber each other.
 - `EnrichEntitySentences` job (low lane, self-re-dispatching, 2×75 sentences
   per run) dispatched from three places: the end of
   `FinalizeEntityDerivations` and the Filament "Enrich" action (`begin()` —
@@ -168,7 +187,7 @@ notice when the package is absent).
   ship `stressedRows` AND `phrasalRows` parallel to the rows, flipped with
   the reading/learning side. Stress marks are a **per-user preference**
   (`stress_marks` in the reader + simulator `ui_settings` sections,
-  autosaved, default off): it swaps `content` → `stressed_content`. Phrasal
+  autosaved, default off): it swaps `content` → `stressed_content`. Multi-word
   verbs are the same kind of preference (`phrasal_verbs`, default off): it
   underlines the tokens each hit's span covers with a dotted verdigris
   underline (`phrasal-hit` class) and shows the matched `phrase` as tooltip;
@@ -186,7 +205,8 @@ notice when the package is absent).
 
 ## Deployment note
 
-`silero-stress==1.5` (ADR 0052) and `pyphen>=0.18` (ADR 0053) are in
+`silero-stress==1.5` (ADR 0052), `pyphen>=0.18` (ADR 0053) and
+`spacy==3.8.16` + the `en_core_web_md` model wheel (ADR 0059) live in
 `docker-compose/python/requirements.txt` — container-definition changes:
 rebuild the python image
 (`docker compose build python && docker compose up -d python`) and
@@ -197,5 +217,7 @@ handles this automatically: it pip-syncs the machine-local venv from
 `ext-python` whenever the pull touched `docker-compose/python/`. After a
 prod deploy the CMUdict file (`laravel/kaikki/cmudict.dict`) must be fetched
 once and `dictionary:import-cmudict` run (kaikki-sourced rows are preserved
-on re-import). ADR 0057 touched only python code (no dependency change) —
-a plain deploy restarts the service, no rebuild.
+on re-import). After the ADR 0059 deploy: run
+`php artisan words:reclass-multiword` (dry-run first) to clean the English
+verb rows, then let the sweep grind the v2 `en_phrasal` backfill or
+accelerate it with `entities:enrich --enricher=en_phrasal --limit=N`.

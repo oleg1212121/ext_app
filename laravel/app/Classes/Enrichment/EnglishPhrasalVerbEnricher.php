@@ -2,20 +2,19 @@
 
 namespace App\Classes\Enrichment;
 
+use App\Classes\MultiwordVerbShape;
 use App\Models\Entity;
 use App\Models\Form;
 use App\Models\Word;
 
 /**
- * English phrasal verbs: python matches 2/3-token windows against the
- * dictionary's multi-word verb headwords ("give up", "kick the bucket") —
- * inert rows the single-token linker can never reach (ADR 0052). The word
- * classes and lemmas the matcher needs ride the shared base resolution;
- * this enricher additionally contributes verb_lemmas — every verb-class
- * headword the dictionary has for the surface — because a phrasal lead can
- * be buried under another class's page: the stained-glass noun "came"
- * outranks the verb in CLASS_PRIORITY, yet "came forward" is a phrasal
- * verb (ADR 0058).
+ * English multi-word verbs: spaCy dependency parsing finds verb + particle/
+ * preposition structures, and the caller supplies the curated dictionary
+ * lexicon that gates prepositional matches ("depend on") while particles
+ * alone ("give up", "looked it up") are parser evidence (ADR 0059). The
+ * verb-lemma hints this enricher contributes ride the shared base
+ * resolution: every verb-class headword the dictionary has for a surface —
+ * a phrasal lead can be buried under another class's page (ADR 0058).
  */
 class EnglishPhrasalVerbEnricher implements Enricher
 {
@@ -28,6 +27,12 @@ class EnglishPhrasalVerbEnricher implements Enricher
     public function key(): string
     {
         return 'en_phrasal';
+    }
+
+    /** v2: the spaCy dependency-parse matcher replaced n-gram matching (ADR 0059). */
+    public function version(): int
+    {
+        return 2;
     }
 
     public function languages(): array
@@ -91,7 +96,8 @@ class EnglishPhrasalVerbEnricher implements Enricher
     }
 
     /**
-     * Multi-word verb headwords for phrasal-verb matching.
+     * Multi-word verb headwords for the lexicon-gated matches: only rows in
+     * the particle/preposition shape the parser can confirm (ADR 0059).
      *
      * @return list<string>
      */
@@ -104,6 +110,7 @@ class EnglishPhrasalVerbEnricher implements Enricher
             ->orderBy('id')
             ->limit(self::LEXICON_LIMIT)
             ->pluck('l_word')
+            ->filter(fn (string $lWord): bool => MultiwordVerbShape::isValid($lWord))
             ->values()
             ->all();
     }

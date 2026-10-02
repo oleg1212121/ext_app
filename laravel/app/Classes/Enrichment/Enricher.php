@@ -23,6 +23,14 @@ interface Enricher
     public function key(): string;
 
     /**
+     * The analysis algorithm version. The completion stamp records it, and
+     * a bump makes every already-enriched entity stale again — the
+     * five-minute sweep re-runs the analysis over the corpus without any
+     * manual backfill (ADR 0059).
+     */
+    public function version(): int;
+
+    /**
      * The ISO language codes this enricher applies to ("en" for phrasal
      * verbs, "ru" for Silero stress — Russian sentences never run the
      * English analyses and vice versa).

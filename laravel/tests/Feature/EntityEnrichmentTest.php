@@ -1,5 +1,6 @@
 <?php
 
+use App\Classes\Enrichment\EnglishPhrasalVerbEnricher;
 use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\EntityTextHasher;
 use App\Classes\SentenceEnrichmentService;
@@ -547,4 +548,53 @@ it('sends per-part ipa for hyphenated compounds the dictionary lacks', function 
             ['surface' => 'seven', 'ipa' => ['/ˈsɛvən/']],
             ['surface' => 'sided', 'ipa' => null],
         ]);
+});
+
+it('re-enriches an entity stamped by an older algorithm version', function () {
+    $entity = enrichableEntity('en', ['She gave up smoking.']);
+    $service = SentenceEnrichmentService::create();
+
+    // v1-era stamps were bare ISO strings: stale for the v2 phrasal
+    // analysis, fresh for the v1 stress analysis (ADR 0059).
+    $entity->update(['enrichment_stamps' => [
+        'en_phrasal' => now()->toISOString(),
+        'en_stress' => now()->toISOString(),
+    ]]);
+    expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['en_phrasal']);
+
+    // Once re-stamped at the current versions, nothing is stale.
+    $entity->update(['enrichment_stamps' => [
+        'en_phrasal' => ['v' => 2, 'at' => now()->toISOString()],
+        'en_stress' => ['v' => 1, 'at' => now()->toISOString()],
+    ]]);
+    expect($service->isStale($entity->refresh()))->toBeFalse();
+
+    // markEnriched writes the versioned shape.
+    $service->markEnriched($entity, [(new EnricherRegistry)->forKey('en_phrasal')]);
+    $stamp = $entity->refresh()->enrichment_stamps['en_phrasal'];
+    expect($stamp['v'])->toBe(2)->and($stamp['at'])->not->toBeNull();
+});
+
+it('gates the phrasal lexicon to the particle/preposition shape', function () {
+    $entity = enrichableEntity('en', ['She gave up smoking.']);
+
+    foreach (['give up', 'put up with', 'look forward to'] as $valid) {
+        createWord('en', $valid, 'verb');
+    }
+    // The Wiktionary-import junk behind the reported false positives, plus
+    // the idioms the parser can never confirm (ADR 0059).
+    foreach (['do it', 'could have', 'be there', 'kick the bucket', 'take the bull by the horns'] as $junk) {
+        createWord('en', $junk, 'verb');
+    }
+
+    $lexicon = (new EnglishPhrasalVerbEnricher)->requestExtras($entity->refresh())['phrasal_lexicon'];
+
+    expect($lexicon)->toContain('give up')
+        ->and($lexicon)->toContain('put up with')
+        ->and($lexicon)->toContain('look forward to')
+        ->and($lexicon)->not->toContain('do it')
+        ->and($lexicon)->not->toContain('could have')
+        ->and($lexicon)->not->toContain('be there')
+        ->and($lexicon)->not->toContain('kick the bucket')
+        ->and($lexicon)->not->toContain('take the bull by the horns');
 });

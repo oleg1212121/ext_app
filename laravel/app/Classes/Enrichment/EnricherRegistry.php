@@ -100,8 +100,10 @@ class EnricherRegistry
 
     /**
      * The entity's language enrichers whose completion stamp is missing (a
-     * newly registered enricher is automatically stale) or older than the
-     * last sentence change. Entities of languages with no enrichers are
+     * newly registered enricher is automatically stale), was written by an
+     * older algorithm version — a version bump re-stales every entity so
+     * the sweep re-runs the analysis corpus-wide (ADR 0059) — or older than
+     * the last sentence change. Entities of languages with no enrichers are
      * never stale — the sweep does not pick them up.
      *
      * @return list<Enricher>
@@ -128,10 +130,22 @@ class EnricherRegistry
                     return true;
                 }
 
+                // v1 stamps were bare ISO strings; the array shape carries
+                // the algorithm version next to the completion time.
+                $enrichedAt = is_array($stamp) ? ($stamp['at'] ?? null) : $stamp;
+
+                if ($enrichedAt === null) {
+                    return true;
+                }
+
+                if ((int) (is_array($stamp) ? ($stamp['v'] ?? 1) : 1) < $enricher->version()) {
+                    return true;
+                }
+
                 // max('updated_at') is an aggregate — it comes back as a
                 // raw string, not through the model's datetime cast.
                 return $lastSentenceChange !== null
-                    && Carbon::parse($lastSentenceChange)->gt(Carbon::parse($stamp));
+                    && Carbon::parse($lastSentenceChange)->gt(Carbon::parse($enrichedAt));
             },
         ));
     }

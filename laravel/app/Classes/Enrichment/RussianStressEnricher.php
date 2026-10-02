@@ -17,6 +17,11 @@ class RussianStressEnricher implements Enricher
         return 'ru_stress';
     }
 
+    public function version(): int
+    {
+        return 1;
+    }
+
     public function languages(): array
     {
         return ['ru'];

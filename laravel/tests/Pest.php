@@ -171,8 +171,8 @@ function createWordClasses(): array
     createLanguages();
 
     $classes = [
-        'en' => ['noun' => 'Noun', 'verb' => 'Verb', 'unknown' => 'Unknown'],
-        'ru' => ['noun' => 'Существительное', 'verb' => 'Глагол', 'unknown' => 'Неизвестно'],
+        'en' => ['noun' => 'Noun', 'verb' => 'Verb', 'phrase' => 'Phrase', 'unknown' => 'Unknown'],
+        'ru' => ['noun' => 'Существительное', 'verb' => 'Глагол', 'phrase' => 'Фраза', 'unknown' => 'Неизвестно'],
     ];
 
     $ids = [];

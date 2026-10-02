@@ -69,9 +69,11 @@ class SentenceEnrichmentService
     /**
      * Stamp the given enrichers done on entities.enrichment_stamps (quiet
      * base-builder write, jsonb merge so concurrent stampers can't clobber
-     * each other's keys). Null stamps every enricher of the entity's
-     * language — the whole-run-done stamp; a language with no enrichers ends
-     * as an empty map so it never counts as stale again.
+     * each other's keys). Each stamp carries the enricher's algorithm
+     * version, so a version bump re-stales the whole corpus (ADR 0059).
+     * Null stamps every enricher of the entity's language — the
+     * whole-run-done stamp; a language with no enrichers ends as an empty
+     * map so it never counts as stale again.
      *
      * @param  list<Enricher>|null  $enrichers
      */
@@ -82,7 +84,10 @@ class SentenceEnrichmentService
         $stamps = [];
 
         foreach ($enrichers as $enricher) {
-            $stamps[$enricher->key()] = now()->toISOString();
+            $stamps[$enricher->key()] = [
+                'v' => $enricher->version(),
+                'at' => now()->toISOString(),
+            ];
         }
 
         // An empty PHP array would encode as the jsonb LIST [], and

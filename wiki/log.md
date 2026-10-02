@@ -1,5 +1,33 @@
 # Directory Update Log
 
+## 2026-10-02 (feat: multi-word verbs via spaCy dependency parsing, ADR 0059)
+
+Real-text review flagged "done, it", "not say" and "could have given" as
+phrasal verbs — three compounding root causes: Wiktionary junk under the
+verb class ("do it", "could have"), translation-path junk (multi-word
+provider candidates stored under the provider pos), and an n-gram matcher
+that cannot see punctuation or particles. The user chose a rewrite. Python
+(`ai/enrichment/phrasal.py`): spaCy `en_core_web_md` (lazy singleton,
+batched via `nlp.pipe`) parses the raw sentence; every VERB token (AUX
+excluded) matches by `prt`/`prep` children — particle verbs hit on parser
+evidence alone (separable "looked it up" works now), prepositional and
+phrasal-prepositional matches stay dictionary-gated; `/enrich` returns 503
+when the model is missing (fail loudly, never stamp empty enrichment).
+Laravel: `Enricher::version()` + versioned stamps `{v, at}` (legacy string
+stamps read as v1) — en_phrasal is v2, so the 5-minute sweep re-enriches the
+whole English corpus automatically; lexicon gated by `MultiwordVerbShape`
+(2–4 tokens, trailing particle/preposition whitelist; idioms out of scope);
+`FetchWordTranslations` stores multi-word candidates under the `phrase`
+class; new `words:reclass-multiword {--dry-run}` reclasses existing English
+junk verb rows to phrase (en-only — Russian multi-word verbs untouched).
+UI string "Phrasal verbs" → "Multi-word verbs" (ru keeps "Фразовые
+глаголы"); storage keys (`en_phrasal`, `phrasal_verbs`) unchanged.
+`requirements.txt` gains spacy + the model wheel (container-definition:
+rebuild python image + `--stamp` on the Docker prod path). CONTEXT.md
+renamed "Phrasal verb hit" → "Multi-word verb hit" and versioned the
+Enrichment staleness definition; `wiki/domains/sentence-enrichment.md` and
+`wiki/domains/dictionary-import.md` updated.
+
 ## 2026-10-01 (feat: pronunciation guide moves from navbar modal to a page under a new Resources dropdown, ADR 0056)
 
 The ADR 0054 phoneme reference shipped as a modal behind an unlabeled icon
