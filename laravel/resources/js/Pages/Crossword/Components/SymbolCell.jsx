@@ -2,7 +2,7 @@ import {cellKey} from '../constants';
 
 export default function SymbolCell({cell, value, onKeyDown, onClick, registerInputRef}) {
     return (
-        <div className="cell symbol" onClick={() => onClick(cell.y, cell.x)}>
+        <div className="cell symbol cursor-pointer hover:shadow-[0_0_2px_grey]" onClick={() => onClick(cell.y, cell.x)}>
             <input
                 type="text"
                 id={cellKey(cell.y, cell.x)}

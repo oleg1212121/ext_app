@@ -1,7 +1,7 @@
 export default function ArrowHorizontalCell({cell, onClick}) {
     return (
         <div
-            className="cell horizontal"
+            className="cell horizontal cursor-pointer hover:shadow-[0_0_2px_grey]"
             onClick={() => onClick(cell.y, cell.x)}
             id={`${cell.y}.${cell.x}`}
         >
