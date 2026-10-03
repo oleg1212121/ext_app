@@ -15,7 +15,7 @@ const FONT_STEP = 2;
 
 // Props a page turn replaces; everything else (entity, fontSize, audio
 // state) survives the visit untouched.
-const PAGED_PROPS = ['rows', 'rowImages', 'rowKeys', 'wordMap', 'translationWordMap', 'meta'];
+const PAGED_PROPS = ['rows', 'rowImages', 'rowKeys', 'stressedRows', 'phrasalRows', 'wordMap', 'translationWordMap', 'meta'];
 
 const LANG_GLYPH = {
     en: 'EN',

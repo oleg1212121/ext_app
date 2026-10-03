@@ -9,7 +9,7 @@ import AI from "./Components/AI.jsx";
 import TextContent from "./Components/TextContent.jsx";
 import {Icon} from "../../Components/icons.jsx";
 import {popupFontSizeFor} from "../../Components/WordPopup.jsx";
-import {useI18n} from '../../i18n';
+import {t, useI18n} from '../../i18n';
 import {getCsrfToken} from '../../lib/http';
 import {loadPositions, savePositions} from '../../lib/simulatorPosition';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
