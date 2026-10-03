@@ -161,9 +161,9 @@ function WordText({
         answerLabel: explain.answerLabel ?? null,
     } : undefined;
 
-    const renderTextSentence = (sentence, textIndex, renderToken) => {
-        const segments = segmentLists[textIndex];
-        const marks = phrasalMarks !== null ? (phrasalMarks[textIndex] ?? null) : null;
+    const renderTextSentence = (sentence, index, renderToken) => {
+        const segments = segmentLists[index];
+        const marks = phrasalMarks !== null ? (phrasalMarks[index] ?? null) : null;
         let tokenIndex = 0;
         return (
             <span className="inline">
@@ -216,7 +216,10 @@ function WordText({
         </span>
     );
 
-    let renderedTexts = 0;
+    // displayTexts/segmentLists/phrasalMarks are indexed by position in the
+    // full sentence list (illustrations included), so text sentences must
+    // look up their memo by that same index — not by a text-only count.
+    const firstTextIndex = sentences.findIndex((sentence) => sentence.image === undefined);
 
     return (
         <span className={className}>
@@ -224,8 +227,7 @@ function WordText({
                 if (sentence.image !== undefined) {
                     return <IllustrationFigure key={sentence.id} sentence={sentence} {...(figureProps ?? {})}/>;
                 }
-                const textIndex = renderedTexts++;
-                const separator = renderedTexts > 1 ? ' ' : null;
+                const separator = index !== firstTextIndex ? ' ' : null;
                 if (!interactive) {
                     // Plain fast path: no word map for this side (entity_words
                     // still building, or text not indexed) — render the raw
@@ -233,14 +235,14 @@ function WordText({
                     return (
                         <React.Fragment key={sentence.id}>
                             {separator}
-                            <span className="inline">{displayTexts[textIndex]}</span>
+                            <span className="inline">{displayTexts[index]}</span>
                         </React.Fragment>
                     );
                 }
                 return (
                     <React.Fragment key={sentence.id}>
                         {separator}
-                        {renderTextSentence(sentence, textIndex, (segment, segmentIndex, entry, markClass, markLabel) => interactiveToken(sentence, segment, segmentIndex, entry, markClass, markLabel))}
+                        {renderTextSentence(sentence, index, (segment, segmentIndex, entry, markClass, markLabel) => interactiveToken(sentence, segment, segmentIndex, entry, markClass, markLabel))}
                     </React.Fragment>
                 );
             })}

@@ -1,5 +1,23 @@
 # Directory Update Log
 
+## 2026-10-03 (fix: reading-rows review follow-ups)
+
+Review of the ADR 0060 branch caught two client bugs and a docs gap.
+`WordText` built its per-sentence memos (`displayTexts`, `segmentLists`,
+`phrasalMarks`) over the full sentence list but looked them up with a
+text-only counter, so any text sentence after an illustration in the same
+row rendered the wrong entry (the image slot); lookups now use the
+full-list index, restoring the ADR's document-order interleave.
+`ReaderApp.setReadingLang` compared the radio's language code against the
+side letter (`lang !== defaultSide`, always true), so the first side flip
+stuck — the default language's radio could never restore it and
+`saveSideFlip` persisted the stuck state; it now compares against
+`langs[defaultSide]`. `AiWordExplainEndpointTest`'s two 422 assertions use
+`assertUnprocessable()` per coding-conventions. Also documenting the
+branch's `phrasal-hit` CSS en route: phrasal-verb hit tokens gained a
+background (`--phrasal-hit-background` in `app.css`), a visual change that
+shipped without a log entry.
+
 ## 2026-10-03 (feat: Reading rows — one row-object payload, ADR 0060)
 
 The reading surfaces' payload of five index-parallel arrays (`rows`,

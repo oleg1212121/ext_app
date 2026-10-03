@@ -184,10 +184,10 @@ export default function ReaderApp({
         if (!hasTranslation || lang === readingLang) {
             return;
         }
-        const next = lang !== defaultSide;
+        const next = lang !== langs[defaultSide];
         setFlipped(next);
         saveSideFlip(positionKey, next);
-    }, [hasTranslation, readingLang, defaultSide, positionKey]);
+    }, [hasTranslation, readingLang, defaultSide, langs, positionKey]);
 
     const handlePickAudio = useCallback(() => {
         audioPickerRef.current?.click();

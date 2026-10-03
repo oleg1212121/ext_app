@@ -210,7 +210,7 @@ it('requires the entity sentence id — the positional address is retired', func
             'word_id' => $fixture['word']->id,
             'surface' => 'bank',
         ])
-        ->assertStatus(422);
+        ->assertUnprocessable();
 });
 
 it('validates that the entity sentence exists', function () {
@@ -223,7 +223,7 @@ it('validates that the entity sentence exists', function () {
             'word_id' => $fixture['word']->id,
             'surface' => 'bank',
         ])
-        ->assertStatus(422);
+        ->assertUnprocessable();
 });
 
 it('surfaces a provider error as a friendly message without leaking internals', function () {
