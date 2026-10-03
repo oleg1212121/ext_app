@@ -14,6 +14,7 @@ import {getCsrfToken} from '../../lib/http';
 import {loadPositions, savePositions} from '../../lib/simulatorPosition';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 import {patchWordMap, recordWordEvents, rowWordIds} from '../../lib/wordFamiliarity';
+import {rowsHaveAnnotation, sideTexts} from '../../lib/readingRows.mjs';
 import {renderMarkdown} from '../../lib/markdown';
 
 const DEFAULT_PER_PAGE = 50;
@@ -97,12 +98,8 @@ function updateResizeableFontStyles(fontSize) {
     `;
 }
 
-async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
+async function loadTextPage(entityMatchId, page, perPage = DEFAULT_PER_PAGE) {
     const token = getCsrfToken();
-    const isAlignmentRunId = /^\d+$/.test(String(filename ?? ''));
-    const body = isAlignmentRunId
-        ? {entity_match_id: parseInt(String(filename), 10), page, per_page: perPage}
-        : {filename, page, per_page: perPage};
     const res = await fetch('/text', {
         method: 'POST',
         headers: {
@@ -110,7 +107,7 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
             Accept: 'application/json',
             ...(token ? {'X-CSRF-TOKEN': token} : {}),
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify({entity_match_id: parseInt(String(entityMatchId), 10), page, per_page: perPage}),
     });
     const json = await res.json();
     const code = json?.data?.code ?? res.status;
@@ -121,10 +118,6 @@ async function loadTextPage(filename, page, perPage = DEFAULT_PER_PAGE) {
     const payload = json.data.data;
     return {
         rows: payload.rows ?? [],
-        rowImages: payload.row_images ?? [],
-        rowKeys: payload.row_keys ?? null,
-        stressedRows: payload.stressed_rows ?? [],
-        phrasalRows: payload.phrasal_rows ?? [],
         wordMaps: payload.word_maps ?? null,
         languages: payload.languages ?? null,
         defaultLearningSide: payload.default_learning_side ?? null,
@@ -208,10 +201,6 @@ const Bilinguals = (props) => {
     const pendingWorkplaceFocusRef = React.useRef(false);
 
     const [rows, setRows] = React.useState([]);
-    const [rowImages, setRowImages] = React.useState([]);
-    const [rowKeys, setRowKeys] = React.useState(null);
-    const [stressedRows, setStressedRows] = React.useState([]);
-    const [phrasalRows, setPhrasalRows] = React.useState([]);
     const [wordMaps, setWordMaps] = React.useState(null);
     const [allTarget, setAllTarget] = React.useState(false);
     const [textMeta, setTextMeta] = React.useState(null);
@@ -288,12 +277,8 @@ const Bilinguals = (props) => {
         setLoadError(null);
         setPending(true);
         try {
-            const {rows: nextRows, rowImages: nextRowImages, rowKeys: nextRowKeys, stressedRows: nextStressedRows, phrasalRows: nextPhrasalRows, wordMaps: nextWordMaps, languages: nextLanguages, defaultLearningSide: nextDefaultSide, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
+            const {rows: nextRows, wordMaps: nextWordMaps, languages: nextLanguages, defaultLearningSide: nextDefaultSide, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
             setRows(nextRows);
-            setRowImages(nextRowImages);
-            setRowKeys(nextRowKeys);
-            setStressedRows(nextStressedRows);
-            setPhrasalRows(nextPhrasalRows);
             setWordMaps(nextWordMaps);
             if (nextLanguages) {
                 setLanguages(nextLanguages);
@@ -314,10 +299,6 @@ const Bilinguals = (props) => {
             }
         } catch (e) {
             setRows([]);
-            setRowImages([]);
-            setRowKeys(null);
-            setStressedRows([]);
-            setPhrasalRows([]);
             setWordMaps(null);
             setAllTarget(false);
             setTextMeta(null);
@@ -434,28 +415,12 @@ const Bilinguals = (props) => {
 
     // Display order: column 0 is the learning target (hidden until revealed),
     // column 1 the base the Open/Ask actions and the workplace pair with.
-    const shownRows = React.useMemo(() => (
-        learningSide === 'a' ? rows : rows.map(([a, b]) => [b, a])
-    ), [rows, learningSide]);
+    // Rows stay canonical — the flip is just which side each column shows.
+    const firstSide = learningSide;
+    const secondSide = baseSide;
 
-    // Illustration pairs flip columns with the text pairs.
-    const shownRowImages = React.useMemo(() => (
-        learningSide === 'a' ? rowImages : rowImages.map(([a, b]) => [b, a])
-    ), [rowImages, learningSide]);
-
-    // Stress variants flip with the text pairs.
-    const shownStressedRows = React.useMemo(() => (
-        learningSide === 'a' ? stressedRows : stressedRows.map(([a, b]) => [b, a])
-    ), [stressedRows, learningSide]);
-
-    const hasStressedData = stressedRows.some(([a, b]) => a !== null || b !== null);
-
-    // Phrasal hit lists flip with the text pairs.
-    const shownPhrasalRows = React.useMemo(() => (
-        learningSide === 'a' ? phrasalRows : phrasalRows.map(([a, b]) => [b, a])
-    ), [phrasalRows, learningSide]);
-
-    const hasPhrasalData = phrasalRows.some(([a, b]) => a !== null || b !== null);
+    const hasStressedData = rowsHaveAnnotation(rows, 'stressed');
+    const hasPhrasalData = rowsHaveAnnotation(rows, 'phrasal');
 
     // Word maps stay keyed by the match's actual sides; the display columns
     // index into them by the side currently playing each role.
@@ -480,33 +445,34 @@ const Bilinguals = (props) => {
     // Revealing a row's target sentence credits its dictionary words a read
     // (+1, deduplicated per sentence pair server-side).
     const creditRead = React.useCallback((n) => {
-        if (!targetHighlightable || !rowKeys) {
+        if (!targetHighlightable) {
             return;
         }
         const index = n - 1 - rowOffset;
-        if (index < 0 || index >= shownRows.length || !rowKeys[index]) {
+        const row = rows[index];
+        if (!row) {
             return;
         }
-        const wordIds = rowWordIds(shownRows[index][0], targetWordMap);
+        const wordIds = rowWordIds(sideTexts(row, learningSide), targetWordMap);
         if (wordIds.length === 0) {
             return;
         }
-        recordWordEvents([{row_key: rowKeys[index], kind: 'read', word_ids: wordIds}])
+        recordWordEvents([{row_key: row.key, kind: 'read', word_ids: wordIds}])
             .then(applyFamiliarity);
-    }, [targetHighlightable, targetWordMap, rowKeys, shownRows, rowOffset, applyFamiliarity]);
+    }, [targetHighlightable, targetWordMap, rows, learningSide, rowOffset, applyFamiliarity]);
 
     // Master target checkbox: reveal the whole column and credit every loaded
     // row's words in one batched request.
     const toggleAllTarget = (checked) => {
         setAllTarget(checked);
-        if (!checked || !targetHighlightable || !rowKeys) {
+        if (!checked || !targetHighlightable) {
             return;
         }
         const events = [];
-        shownRows.forEach((row, index) => {
-            const wordIds = rowWordIds(row[0], targetWordMap);
-            if (rowKeys[index] && wordIds.length > 0) {
-                events.push({row_key: rowKeys[index], kind: 'read', word_ids: wordIds});
+        rows.forEach((row) => {
+            const wordIds = rowWordIds(sideTexts(row, learningSide), targetWordMap);
+            if (wordIds.length > 0) {
+                events.push({row_key: row.key, kind: 'read', word_ids: wordIds});
             }
         });
         if (events.length === 0) {
@@ -616,9 +582,9 @@ const Bilinguals = (props) => {
             return;
         }
 
-        // The display row's base column (index 1) pairs with the workplace —
-        // whatever language plays the base after a toggle.
-        const cellContent = String(row?.[1] ?? '').trim().replace('*', '');
+        // The base column pairs with the workplace — whatever language plays
+        // the base after a toggle.
+        const cellContent = sideTexts(row, baseSide).trim().replace('*', '');
         const workplaceText = String(overrides.workplaceText ?? workplaceRef.current?.value ?? '').trim().replace('*', '');
         // Only the tasks travel; the server joins them with the admin's
         // format template using the current column language codes.
@@ -836,8 +802,9 @@ const Bilinguals = (props) => {
                             <TextContent
                                 ask={ask}
                                 focusOnWorkplace={focusOnWorkplace}
-                                rows={shownRows}
-                                rowImages={shownRowImages}
+                                rows={rows}
+                                firstSide={firstSide}
+                                secondSide={secondSide}
                                 rowOffset={rowOffset}
                                 pending={pending}
                                 loadError={loadError}
@@ -848,8 +815,6 @@ const Bilinguals = (props) => {
                                 onToggleRow={onToggleRow}
                                 targetLanguage={languages[learningSide]}
                                 baseLanguage={languages[baseSide]}
-                                targetSide={learningSide}
-                                baseSide={baseSide}
                                 targetWordMap={targetWordMap}
                                 baseWordMap={baseWordMap}
                                 targetHighlightable={targetHighlightable}
@@ -857,12 +822,9 @@ const Bilinguals = (props) => {
                                 targetExplainable={targetExplainable}
                                 baseExplainable={baseExplainable}
                                 highlightWords={highlightWords}
-                                stressedRows={shownStressedRows}
                                 showStress={showStress}
-                                phrasalRows={shownPhrasalRows}
                                 showPhrasal={showPhrasal}
                                 onWordProgress={handleWordProgress}
-                                rowKeys={rowKeys}
                                 allTarget={allTarget}
                                 onToggleAllTarget={toggleAllTarget}
                                 popupFontSize={popupFontSize}

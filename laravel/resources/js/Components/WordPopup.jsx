@@ -164,19 +164,6 @@ function ExplainPane({explain, explainKey, preview = false}) {
             return;
         }
         setExplanation({status: 'loading'});
-        const body = explain.rowKind === 'es'
-            ? {
-                entity_sentence_id: explain.rowId,
-                word_id: explain.wordId,
-                surface: explain.surface,
-            }
-            : {
-                meaning_match_id: explain.rowId,
-                side: explain.side,
-                sentence_index: explain.sentenceIndex,
-                word_id: explain.wordId,
-                surface: explain.surface,
-            };
         fetch('/ai/word-explain', {
             method: 'POST',
             headers: {
@@ -184,7 +171,11 @@ function ExplainPane({explain, explainKey, preview = false}) {
                 Accept: 'application/json',
                 ...(getCsrfToken() ? {'X-CSRF-TOKEN': getCsrfToken()} : {}),
             },
-            body: JSON.stringify(body),
+            body: JSON.stringify({
+                entity_sentence_id: explain.sentenceId,
+                word_id: explain.wordId,
+                surface: explain.surface,
+            }),
         })
             .then(async (res) => {
                 const json = await res.json().catch(() => null);
@@ -561,7 +552,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     const ref = useRef(null);
 
     const explainKey = explain
-        ? [explain.rowKind, explain.rowId, explain.side, explain.sentenceIndex, surface, explain.modelKey].join('|')
+        ? [explain.sentenceId, surface, explain.modelKey].join('|')
         : null;
 
     useEffect(() => {

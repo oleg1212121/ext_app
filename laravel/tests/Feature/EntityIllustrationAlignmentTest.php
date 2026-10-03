@@ -3,7 +3,7 @@
 use App\Classes\AlignmentEditorPersister;
 use App\Classes\AlignmentEditorPresenter;
 use App\Classes\EntityTextHasher;
-use App\Classes\MeaningMatchPresenter;
+use App\Classes\ReadingRowsPresenter;
 use App\Jobs\AlignEntitySentences;
 use App\Models\Entity;
 use App\Models\EntityMatch;
@@ -312,7 +312,7 @@ it('writes alignable totals when an alignment is copied onto illustrated copies'
 
 // ─── presenter ───────────────────────────────────────────────────────────────
 
-it('moves illustration captions out of row text and into the image payload', function () {
+it('moves illustration captions into the row payload as image sentences', function () {
     $work = createWork();
     $enEntity = createEntity('en', $work);
     $ruEntity = createEntity('ru', $work);
@@ -336,24 +336,22 @@ it('moves illustration captions out of row text and into the image payload', fun
         ->orderBy('order')
         ->get();
 
-    $presenter = new MeaningMatchPresenter;
+    $presenter = new ReadingRowsPresenter;
 
-    $text = $presenter->toSimulatorRows($rows);
+    $payload = $presenter->toReadingRows($rows);
 
-    expect($text)->toBe([
-        ['English text.', 'Русский текст.'],
-        ['', ''],
-    ]);
-
-    $images = $presenter->toSimulatorImages($rows);
-
-    expect($images)->toHaveCount(2)
-        ->and($images[0])->toBe([[], []])
-        ->and($images[1][0])->toHaveCount(1)
-        ->and($images[1][0][0]['caption'])->toBe('The lighthouse.')
-        ->and($images[1][0][0]['url'])->toBe(route('illustrations.show', ['sentence' => $enImage->id]))
-        ->and($images[1][0][0]['width'])->toBe(10)
-        ->and($images[1][1])->toBe([]);
+    // The text row's sides carry their text sentences; the image row's a
+    // side carries the illustration sentence — caption as text, image
+    // descriptor with the access-checked URL — and its b side is empty.
+    expect($payload)->toHaveCount(2)
+        ->and($payload[0]['a']['sentences'][0]['text'])->toBe('English text.')
+        ->and($payload[0]['b']['sentences'][0]['text'])->toBe('Русский текст.')
+        ->and($payload[1]['key'])->toBe('mm:'.$imageRow->id)
+        ->and($payload[1]['a']['sentences'])->toHaveCount(1)
+        ->and($payload[1]['a']['sentences'][0]['text'])->toBe('The lighthouse.')
+        ->and($payload[1]['a']['sentences'][0]['image']['url'])->toBe(route('illustrations.show', ['sentence' => $enImage->id]))
+        ->and($payload[1]['a']['sentences'][0]['image']['width'])->toBe(10)
+        ->and($payload[1]['b']['sentences'])->toBe([]);
 });
 
 // ─── text hash ───────────────────────────────────────────────────────────────
@@ -375,11 +373,11 @@ it('lets the image hash break an exact-copy tie that captions alone cannot', fun
 
 // ─── reading surfaces ────────────────────────────────────────────────────────
 
-it('ships row images in the reader for a single-language text', function () {
+it('ships image sentences in the reader for a single-language text', function () {
     $entity = createEntity('en', null, ['name' => 'Picture book']);
 
     EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Once upon a time.', 'order' => 1]);
-    createIllustrationSentence($entity, 2, 'The lighthouse.');
+    $image = createIllustrationSentence($entity, 2, 'The lighthouse.');
 
     $user = approvedUser();
 
@@ -387,15 +385,15 @@ it('ships row images in the reader for a single-language text', function () {
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
-            ->where('rows', [['Once upon a time.', ''], ['', '']])
-            ->has('rowImages', 2)
-            ->where('rowImages.0', [[], []])
-            ->where('rowImages.1.0.0.caption', 'The lighthouse.')
-            ->where('rowImages.1.0.0.width', 10)
+            ->has('rows', 2)
+            ->where('rows.0.a.sentences.0.text', 'Once upon a time.')
+            ->where('rows.1.a.sentences.0.text', 'The lighthouse.')
+            ->where('rows.1.a.sentences.0.image.url', route('illustrations.show', ['sentence' => $image->id]))
+            ->where('rows.1.a.sentences.0.image.width', 10)
         );
 });
 
-it('ships row_images in the simulator text payload', function () {
+it('ships image sentences in the simulator text payload', function () {
     $work = createWork();
     $enEntity = createEntity('en', $work, ['name' => 'Sim EN']);
     $ruEntity = createEntity('ru', $work, ['name' => 'Sim RU']);
@@ -420,6 +418,6 @@ it('ships row_images in the simulator text payload', function () {
         'page' => 1,
         'per_page' => 50,
     ])->assertOk()->assertJsonPath('data.code', 200)
-        ->assertJsonPath('data.data.rows.1', ['', ''])
-        ->assertJsonPath('data.data.row_images.1.0.0.caption', 'The lighthouse.');
+        ->assertJsonPath('data.data.rows.1.a.sentences.0.text', 'The lighthouse.')
+        ->assertJsonPath('data.data.rows.1.b.sentences', []);
 });

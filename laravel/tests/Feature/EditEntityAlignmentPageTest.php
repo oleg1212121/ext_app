@@ -279,7 +279,7 @@ test('simulator text endpoint returns saved alignment edits', function () {
     ]);
 
     $response->assertOk()
-        ->assertJsonPath('data.data.rows.0.0', 'Saved via editor.');
+        ->assertJsonPath('data.data.rows.0.a.sentences.0.text', 'Saved via editor.');
 });
 
 test('alignment editor paginates meaning rows', function () {

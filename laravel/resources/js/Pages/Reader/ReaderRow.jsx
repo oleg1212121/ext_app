@@ -1,95 +1,47 @@
-import {memo, useMemo} from 'react';
+import {memo} from 'react';
 import WordText from '../../Components/WordText.jsx';
-
-const NO_IMAGES = [];
-
-// A book illustration: the picture with its optional caption beneath. No
-// transitions or hover styling — the reader's row perf contract (fixed
-// identity, memo-friendly, no layout thrash) applies.
-const IllustrationFigure = ({image}) => (
-    <figure className="text-center">
-        <img
-            src={image.url}
-            alt={image.caption || ''}
-            loading="lazy"
-            decoding="async"
-            width={image.width ?? undefined}
-            height={image.height ?? undefined}
-            className="mx-auto inline-block max-h-[60vh] w-auto max-w-full rounded-sm"
-        />
-        {image.caption ? (
-            <figcaption
-                className="italic"
-                style={{fontSize: '0.8em', lineHeight: 1.5, color: 'var(--color-ink-soft)'}}
-            >
-                {image.caption}
-            </figcaption>
-        ) : null}
-    </figure>
-);
+import {sideHasContent, sideSentences} from '../../lib/readingRows.mjs';
 
 // Memoized: rows are token-heavy, and the reader re-renders for plenty of
 // reasons (audio status, page picker, sibling row expansion) that leave an
 // untouched row's props identical.
+//
+// A row is one Reading row object (ADR 0060: {key, a, b} canonical sides of
+// sentence objects); first/second are display-column descriptors the reader
+// page derives once per render — {side, wordMap, highlightable, explainable}.
+// `second` is null for single-language texts.
 function ReaderRow({
     index,
-    primary,
-    translation,
-    rowKey,
-    primaryImages = NO_IMAGES,
-    translationImages = NO_IMAGES,
+    row,
+    first,
+    second = null,
     showAll,
     sideBySide,
     fontSize,
     popupFontSize,
     expanded,
     onToggle,
-    wordMap,
-    primaryHighlightable,
-    translationWordMap,
-    translationHighlightable,
     highlight,
     onWordProgress,
-    primaryExplainable = false,
-    translationExplainable = false,
-    primarySide = null,
-    explain = null,
-    primaryStressed = null,
-    translationStressed = null,
     showStress = false,
-    primaryPhrasal = null,
-    translationPhrasal = null,
     showPhrasal = false,
+    explain = null,
 }) {
-    // The translation column lives on the other entity match side than the
-    // primary one; without a primary side (single-language text) it has none.
-    const translationSide = primarySide === 'a' ? 'b' : primarySide === 'b' ? 'a' : null;
-    // Stable payload identities: without them, memoized WordText instances
-    // would re-render on every parent pass. Passed through whenever the side
-    // is language-eligible — enabled or not — so keyless users still get the
-    // word popup's tab strip and its Models used popup.
-    const primaryExplainPayload = useMemo(
-        () => (primaryExplainable && primarySide ? explain ?? undefined : undefined),
-        [explain, primaryExplainable, primarySide],
-    );
-    const translationExplainPayload = useMemo(
-        () => (translationExplainable && translationSide ? explain ?? undefined : undefined),
-        [explain, translationExplainable, translationSide],
-    );
-    // An image-only side has empty text but still has content to show (and
-    // to reveal), so the illustration counts toward "has translation".
-    const hasTranslation = translation.trim() !== '' || translationImages.length > 0;
+    const firstSentences = sideSentences(row, first.side);
+    const secondSentences = second !== null ? sideSentences(row, second.side) : [];
+
+    // Keyless users still get the word popup's tab strip and its Models used
+    // popup, so the explain payload passes through whenever the side is
+    // language-eligible — enabled or not.
+    const firstExplain = first.explainable ? explain ?? undefined : undefined;
+    const secondExplain = second?.explainable ? explain ?? undefined : undefined;
+
+    // An image-only second side still has content to show (and to reveal),
+    // so the illustration counts toward "has translation".
+    const hasSecond = second !== null && sideHasContent(row, second.side);
     const isVisible = showAll || expanded;
 
-    // Plain-text fast path: when the server ships no word map for a side
-    // (entity_words still building, or text not indexed), WordText's
-    // tokenizer/segment machinery has nothing to do — render the raw string
-    // instead. WordText joins sentences (split on "\n") with spaces, so the
-    // fallback replaces newlines the same way to stay visually identical.
-    const primaryInteractive = Object.keys(wordMap ?? {}).length > 0;
-    const translationInteractive = Object.keys(translationWordMap ?? {}).length > 0;
-
-    const toggleable = hasTranslation && !showAll;
+    const toggleable = hasSecond && !showAll;
 
     // A div with role="button" (not a real <button>) so the interactive word
     // tokens inside stay valid HTML; word clicks stopPropagation, so the row
@@ -133,35 +85,27 @@ function ReaderRow({
                         fontFamily: 'var(--font-reading)',
                     }}
                 >
-                    {primaryImages.map((image) => (
-                        <IllustrationFigure key={image.id} image={image}/>
-                    ))}
-                    {primaryInteractive ? (
-                        <WordText
-                            text={primary}
-                            wordMap={wordMap}
-                            highlight={highlight && primaryHighlightable}
-                            rowKey={rowKey}
-                            onWordProgress={onWordProgress}
-                            className="whitespace-pre-line"
-                            popupFontSize={popupFontSize}
-                            side={primarySide ?? undefined}
-                            explain={primaryExplainPayload}
-                            stressed={primaryStressed}
-                            showStress={showStress}
-                            phrasal={primaryPhrasal}
-                            showPhrasal={showPhrasal}
-                        />
-                    ) : showStress && primaryStressed ? primaryStressed : primary}
+                    <WordText
+                        sentences={firstSentences}
+                        wordMap={first.wordMap}
+                        highlight={highlight && first.highlightable}
+                        rowKey={row.key}
+                        onWordProgress={onWordProgress}
+                        className="whitespace-pre-line"
+                        popupFontSize={popupFontSize}
+                        explain={firstExplain}
+                        showStress={showStress}
+                        showPhrasal={showPhrasal}
+                    />
                 </div>
 
-                {sideBySide && hasTranslation && (
+                {sideBySide && hasSecond && (
                     // Hover styling is CSS-only (.group:hover in app.css);
                     // the data attribute covers the revealed state.
                     <span aria-hidden="true" className="gutter-cane hidden lg:block row-span-2 self-stretch h-full min-h-[3rem]" data-row-hover={isVisible ? 'true' : 'false'}/>
                 )}
 
-                {hasTranslation && (
+                {hasSecond && (
                     <div
                         className={[
                             isVisible ? 'opacity-100' : 'opacity-0 hidden',
@@ -181,25 +125,17 @@ function ReaderRow({
                                 borderLeft: sideBySide ? undefined : '1px solid var(--color-verdigris)',
                             }}
                         >
-                            {translationImages.map((image) => (
-                                <IllustrationFigure key={image.id} image={image}/>
-                            ))}
-                            {translationInteractive ? (
-                                <WordText
-                                    text={translation}
-                                    wordMap={translationWordMap}
-                                    highlight={highlight && translationHighlightable}
-                                    rowKey={rowKey}
-                                    onWordProgress={onWordProgress}
-                                    popupFontSize={popupFontSize}
-                                    side={translationSide ?? undefined}
-                                    explain={translationExplainPayload}
-                                    stressed={translationStressed}
-                                    showStress={showStress}
-                                    phrasal={translationPhrasal}
-                                    showPhrasal={showPhrasal}
-                                />
-                            ) : showStress && translationStressed ? translationStressed : translation}
+                            <WordText
+                                sentences={secondSentences}
+                                wordMap={second.wordMap}
+                                highlight={highlight && second.highlightable}
+                                rowKey={row.key}
+                                onWordProgress={onWordProgress}
+                                popupFontSize={popupFontSize}
+                                explain={secondExplain}
+                                showStress={showStress}
+                                showPhrasal={showPhrasal}
+                            />
                         </div>
                     </div>
                 )}

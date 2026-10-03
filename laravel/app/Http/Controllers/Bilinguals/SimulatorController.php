@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Bilinguals;
 use App\Classes\AIModelResolver;
 use App\Classes\EntityAccessService;
 use App\Classes\EntityWordMap;
-use App\Classes\MeaningMatchPresenter;
+use App\Classes\ReadingRowsPresenter;
 use App\Exceptions\AiProviderException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AiQuestionRequest;
@@ -28,7 +28,7 @@ class SimulatorController extends Controller
 {
     public function __construct(
         protected AIModelResolver $modelResolver,
-        protected MeaningMatchPresenter $presenter,
+        protected ReadingRowsPresenter $readingRows,
     ) {}
 
     /**
@@ -181,19 +181,11 @@ class SimulatorController extends Controller
         $page = max(1, (int) ($validated['page'] ?? 1));
         $perPage = min(200, max(1, (int) ($validated['per_page'] ?? 50)));
 
-        if (! empty($validated['entity_match_id'])) {
-            $result = $this->textFromEntityMatch(
-                (int) $validated['entity_match_id'],
-                $page,
-                $perPage
-            );
-        } else {
-            $result = $this->textFromFilename(
-                $validated['filename'],
-                $page,
-                $perPage
-            );
-        }
+        $result = $this->textFromEntityMatch(
+            (int) $validated['entity_match_id'],
+            $page,
+            $perPage
+        );
 
         $status = $result['code'];
         unset($result['code']);
@@ -210,7 +202,7 @@ class SimulatorController extends Controller
     }
 
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, row_keys: list<string>|null, word_maps: array|null, languages: array{a: array, b: array}|null, default_learning_side: string, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
+     * @return array{rows: list<array<string, mixed>>, word_maps: array|null, languages: array{a: array, b: array}|null, default_learning_side: string, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
      */
     private function textFromEntityMatch(int $entityMatchId, int $page, int $perPage): array
     {
@@ -234,16 +226,10 @@ class SimulatorController extends Controller
             ->paginate(perPage: $perPage, columns: ['*'], pageName: 'page', page: $page);
 
         return [
-            'rows' => $this->presenter->toSimulatorRows($paginator->getCollection()),
-            // Row-aligned with rows: row i carries its [aImages, bImages]
-            // pair here (illustrations, ADR 0050).
-            'row_images' => $this->presenter->toSimulatorImages($paginator->getCollection()),
-            'row_keys' => $this->presenter->toSimulatorRowKeys($paginator->getCollection()),
-            // Stress-mark variants, row-aligned with rows in the same [a, b]
-            // order (ADR 0052).
-            'stressed_rows' => $this->presenter->toSimulatorStressedRows($paginator->getCollection()),
-            // Phrasal-verb hit lists, row-aligned the same way (ADR 0057).
-            'phrasal_rows' => $this->presenter->toSimulatorPhrasalRows($paginator->getCollection()),
+            // Reading rows in canonical a/b order (ADR 0060) — which side is
+            // the learning target is the client's flip around
+            // default_learning_side.
+            'rows' => $this->readingRows->toReadingRows($paginator->getCollection()),
             'word_maps' => $this->wordMapsFor($match),
             // The picker page's language toggle tracks the loaded match: the
             // same shapes the pinned route ships at render time.
@@ -298,79 +284,6 @@ class SimulatorController extends Controller
                 'b' => $match->bEntity->language_id !== $nativeLanguageId,
             ],
         ];
-    }
-
-    /**
-     * @return array{rows: list<array{0: string, 1: string}>, row_keys: null, word_maps: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
-     */
-    private function textFromFilename(string $filename, int $page, int $perPage): array
-    {
-        $result = [
-            'rows' => [],
-            'row_keys' => null,
-            'word_maps' => null,
-            'meta' => [
-                'current_page' => $page,
-                'per_page' => $perPage,
-                'total' => 0,
-                'last_page' => 1,
-            ],
-        ];
-        $isRus = false;
-
-        $path = public_path('texts/simulator/'.$filename);
-
-        if (! file_exists($path)) {
-            $result['error'] = 'File not found';
-
-            return [...$result, 'code' => 404];
-        }
-
-        $fd = fopen($path, 'r');
-        if ($fd === false) {
-            $result['error'] = 'Could not open file';
-
-            return [...$result, 'code' => 500];
-        }
-
-        $allRows = [];
-        $cur = ['', ''];
-
-        while (($line = fgets($fd)) !== false) {
-            $line = trim($line);
-
-            if ($line === '') {
-                if ($isRus) {
-                    $allRows[] = $cur;
-                    $cur = ['', ''];
-                }
-                $isRus = ! $isRus;
-            } else {
-                if ($isRus) {
-                    $cur[1] = $line;
-                } else {
-                    $cur[0] = $line;
-                }
-            }
-        }
-
-        fclose($fd);
-
-        $total = count($allRows);
-        $lastPage = $total > 0 ? (int) ceil($total / $perPage) : 1;
-        if ($page > $lastPage) {
-            $page = $lastPage;
-        }
-        $offset = ($page - 1) * $perPage;
-        $result['rows'] = array_slice($allRows, $offset, $perPage);
-        $result['meta'] = [
-            'current_page' => $page,
-            'per_page' => $perPage,
-            'total' => $total,
-            'last_page' => $lastPage,
-        ];
-
-        return [...$result, 'code' => 200];
     }
 
     public function askAi(AiQuestionRequest $request): JsonResponse
@@ -482,11 +395,8 @@ class SimulatorController extends Controller
      * Explain a Ctrl-clicked word in its sentence context (the sentence
      * before, the clicked sentence, the sentence after — by document order
      * in the clicked side's entity). The client identifies the clicked
-     * sentence either by a meaning-match row key (bilingual rows: its index
-     * within the row side's text, which joins the side's non-empty sentences
-     * in document order with newlines — MeaningMatchPresenter::sideText —
-     * the same list is rebuilt here so the index lines up exactly) or by the
-     * entity sentence id directly (single-language reader rows).
+     * sentence by its entity sentence id — reading rows carry sentence ids
+     * on every side (ADR 0060), so no positional contract exists.
      */
     public function explainWord(AiWordExplainRequest $request): JsonResponse
     {
@@ -498,44 +408,17 @@ class SimulatorController extends Controller
             return $this->explainError('Choose an AI model in your profile settings.', 400);
         }
 
-        if (! empty($validated['entity_sentence_id'])) {
-            /** @var EntitySentence|null $clicked */
-            $clicked = EntitySentence::query()
-                ->with('entity')
-                ->find($validated['entity_sentence_id']);
+        /** @var EntitySentence|null $clicked */
+        $clicked = EntitySentence::query()
+            ->with('entity')
+            ->find($validated['entity_sentence_id']);
 
-            if ($clicked === null) {
-                return $this->explainError('Sentence not found.', 404);
-            }
+        if ($clicked === null) {
+            return $this->explainError('Sentence not found.', 404);
+        }
 
-            if (! $this->access()->canRead(auth()->user(), $clicked->entity)) {
-                return $this->explainError('You do not have access to this text.', 403);
-            }
-        } else {
-            /** @var MeaningMatch|null $meaningMatch */
-            $meaningMatch = MeaningMatch::query()
-                ->with(['entityMatch', 'sentenceMeaningMatches.entitySentence'])
-                ->find($validated['meaning_match_id']);
-
-            if ($meaningMatch === null || $meaningMatch->entityMatch === null) {
-                return $this->explainError('Entity match not found', 404);
-            }
-
-            if (! $this->access()->canReadMatch(auth()->user(), $meaningMatch->entityMatch)) {
-                return $this->explainError('You do not have access to this text.', 403);
-            }
-
-            $clicked = $meaningMatch->sentenceMeaningMatches
-                ->where('side', $validated['side'])
-                ->sortBy(fn ($junction) => $junction->entitySentence?->order ?? 0)
-                ->filter(fn ($junction) => ($junction->entitySentence?->content ?? '') !== '')
-                ->values()
-                ->get((int) $validated['sentence_index'])
-                ?->entitySentence;
-
-            if ($clicked === null) {
-                return $this->explainError('Sentence not found.', 404);
-            }
+        if (! $this->access()->canRead(auth()->user(), $clicked->entity)) {
+            return $this->explainError('You do not have access to this text.', 403);
         }
 
         $previous = EntitySentence::query()

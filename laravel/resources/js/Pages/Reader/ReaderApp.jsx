@@ -7,6 +7,7 @@ import {useI18n} from '../../i18n';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 import {loadReadingPositions, saveReadingPositions} from '../../lib/readingPosition';
 import {loadSideFlip, saveSideFlip} from '../../lib/sideFlip';
+import {displaySideFor, otherSide, rowsHaveAnnotation} from '../../lib/readingRows.mjs';
 
 const MIN_FONT_SIZE = 16;
 const MAX_FONT_SIZE = 38;
@@ -14,8 +15,9 @@ const DEFAULT_FONT_SIZE = 20;
 const FONT_STEP = 2;
 
 // Props a page turn replaces; everything else (entity, fontSize, audio
-// state) survives the visit untouched.
-const PAGED_PROPS = ['rows', 'rowImages', 'rowKeys', 'stressedRows', 'phrasalRows', 'wordMap', 'translationWordMap', 'meta'];
+// state) survives the visit untouched. With one row payload there is
+// nothing that can go stale relative to another prop.
+const PAGED_PROPS = ['rows', 'wordMaps', 'meta'];
 
 const LANG_GLYPH = {
     en: 'EN',
@@ -72,27 +74,19 @@ const Divider = () => (
 );
 
 export default function ReaderApp({
-    primaryLang = null,
-    translationLang = null,
     entity,
     rows = [],
-    rowImages = [],
-    rowKeys = [],
-    stressedRows = [],
-    phrasalRows = [],
+    defaultSide = null,
+    langs = {a: null, b: null},
     meta = null,
     positionKey = null,
     fontSize: savedFontSize,
     highlight: savedHighlight = true,
     stressMarks: savedStressMarks = false,
     phrasalVerbs: savedPhrasalVerbs = false,
-    wordMap: initialWordMap = {},
-    primaryHighlightable = false,
-    translationWordMap: initialTranslationWordMap = {},
-    translationHighlightable = false,
-    primaryExplainable = false,
-    translationExplainable = false,
-    primarySide = null,
+    wordMaps: initialWordMaps = {a: {}, b: {}},
+    highlightable = {a: false, b: false},
+    explainable = {a: false, b: false},
     explain = null,
 }) {
     const {t} = useI18n();
@@ -106,10 +100,9 @@ export default function ReaderApp({
     // Phrasal verbs toggle (ADR 0057): dotted underlines on English hits.
     const [showPhrasal, setShowPhrasal] = useState(savedPhrasalVerbs);
     useUiSettingsAutosave('reader', {font_size: fontSize, highlight, stress_marks: showStress, phrasal_verbs: showPhrasal});
-    const [wordMap, setWordMap] = useState(initialWordMap);
-    const [translationWordMap, setTranslationWordMap] = useState(initialTranslationWordMap);
+    const [wordMaps, setWordMaps] = useState(initialWordMaps);
     // Language toggle (Working state, per device + positionKey): when true,
-    // the server's translation column is read as the primary one.
+    // the side other than the server's default reads as the primary one.
     const [flipped, setFlipped] = useState(() => loadSideFlip(positionKey));
     const [showAll, setShowAll] = useState(false);
     const [sideBySide, setSideBySide] = useState(false);
@@ -154,70 +147,47 @@ export default function ReaderApp({
     }, []);
 
     // Word progress changed in a popup: recolor the same word everywhere (a
-    // token can appear in the primary text and its translation).
+    // token can appear on both canonical sides).
     const handleWordProgress = useCallback((key, status) => {
         const apply = (map) => (map[key] ? {...map, [key]: {...map[key], s: status}} : map);
-        setWordMap(apply);
-        setTranslationWordMap(apply);
+        setWordMaps((maps) => ({a: apply(maps.a), b: apply(maps.b)}));
     }, []);
 
     // The language toggle only exists when the text has a translation side;
-    // when flipped, the server's translation column is read as the primary.
-    const hasTranslation = translationLang !== null && translationLang !== undefined;
+    // flipped, the non-default side reads as the primary one. The rows stay
+    // canonical — flipping only re-picks which side each column shows.
+    const hasTranslation = defaultSide === 'a' || defaultSide === 'b';
     const effectiveFlipped = hasTranslation && flipped;
 
-    const displayRows = useMemo(
-        () => (effectiveFlipped
-            ? rows.map(([primary, translation]) => [translation, primary])
-            : rows),
-        [rows, effectiveFlipped],
-    );
+    const displaySide = displaySideFor(defaultSide, effectiveFlipped);
+    const firstSide = displaySide ?? 'a';
+    const secondSide = displaySide !== null ? otherSide(displaySide) : null;
+    const readingLang = langs[firstSide];
 
-    // Illustration pairs flip columns exactly like the text pairs, so each
-    // row's images stay on the same side as that row's text.
-    const displayRowImages = useMemo(
-        () => (effectiveFlipped
-            ? rowImages.map(([primary, translation]) => [translation, primary])
-            : rowImages),
-        [rowImages, effectiveFlipped],
-    );
+    const hasStressedData = useMemo(() => rowsHaveAnnotation(rows, 'stressed'), [rows]);
+    const hasPhrasalData = useMemo(() => rowsHaveAnnotation(rows, 'phrasal'), [rows]);
 
-    // Stressed variants flip with the text pairs.
-    const displayStressedRows = useMemo(
-        () => (effectiveFlipped
-            ? stressedRows.map(([primary, translation]) => [translation, primary])
-            : stressedRows),
-        [stressedRows, effectiveFlipped],
-    );
-    const hasStressedData = stressedRows.some(([primary, translation]) => primary !== null || translation !== null);
-
-    // Phrasal hit lists flip with the text pairs.
-    const displayPhrasalRows = useMemo(
-        () => (effectiveFlipped
-            ? phrasalRows.map(([primary, translation]) => [translation, primary])
-            : phrasalRows),
-        [phrasalRows, effectiveFlipped],
-    );
-    const hasPhrasalData = phrasalRows.some(([primary, translation]) => primary !== null || translation !== null);
-
-    const shownWordMap = effectiveFlipped ? translationWordMap : wordMap;
-    const shownTranslationWordMap = effectiveFlipped ? wordMap : translationWordMap;
-    const shownPrimaryHighlightable = effectiveFlipped ? translationHighlightable : primaryHighlightable;
-    const shownTranslationHighlightable = effectiveFlipped ? primaryHighlightable : translationHighlightable;
-    const shownPrimaryExplainable = effectiveFlipped ? translationExplainable : primaryExplainable;
-    const shownTranslationExplainable = effectiveFlipped ? primaryExplainable : translationExplainable;
-    const otherSide = primarySide === 'a' ? 'b' : primarySide === 'b' ? 'a' : null;
-    const shownPrimarySide = effectiveFlipped ? otherSide : primarySide;
-    const readingLang = effectiveFlipped ? translationLang : primaryLang;
+    const firstDescriptor = useMemo(() => ({
+        side: firstSide,
+        wordMap: wordMaps[firstSide] ?? {},
+        highlightable: !!highlightable[firstSide],
+        explainable: !!explainable[firstSide],
+    }), [firstSide, wordMaps, highlightable, explainable]);
+    const secondDescriptor = useMemo(() => (secondSide === null ? null : {
+        side: secondSide,
+        wordMap: wordMaps[secondSide] ?? {},
+        highlightable: !!highlightable[secondSide],
+        explainable: !!explainable[secondSide],
+    }), [secondSide, wordMaps, highlightable, explainable]);
 
     const setReadingLang = useCallback((lang) => {
         if (!hasTranslation || lang === readingLang) {
             return;
         }
-        const next = !flipped;
+        const next = lang !== defaultSide;
         setFlipped(next);
         saveSideFlip(positionKey, next);
-    }, [flipped, hasTranslation, readingLang, positionKey]);
+    }, [hasTranslation, readingLang, defaultSide, positionKey]);
 
     const handlePickAudio = useCallback(() => {
         audioPickerRef.current?.click();
@@ -373,11 +343,10 @@ export default function ReaderApp({
             return;
         }
         previousPageRef.current = currentPage;
-        setWordMap(initialWordMap);
-        setTranslationWordMap(initialTranslationWordMap);
+        setWordMaps(initialWordMaps);
         setExpandedRows(new Set());
         contentRef.current?.scrollTo({top: 0});
-    }, [currentPage, initialWordMap, initialTranslationWordMap]);
+    }, [currentPage, initialWordMaps]);
 
     // Restore the text's saved Reading position once, when the URL doesn't
     // already pin a page: jump history-replace to the clamped saved page
@@ -466,28 +435,31 @@ export default function ReaderApp({
                                 aria-label={t('reader.reading_language')}
                                 className="flex items-center gap-0.5 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm p-0.5"
                             >
-                                {[primaryLang, translationLang].map((code) => (
-                                    <label
-                                        key={code}
-                                        className={[
-                                            'px-2 h-7 inline-flex items-center font-sans text-xs tracking-wide rounded-sm cursor-pointer select-none',
-                                            'transition-colors duration-150 focus-within:outline-none focus-within:ring-2 focus-within:ring-[var(--color-vermilion)]',
-                                            readingLang === code
-                                                ? 'bg-[var(--color-vermilion)] text-vellum dark:bg-[var(--color-vermilion-night)] dark:text-ink-night'
-                                                : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
-                                        ].join(' ')}
-                                    >
-                                        <input
-                                            type="radio"
-                                            name="reader-reading-language"
-                                            value={code}
-                                            checked={readingLang === code}
-                                            onChange={() => setReadingLang(code)}
-                                            className="sr-only"
-                                        />
-                                        {LANG_GLYPH[code] ?? code}
-                                    </label>
-                                ))}
+                                {['a', 'b'].map((side) => {
+                                    const code = langs[side];
+                                    return (
+                                        <label
+                                            key={side}
+                                            className={[
+                                                'px-2 h-7 inline-flex items-center font-sans text-xs tracking-wide rounded-sm cursor-pointer select-none',
+                                                'transition-colors duration-150 focus-within:outline-none focus-within:ring-2 focus-within:ring-[var(--color-vermilion)]',
+                                                readingLang === code
+                                                    ? 'bg-[var(--color-vermilion)] text-vellum dark:bg-[var(--color-vermilion-night)] dark:text-ink-night'
+                                                    : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
+                                            ].join(' ')}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="reader-reading-language"
+                                                value={code}
+                                                checked={readingLang === code}
+                                                onChange={() => setReadingLang(code)}
+                                                className="sr-only"
+                                            />
+                                            {LANG_GLYPH[code] ?? code}
+                                        </label>
+                                    );
+                                })}
                             </div>
                         )}
 
@@ -630,36 +602,23 @@ export default function ReaderApp({
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                                 </svg>
                             </li>
-                        ) : displayRows.map(([primary, translation], index) => (
+                        ) : rows.map((row, index) => (
                             <ReaderRow
-                                key={rowKeys[index] ?? index}
+                                key={row.key}
                                 index={index}
-                                primary={primary}
-                                translation={translation}
-                                rowKey={rowKeys[index]}
-                                primaryImages={displayRowImages[index]?.[0]}
-                                translationImages={displayRowImages[index]?.[1]}
-                                primaryStressed={displayStressedRows[index]?.[0] ?? null}
-                                translationStressed={displayStressedRows[index]?.[1] ?? null}
-                                showStress={showStress}
-                                primaryPhrasal={displayPhrasalRows[index]?.[0] ?? null}
-                                translationPhrasal={displayPhrasalRows[index]?.[1] ?? null}
-                                showPhrasal={showPhrasal}
+                                row={row}
+                                first={firstDescriptor}
+                                second={secondDescriptor}
                                 showAll={showAll}
                                 sideBySide={sideBySide}
                                 fontSize={fontSize}
                                 popupFontSize={popupFontSize}
                                 expanded={expandedRows.has(index)}
                                 onToggle={toggleRow}
-                                wordMap={shownWordMap}
-                                primaryHighlightable={shownPrimaryHighlightable}
-                                translationWordMap={shownTranslationWordMap}
-                                translationHighlightable={shownTranslationHighlightable}
                                 highlight={highlight}
                                 onWordProgress={handleWordProgress}
-                                primaryExplainable={shownPrimaryExplainable}
-                                translationExplainable={shownTranslationExplainable}
-                                primarySide={shownPrimarySide}
+                                showStress={showStress}
+                                showPhrasal={showPhrasal}
                                 explain={explain}
                             />
                         ))}

@@ -376,10 +376,10 @@ it('ships stressed variants and phrasal hits to the reader page', function () {
     $response = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk();
 
     $props = $response->inertiaPage()['props'];
-    expect($props['stressedRows'][0][0])->toBe('Она́ произно́сит э́то краси́во.')
+    expect($props['rows'][0]['a']['sentences'][0]['stressed'])->toBe('Она́ произно́сит э́то краси́во.')
         ->and($props['stressMarks'])->toBeFalse()
         // jsonb round-trips reorder keys; compare canonicalized.
-        ->and($props['phrasalRows'][0][0])->toEqualCanonicalizing([[['verb' => 'произносит', 'particles' => [], 'start' => 4, 'end' => 14, 'phrase' => 'произносить']]])
+        ->and($props['rows'][0]['a']['sentences'][0]['phrasal'])->toEqualCanonicalizing([['verb' => 'произносит', 'particles' => [], 'start' => 4, 'end' => 14, 'phrase' => 'произносить']])
         ->and($props['phrasalVerbs'])->toBeFalse();
 
     // Saved preferences ride along.
@@ -395,10 +395,12 @@ it('ships stressed variants and phrasal hits to the reader page', function () {
         ->and($props['phrasalVerbs'])->toBeTrue();
 });
 
-it('ships side lists as sequential arrays when a row junctions an empty sentence', function () {
-    // Regression: sideSentences filtered without reindexing, so a row whose
-    // first junction was an empty/illustration sentence produced sparse keys
-    // that desynced the readers' sentence indexes from the shipped lists.
+it('ships sentence lists that skip empty junctions and stay sequential', function () {
+    // Regression (in its current form): a row whose first junction was an
+    // empty/illustration sentence once produced sparse keys that desynced
+    // the readers' sentence indexes from the shipped lists. The row-object
+    // payload (ADR 0060) keeps every sentence self-describing, so the
+    // lists must simply be sequential PHP lists.
     $user = approvedUser();
     $work = createWork();
     $enEntity = createEntity('en', $work);
@@ -418,18 +420,16 @@ it('ships side lists as sequential arrays when a row junctions an empty sentence
 
     $props = $this->actingAs($user)->get("/reader/{$enEntity->id}")->assertOk()->inertiaPage()['props'];
 
-    // The empty sentence is filtered from the text; the row, stressed and
-    // phrasal lists must stay sequential and aligned with the remaining
-    // sentences. Reading side is ru (the en side is the native-language
-    // translation).
-    expect($props['rows'][0][0])->toBe('Привет.')
-        ->and(array_is_list($props['stressedRows']))->toBeTrue()
-        ->and(count($props['stressedRows']))->toBe(1)
-        ->and($props['stressedRows'][0][0])->toBe('При́вет.')
-        ->and($props['stressedRows'][0][1])->toBe("He\u{0301}llo the\u{0301}re.")
-        ->and(array_is_list($props['phrasalRows']))->toBeTrue()
-        ->and($props['phrasalRows'][0][0])->toBeNull()
-        ->and($props['phrasalRows'][0][1])->toEqualCanonicalizing([[['verb' => 'Hello', 'particles' => ['there'], 'start' => 0, 'end' => 12, 'phrase' => 'hello there']]]);
+    // The empty sentence is filtered; the a side carries exactly the hello
+    // sentence with its annotations on the sentence object itself.
+    $helloPayload = $props['rows'][0]['a']['sentences'];
+    expect($props['rows'][0]['b']['sentences'][0]['text'])->toBe('Привет.')
+        ->and(array_is_list($props['rows']))->toBeTrue()
+        ->and(count($helloPayload))->toBe(1)
+        ->and(array_is_list($helloPayload))->toBeTrue()
+        ->and($helloPayload[0]['text'])->toBe('Hello there.')
+        ->and($helloPayload[0]['stressed'])->toBe("He\u{0301}llo the\u{0301}re.")
+        ->and($helloPayload[0]['phrasal'])->toEqualCanonicalizing([['verb' => 'Hello', 'particles' => ['there'], 'start' => 0, 'end' => 12, 'phrase' => 'hello there']]);
 });
 
 it('strips stress marks from word popup surfaces', function () {

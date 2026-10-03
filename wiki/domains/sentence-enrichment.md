@@ -191,15 +191,16 @@ notice when the package is absent).
 ## Rendering
 
 - Reader (`ReaderController`) and simulator (`SimulatorController::text`)
-  ship `stressedRows` AND `phrasalRows` parallel to the rows, flipped with
-  the reading/learning side. Stress marks are a **per-user preference**
+  ship enrichment inside the Reading rows (ADR 0060): each sentence object
+  carries `stressed` and `phrasal` keys — present only when the data
+  exists — beside its `text`. Stress marks are a **per-user preference**
   (`stress_marks` in the reader + simulator `ui_settings` sections,
-  autosaved, default off): it swaps `content` → `stressed_content`. Multi-word
+  autosaved, default off): it swaps `text` → `stressed`. Multi-word
   verbs are the same kind of preference (`phrasal_verbs`, default off): it
   underlines the tokens each hit's span covers with a dotted verdigris
   underline (`phrasal-hit` class) and shows the matched `phrase` as tooltip;
-  spans index `content`, so token indexes are computed from the original
-  sentence and transfer to the stressed variant (the token sequence is
+  spans index the plain text, so marks are computed per sentence from the
+  original and transfer to the stressed variant (the token sequence is
   unchanged). Both toggles render only when data exists; toolbar controls
   draw from the shared grey line-art icon set (`icons.jsx`; WordText is the
   shared renderer). Filament previews both columns in

@@ -1,5 +1,33 @@
 # Directory Update Log
 
+## 2026-10-03 (feat: Reading rows — one row-object payload, ADR 0060)
+
+The reading surfaces' payload of five index-parallel arrays (`rows`,
+`rowImages`/`row_images`, `rowKeys`/`row_keys`, `stressedRows`/
+`stressed_rows`, `phrasalRows`/`phrasal_rows`) is replaced by one array of
+**Reading rows** — self-describing row objects in canonical a/b order, each
+sentence carrying its entity-sentence id, text, and annotation keys only
+when data exists; illustrations ride as image sentences in document order.
+The server ships `defaultSide` (ADR 0037 rule) plus side-keyed companions
+and never reorders; the client's flip (`resources/js/lib/readingRows.mjs`)
+is just which side each display column shows — the nine flip memos and the
+reader's server-side normalization are gone. `/ai/word-explain` now takes
+only `entity_sentence_id` (the positional `meaning_match_id + side +
+sentence_index` address and the server's mirror-the-presenter list rebuild
+are deleted); `ReaderRow` (26 props) takes a row + two side descriptors,
+`WordText` takes a side's sentence list, `IllustrationFigure` is shared,
+and the simulator's dead `filename` mode + its two fixture files are
+removed (`entity_match_id` required). New `ReadingRowsPresenter`; the five
+simulator builders left `MeaningMatchPresenter` (keeps `toDisplayRows` +
+`meaningMatchesQuery`). Also fixed en route: stale `stressedRows`/
+`phrasalRows` on reader page turns (the `PAGED_PROPS` gap — one payload
+makes it structural) and the simulator error-path `t()` ReferenceError.
+Concepts updated: reader, bilinguals-simulator, interactive-words,
+sentence-enrichment; glossary gains **Reading row**. Tests rewritten to
+the new shape (ReaderPageTest, EntityEnrichmentTest,
+SimulatorTextEndpointTest incl. filename-mode rejection,
+EntityIllustrationAlignmentTest, AiWordExplainEndpointTest).
+
 ## 2026-10-02 (fix: directional-adverb guard for multi-word verbs, ADR 0059 v3)
 
 A user report ("Beige-colored skin." flagged as a multi-word verb) did

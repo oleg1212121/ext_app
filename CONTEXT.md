@@ -733,6 +733,19 @@ One place a token appears in an entity's text. Occurrences are derived from
 the sentence text at render time and are never stored (see ADR 0027).
 _Avoid_: word position (implementation detail), word hit.
 
+**Reading row**:
+The payload's unit of presentation on a reading surface (ADR 0060) — one
+meaning match, or one sentence of an unaligned entity, shaped as a row
+object with a `key` (`mm:`/`es:`) and its two sides in canonical A-side/B-side
+order. Each side carries its sentences in document order as self-describing
+objects (text with optional stress/phrasal annotations, or an illustration
+with its caption); a single-language row has no second side. Which side a
+surface displays first is the reader's flip around the server's default,
+never a reordering of the rows themselves.
+_Avoid_: bilingual row (single-language rows are Reading rows too),
+alignment row (the Alignments editor's rows), pair (the old two-string
+array shape).
+
 **Word map**:
 The per-entity lookup an interactive page carries — lowercase token to its
 dictionary Word id and the reader's **Word familiarity** — covering the

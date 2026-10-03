@@ -6,11 +6,11 @@ use App\Classes\AIModelResolver;
 use App\Classes\EntityAccessService;
 use App\Classes\EntityWordMap;
 use App\Classes\MeaningMatchPresenter;
+use App\Classes\ReadingRowsPresenter;
 use App\Classes\WordTokenizer;
 use App\Http\Requests\ReaderPageRequest;
 use App\Models\Entity;
 use App\Models\EntityMatch;
-use App\Models\EntitySentence;
 use App\Models\Language;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -27,6 +27,7 @@ class ReaderController extends Controller
 
     public function __construct(
         protected MeaningMatchPresenter $presenter,
+        protected ReadingRowsPresenter $readingRows,
         protected AIModelResolver $modelResolver,
     ) {}
 
@@ -61,44 +62,50 @@ class ReaderController extends Controller
 
         $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
 
-        ['rows' => $rows, 'rowImages' => $rowImages, 'rowKeys' => $rowKeys, 'stressedRows' => $stressedRows, 'phrasalRows' => $phrasalRows, 'readingEntity' => $readingEntity, 'translationEntity' => $translationEntity, 'meta' => $meta, 'positionKey' => $positionKey, 'readingSide' => $readingSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
+        ['rows' => $rows, 'sideEntities' => $sideEntities, 'meta' => $meta, 'positionKey' => $positionKey, 'defaultSide' => $defaultSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
 
         $userId = (int) auth()->id();
         $wordMap = new EntityWordMap;
         $explanationModel = $this->modelResolver->resolveExplanationModel();
 
+        // Rows are canonical a/b (ADR 0060) — which side reads first is the
+        // client's flip around defaultSide. Languages, word maps and the
+        // eligibility flags ride the same side letters, so the client needs
+        // no pair-flip knowledge at all; a single-language text has no b side.
         return Inertia::render('Reader', [
-            // The two columns' languages after the side rule — the reading
-            // language first, translation null for single-language texts.
-            'primaryLang' => $readingEntity->language?->code,
-            'translationLang' => $translationEntity?->language?->code,
             'entity' => [
                 'id' => $entity->id,
                 'name' => $entity->name,
             ],
             'rows' => $rows,
-            'rowImages' => $rowImages,
-            'rowKeys' => $rowKeys,
-            'stressedRows' => $stressedRows,
-            'phrasalRows' => $phrasalRows,
+            'defaultSide' => $defaultSide,
+            'langs' => [
+                'a' => $sideEntities['a']?->language?->code,
+                'b' => $sideEntities['b']?->language?->code,
+            ],
             'meta' => $meta,
             'positionKey' => $positionKey,
             'fontSize' => $this->savedReaderFontSize(),
             'highlight' => $this->savedHighlight(),
             'stressMarks' => $this->savedStressMarks(),
             'phrasalVerbs' => $this->savedPhrasalVerbs(),
-            'wordMap' => $this->wordMapForRows($wordMap->forEntity($readingEntity, $userId), $rows, 0),
-            'primaryHighlightable' => $readingEntity->language_id !== $nativeLanguageId,
-            'translationWordMap' => $translationEntity !== null
-                ? $this->wordMapForRows($wordMap->forEntity($translationEntity, $userId), $rows, 1)
-                : [],
-            'translationHighlightable' => $translationEntity !== null && $translationEntity->language_id !== $nativeLanguageId,
+            'wordMaps' => [
+                'a' => $this->wordMapForRows($wordMap->forEntity($sideEntities['a'], $userId), $rows, 'a'),
+                'b' => $sideEntities['b'] !== null
+                    ? $this->wordMapForRows($wordMap->forEntity($sideEntities['b'], $userId), $rows, 'b')
+                    : [],
+            ],
+            'highlightable' => [
+                'a' => $this->isNotNative($sideEntities['a'], $nativeLanguageId),
+                'b' => $this->isNotNative($sideEntities['b'], $nativeLanguageId),
+            ],
             // The AI explanation tab follows the same "not your native
             // language" rule as highlighting; the model itself is the user's
             // stored explanation preference, resolved server-side.
-            'primaryExplainable' => $readingEntity->language_id !== $nativeLanguageId,
-            'translationExplainable' => $translationEntity !== null && $translationEntity->language_id !== $nativeLanguageId,
-            'primarySide' => $readingSide,
+            'explainable' => [
+                'a' => $this->isNotNative($sideEntities['a'], $nativeLanguageId),
+                'b' => $this->isNotNative($sideEntities['b'], $nativeLanguageId),
+            ],
             'explain' => [
                 'enabled' => auth()->user()->canUseAi(),
                 'modelKey' => $explanationModel['id'] ?? null,
@@ -135,7 +142,7 @@ class ReaderController extends Controller
     }
 
     /**
-     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, stressedRows: list<array{0: ?string, 1: ?string}>, phrasalRows: list<array{0: ?list<list<array<string, mixed>>>, 1: ?list<list<array<string, mixed>>>>}, readingEntity: Entity, translationEntity: Entity|null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
+     * @return array{rows: list<array<string, mixed>>, sideEntities: array{a: Entity|null, b: Entity|null}, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, defaultSide: string|null}
      */
     private function buildRows(Entity $entity, ?int $nativeLanguageId, int $page): array
     {
@@ -153,10 +160,11 @@ class ReaderController extends Controller
 
         // The URL entity only anchors the match; the side rule — native side
         // translates, then the work's original, then the A-side — picks
-        // which language is read and which one is shown as translation.
-        $readingSide = $entityMatch->readingSideFor($nativeLanguageId);
-        $readingEntity = $readingSide === 'a' ? $entityMatch->aEntity : $entityMatch->bEntity;
-        $translationEntity = $readingSide === 'a' ? $entityMatch->bEntity : $entityMatch->aEntity;
+        // which language reads first. It ships as defaultSide: the rows
+        // themselves stay canonical a/b and the client flips (ADR 0060).
+        $defaultSide = $entityMatch->readingSideFor($nativeLanguageId);
+        $readingEntity = $defaultSide === 'a' ? $entityMatch->aEntity : $entityMatch->bEntity;
+        $translationEntity = $defaultSide === 'a' ? $entityMatch->bEntity : $entityMatch->aEntity;
 
         if ($readingEntity === null || $translationEntity === null
             || ! $this->access()->canRead(auth()->user(), $readingEntity)
@@ -169,43 +177,23 @@ class ReaderController extends Controller
             $page,
         );
 
-        $bilingualRows = $this->presenter->toSimulatorRows($paginator->getCollection());
-        $bilingualImages = $this->presenter->toSimulatorImages($paginator->getCollection());
-
-        // Row keys stay in meaning-match order — normalizeRowsForReadingSide
-        // only flips the text columns, never the keys. The position key is
-        // the entity match: both reading sides page through the same rows.
+        // The position key is the entity match: both reading sides page
+        // through the same rows.
         return [
-            'rows' => $this->normalizeRowsForReadingSide($bilingualRows, $readingSide),
-            // Image pairs flip columns with the text pairs, so row i's images
-            // always line up with row i's [primary, translation] texts.
-            'rowImages' => $this->normalizeRowsForReadingSide($bilingualImages, $readingSide),
-            // Stressed variants flip with the text pairs for the same reason
-            // (ADR 0052).
-            'stressedRows' => $this->normalizeRowsForReadingSide(
-                $this->presenter->toSimulatorStressedRows($paginator->getCollection()),
-                $readingSide,
-            ),
-            // Phrasal-verb hit lists flip with the text pairs too (ADR 0057).
-            'phrasalRows' => $this->normalizeRowsForReadingSide(
-                $this->presenter->toSimulatorPhrasalRows($paginator->getCollection()),
-                $readingSide,
-            ),
-            'rowKeys' => $this->presenter->toSimulatorRowKeys($paginator->getCollection()),
-            'readingEntity' => $readingEntity,
-            'translationEntity' => $translationEntity,
+            'rows' => $this->readingRows->toReadingRows($paginator->getCollection()),
+            'sideEntities' => ['a' => $entityMatch->aEntity, 'b' => $entityMatch->bEntity],
             'meta' => $this->metaFor($paginator),
             'positionKey' => 'mm:'.$entityMatch->id,
-            'readingSide' => $readingSide,
+            'defaultSide' => $defaultSide,
         ];
     }
 
     /**
-     * Rows of the bare entity keyed by their entity sentences, with no
-     * translation side. An illustration sentence's row carries no text —
-     * its image (with the caption) rides the aligned rowImages entry.
+     * Rows of the bare entity, one Reading row per sentence with no
+     * translation side. Illustrations ride their row as the image sentence
+     * shape, caption as text.
      *
-     * @return array{rows: list<array{0: string, 1: string}>, rowImages: list<array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}>, rowKeys: list<string>, stressedRows: list<array{0: ?string, 1: ?string}>, phrasalRows: list<array{0: ?list<list<array<string, mixed>>>, 1: null}>, readingEntity: Entity, translationEntity: null, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, readingSide: string|null}
+     * @return array{rows: list<array<string, mixed>>, sideEntities: array{a: Entity, b: null}, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, defaultSide: string|null}
      */
     private function singleLanguageRows(Entity $entity, int $page): array
     {
@@ -215,62 +203,14 @@ class ReaderController extends Controller
             ['id', 'content', 'image_path', 'image_width', 'image_height', 'stressed_content', 'phrasal_verbs'],
         );
 
-        $collection = $paginator->getCollection();
-        $hasStressed = fn (EntitySentence $sentence): bool => $sentence->stressed_content !== null;
-
         return [
-            'rows' => $collection
-                ->map(fn (EntitySentence $sentence): array => [
-                    $sentence->image_path !== null ? '' : $sentence->content,
-                    '',
-                ])
-                ->all(),
-            // Single-language rows carry one stressed column; illustration
-            // rows have no text, so they never carry a variant (ADR 0052).
-            'stressedRows' => $collection
-                ->map(fn (EntitySentence $sentence): array => [
-                    $sentence->image_path !== null || ! $hasStressed($sentence)
-                        ? null
-                        : $sentence->stressed_content,
-                    null,
-                ])
-                ->all(),
-            // Phrasal hits wrap in the per-sentence list shape WordText
-            // expects (one sentence per row here); illustration rows carry
-            // none (ADR 0057).
-            'phrasalRows' => $collection
-                ->map(fn (EntitySentence $sentence): array => [
-                    $sentence->image_path !== null || empty($sentence->phrasal_verbs)
-                        ? null
-                        : [array_values($sentence->phrasal_verbs)],
-                    null,
-                ])
-                ->all(),
-            'rowImages' => $collection
-                ->map(function (EntitySentence $sentence): array {
-                    $images = $sentence->image_path !== null
-                        ? [[
-                            'id' => $sentence->id,
-                            'url' => route('illustrations.show', ['sentence' => $sentence->id]),
-                            'width' => $sentence->image_width !== null ? (int) $sentence->image_width : null,
-                            'height' => $sentence->image_height !== null ? (int) $sentence->image_height : null,
-                            'caption' => $sentence->content,
-                        ]]
-                        : [];
-
-                    return [$images, []];
-                })
-                ->all(),
-            'rowKeys' => $collection
-                ->map(fn (EntitySentence $sentence): string => 'es:'.$sentence->id)
-                ->all(),
-            'readingEntity' => $entity,
-            'translationEntity' => null,
+            'rows' => $this->readingRows->forEntitySentences($paginator->getCollection()),
+            'sideEntities' => ['a' => $entity, 'b' => null],
             'meta' => $this->metaFor($paginator),
             // Deliberately not es: — that prefix names a single entity
             // sentence in row-key vocabulary; a position keys the whole text.
             'positionKey' => 'ent:'.$entity->id,
-            'readingSide' => null,
+            'defaultSide' => null,
         ];
     }
 
@@ -314,12 +254,13 @@ class ReaderController extends Controller
      * the client renders page rows only, so the payload must not carry a
      * map for the whole text. Tokens come from the same tokenizer that
      * built the map's l_word keys, so presence matches what the client
-     * will segment and look up.
+     * will segment and look up. A side's tokens come from its text
+     * sentences; illustration captions are not lookup text.
      *
      * @param  array<string, array{w: int, s: int|null}>  $map
-     * @param  list<array{0: string, 1: string}>  $rows
+     * @param  list<array<string, mixed>>  $rows
      */
-    private function wordMapForRows(array $map, array $rows, int $column): array
+    private function wordMapForRows(array $map, array $rows, string $side): array
     {
         if ($map === []) {
             return [];
@@ -329,30 +270,24 @@ class ReaderController extends Controller
         $present = [];
 
         foreach ($rows as $row) {
-            $present += $tokenizer->tokenize($row[$column]);
+            foreach ($row[$side]['sentences'] ?? [] as $sentence) {
+                if (! isset($sentence['image'])) {
+                    $present += $tokenizer->tokenize($sentence['text']);
+                }
+            }
         }
 
         return array_intersect_key($map, $present);
     }
 
     /**
-     * Put the reading language's text first: rows are [a, b] pairs, so flip
-     * them when reading from the b side. Works for the image pairs too —
-     * same two-column shape.
-     *
-     * @param  list<array{0: mixed, 1: mixed}>  $rows
-     * @return list<array{0: mixed, 1: mixed}>
+     * "Not the user's native language" — the highlighting and explanation
+     * eligibility rule. A missing side (single-language text) is never
+     * eligible.
      */
-    private function normalizeRowsForReadingSide(array $rows, string $readingSide): array
+    private function isNotNative(?Entity $entity, ?int $nativeLanguageId): bool
     {
-        if ($readingSide === 'a') {
-            return $rows;
-        }
-
-        return array_map(
-            fn (array $row): array => [$row[1], $row[0]],
-            $rows,
-        );
+        return $entity !== null && $entity->language_id !== $nativeLanguageId;
     }
 
     /**

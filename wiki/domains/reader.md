@@ -1,18 +1,18 @@
 ---
 type: Feature
 title: Reader
-description: React reading interface for imported text entities in any enabled language, with bilingual rows from alignments, inline illustrations (rowImages, ADR 0050), a native-language default reading side with a client-side swap, server-side pagination, and a per-device reading position.
+description: React reading interface for imported text entities in any enabled language, with bilingual Reading rows (canonical a/b row objects, ADR 0060), inline illustration sentences (ADR 0050), a server-default reading side with a client-side swap, server-side pagination, and a per-device reading position.
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-09-30T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-03T00:00:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
     title: ReaderController
   - id: presenter
-    resource: laravel/app/Classes/MeaningMatchPresenter.php
-    title: MeaningMatchPresenter (bilingual row shaping)
+    resource: laravel/app/Classes/ReadingRowsPresenter.php
+    title: ReadingRowsPresenter (Reading row shaping)
   - id: page-request
     resource: laravel/app/Http/Requests/ReaderPageRequest.php
     title: ReaderPageRequest (tolerant ?page normalization)
@@ -51,18 +51,18 @@ again as the index.
 
 # Side rule and language toggle
 
-`EntityMatch::readingSideFor(nativeLanguageId)` decides the reading side:
-the side in the user's **Native language** becomes the translation, else the
-work's original side, else the A-side — the exact rule
+`EntityMatch::readingSideFor(nativeLanguageId)` decides the default reading
+side: the side in the user's **Native language** becomes the translation,
+else the work's original side, else the A-side — the exact rule
 `LibraryController::readerTarget()` uses for the card's Read button, so link
-and page agree. `buildRows()` normalizes rows for that side (reading text in
-column 0) and the payload ships `primaryLang` / `translationLang` (null for
-single-language texts), `primarySide`, and per-column word maps and
-highlight/explain flags.
+and page agree. The rows themselves stay canonical a/b (ADR 0060): the
+server ships them as `defaultSide` plus side-keyed `langs` / `wordMaps` /
+`highlightable` / `explainable`, and never reorders.
 
 `ReaderApp` renders a two-option language radio (labelled with the actual
 language codes) whenever a translation side exists. Flipping is pure client
-display state — rows, word maps, flags and `primarySide` swap in render, no
+display state — which canonical side each column shows is derived in render
+(`lib/readingRows.mjs`, the only flip-mapping module), no row copying, no
 reload — and persists as a **Side swap** (Working state) under
 `ext_app.reader.side-flip.v1` (`lib/sideFlip.js`), keyed by `positionKey`.
 
@@ -74,29 +74,27 @@ Inertia pages under `resources/js/Pages/Reader/` — `ReaderApp` +
 back arrow is browser-history back; the index is a separate page, not an
 in-app listing inside the reader.
 
-# Bilingual rows
+# Reading rows
 
 `ReaderController::buildRows()` finds the entity's `EntityMatch` (either
 side). With no match — or when the caller may not read **both** sides'
 entities — it falls back to single-language rows rather than leaking the
 restricted counterpart (mirrors the simulator both-sides rule from ADR 0014).
-With a readable match the meaning matches are shaped into bilingual rows by
-`MeaningMatchPresenter::toSimulatorRows()` and normalized for the reading
-side: rows are `[a, b]` pairs, flipped so the reading language always comes
-first. The payload also carries `rowKeys` — `mm:{meaningMatchId}` per
-bilingual row (never flipped by the side normalization) or
-`es:{entitySentenceId}` per single-language row — used to scope familiarity
-lookup events to a sentence pair (ADR 0028).
+With a readable match the meaning matches are shaped into **Reading rows**
+by `ReadingRowsPresenter::toReadingRows()` (ADR 0060): one row object per
+meaning match — `{key: "mm:{id}", a: {sentences}, b: {sentences}}` in
+canonical side order — each sentence self-describing: `{id, text,
+stressed?, phrasal?}` for text, `{id, image: {url, width, height},
+text: caption}` for illustrations, annotation keys present only when the
+data exists. Single-language rows (via `forEntitySentences()`) are one
+sentence per row with `b: null`. Row `key`s (`mm:`/`es:` prefixes) scope
+familiarity lookup events to a sentence pair (ADR 0028); the sentence `id`
+is what the word-explanation request addresses.
 
-**Illustrations ride a parallel `rowImages` prop** (ADR 0050): row-aligned
-with `rows` (flipped by the same side normalization, and by the client
-language toggle), each entry an `[aImages, bImages]` pair of image
-descriptors (`url` on the access-checked `illustrations.show` route,
-intrinsic `width`/`height`, optional `caption`). Illustration sentences
-contribute no text to `rows` — their caption renders under the picture,
-which `ReaderRow` places above the row text on each side; a text-less side
-with an image still counts as "has translation" so its images reveal.
-Caption tokens are not part of the page word maps.
+**Illustrations are image sentences inside the ordered list** (ADR 0050):
+they ride their side's `sentences` in document order and render interleaved
+with the text (shared `Components/IllustrationFigure.jsx`). Caption tokens
+are not part of the page word maps.
 
 Reads are gated by `EntityAccessService` (see the [Entity Access](
 ../../CONTEXT.md#entity-access-context) context): `show` 403s on a
@@ -149,22 +147,20 @@ page appears directly, at its top.
 # Interactive words
 
 `show()` also ships the [interactive word](/domains/interactive-words.md)
-payload (scoped to the current page's rows): `wordMap` for the reading
-entity and `translationWordMap` for the
-aligned counterpart entity (empty when rows are single-language), plus
-`highlight` (the saved `reader.highlight` setting) and the
-`primaryHighlightable` / `translationHighlightable` language flags (side
-language ≠ the user's native language). The same rule now gates the AI
-Context explanation tab: `primaryExplainable` / `translationExplainable`
-flags, `primarySide` ('a'|'b', which match side the primary column reads —
-`null` for single-language texts) and `explain` (`{enabled, modelKey}` from
-`AIModelResolver::resolveExplanationModel()`, ADR 0035). `ReaderRow` renders
-both row halves through the shared `WordText`/`WordPopup` components (each
-gets the row's `rowKey`, so clicking a word fires a ledger-deduplicated
-**lookup** event — the reader never credits reads); the primary line is a
-`role="button"` div (not a `<button>`) so word buttons inside it stay valid
-HTML — activating the line itself still toggles the translation, word clicks
-stop propagation. Both reading lines style themselves with
+payload (scoped to the current page's rows): `wordMaps` keyed by canonical
+side (`{a, b}`; the b map empty when rows are single-language), plus
+`highlight` (the saved `reader.highlight` setting) and the `highlightable`
+language flags (side language ≠ the user's native language). The same rule
+now gates the AI Context explanation tab: `explainable` flags and `explain`
+(`{enabled, modelKey}` from `AIModelResolver::resolveExplanationModel()`,
+ADR 0035). `ReaderRow` takes two display-column descriptors
+(`{side, wordMap, highlightable, explainable}`) and renders both row halves
+through the shared `WordText`/`WordPopup` components (each gets the row's
+`key`, so clicking a word fires a ledger-deduplicated **lookup** event —
+the reader never credits reads); the primary line is a `role="button"` div
+(not a `<button>`) so word buttons inside it stay valid HTML — activating
+the line itself still toggles the translation, word clicks stop
+propagation. Both reading lines style themselves with
 `var(--font-reading)` — `'Source Serif 4', Georgia, …` (see
 `conventions/design-system.md`): the stack must put a single font covering
 Latin + Cyrillic + U+0301 first, or combining stress marks can't attach to
@@ -207,9 +203,9 @@ rows carry **no transitions at all** (primary line, translation reveal, and
 the hover rule span lost `transition-*`; there is no `.reader-row:hover`
 recolor either — recoloring inline text while rows sweep under the cursor
 forces per-row glyph re-rasterization). When a side's word map is empty,
-`ReaderRow` renders the raw string instead of `WordText` (tokenizer/segment
-machinery never mounts; newlines are replaced with spaces to match
-`WordText`'s sentence joining). The page picker is `type="text"
+`WordText` renders the raw display text instead of its tokenizer/segment
+machinery (the plain-text fast path lives inside `WordText` since ADR
+0060's reshape). The page picker is `type="text"
 inputMode="numeric"` (Chrome spins focused `type="number"` on wheel). Fonts
 are self-hosted from `public/fonts/` via `resources/css/fonts.css` (same
 five families the former Google css2 link provided) — no network font fetch,
