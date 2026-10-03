@@ -14,7 +14,7 @@ $width = match ($width) {
 @endphp
 
 <div class="relative" x-data="{ open: false }" @click.outside="open = false" @close.stop="open = false">
-    <div @click="open = ! open">
+    <div class="cursor-pointer hover:shadow-[0_0_2px_grey]" @click="open = ! open">
         {{ $trigger }}
     </div>
 

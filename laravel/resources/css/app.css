@@ -92,6 +92,19 @@ b, strong {
     color: var(--wbench-emphasis-night);
 }
 
+/* Preflight leaves buttons on the default arrow cursor; interactive controls
+   (icon-only buttons included) should afford clicking — pointer cursor plus a
+   faint hover glow. Base layer, so cursor/shadow utilities still win. */
+@layer base {
+    button:not(:disabled) {
+        cursor: pointer;
+    }
+
+    button:not(:disabled):hover {
+        box-shadow: 0 0 2px grey;
+    }
+}
+
 .gutter-cane {
     width: 1px;
     background-color: var(--color-hairline);
