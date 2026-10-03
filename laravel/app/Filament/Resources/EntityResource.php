@@ -2,7 +2,7 @@
 
 namespace App\Filament\Resources;
 
-use App\Classes\SentenceEnrichmentService;
+use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\TextSignatureService;
 use App\Filament\Resources\EntityResource\Pages;
 use App\Filament\Resources\EntityResource\RelationManagers;
@@ -243,7 +243,7 @@ class EntityResource extends Resource
                             ->send();
                     })
                     ->visible(fn (Entity $record) => $record->sentences()->exists()
-                        && in_array($record->language?->code ?? '', SentenceEnrichmentService::ENRICHABLE_LANGUAGES, true)),
+                        && app(EnricherRegistry::class)->forLanguage($record->language?->code ?? '') !== []),
             ])
             ->toolbarActions([
                 Actions\BulkActionGroup::make([

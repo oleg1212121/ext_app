@@ -193,21 +193,23 @@ test('the side rule reads the non-native side regardless of the url entity', fun
 
     // Factory users are native English speakers: the EN side is the native
     // one, so the reader opens the RU text with EN as translation — opening
-    // either entity of the match lands on the same reading side.
+    // either entity of the match lands on the same default side. The rows
+    // themselves stay canonical a/b (ADR 0060): a first, reading side only
+    // picks which column displays first.
     foreach ([$entities['en'], $entities['ru']] as $entity) {
         $this->actingAs($user)
             ->get(route('reader.show', ['entityId' => $entity->id]))
             ->assertSuccessful()
             ->assertInertia(fn ($page) => $page
                 ->component('Reader')
-                ->where('primaryLang', 'ru')
-                ->where('translationLang', 'en')
+                ->where('langs.a', 'en')
+                ->where('langs.b', 'ru')
+                ->where('defaultSide', 'b')
                 ->where('entity.id', $entity->id)
                 ->has('rows', 1)
-                ->where('rows.0.0', 'Первое RU sentence.')
-                ->where('rows.0.1', 'First EN sentence about a cat.')
-                ->has('rowKeys', 1)
-                ->where('rowKeys.0', 'mm:'.MeaningMatch::query()->where('entity_match_id', $entities['entityMatch']->id)->value('id')));
+                ->where('rows.0.key', 'mm:'.MeaningMatch::query()->where('entity_match_id', $entities['entityMatch']->id)->value('id'))
+                ->where('rows.0.a.sentences.0.text', 'First EN sentence about a cat.')
+                ->where('rows.0.b.sentences.0.text', 'Первое RU sentence.'));
     }
 });
 
@@ -263,10 +265,10 @@ test('without a native side the work original is read', function () {
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
-            ->where('primaryLang', 'fr')
-            ->where('translationLang', 'de')
-            ->where('primarySide', 'a')
-            ->where('rows.0.0', 'Phrase originale.'));
+            ->where('langs.a', 'fr')
+            ->where('langs.b', 'de')
+            ->where('defaultSide', 'a')
+            ->where('rows.0.a.sentences.0.text', 'Phrase originale.'));
 });
 
 test('with no native and no original side the a-side is read', function () {
@@ -312,10 +314,10 @@ test('with no native and no original side the a-side is read', function () {
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
-            ->where('primaryLang', 'ru')
-            ->where('translationLang', 'fr')
-            ->where('primarySide', 'a')
-            ->where('rows.0.0', 'Первое RU sentence.'));
+            ->where('langs.a', 'ru')
+            ->where('langs.b', 'fr')
+            ->where('defaultSide', 'a')
+            ->where('rows.0.a.sentences.0.text', 'Первое RU sentence.'));
 });
 
 test('missing reader entity returns not found', function () {
@@ -344,14 +346,15 @@ test('entity without alignment returns single language rows', function () {
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
-            ->where('primaryLang', 'en')
-            ->where('translationLang', null)
+            ->where('langs.a', 'en')
+            ->where('langs.b', null)
+            ->where('defaultSide', null)
             ->has('rows', 1)
-            ->where('rows.0.0', 'Standalone EN sentence.')
-            ->where('rows.0.1', '')
-            // Unaligned rows are keyed by their entity sentence.
-            ->has('rowKeys', 1)
-            ->where('rowKeys.0', 'es:'.EntitySentence::query()->where('entity_id', $en->id)->value('id')));
+            ->where('rows.0.a.sentences.0.text', 'Standalone EN sentence.')
+            // Unaligned rows are keyed by their entity sentence; the
+            // translation side does not exist at all.
+            ->where('rows.0.b', null)
+            ->where('rows.0.key', 'es:'.EntitySentence::query()->where('entity_id', $en->id)->value('id')));
 });
 
 test('reader page includes the interactive word map with familiarity values', function () {
@@ -398,17 +401,17 @@ test('reader page includes the interactive word map with familiarity values', fu
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
-            // The side rule reads the RU side, so the primary map is the RU
-            // one and the EN map rides along as the translation.
-            ->where('wordMap.первое.w', $ruWord->id)
-            ->where('translationWordMap.cat.w', $cat->id)
-            ->where('translationWordMap.cat.s', null)
-            ->where('translationWordMap.sentence.s', 100)
+            // The side rule reads the RU side, so the b-side map carries RU
+            // words and the a-side map the EN ones.
+            ->where('wordMaps.b.первое.w', $ruWord->id)
+            ->where('wordMaps.a.cat.w', $cat->id)
+            ->where('wordMaps.a.cat.s', null)
+            ->where('wordMaps.a.sentence.s', 100)
             ->where('highlight', true)
-            // Factory users are native English speakers: the RU primary side
-            // is not native (highlightable), the EN translation side is.
-            ->where('primaryHighlightable', true)
-            ->where('translationHighlightable', false));
+            // Factory users are native English speakers: the RU b-side is
+            // not native (highlightable), the EN a-side is.
+            ->where('highlightable.b', true)
+            ->where('highlightable.a', false));
 });
 
 test('reader page paginates rows and reports meta', function () {
@@ -421,8 +424,7 @@ test('reader page paginates rows and reports meta', function () {
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
             ->has('rows', 10)
-            ->where('rows.0.0', 'Строка 51 sentence.')
-            ->has('rowKeys', 10)
+            ->where('rows.0.b.sentences.0.text', 'Строка 51 sentence.')
             ->where('meta.current_page', 2)
             ->where('meta.per_page', 50)
             ->where('meta.total', 60)
@@ -440,7 +442,7 @@ test('an out-of-range reader page clamps to the last page', function () {
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
             ->has('rows', 10)
-            ->where('rows.0.0', 'Строка 51 sentence.')
+            ->where('rows.0.b.sentences.0.text', 'Строка 51 sentence.')
             ->where('meta.current_page', 2)
             ->where('meta.last_page', 2));
 });
@@ -455,7 +457,7 @@ test('junk reader page values resolve to the first page', function () {
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
             ->has('rows', 50)
-            ->where('rows.0.0', 'Строка 1 sentence.')
+            ->where('rows.0.b.sentences.0.text', 'Строка 1 sentence.')
             ->where('meta.current_page', 1));
 
     $this->actingAs($user)
@@ -463,7 +465,7 @@ test('junk reader page values resolve to the first page', function () {
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
-            ->where('rows.0.0', 'Строка 1 sentence.')
+            ->where('rows.0.b.sentences.0.text', 'Строка 1 sentence.')
             ->where('meta.current_page', 1));
 });
 
@@ -476,7 +478,7 @@ test('both entities of a match share one position key', function () {
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
-            ->where('rows.0.0', 'Строка 1 sentence.')
+            ->where('rows.0.b.sentences.0.text', 'Строка 1 sentence.')
             ->where('meta.last_page', 1)
             ->where('positionKey', 'mm:'.$text['entityMatch']->id));
 });
@@ -502,13 +504,13 @@ test('a single language entity paginates with an entity position key', function 
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
             ->has('rows', 5)
-            ->where('rows.0.0', 'Line 51.')
-            ->where('meta.total', 55)
-            ->where('meta.last_page', 2)
-            ->where('rowKeys.0', 'es:'.EntitySentence::query()
+            ->where('rows.0.a.sentences.0.text', 'Line 51.')
+            ->where('rows.0.a.sentences.0.id', EntitySentence::query()
                 ->where('entity_id', $en->id)
                 ->where('order', 51)
                 ->value('id'))
+            ->where('meta.total', 55)
+            ->where('meta.last_page', 2)
             ->where('positionKey', 'ent:'.$en->id));
 });
 
@@ -536,8 +538,8 @@ test('the word map is scoped to the rows on the current page', function () {
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
             ->has('rows', 50)
-            // The EN side is the translation column for a native-EN user.
-            ->missing('translationWordMap.orbit'));
+            // The EN side is the b-side (non-reading) map for a native-EN user.
+            ->missing('wordMaps.a.orbit'));
 
     $this->actingAs($user)
         ->get(route('reader.show', ['entityId' => $text['en']->id, 'page' => 2]))
@@ -545,7 +547,7 @@ test('the word map is scoped to the rows on the current page', function () {
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
             ->has('rows', 5)
-            ->where('translationWordMap.orbit.w', $orbit->id));
+            ->where('wordMaps.a.orbit.w', $orbit->id));
 });
 
 test('reader page passes explanation gating and side props', function () {
@@ -557,10 +559,10 @@ test('reader page passes explanation gating and side props', function () {
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
-            // Reading the RU side: primary is not native, translation is.
-            ->where('primaryExplainable', true)
-            ->where('translationExplainable', false)
-            ->where('primarySide', 'b')
+            // Reading the RU b-side: it is not native, the EN a-side is.
+            ->where('explainable.b', true)
+            ->where('explainable.a', false)
+            ->where('defaultSide', 'b')
             // No API keys yet: AI explanations stay off.
             ->where('explain.enabled', false)
             ->where('explain.modelKey', null)
@@ -608,9 +610,9 @@ test('a single language reader page has no primary side', function () {
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
-            ->where('primarySide', null)
-            // The factory user is a native English speaker: the EN primary
-            // column is native, so it is not explainable.
-            ->where('primaryExplainable', false)
-            ->where('translationExplainable', false));
+            ->where('defaultSide', null)
+            // The factory user is a native English speaker: the EN side is
+            // native, so it is not explainable — and there is no other side.
+            ->where('explainable.a', false)
+            ->where('explainable.b', false));
 });

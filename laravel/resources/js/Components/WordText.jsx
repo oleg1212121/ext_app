@@ -3,6 +3,7 @@ import {createPortal} from 'react-dom';
 import {segmentText} from '../lib/wordTokenizer.mjs';
 import {FAMILIARITY_MAX, FAMILIARITY_STRONG_AT, FAMILIARITY_PROGRESS_AT, recordWordEvents} from '../lib/wordFamiliarity';
 import WordPopup from './WordPopup.jsx';
+import IllustrationFigure from './IllustrationFigure.jsx';
 
 // Memoized: a reading page mounts hundreds of WordText instances and its
 // parent components re-render for reasons (streaming answer, audio status,
@@ -24,11 +25,12 @@ function tierClass(familiarity, highlight) {
 }
 
 /**
- * Renders text split into interactive dictionary words. Only tokens present
- * in the word map ({l_word: {w: wordId, s: familiarity|null}}) become
- * interactive; everything else is plain text. Ctrl+click opens the popup
- * (plain clicks do nothing); highlight = knowledge tinting, gated by the
- * caller (setting + language eligibility).
+ * Renders one reading row side (ADR 0060): the side's sentence objects in
+ * document order — illustrations as figures, text sentences split into
+ * interactive dictionary words. Only tokens present in the word map
+ * ({l_word: {w: wordId, s: familiarity|null}}) become interactive;
+ * everything else is plain text. Ctrl+click opens the popup (plain clicks
+ * do nothing); highlight = knowledge tinting, gated by the caller.
  *
  * Interactive tokens are role="button" spans, not real <button> elements:
  * Chromium treats button labels as widget chrome, so a double-click would
@@ -36,39 +38,83 @@ function tierClass(familiarity, highlight) {
  * They stay focusable with the same keyboard contract a button had
  * (Ctrl+Enter/Ctrl+Space opens the popup).
  *
- * rowKey (optional) scopes this sentence for familiarity bookkeeping: the
+ * rowKey (optional) scopes this row side for familiarity bookkeeping: the
  * first popup lookup of a word within the row costs -2, credited once.
  *
- * The text is one row side: its sentences joined with "\n" in document order
- * (MeaningMatchPresenter::sideText). Each sentence renders in its own inline
- * span — visually identical, but a click knows which sentence it hit. With
- * rowKey and an `explain` ({enabled, modelKey, modelLabel, followsAnswer,
- * answerLabel}) present — enabled or not — WordPopup gets an `explain`
- * payload; the backend rebuilds the same sentence list, so
- * the index is exact. rowKey's prefix selects the backend source: "mm:{id}"
- * is a meaning match row (side required), anything else ("es:{id}") is a
- * bare entity sentence (side unused).
+ * Stress marks (ADR 0052): when showStress is on, a sentence's `stressed`
+ * variant displays instead of `text` — the word map still resolves because
+ * keys strip combining marks.
  *
- * Stress marks (ADR 0052): `stressed` is the same side's "\n"-joined
- * stressed variant (sentence-aligned 1:1, or null). When showStress is on
- * and a sentence has a variant, the variant is displayed instead — the
- * word map still resolves because keys strip combining marks.
+ * Phrasal verbs (ADR 0057): when showPhrasal is on, the tokens each hit
+ * covers get a dotted underline with the matched headword as tooltip. Hit
+ * spans index the sentence's plain text, so marks are computed from the
+ * original; the stressed variant keeps the token sequence (marks attach
+ * inside tokens), so the mapping transfers.
+ *
+ * With `explain` ({sentenceId-carrying popup config}) present — enabled or
+ * not — WordPopup gets an explain payload keyed by the clicked sentence's
+ * entity sentence id, which every sentence object carries.
  */
-function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress, className, popupFontSize, side, explain, stressed = null, showStress = false}) {
-    const sentences = useMemo(() => String(text ?? '').split('\n'), [text]);
-    const stressedSentences = useMemo(() => (stressed !== null ? String(stressed).split('\n') : null), [stressed]);
-    const useStressed = showStress && stressedSentences !== null && stressedSentences.length === sentences.length;
-    const displaySentences = useMemo(
-        () => sentences.map((sentence, index) => (useStressed ? (stressedSentences[index] ?? sentence) : sentence)),
-        [sentences, stressedSentences, useStressed],
+function WordText({
+    sentences = [],
+    wordMap = {},
+    highlight = true,
+    rowKey,
+    onWordProgress,
+    className,
+    popupFontSize,
+    explain,
+    showStress = false,
+    showPhrasal = false,
+    figureProps,
+}) {
+    const interactive = Object.keys(wordMap ?? {}).length > 0;
+
+    // Display variant per sentence: the stressed form when the toggle is on
+    // and the sentence carries one.
+    const displayTexts = useMemo(
+        () => sentences.map((sentence) => (showStress && sentence.stressed ? sentence.stressed : sentence.text)),
+        [sentences, showStress],
     );
-    const sentenceSegments = useMemo(
-        () => displaySentences.map((sentence) => segmentText(sentence)),
-        [displaySentences],
+
+    // Per text sentence: token index -> matched headword, over the
+    // key-bearing segments of the ORIGINAL text (hit spans index content).
+    const phrasalMarks = useMemo(() => {
+        if (!showPhrasal) {
+            return null;
+        }
+        return sentences.map((sentence, index) => {
+            const hits = sentence.phrasal;
+            if (!Array.isArray(hits) || hits.length === 0) {
+                return null;
+            }
+            const marks = new Map();
+            let offset = 0;
+            let tokenIndex = 0;
+            for (const segment of segmentText(sentences[index].text)) {
+                const length = segment.text.length;
+                if (segment.key !== null) {
+                    for (const hit of hits) {
+                        if (hit && offset < hit.end && offset + length > hit.start) {
+                            marks.set(tokenIndex, hit.phrase ?? [hit.verb, ...(hit.particles ?? [])].join(' '));
+                        }
+                    }
+                    tokenIndex += 1;
+                }
+                offset += length;
+            }
+            return marks.size > 0 ? marks : null;
+        });
+    }, [sentences, showPhrasal]);
+
+    const segmentLists = useMemo(
+        () => displayTexts.map((text) => segmentText(text)),
+        [displayTexts],
     );
+
     const [popup, setPopup] = useState(null);
 
-    const openPopup = useCallback((event, segment, sentenceIndex) => {
+    const openPopup = useCallback((event, segment, sentenceId) => {
         event.stopPropagation();
         if (!event.ctrlKey) {
             return;
@@ -82,7 +128,7 @@ function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress,
             surface: segment.key,
             familiarity: entry.s,
             rect: event.currentTarget.getBoundingClientRect(),
-            sentenceIndex,
+            sentenceId,
         });
         if (rowKey) {
             recordWordEvents([{row_key: rowKey, kind: 'lookup', word_ids: [entry.w]}])
@@ -107,10 +153,7 @@ function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress,
     // the word popup's tab strip (and its Models used popup) also reaches
     // keyless users; `enabled` rides along for the guidance states.
     const explainPayload = popup && rowKey && explain ? {
-        rowKind: rowKey.startsWith('mm:') ? 'mm' : 'es',
-        rowId: Number(rowKey.slice(3)),
-        side: side ?? null,
-        sentenceIndex: popup.sentenceIndex,
+        sentenceId: popup.sentenceId,
         modelKey: explain.modelKey ?? null,
         enabled: explain.enabled === true,
         modelLabel: explain.modelLabel ?? null,
@@ -118,45 +161,89 @@ function WordText({text, wordMap = {}, highlight = true, rowKey, onWordProgress,
         answerLabel: explain.answerLabel ?? null,
     } : undefined;
 
+    const renderTextSentence = (sentence, index, renderToken) => {
+        const segments = segmentLists[index];
+        const marks = phrasalMarks !== null ? (phrasalMarks[index] ?? null) : null;
+        let tokenIndex = 0;
+        return (
+            <span className="inline">
+                {segments.map((segment, index) => {
+                    if (segment.key !== null) {
+                        const markLabel = marks !== null ? (marks.get(tokenIndex++) ?? null) : null;
+                        const entry = wordMap[segment.key];
+                        const markClass = markLabel !== null ? ' phrasal-hit' : '';
+                        if (entry?.w) {
+                            return renderToken(segment, index, entry, markClass, markLabel);
+                        }
+                        if (markLabel !== null) {
+                            return (
+                                <span key={index} className={'word-token phrasal-hit'} title={markLabel}>
+                                    {segment.text}
+                                </span>
+                            );
+                        }
+                        return <React.Fragment key={index}>{segment.text}</React.Fragment>;
+                    }
+                    return <React.Fragment key={index}>{segment.text}</React.Fragment>;
+                })}
+            </span>
+        );
+    };
+
+    const interactiveToken = (sentence, segment, index, entry, markClass, markLabel) => (
+        <span
+            key={index}
+            role="button"
+            tabIndex={0}
+            className={tierClass(entry.s, highlight) + markClass}
+            title={markLabel ?? undefined}
+            onClick={(event) => openPopup(event, segment, sentence.id)}
+            onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') {
+                    return;
+                }
+                // Mirror the <button> this replaced: Enter/Space synthesized a
+                // click (swallowed by openPopup), and only Ctrl+that click
+                // opened the popup.
+                event.stopPropagation();
+                if (event.ctrlKey) {
+                    event.preventDefault();
+                    openPopup(event, segment, sentence.id);
+                }
+            }}
+        >
+            {segment.text}
+        </span>
+    );
+
+    // displayTexts/segmentLists/phrasalMarks are indexed by position in the
+    // full sentence list (illustrations included), so text sentences must
+    // look up their memo by that same index — not by a text-only count.
+    const firstTextIndex = sentences.findIndex((sentence) => sentence.image === undefined);
+
     return (
         <span className={className}>
-            {sentenceSegments.map((segments, sentenceIndex) => {
+            {sentences.map((sentence, index) => {
+                if (sentence.image !== undefined) {
+                    return <IllustrationFigure key={sentence.id} sentence={sentence} {...(figureProps ?? {})}/>;
+                }
+                const separator = index !== firstTextIndex ? ' ' : null;
+                if (!interactive) {
+                    // Plain fast path: no word map for this side (entity_words
+                    // still building, or text not indexed) — render the raw
+                    // display text.
+                    return (
+                        <React.Fragment key={sentence.id}>
+                            {separator}
+                            <span className="inline">{displayTexts[index]}</span>
+                        </React.Fragment>
+                    );
+                }
                 return (
-                <React.Fragment key={sentenceIndex}>
-                    {sentenceIndex > 0 && ' '}
-                    <span className="inline">
-                        {segments.map((segment, index) => {
-                            const entry = segment.key !== null ? wordMap[segment.key] : undefined;
-                            if (entry?.w) {
-                                return (
-                                    <span
-                                        key={index}
-                                        role="button"
-                                        tabIndex={0}
-                                        className={tierClass(entry.s, highlight)}
-                                        onClick={(event) => openPopup(event, segment, sentenceIndex)}
-                                        onKeyDown={(event) => {
-                                            if (event.key !== 'Enter' && event.key !== ' ') {
-                                                return;
-                                            }
-                                            // Mirror the <button> this replaced: Enter/Space
-                                            // synthesized a click (swallowed by openPopup), and
-                                            // only Ctrl+that click opened the popup.
-                                            event.stopPropagation();
-                                            if (event.ctrlKey) {
-                                                event.preventDefault();
-                                                openPopup(event, segment, sentenceIndex);
-                                            }
-                                        }}
-                                    >
-                                        {segment.text}
-                                    </span>
-                                );
-                            }
-                            return <React.Fragment key={index}>{segment.text}</React.Fragment>;
-                        })}
-                    </span>
-                </React.Fragment>
+                    <React.Fragment key={sentence.id}>
+                        {separator}
+                        {renderTextSentence(sentence, index, (segment, segmentIndex, entry, markClass, markLabel) => interactiveToken(sentence, segment, segmentIndex, entry, markClass, markLabel))}
+                    </React.Fragment>
                 );
             })}
             {popup && createPortal(

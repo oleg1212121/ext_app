@@ -2,47 +2,35 @@ import Main from '../Layouts/Main.jsx';
 import ReaderApp from './Reader/ReaderApp.jsx';
 
 const Reader = ({
-    primaryLang,
-    translationLang,
     entity,
     rows = [],
-    rowImages = [],
-    rowKeys = [],
-    stressedRows = [],
+    defaultSide = null,
+    langs = {a: null, b: null},
     meta = null,
     positionKey = null,
     fontSize,
     highlight,
     stressMarks = false,
-    wordMap,
-    primaryHighlightable,
-    translationWordMap,
-    translationHighlightable,
-    primaryExplainable = false,
-    translationExplainable = false,
-    primarySide = null,
+    phrasalVerbs = false,
+    wordMaps = {a: {}, b: {}},
+    highlightable = {a: false, b: false},
+    explainable = {a: false, b: false},
     explain = null,
 }) => (
     <ReaderApp
-        primaryLang={primaryLang}
-        translationLang={translationLang}
         entity={entity}
         rows={rows}
-        rowImages={rowImages}
-        rowKeys={rowKeys}
-        stressedRows={stressedRows}
+        defaultSide={defaultSide}
+        langs={langs}
         meta={meta}
         positionKey={positionKey}
         fontSize={fontSize}
         highlight={highlight}
         stressMarks={stressMarks}
-        wordMap={wordMap}
-        primaryHighlightable={primaryHighlightable}
-        translationWordMap={translationWordMap}
-        translationHighlightable={translationHighlightable}
-        primaryExplainable={primaryExplainable}
-        translationExplainable={translationExplainable}
-        primarySide={primarySide}
+        phrasalVerbs={phrasalVerbs}
+        wordMaps={wordMaps}
+        highlightable={highlightable}
+        explainable={explainable}
         explain={explain}
     />
 );

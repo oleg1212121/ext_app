@@ -1,5 +1,7 @@
 <?php
 
+use App\Classes\Enrichment\EnglishPhrasalVerbEnricher;
+use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\EntityTextHasher;
 use App\Classes\SentenceEnrichmentService;
 use App\Jobs\EnrichEntitySentences;
@@ -43,16 +45,22 @@ function enrichableEntity(string $code, array $sentences): Entity
 }
 
 /**
- * Fake /enrich echoing each sentence back with a fixed stressed variant.
+ * Fake /enrich honouring the keyed contract (ADR 0057): each active
+ * enricher's output rides results[].output under its key.
  */
 function fakeEnrichResponse(): void
 {
     Http::fake(function (Request $request) {
-        $results = collect($request->data()['sentences'] ?? [])
+        $data = $request->data();
+        $enrichers = $data['enrichers'] ?? [];
+        $results = collect($data['sentences'] ?? [])
             ->map(fn (array $sentence): array => [
                 'id' => $sentence['id'],
-                'stressed' => $sentence['text'].'́',
-                'phrasal_verbs' => $request->data()['language'] === 'en' ? [] : null,
+                'output' => array_filter([
+                    'ru_stress' => in_array('ru_stress', $enrichers, true) ? $sentence['text'].'́' : null,
+                    'en_stress' => in_array('en_stress', $enrichers, true) ? $sentence['text'] : null,
+                    'en_phrasal' => in_array('en_phrasal', $enrichers, true) ? [] : null,
+                ], fn ($output): bool => $output !== null),
             ])
             ->all();
 
@@ -86,7 +94,16 @@ it('enriches a chunk without bumping sentence timestamps or entity staleness mar
         ->and($entity->refresh()->text_hash)->toBe('hash-before');
 });
 
-it('runs the whole entity through the job and stamps enriched_at', function () {
+it('maps enrichers to languages declaratively', function () {
+    $registry = new EnricherRegistry;
+
+    expect(collect($registry->forLanguage('ru'))->map->key()->all())->toBe(['ru_stress'])
+        ->and(collect($registry->forLanguage('en'))->map->key()->all())->toBe(['en_stress', 'en_phrasal'])
+        ->and($registry->forLanguage('fr'))->toBe([])
+        ->and(collect($registry->languages())->sort()->values()->all())->toBe(['en', 'ru']);
+});
+
+it('runs the whole entity through the job and stamps every enricher', function () {
     fakeEnrichResponse();
 
     $entity = enrichableEntity('en', ['One.', 'Two.', 'Three.']);
@@ -95,14 +112,14 @@ it('runs the whole entity through the job and stamps enriched_at', function () {
     Bus::fake();
     (new EnrichEntitySentences($entity->id))->handle();
 
-    expect($entity->refresh()->enriched_at)->not->toBeNull()
+    expect(array_keys($entity->refresh()->enrichment_stamps ?? []))->toBe(['en_stress', 'en_phrasal'])
         // The empty sentence keeps null columns (python rejects empty text)
         // but still counts as processed.
         ->and(EntitySentence::query()->where('entity_id', $entity->id)->whereNull('stressed_content')->count())->toBe(1)
         ->and(EntitySentence::query()->where('entity_id', $entity->id)->count())->toBe(4);
 });
 
-it('marks entities the pipeline cannot enrich as done instead of leaving them stale', function () {
+it('never dispatches or stamps entities the pipeline cannot enrich', function () {
     $french = Language::query()->create(['code' => 'fr', 'name' => 'French', 'is_enabled' => true, 'sort_order' => 5]);
     $work = createWork(['original_language_id' => $french->id]);
     $frenchEntity = Entity::query()->create(['work_id' => $work->id, 'language_id' => $french->id, 'name' => 'FR']);
@@ -114,16 +131,33 @@ it('marks entities the pipeline cannot enrich as done instead of leaving them st
     Bus::fake();
     $this->artisan('entities:enrich')->assertSuccessful();
 
-    expect($frenchEntity->refresh()->enriched_at)->not->toBeNull()
-        ->and($empty->refresh()->enriched_at)->not->toBeNull()
-        ->and($enrichable->refresh()->enriched_at)->toBeNull();
+    // French has no enrichers: never stale, never dispatched, never stamped.
+    // The empty entity IS dispatchable — its job runs once and stamps it done.
+    expect($frenchEntity->refresh()->enrichment_stamps)->toBeNull()
+        ->and($empty->refresh()->enrichment_stamps)->toBeNull()
+        ->and($enrichable->refresh()->enrichment_stamps)->toBeNull();
 
     Bus::assertDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $enrichable->id);
+    Bus::assertDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $empty->id);
+    Bus::assertNotDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $frenchEntity->id);
+});
+
+it('marks a non-enrichable language done when its job runs', function () {
+    $french = Language::query()->create(['code' => 'fr', 'name' => 'French', 'is_enabled' => true, 'sort_order' => 5]);
+    $work = createWork(['original_language_id' => $french->id]);
+    $frenchEntity = Entity::query()->create(['work_id' => $work->id, 'language_id' => $french->id, 'name' => 'FR']);
+    EntitySentence::create(['entity_id' => $frenchEntity->id, 'content' => 'Bonjour.', 'order' => 1024]);
+
+    Bus::fake();
+    (new EnrichEntitySentences($frenchEntity->id))->handle();
+
+    expect($frenchEntity->refresh()->enrichment_stamps)->toBe([])
+        ->and(SentenceEnrichmentService::create()->isStale($frenchEntity))->toBeFalse();
 });
 
 it('skips freshly enriched entities in the sweep', function () {
     $fresh = enrichableEntity('ru', ['Привет.']);
-    $fresh->update(['enriched_at' => now()]);
+    $fresh->update(['enrichment_stamps' => ['ru_stress' => now()->toISOString()]]);
 
     Bus::fake();
     $this->artisan('entities:enrich')->assertSuccessful();
@@ -133,15 +167,96 @@ it('skips freshly enriched entities in the sweep', function () {
 
 it('re-enriches an entity whose sentences changed after enrichment', function () {
     $entity = enrichableEntity('ru', ['Привет.']);
-    $entity->update(['enriched_at' => now()->subDay()]);
+    $entity->update(['enrichment_stamps' => ['ru_stress' => now()->subDay()->toISOString()]]);
 
     $service = SentenceEnrichmentService::create();
     expect($service->isStale($entity->refresh()))->toBeTrue();
 
     // A content edit after enrichment flips staleness (the touch bumps
-    // sentences_updated_at past enriched_at).
+    // sentences_updated_at past the stamp).
     EntitySentence::query()->where('entity_id', $entity->id)->first()->update(['content' => 'Приветик.']);
     expect($service->isStale($entity->refresh()))->toBeTrue();
+});
+
+it('re-enriches only the enricher missing a stamp (retro-processing)', function () {
+    fakeEnrichResponse();
+
+    // State of an entity enriched before en_phrasal existed: only the stress
+    // enricher carries a stamp, and its sentence already has stress marks.
+    $entity = enrichableEntity('en', ['She gave up smoking.']);
+    $sentence = EntitySentence::query()->where('entity_id', $entity->id)->first();
+    $sentence->forceFill(['stressed_content' => 'pre-existing marks'])->saveQuietly();
+    $entity->update(['enrichment_stamps' => ['en_stress' => now()->toISOString()]]);
+
+    $service = SentenceEnrichmentService::create();
+    $stale = $service->staleEnrichers($entity->refresh());
+    expect(collect($stale)->map->key()->all())->toBe(['en_phrasal']);
+
+    $stampsBefore = $entity->refresh()->enrichment_stamps;
+
+    // The job (the sweep's beginEnrichers path) runs only the stale
+    // enricher, then stamps exactly it.
+    (new EnrichEntitySentences($entity->id, 0, ['en_phrasal']))->handle();
+
+    // The phrasal-only run wrote its hits and stamped only itself; the fresh
+    // stress marks and their stamp are untouched.
+    expect($sentence->refresh()->phrasal_verbs)->toBe([])
+        ->and($sentence->stressed_content)->toBe('pre-existing marks')
+        ->and($entity->refresh()->enrichment_stamps['en_phrasal'] ?? null)->not->toBeNull()
+        ->and($entity->enrichment_stamps['en_stress'] ?? null)->toBe($stampsBefore['en_stress']);
+});
+
+it('never sends phrasal data for a russian entity', function () {
+    $captured = null;
+    Http::fake(function (Request $request) use (&$captured) {
+        $captured = $request->data();
+
+        return Http::response(['results' => []]);
+    });
+
+    $entity = enrichableEntity('ru', ['Привет.']);
+
+    SentenceEnrichmentService::create()->enrichChunk(
+        $entity,
+        EntitySentence::query()->where('entity_id', $entity->id)->get(),
+    );
+
+    expect($captured['enrichers'])->toBe(['ru_stress'])
+        ->and($captured)->not->toHaveKey('phrasal_lexicon');
+});
+
+it('skips the stress hints when only the phrasal enricher runs', function () {
+    $captured = null;
+    Http::fake(function (Request $request) use (&$captured) {
+        $captured = $request->data();
+
+        return Http::response(['results' => []]);
+    });
+
+    $entity = enrichableEntity('en', ['Dictionary.']);
+    $dictionary = createWord('en', 'dictionary', 'noun');
+    $type = TranscriptionType::query()->firstOrCreate(
+        ['language_id' => $dictionary->language_id, 'slug' => 'ipa'],
+        ['title' => 'IPA', 'description' => 'test'],
+    );
+    Transcription::query()->create([
+        'word_id' => $dictionary->id,
+        'transcription_type_id' => $type->id,
+        'transcription' => '/ˈdɪk.ʃə.nə.ɹi/',
+    ]);
+
+    $registry = new EnricherRegistry;
+    $service = SentenceEnrichmentService::create();
+    $service->enrichChunk(
+        $entity,
+        EntitySentence::query()->where('entity_id', $entity->id)->get(),
+        [$registry->forKey('en_phrasal')],
+    );
+
+    $token = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'Dictionary');
+    expect($captured['enrichers'])->toBe(['en_phrasal'])
+        ->and($captured['phrasal_lexicon'])->toBeArray()
+        ->and($token['ipa'])->toBeNull();
 });
 
 it('dispatches enrichment at the end of the upload pipeline', function () {
@@ -203,37 +318,89 @@ it('sends dictionary hints with the enrichment request', function () {
         ->and($gave['lemma'])->toBe('give');
 });
 
-it('ships stressed variants to the reader page', function () {
+it('sends verb-lemma candidates for leads buried under another class', function () {
+    $captured = null;
+    Http::fake(function (Request $request) use (&$captured) {
+        $captured = $request->data();
+
+        return Http::response(['results' => []]);
+    });
+
+    $entity = enrichableEntity('en', ['She came forward.']);
+
+    // The stained-glass noun outranks the verb (CLASS_PRIORITY: noun > verb),
+    // so the entity link classifies "came" as a noun — yet "came forward" is
+    // a phrasal verb (ADR 0058).
+    $came = createWord('en', 'came', 'noun');
+    EntityWord::query()->create([
+        'entity_id' => $entity->id,
+        'l_word' => 'came',
+        'token' => 'came',
+        'count' => 1,
+        'word_id' => $came->id,
+    ]);
+
+    // The dictionary's verb pages for the surface: the imported form-of page
+    // keeps the inflected headword itself (l_word "came", word "came" — the
+    // shape the real data has, see "looked"), and the forms table reaches
+    // the base verb "come". Both become candidates, in that order.
+    $inflected = createWord('en', 'came', 'verb');
+    $base = createWord('en', 'come', 'verb');
+    Form::query()->create(['word_id' => $base->id, 'form' => 'came', 'l_word' => 'came']);
+
+    SentenceEnrichmentService::create()->enrichChunk(
+        $entity->refresh(),
+        EntitySentence::query()->where('entity_id', $entity->id)->get(),
+    );
+
+    $cameToken = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'came');
+    expect($cameToken['cls'])->toBe('noun')
+        ->and($cameToken['lemma'])->toBe('came')
+        ->and($cameToken['verb_lemmas'])->toBe(['came', 'come'])
+        // A surface with no verb pages ships none.
+        ->and(collect($captured['sentences'][0]['tokens'])->firstWhere('surface', 'forward')['verb_lemmas'])->toBeNull()
+        // The inflected page and the noun page are distinct dictionary rows.
+        ->and($inflected->id)->not->toBe($came->id);
+});
+
+it('ships stressed variants and phrasal hits to the reader page', function () {
     $user = approvedUser();
 
     $entity = enrichableEntity('ru', ['Она произносит это красиво.']);
     $sentence = EntitySentence::query()->where('entity_id', $entity->id)->first();
     EntitySentence::query()->whereKey($sentence->id)->toBase()->update([
         'stressed_content' => 'Она́ произно́сит э́то краси́во.',
+        'phrasal_verbs' => json_encode([['verb' => 'произносит', 'particles' => [], 'start' => 4, 'end' => 14, 'phrase' => 'произносить']], JSON_UNESCAPED_UNICODE),
     ]);
 
     $response = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk();
 
     $props = $response->inertiaPage()['props'];
-    expect($props['stressedRows'][0][0])->toBe('Она́ произно́сит э́то краси́во.')
-        ->and($props['stressMarks'])->toBeFalse();
+    expect($props['rows'][0]['a']['sentences'][0]['stressed'])->toBe('Она́ произно́сит э́то краси́во.')
+        ->and($props['stressMarks'])->toBeFalse()
+        // jsonb round-trips reorder keys; compare canonicalized.
+        ->and($props['rows'][0]['a']['sentences'][0]['phrasal'])->toEqualCanonicalizing([['verb' => 'произносит', 'particles' => [], 'start' => 4, 'end' => 14, 'phrase' => 'произносить']])
+        ->and($props['phrasalVerbs'])->toBeFalse();
 
     // Saved preferences ride along.
     $user->settings()->updateOrCreate(
         ['user_id' => $user->id],
-        ['ui_settings' => ['reader' => ['stress_marks' => true]]],
+        ['ui_settings' => ['reader' => ['stress_marks' => true, 'phrasal_verbs' => true]]],
     );
     // The factory pre-loads the settings relation; drop the stale copy so the
     // request resolves the just-updated row.
     $user->unsetRelation('settings');
     $props = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk()->inertiaPage()['props'];
-    expect($props['stressMarks'])->toBeTrue();
+    expect($props['stressMarks'])->toBeTrue()
+        ->and($props['phrasalVerbs'])->toBeTrue();
 });
 
-it('ships side lists as sequential arrays when a row junctions an empty sentence', function () {
-    // Regression: sideSentences filtered without reindexing, so a row whose
-    // first junction was an empty/illustration sentence produced sparse keys
-    // that desynced the readers' sentence indexes from the shipped lists.
+it('ships sentence lists that skip empty junctions and stay sequential', function () {
+    // Regression (in its current form): a row whose first junction was an
+    // empty/illustration sentence once produced sparse keys that desynced
+    // the readers' sentence indexes from the shipped lists. The row-object
+    // payload (ADR 0060) keeps every sentence self-describing, so the
+    // lists must simply be sequential PHP lists.
     $user = approvedUser();
     $work = createWork();
     $enEntity = createEntity('en', $work);
@@ -242,7 +409,7 @@ it('ships side lists as sequential arrays when a row junctions an empty sentence
     $empty = EntitySentence::create(['entity_id' => $enEntity->id, 'content' => '', 'order' => 1]);
     $hello = EntitySentence::create(['entity_id' => $enEntity->id, 'content' => 'Hello there.', 'order' => 2]);
     $privet = EntitySentence::create(['entity_id' => $ruEntity->id, 'content' => 'Привет.', 'order' => 1]);
-    $hello->forceFill(['stressed_content' => "He\u{0301}llo the\u{0301}re."])->saveQuietly();
+    $hello->forceFill(['stressed_content' => "He\u{0301}llo the\u{0301}re.", 'phrasal_verbs' => [['verb' => 'Hello', 'particles' => ['there'], 'start' => 0, 'end' => 12, 'phrase' => 'hello there']]])->saveQuietly();
     $privet->forceFill(['stressed_content' => 'При́вет.'])->saveQuietly();
 
     $entityMatch = createEntityMatch($enEntity, $ruEntity);
@@ -253,14 +420,16 @@ it('ships side lists as sequential arrays when a row junctions an empty sentence
 
     $props = $this->actingAs($user)->get("/reader/{$enEntity->id}")->assertOk()->inertiaPage()['props'];
 
-    // The empty sentence is filtered from the text; the row and stressed
-    // lists must stay sequential and aligned with the remaining sentences.
-    // Reading side is ru (the en side is the native-language translation).
-    expect($props['rows'][0][0])->toBe('Привет.')
-        ->and(array_is_list($props['stressedRows']))->toBeTrue()
-        ->and(count($props['stressedRows']))->toBe(1)
-        ->and($props['stressedRows'][0][0])->toBe('При́вет.')
-        ->and($props['stressedRows'][0][1])->toBe("He\u{0301}llo the\u{0301}re.");
+    // The empty sentence is filtered; the a side carries exactly the hello
+    // sentence with its annotations on the sentence object itself.
+    $helloPayload = $props['rows'][0]['a']['sentences'];
+    expect($props['rows'][0]['b']['sentences'][0]['text'])->toBe('Привет.')
+        ->and(array_is_list($props['rows']))->toBeTrue()
+        ->and(count($helloPayload))->toBe(1)
+        ->and(array_is_list($helloPayload))->toBeTrue()
+        ->and($helloPayload[0]['text'])->toBe('Hello there.')
+        ->and($helloPayload[0]['stressed'])->toBe("He\u{0301}llo the\u{0301}re.")
+        ->and($helloPayload[0]['phrasal'])->toEqualCanonicalizing([['verb' => 'Hello', 'particles' => ['there'], 'start' => 0, 'end' => 12, 'phrase' => 'hello there']]);
 });
 
 it('strips stress marks from word popup surfaces', function () {
@@ -379,4 +548,54 @@ it('sends per-part ipa for hyphenated compounds the dictionary lacks', function 
             ['surface' => 'seven', 'ipa' => ['/ˈsɛvən/']],
             ['surface' => 'sided', 'ipa' => null],
         ]);
+});
+
+it('re-enriches an entity stamped by an older algorithm version', function () {
+    $entity = enrichableEntity('en', ['She gave up smoking.']);
+    $service = SentenceEnrichmentService::create();
+
+    // v1-era stamps were bare ISO strings: stale for the current-version
+    // phrasal analysis, fresh for the v1 stress analysis (ADR 0059).
+    $entity->update(['enrichment_stamps' => [
+        'en_phrasal' => now()->toISOString(),
+        'en_stress' => now()->toISOString(),
+    ]]);
+    expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['en_phrasal']);
+
+    // Once re-stamped at the current versions, nothing is stale.
+    $version = (new EnglishPhrasalVerbEnricher)->version();
+    $entity->update(['enrichment_stamps' => [
+        'en_phrasal' => ['v' => $version, 'at' => now()->toISOString()],
+        'en_stress' => ['v' => 1, 'at' => now()->toISOString()],
+    ]]);
+    expect($service->isStale($entity->refresh()))->toBeFalse();
+
+    // markEnriched writes the versioned shape.
+    $service->markEnriched($entity, [(new EnricherRegistry)->forKey('en_phrasal')]);
+    $stamp = $entity->refresh()->enrichment_stamps['en_phrasal'];
+    expect($stamp['v'])->toBe($version)->and($stamp['at'])->not->toBeNull();
+});
+
+it('gates the phrasal lexicon to the particle/preposition shape', function () {
+    $entity = enrichableEntity('en', ['She gave up smoking.']);
+
+    foreach (['give up', 'put up with', 'look forward to'] as $valid) {
+        createWord('en', $valid, 'verb');
+    }
+    // The Wiktionary-import junk behind the reported false positives, plus
+    // the idioms the parser can never confirm (ADR 0059).
+    foreach (['do it', 'could have', 'be there', 'kick the bucket', 'take the bull by the horns'] as $junk) {
+        createWord('en', $junk, 'verb');
+    }
+
+    $lexicon = (new EnglishPhrasalVerbEnricher)->requestExtras($entity->refresh())['phrasal_lexicon'];
+
+    expect($lexicon)->toContain('give up')
+        ->and($lexicon)->toContain('put up with')
+        ->and($lexicon)->toContain('look forward to')
+        ->and($lexicon)->not->toContain('do it')
+        ->and($lexicon)->not->toContain('could have')
+        ->and($lexicon)->not->toContain('be there')
+        ->and($lexicon)->not->toContain('kick the bucket')
+        ->and($lexicon)->not->toContain('take the bull by the horns');
 });

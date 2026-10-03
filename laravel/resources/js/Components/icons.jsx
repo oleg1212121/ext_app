@@ -5,6 +5,8 @@
 const ICON_PATHS = {
     // Stress marks: a capital A with an acute stroke above it.
     stress: 'M7.5 20 12 8.5 16.5 20M9.3 15.2h5.4M11 5.5 13.5 3',
+    // Phrasal verbs: two word blocks joined by a dotted underline.
+    phrasal: 'M5 6v5h5V6H5zm7 0v5h5V6h-5zM4 16h2m3 0h2m3 0h2m3 0h2',
     // Simulator tab strip (paths previously inlined in Bilinguals.jsx).
     bookOpen: 'M12 6.03v13m0-13c-2.819-.831-4.715-1.076-8.029-1.023A.99.99 0 0 0 3 6v11c0 .563.466 1.014 1.03 1.007 3.122-.043 5.018.212 7.97 1.023m0-13c2.819-.831 4.715-1.076 8.029-1.023A.99.99 0 0 1 21 6v11c0 .563-.466 1.014-1.03 1.007-3.122-.043-5.018.212-7.97 1.023',
     pencil: 'm14.304 4.844 2.852 2.852M7 7H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-4.5m2.409-9.91a2.017 2.017 0 0 1 0 2.853l-6.844 6.844L8 14l.713-3.565 6.844-6.844a2.015 2.015 0 0 1 2.852 0Z',

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\SentenceEnrichmentService;
 use App\Jobs\EnrichEntitySentences;
 use App\Models\Entity;
@@ -11,35 +12,31 @@ class EnrichEntitiesCommand extends Command
 {
     protected $signature = 'entities:enrich
         {--limit=10 : Maximum stale entities to dispatch per run}
+        {--enricher= : Force one enricher key (e.g. en_phrasal) across its languages}
         {--dry-run : Report what would be dispatched without dispatching}';
 
-    protected $description = 'Dispatch the sentence enrichment pipeline for entities that were never enriched or changed since enrichment (ADR 0052). Scheduled every five minutes.';
+    protected $description = 'Dispatch the sentence enrichment pipeline for the enrichers each entity is stale for (ADR 0057). Scheduled every five minutes.';
 
-    public function handle(): int
+    public function handle(EnricherRegistry $registry): int
     {
         $limit = max(1, (int) $this->option('limit'));
         $dryRun = (bool) $this->option('dry-run');
+        // Not container-resolvable (primitive constructor args): the create()
+        // factory is the canonical construction path.
         $enrichment = SentenceEnrichmentService::create();
 
-        // Entities the pipeline cannot enrich (other languages, no sentences)
-        // are stamped done so they stop counting as stale.
-        $notApplicable = Entity::query()
-            ->where(fn ($query) => $query
-                ->whereHas('language', fn ($q) => $q->whereNotIn('code', SentenceEnrichmentService::ENRICHABLE_LANGUAGES))
-                ->orWhereDoesntHave('sentences'))
-            ->whereNull('enriched_at')
-            ->pluck('id');
-
-        if ($notApplicable->isNotEmpty() && ! $dryRun) {
-            Entity::query()->whereIn('id', $notApplicable)->update(['enriched_at' => now()]);
+        if (($forced = $this->option('enricher')) !== null) {
+            return $this->forceEnricher((string) $forced, $registry, $limit, $dryRun);
         }
 
         $stale = Entity::query()
-            ->whereHas('language', fn ($q) => $q->whereIn('code', SentenceEnrichmentService::ENRICHABLE_LANGUAGES))
             ->with('language')
+            // SQL-side filter: a language no enricher applies to can never
+            // be stale, so its entities are not even loaded.
+            ->whereHas('language', fn ($query) => $query->whereIn('code', $registry->languages()))
             ->orderBy('id')
             ->get()
-            ->filter(fn (Entity $entity) => $enrichment->isStale($entity))
+            ->filter(fn (Entity $entity) => $enrichment->staleEnrichers($entity) !== [])
             ->take($limit);
 
         if ($stale->isEmpty()) {
@@ -49,14 +46,59 @@ class EnrichEntitiesCommand extends Command
         }
 
         foreach ($stale as $entity) {
+            // Only the enrichers whose stamps are missing or stale run — a
+            // newly registered enricher backfills itself here (ADR 0057).
+            $keys = collect($enrichment->staleEnrichers($entity))
+                ->map(fn ($enricher) => $enricher->key())
+                ->values()
+                ->all();
+
             if ($dryRun) {
-                $this->line("Would enrich entity #{$entity->id} ({$entity->language?->code})");
+                $this->line("Would enrich entity #{$entity->id} ({$entity->language?->code}): ".implode(', ', $keys));
 
                 continue;
             }
 
-            EnrichEntitySentences::begin($entity);
-            $this->info("Dispatched enrichment for entity #{$entity->id} ({$entity->language?->code})");
+            EnrichEntitySentences::beginEnrichers($entity, $keys);
+            $this->info("Dispatched enrichment for entity #{$entity->id} ({$entity->language?->code}): ".implode(', ', $keys));
+        }
+
+        return self::SUCCESS;
+    }
+
+    private function forceEnricher(string $key, EnricherRegistry $registry, int $limit, bool $dryRun): int
+    {
+        $enricher = $registry->forKey($key);
+
+        if ($enricher === null) {
+            $this->error("Unknown enricher '{$key}'. Registered keys: ".implode(', ', $registry->keys()));
+
+            return self::FAILURE;
+        }
+
+        $targets = Entity::query()
+            ->with('language')
+            ->whereHas('language', fn ($query) => $query->whereIn('code', $enricher->languages()))
+            ->whereHas('sentences')
+            ->orderBy('id')
+            ->take($limit)
+            ->get();
+
+        if ($targets->isEmpty()) {
+            $this->info("No entities for enricher '{$key}'.");
+
+            return self::SUCCESS;
+        }
+
+        foreach ($targets as $entity) {
+            if ($dryRun) {
+                $this->line("Would enrich entity #{$entity->id} ({$entity->language?->code}): {$key}");
+
+                continue;
+            }
+
+            EnrichEntitySentences::beginEnrichers($entity, [$key]);
+            $this->info("Dispatched enrichment for entity #{$entity->id} ({$entity->language?->code}): {$key}");
         }
 
         return self::SUCCESS;

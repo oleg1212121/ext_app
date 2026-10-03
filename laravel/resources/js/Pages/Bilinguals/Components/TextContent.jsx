@@ -3,38 +3,22 @@ import CheckboxInput from "../../../Components/Forms/CheckboxInput.jsx";
 import Button from "../../../Components/Forms/Button.jsx";
 import WordText from "../../../Components/WordText.jsx";
 import {useI18n} from '../../../i18n';
+import {sideSentences} from '../../../lib/readingRows.mjs';
 import React, {useMemo} from "react";
 
-const NO_IMAGES = [];
-
-// A book illustration inside one column: picture with its optional caption
-// beneath. Rendered inside the column's hideable container, so the reveal
-// checkbox covers it like the text.
-const IllustrationFigure = ({image}) => (
-    <figure className="mb-1 text-center">
-        <img
-            src={image.url}
-            alt={image.caption || ''}
-            loading="lazy"
-            decoding="async"
-            width={image.width ?? undefined}
-            height={image.height ?? undefined}
-            className="mx-auto inline-block max-h-[40vh] w-auto max-w-full rounded-sm"
-        />
-        {image.caption ? (
-            <figcaption className="italic text-[0.85em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                {image.caption}
-            </figcaption>
-        ) : null}
-    </figure>
-);
+const SIMULATOR_FIGURE_PROPS = {
+    figureClassName: 'mb-1 text-center',
+    imgClassName: 'max-h-[40vh]',
+    captionClassName: 'italic text-[0.85em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]',
+};
 
 /**
- * The alignment table. Columns are display-oriented, not side letters: the
- * left column is the learning target (hidden until revealed, read-credited),
- * the right column the base the learner translates from (Open/Ask actions).
- * The caller maps the match's actual sides onto these columns — targetSide/
- * baseSide keep the real side letters for the word-explain payloads.
+ * The alignment table over Reading rows (ADR 0060). Columns are
+ * display-oriented, not side letters: the left column is the learning
+ * target (hidden until revealed, read-credited), the right column the base
+ * the learner translates from (Open/Ask actions). Rows arrive canonical;
+ * firstSide/secondSide name which canonical side plays each column — the
+ * caller's flip is just that choice, no row copying.
  */
 export default function TextContent(props) {
     const {t} = useI18n();
@@ -123,28 +107,24 @@ export default function TextContent(props) {
                 {props.rows.map((row, i) => {
                     const n = rowOffset + i + 1;
                     const nStr = n < 10 ? `0${n}` : String(n);
-                    const rowImages = props.rowImages?.[i] ?? NO_IMAGES;
                     return (
                     <tr id={`simulator-row-${n}`}
-                        key={rowOffset + i}
+                        key={row.key}
                         className="simulator-row group relative transition-colors duration-150 hover:bg-[var(--wbench-paper-deep)]/60 dark:hover:bg-[var(--wbench-paper-deep-night)]/50 cursor-pointer">
                         <td className="px-4 py-2 align-top hide_target relative">
                             <span className="ribbon-mark absolute left-0 top-0 bottom-0" aria-hidden="true"/>
                             <span className="target content resizeable_element block w-full break-words text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-serif)]">
-                                {(rowImages[0] ?? NO_IMAGES).map((image) => (
-                                    <IllustrationFigure key={image.id} image={image}/>
-                                ))}
                                 <WordText
-                                    text={row[0]}
+                                    sentences={sideSentences(row, props.firstSide)}
                                     wordMap={props.targetWordMap}
                                     highlight={props.highlightWords && props.targetHighlightable}
-                                    rowKey={props.rowKeys?.[i]}
+                                    rowKey={row.key}
                                     onWordProgress={props.onWordProgress}
                                     popupFontSize={props.popupFontSize}
-                                    side={props.targetSide}
                                     explain={targetExplain}
-                                    stressed={props.stressedRows?.[i]?.[0] ?? null}
                                     showStress={props.showStress}
+                                    showPhrasal={props.showPhrasal}
+                                    figureProps={SIMULATOR_FIGURE_PROPS}
                                 />
                             </span>
                         </td>
@@ -166,20 +146,17 @@ export default function TextContent(props) {
                         <td className="px-4 py-2 align-top hide_base">
                             <div className="flex w-full flex-col gap-1.5">
                                 <span className="base content resizeable_element block w-full break-words text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-serif)]">
-                                    {(rowImages[1] ?? NO_IMAGES).map((image) => (
-                                        <IllustrationFigure key={image.id} image={image}/>
-                                    ))}
                                     <WordText
-                                        text={row[1]}
+                                        sentences={sideSentences(row, props.secondSide)}
                                         wordMap={props.baseWordMap}
                                         highlight={props.highlightWords && props.baseHighlightable}
-                                        rowKey={props.rowKeys?.[i]}
+                                        rowKey={row.key}
                                         onWordProgress={props.onWordProgress}
                                         popupFontSize={props.popupFontSize}
-                                        side={props.baseSide}
                                         explain={baseExplain}
-                                        stressed={props.stressedRows?.[i]?.[1] ?? null}
                                         showStress={props.showStress}
+                                        showPhrasal={props.showPhrasal}
+                                        figureProps={SIMULATOR_FIGURE_PROPS}
                                     />
                                 </span>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">

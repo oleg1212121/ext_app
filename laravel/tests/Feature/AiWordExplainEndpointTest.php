@@ -46,9 +46,7 @@ function createExplainFixture(): array
 function explainPayload(array $fixture, array $overrides = []): array
 {
     return [
-        'meaning_match_id' => $fixture['meaningMatch']->id,
-        'side' => 'a',
-        'sentence_index' => 0,
+        'entity_sentence_id' => $fixture['s2']->id,
         'word_id' => $fixture['word']->id,
         'surface' => 'bank',
         ...$overrides,
@@ -108,12 +106,12 @@ it('uses the explanation model the resolver resolved, ignoring any client-sent m
     expect($captured['model'])->toBe('openrouter:google/gemini-3-flash-preview');
 });
 
-it('resolves the clicked sentence by index when one row holds several sentences', function () {
+it('explains a word addressed by id when one row holds several sentences', function () {
     $fixture = createExplainFixture();
     $s4 = EntitySentence::query()->create(['entity_id' => $fixture['en']->id, 'content' => 'The current was strong.', 'order' => 4096]);
 
-    // Second sentence of the row side: clicked = S3, previous = S2 (same
-    // row), next = S4 (next entity sentence).
+    // S3 rides the same row side as S2; clicking it by id gives clicked = S3,
+    // previous = S2 (same row), next = S4 (next entity sentence).
     $junction = SentenceMeaningMatch::query()->create([
         'entity_sentence_id' => $fixture['s3']->id,
         'meaning_match_id' => $fixture['meaningMatch']->id,
@@ -125,7 +123,7 @@ it('resolves the clicked sentence by index when one row holds several sentences'
     mockResolverForExplain($captured);
 
     $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-explain', explainPayload($fixture, ['sentence_index' => 1, 'surface' => 'water', 'word_id' => createWord('en', 'water')->id]))
+        ->postJson('/ai/word-explain', explainPayload($fixture, ['entity_sentence_id' => $fixture['s3']->id, 'surface' => 'water', 'word_id' => createWord('en', 'water')->id]))
         ->assertOk();
 
     expect($captured['question'])->toContain('He dropped the coin in the bank.');
@@ -198,13 +196,21 @@ it('refuses a restricted entity the user cannot read', function () {
         ->assertJsonPath('data.data.error', 'You do not have access to this text.');
 });
 
-it('validates that the meaning match exists', function () {
+it('requires the entity sentence id — the positional address is retired', function () {
     $fixture = createExplainFixture();
     mockResolverForExplain();
 
+    // Reading rows carry sentence ids (ADR 0060), so the retired
+    // meaning_match_id + side + sentence_index address no longer validates.
     $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-explain', explainPayload($fixture, ['meaning_match_id' => 999999]))
-        ->assertStatus(422);
+        ->postJson('/ai/word-explain', [
+            'meaning_match_id' => $fixture['meaningMatch']->id,
+            'side' => 'a',
+            'sentence_index' => 0,
+            'word_id' => $fixture['word']->id,
+            'surface' => 'bank',
+        ])
+        ->assertUnprocessable();
 });
 
 it('validates that the entity sentence exists', function () {
@@ -217,17 +223,7 @@ it('validates that the entity sentence exists', function () {
             'word_id' => $fixture['word']->id,
             'surface' => 'bank',
         ])
-        ->assertStatus(422);
-});
-
-it('returns 404 when the sentence index is out of range', function () {
-    $fixture = createExplainFixture();
-    mockResolverForExplain();
-
-    $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-explain', explainPayload($fixture, ['sentence_index' => 5]))
-        ->assertStatus(404)
-        ->assertJsonPath('data.data.error', 'Sentence not found.');
+        ->assertUnprocessable();
 });
 
 it('surfaces a provider error as a friendly message without leaking internals', function () {

@@ -168,6 +168,32 @@ it('falls back to google and uses the source word class for pos-less candidates'
         ->and(WordTranslationFetch::query()->sole()->provider)->toBe('google');
 });
 
+it('stores multi-word candidates under the phrase class', function () {
+    enableTranslationProviders();
+
+    Http::fake(['yandex.test/*' => Http::response([
+        'def' => [[
+            'pos' => 'verb',
+            'tr' => [
+                ['text' => 'уступать дорогу'], // multi-word: a phrase, not a verb
+                ['text' => 'давать'],
+            ],
+        ]],
+    ])]);
+
+    $word = createWord('en', 'give up', 'verb');
+
+    (new FetchWordTranslations($word->id, ruLanguageId()))->handle(app(WordTranslationResolver::class));
+
+    $phrase = Word::query()->where('language_id', ruLanguageId())->where('l_word', 'уступать дорогу')->firstOrFail();
+    $verb = Word::query()->where('language_id', ruLanguageId())->where('l_word', 'давать')->firstOrFail();
+
+    expect($phrase->wordClass->slug)->toBe('phrase')
+        ->and($verb->wordClass->slug)->toBe('verb')
+        ->and(WordTranslation::isLinked($word->id, $phrase->id))->toBeTrue()
+        ->and(WordTranslation::isLinked($word->id, $verb->id))->toBeTrue();
+});
+
 it('records the exclusion when every provider finds nothing', function () {
     config([
         'services.yandex_translate.key' => 'yandex-test-key',

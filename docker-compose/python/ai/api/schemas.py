@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from ai import config
@@ -107,8 +109,8 @@ class EnrichToken(BaseModel):
     end: int = Field(gt=0)
     # Word-class slug from the dictionary link (e.g. "verb", "noun").
     cls: str | None = None
-    # Dictionary headword for the token (lemma); used for inflected phrasal
-    # leads ("gave up" -> lead lemma "give").
+    # Dictionary headword for the token (lemma); available to enrichers as
+    # the linked dictionary base of the surface.
     lemma: str | None = None
     # English: Wiktionary IPA variants for this token, with ˈ kept.
     ipa: list[str] | None = None
@@ -117,6 +119,10 @@ class EnrichToken(BaseModel):
     parts: list[EnrichTokenPart] | None = None
     # Russian: dictionary stressed-form candidates carrying U+0301.
     stressed: list[str] | None = None
+    # English: all verb-class headwords for the surface (direct rows + forms
+    # table), extra lemma candidates for the lexicon-gated multi-word-verb
+    # checks (ADR 0058).
+    verb_lemmas: list[str] | None = None
 
 
 class EnrichSentence(BaseModel):
@@ -126,7 +132,13 @@ class EnrichSentence(BaseModel):
 
 
 class EnrichRequest(BaseModel):
-    language: str = Field(pattern="^(ru|en)$")
+    # Informational (logging); dispatch keys off enrichers — Laravel's
+    # registry owns the language -> enricher mapping (ADR 0057).
+    language: str = Field(min_length=1, max_length=12)
+    # Which analyses to run for this batch; validity = dispatchability.
+    enrichers: list[Literal["ru_stress", "en_stress", "en_phrasal"]] = Field(
+        ..., min_length=1
+    )
     # Multi-word verb headwords from the dictionary (English phrasal verbs).
     phrasal_lexicon: list[str] = Field(default_factory=list, max_length=50000)
     sentences: list[EnrichSentence] = Field(..., min_length=1, max_length=config.ENRICH_MAX_SENTENCES)
@@ -137,12 +149,16 @@ class EnrichPhrasalHit(BaseModel):
     particles: list[str]
     start: int
     end: int
+    # The lexicon headword the match came through ("gave up" -> "give up").
+    phrase: str | None = None
 
 
 class EnrichResult(BaseModel):
     id: int
-    stressed: str | None = None
-    phrasal_verbs: list[EnrichPhrasalHit] | None = None
+    # Enricher key -> that enricher's output for the sentence; the shape
+    # differs per enricher (ru_stress/en_stress carry the marked string,
+    # en_phrasal the hit list).
+    output: dict[str, str | list[EnrichPhrasalHit] | None] = Field(default_factory=dict)
 
 
 class EnrichResponse(BaseModel):

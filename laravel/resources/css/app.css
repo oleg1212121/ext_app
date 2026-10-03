@@ -162,6 +162,8 @@ b, strong {
     --word-progress: var(--wbench-across);
     --word-progress-strong: var(--color-verdigris);
     --word-known: #16a34a;
+    --phrasal-underline: var(--color-verdigris);
+    --phrasal-hit-background: gainsboro;
 }
 
 .dark {
@@ -169,6 +171,8 @@ b, strong {
     --word-progress: var(--wbench-across-night);
     --word-progress-strong: var(--color-verdigris-night);
     --word-known: #4ade80;
+    --phrasal-underline: var(--color-verdigris-night);
+    --phrasal-hit-background: #3f3f3f;
 }
 
 .word-token {
@@ -211,4 +215,16 @@ b, strong {
 
 .word-token.word-known {
     color: var(--word-known);
+}
+
+/* Phrasal-verb hits (ADR 0057): a dotted underline under the whole
+   verb+particle span; the matched headword rides the title attribute. */
+.phrasal-hit {
+    background-color: var(--phrasal-hit-background);
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: var(--phrasal-underline);
+    text-decoration-thickness: from-font;
+    text-underline-offset: 4px;
+    cursor: help;
 }

@@ -1,5 +1,97 @@
 # Directory Update Log
 
+## 2026-10-03 (fix: reading-rows review follow-ups)
+
+Review of the ADR 0060 branch caught two client bugs and a docs gap.
+`WordText` built its per-sentence memos (`displayTexts`, `segmentLists`,
+`phrasalMarks`) over the full sentence list but looked them up with a
+text-only counter, so any text sentence after an illustration in the same
+row rendered the wrong entry (the image slot); lookups now use the
+full-list index, restoring the ADR's document-order interleave.
+`ReaderApp.setReadingLang` compared the radio's language code against the
+side letter (`lang !== defaultSide`, always true), so the first side flip
+stuck — the default language's radio could never restore it and
+`saveSideFlip` persisted the stuck state; it now compares against
+`langs[defaultSide]`. `AiWordExplainEndpointTest`'s two 422 assertions use
+`assertUnprocessable()` per coding-conventions. Also documenting the
+branch's `phrasal-hit` CSS en route: phrasal-verb hit tokens gained a
+background (`--phrasal-hit-background` in `app.css`), a visual change that
+shipped without a log entry.
+
+## 2026-10-03 (feat: Reading rows — one row-object payload, ADR 0060)
+
+The reading surfaces' payload of five index-parallel arrays (`rows`,
+`rowImages`/`row_images`, `rowKeys`/`row_keys`, `stressedRows`/
+`stressed_rows`, `phrasalRows`/`phrasal_rows`) is replaced by one array of
+**Reading rows** — self-describing row objects in canonical a/b order, each
+sentence carrying its entity-sentence id, text, and annotation keys only
+when data exists; illustrations ride as image sentences in document order.
+The server ships `defaultSide` (ADR 0037 rule) plus side-keyed companions
+and never reorders; the client's flip (`resources/js/lib/readingRows.mjs`)
+is just which side each display column shows — the nine flip memos and the
+reader's server-side normalization are gone. `/ai/word-explain` now takes
+only `entity_sentence_id` (the positional `meaning_match_id + side +
+sentence_index` address and the server's mirror-the-presenter list rebuild
+are deleted); `ReaderRow` (26 props) takes a row + two side descriptors,
+`WordText` takes a side's sentence list, `IllustrationFigure` is shared,
+and the simulator's dead `filename` mode + its two fixture files are
+removed (`entity_match_id` required). New `ReadingRowsPresenter`; the five
+simulator builders left `MeaningMatchPresenter` (keeps `toDisplayRows` +
+`meaningMatchesQuery`). Also fixed en route: stale `stressedRows`/
+`phrasalRows` on reader page turns (the `PAGED_PROPS` gap — one payload
+makes it structural) and the simulator error-path `t()` ReferenceError.
+Concepts updated: reader, bilinguals-simulator, interactive-words,
+sentence-enrichment; glossary gains **Reading row**. Tests rewritten to
+the new shape (ReaderPageTest, EntityEnrichmentTest,
+SimulatorTextEndpointTest incl. filename-mode rejection,
+EntityIllustrationAlignmentTest, AiWordExplainEndpointTest).
+
+## 2026-10-02 (fix: directional-adverb guard for multi-word verbs, ADR 0059 v3)
+
+A user report ("Beige-colored skin." flagged as a multi-word verb) did
+not reproduce — no stored hit, and the parse contains no VERB token
+("colored" is ADJ) — but the review it prompted exposed real precision
+misses of the same flavor: "swung OVER TOWARD Max" → `swing over` and
+"followed Max DOWN TO the basement" → `follow down`, where the particle
+slot holds a directional path adverb, not a particle. Fix (ADR 0059
+v3): the parser-evidence particle path skips a particle immediately
+followed by a goal/path preposition (to/toward/towards/into/onto/
+through/across/past). Locative prepositions ("looked it up on the
+network") and infinitival "to" (tagged PART, not ADP — "looked it up to
+check") still hit; dictionary-gated combos ("come up to") are tried
+before the guard and survive it. `EnglishPhrasalVerbEnricher` version
+2 → 3 — the sweep re-stales and re-runs the English corpus with no
+manual step. Python regression tests for all four cases;
+`wiki/domains/sentence-enrichment.md` updated.
+
+## 2026-10-02 (feat: multi-word verbs via spaCy dependency parsing, ADR 0059)
+
+Real-text review flagged "done, it", "not say" and "could have given" as
+phrasal verbs — three compounding root causes: Wiktionary junk under the
+verb class ("do it", "could have"), translation-path junk (multi-word
+provider candidates stored under the provider pos), and an n-gram matcher
+that cannot see punctuation or particles. The user chose a rewrite. Python
+(`ai/enrichment/phrasal.py`): spaCy `en_core_web_md` (lazy singleton,
+batched via `nlp.pipe`) parses the raw sentence; every VERB token (AUX
+excluded) matches by `prt`/`prep` children — particle verbs hit on parser
+evidence alone (separable "looked it up" works now), prepositional and
+phrasal-prepositional matches stay dictionary-gated; `/enrich` returns 503
+when the model is missing (fail loudly, never stamp empty enrichment).
+Laravel: `Enricher::version()` + versioned stamps `{v, at}` (legacy string
+stamps read as v1) — en_phrasal is v2, so the 5-minute sweep re-enriches the
+whole English corpus automatically; lexicon gated by `MultiwordVerbShape`
+(2–4 tokens, trailing particle/preposition whitelist; idioms out of scope);
+`FetchWordTranslations` stores multi-word candidates under the `phrase`
+class; new `words:reclass-multiword {--dry-run}` reclasses existing English
+junk verb rows to phrase (en-only — Russian multi-word verbs untouched).
+UI string "Phrasal verbs" → "Multi-word verbs" (ru keeps "Фразовые
+глаголы"); storage keys (`en_phrasal`, `phrasal_verbs`) unchanged.
+`requirements.txt` gains spacy + the model wheel (container-definition:
+rebuild python image + `--stamp` on the Docker prod path). CONTEXT.md
+renamed "Phrasal verb hit" → "Multi-word verb hit" and versioned the
+Enrichment staleness definition; `wiki/domains/sentence-enrichment.md` and
+`wiki/domains/dictionary-import.md` updated.
+
 ## 2026-10-01 (feat: pronunciation guide moves from navbar modal to a page under a new Resources dropdown, ADR 0056)
 
 The ADR 0054 phoneme reference shipped as a modal behind an unlabeled icon
@@ -3705,3 +3797,93 @@ did* **Change: AI Models admin enable/disable now fires without a confirmation
   delegation cases. New `docs/adr/0051-scheduler-resume-preserves-landmarks.md`;
   `wiki/domains/sentence-alignment.md` Stage 3/4 updated (command reference
   regenerated via `wiki:sync` for the new `alignments:resume` description).
+
+## 2026-10-02 (enricher registry + phrasal verbs on the reading surfaces)
+
+Sentence enrichment restructured from hardcoded language conditionals to
+declaratively scoped **enrichers** (ADR 0057; glossary term added to
+CONTEXT.md): `App\Classes\Enrichment\Enricher` + `EnricherRegistry` with
+`RussianStressEnricher` (ru_stress), `EnglishStressEnricher` (en_stress) and
+`EnglishPhrasalVerbEnricher` (en_phrasal). `SentenceEnrichmentService::enrichChunk`
+now takes the enricher list, resolves shared base hints (cls/lemma/headword/
+word_id per token key) and merges each enricher's token hints + request
+extras into ONE python call; the `/enrich` request carries
+`enrichers: [key]` (pydantic Literal replaces the `^(ru|en)$` language
+pattern) and results return keyed by enricher (`results[].output`), so a
+partial run skips the other modules. Phrasal hits gained a `phrase` field
+(the matched lexicon headword, for tooltips). Staleness moved from the
+single `entities.enriched_at` to per-enricher `entities.enrichment_stamps`
+jsonb (`EnricherRegistry::staleFor`): a newly registered enricher is stale
+on its own — ADR 0053's manual enriched_at reset choreography is gone;
+stamps merge via jsonb `||`; the migration backfills enriched entities,
+leaves never-enriched enrichable ones null (sweep rebuilds) and gives
+languages without enrichers `{}`. `entities:enrich` dispatches only the
+stale set (`beginEnrichers`) and gained `--enricher=` (force one key);
+Filament's Enrich action and FinalizeEntityDerivations keep full runs
+(`begin()`); non-enrichable languages stamp `{}` in the job (the sweep no
+longer needs its bulk not-applicable stamping). Phrasal verbs became
+visible per ADR 0057: reader + simulator ship `phrasalRows`/
+`phrasal_rows` (per side: per-sentence hit lists, side null when no hits;
+flipped with the reading/learning side like stressedRows), `WordText`
+underlines hit-span tokens (dotted `phrasal-hit` class, indexes computed
+from the ORIGINAL sentence so they transfer to the stressed variant) with
+the matched phrase as tooltip, behind a per-user `phrasal_verbs`
+ui_settings preference (reader + simulator, default off, autosaved; new
+`reader.phrasal_verbs` / `bilinguals.phrasal_verbs` UI strings, new
+`phrasal` icon); the Filament Sentences "Phrasal verbs" column is visible
+by default. `wiki/domains/sentence-enrichment.md` rewritten for the
+registry/stamps/rendering; ADR 0052 unaffected (its phrasal "Filament-only"
+scope is superseded by 0057).
+
+## 2026-10-02 (phrasal lead verb-lemma candidates)
+
+"came forward" went unflagged: the matcher trusted the single `cls` hint,
+but `CLASS_PRIORITY` ranks noun above verb, so POS-ambiguous leads ("came",
+"went", "turn", "cut"…) resolved to their noun page and never led a match;
+a second miss class had verb leads whose imported headword is the inflected
+form itself ("looked"), making the single lemma hint useless. A classified
+probe of entity 17 (read-only, script since deleted) measured 93 windows
+whose phrase IS a stored multi-word verb headword against 6 stored hits —
+62 class-hijacked, 31 bad-lemma, the rest literal uses / dictionary gaps.
+Fix (ADR 0058): `EnglishPhrasalVerbEnricher` contributes a `verb_lemmas`
+per-token hint (every verb-class headword for the surface: direct rows +
+forms-table bases, deduped, cap 8; only when en_phrasal runs), python
+`phrasal.find_phrasal_verbs` tries linked-lemma + verb_lemmas candidates
+with longest-window-first preference; `EnrichToken.verb_lemmas` added.
+Re-run of en_phrasal only (ADR 0057's per-enricher staleness in action;
+en_stress untouched): entity 17 went 6 → 243 hits, all with `phrase`.
+Coverage is now bounded by lexicon completeness — a data matter (the dev
+dictionary predates part of the dump; "come forward" is importable but
+absent; re-running the dictionary import widens detection, then
+`entities:enrich --enricher=en_phrasal` applies it). Review fixes riding
+along: the enrich sweep pre-filters languages in SQL (`EnricherRegistry::
+languages()`), `keys()` replaces a hardcoded key list in `--enricher=`
+errors, unused `SentenceEnrichmentService::registry()` removed, and the
+`phrasal_verbs` ui-settings toggles gained endpoint tests.
+
+## 2026-10-03 (full suite runs parallel; worker-DB drop actually works)
+
+`composer run test` ran the suite serially (`php artisan test`) while the
+parallel machinery sat unused on the TIA path. The script now runs
+`vendor/bin/pest --parallel --drop-databases` (8 workers in the dev
+container): 899 tests / 4540 assertions measured at 273s serial → ~93-117s
+parallel (host wall clock 4m48s → ~2m; first run after a drop pays worker-DB
+creation). CI (`tests.yml`) picks this up unchanged — it invokes the same
+composer script, its `postgres` service user can CREATE DATABASE, and
+`pcntl` is already in the setup-php extension list.
+
+While verifying, found that `--drop-databases` had never actually dropped
+anything: Pest's Laravel handler copies the flag into `$_ENV`, but Laravel's
+`ParallelTesting` reads its options from `$_SERVER`
+(`ParallelTesting::option()` / `inParallel()`), and PHP never merges `$_ENV`
+into `$_SERVER`. Workers created/used `ext_app_test_test_{N}` every run and
+left all 8 behind — the mechanism behind the 2026-08-03 orphan cleanup, and
+`test:tia` leaked them for months despite passing the flag. Fix: both
+scripts now export `LARAVEL_PARALLEL_TESTING=1` and
+`LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1` as real environment variables
+(`sh -c 'VAR=1 …'` prefix), which EGPCS surfaces in `$_SERVER` for parent and
+workers alike; the parent runner then drops every worker DB in its teardown
+(verified: 0 leftovers after a full run). Trade-off: worker DBs are
+recreated each run (~20s), accepted so orphans can never accumulate again.
+`tests/TestCase.php`'s `ext_app_test` guard is unaffected — Laravel appends
+the worker suffix after app boot.

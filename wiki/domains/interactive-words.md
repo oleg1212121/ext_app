@@ -5,7 +5,7 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-09-29T19:54:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-03T00:00:00+03:00}
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -193,14 +193,14 @@ popup opens.
 
 # Context explanation tab
 
-When the surrounding `WordText` receives a `rowKey`, a `side` and an `explain`
+When the surrounding `WordText` receives a `rowKey` and an `explain`
 payload (`{enabled, modelKey, modelLabel, followsAnswer, answerLabel}` —
 eligibility per column, carried enabled or not), the popup
 grows a tab strip: the dictionary content above stays on the first tab and a
 second tab ("Explanation") offers the **Context explanation** — an AI answer
 to "what does this word mean in this sentence?". Eligibility follows the
 same rule everywhere: a column is explainable when its language ≠ the user's
-native language (the `*Highlightable`/`word_maps.explainable` maps), so the
+native language (the `highlightable` / `word_maps.explainable` maps), so the
 Reader now has the tab too — the simulator on both surfaces since the model
 no longer needs page state (ADR 0035). Right of the Explanation tab sits a
 **robot-with-question-mark icon** (not a tab — its click never switches
@@ -220,17 +220,14 @@ outside-click closing — the word popup underneath stays put.
   guidance with a link to `/profile?tab=ai`; when the user has no
   resolved explanation model, the tab shows choose-a-model guidance
   instead of the button.
-* **Sentence identity travels as an index or an id.** For bilingual rows the
-  row text joins a side's non-empty sentences in document order with `\n`
-  (`MeaningMatchPresenter::sideText`); `WordText` renders each sentence in
-  its own inline span (visually identical — the joins render as single
-  spaces) and remembers which sentence a Ctrl+click landed in. The payload
-  is then `{meaning_match_id, side, sentence_index, word_id, surface}`. For
-  single-language reader rows (`es:` row keys) it is
-  `{entity_sentence_id, word_id, surface}` directly. No `model` field — the
-  server resolves the user's stored explanation model (ADR 0035); the
-  backend rebuilds the same sentence list, so the index resolves to the
-  exact clicked `EntitySentence`.
+* **Sentence identity travels as an id.** Every Reading row sentence object
+  carries its entity sentence `id` (ADR 0060), `WordText` remembers which
+  sentence a Ctrl+click landed in, and the payload is simply
+  `{entity_sentence_id, word_id, surface}` — the retired positional
+  `meaning_match_id + side + sentence_index` address (and the server-side
+  sentence-list rebuild that mirrored the presenter) is gone. No `model`
+  field — the server resolves the user's stored explanation model
+  (ADR 0035).
 * **Context assembly.** The endpoint takes the sentence before and the
   sentence after the clicked one by document order in the same entity
   (`entity_sentences.order` — neighbours may live in adjacent rows or off
@@ -241,12 +238,12 @@ outside-click closing — the word popup underneath stays put.
 * **Model and access.** The model is the user's resolved **explanation
   model** (`AIModelResolver::resolveExplanationModel()` — unset follows the
   answer model; a null resolution answers with choose-a-model guidance);
-  bilingual rows must pass `EntityAccessService::canReadMatch`,
-  entity-sentence rows `canRead` on the sentence's entity. Errors reuse the
+  access is `EntityAccessService::canRead` on the clicked sentence's
+  entity. Errors reuse the
   envelope `{data: {data: {error}, code}}`; the endpoint is throttled
   20/min like the other AI routes.
 * **Client memo.** Answers are cached per popup instance in a page-lifetime
-  `Map` keyed by `rowKind|rowId|side|sentenceIndex|surface|modelKey` — no
+  `Map` keyed by `sentenceId|surface|modelKey` — no
   server-side cache, so re-opening the same word in the same sentence is
   free within the page, switching the explanation model misses the cache,
   and "Ask again" drops the memo and refetches.
@@ -265,10 +262,9 @@ outside-click closing — the word popup underneath stays put.
   responds `{data: {familiarity: {wordId: value}}}` covering every
   referenced word so the client can recolor without a refetch.
 * `row_key` scopes one sentence pair: `mm:{meaningMatchId}` (aligned rows)
-  or `es:{entitySentenceId}` (unaligned reader rows). The payloads carry
-  them one-to-one with the rows — `row_keys` in the simulator's `POST /text`
-  response (`null` in legacy filename mode), `rowKeys` on the reader page —
-  and the request validates the referenced rows exist.
+  or `es:{entitySentenceId}` (unaligned reader rows). Reading rows carry
+  their `key` on the row object itself (ADR 0060), so no parallel key list
+  exists, and the request validates the referenced rows exist.
 * **Reads** fire only on the bilinguals simulator (checking a row's EN
   checkbox, or the `all_en` header checkbox which batches the whole loaded
   page into one request), crediting the learning-language side's words.
@@ -282,7 +278,7 @@ outside-click closing — the word popup underneath stays put.
 # Highlighting rules
 
 * Tinting applies only to sides whose entity language ≠ the user's native
-  language (`primaryHighlightable` / `translationHighlightable` /
+  language (the reader's `highlightable` / the simulator's
   `word_maps.highlightable`), so a native speaker's side stays clean.
 * Each surface has a persisted toggle: `reader.highlight` and
   `simulator.highlight_words` in `user_settings.ui_settings`
@@ -310,24 +306,23 @@ outside-click closing — the word popup underneath stays put.
 
 # Consuming surfaces
 
-* **Reader** (`/reader/{lang}/{entityId}`): props `wordMap`,
-  `translationWordMap`, `rowKeys`, `highlight`, `primaryHighlightable`,
-  `translationHighlightable`, plus the explanation quartet `primaryExplainable`
-  / `translationExplainable` / `primarySide` / `explain`
-  (`{enabled, modelKey, modelLabel, followsAnswer}` — the label fields feed
-  the word popup's Models used popup, which on the reader lists the
-  explanation model only); `ReaderRow` renders both row halves through
+* **Reader** (`/reader/{entityId}`): props `rows` (Reading rows carrying
+  their `key` and sentence ids), `wordMaps` `{a, b}` (page-scoped),
+  `highlight`, `highlightable`/`explainable` (canonical-side maps), plus
+  `explain` (`{enabled, modelKey, modelLabel, followsAnswer}` — the label
+  fields feed the word popup's Models used popup, which on the reader lists
+  the explanation model only); `ReaderRow` takes two display-column
+  descriptors and renders both row halves through
   `WordText` (the primary line is a `role="button"` div so the word tokens —
   themselves `role="button"` spans — stay valid HTML inside it) and derives
   the popup font from its own `fontSize`. Lookup events only — no read
-  crediting. Bilingual rows key `mm:{id}` and carry their match side;
-  single-language rows key `es:{id}` (no side) and explain through the
-  entity-sentence payload.
+  crediting. Rows key `mm:{id}` / `es:{id}`; every sentence explains through
+  its entity-sentence id.
 * **Bilinguals simulator** (`POST /text`): response gains `word_maps`
-  (`{a, b, highlightable, explainable}`; `null` in legacy filename mode) and
-  `row_keys` (aligned with `rows`); `TextContent` renders both cells through
-  `WordText` (`side="a"`/`side="b"`, and `explain = {enabled: canUseAi,
-  modelKey, modelLabel, followsAnswer, answerLabel}` gated per side by
-  `word_maps.explainable`), fires read
+  (`{a, b, highlightable, explainable}`); `TextContent` renders both cells
+  through `WordText` over the canonical Reading rows
+  (`firstSide`/`secondSide` pick the columns, and `explain = {enabled:
+  canUseAi, modelKey, modelLabel, followsAnswer, answerLabel}` gated per
+  side by `word_maps.explainable`), fires read
   events from the row/column checkboxes, and enables the popup's Context
   explanation tab.

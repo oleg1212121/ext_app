@@ -733,6 +733,19 @@ One place a token appears in an entity's text. Occurrences are derived from
 the sentence text at render time and are never stored (see ADR 0027).
 _Avoid_: word position (implementation detail), word hit.
 
+**Reading row**:
+The payload's unit of presentation on a reading surface (ADR 0060) — one
+meaning match, or one sentence of an unaligned entity, shaped as a row
+object with a `key` (`mm:`/`es:`) and its two sides in canonical A-side/B-side
+order. Each side carries its sentences in document order as self-describing
+objects (text with optional stress/phrasal annotations, or an illustration
+with its caption); a single-language row has no second side. Which side a
+surface displays first is the reader's flip around the server's default,
+never a reordering of the rows themselves.
+_Avoid_: bilingual row (single-language rows are Reading rows too),
+alignment row (the Alignments editor's rows), pair (the old two-string
+array shape).
+
 **Word map**:
 The per-entity lookup an interactive page carries — lowercase token to its
 dictionary Word id and the reader's **Word familiarity** — covering the
@@ -801,16 +814,33 @@ text as its display substitute when the reader turns stress marks on. Always
 sentence-aligned one-to-one with the original. See ADR 0052.
 _Avoid_: stressed content (the text itself is never stressed), accent text.
 
-**Phrasal verb hit**:
-A detected multi-word verb ("gave up") inside a sentence: the verb with its
-particle(s) and where they sit in the sentence. Detected from dictionary
-multi-word headwords, not from word linking.
-_Avoid_: phrasal link (nothing is linked), verb phrase (broader).
+**Multi-word verb hit**:
+A detected multi-word verb inside a sentence — the verb with its
+particle(s)/preposition and where they sit in the sentence. Detected by
+dependency parsing: particle verbs ("gave up", "looked it up") on parse
+evidence alone, prepositional ("depend on") and phrasal-prepositional
+("put up with") verbs only where the dictionary lists them. Underlined
+on the reading surfaces when the reader turns multi-word verbs on. See
+ADR 0059. _Avoid_: phrasal link (nothing is linked), verb phrase
+(broader), phrasal verb hit (the pre-parser term — a prepositional verb
+is not a phrasal verb).
+
+**Enricher**:
+One enrichment analysis with declared language applicability and an
+algorithm version — the unit that answers "what should be included in
+the enrichment process" for a language (stress marks for Russian,
+stress marks and multi-word verbs for English). Adding an analysis
+means adding an enricher; languages it does not declare never run it.
+See ADR 0057, ADR 0059. _Avoid_: processor (collides with entity/alignment
+processing states), algorithm (the code-level notion, not the domain unit),
+pipeline (the whole orchestration, not one analysis).
 
 **Enrichment staleness**:
-Whether a sentence set needs (re-)enrichment: never enriched, or any sentence
-changed since it was. Entities enrichment cannot apply to count as enriched,
-not stale. See ADR 0052.
+Whether a sentence set needs (re-)enrichment, tracked per enricher: an
+enricher is stale when it never ran, when it is newly registered (no
+stamp), when it was last run by an older algorithm version, or when any
+sentence changed since it did. A language with no enrichers cannot go
+stale. See ADR 0052, ADR 0057, ADR 0059.
 _Avoid_: enrichment status (there is no processing state, only staleness),
 dirty.
 

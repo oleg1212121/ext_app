@@ -87,7 +87,10 @@ it('returns paginated alignment rows for entity_match_id', function () {
 
     $rows = $response->json('data.data.rows');
     expect($rows)->toHaveCount(1)
-        ->and($rows[0])->toBe(['First EN.', 'First RU.']);
+        // Reading rows are canonical a/b objects (ADR 0060).
+        ->and($rows[0]['key'])->toBe('mm:'.$matchRow->id)
+        ->and($rows[0]['a']['sentences'][0]['text'])->toBe('First EN.')
+        ->and($rows[0]['b']['sentences'][0]['text'])->toBe('First RU.');
 
     $page2 = $this->actingAs($user)->postJson('/text', [
         'entity_match_id' => $entityMatch->id,
@@ -96,47 +99,23 @@ it('returns paginated alignment rows for entity_match_id', function () {
     ]);
 
     $page2->assertOk();
+    $skipPayload = $page2->json('data.data.rows.0');
     expect($page2->json('data.data.rows'))->toHaveCount(1)
-        ->and($page2->json('data.data.rows.0'))->toBe(['', 'Second RU.'])
+        ->and($skipPayload['a']['sentences'])->toBe([])
+        ->and($skipPayload['b']['sentences'][0]['text'])->toBe('Second RU.')
         ->and($page2->json('data.data.meta.current_page'))->toBe(2);
 });
 
-it('returns file-based rows when filename is provided without match id', function () {
+it('rejects the retired filename mode', function () {
     $user = User::factory()->create();
 
-    $dir = public_path('texts/simulator');
-    if (! is_dir($dir)) {
-        mkdir($dir, 0755, true);
-    }
-
-    $name = 'simulator_text_endpoint_fixture.txt';
-    $path = $dir.'/'.$name;
-    $content = "Line EN one\n\nLine RU one\n\n";
-    file_put_contents($path, $content);
-
-    try {
-        $response = $this->actingAs($user)->postJson('/text', [
-            'filename' => $name,
-            'page' => 1,
-            'per_page' => 10,
-        ]);
-
-        $response->assertOk()
-            ->assertJsonPath('data.code', 200);
-
-        $rows = $response->json('data.data.rows');
-        expect($rows)->toHaveCount(1)
-            ->and($rows[0])->toBe(['Line EN one', 'Line RU one'])
-            // Legacy filename mode has no word maps and no event row keys.
-            ->and($response->json('data.data.row_keys'))->toBeNull();
-    } finally {
-        if (is_file($path)) {
-            unlink($path);
-        }
-    }
+    $this->actingAs($user)->postJson('/text', [
+        'filename' => 'whatever.txt',
+        'page' => 1,
+    ])->assertUnprocessable();
 });
 
-it('requires filename or entity_match_id', function () {
+it('requires an entity match id', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)->postJson('/text', [
@@ -208,7 +187,5 @@ it('includes word maps for both sides of the match', function () {
         ->assertJsonPath('data.data.word_maps.a.cat.s', null)
         ->assertJsonPath('data.data.word_maps.b.кот.s', 3)
         ->assertJsonPath('data.data.word_maps.highlightable.a', false)
-        ->assertJsonPath('data.data.word_maps.highlightable.b', true)
-        // Row keys align one-to-one with rows, keyed by the meaning match.
-        ->assertJsonPath('data.data.row_keys.0', 'mm:'.$matchRow->id);
+        ->assertJsonPath('data.data.word_maps.highlightable.b', true);
 });

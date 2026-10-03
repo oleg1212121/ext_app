@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-09-28T22:30:00Z }
+generated: { by: agent:zcode, at: 2026-10-03T00:00:00Z}
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -81,13 +81,14 @@ variants.
   left **target** column hides the language being learned (revealed per row,
   read-credited); the right **base** column carries the Open/Ask actions and
   pairs with the workplace. A toolbar language radio picks the learning side
-  around the server-computed `defaultLearningSide`
+  around the server-computed `default_learning_side`
   (`EntityMatch::readingSideFor` — native side translates, then the work's
-  original, then A-side, shared with the reader); the flip is pure display
-  state (rows and word maps swap columns, `WordText` keeps receiving the
-  actual match `side` so word-explain payloads stay exact). Column headers
-  show the sides' real language names and the toolbar badge the match's real
-  codes — no more hardcoded EN/RU.
+  original, then A-side, shared with the reader). Rows arrive canonical
+  a/b (ADR 0060) and never move: the flip is just which canonical side each
+  column shows (`firstSide`/`secondSide` into `TextContent`,
+  `lib/readingRows.mjs`), and word maps stay keyed by real side letters.
+  Column headers show the sides' real language names and the toolbar badge
+  the match's real codes — no more hardcoded EN/RU.
 * Two **entry points share one page** (ADR 0038): the pinned URL from an
   alignment card (match fixed, label shown in the toolbar) and the Practice
   menu's `/simulator` (no pin — the Select + Load picker lists the readable
@@ -102,23 +103,24 @@ variants.
   match (ADR 0014). A user who uploaded only one side of a work therefore
   cannot read the bilingual simulator content until they also upload/match
   the other side.
-* `text()` paginates (default 50/page, max 200) and serves an entity match by
-  `entity_match_id` (the meaning matches shaped for the UI by
-  `MeaningMatchPresenter`); a legacy `filename` mode still reads pre-aligned
-  file pairs from `public/texts/simulator/`. Entity-match responses also
-  carry `word_maps` (`{a, b, highlightable, explainable}` — the
+* `text()` paginates (default 50/page, max 200) and serves an entity match
+  by `entity_match_id` — required (the retired `filename` mode that read
+  pre-aligned file pairs from `public/texts/simulator/` was removed with
+  ADR 0060; the two unused fixture files went with it). The meaning matches
+  are shaped into **Reading rows** by `ReadingRowsPresenter::toReadingRows()`
+  (ADR 0060): one row object per match — `{key: "mm:{id}", a: {sentences},
+  b: {sentences}}` — whose sentence objects carry `{id, text, stressed?,
+  phrasal?}` (text) or `{id, image, text: caption}` (illustrations, ADR
+  0050) in document order, rendered interleaved inside the revealable cells,
+  so the reveal checkbox covers pictures like words. Responses also carry
+  `word_maps` (`{a, b, highlightable, explainable}` — the
   [interactive word](/domains/interactive-words.md) maps for both sides plus
-  the per-side explain-eligibility rule "column language ≠ native language";
-  `null` in filename mode), `row_keys` (`mm:{meaningMatchId}` per row,
-  `null` in filename mode), and — so the picker page's language toggle tracks
-  the loaded match (ADR 0038) — `languages` (`{a, b}` code/name) and
-  `default_learning_side` (the same side rule the pinned route applies at
-  render time), so `TextContent` renders both cells through the
-  shared `WordText`/`WordPopup` components with a
-  `simulator.highlight_words` toolbar toggle. Illustrations ride the
-  row-aligned `row_images` payload (ADR 0050): per row an `[aImages,
-  bImages]` pair rendered inside the revealable cells above the text, so the
-  reveal checkbox covers pictures like words.
+  the per-side explain-eligibility rule "column language ≠ native language")
+  and — so the picker page's language toggle tracks the loaded match
+  (ADR 0038) — `languages` (`{a, b}` code/name) and `default_learning_side`
+  (the same side rule the pinned route applies at render time);
+  `TextContent` renders both cells through the shared `WordText`/`WordPopup`
+  components with a `simulator.highlight_words` toolbar toggle.
 * **Revealing a row's target cell credits a read** (+1 familiarity to the
   learning side's dictionary words, ADR 0028): `onToggleRow` fires one
   best-effort `POST /word-events` scoped to the row's `row_key`; the
@@ -134,10 +136,10 @@ variants.
   `App\Http\Requests\AiQuestionRequest` / `AiWordExplainRequest` /
   `BilingualsTextRequest`.
 * **Word-popup Context explanation** (`POST /ai/word-explain`, throttle
-  20/min): given the clicked meaning match, side, sentence index within
-  the row side, word id and surface, the endpoint rebuilds the side's
-  sentence list (the same join `MeaningMatchPresenter::sideText` used for
-  rendering, so the index is exact), takes the clicked `EntitySentence`
+  20/min): given the clicked entity sentence id (every Reading row sentence
+  carries its id — ADR 0060; the retired positional
+  `meaning_match_id + side + sentence_index` address was removed with it),
+  word id and surface, the endpoint takes the clicked `EntitySentence`
   plus its before/after neighbours **in the same entity** by document
   order, marks the surface with `**…**`, and asks the user's resolved
   **explanation model** for a 2–4-sentence explanation of the word's sense

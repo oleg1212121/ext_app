@@ -33,6 +33,7 @@ return [
     'reader.hint' => ['en' => 'Tap a line to reveal its translation · Spacebar toggles audio playback', 'ru' => 'Нажмите на строку, чтобы увидеть перевод · Пробел включает и выключает аудио'],
     'reader.highlights' => ['en' => 'Highlights', 'ru' => 'Подсветка слов'],
     'reader.stress_marks' => ['en' => 'Stress marks', 'ru' => 'Ударения'],
+    'reader.phrasal_verbs' => ['en' => 'Multi-word verbs', 'ru' => 'Фразовые глаголы'],
     'reader.reading_language' => ['en' => 'Reading language', 'ru' => 'Язык чтения'],
     // Reader index (ReaderIndexApp.jsx) — the Practice → Reader browse page.
     'reader.reader_heading' => ['en' => 'Reader', 'ru' => 'Читалка'],

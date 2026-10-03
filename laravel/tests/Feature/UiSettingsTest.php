@@ -147,6 +147,32 @@ test('an unapproved user can update ui settings', function () {
     expect($user->settings()->first()->ui_settings['popup']['examples'])->toBeFalse();
 });
 
+test('authenticated user can save the phrasal-verbs toggles', function () {
+    // ADR 0057: reader + simulator each carry a phrasal_verbs preference
+    // beside stress_marks.
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', [
+            'reader' => ['phrasal_verbs' => true],
+            'simulator' => ['phrasal_verbs' => true],
+        ])
+        ->assertOk()
+        ->assertJson(['saved' => true]);
+
+    $ui = $user->settings()->first()->ui_settings;
+    expect($ui['reader']['phrasal_verbs'])->toBeTrue()
+        ->and($ui['simulator']['phrasal_verbs'])->toBeTrue();
+
+    // Non-boolean junk is rejected in both sections.
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['reader' => ['phrasal_verbs' => 'banana']])
+        ->assertInvalid('reader.phrasal_verbs');
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['simulator' => ['phrasal_verbs' => 'banana']])
+        ->assertInvalid('simulator.phrasal_verbs');
+});
+
 test('simulator page seeds props from saved ui settings', function () {
     $user = User::factory()->create();
     $match = createSimulatorMatch();

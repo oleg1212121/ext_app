@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database.
 tags: [testing, pest]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-20T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-03T00:00:00Z }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -56,7 +56,11 @@ sources:
   `config('wiki.skip_mtime_staleness')` in `WikiValidator`. Local runs keep
   the signal.
 * `composer run test` clears the **config and route caches** first, then runs
-  the suite. Routing the test run through `route:clear` is required because
+  the suite **in parallel** (Pest `--parallel`, one process per CPU core —
+  8 in the dev container). Each parallel worker runs against its own
+  temporary database `ext_app_test_test_{N}`; the base `ext_app_test` is only
+  used by serial runs (`artisan test --filter=…`, single-file runs).
+  Routing the test run through `route:clear` is required because
   `deploy.sh` runs `php artisan route:cache`, which bakes the production
   `APP_KEY` into the cached routes; Livewire derives its update endpoint from
   `APP_KEY`, so a stale route cache built under a different key makes every
@@ -77,10 +81,23 @@ sources:
     data.
   * `tests/Pest.php` adds a `beforeEach` asserting
     `DB::connection()->getName() === 'testing'` as a second guardrail.
-* **Parallel workers self-clean:** `composer run test:tia` passes
-  `--drop-databases` to Pest, so each parallel worker drops its temporary
-  `ext_app_test_test_{N}` database after the run and orphaned test DBs must
-  not accumulate.
+* **Parallel workers self-clean — but only because the scripts export
+  `LARAVEL_PARALLEL_TESTING=1` and `LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1`
+  as real environment variables.** Pest's `--drop-databases` flag alone is
+  NOT enough: Pest's Laravel handler copies the flag into `$_ENV`, but
+  Laravel's `ParallelTesting` reads the options from `$_SERVER`
+  (`ParallelTesting::option()` / `inParallel()`), and PHP never merges `$_ENV`
+  into `$_SERVER`. Result: worker databases `ext_app_test_test_{N}` are
+  created and used on every parallel run, but silently never dropped — this
+  is what caused the orphaned-DB accumulation cleaned up on 2026-08-03, and
+  `test:tia` leaked them for months despite passing the flag. Exporting the
+  two variables (in the composer `test` and `test:tia` scripts, prefixed
+  inside `sh -c 'VAR=1 …'` the same way as the TIA ini scan-dir) makes them
+  visible via `variables_order=EGPCS` in every process — the parent runner
+  then drops all worker DBs in its `finally` teardown, verified
+  2026-10-03 (899 tests, 0 leftovers). First run after a drop pays worker-DB
+  creation (~20s); every run recreates them since they are dropped at the
+  end.
 * **Cross-file helpers live in `tests/Pest.php`:** parallel workers each
   load only a subset of test files, so a helper defined (even under
   `function_exists`) in one test file but called from another works in
@@ -91,7 +108,8 @@ sources:
 # Commands
 
 ```bash
-# Full suite (config:clear first)
+# Full suite, parallel (config+route clear first; ~1.5-2min for 899 tests
+# vs ~5min serial before 2026-10-03)
 docker exec ext_app_laravel composer run test
 
 # One file
@@ -135,8 +153,12 @@ docker exec ext_app_laravel sh -c 'cd /var/www && PHP_INI_SCAN_DIR=/usr/local/et
   reset of the test DB use `composer run test` / `composer run test:tia`, or
   pin the testing connection explicitly:
   `DB_CONNECTION=testing php artisan migrate:fresh`.
-* **Never start two test runs concurrently** — they share `ext_app_test` and
-  corrupt each other's `RefreshDatabase` state. Run suites sequentially.
+* **Never start two test runs concurrently** — parallel workers name their
+  databases `ext_app_test_test_{N}` per process slot, so two runs collide on
+  the same worker databases and corrupt each other's `RefreshDatabase` state.
+  Run suites sequentially. (`--filter`/single-file runs also spin up 8
+  workers by default; pass `--processes=2` to a small run if you need the
+  machine for something else.)
 * If a migration was just added, the test DB needs it too; Laravel's test
   runner migrates when tests use the `RefreshDatabase` trait — check sibling
   tests for the convention.

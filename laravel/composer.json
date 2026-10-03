@@ -66,13 +66,13 @@
         "test": [
             "@php artisan config:clear --ansi",
             "@php artisan route:clear --ansi",
-            "@php artisan test"
+            "sh -c 'LARAVEL_PARALLEL_TESTING=1 LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1 php vendor/bin/pest --parallel --drop-databases'"
         ],
         "test:tia": [
             "@php artisan config:clear --ansi",
             "@php artisan route:clear --ansi",
             "@php scripts/tia-setup.php",
-            "sh -c 'PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/var/www/scripts/php-ini php vendor/bin/pest --parallel --tia --drop-databases --coverage'"
+            "sh -c 'LARAVEL_PARALLEL_TESTING=1 LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1 PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/var/www/scripts/php-ini php vendor/bin/pest --parallel --tia --drop-databases --coverage'"
         ]
     },
     "extra": {

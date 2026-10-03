@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps into the unified language-keyed dictionary tables and linking translations across every language pair.
-tags: [dictionary, import, wiktionary, kaikki]
+description: Parsing Kaikki/Wiktionary dumps into the unified language-keyed dictionary tables and linking translations across every language pair; multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059).
+tags: [dictionary, import, wiktionary, kaikki, multi-word-verbs]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-09-16T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-02T17:30:00Z }
 sources:
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
@@ -22,6 +22,12 @@ sources:
   - id: link-cmd
     resource: laravel/app/Console/Commands/LinkTranslationsCommand.php
     title: wiktionary:link-translations
+  - id: reclass-cmd
+    resource: laravel/app/Console/Commands/ReclassMultiwordWordsCommand.php
+    title: words:reclass-multiword
+  - id: shape
+    resource: laravel/app/Classes/MultiwordVerbShape.php
+    title: MultiwordVerbShape
 ---
 
 # What it is
@@ -103,6 +109,25 @@ slug as a placeholder `title`, and the word imports under it (the former
 seeders — `INSERT` the language row, run the import, then curate the
 placeholder titles in `/admin`. Import stats report the created lookups
 (`lookups_created`).
+
+# Multi-word headword hygiene (ADR 0059)
+
+The import stores multi-word headwords under whatever pos the dump claims,
+so junk lands under the verb class ("do it", "could have", "be there")
+beside idioms ("kick the bucket") — and the translation-fetch job used to
+store multi-word provider candidates under the provider pos, creating more
+of the same. Since ADR 0059 the multi-word-verb lexicon is gated by
+`App\Classes\MultiwordVerbShape` (2–4 tokens, every token after the verb a
+closed-class particle/preposition), so polluted rows can no longer produce
+false matches regardless; `FetchWordTranslations` now stores multi-word
+candidates under the `phrase` class (auto-created after the
+lookup-auto-creation convention), and
+`php artisan words:reclass-multiword {--dry-run}` reclasses the existing
+**English** junk verb rows to `phrase` (rows whose headword already exists
+in the phrase class are skipped — the words table is unique per
+(word, language, class); resolve those by hand). Other languages are
+untouched — Russian multi-word verbs ("выдавать себя за") are legitimate
+verbs the English shape has no opinion about.
 
 # Where it surfaces
 

@@ -169,46 +169,99 @@ check(
     "aw" + "a" + ACUTE + "y",
 )
 
-# --- phrasal -----------------------------------------------------------------
-def toks(*specs):
-    return [
-        {"surface": s, "start": st, "end": en, "cls": c, **({"lemma": lm} if lm else {})}
-        for s, st, en, c, lm in specs
-    ]
+# --- phrasal: spaCy multi-word verbs (ADR 0059; skipped without the model) ---
+try:
+    _ = phrasal._nlp()
+    _HAS_SPACY = True
+except RuntimeError:
+    _HAS_SPACY = False
+    print("spaCy / en_core_web_md unavailable — phrasal tests skipped")
 
-hits = phrasal.find_phrasal_verbs(
-    toks(("She", 0, 3, "pron", None), ("gave", 4, 8, "verb", "give"), ("up", 9, 11, "prep", None), ("smoking", 12, 19, "noun", None)),
-    {"give up", "give"},
-)
-check(
-    "phrasal: inflected lead matches lemma headword",
-    hits,
-    [{"verb": "gave", "particles": ["up"], "start": 4, "end": 11}],
-)
-hits = phrasal.find_phrasal_verbs(
-    toks(("He", 0, 2, "pron", None), ("kicked", 3, 9, "verb", "kick"), ("the", 10, 13, "det", None), ("bucket", 14, 20, "noun", None)),
-    {"kick the bucket"},
-)
-check(
-    "phrasal: three-word idiom wins over shorter/none",
-    hits,
-    [{"verb": "kicked", "particles": ["the", "bucket"], "start": 3, "end": 20}],
-)
-hits = phrasal.find_phrasal_verbs(
-    toks(("The", 0, 3, "det", None), ("setup", 4, 9, "noun", "set up"), ("failed", 10, 16, "verb", "fail")),
-    {"set up"},
-)
-check("phrasal: non-verb lead is not a hit", hits, [])
-hits = phrasal.find_phrasal_verbs(
-    toks(("She", 0, 3, "pron", None), ("gave", 4, 8, "verb", "give"), ("up", 9, 11, "prep", None)),
-    {},
-)
-check("phrasal: empty lexicon yields nothing", hits, [])
-hits = phrasal.find_phrasal_verbs(
-    toks(("Do", 0, 2, "verb", "do"), ("give", 3, 7, "verb", "give"), ("up", 8, 10, "prep", None)),
-    {"give up"},
-)
-check("phrasal: hits consume their tokens (no inner re-match)", hits, [{"verb": "give", "particles": ["up"], "start": 3, "end": 10}])
+
+def _en_tokens(text, verb_lemmas=None):
+    """PHP-style tokens (WordTokenizer regex) with optional verb_lemmas."""
+    tokens = [
+        {"surface": m.group(0), "start": m.start(), "end": m.end()}
+        for m in _WORD_RE.finditer(text)
+    ]
+    for key, lemmas in (verb_lemmas or {}).items():
+        for token in tokens:
+            if token["surface"].lower() == key:
+                token["verb_lemmas"] = lemmas
+    return tokens
+
+
+def _find(text, lexicon=(), verb_lemmas=None):
+    return phrasal.find_multiword_verbs(
+        [{"id": 1, "text": text, "tokens": _en_tokens(text, verb_lemmas)}],
+        set(lexicon),
+    )[0]
+
+
+if _HAS_SPACY:
+    # Particle verbs hit on parser evidence alone — no lexicon needed.
+    check(
+        "mw: particle verb hits without a lexicon entry",
+        _find("She gave up smoking."),
+        [{"verb": "gave", "particles": ["up"], "start": 4, "end": 11, "phrase": "give up"}],
+    )
+    check(
+        "mw: separated particle spans the whole chunk",
+        _find("He looked it up on the network."),
+        [{"verb": "looked", "particles": ["up"], "start": 3, "end": 15, "phrase": "look up"}],
+    )
+    # Prepositional verbs are dictionary-gated.
+    check(
+        "mw: prepositional verb with lexicon entry",
+        _find("She depends on her network.", ["depend on"]),
+        [{"verb": "depends", "particles": ["on"], "start": 4, "end": 14, "phrase": "depend on"}],
+    )
+    check(
+        "mw: prepositional verb without lexicon entry stays a miss",
+        _find("She sat in the car.", ["sit under"]),
+        [],
+    )
+    check(
+        "mw: phrasal-prepositional combo spans through the preposition",
+        _find("She came up with a brilliant plan.", ["come up with"]),
+        [{"verb": "came", "particles": ["up", "with"], "start": 4, "end": 16, "phrase": "come up with"}],
+    )
+    # The reported false positives ( AUX excluded; no prt/prep children).
+    check("mw: modal+aux verb is no hit", _find("She could have given more.", ["give up", "give"]), [])
+    check("mw: negated plain verb is no hit", _find("He did not say a word.", ["say"]), [])
+    check("mw: punctuation-adjacent clause is no hit", _find("It was done, it was over.", ["do it"]), [])
+    check("mw: passive participle without particle is no hit", _find("The work was done by noon.", ["do"]), [])
+    # Directional adverbs: a goal/path preposition right after the particle
+    # reads as direction, not a multi-word verb (ADR 0059 v3).
+    check("mw: directional over-toward is no hit", _find("The ringmaster swung over toward Max."), [])
+    check("mw: directional down-to is no hit", _find("She followed Max down to the basement."), [])
+    check(
+        "mw: locative preposition after particle still hits",
+        _find("He looked it up on the network."),
+        [{"verb": "looked", "particles": ["up"], "start": 3, "end": 15, "phrase": "look up"}],
+    )
+    check(
+        "mw: infinitival to after particle still hits",
+        _find("She looked it up to check the facts."),
+        [{"verb": "looked", "particles": ["up"], "start": 4, "end": 16, "phrase": "look up"}],
+    )
+    # One hit per verb; two verbs give two hits.
+    check(
+        "mw: two verbs, two hits",
+        _find("She gave up and looked it up."),
+        [
+            {"verb": "gave", "particles": ["up"], "start": 4, "end": 11, "phrase": "give up"},
+            {"verb": "looked", "particles": ["up"], "start": 16, "end": 28, "phrase": "look up"},
+        ],
+    )
+    # verb_lemmas (ADR 0058) ride along as extra lemma candidates.
+    check(
+        "mw: verb_lemmas hints still flow through",
+        _find("She gave up smoking.", ["give up"], {"gave": ["give"]}),
+        [{"verb": "gave", "particles": ["up"], "start": 4, "end": 11, "phrase": "give up"}],
+    )
+    # Empty lexicon + empty hints still work end to end.
+    check("mw: plain sentence with empty lexicon", _find("The dog sleeps."), [])
 
 # --- ru_stress (Silero; skipped when unavailable) -----------------------------
 try:
