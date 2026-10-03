@@ -3814,3 +3814,30 @@ along: the enrich sweep pre-filters languages in SQL (`EnricherRegistry::
 languages()`), `keys()` replaces a hardcoded key list in `--enricher=`
 errors, unused `SentenceEnrichmentService::registry()` removed, and the
 `phrasal_verbs` ui-settings toggles gained endpoint tests.
+
+## 2026-10-03 (full suite runs parallel; worker-DB drop actually works)
+
+`composer run test` ran the suite serially (`php artisan test`) while the
+parallel machinery sat unused on the TIA path. The script now runs
+`vendor/bin/pest --parallel --drop-databases` (8 workers in the dev
+container): 899 tests / 4540 assertions measured at 273s serial → ~93-117s
+parallel (host wall clock 4m48s → ~2m; first run after a drop pays worker-DB
+creation). CI (`tests.yml`) picks this up unchanged — it invokes the same
+composer script, its `postgres` service user can CREATE DATABASE, and
+`pcntl` is already in the setup-php extension list.
+
+While verifying, found that `--drop-databases` had never actually dropped
+anything: Pest's Laravel handler copies the flag into `$_ENV`, but Laravel's
+`ParallelTesting` reads its options from `$_SERVER`
+(`ParallelTesting::option()` / `inParallel()`), and PHP never merges `$_ENV`
+into `$_SERVER`. Workers created/used `ext_app_test_test_{N}` every run and
+left all 8 behind — the mechanism behind the 2026-08-03 orphan cleanup, and
+`test:tia` leaked them for months despite passing the flag. Fix: both
+scripts now export `LARAVEL_PARALLEL_TESTING=1` and
+`LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1` as real environment variables
+(`sh -c 'VAR=1 …'` prefix), which EGPCS surfaces in `$_SERVER` for parent and
+workers alike; the parent runner then drops every worker DB in its teardown
+(verified: 0 leftovers after a full run). Trade-off: worker DBs are
+recreated each run (~20s), accepted so orphans can never accumulate again.
+`tests/TestCase.php`'s `ext_app_test` guard is unaffected — Laravel appends
+the worker suffix after app boot.
