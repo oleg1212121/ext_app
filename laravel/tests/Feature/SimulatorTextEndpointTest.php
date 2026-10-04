@@ -175,7 +175,8 @@ it('includes word maps for both sides of the match', function () {
     $user->userWords()->create(['word_id' => $ruCat->id, 'familiarity' => 3]);
 
     // Factory users are native English speakers: the EN side (a) is native,
-    // so only the RU side (b) is highlightable.
+    // so only the RU side (b) is highlightable/explainable. Eligibility is
+    // the reader's sibling shape — its own key, not nested in word_maps.
     $response = $this->actingAs($user)->postJson('/text', [
         'entity_match_id' => $entityMatch->id,
         'page' => 1,
@@ -186,6 +187,93 @@ it('includes word maps for both sides of the match', function () {
         ->assertJsonPath('data.data.word_maps.a.cat.w', $enCat->id)
         ->assertJsonPath('data.data.word_maps.a.cat.s', null)
         ->assertJsonPath('data.data.word_maps.b.кот.s', 3)
-        ->assertJsonPath('data.data.word_maps.highlightable.a', false)
-        ->assertJsonPath('data.data.word_maps.highlightable.b', true);
+        ->assertJsonPath('data.data.highlightable.a', false)
+        ->assertJsonPath('data.data.highlightable.b', true)
+        ->assertJsonPath('data.data.explainable.a', false)
+        ->assertJsonPath('data.data.explainable.b', true);
+});
+
+it('scopes the word map to the rows on the current page', function () {
+    $user = User::factory()->create();
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English']);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian']);
+
+    $en1 = EntitySentence::create([
+        'entity_id' => $enEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'The cat sleeps.',
+        'order' => 1,
+    ]);
+    $ru1 = EntitySentence::create([
+        'entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'Кот спит.',
+        'order' => 1,
+    ]);
+    $en2 = EntitySentence::create([
+        'entity_id' => $enEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'The orbit widens.',
+        'order' => 2,
+    ]);
+    $ru2 = EntitySentence::create([
+        'entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'Орбита ширится.',
+        'order' => 2,
+    ]);
+
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, ['status' => 'completed']);
+
+    foreach ([[$en1, $ru1], [$en2, $ru2]] as $i => [$enSentence, $ruSentence]) {
+        $matchRow = MeaningMatch::create([
+            'entity_match_id' => $entityMatch->id,
+            'order' => $i,
+            'similarity' => 0.95,
+            'alignment_chunk' => 0,
+        ]);
+
+        SentenceMeaningMatch::create(['entity_sentence_id' => $enSentence->id, 'meaning_match_id' => $matchRow->id, 'side' => 'a']);
+        SentenceMeaningMatch::create(['entity_sentence_id' => $ruSentence->id, 'meaning_match_id' => $matchRow->id, 'side' => 'b']);
+    }
+
+    $enCat = createWord('en', 'cat', 'noun');
+    EntityWord::create([
+        'entity_id' => $enEntity->id,
+        'word_id' => $enCat->id,
+        'l_word' => 'cat',
+        'token' => 'cat',
+        'count' => 1,
+    ]);
+    $enOrbit = createWord('en', 'orbit', 'noun');
+    EntityWord::create([
+        'entity_id' => $enEntity->id,
+        'word_id' => $enOrbit->id,
+        'l_word' => 'orbit',
+        'token' => 'orbit',
+        'count' => 1,
+    ]);
+
+    // Page 1 renders row 1 only: its words ride the map, page-2 words don't.
+    $page1 = $this->actingAs($user)->postJson('/text', [
+        'entity_match_id' => $entityMatch->id,
+        'page' => 1,
+        'per_page' => 1,
+    ]);
+
+    $page1->assertOk()
+        ->assertJsonPath('data.data.word_maps.a.cat.w', $enCat->id)
+        ->assertJsonPath('data.data.word_maps.a.orbit', null);
+
+    $page2 = $this->actingAs($user)->postJson('/text', [
+        'entity_match_id' => $entityMatch->id,
+        'page' => 2,
+        'per_page' => 1,
+    ]);
+
+    $page2->assertOk()
+        ->assertJsonPath('data.data.word_maps.a.orbit.w', $enOrbit->id)
+        ->assertJsonPath('data.data.word_maps.a.cat', null);
 });

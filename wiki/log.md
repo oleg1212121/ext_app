@@ -1,5 +1,25 @@
 # Directory Update Log
 
+## 2026-10-04 (refactor: one word-map / meta payload builder, ADR 0060 amendment)
+
+`ReadingRowsPresenter` is now the reading surfaces' whole payload seam: it
+gains `wordMapsFor(sideEntities, userId, nativeLanguageId, rows)` — the
+page-filtered word maps plus the `highlightable`/`explainable` eligibility
+flags (the "not the user's native language" rule, null-entity safe) — and
+`metaFor(paginator)`. The reader's private `wordMapForRows` / `isNotNative`
+/ `metaFor` and the simulator's `wordMapsFor` + inline meta array are
+deleted. The simulator `/text` response flattens to the reader's sibling
+shape (`word_maps {a, b}` with `highlightable` / `explainable` as
+top-level keys — the wire stays snake_case, the client renames) and now
+page-filters its maps like the reader (the client never read off-page
+entries; the payload shrinks to what the page renders). `Bilinguals.jsx`
+word-map state drops to pure `{a, b}` with eligibility in its own state —
+the spread-must-preserve-eligibility hack is gone. ADR 0060 amended;
+`wiki/domains/reader.md`, `bilinguals-simulator.md` and
+`interactive-words.md` updated. Tests: `SimulatorTextEndpointTest` asserts
+the sibling eligibility keys (the simulator's `explainable` was previously
+untested) and gains a page-scoping test mirroring the reader's.
+
 ## 2026-10-04 (refactor: MeaningMatchStore, ADR 0063)
 
 `SentenceAlignmentService` (971 lines) is split into two classes along its

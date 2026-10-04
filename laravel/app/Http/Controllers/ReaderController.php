@@ -4,10 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Classes\AIModelResolver;
 use App\Classes\EntityAccessService;
-use App\Classes\EntityWordMap;
 use App\Classes\MeaningMatchPresenter;
 use App\Classes\ReadingRowsPresenter;
-use App\Classes\WordTokenizer;
 use App\Http\Requests\ReaderPageRequest;
 use App\Models\Entity;
 use App\Models\EntityMatch;
@@ -64,8 +62,7 @@ class ReaderController extends Controller
 
         ['rows' => $rows, 'sideEntities' => $sideEntities, 'meta' => $meta, 'positionKey' => $positionKey, 'defaultSide' => $defaultSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
 
-        $userId = (int) auth()->id();
-        $wordMap = new EntityWordMap;
+        ['wordMaps' => $wordMaps, 'highlightable' => $highlightable, 'explainable' => $explainable] = $this->readingRows->wordMapsFor($sideEntities, (int) auth()->id(), $nativeLanguageId, $rows);
         $explanationModel = $this->modelResolver->resolveExplanationModel();
 
         // Rows are canonical a/b (ADR 0060) — which side reads first is the
@@ -89,23 +86,12 @@ class ReaderController extends Controller
             'highlight' => $this->savedHighlight(),
             'stressMarks' => $this->savedStressMarks(),
             'phrasalVerbs' => $this->savedPhrasalVerbs(),
-            'wordMaps' => [
-                'a' => $this->wordMapForRows($wordMap->forEntity($sideEntities['a'], $userId), $rows, 'a'),
-                'b' => $sideEntities['b'] !== null
-                    ? $this->wordMapForRows($wordMap->forEntity($sideEntities['b'], $userId), $rows, 'b')
-                    : [],
-            ],
-            'highlightable' => [
-                'a' => $this->isNotNative($sideEntities['a'], $nativeLanguageId),
-                'b' => $this->isNotNative($sideEntities['b'], $nativeLanguageId),
-            ],
+            'wordMaps' => $wordMaps,
+            'highlightable' => $highlightable,
             // The AI explanation tab follows the same "not your native
             // language" rule as highlighting; the model itself is the user's
             // stored explanation preference, resolved server-side.
-            'explainable' => [
-                'a' => $this->isNotNative($sideEntities['a'], $nativeLanguageId),
-                'b' => $this->isNotNative($sideEntities['b'], $nativeLanguageId),
-            ],
+            'explainable' => $explainable,
             'explain' => [
                 'enabled' => auth()->user()->canUseAi(),
                 'modelKey' => $explanationModel['id'] ?? null,
@@ -182,7 +168,7 @@ class ReaderController extends Controller
         return [
             'rows' => $this->readingRows->toReadingRows($paginator->getCollection()),
             'sideEntities' => ['a' => $entityMatch->aEntity, 'b' => $entityMatch->bEntity],
-            'meta' => $this->metaFor($paginator),
+            'meta' => $this->readingRows->metaFor($paginator),
             'positionKey' => 'mm:'.$entityMatch->id,
             'defaultSide' => $defaultSide,
         ];
@@ -206,7 +192,7 @@ class ReaderController extends Controller
         return [
             'rows' => $this->readingRows->forEntitySentences($paginator->getCollection()),
             'sideEntities' => ['a' => $entity, 'b' => null],
-            'meta' => $this->metaFor($paginator),
+            'meta' => $this->readingRows->metaFor($paginator),
             // Deliberately not es: — that prefix names a single entity
             // sentence in row-key vocabulary; a position keys the whole text.
             'positionKey' => 'ent:'.$entity->id,
@@ -232,62 +218,6 @@ class ReaderController extends Controller
         }
 
         return $paginator;
-    }
-
-    /**
-     * The flat meta shape every paginated surface in the app ships.
-     *
-     * @return array{current_page: int, per_page: int, total: int, last_page: int}
-     */
-    private function metaFor(LengthAwarePaginator $paginator): array
-    {
-        return [
-            'current_page' => $paginator->currentPage(),
-            'per_page' => $paginator->perPage(),
-            'total' => $paginator->total(),
-            'last_page' => max(1, $paginator->lastPage()),
-        ];
-    }
-
-    /**
-     * Keep only the map entries whose token occurs in this page's rows —
-     * the client renders page rows only, so the payload must not carry a
-     * map for the whole text. Tokens come from the same tokenizer that
-     * built the map's l_word keys, so presence matches what the client
-     * will segment and look up. A side's tokens come from its text
-     * sentences; illustration captions are not lookup text.
-     *
-     * @param  array<string, array{w: int, s: int|null}>  $map
-     * @param  list<array<string, mixed>>  $rows
-     */
-    private function wordMapForRows(array $map, array $rows, string $side): array
-    {
-        if ($map === []) {
-            return [];
-        }
-
-        $tokenizer = new WordTokenizer;
-        $present = [];
-
-        foreach ($rows as $row) {
-            foreach ($row[$side]['sentences'] ?? [] as $sentence) {
-                if (! isset($sentence['image'])) {
-                    $present += $tokenizer->tokenize($sentence['text']);
-                }
-            }
-        }
-
-        return array_intersect_key($map, $present);
-    }
-
-    /**
-     * "Not the user's native language" — the highlighting and explanation
-     * eligibility rule. A missing side (single-language text) is never
-     * eligible.
-     */
-    private function isNotNative(?Entity $entity, ?int $nativeLanguageId): bool
-    {
-        return $entity !== null && $entity->language_id !== $nativeLanguageId;
     }
 
     /**

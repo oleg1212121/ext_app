@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-04T13:45:00Z}
+generated: { by: agent:zcode, at: 2026-10-04T18:40:00Z}
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -119,9 +119,12 @@ variants.
   phrasal?}` (text) or `{id, image, text: caption}` (illustrations, ADR
   0050) in document order, rendered interleaved inside the revealable cells,
   so the reveal checkbox covers pictures like words. Responses also carry
-  `word_maps` (`{a, b, highlightable, explainable}` — the
-  [interactive word](/domains/interactive-words.md) maps for both sides plus
-  the per-side explain-eligibility rule "column language ≠ native language")
+  the reader's sibling shape (ADR 0060 amendment): `word_maps` (`{a, b}` —
+  the [interactive word](/domains/interactive-words.md) maps for both
+  sides, filtered to the tokens on the current page's rows exactly like the
+  reader) plus the eligibility flags as their own top-level keys,
+  `highlightable` / `explainable` (the per-side rule "column language ≠
+  native language"; the wire stays snake_case and the client renames)
   and — so the picker page's language toggle tracks the loaded match
   (ADR 0038) — `languages` (`{a, b}` code/name) and `default_learning_side`
   (the same side rule the pinned route applies at render time);

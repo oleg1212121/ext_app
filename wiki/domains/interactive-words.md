@@ -5,7 +5,7 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-10-03T00:00:00+03:00}
+generated: { by: agent:zcode, at: 2026-10-04T18:40:00Z+03:00}
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -200,7 +200,8 @@ grows a tab strip: the dictionary content above stays on the first tab and a
 second tab ("Explanation") offers the **Context explanation** — an AI answer
 to "what does this word mean in this sentence?". Eligibility follows the
 same rule everywhere: a column is explainable when its language ≠ the user's
-native language (the `highlightable` / `word_maps.explainable` maps), so the
+native language (the sibling `highlightable` / `explainable` maps both
+surfaces ship — ADR 0060 amendment), so the
 Reader now has the tab too — the simulator on both surfaces since the model
 no longer needs page state (ADR 0035). Right of the Explanation tab sits a
 **robot-with-question-mark icon** (not a tab — its click never switches
@@ -278,8 +279,8 @@ outside-click closing — the word popup underneath stays put.
 # Highlighting rules
 
 * Tinting applies only to sides whose entity language ≠ the user's native
-  language (the reader's `highlightable` / the simulator's
-  `word_maps.highlightable`), so a native speaker's side stays clean.
+  language (the sibling `highlightable` map both surfaces ship — ADR 0060
+  amendment), so a native speaker's side stays clean.
 * Each surface has a persisted toggle: `reader.highlight` and
   `simulator.highlight_words` in `user_settings.ui_settings`
   (`UpdateUiSettingsRequest`), default on. Tint classes (`.word-unknown`,
@@ -288,11 +289,11 @@ outside-click closing — the word popup underneath stays put.
   `resources/css/app.css`. The hover affordance is an **underline** (no color
   change), so the tint stays legible; tier colors win on hover over tinted
   words (ADR 0030).
-* **Familiarity patches must never reshape `word_maps`.** The simulator keeps
-  `highlightable` inside `wordMaps`; any update via `setWordMaps` must spread
-  the whole object (`{...maps, a: patchWordMap(...), b: patchWordMap(...)}`)
-  so `wordMaps.highlightable` survives — otherwise every word drops its tint
-  and read crediting silently stops (guarded by `highlightable.a`).
+* **Word-map state is pure `{a, b}`.** Eligibility rides its own prop/state,
+  never inside `wordMaps`, so familiarity patches (`setWordMaps` spreads +
+  `patchWordMap`) cannot clobber it — the pre-amendment simulator kept
+  `highlightable` nested inside the maps and needed spread care to
+  preserve it.
 
 # Routes
 
@@ -318,11 +319,13 @@ outside-click closing — the word popup underneath stays put.
   the popup font from its own `fontSize`. Lookup events only — no read
   crediting. Rows key `mm:{id}` / `es:{id}`; every sentence explains through
   its entity-sentence id.
-* **Bilinguals simulator** (`POST /text`): response gains `word_maps`
-  (`{a, b, highlightable, explainable}`); `TextContent` renders both cells
+* **Bilinguals simulator** (`POST /text`): response gains the reader's
+  sibling shape — `word_maps` (`{a, b}`, page-scoped like the reader) plus
+  `highlightable`/`explainable` as their own keys (ADR 0060 amendment);
+  `TextContent` renders both cells
   through `WordText` over the canonical Reading rows
   (`firstSide`/`secondSide` pick the columns, and `explain = {enabled:
   canUseAi, modelKey, modelLabel, followsAnswer, answerLabel}` gated per
-  side by `word_maps.explainable`), fires read
+  side by `explainable`), fires read
   events from the row/column checkboxes, and enables the popup's Context
   explanation tab.

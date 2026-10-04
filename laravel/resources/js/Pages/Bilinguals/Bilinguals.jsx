@@ -117,9 +117,14 @@ async function loadTextPage(entityMatchId, page, perPage = DEFAULT_PER_PAGE) {
         throw new Error(msg);
     }
     const payload = json.data.data;
+    // The reader's sibling shape (ADR 0060): word maps {a, b} with the
+    // highlight/explain eligibility flags as their own keys. The wire stays
+    // snake_case; meta is read as-is.
     return {
         rows: payload.rows ?? [],
-        wordMaps: payload.word_maps ?? null,
+        wordMaps: payload.word_maps ?? {},
+        highlightable: payload.highlightable ?? {a: false, b: false},
+        explainable: payload.explainable ?? {a: false, b: false},
         languages: payload.languages ?? null,
         defaultLearningSide: payload.default_learning_side ?? null,
         meta: payload.meta ?? {
@@ -204,6 +209,11 @@ const Bilinguals = (props) => {
 
     const [rows, setRows] = React.useState([]);
     const [wordMaps, setWordMaps] = React.useState(null);
+    // Highlight/explain eligibility rides its own prop (the reader's
+    // sibling shape), not inside the word maps — so the map state stays
+    // pure {a, b} and progress updates have nothing to preserve.
+    const [highlightable, setHighlightable] = React.useState({a: false, b: false});
+    const [explainable, setExplainable] = React.useState({a: false, b: false});
     const [allTarget, setAllTarget] = React.useState(false);
     const [textMeta, setTextMeta] = React.useState(null);
     const [textPage, setTextPage] = React.useState(initialSaved?.page ?? 1);
@@ -283,9 +293,11 @@ const Bilinguals = (props) => {
         setLoadError(null);
         setPending(true);
         try {
-            const {rows: nextRows, wordMaps: nextWordMaps, languages: nextLanguages, defaultLearningSide: nextDefaultSide, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
+            const {rows: nextRows, wordMaps: nextWordMaps, highlightable: nextHighlightable, explainable: nextExplainable, languages: nextLanguages, defaultLearningSide: nextDefaultSide, meta} = await loadTextPage(currentText, page, DEFAULT_PER_PAGE);
             setRows(nextRows);
             setWordMaps(nextWordMaps);
+            setHighlightable(nextHighlightable);
+            setExplainable(nextExplainable);
             if (nextLanguages) {
                 setLanguages(nextLanguages);
             }
@@ -306,6 +318,8 @@ const Bilinguals = (props) => {
         } catch (e) {
             setRows([]);
             setWordMaps(null);
+            setHighlightable({a: false, b: false});
+            setExplainable({a: false, b: false});
             setAllTarget(false);
             setTextMeta(null);
             setLoadError(e instanceof Error ? e.message : t('bilinguals.failed_to_load_text'));
@@ -416,13 +430,14 @@ const Bilinguals = (props) => {
     const hasPhrasalData = rowsHaveAnnotation(rows, 'phrasal');
 
     // Word maps stay keyed by the match's actual sides; the display columns
-    // index into them by the side currently playing each role.
+    // index into them by the side currently playing each role. Eligibility
+    // flags arrive per side from the server (the reader's sibling shape).
     const targetWordMap = wordMaps?.[learningSide] ?? {};
     const baseWordMap = wordMaps?.[baseSide] ?? {};
-    const targetHighlightable = !!(wordMaps?.highlightable?.[learningSide]);
-    const baseHighlightable = !!(wordMaps?.highlightable?.[baseSide]);
-    const targetExplainable = !!(wordMaps?.explainable?.[learningSide]);
-    const baseExplainable = !!(wordMaps?.explainable?.[baseSide]);
+    const targetHighlightable = !!highlightable[learningSide];
+    const baseHighlightable = !!highlightable[baseSide];
+    const targetExplainable = !!explainable[learningSide];
+    const baseExplainable = !!explainable[baseSide];
 
     // Apply {wordId: familiarity} results from the familiarity API: recolor
     // every occurrence of the touched words on both sides.

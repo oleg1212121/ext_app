@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Bilinguals;
 
 use App\Classes\AIModelResolver;
 use App\Classes\EntityAccessService;
-use App\Classes\EntityWordMap;
 use App\Classes\ReadingRowsPresenter;
 use App\Exceptions\AiProviderException;
 use App\Http\Controllers\Controller;
@@ -202,7 +201,7 @@ class SimulatorController extends Controller
     }
 
     /**
-     * @return array{rows: list<array<string, mixed>>, word_maps: array|null, languages: array{a: array, b: array}|null, default_learning_side: string, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
+     * @return array{rows: list<array<string, mixed>>, word_maps: array{a: array, b: array}, highlightable: array{a: bool, b: bool}, explainable: array{a: bool, b: bool}, languages: array{a: array, b: array}, default_learning_side: string, meta: array{current_page: int, per_page: int, total: int, last_page: int}, error?: string, code: int}
      */
     private function textFromEntityMatch(int $entityMatchId, int $page, int $perPage): array
     {
@@ -225,12 +224,25 @@ class SimulatorController extends Controller
             ->orderBy('order')
             ->paginate(perPage: $perPage, columns: ['*'], pageName: 'page', page: $page);
 
+        $rows = $this->readingRows->toReadingRows($paginator->getCollection());
+        ['wordMaps' => $wordMaps, 'highlightable' => $highlightable, 'explainable' => $explainable] = $this->readingRows->wordMapsFor(
+            ['a' => $match->aEntity, 'b' => $match->bEntity],
+            (int) auth()->id(),
+            auth()->user()->nativeLanguage()?->id,
+            $rows,
+        );
+
         return [
             // Reading rows in canonical a/b order (ADR 0060) — which side is
             // the learning target is the client's flip around
             // default_learning_side.
-            'rows' => $this->readingRows->toReadingRows($paginator->getCollection()),
-            'word_maps' => $this->wordMapsFor($match),
+            'rows' => $rows,
+            // The reader's sibling shape (ADR 0060): page-scoped word maps,
+            // with the highlight/explain eligibility flags as their own
+            // keys. The wire stays snake_case; the client renames.
+            'word_maps' => $wordMaps,
+            'highlightable' => $highlightable,
+            'explainable' => $explainable,
             // The picker page's language toggle tracks the loaded match: the
             // same shapes the pinned route ships at render time.
             'languages' => [
@@ -244,45 +256,8 @@ class SimulatorController extends Controller
                 ],
             ],
             'default_learning_side' => $match->readingSideFor(auth()->user()->nativeLanguage()?->id),
-            'meta' => [
-                'current_page' => $paginator->currentPage(),
-                'per_page' => $paginator->perPage(),
-                'total' => $paginator->total(),
-                'last_page' => max(1, $paginator->lastPage()),
-            ],
+            'meta' => $this->readingRows->metaFor($paginator),
             'code' => 200,
-        ];
-    }
-
-    /**
-     * Interactive word maps and highlight eligibility for both sides of the
-     * match. Null when either entity is gone (legacy file mode has none).
-     *
-     * @return array{a: array, b: array}|null
-     */
-    private function wordMapsFor(EntityMatch $match): ?array
-    {
-        if ($match->aEntity === null || $match->bEntity === null) {
-            return null;
-        }
-
-        $userId = (int) auth()->id();
-        $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
-        $wordMap = new EntityWordMap;
-
-        return [
-            'a' => $wordMap->forEntity($match->aEntity, $userId),
-            'b' => $wordMap->forEntity($match->bEntity, $userId),
-            'highlightable' => [
-                'a' => $match->aEntity->language_id !== $nativeLanguageId,
-                'b' => $match->bEntity->language_id !== $nativeLanguageId,
-            ],
-            // The AI explanation tab is offered on exactly the sides whose
-            // language is not the user's native language.
-            'explainable' => [
-                'a' => $match->aEntity->language_id !== $nativeLanguageId,
-                'b' => $match->bEntity->language_id !== $nativeLanguageId,
-            ],
         ];
     }
 

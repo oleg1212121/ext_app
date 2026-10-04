@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-04T13:45:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T18:40:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -116,9 +116,12 @@ on a valid page (`ReaderPageRequest` normalizes `?page` tolerantly rather
 than failing validation — it's a shareable URL, not a form field). The
 payload carries a flat `meta` prop (`current_page`, `per_page`, `total`,
 `last_page`) and the page's rows only. **Word maps are page-scoped too**:
-`wordMapForRows()` keeps only entries whose token occurs in the page's row
-texts (tokenized with the same `WordTokenizer` that built the `l_word`
-keys), so the payload no longer scales with the text's length.
+`ReadingRowsPresenter::wordMapsFor()` — the shared reading-surface payload
+seam since the ADR 0060 amendment (the simulator's `/text` uses the same
+builder and the same filtering) — keeps only entries whose token occurs in
+the page's row texts (tokenized with the same `WordTokenizer` that built
+the `l_word` keys), so the payload no longer scales with the text's length;
+`meta` comes from the presenter's `metaFor()` too.
 
 # Reading position
 
