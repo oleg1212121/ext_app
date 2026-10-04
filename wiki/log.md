@@ -1,5 +1,26 @@
 # Directory Update Log
 
+## 2026-10-04 (refactor: One alignment-editing domain, ADR 0062)
+
+The Filament draft editor is retired: `EditEntityAlignment`,
+`AlignmentEditorPersister`, `AlignmentEditorDraftStore`,
+`AlignmentEditorPresenter`, the page blade + `alignment-sentence-editor`
+partial and their tests (`EditEntityAlignmentPageTest`,
+`AlignmentEditorPersisterTest`, `AlignmentEditorDraftStoreTest`) are
+deleted; the `EntityMatchResource` list keeps Re-align / Run-from-scratch /
+publish actions and its "Edit alignment" action (and the `ViewEntityMatch`
+header action) now open the React editor at `alignments.show`. Editing no
+longer flips a stale match to `completed` — only explicit Re-align /
+Run-from-scratch / re-import do (ADR 0055 philosophy, now consistently
+enforced). The read-only Filament view page and the shared
+`alignment-pagination` partial stay. Same commit: the invariants moved onto
+the models (`MeaningMatch::HUMAN_CHUNK`, `EntityMatch::nextAlignmentChunk/
+syncLinkedCount/recountTotals/syncTotals`) and every writer — editor
+controller, aligner job + `SentenceAlignmentService`, importer,
+`AlignmentCopyService`, `alignments:repair`, the sentence-deletion hook —
+routes through them; the sentence-alignment concept's invariant text was
+updated accordingly and §6 rewritten for the single-editor world.
+
 ## 2026-10-04 (refactor: One client for the python service, ADR 0061)
 
 The four scattered python-service call sites (`SentenceSplitter` /split,

@@ -1,7 +1,5 @@
 <?php
 
-use App\Classes\AlignmentEditorPersister;
-use App\Classes\AlignmentEditorPresenter;
 use App\Classes\EntityTextHasher;
 use App\Classes\ReadingRowsPresenter;
 use App\Jobs\AlignEntitySentences;
@@ -214,19 +212,15 @@ it('keeps the editor add-sentence recount in alignable space', function () {
         ->and($entityMatch->b_total_sentences)->toBe(1);
 });
 
-it('keeps the draft-apply recount in alignable space', function () {
+it('keeps the totals recount in alignable space', function () {
     ['entityMatch' => $entityMatch, 'enEntity' => $enEntity] = illustratedMatchForTotals();
 
-    $presenter = app(AlignmentEditorPresenter::class);
+    EntitySentence::create(['entity_id' => $enEntity->id, 'content' => 'A brand new sentence.', 'order' => 3]);
 
-    $draft = $presenter->toDraft($entityMatch->fresh(['aEntity', 'bEntity']));
-    $draft['unmatched_a'][] = $presenter->sentencePayload(null, 'Draft-added sentence.', 3, 'tmp-en-1');
-
-    app(AlignmentEditorPersister::class)->persist($entityMatch->fresh(), $draft);
-
+    $entityMatch->syncTotals();
     $entityMatch->refresh();
 
-    // The a entity grew to three sentences (text, illustration, draft-added),
+    // The a entity grew to three sentences (text, illustration, added),
     // but only its two alignable ones count toward the totals.
     expect($entityMatch->a_total_sentences)->toBe(2)
         ->and($entityMatch->b_total_sentences)->toBe(1)

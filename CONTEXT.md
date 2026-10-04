@@ -57,6 +57,18 @@ a human on purpose and is treated as resolved (see ADR 0049). Surfaced in the
 Alignments editor as a review list.
 _Avoid_: low-similarity match (score-only wording, misses one-sided rows), resolved (not a stored state; the human-confirmed convention replaces it)
 
+**Alignment editor**:
+The human-refinement surface for one Entity match — the React page at
+`/alignments/{id}`, backed by the surgical `AlignmentEditorController`
+endpoints, where sentences are added, edited, dragged between rows and the
+unmatched pool, and rows are created, approved, and deleted. Opened from the
+work's Alignments page cards, the entity page, and the Filament Sentence
+Alignment list's edit link. The one editing surface (ADR 0062); the Filament
+resource remains the operations console (Re-align, Run from scratch) over
+the same data.
+_Avoid_: Filament editor (the retired draft editor), draft editor, alignment
+editor page (there is only one).
+
 **Sentence**:
 A split sentence of an entity. Its entity-global `order` is the **document order** —
 the order of the sentence in the original text. The alignment pipeline and the
@@ -100,7 +112,7 @@ _Avoid_: score
 `entity_similarity` on the entity match — the whole-pair embedding similarity,
 distinct from per-row similarity.
 
-linked_count**:
+**linked_count**:
 The number of meaning matches in an entity match (empty ones included).
 
 **Resume**:

@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-04T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T12:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -668,8 +668,8 @@ editor-shaped row.
     rows as **landmarks** (pins that survive a re-run and partition the match
     into non-overlapping pools, see Plan 08):
     - **Hard (human-made)** — rows created or edited by a human via the
-      alignment editor (`AlignmentEditorController` /
-      `AlignmentEditorPersister`) carry `alignment_chunk = -1` and
+      alignment editor (`AlignmentEditorController`) carry
+      `alignment_chunk = MeaningMatch::HUMAN_CHUNK` (-1) and
       `similarity = 1.0`. They are never deleted, never rolled back, and never
       re-aligned — the machine cannot cross them.
     - **Auto** — machine rows whose `similarity >= LANDMARK_THRESHOLD`
@@ -733,9 +733,10 @@ editor-shaped row.
       automatic run".
     - The scheduler is unchanged — it picks only `pending`, so stale matches
       are invisible to it forever. **Only an explicit human action re-aligns
-      or clears the flag**: Re-align / Run from scratch (→ `aligning`), a full
-      Filament editor save (→ `completed`), a sentence re-import (→
-      `completed`). React editor row edits leave `stale` untouched. To protect
+      or clears the flag**: Re-align / Run from scratch (→ `aligning`), a
+      sentence re-import (→ `completed`). Alignment-editor edits leave
+      `stale` untouched (ADR 0062 — the editor is surgical and never
+      completes a match). To protect
       a weak row from a future Re-align, approve it in the alignment editor —
       the approve action pins it as a human landmark (`similarity = 1.0`,
       `alignment_chunk = -1`).
@@ -755,11 +756,13 @@ editor-shaped row.
    `SparseOrderService`; `entity-orders:rebalance` (language-agnostic since
    the unified schema — it scopes `entity_sentences` and `meaning_matches`
    directly, no `--lang`) runs **daily** (see `routes/console.php`).
-6. **Review** — humans fix machine output in the Filament
-    `EntityMatch` resource's custom `EditEntityAlignment` page (one merged
-    resource since ADR 0018 — side-based draft props with language-name
-    labels via `sideLabel()`, falling back to the side letter), or in the
-    Inertia/React **Alignments editor**: since ADR
+6. **Review** — humans fix machine output in the Inertia/React **Alignments
+    editor**, the one editing surface since ADR
+    [0062](../../docs/adr/0062-one-alignment-editing-domain.md) (the Filament
+    draft editor — `EditEntityAlignment`, `AlignmentEditorPersister`,
+    `AlignmentEditorDraftStore` — is retired; the Filament `EntityMatch`
+    resource keeps the list, Re-align / Run-from-scratch actions, and an
+    "Edit alignment" link that opens the React editor): since ADR
     [0036](../../docs/adr/0036-alignments-live-under-work.md) alignment
     browsing and creation live under each work — the work's
     **Alignments page** (`/works/{work}/alignments`, see
