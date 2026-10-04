@@ -483,6 +483,71 @@ it('non-granted user cannot reorder sentences', function () {
         ->assertForbidden();
 });
 
+// ─── totals resync (ADR 0062) ────────────────────────────────────────────────
+
+it('inserting a sentence resyncs the totals of every match involving the entity', function () {
+    $work = createWork();
+    $entity = createEntity('en', $work, ['name' => 'Totals insert', 'is_restricted' => true]);
+    $user = approvedUser();
+    grantAccess($user, $entity);
+    $typeId = SentenceType::where('name', 'sentence')->value('id');
+
+    // One match with the entity on each side; sentinel totals so a resync
+    // is observable wherever the entity sits.
+    $matchA = createEntityMatch($entity, createEntity('ru', $work, ['name' => 'Pair 1']), [
+        'status' => 'completed',
+        'a_total_sentences' => 99,
+        'b_total_sentences' => 99,
+    ]);
+    $matchB = createEntityMatch(createEntity('ru', $work, ['name' => 'Pair 2']), $entity, [
+        'status' => 'completed',
+        'a_total_sentences' => 99,
+        'b_total_sentences' => 99,
+    ]);
+
+    $this->actingAs($user)
+        ->postJson("/entities/en/{$entity->id}/sentences", [
+            'content' => 'Added',
+            'sentence_type_id' => $typeId,
+            'after_sentence_id' => null,
+        ]);
+
+    // The entity now holds one alignable sentence; every side carrying it
+    // was recounted, the other side kept its (stale) value.
+    foreach ([$matchA, $matchB] as $match) {
+        $side = $match->a_entity_id === $entity->id ? 'a' : 'b';
+        $other = $side === 'a' ? 'b' : 'a';
+
+        expect($match->refresh()->{"{$side}_total_sentences"})->toBe(1)
+            ->and($match->refresh()->{"{$other}_total_sentences"})->toBe(99);
+    }
+});
+
+it('deleting a sentence resyncs the totals of every match involving the entity', function () {
+    $work = createWork();
+    $entity = createEntity('en', $work, ['name' => 'Totals delete', 'is_restricted' => true]);
+    $user = approvedUser();
+    grantAccess($user, $entity);
+    $typeId = SentenceType::where('name', 'sentence')->value('id');
+
+    $first = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'First', 'order' => 0, 'sentence_type_id' => $typeId]);
+    EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Second', 'order' => 1024, 'sentence_type_id' => $typeId]);
+
+    $match = createEntityMatch($entity, createEntity('ru', $work, ['name' => 'Pair']), [
+        'status' => 'completed',
+        'a_total_sentences' => 99,
+        'b_total_sentences' => 99,
+    ]);
+
+    $this->actingAs($user)
+        ->deleteJson("/entities/en/{$entity->id}/sentences/{$first->id}")
+        ->assertOk();
+
+    $side = $match->a_entity_id === $entity->id ? 'a' : 'b';
+
+    expect($match->refresh()->{"{$side}_total_sentences"})->toBe(1);
+});
+
 // ─── Russian entity parity ───────────────────────────────────────────────────
 
 it('granted user can edit a Russian entity and its sentences', function () {

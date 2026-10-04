@@ -13,13 +13,27 @@ header action) now open the React editor at `alignments.show`. Editing no
 longer flips a stale match to `completed` — only explicit Re-align /
 Run-from-scratch / re-import do (ADR 0055 philosophy, now consistently
 enforced). The read-only Filament view page and the shared
-`alignment-pagination` partial stay. Same commit: the invariants moved onto
-the models (`MeaningMatch::HUMAN_CHUNK`, `EntityMatch::nextAlignmentChunk/
-syncLinkedCount/recountTotals/syncTotals`) and every writer — editor
-controller, aligner job + `SentenceAlignmentService`, importer,
-`AlignmentCopyService`, `alignments:repair`, the sentence-deletion hook —
-routes through them; the sentence-alignment concept's invariant text was
-updated accordingly and §6 rewritten for the single-editor world.
+`alignment-pagination` partial stay.
+
+Same effort, three more moves: (1) the invariants went onto the models
+(`MeaningMatch::HUMAN_CHUNK`, `EntityMatch::nextAlignmentChunk/
+syncLinkedCount/recountTotals/syncTotals/alignableCountForEntity/
+syncTotalsForEntity`) and every writer — editor, aligner job +
+`SentenceAlignmentService`, importer, `AlignmentCopyService`,
+`alignments:repair`, the sentence-deletion hook — routes through them;
+(2) `App\Enums\Side` (backed a/b) owns the side-key mapping with
+`EntityMatch::entityFor/entityIdFor`, adopted across the editor classes
+(junction `side` values and payloads stay string-based); (3)
+`AlignmentEditorService` now owns the editing domain — row
+create/delete/approve, sentence add/unlink/delete, the move placement
+engine (incl. the two-phase negative-park order write) — while
+`AlignmentEditorController` keeps gates, validation, 404/422 mapping and
+the mutation envelope (`AlignmentEditorApiTest` passes unmodified).
+Finally the totals gap is closed: entity-frontend sentence mutations
+(`EntityController` + the Filament `SentencesRelationManager`) now call
+`EntityMatch::syncTotalsForEntity` alongside the stale flip, so the editor
+header shows truthful image-less counts before a Re-align (new tests in
+`EntityEditingTest` + `EntitySentencesRelationManagerTest`).
 
 ## 2026-10-04 (refactor: One client for the python service, ADR 0061)
 

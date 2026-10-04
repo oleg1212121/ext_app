@@ -4,6 +4,7 @@ namespace App\Filament\Resources\EntityResource\RelationManagers;
 
 use App\Classes\SparseOrderService;
 use App\Models\Entity;
+use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\SentenceType;
 use Filament\Actions;
@@ -123,7 +124,8 @@ class SentencesRelationManager extends RelationManager
                         $owner->sentences()->save($sentence);
 
                         return $sentence;
-                    }),
+                    })
+                    ->after(fn (RelationManager $livewire) => EntityMatch::syncTotalsForEntity($livewire->getOwnerRecord()->id)),
             ])
             ->recordActions([
                 Actions\EditAction::make()
@@ -135,12 +137,15 @@ class SentencesRelationManager extends RelationManager
                         $record->update($data);
 
                         return $record;
-                    }),
-                Actions\DeleteAction::make(),
+                    })
+                    ->after(fn (RelationManager $livewire) => EntityMatch::syncTotalsForEntity($livewire->getOwnerRecord()->id)),
+                Actions\DeleteAction::make()
+                    ->after(fn (RelationManager $livewire) => EntityMatch::syncTotalsForEntity($livewire->getOwnerRecord()->id)),
             ])
             ->toolbarActions([
                 Actions\BulkActionGroup::make([
-                    Actions\DeleteBulkAction::make(),
+                    Actions\DeleteBulkAction::make()
+                        ->after(fn (RelationManager $livewire) => EntityMatch::syncTotalsForEntity($livewire->getOwnerRecord()->id)),
                 ]),
             ]);
     }

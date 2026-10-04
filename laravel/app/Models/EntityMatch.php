@@ -119,8 +119,8 @@ class EntityMatch extends Model
     public function recountTotals(): array
     {
         return [
-            'a' => (int) $this->aEntity->sentences()->withoutImage()->count(),
-            'b' => (int) $this->bEntity->sentences()->withoutImage()->count(),
+            'a' => self::alignableCountForEntity((int) $this->a_entity_id),
+            'b' => self::alignableCountForEntity((int) $this->b_entity_id),
         ];
     }
 
@@ -135,6 +135,33 @@ class EntityMatch extends Model
             'a_total_sentences' => $totals['a'],
             'b_total_sentences' => $totals['b'],
         ]);
+    }
+
+    /**
+     * Resync the totals of every match involving one entity after its
+     * sentence set changed outside the alignment editor (the entities
+     * frontend, the Filament relation manager). The stale flag those edits
+     * also raise (ADR 0055) says "re-align"; the resynced totals keep the
+     * editor header truthful meanwhile.
+     */
+    public static function syncTotalsForEntity(int $entityId): void
+    {
+        $count = self::alignableCountForEntity($entityId);
+
+        self::query()->where('a_entity_id', $entityId)->update(['a_total_sentences' => $count]);
+        self::query()->where('b_entity_id', $entityId)->update(['b_total_sentences' => $count]);
+    }
+
+    /**
+     * The image-less sentence count of one entity — the unit every total is
+     * built from.
+     */
+    public static function alignableCountForEntity(int $entityId): int
+    {
+        return (int) EntitySentence::query()
+            ->where('entity_id', $entityId)
+            ->withoutImage()
+            ->count();
     }
 
     public function getConfirmedCountAttribute(): int

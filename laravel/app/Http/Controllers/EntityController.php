@@ -298,6 +298,7 @@ class EntityController extends Controller
         });
 
         $this->markMatchesStale($entity->id);
+        EntityMatch::syncTotalsForEntity($entity->id);
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
@@ -351,6 +352,7 @@ class EntityController extends Controller
         }
 
         $this->markMatchesStale($entity->id);
+        EntityMatch::syncTotalsForEntity($entity->id);
 
         return response()->json([
             'sentence' => $this->sentencePayload($sentenceModel->refresh()),
@@ -372,6 +374,7 @@ class EntityController extends Controller
         DB::transaction(fn () => $sentenceModel->delete());
 
         $this->markMatchesStale($entity->id);
+        EntityMatch::syncTotalsForEntity($entity->id);
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
@@ -422,6 +425,7 @@ class EntityController extends Controller
         $entity->touchSentences();
 
         $this->markMatchesStale($entity->id);
+        EntityMatch::syncTotalsForEntity($entity->id);
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));

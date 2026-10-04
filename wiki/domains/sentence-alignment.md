@@ -905,7 +905,11 @@ editor-shaped row.
    in the Filament `EntityResource` (one merged resource with language and
    work selects). The relation manager uses `SparseOrderService` to keep
    insertions efficient; deleting a sentence cleans up any now-empty meaning
-   matches.
+   matches. Every sentence mutation on these entity-level paths (the
+   entities frontend endpoints and the relation manager) also resyncs the
+   image-less totals of every match involving the entity
+   (`EntityMatch::syncTotalsForEntity`) alongside the stale flip, so the
+   alignment editor's header stays truthful between re-aligns (ADR 0062).
 
 # Python microservice
 
