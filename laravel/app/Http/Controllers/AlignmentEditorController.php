@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Classes\AlignmentEditorApiPresenter;
 use App\Classes\EntityAccessService;
 use App\Classes\SparseOrderService;
+use App\Enums\Side;
 use App\Http\Requests\AddSentenceRequest;
 use App\Http\Requests\MoveSentenceRequest;
 use App\Http\Requests\NeedsReviewRequest;
@@ -82,9 +83,9 @@ class AlignmentEditorController extends Controller
         $unmatchedChanged = [];
 
         DB::transaction(function () use ($entityMatch, $meaningMatch, &$unmatchedChanged): void {
-            foreach (['a', 'b'] as $side) {
-                if ($meaningMatch->sideSentenceMeaningMatches($side)->exists()) {
-                    $unmatchedChanged[] = $side;
+            foreach (Side::cases() as $side) {
+                if ($meaningMatch->sideSentenceMeaningMatches($side->value)->exists()) {
+                    $unmatchedChanged[] = $side->value;
                 }
             }
 
@@ -117,7 +118,7 @@ class AlignmentEditorController extends Controller
     {
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
-        $side = $request->validated('side');
+        $side = Side::from($request->validated('side'));
         $content = trim((string) $request->validated('content'));
         $meaningMatchId = (int) $request->validated('meaning_match_id');
 
@@ -126,7 +127,7 @@ class AlignmentEditorController extends Controller
             ->findOrFail($meaningMatchId);
 
         DB::transaction(function () use ($entityMatch, $side, $content, $meaningMatch): void {
-            $entityId = $this->entityId($entityMatch, $side);
+            $entityId = $entityMatch->entityIdFor($side);
 
             $anchor = $this->sideAnchorOrder($entityMatch, $side, $meaningMatch);
 
@@ -144,7 +145,7 @@ class AlignmentEditorController extends Controller
             SentenceMeaningMatch::query()->create([
                 'entity_sentence_id' => $sentence->id,
                 'meaning_match_id' => $meaningMatch->id,
-                'side' => $side,
+                'side' => $side->value,
             ]);
 
             $meaningMatch->update(['similarity' => 1.0]);
@@ -159,7 +160,7 @@ class AlignmentEditorController extends Controller
     {
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
-        $side = $request->validated('side');
+        $side = Side::from($request->validated('side'));
         $content = trim((string) $request->validated('content'));
 
         $sentenceModel = $this->findSideSentence($entityMatch, $side, $sentence);
@@ -174,7 +175,7 @@ class AlignmentEditorController extends Controller
     {
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
-        $side = $request->validated('side');
+        $side = Side::from($request->validated('side'));
 
         $sentenceModel = $this->findSideSentence($entityMatch, $side, $sentence);
 
@@ -189,7 +190,7 @@ class AlignmentEditorController extends Controller
             $entityMatch,
             $this->rowPayloadsByIds($entityMatch, [$rowId]),
             [],
-            [$side],
+            [$side->value],
         );
     }
 
@@ -197,7 +198,7 @@ class AlignmentEditorController extends Controller
     {
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
-        $side = $request->validated('side');
+        $side = Side::from($request->validated('side'));
 
         $sentenceModel = $this->findSideSentence($entityMatch, $side, $sentence);
 
@@ -213,14 +214,14 @@ class AlignmentEditorController extends Controller
             $entityMatch->syncTotals();
         });
 
-        return $this->mutationResponse($entityMatch, [], [], [$side]);
+        return $this->mutationResponse($entityMatch, [], [], [$side->value]);
     }
 
     public function moveSentence(EntityMatch $entityMatch, MoveSentenceRequest $request): JsonResponse
     {
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
-        $side = $request->validated('side');
+        $side = Side::from($request->validated('side'));
         $sentenceId = (int) $request->validated('sentence_id');
         $toRowId = $request->validated('to_row_id');
         $index = (int) $request->validated('index');
@@ -269,7 +270,7 @@ class AlignmentEditorController extends Controller
             $entityMatch,
             $this->rowPayloadsByIds($entityMatch, $affectedRowIds),
             [],
-            [$side],
+            [$side->value],
         );
     }
 
@@ -280,14 +281,13 @@ class AlignmentEditorController extends Controller
      * sentence — so it can never collide with an interleaved sentence's order
      * and rebalances the neighborhood when the surrounding gap is exhausted.
      *
-     * @param  'a'|'b'  $side
      * @param  list<int>  $seq  the row's sentence ids in intended order
      * @param  array{
      *     sentences: array<int, array{order: int, row_id: ?int}>,
      *     rows: array<int, array{order: int, ids: list<int>}}>
      * }  $layout
      */
-    private function placeMovedWithinRow(EntityMatch $entityMatch, string $side, array $seq, int $movedId, array $layout): void
+    private function placeMovedWithinRow(EntityMatch $entityMatch, Side $side, array $seq, int $movedId, array $layout): void
     {
         $insertIndex = array_search($movedId, $seq, true);
         $remaining = array_values(array_filter($seq, fn (int $id): bool => $id !== $movedId));
@@ -313,13 +313,12 @@ class AlignmentEditorController extends Controller
      * row order, again from the side's global document order so the result
      * cannot collide with an interleaved sentence.
      *
-     * @param  'a'|'b'  $side
      * @param  array{
      *     sentences: array<int, array{order: int, row_id: ?int}>,
      *     rows: array<int, array{order: int, ids: list<int>}}>
      * }  $layout
      */
-    private function placeIntoEmptyRow(EntityMatch $entityMatch, string $side, int $sentenceId, array $layout, int $rowId): void
+    private function placeIntoEmptyRow(EntityMatch $entityMatch, Side $side, int $sentenceId, array $layout, int $rowId): void
     {
         $rowOrder = $layout['rows'][$rowId]['order'];
 
@@ -359,12 +358,11 @@ class AlignmentEditorController extends Controller
      * at unique negatives first — so the (entity_id, order) unique index never
      * sees a transient collision mid-write.
      *
-     * @param  'a'|'b'  $side
      * @return int the order assigned to the placed sentence
      */
-    private function placeSideSentence(EntityMatch $entityMatch, string $side, ?int $sentenceId, int $afterOrder): int
+    private function placeSideSentence(EntityMatch $entityMatch, Side $side, ?int $sentenceId, int $afterOrder): int
     {
-        $entityId = $this->entityId($entityMatch, $side);
+        $entityId = $entityMatch->entityIdFor($side);
 
         $currentOrders = EntitySentence::query()
             ->where('entity_id', $entityId)
@@ -444,10 +442,8 @@ class AlignmentEditorController extends Controller
      * Renumber a freshly linked sentence so it sorts at the drop index within
      * its destination row, bounded by the document orders of the surrounding
      * rows so the global numbering stays monotonic with row order.
-     *
-     * @param  'a'|'b'  $side
      */
-    private function placeSentenceAt(EntityMatch $entityMatch, string $side, int $sentenceId, int $rowId, int $index): void
+    private function placeSentenceAt(EntityMatch $entityMatch, Side $side, int $sentenceId, int $rowId, int $index): void
     {
         $layout = $this->sideLayout($entityMatch, $side);
 
@@ -568,15 +564,14 @@ class AlignmentEditorController extends Controller
     }
 
     /**
-     * @param  'a'|'b'  $side
      * @return array{
      *     sentences: array<int, array{order: int, row_id: ?int}>,
      *     rows: array<int, array{order: int, ids: list<int>}}>
      * }
      */
-    private function sideLayout(EntityMatch $entityMatch, string $side): array
+    private function sideLayout(EntityMatch $entityMatch, Side $side): array
     {
-        $entityId = $this->entityId($entityMatch, $side);
+        $entityId = $entityMatch->entityIdFor($side);
 
         $sentences = EntitySentence::query()
             ->where('entity_id', $entityId)
@@ -596,7 +591,7 @@ class AlignmentEditorController extends Controller
 
         $rows = MeaningMatch::query()
             ->where('entity_match_id', $entityMatch->id)
-            ->with(['sentenceMeaningMatches' => fn ($query) => $query->where('side', $side)])
+            ->with(['sentenceMeaningMatches' => fn ($query) => $query->where('side', $side->value)])
             ->orderBy('order')
             ->get();
 
@@ -645,10 +640,7 @@ class AlignmentEditorController extends Controller
         return $layout;
     }
 
-    /**
-     * @param  'a'|'b'  $side
-     */
-    private function sideAnchorOrder(EntityMatch $entityMatch, string $side, MeaningMatch $meaningMatch): int
+    private function sideAnchorOrder(EntityMatch $entityMatch, Side $side, MeaningMatch $meaningMatch): int
     {
         $layout = $this->sideLayout($entityMatch, $side);
         $currentRowOrder = (int) $meaningMatch->order;
@@ -708,24 +700,18 @@ class AlignmentEditorController extends Controller
         return min(array_map(fn (int $id): int => $layout['sentences'][$id]['order'], $ids));
     }
 
-    /**
-     * @param  'a'|'b'  $side
-     */
-    private function link(string $side, int $sentenceId, int $rowId): void
+    private function link(Side $side, int $sentenceId, int $rowId): void
     {
         SentenceMeaningMatch::query()->create([
             'entity_sentence_id' => $sentenceId,
             'meaning_match_id' => $rowId,
-            'side' => $side,
+            'side' => $side->value,
         ]);
 
         MeaningMatch::query()->whereKey($rowId)->update(['similarity' => 1.0]);
     }
 
-    /**
-     * @param  'a'|'b'  $side
-     */
-    private function unlink(EntityMatch $entityMatch, string $side, int $sentenceId, int $rowId): void
+    private function unlink(EntityMatch $entityMatch, Side $side, int $sentenceId, int $rowId): void
     {
         SentenceMeaningMatch::query()
             ->where('entity_sentence_id', $sentenceId)
@@ -735,10 +721,7 @@ class AlignmentEditorController extends Controller
         MeaningMatch::query()->whereKey($rowId)->update(['similarity' => 1.0]);
     }
 
-    /**
-     * @param  'a'|'b'  $side
-     */
-    private function rowIdOfSentence(EntityMatch $entityMatch, string $side, int $sentenceId): ?int
+    private function rowIdOfSentence(EntityMatch $entityMatch, Side $side, int $sentenceId): ?int
     {
         // Scoped to this match: the sentence may also be junctioned in other
         // matches of the same entity, and an unscoped first() would return a
@@ -752,26 +735,15 @@ class AlignmentEditorController extends Controller
         return $junction !== null ? (int) $junction->meaning_match_id : null;
     }
 
-    /**
-     * @param  'a'|'b'  $side
-     */
-    private function findSideSentence(EntityMatch $entityMatch, string $side, int $sentenceId): Model
+    private function findSideSentence(EntityMatch $entityMatch, Side $side, int $sentenceId): Model
     {
         $sentence = EntitySentence::query()
             ->whereKey($sentenceId)
-            ->where('entity_id', $this->entityId($entityMatch, $side))
+            ->where('entity_id', $entityMatch->entityIdFor($side))
             ->first();
 
         abort_if($sentence === null, 404);
 
         return $sentence;
-    }
-
-    /**
-     * @param  'a'|'b'  $side
-     */
-    private function entityId(EntityMatch $entityMatch, string $side): int
-    {
-        return $side === 'a' ? (int) $entityMatch->a_entity_id : (int) $entityMatch->b_entity_id;
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\Side;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -65,6 +66,22 @@ class EntityMatch extends Model
     public function meaningMatches(): HasMany
     {
         return $this->hasMany(MeaningMatch::class);
+    }
+
+    /**
+     * The side's entity on this match.
+     */
+    public function entityFor(Side $side): ?Entity
+    {
+        return $side === Side::A ? $this->aEntity : $this->bEntity;
+    }
+
+    /**
+     * The side's entity id on this match.
+     */
+    public function entityIdFor(Side $side): int
+    {
+        return (int) ($side === Side::A ? $this->a_entity_id : $this->b_entity_id);
     }
 
     /**
