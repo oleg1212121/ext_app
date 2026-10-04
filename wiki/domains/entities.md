@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-09-30T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T19:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -120,9 +120,10 @@ The `Edit` page combines a metadata form (Inertia `PATCH` →
 `entities.update`) with a sentence manager backed by `@dnd-kit/sortable`.
 Sentence CRUD is JSON-driven (mirrors `AlignmentEditorController`): the page
 fetches the sentence list from `entities.sentences`, and each mutation
-(insert / update / delete / reorder) returns the updated list. Drag-to-reorder
-uses `SparseOrderService::orderForInsertAfter` with `after_sentence_id = 0`
-sentinel for "at the beginning".
+(insert / update / delete / reorder) returns the updated list. Insert and
+reorder place through `SentenceOrderService::place` (ADR 0064) with
+`after_sentence_id = 0` as the "at the beginning" wire convention and
+`null` = append at the end.
 
 **Illustrations (ADR 0050)**: selecting the seeded `illustration` sentence
 type in the add form grows an image file input (jpg/jpeg/png/webp/gif,
@@ -132,7 +133,7 @@ image, and the type is pinned. Files store on the private `local` disk
 (`IllustrationStorage`, content-hash named so identical uploads share one
 file, reference-counted delete) and serve through `GET /illustrations/{sentence}`
 behind `EntityAccessService::canRead`. Illustration mutations flip matches to
-`pending` like any sentence mutation.
+`stale` like any sentence mutation.
 
 **Access**: `EntityAccessService::canEdit` mirrors `canRead` — admin bypass;
 Restricted editable by grantees; Public editable by any approved user —
@@ -145,9 +146,9 @@ models' `deleting`/`deleted` hooks remove junctions, delete any meaning match
 left empty, and update `linked_count`. This diverges deliberately from the
 alignment editor's unlink-before-delete rule (422 if linked).
 
-**Match staleness**: every sentence mutation flips all `EntityMatch` rows
-involving the entity (either side) to `status = 'pending'`, surfacing the need
-to re-align. The entity `signature` is intentionally left stale — but the
+**Match staleness (ADR 0055)**: every sentence mutation flips all `EntityMatch` rows
+involving the entity (either side) to `status = 'stale'`, surfacing the need
+to re-align; only an explicit Re-align / Run from scratch acts on it. The entity `signature` is intentionally left stale — but the
 **text hash** is not: every mutation also bumps `entities.sentences_updated_at`
 (model events for Eloquent writes; explicit touches at the bulk sites), which
 the `entities:refresh-text-hashes` scheduler uses to rehash (see below).

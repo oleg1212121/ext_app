@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-04T18:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T19:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -27,7 +27,10 @@ sources:
     title: Alignment reuse for exact-copy entity pairs
   - id: signature-service
     resource: laravel/app/Classes/TextSignatureService.php
-    title: Text signatures / cross-language candidates (/embed client)
+    title: Text signatures / cross-language candidates (/embed client); one cosineSimilarity implementation (ADR 0064)
+  - id: sentence-order-service
+    resource: laravel/app/Classes/SentenceOrderService.php
+    title: the entity-sentence placement pipeline — anchor resolution, non-negative shift, two-phase persist, text-hash bump (ADR 0064)
   - id: hasher
     resource: laravel/app/Classes/EntityTextHasher.php
     title: Exact-copy text hashing
@@ -870,15 +873,19 @@ editor-shaped row.
     document order (`entity_sentences.order`) via
     `AlignmentEditorService::placeSideSentence`, which picks the new order
     from the side's **global document order** (midpoint between the sorted
-    neighbours, not just the destination row's pair) and rebalances the sparse
-    window through `SparseOrderService::orderForInsertAfter` when the
+    neighbours, not just the destination row's pair) and hands the anchored
+    placement to `SentenceOrderService::placeAfterOrder`, which rebalances
+    the sparse window through `SparseOrderService::orderForInsertAfter` when
+    the
     surrounding gap is exhausted — the old in-row-neighbour placement could
     emit an order that another (e.g. unmatched) sentence already held,
     producing duplicate orders and visually shuffling rows; sentence orders
     are now unique per entity (DB-enforced, see
     [Entities & Alignment](/database/entities-alignment.md)) and every write
     parks changed rows at unique negatives first (junctions stay orderless;
-    in-row sequence is the sentence orders themselves). The editor renders an
+    in-row sequence is the sentence orders themselves). The placement
+    service also bumps `sentences_updated_at` when an order changes — a
+    drag edits the document the text hash covers (ADR 0033/0064). The editor renders an
       explicit **drop slot** above the first, between every pair, and below the
       last sentence of each column (a tall standalone slot for an empty
       column); slots are permanently visible as thin faint dashed lines, so the
@@ -915,8 +922,10 @@ editor-shaped row.
 7. **Sentence editing** — individual entity sentences can be created, edited,
    deleted, and reordered from the *Sentences* tab on each entity's edit page
    in the Filament `EntityResource` (one merged resource with language and
-   work selects). The relation manager uses `SparseOrderService` to keep
-   insertions efficient; deleting a sentence cleans up any now-empty meaning
+   work selects). The relation manager places inserts and reorders through
+   `SentenceOrderService` (same pipeline as the entities frontend, so
+   two-phase writes, the non-negative shift and the text-hash bump cannot
+   drift per surface); deleting a sentence cleans up any now-empty meaning
    matches. Every sentence mutation on these entity-level paths (the
    entities frontend endpoints and the relation manager) also resyncs the
    image-less totals of every match involving the entity
@@ -930,8 +939,10 @@ editor-shaped row.
   `uvicorn --reload` can restart the app in ~1–2s after a source edit without
   re-loading the multi-GB model files; `ai/models_cache.py` is the lazy loader):
   - **Signature model** `MODEL_PATH` (default BGE-M3, 1024-dim) — used by
-    `/embed`, `/embed/batch`, `/cosine/batch` (signature generation only; the
-    cosine compare itself is pure numpy). Backs `TextSignatureService`.
+    `/embed` (signature generation only; the cosine compare happens in PHP,
+    `TextSignatureService::cosineSimilarity`). Backs `TextSignatureService`.
+    The old `/embed/batch` and `/cosine/batch` endpoints were removed (they
+    served a Laravel duplicate-detection path that ADR 0033 deleted).
   - **Aligner model** `ALIGN_MODEL_PATH` (code default
     `paraphrase-multilingual-MiniLM-L12-v2`, 384-dim; the repo `.env` currently
     points it at **LaBSE**, `sentence-transformers/LaBSE` → `/app/models/labse`,
