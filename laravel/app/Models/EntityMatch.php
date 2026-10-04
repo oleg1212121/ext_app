@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\Side;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -65,6 +66,102 @@ class EntityMatch extends Model
     public function meaningMatches(): HasMany
     {
         return $this->hasMany(MeaningMatch::class);
+    }
+
+    /**
+     * The side's entity on this match.
+     */
+    public function entityFor(Side $side): ?Entity
+    {
+        return $side === Side::A ? $this->aEntity : $this->bEntity;
+    }
+
+    /**
+     * The side's entity id on this match.
+     */
+    public function entityIdFor(Side $side): int
+    {
+        return (int) ($side === Side::A ? $this->a_entity_id : $this->b_entity_id);
+    }
+
+    /**
+     * Monotonic per-run alignment chunk id (MAX+1, 0 for a fresh match).
+     * Human-edited rows use the MeaningMatch::HUMAN_CHUNK sentinel, so
+     * machine ids can never collide with it.
+     */
+    public function nextAlignmentChunk(): int
+    {
+        $max = $this->meaningMatches()->max('alignment_chunk');
+
+        return $max === null ? 0 : ((int) $max) + 1;
+    }
+
+    /**
+     * Recount the meaning matches and persist the result. Every writer of
+     * linked_count goes through this — the count is the progress bar shown
+     * on the alignment surfaces, and a site that forgets to resync
+     * desyncs it.
+     */
+    public function syncLinkedCount(): int
+    {
+        $this->update(['linked_count' => $this->meaningMatches()->count()]);
+
+        return (int) $this->linked_count;
+    }
+
+    /**
+     * The image-less sentence counts per side — the aligner's cursor space
+     * (ADR 0050): illustrations never enter a chunk window, a count, or a
+     * cursor.
+     *
+     * @return array{a: int, b: int}
+     */
+    public function recountTotals(): array
+    {
+        return [
+            'a' => self::alignableCountForEntity((int) $this->a_entity_id),
+            'b' => self::alignableCountForEntity((int) $this->b_entity_id),
+        ];
+    }
+
+    /**
+     * Recount and persist both sides' totals (see recountTotals).
+     */
+    public function syncTotals(): void
+    {
+        $totals = $this->recountTotals();
+
+        $this->update([
+            'a_total_sentences' => $totals['a'],
+            'b_total_sentences' => $totals['b'],
+        ]);
+    }
+
+    /**
+     * Resync the totals of every match involving one entity after its
+     * sentence set changed outside the alignment editor (the entities
+     * frontend, the Filament relation manager). The stale flag those edits
+     * also raise (ADR 0055) says "re-align"; the resynced totals keep the
+     * editor header truthful meanwhile.
+     */
+    public static function syncTotalsForEntity(int $entityId): void
+    {
+        $count = self::alignableCountForEntity($entityId);
+
+        self::query()->where('a_entity_id', $entityId)->update(['a_total_sentences' => $count]);
+        self::query()->where('b_entity_id', $entityId)->update(['b_total_sentences' => $count]);
+    }
+
+    /**
+     * The image-less sentence count of one entity — the unit every total is
+     * built from.
+     */
+    public static function alignableCountForEntity(int $entityId): int
+    {
+        return (int) EntitySentence::query()
+            ->where('entity_id', $entityId)
+            ->withoutImage()
+            ->count();
     }
 
     public function getConfirmedCountAttribute(): int

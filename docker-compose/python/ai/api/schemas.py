@@ -14,24 +14,6 @@ class EmbedResponse(BaseModel):
     vector: list[float]
 
 
-class EmbedBatchRequest(BaseModel):
-    texts: list[str] = Field(..., min_length=1, max_length=config.EMBED_BATCH_MAX_TEXTS)
-    language: str = "en"
-
-
-class EmbedBatchResponse(BaseModel):
-    vectors: list[list[float]]
-
-
-class CosineBatchRequest(BaseModel):
-    query: list[float] = Field(..., min_length=1)
-    candidates: list[list[float]] = Field(..., max_length=config.COSINE_MAX_CANDIDATES)
-
-
-class CosineBatchResponse(BaseModel):
-    similarities: list[float]
-
-
 class SplitRequest(BaseModel):
     text: str = Field(..., max_length=config.SPLIT_MAX_TEXT_LENGTH)
     language: str = "en"

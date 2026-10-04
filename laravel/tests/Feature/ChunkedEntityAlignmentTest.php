@@ -1,6 +1,9 @@
 <?php
 
+use App\Classes\MeaningMatchStore;
+use App\Classes\PythonClient;
 use App\Classes\SentenceAlignmentService;
+use App\Classes\TextSignatureService;
 use App\Jobs\AlignEntitySentences;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
@@ -1797,7 +1800,7 @@ it('keeps meaning match order in document position while re-aligning around a la
 
     // The completion resequence renumbers by document position: the pool
     // before the landmark must end up sorting before it.
-    SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
+    MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($entityMatch);
 
     $rows = MeaningMatch::query()
         ->where('entity_match_id', $entityMatch->id)
@@ -1852,7 +1855,7 @@ it('replaces stale machine rows covering the sentences of a re-stored window', f
         'side' => 'b',
     ]);
 
-    SentenceAlignmentService::create()->storeAlignmentSegmentFromMatches(
+    MeaningMatchStore::create()->storeAlignmentSegmentFromMatches(
         $entityMatch,
         6,
         [['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.5]],
@@ -1909,7 +1912,7 @@ it('does not junction landmark sentences from a re-fed machine window', function
     // human row already pins. Landmark sentences are reserved at write time:
     // the machine row junctioning only them is never stored, so no duplicate
     // junction exists even transiently.
-    SentenceAlignmentService::create()->storeAlignmentSegmentFromMatches(
+    MeaningMatchStore::create()->storeAlignmentSegmentFromMatches(
         $entityMatch,
         6,
         [['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.5]],
@@ -1936,7 +1939,10 @@ it('passes landmarks and high confidence to the alignment endpoint', function ()
     $bSentence = new EntitySentence(['content' => 'Russian.', 'order' => 1]);
     $bSentence->id = 1;
 
-    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+    $service = new SentenceAlignmentService(
+        new PythonClient('http://ext_python:8000', 30, 300),
+        new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 300)),
+    );
 
     $service->alignChunkRemote(
         collect([$aSentence]),
@@ -1969,7 +1975,10 @@ it('omits landmark and high confidence keys from the payload when not given', fu
     $bSentence = new EntitySentence(['content' => 'Russian.', 'order' => 1]);
     $bSentence->id = 1;
 
-    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+    $service = new SentenceAlignmentService(
+        new PythonClient('http://ext_python:8000', 30, 300),
+        new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 300)),
+    );
 
     $service->alignChunkRemote(
         collect([$aSentence]),

@@ -1055,3 +1055,25 @@ test('new sentence in empty row gets correct order when preceding row has high-o
     $this->assertLessThan(100000, $order, "Order {$order} must stay below the high-order dragged sentence (100000)");
     $this->assertLessThan(2048, $order, "Order {$order} must stay below the next row's sentences");
 });
+
+test('moving a sentence bumps sentences_updated_at (document order feeds the text hash)', function () {
+    $world = editorWorld([0, 1024]);
+    $row = makeRow($world['match']->id, 100);
+    [$a, $b] = $world['enSentences'];
+    linkSentence('a', $a->id, $row->id);
+    linkSentence('a', $b->id, $row->id);
+
+    $world['en']->forceFill(['sentences_updated_at' => now()->subHour()])->save();
+    $before = $world['en']->refresh()->sentences_updated_at;
+
+    actingAs(User::factory()->create())
+        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+            'side' => 'a',
+            'sentence_id' => $b->id,
+            'to_row_id' => $row->id,
+            'index' => 0,
+        ])
+        ->assertOk();
+
+    expect($world['en']->refresh()->sentences_updated_at->greaterThan($before))->toBeTrue();
+});

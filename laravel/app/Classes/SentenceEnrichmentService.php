@@ -8,12 +8,8 @@ use App\Models\Entity;
 use App\Models\EntitySentence;
 use App\Models\EntityWord;
 use App\Models\Word;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Throwable;
 
 /**
  * Sentence enrichment: the per-language analyses (stress marks ru/en, phrasal
@@ -28,14 +24,11 @@ use Throwable;
  */
 class SentenceEnrichmentService
 {
-    private const RETRY_DELAYS_MS = [500, 1_500, 3_000];
-
     /** Sentences per python /enrich call (matches ALIGN chunk sizing). */
     public const CHUNK_SIZE = 75;
 
     public function __construct(
-        private readonly string $apiUrl,
-        private readonly int $timeout,
+        private readonly PythonClient $python,
         private readonly WordTokenizer $tokenizer,
         private readonly EnricherRegistry $registry,
     ) {}
@@ -43,8 +36,7 @@ class SentenceEnrichmentService
     public static function create(): self
     {
         return new self(
-            apiUrl: config('services.python.url', 'http://ext_python:8000'),
-            timeout: (int) config('services.python.timeout', 30),
+            python: PythonClient::create(),
             tokenizer: app(WordTokenizer::class),
             registry: app(EnricherRegistry::class),
         );
@@ -174,7 +166,7 @@ class SentenceEnrichmentService
             ];
         }
 
-        $results = $this->callEnrich($payload);
+        $results = $this->python->enrich($payload);
 
         foreach ($empty as $id) {
             $results[] = ['id' => $id, 'output' => []];
@@ -199,40 +191,6 @@ class SentenceEnrichmentService
         });
 
         return $written;
-    }
-
-    /**
-     * @return list<array{id: int, output: array<string, mixed>}>
-     */
-    private function callEnrich(array $payload): array
-    {
-        $response = Http::timeout($this->timeout)
-            ->retry(
-                self::RETRY_DELAYS_MS,
-                0,
-                fn (Throwable $exception, PendingRequest $request): bool => $exception instanceof ConnectionException,
-                false,
-            )
-            ->post("{$this->apiUrl}/enrich", $payload);
-
-        if (! $response->successful()) {
-            throw new \RuntimeException("Python enrichment service error: {$response->status()} - {$response->body()}");
-        }
-
-        $results = [];
-
-        foreach ($response->json('results', []) as $raw) {
-            if (! is_array($raw)) {
-                continue;
-            }
-
-            $results[] = [
-                'id' => (int) ($raw['id'] ?? 0),
-                'output' => is_array($raw['output'] ?? null) ? $raw['output'] : [],
-            ];
-        }
-
-        return $results;
     }
 
     /**

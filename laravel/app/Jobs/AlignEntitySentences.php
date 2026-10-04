@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Classes\MeaningMatchStore;
 use App\Classes\SentenceAlignmentService;
 use App\Models\Entity;
 use App\Models\EntityMatch;
@@ -31,8 +32,6 @@ class AlignEntitySentences implements ShouldQueue
     private const ANCHOR_SCORE_THRESHOLD = 0.40;
 
     private const ROLLBACK_MATCHES = 2;
-
-    public const LANDMARK_THRESHOLD = SentenceAlignmentService::LANDMARK_THRESHOLD;
 
     public int $timeout = 600;
 
@@ -106,10 +105,12 @@ class AlignEntitySentences implements ShouldQueue
             'b_count' => $bSentenceCount,
             'chunk_size' => $chunkSize,
             'max_n' => $maxN,
-        ] = self::snapshotAlignmentPlan($entityMatch, $aEntity, $bEntity);
+        ] = self::snapshotAlignmentPlan($entityMatch);
 
         $entityMatch->meaningMatches()->delete();
 
+        // linked_count is a reset, not a resync — the rows were just deleted,
+        // so zero is provably the count.
         $entityMatch->update([
             'status' => 'aligning',
             'entity_similarity' => $verification['similarity'],
@@ -136,7 +137,8 @@ class AlignEntitySentences implements ShouldQueue
 
     /**
      * Re-align an entity match that already has meaning-match rows, keeping
-     * the human-made rows (alignment_chunk -1) and high-confidence landmarks
+     * the human-made rows (the MeaningMatch::HUMAN_CHUNK sentinel) and
+     * high-confidence landmarks
      * (similarity >= LANDMARK_THRESHOLD) pinned in place. Only machine rows
      * below the landmark bar are deleted; the snapshot is refreshed so
      * sentences added or removed since the original run are inside the
@@ -175,7 +177,7 @@ class AlignEntitySentences implements ShouldQueue
 
         MeaningMatch::query()
             ->where('entity_match_id', $entityMatch->id)
-            ->where('similarity', '<', self::LANDMARK_THRESHOLD)
+            ->where('similarity', '<', MeaningMatch::LANDMARK_THRESHOLD)
             ->delete();
 
         [
@@ -183,7 +185,7 @@ class AlignEntitySentences implements ShouldQueue
             'b_count' => $bSentenceCount,
             'chunk_size' => $chunkSize,
             'max_n' => $maxN,
-        ] = self::snapshotAlignmentPlan($entityMatch, $aEntity, $bEntity);
+        ] = self::snapshotAlignmentPlan($entityMatch);
 
         $entityMatch->update([
             'status' => 'aligning',
@@ -193,13 +195,12 @@ class AlignEntitySentences implements ShouldQueue
             'max_n' => $maxN,
             'a_last_sentence_offset' => 0,
             'b_last_sentence_offset' => 0,
-            'linked_count' => MeaningMatch::query()
-                ->where('entity_match_id', $entityMatch->id)
-                ->count(),
             'error_message' => null,
             'started_at' => now(),
             'completed_at' => null,
         ]);
+
+        $entityMatch->syncLinkedCount();
 
         if ($aSentenceCount === 0 || $bSentenceCount === 0) {
             (new self($entityMatchId))->finalize($entityMatch);
@@ -218,10 +219,11 @@ class AlignEntitySentences implements ShouldQueue
      *
      * @return array{a_count: int, b_count: int, chunk_size: int, max_n: int}
      */
-    private static function snapshotAlignmentPlan(EntityMatch $entityMatch, Entity $aEntity, Entity $bEntity): array
+    private static function snapshotAlignmentPlan(EntityMatch $entityMatch): array
     {
-        $aSentenceCount = $aEntity->sentences()->withoutImage()->count();
-        $bSentenceCount = $bEntity->sentences()->withoutImage()->count();
+        $totals = $entityMatch->recountTotals();
+        $aSentenceCount = $totals['a'];
+        $bSentenceCount = $totals['b'];
 
         $chunkSize = min(max((int) $entityMatch->chunk_size, 1), self::MAX_EFFECTIVE_CHUNK_SIZE);
         $maxN = min(max((int) $entityMatch->max_n, 1), self::MAX_EFFECTIVE_SPAN);
@@ -431,8 +433,8 @@ class AlignEntitySentences implements ShouldQueue
         return MeaningMatch::query()
             ->where('entity_match_id', $entityMatch->id)
             ->where(fn ($query) => $query
-                ->where('alignment_chunk', -1)
-                ->orWhere('similarity', '>=', self::LANDMARK_THRESHOLD))
+                ->where('alignment_chunk', MeaningMatch::HUMAN_CHUNK)
+                ->orWhere('similarity', '>=', MeaningMatch::LANDMARK_THRESHOLD))
             ->orderBy('order')
             ->orderBy('id')
             ->with('sentenceMeaningMatches')
@@ -588,15 +590,17 @@ class AlignEntitySentences implements ShouldQueue
             return;
         }
 
-        $alignmentChunk = $this->nextAlignmentChunk($entityMatch->id);
+        $alignmentChunk = $entityMatch->nextAlignmentChunk();
+
+        $store = MeaningMatchStore::create();
 
         $this->persistOffsets(
             $entityMatch,
             $aEnd,
             $bEnd,
             $aTotal,
-            function () use ($service, $entityMatch, $alignmentChunk, $committed, $aSentences, $bSentences): void {
-                $service->storeAlignmentSegmentFromMatches(
+            function () use ($store, $entityMatch, $alignmentChunk, $committed, $aSentences, $bSentences): void {
+                $store->storeAlignmentSegmentFromMatches(
                     entityMatch: $entityMatch,
                     alignmentChunk: $alignmentChunk,
                     committedMatches: $committed,
@@ -618,14 +622,14 @@ class AlignEntitySentences implements ShouldQueue
      */
     private function storePoolSkips(EntityMatch $entityMatch, array $windowHeads): void
     {
-        $chunk = $this->nextAlignmentChunk($entityMatch->id);
-        $service = SentenceAlignmentService::create();
+        $chunk = $entityMatch->nextAlignmentChunk();
+        $store = MeaningMatchStore::create();
 
         foreach (self::skipSides($entityMatch) as $side) {
             $sentences = $windowHeads[$side] ?? null;
 
             if ($sentences !== null && $sentences->isNotEmpty()) {
-                $service->storeSkipSentences($entityMatch, $chunk, $side, $sentences);
+                $store->storeSkipSentences($entityMatch, $chunk, $side, $sentences);
             }
         }
     }
@@ -736,7 +740,7 @@ class AlignEntitySentences implements ShouldQueue
             return;
         }
 
-        $alignmentChunk = $this->nextAlignmentChunk($entityMatch->id);
+        $alignmentChunk = $entityMatch->nextAlignmentChunk();
 
         // The last chunk stores trailing skips up to the window end, so the
         // cursors must advance past everything stored — stopping at the last
@@ -755,13 +759,15 @@ class AlignEntitySentences implements ShouldQueue
             $newBOffset = $storedBOffset;
         }
 
+        $store = MeaningMatchStore::create();
+
         $this->persistOffsets(
             $entityMatch,
             $newAOffset,
             $newBOffset,
             $aTotal,
-            function () use ($service, $entityMatch, $alignmentChunk, $committed, $aSentences, $bSentences, $isLastChunk): void {
-                $service->storeAlignmentSegmentFromMatches(
+            function () use ($store, $entityMatch, $alignmentChunk, $committed, $aSentences, $bSentences, $isLastChunk): void {
+                $store->storeAlignmentSegmentFromMatches(
                     entityMatch: $entityMatch,
                     alignmentChunk: $alignmentChunk,
                     committedMatches: $committed,
@@ -783,8 +789,8 @@ class AlignEntitySentences implements ShouldQueue
      */
     private function storeChunkSkips(EntityMatch $entityMatch, int $aOffset, int $bOffset, array $sides): void
     {
-        $chunk = $this->nextAlignmentChunk($entityMatch->id);
-        $service = SentenceAlignmentService::create();
+        $chunk = $entityMatch->nextAlignmentChunk();
+        $store = MeaningMatchStore::create();
 
         foreach (self::skipSides($entityMatch) as $side) {
             if (! in_array($side, $sides, true)) {
@@ -803,7 +809,7 @@ class AlignEntitySentences implements ShouldQueue
                 ->limit(1)
                 ->get();
 
-            $service->storeSkipSentences($entityMatch, $chunk, $side, $sentence);
+            $store->storeSkipSentences($entityMatch, $chunk, $side, $sentence);
         }
     }
 
@@ -832,8 +838,8 @@ class AlignEntitySentences implements ShouldQueue
 
         return MeaningMatch::query()
             ->where('entity_match_id', $entityMatch->id)
-            ->where('alignment_chunk', '!=', -1)
-            ->where('similarity', '<', self::LANDMARK_THRESHOLD)
+            ->where('alignment_chunk', '!=', MeaningMatch::HUMAN_CHUNK)
+            ->where('similarity', '<', MeaningMatch::LANDMARK_THRESHOLD)
             ->whereHas('sentenceMeaningMatches', fn ($query) => $query
                 ->where('side', 'a')
                 ->whereIn('entity_sentence_id', $poolAIds))
@@ -988,19 +994,6 @@ class AlignEntitySentences implements ShouldQueue
     }
 
     /**
-     * Monotonic per-run alignment chunk id. Human-edited rows use the -1
-     * sentinel, so MAX+1 can never collide with it.
-     */
-    private function nextAlignmentChunk(int $entityMatchId): int
-    {
-        $max = MeaningMatch::query()
-            ->where('entity_match_id', $entityMatchId)
-            ->max('alignment_chunk');
-
-        return $max === null ? 0 : ((int) $max) + 1;
-    }
-
-    /**
      * Commit the chunk's rows and the advanced cursors atomically, then hand
      * control back to the queue. Persisting rows and advancing the cursors in
      * separate transactions let a crash between the two re-align the same
@@ -1023,10 +1016,9 @@ class AlignEntitySentences implements ShouldQueue
             $entityMatch->update([
                 'a_last_sentence_offset' => $newAOffset,
                 'b_last_sentence_offset' => $newBOffset,
-                'linked_count' => MeaningMatch::query()
-                    ->where('entity_match_id', $entityMatch->id)
-                    ->count(),
             ]);
+
+            $entityMatch->syncLinkedCount();
         });
 
         if ($newAOffset >= $aTotal) {
@@ -1050,7 +1042,7 @@ class AlignEntitySentences implements ShouldQueue
      */
     private function finalize(EntityMatch $entityMatch): void
     {
-        $service = SentenceAlignmentService::create();
+        $store = MeaningMatchStore::create();
 
         // Order values already taken by this match's rows, shared across both
         // sides' repairs: opposite-side runs between the same anchors compute
@@ -1066,11 +1058,11 @@ class AlignEntitySentences implements ShouldQueue
         );
 
         foreach (['a', 'b'] as $side) {
-            [$junctionless, $index] = $service->junctionlessSentencesFor($entityMatch, $side);
+            [$junctionless, $index] = $store->junctionlessSentencesFor($entityMatch, $side);
 
             if ($junctionless->isNotEmpty()) {
                 try {
-                    $service->repairJunctionlessSentences($entityMatch, $side, $junctionless, $index, $claimedOrders);
+                    $store->repairJunctionlessSentences($entityMatch, $side, $junctionless, $index, $claimedOrders);
                 } catch (Throwable $exception) {
                     Log::warning('Failed to junction sentences on alignment completion', [
                         'entity_match_id' => $entityMatch->id,
@@ -1082,7 +1074,7 @@ class AlignEntitySentences implements ShouldQueue
         }
 
         try {
-            $resequenced = $service->resequenceMatchesByDocumentPosition($entityMatch);
+            $resequenced = $store->resequenceMatchesByDocumentPosition($entityMatch);
 
             if ($resequenced > 0) {
                 Log::info('Resequenced meaning matches by document position on completion', [
@@ -1103,19 +1095,15 @@ class AlignEntitySentences implements ShouldQueue
         // Re-align (ADR 0055).
         $entityMatch->refresh();
 
-        $attributes = [
-            'linked_count' => MeaningMatch::query()
-                ->where('entity_match_id', $entityMatch->id)
-                ->count(),
-        ];
+        $entityMatch->syncLinkedCount();
 
         if ($entityMatch->status === 'aligning') {
-            $attributes['status'] = 'completed';
-            $attributes['error_message'] = null;
-            $attributes['completed_at'] = now();
+            $entityMatch->update([
+                'status' => 'completed',
+                'error_message' => null,
+                'completed_at' => now(),
+            ]);
         }
-
-        $entityMatch->update($attributes);
     }
 
     public function failed(Throwable $exception): void

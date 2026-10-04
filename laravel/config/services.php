@@ -88,7 +88,6 @@ return [
         'url' => env('PYTHON_API_URL', 'http://ext_python:8000'),
         'timeout' => env('PYTHON_TIMEOUT', 30),
         'align_timeout' => env('PYTHON_ALIGN_TIMEOUT', 600),
-        'has_similar_batch_size' => (int) env('PYTHON_HAS_SIMILAR_BATCH', 200),
         'sentence_split_chunk_bytes' => (int) env('PYTHON_SPLIT_CHUNK_BYTES', 262_144),
         // Byte chunks one split run feeds to python before re-dispatching
         // itself; 0 means unlimited (split the whole file in one run).

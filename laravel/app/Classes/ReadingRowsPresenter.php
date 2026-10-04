@@ -2,16 +2,17 @@
 
 namespace App\Classes;
 
+use App\Models\Entity;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
 /**
- * Builds the reading surfaces' row payload (ADR 0060): one Reading row per
- * meaning match — or per entity sentence for a single-language text — each
- * carrying its sides as ordered sentence objects in canonical a/b order.
- * Presenting the sides (which one reads first) is the client's flip; this
- * module never reorders.
+ * The reading surfaces' payload seam (ADR 0060): reading rows in canonical
+ * a/b order, the interactive-word payload that annotates them, and the flat
+ * pagination meta. Presenting the sides (which one reads first) is the
+ * client's flip; this module never reorders.
  *
  * One sentence object is either
  *  - an illustration: {id, image: {url, width, height}, text: caption}
@@ -74,6 +75,95 @@ class ReadingRowsPresenter
             ->map(fn (EntitySentence $sentence): array => $this->sentencePayload($sentence))
             ->values()
             ->all();
+    }
+
+    /**
+     * The interactive-word payload both reading surfaces ship: word maps
+     * filtered to the tokens on the current page's rows (the client renders
+     * page rows only), plus the highlight/explain eligibility flags. Both
+     * eligibility flags follow the same "not the user's native language"
+     * rule; a missing side (single-language text) is never eligible.
+     *
+     * @param  array{a: Entity|null, b: Entity|null}  $sideEntities
+     * @param  list<array<string, mixed>>  $rows
+     * @return array{wordMaps: array{a: array, b: array}, highlightable: array{a: bool, b: bool}, explainable: array{a: bool, b: bool}}
+     */
+    public function wordMapsFor(array $sideEntities, int $userId, ?int $nativeLanguageId, array $rows): array
+    {
+        return [
+            'wordMaps' => [
+                'a' => isset($sideEntities['a'])
+                    ? $this->wordMapForRows((new EntityWordMap)->forEntity($sideEntities['a'], $userId), $rows, 'a')
+                    : [],
+                'b' => isset($sideEntities['b'])
+                    ? $this->wordMapForRows((new EntityWordMap)->forEntity($sideEntities['b'], $userId), $rows, 'b')
+                    : [],
+            ],
+            'highlightable' => [
+                'a' => $this->isNotNative($sideEntities['a'] ?? null, $nativeLanguageId),
+                'b' => $this->isNotNative($sideEntities['b'] ?? null, $nativeLanguageId),
+            ],
+            'explainable' => [
+                'a' => $this->isNotNative($sideEntities['a'] ?? null, $nativeLanguageId),
+                'b' => $this->isNotNative($sideEntities['b'] ?? null, $nativeLanguageId),
+            ],
+        ];
+    }
+
+    /**
+     * The flat meta shape every paginated surface in the app ships.
+     *
+     * @return array{current_page: int, per_page: int, total: int, last_page: int}
+     */
+    public function metaFor(LengthAwarePaginator $paginator): array
+    {
+        return [
+            'current_page' => $paginator->currentPage(),
+            'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(),
+            'last_page' => max(1, $paginator->lastPage()),
+        ];
+    }
+
+    /**
+     * Keep only the map entries whose token occurs in these rows — the
+     * client renders page rows only, so the payload must not carry a map
+     * for the whole text. Tokens come from the same tokenizer that built
+     * the map's l_word keys, so presence matches what the client will
+     * segment and look up. A side's tokens come from its text sentences;
+     * illustration captions are not lookup text.
+     *
+     * @param  array<string, array{w: int, s: int|null}>  $map
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private function wordMapForRows(array $map, array $rows, string $side): array
+    {
+        if ($map === []) {
+            return [];
+        }
+
+        $tokenizer = new WordTokenizer;
+        $present = [];
+
+        foreach ($rows as $row) {
+            foreach ($row[$side]['sentences'] ?? [] as $sentence) {
+                if (! isset($sentence['image'])) {
+                    $present += $tokenizer->tokenize($sentence['text']);
+                }
+            }
+        }
+
+        return array_intersect_key($map, $present);
+    }
+
+    /**
+     * "Not the user's native language" — the highlighting and explanation
+     * eligibility rule. A missing side (single-language text) is never
+     * eligible.
+     */
+    private function isNotNative(?Entity $entity, ?int $nativeLanguageId): bool
+    {
+        return $entity !== null && $entity->language_id !== $nativeLanguageId;
     }
 
     /**

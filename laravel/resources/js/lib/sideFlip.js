@@ -1,7 +1,8 @@
-// Reader language swap (ADR 0024's Working-state tier): whether the reader
-// shows the flipped sides — the server's translation column read as the
-// primary one — keyed by the server's positionKey. Per-device only, never
-// sent to the server; written when the toggle changes.
+// Side swap (ADR 0024's Working-state tier): whether a reading surface shows
+// the flipped sides — the server's default learning side read second — keyed
+// by the server's positionKey. Shared by the reader and the simulator (one
+// flip per text via the useSideFlip hook). Per-device only, never sent to
+// the server; written when the toggle changes.
 const KEY = 'ext_app.reader.side-flip.v1';
 
 export function loadSideFlip(positionKey) {

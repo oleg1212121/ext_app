@@ -1,5 +1,6 @@
 <?php
 
+use App\Classes\PythonClient;
 use App\Classes\TextSignatureService;
 use App\Jobs\GenerateEntitySignature;
 use App\Jobs\ProcessEntityFile;
@@ -29,7 +30,7 @@ it('retries transient embedding connection failures before succeeding', function
         ]);
     });
 
-    $service = new TextSignatureService('http://ext_python:8000', 30);
+    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
 
     expect($service->generateSignature('A short sample text'))
         ->toEqual([0.1, 0.2, 0.3]);
@@ -58,7 +59,7 @@ it('sends only a head and tail sample for long texts to the python service', fun
         '*' => Http::response(['vector' => array_fill(0, 384, 0.01)], 200),
     ]);
 
-    $service = new TextSignatureService('http://ext_python:8000', 30);
+    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
 
     $long = str_repeat('x', 21_000);
     expect(strlen($long))->toBeGreaterThan(20_000);
@@ -81,7 +82,7 @@ it('sends short text unchanged to the python service', function () {
         '*' => Http::response(['vector' => [0.1, 0.2, 0.3]], 200),
     ]);
 
-    $service = new TextSignatureService('http://ext_python:8000', 30);
+    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
 
     expect($service->generateSignature('hello'))->toEqual([0.1, 0.2, 0.3]);
 
@@ -107,4 +108,23 @@ it('dispatches sentence splitting without calling the python service', function 
 
     Bus::assertDispatched(SplitEntityFileSentences::class);
     Http::assertSentCount(0);
+});
+
+it('computes cosine similarity for the signature gate', function () {
+    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
+
+    expect($service->cosineSimilarity([1.0, 0.0], [1.0, 0.0]))->toBe(1.0)
+        ->and($service->cosineSimilarity([1.0, 0.0], [0.0, 1.0]))->toBe(0.0)
+        ->and($service->cosineSimilarity([0.0, 0.0], [1.0, 1.0]))->toBe(0.0)
+        ->and($service->cosineSimilarity([1.0, 2.0], [2.0, 4.0]))->toEqualWithDelta(1.0, 0.000001)
+        ->and($service->cosineSimilarity([], [1.0]))->toBe(0.0);
+});
+
+it('truncates defensively when signature vectors differ in length', function () {
+    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
+
+    // The shared prefix decides the score; the extra dimension is ignored
+    // rather than warning on a missing index.
+    expect($service->cosineSimilarity([1.0, 0.0], [1.0, 0.0, 7.0]))->toBe(1.0)
+        ->and($service->cosineSimilarity([1.0, 0.0, 7.0], [1.0, 0.0]))->toBe(1.0);
 });

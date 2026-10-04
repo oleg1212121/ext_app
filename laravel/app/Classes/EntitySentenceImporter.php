@@ -117,7 +117,6 @@ class EntitySentenceImporter
             $bEntity->sentences()->delete();
 
             $now = Carbon::now();
-            $pairCount = count($pairs);
 
             $aSentenceRows = [];
             $bSentenceRows = [];
@@ -212,11 +211,11 @@ class EntitySentenceImporter
 
             $entityMatch->update([
                 'status' => 'completed',
-                'a_total_sentences' => $pairCount,
-                'b_total_sentences' => $pairCount,
-                'linked_count' => $pairCount,
                 'completed_at' => $now,
             ]);
+
+            $entityMatch->syncTotals();
+            $entityMatch->syncLinkedCount();
 
             // Bulk writes bypass model events; mark both sentence sets changed.
             Entity::touchSentencesFor($aEntity->id);

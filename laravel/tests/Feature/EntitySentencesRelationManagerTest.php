@@ -205,3 +205,34 @@ it('deletes a sentence and removes empty meaning matches', function (string $lan
     expect(MeaningMatch::find($meaningMatch->id))->toBeNull();
     expect($entityMatch->refresh()->linked_count)->toBe(0);
 })->with($languageConfigs);
+
+it('resyncs the match totals when a sentence is created through the relation manager', function (string $languageCode) {
+    $work = createWork();
+    $entity = createEntity($languageCode, $work, ['name' => 'Totals entity']);
+    $otherLanguageCode = $languageCode === 'en' ? 'ru' : 'en';
+    $other = createEntity($otherLanguageCode, $work, ['name' => "Pair {$otherLanguageCode}"]);
+    $sentenceTypeId = SentenceType::where('name', 'sentence')->value('id');
+
+    $entityMatch = createEntityMatch($entity, $other, [
+        'status' => 'completed',
+        'a_total_sentences' => 99,
+        'b_total_sentences' => 99,
+    ]);
+
+    Livewire::test(SentencesRelationManager::class, [
+        'ownerRecord' => $entity,
+        'pageClass' => EditEntity::class,
+    ])
+        ->callTableAction(CreateAction::class, data: [
+            'content' => 'Fresh sentence',
+            'sentence_type_id' => $sentenceTypeId,
+            'insert_after' => SparseOrderService::BEGINNING_SENTINEL,
+        ])
+        ->assertHasNoTableActionErrors();
+
+    $side = $entityMatch->a_entity_id === $entity->id ? 'a' : 'b';
+
+    // The sentinel 99 was recounted to the real alignable count on the
+    // side carrying the entity (ADR 0062 totals resync).
+    expect($entityMatch->refresh()->{"{$side}_total_sentences"})->toBe(1);
+})->with($languageConfigs);

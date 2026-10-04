@@ -2,6 +2,7 @@
 
 namespace App\Classes;
 
+use App\Enums\Side;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
@@ -149,7 +150,7 @@ class AlignmentEditorApiPresenter
      */
     public function unmatchedPayload(EntityMatch $entityMatch, string $side, int $page): array
     {
-        $entity = $side === 'a' ? $entityMatch->aEntity : $entityMatch->bEntity;
+        $entity = $entityMatch->entityFor(Side::from($side));
 
         $linkedIds = SentenceMeaningMatch::query()
             ->whereIn('meaning_match_id', MeaningMatch::query()

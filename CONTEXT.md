@@ -57,6 +57,18 @@ a human on purpose and is treated as resolved (see ADR 0049). Surfaced in the
 Alignments editor as a review list.
 _Avoid_: low-similarity match (score-only wording, misses one-sided rows), resolved (not a stored state; the human-confirmed convention replaces it)
 
+**Alignment editor**:
+The human-refinement surface for one Entity match — the React page at
+`/alignments/{id}`, backed by the surgical `AlignmentEditorController`
+endpoints, where sentences are added, edited, dragged between rows and the
+unmatched pool, and rows are created, approved, and deleted. Opened from the
+work's Alignments page cards, the entity page, and the Filament Sentence
+Alignment list's edit link. The one editing surface (ADR 0062); the Filament
+resource remains the operations console (Re-align, Run from scratch) over
+the same data.
+_Avoid_: Filament editor (the retired draft editor), draft editor, alignment
+editor page (there is only one).
+
 **Sentence**:
 A split sentence of an entity. Its entity-global `order` is the **document order** —
 the order of the sentence in the original text. The alignment pipeline and the
@@ -96,11 +108,19 @@ Per-meaning-match aligner confidence (0–1). A human-confirmed grouping is trus
 at 1.0 (structural changes reset it).
 _Avoid_: score
 
+**Landmark**:
+A meaning match pinned against re-alignment, in either of two tiers: a
+human-made row (confirmed in the alignment editor) or a machine row whose
+similarity is at or above the landmark bar. A re-align keeps landmarks and
+re-derives only the low-confidence rows between them; the pipeline never
+deletes one, and no machine output may cross one. See ADR 0051.
+_Avoid_: pinned row, confident row (UI-count wording), human row (names only one tier)
+
 **Entity similarity**:
 `entity_similarity` on the entity match — the whole-pair embedding similarity,
 distinct from per-row similarity.
 
-linked_count**:
+**linked_count**:
 The number of meaning matches in an entity match (empty ones included).
 
 **Resume**:
@@ -680,8 +700,10 @@ positional, not language-derived).
 **Side swap**:
 A reader's per-device flip of the **Reading side** and **Translation side**
 around their computed default, via the pages' language toggle. A
-**Working state** kind: kept per device (keyed per text/match), never stored
-server-side, and the default always recomputes from the Native language.
+**Working state** kind: one flip per text shared by every reading surface
+(flipping on one surface flips the same text on the others), keyed per
+text/match, never stored server-side, and the default always recomputes
+from the Native language.
 _Avoid_: language setting (a durable UI setting it is not), reverse mode.
 
 **Word popup**:

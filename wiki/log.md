@@ -1,5 +1,114 @@
 # Directory Update Log
 
+## 2026-10-04 (refactor: one word-map / meta payload builder, ADR 0060 amendment)
+
+`ReadingRowsPresenter` is now the reading surfaces' whole payload seam: it
+gains `wordMapsFor(sideEntities, userId, nativeLanguageId, rows)` — the
+page-filtered word maps plus the `highlightable`/`explainable` eligibility
+flags (the "not the user's native language" rule, null-entity safe) — and
+`metaFor(paginator)`. The reader's private `wordMapForRows` / `isNotNative`
+/ `metaFor` and the simulator's `wordMapsFor` + inline meta array are
+deleted. The simulator `/text` response flattens to the reader's sibling
+shape (`word_maps {a, b}` with `highlightable` / `explainable` as
+top-level keys — the wire stays snake_case, the client renames) and now
+page-filters its maps like the reader (the client never read off-page
+entries; the payload shrinks to what the page renders). `Bilinguals.jsx`
+word-map state drops to pure `{a, b}` with eligibility in its own state —
+the spread-must-preserve-eligibility hack is gone. ADR 0060 amended;
+`wiki/domains/reader.md`, `bilinguals-simulator.md` and
+`interactive-words.md` updated. Tests: `SimulatorTextEndpointTest` asserts
+the sibling eligibility keys (the simulator's `explainable` was previously
+untested) and gains a page-scoping test mirroring the reader's.
+
+## 2026-10-04 (refactor: MeaningMatchStore, ADR 0063)
+
+`SentenceAlignmentService` (971 lines) is split into two classes along its
+one real seam. It keeps only the python-match adapter: `verifyEntityPair`,
+`alignChunkRemote` (payload assembly + `/align` through `PythonClient`),
+and the links/dpPath path builders — `buildCommittedPath` /
+`buildSkipOnlyPath` are now public, their docblocks stating the array
+shapes as the adapter↔store contract. The new `App\Classes\MeaningMatchStore`
+(~600 lines) is the pipeline's meaning-match write path —
+`storeAlignmentSegmentFromMatches`, `storeSkipSentences`,
+`resequenceMatchesByDocumentPosition`, `junctionlessSentencesFor`,
+`repairJunctionlessSentences`, with `persistSegment`, the junction-dedupe
+keeper election and `claimOrder` private — the pipeline-side sibling of
+`AlignmentEditorService` (ADR 0062). Method bodies moved verbatim;
+transactions stay where they were (each store method owns its own, the
+job's `persistOffsets` nesting unchanged). Callers rewired directly, no
+facade: the job, `alignments:resequence`, `alignments:repair` and
+`AlignmentCopyService` call the store for writes and the service for
+verify/align; the dead `storeLinks` / `storeAlignmentSegment` surface is
+deleted. `LANDMARK_THRESHOLD` moved onto `MeaningMatch` (sibling of
+`HUMAN_CHUNK`) — the service const and the job's mirror are gone, and
+`EntityMatchResource`'s Re-align modal reads the model const. Context.md
+gains a **Landmark** glossary term; `wiki/domains/sentence-alignment.md`
+and `wiki/database/entities-alignment.md` updated; the stale
+`RETRY_DELAYS_MS` attribution in `wiki/playbooks/run-alignment.md`
+corrected. Tests: `ResequenceEntityMatchesTest`,
+`ChunkedEntityAlignmentTest` and `SentenceAlignmentServiceTest` pass with
+construction-site rewires only (894 passed overall).
+
+## 2026-10-04 (refactor: One alignment-editing domain, ADR 0062)
+
+The Filament draft editor is retired: `EditEntityAlignment`,
+`AlignmentEditorPersister`, `AlignmentEditorDraftStore`,
+`AlignmentEditorPresenter`, the page blade + `alignment-sentence-editor`
+partial and their tests (`EditEntityAlignmentPageTest`,
+`AlignmentEditorPersisterTest`, `AlignmentEditorDraftStoreTest`) are
+deleted; the `EntityMatchResource` list keeps Re-align / Run-from-scratch /
+publish actions and its "Edit alignment" action (and the `ViewEntityMatch`
+header action) now open the React editor at `alignments.show`. Editing no
+longer flips a stale match to `completed` — only explicit Re-align /
+Run-from-scratch / re-import do (ADR 0055 philosophy, now consistently
+enforced). The read-only Filament view page and the shared
+`alignment-pagination` partial stay.
+
+Same effort, three more moves: (1) the invariants went onto the models
+(`MeaningMatch::HUMAN_CHUNK`, `EntityMatch::nextAlignmentChunk/
+syncLinkedCount/recountTotals/syncTotals/alignableCountForEntity/
+syncTotalsForEntity`) and every writer — editor, aligner job +
+`SentenceAlignmentService`, importer, `AlignmentCopyService`,
+`alignments:repair`, the sentence-deletion hook — routes through them;
+(2) `App\Enums\Side` (backed a/b) owns the side-key mapping with
+`EntityMatch::entityFor/entityIdFor`, adopted across the editor classes
+(junction `side` values and payloads stay string-based); (3)
+`AlignmentEditorService` now owns the editing domain — row
+create/delete/approve, sentence add/unlink/delete, the move placement
+engine (incl. the two-phase negative-park order write) — while
+`AlignmentEditorController` keeps gates, validation, 404/422 mapping and
+the mutation envelope (`AlignmentEditorApiTest` passes unmodified).
+Finally the totals gap is closed: entity-frontend sentence mutations
+(`EntityController` + the Filament `SentencesRelationManager`) now call
+`EntityMatch::syncTotalsForEntity` alongside the stale flip, so the editor
+header shows truthful image-less counts before a Re-align (new tests in
+`EntityEditingTest` + `EntitySentencesRelationManagerTest`).
+
+## 2026-10-04 (refactor: One client for the python service, ADR 0061)
+
+The four scattered python-service call sites (`SentenceSplitter` /split,
+`SentenceAlignmentService` /align, `SentenceEnrichmentService` /enrich,
+`TextSignatureService` /embed), each carrying a byte-identical copy of the
+house transport idiom (base-URL config, connection-error-only retries at
+500/1500/3000 ms, `throw: false`, error envelope), are collapsed onto one
+seam: `App\Classes\PythonClient` — typed endpoint methods owning response
+unwrapping, `create()` factory reading `services.python.url/timeout/
+align_timeout` (dead 300 fallback removed; orphaned
+`has_similar_batch_size` key dropped). Non-2xx responses now throw
+`App\Exceptions\PythonClientException` (extends `RuntimeException`) with
+the preserved `Python {endpoint} service error: {status} - {body}` shape;
+`TextSignatureService` catches it for its deliberate best-effort null
+(embed must not block entity finalization). Payload assembly stays in the
+domain services; `WordTranslationProvider`'s lookalike idiom for external
+translation APIs is explicitly out of scope. The four services take the
+client via constructor injection and keep their `create()` factories, so
+production call sites are unchanged; `AppServiceProvider` binds the client
+for container-resolved `SentenceSplitter`. New
+`tests/Unit/PythonClientTest.php` (retry, endpoint-labelled envelope,
+per-endpoint unwrapping, embed null-on-missing-vector, factory URL);
+per-service tests keep their transport assertions through the seam. Full
+suite 910 passed.
+
 ## 2026-10-03 (fix: reading-rows review follow-ups)
 
 Review of the ADR 0060 branch caught two client bugs and a docs gap.
@@ -3887,3 +3996,41 @@ workers alike; the parent runner then drops every worker DB in its teardown
 recreated each run (~20s), accepted so orphans can never accumulate again.
 `tests/TestCase.php`'s `ext_app_test` guard is unaffected — Laravel appends
 the worker suffix after app boot.
+
+## 2026-10-04 (one side flip per text, shared by the reading surfaces)
+
+The two reading surfaces duplicated the flip mechanics: `Bilinguals.jsx`
+defined its own `otherSide` and hand-rolled the learning-side math instead
+of using `readingRows.mjs`, and each surface wired its own flip state +
+persistence in two different localStorage containers (reader:
+`ext_app.reader.side-flip.v1` keyed by `positionKey`; simulator: a
+`flipped` field inside its per-match position entry keyed by bare match id).
+A new `hooks/useSideFlip.js` now owns flip state, persistence, and the
+derived first/second sides for both surfaces (`ReaderApp.jsx` and
+`Bilinguals.jsx` consume it). The simulator's flip moved to the shared
+side-flip store keyed `mm:{matchId}` — one **Side swap** per text, so a
+flip on the reader carries into the simulator for the same match (ADR 0037
+amendment). Simulator position entries are now `{page, row}`; the stale
+`flipped` key is stripped on write and old saved flips reset once (no
+migration). No PHP/routes/API changes; docs: ADR 0037 amendment block,
+CONTEXT.md Side swap term, reader + bilinguals-simulator concepts.
+
+## 2026-10-04 (queue workers died silently: sweep GC before every pop)
+
+Manual `php artisan queue:work --queue=default,low` runs (and, latently, the
+prod compose workers) died silently after tens of jobs — shell prompt
+returns, nothing in `failed_jobs`, pending count unmoved: PHP's 128M CLI
+`memory_limit` fatal in the long-lived daemon, whose in-flight job then
+re-leases after `retry_after`. Differential runs (Debugbar on/off, RSS
+sampled) exonerated Debugbar and pinned the mechanism: each enrichment job
+leaves thousands of cyclic Eloquent roots (model↔collection cycles), PHP's
+GC only sweeps on root-buffer overflow, so a daemon processing self-chaining
+`EnrichEntitySentences` work climbed ~1MB/job to the fatal (measured:
+124.5MB at job 74; user-visible death at 20-30 jobs on bigger early-cursor
+chunks). Fix: `AppServiceProvider` sweeps `gc_collect_cycles()` before every
+pop via `Queue::looping` — probe A/B: unswept worker fatal by ~75 jobs,
+swept worker flat at ~50-60MB over the same fuel. Also: `DB_QUEUE_RETRY_AFTER=900`
+set in dev `.env` (was falling back to 660; wiki already mandated 900), and
+the backlog drained to 0 pending / 0 failed. Repro + guidance now in
+`playbooks/run-alignment.md` (Failure handling); note `queue:listen` (composer
+`dev`) is immune — fresh process per job.

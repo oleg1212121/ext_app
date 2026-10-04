@@ -6,8 +6,8 @@ import {Icon} from '../../Components/icons.jsx';
 import {useI18n} from '../../i18n';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 import {loadReadingPositions, saveReadingPositions} from '../../lib/readingPosition';
-import {loadSideFlip, saveSideFlip} from '../../lib/sideFlip';
-import {displaySideFor, otherSide, rowsHaveAnnotation} from '../../lib/readingRows.mjs';
+import {useSideFlip} from '../../hooks/useSideFlip';
+import {rowsHaveAnnotation} from '../../lib/readingRows.mjs';
 
 const MIN_FONT_SIZE = 16;
 const MAX_FONT_SIZE = 38;
@@ -103,7 +103,7 @@ export default function ReaderApp({
     const [wordMaps, setWordMaps] = useState(initialWordMaps);
     // Language toggle (Working state, per device + positionKey): when true,
     // the side other than the server's default reads as the primary one.
-    const [flipped, setFlipped] = useState(() => loadSideFlip(positionKey));
+    const sideFlip = useSideFlip(defaultSide, positionKey);
     const [showAll, setShowAll] = useState(false);
     const [sideBySide, setSideBySide] = useState(false);
     const [wideMode, setWideMode] = useState(false);
@@ -156,12 +156,7 @@ export default function ReaderApp({
     // The language toggle only exists when the text has a translation side;
     // flipped, the non-default side reads as the primary one. The rows stay
     // canonical — flipping only re-picks which side each column shows.
-    const hasTranslation = defaultSide === 'a' || defaultSide === 'b';
-    const effectiveFlipped = hasTranslation && flipped;
-
-    const displaySide = displaySideFor(defaultSide, effectiveFlipped);
-    const firstSide = displaySide ?? 'a';
-    const secondSide = displaySide !== null ? otherSide(displaySide) : null;
+    const {hasTranslation, firstSide, secondSide, toggleTo} = sideFlip;
     const readingLang = langs[firstSide];
 
     const hasStressedData = useMemo(() => rowsHaveAnnotation(rows, 'stressed'), [rows]);
@@ -180,14 +175,14 @@ export default function ReaderApp({
         explainable: !!explainable[secondSide],
     }), [secondSide, wordMaps, highlightable, explainable]);
 
-    const setReadingLang = useCallback((lang) => {
-        if (!hasTranslation || lang === readingLang) {
+    const setReadingLang = useCallback((side) => {
+        // Both sides can share a language code; picking the other radio is
+        // then a no-op.
+        if (langs[side] === readingLang) {
             return;
         }
-        const next = lang !== langs[defaultSide];
-        setFlipped(next);
-        saveSideFlip(positionKey, next);
-    }, [hasTranslation, readingLang, defaultSide, langs, positionKey]);
+        toggleTo(side);
+    }, [langs, readingLang, toggleTo]);
 
     const handlePickAudio = useCallback(() => {
         audioPickerRef.current?.click();
@@ -453,7 +448,7 @@ export default function ReaderApp({
                                                 name="reader-reading-language"
                                                 value={code}
                                                 checked={readingLang === code}
-                                                onChange={() => setReadingLang(code)}
+                                                onChange={() => setReadingLang(side)}
                                                 className="sr-only"
                                             />
                                             {LANG_GLYPH[code] ?? code}

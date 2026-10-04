@@ -5,11 +5,17 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-01T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T19:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
-    title: /align HTTP client + meaning-match storage
+    title: python-match adapter — pair verify, /align call, links/dpPath path builders (ADR 0063)
+  - id: meaning-match-store
+    resource: laravel/app/Classes/MeaningMatchStore.php
+    title: the pipeline's meaning-match write path — segments, resequence, junction-less repair (ADR 0063)
+  - id: python-client
+    resource: laravel/app/Classes/PythonClient.php
+    title: the one python transport seam (ADR 0061)
   - id: repair-command
     resource: laravel/app/Console/Commands/RepairEntityMatchAlignmentCommand.php
     title: alignments:repair — in-place dedupe + both-side backfill
@@ -21,7 +27,10 @@ sources:
     title: Alignment reuse for exact-copy entity pairs
   - id: signature-service
     resource: laravel/app/Classes/TextSignatureService.php
-    title: Text signatures / cross-language candidates (/embed client)
+    title: Text signatures / cross-language candidates (/embed client); one cosineSimilarity implementation (ADR 0064)
+  - id: sentence-order-service
+    resource: laravel/app/Classes/SentenceOrderService.php
+    title: the entity-sentence placement pipeline — anchor resolution, non-negative shift, two-phase persist, text-hash bump (ADR 0064)
   - id: hasher
     resource: laravel/app/Classes/EntityTextHasher.php
     title: Exact-copy text hashing
@@ -99,7 +108,11 @@ sentences appear in document order — the per-sentence number shown in the
 reader and the alignment editor is exactly that rank, so a scrambled
 `meaning_matches.order` **is** a scrambled alignment on every display surface.
 
-Enforcement (all inside `SentenceAlignmentService`):
+Enforcement (all inside `MeaningMatchStore` — since ADR
+[0063](../../docs/adr/0063-meaning-match-store.md) the pipeline is two
+classes: `SentenceAlignmentService` is the stateless python-match adapter
+(verify gate, `/align` call, links/dpPath path builders), `MeaningMatchStore`
+is its write path):
 `resequenceMatchesByDocumentPosition()` renumbers a match's rows 0, 1024,
 2048… so the stored sequence equals document position — a-anchored rows
 (two-sided or a-only) sort by their a position; single-b rows have no a anchor
@@ -143,9 +156,11 @@ pipeline revisits completed matches).
 **Junction-uniqueness invariant (strict, ADR 0048).** One sentence is
 junctioned into at most one meaning match per side per entity match —
 partial overlaps included. Enforced in layers:
-`persistSegment()` deletes every machine row below the landmark bar
-(`alignment_chunk != -1` and `similarity <` `LANDMARK_THRESHOLD`, shared
-const with the job) that junctions any sentence of the segment it is about
+`persistSegment()` (on `MeaningMatchStore`) deletes every machine row below
+the landmark bar
+(`alignment_chunk != -1` and `similarity <` `MeaningMatch::LANDMARK_THRESHOLD`,
+homed on the model, ADR 0063) that junctions any sentence of the segment it
+is about
 to store — so a re-fed window (retry after a crash, duplicated job)
 **replaces** stale coverage instead of duplicating it — and **reserves**
 landmark-junctioned sentences: incoming machine windows skip their
@@ -264,9 +279,11 @@ editor-shaped row.
    first `AlignEntitySentences` job. Each `handle()` invocation reads the
    cursor from the model, slices one chunk of a-side and b-side sentences
    **sequentially** (b offset = a offset, no overlap), POSTs them to
-   `/align` via `SentenceAlignmentService::alignChunkRemote()`
-   (`services.python.align_timeout`, default 600), and writes the result via
-   `storeAlignmentSegmentFromMatches()` (one `MeaningMatch` per DP step +
+   `/align` via `SentenceAlignmentService::alignChunkRemote()` (transport
+   through `PythonClient::align()`; `services.python.align_timeout`,
+   default 600), and writes the result via
+   `MeaningMatchStore::storeAlignmentSegmentFromMatches()` (one
+   `MeaningMatch` per DP step +
    `SentenceMeaningMatch` junction rows carrying `side` `'a'`/`'b'`). The job
    commits only matches up to and including the **last confident anchor**
    (score ≥ `ANCHOR_SCORE_THRESHOLD` = 0.40): the DP force-aligns every
@@ -330,7 +347,7 @@ editor-shaped row.
     `resequenceMatchesByDocumentPosition()` over the whole match (same
     best-effort contract) so every completion path leaves the stored sequence
     equal to document position — see the order-preservation invariant above.
-    `storeSkipSentences()` on `SentenceAlignmentService` persists
+    `storeSkipSentences()` on `MeaningMatchStore` persists
     single-sided rows (side parameter `'a'|'b'`), and the crawl's empty-commit
     seams (`alignWholePool`, `alignPoolChunk`) use it to junction the first
     uncommitted sentence of whichever side's cursor advances (parked sides
@@ -625,7 +642,9 @@ editor-shaped row.
     b_end}` ints) and `high_confidence`. When neither is given the payload is
     **byte-identical to the previous shape** (no `landmarks`/`high_confidence`
     keys are sent), so existing callers and the request format are untouched.
-    `AlignEntitySentences` reserves `LANDMARK_THRESHOLD = 0.90` (inert until
+    `AlignEntitySentences` reserves the landmark bar
+    (`MeaningMatch::LANDMARK_THRESHOLD`, 0.90 — homed on the model since ADR
+    0063; inert until
     plan 08 turns human-edited rows into pins on re-align). Feature tests
     assert the keys appear in the payload when passed and are omitted when not.
 3. **Align (landmark-aware re-align, Plan 08, Aug 2026)** — the entry-point
@@ -664,12 +683,12 @@ editor-shaped row.
     rows as **landmarks** (pins that survive a re-run and partition the match
     into non-overlapping pools, see Plan 08):
     - **Hard (human-made)** — rows created or edited by a human via the
-      alignment editor (`AlignmentEditorController` /
-      `AlignmentEditorPersister`) carry `alignment_chunk = -1` and
+      alignment editor (`AlignmentEditorController`) carry
+      `alignment_chunk = MeaningMatch::HUMAN_CHUNK` (-1) and
       `similarity = 1.0`. They are never deleted, never rolled back, and never
       re-aligned — the machine cannot cross them.
     - **Auto** — machine rows whose `similarity >= LANDMARK_THRESHOLD`
-      (`AlignEntitySentences::LANDMARK_THRESHOLD = 0.90`) are promoted to
+      (`MeaningMatch::LANDMARK_THRESHOLD` = 0.90) are promoted to
       landmarks on re-align: they survive the delete-only-sub-threshold wipe
       and become pool boundaries exactly like human rows.
     Both tiers feed `landmarkRows()` → `landmarkBounds()`, so both are pool
@@ -729,9 +748,10 @@ editor-shaped row.
       automatic run".
     - The scheduler is unchanged — it picks only `pending`, so stale matches
       are invisible to it forever. **Only an explicit human action re-aligns
-      or clears the flag**: Re-align / Run from scratch (→ `aligning`), a full
-      Filament editor save (→ `completed`), a sentence re-import (→
-      `completed`). React editor row edits leave `stale` untouched. To protect
+      or clears the flag**: Re-align / Run from scratch (→ `aligning`), a
+      sentence re-import (→ `completed`). Alignment-editor edits leave
+      `stale` untouched (ADR 0062 — the editor is surgical and never
+      completes a match). To protect
       a weak row from a future Re-align, approve it in the alignment editor —
       the approve action pins it as a human landmark (`similarity = 1.0`,
       `alignment_chunk = -1`).
@@ -751,11 +771,13 @@ editor-shaped row.
    `SparseOrderService`; `entity-orders:rebalance` (language-agnostic since
    the unified schema — it scopes `entity_sentences` and `meaning_matches`
    directly, no `--lang`) runs **daily** (see `routes/console.php`).
-6. **Review** — humans fix machine output in the Filament
-    `EntityMatch` resource's custom `EditEntityAlignment` page (one merged
-    resource since ADR 0018 — side-based draft props with language-name
-    labels via `sideLabel()`, falling back to the side letter), or in the
-    Inertia/React **Alignments editor**: since ADR
+6. **Review** — humans fix machine output in the Inertia/React **Alignments
+    editor**, the one editing surface since ADR
+    [0062](../../docs/adr/0062-one-alignment-editing-domain.md) (the Filament
+    draft editor — `EditEntityAlignment`, `AlignmentEditorPersister`,
+    `AlignmentEditorDraftStore` — is retired; the Filament `EntityMatch`
+    resource keeps the list, Re-align / Run-from-scratch actions, and an
+    "Edit alignment" link that opens the React editor): since ADR
     [0036](../../docs/adr/0036-alignments-live-under-work.md) alignment
     browsing and creation live under each work — the work's
     **Alignments page** (`/works/{work}/alignments`, see
@@ -849,17 +871,21 @@ editor-shaped row.
     editor honors the drop position: dragging a sentence — within a row,
     across rows, or from an unmatched pool into a row — renumbers its
     document order (`entity_sentences.order`) via
-    `AlignmentEditorController::placeSideSentence`, which picks the new order
+    `AlignmentEditorService::placeSideSentence`, which picks the new order
     from the side's **global document order** (midpoint between the sorted
-    neighbours, not just the destination row's pair) and rebalances the sparse
-    window through `SparseOrderService::orderForInsertAfter` when the
+    neighbours, not just the destination row's pair) and hands the anchored
+    placement to `SentenceOrderService::placeAfterOrder`, which rebalances
+    the sparse window through `SparseOrderService::orderForInsertAfter` when
+    the
     surrounding gap is exhausted — the old in-row-neighbour placement could
     emit an order that another (e.g. unmatched) sentence already held,
     producing duplicate orders and visually shuffling rows; sentence orders
     are now unique per entity (DB-enforced, see
     [Entities & Alignment](/database/entities-alignment.md)) and every write
     parks changed rows at unique negatives first (junctions stay orderless;
-    in-row sequence is the sentence orders themselves). The editor renders an
+    in-row sequence is the sentence orders themselves). The placement
+    service also bumps `sentences_updated_at` when an order changes — a
+    drag edits the document the text hash covers (ADR 0033/0064). The editor renders an
       explicit **drop slot** above the first, between every pair, and below the
       last sentence of each column (a tall standalone slot for an empty
       column); slots are permanently visible as thin faint dashed lines, so the
@@ -896,9 +922,15 @@ editor-shaped row.
 7. **Sentence editing** — individual entity sentences can be created, edited,
    deleted, and reordered from the *Sentences* tab on each entity's edit page
    in the Filament `EntityResource` (one merged resource with language and
-   work selects). The relation manager uses `SparseOrderService` to keep
-   insertions efficient; deleting a sentence cleans up any now-empty meaning
-   matches.
+   work selects). The relation manager places inserts and reorders through
+   `SentenceOrderService` (same pipeline as the entities frontend, so
+   two-phase writes, the non-negative shift and the text-hash bump cannot
+   drift per surface); deleting a sentence cleans up any now-empty meaning
+   matches. Every sentence mutation on these entity-level paths (the
+   entities frontend endpoints and the relation manager) also resyncs the
+   image-less totals of every match involving the entity
+   (`EntityMatch::syncTotalsForEntity`) alongside the stale flip, so the
+   alignment editor's header stays truthful between re-aligns (ADR 0062).
 
 # Python microservice
 
@@ -907,8 +939,10 @@ editor-shaped row.
   `uvicorn --reload` can restart the app in ~1–2s after a source edit without
   re-loading the multi-GB model files; `ai/models_cache.py` is the lazy loader):
   - **Signature model** `MODEL_PATH` (default BGE-M3, 1024-dim) — used by
-    `/embed`, `/embed/batch`, `/cosine/batch` (signature generation only; the
-    cosine compare itself is pure numpy). Backs `TextSignatureService`.
+    `/embed` (signature generation only; the cosine compare happens in PHP,
+    `TextSignatureService::cosineSimilarity`). Backs `TextSignatureService`.
+    The old `/embed/batch` and `/cosine/batch` endpoints were removed (they
+    served a Laravel duplicate-detection path that ADR 0033 deleted).
   - **Aligner model** `ALIGN_MODEL_PATH` (code default
     `paraphrase-multilingual-MiniLM-L12-v2`, 384-dim; the repo `.env` currently
     points it at **LaBSE**, `sentence-transformers/LaBSE` → `/app/models/labse`,
@@ -962,10 +996,11 @@ editor-shaped row.
   The `/embed` and `/split` requests carry the entity's language code from
   Laravel (`language` field).
 * Python writes **nothing** to Postgres — Laravel owns all DB writes.
-* Laravel talks to it via `services.python.url` (default
-  `http://ext_python:8000`) with retries at 500/1500/3000 ms; keys:
-  `timeout`, `align_timeout`, `has_similar_batch_size`,
-  `sentence_split_chunk_bytes`.
+* Laravel talks to it exclusively through `PythonClient` (ADR 0061 — the
+  one transport seam: base URL, timeouts, connection-error-only retries at
+  500/1500/3000 ms, `PythonClientException` envelope on non-2xx), built
+  from `services.python.url` (default `http://ext_python:8000`); keys:
+  `timeout`, `align_timeout`, `sentence_split_chunk_bytes`.
 * `TextSignatureService` also exposes `findCrossLanguage()` for cross-language
   alignment candidates. (`hasSimilar()` and the `/cosine/batch` dedup helpers
   were removed with the near-dup merging flow, ADR 0033.)

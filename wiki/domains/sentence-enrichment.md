@@ -5,7 +5,7 @@ description: Local-only per-sentence enrichment — Russian/English stress marks
 tags: [enrichment, stress-marks, multi-word-verbs, enrichers, python-service, spacy, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-02T19:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T00:00:00Z }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -161,7 +161,8 @@ notice when the package is absent).
 - `SentenceEnrichmentService` (`create()` factory like the other python
   clients): builds token spans via `WordTokenizer::tokenizeWithSpans`,
   resolves the shared base hints, merges the active enrichers' hints/extras,
-  calls `/enrich` with `Http::retry` on connection errors, and persists each
+  calls `/enrich` through `PythonClient::enrich()` (ADR 0061 — the shared
+  transport seam owns retries and the error envelope), and persists each
   enricher's output into its column.
 - **Quiet writes**: `EntitySentence::query()->whereKey()->toBase()->update()`
   — no model events, no `updated_at`. Model events would `touchSentencesFor`

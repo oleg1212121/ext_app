@@ -1,7 +1,7 @@
 # ADR 0060: Reading rows — one row-object payload for the reading surfaces
 
 Date: 2026-10-03
-Status: Accepted
+Status: Accepted (amended 2026-10-04)
 
 ## Context
 
@@ -103,3 +103,33 @@ their side helpers are deleted from `MeaningMatchPresenter`, which keeps
   `EntityEnrichmentTest` (reader payload pins), `SimulatorTextEndpointTest`
   (including filename-mode rejection), `EntityIllustrationAlignmentTest`
   (presenter-level, now `ReadingRowsPresenter`), `AiWordExplainEndpointTest`.
+
+> **Amendment (2026-10-04): one word-map / meta builder for both surfaces.**
+> The follow-up architecture-review pass found the payload assembly *around*
+> the rows still duplicated: the reader's `wordMapForRows`, `isNotNative`
+> and `metaFor` helpers vs the simulator's `wordMapsFor` and an inline meta
+> array — with two real divergences hiding in the sameness. Three decisions:
+>
+> - **`ReadingRowsPresenter` is the reading-surface payload seam.** It gains
+>   `wordMapsFor(sideEntities, userId, nativeLanguageId, rows)` — word maps
+>   plus the `highlightable`/`explainable` eligibility flags ("not the
+>   user's native language", null-entity safe) — and `metaFor(paginator)`.
+>   Both controllers' private helpers are deleted.
+> - **Eligibility flattens to siblings on the simulator too.** The simulator
+>   had nested `highlightable`/`explainable` *inside* the `word_maps` blob,
+>   so the client's word-map state carried eligibility keys that every
+>   familiarity patch had to preserve. The `/text` response now ships
+>   `word_maps {a, b}`, `highlightable {a, b}`, `explainable {a, b}` as
+>   siblings — the reader's shape — and `word_maps` is always present (the
+>   legacy "null when either entity is gone" path is gone with file mode).
+>   The wire stays snake_case; `Bilinguals.jsx` keeps its rename lines.
+> - **Both surfaces page-filter their maps.** The reader already filtered
+>   its word map to the tokens on the current page's rows; the simulator
+>   shipped full entity-wide maps that the client never read off-page. The
+>   shared `wordMapsFor` always filters, so the simulator's payload shrinks
+>   to what its page can render. Client behavior is unchanged — `WordText`
+>   and the familiarity helpers tokenize rows before lookup.
+>
+> `SimulatorTextEndpointTest` asserts the sibling eligibility keys (the
+> simulator's `explainable` was previously untested) and gains a
+> page-scoping test mirroring the reader's.

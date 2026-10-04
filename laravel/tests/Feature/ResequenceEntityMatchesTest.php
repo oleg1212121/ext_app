@@ -1,6 +1,6 @@
 <?php
 
-use App\Classes\SentenceAlignmentService;
+use App\Classes\MeaningMatchStore;
 use App\Classes\SparseOrderService;
 use App\Models\Entity;
 use App\Models\EntitySentence;
@@ -130,14 +130,14 @@ it('resequences a junction-less row last and reports zero changes when order alr
         'alignment_chunk' => 0,
     ]);
 
-    $changed = SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
+    $changed = MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($entityMatch);
 
     expect($changed)->toBe(2)
         ->and($junctionedRow->refresh()->order)->toBe(0, 'junctioned row must sort first')
         ->and($junctionlessRow->refresh()->order)->toBe(SparseOrderService::STRIDE, 'junction-less row must sort last');
 
     // A second pass is a no-op: everything is already in document position.
-    expect(SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch))->toBe(0);
+    expect(MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($entityMatch))->toBe(0);
 });
 
 it('slots a single-b row before the two-sided row whose b sentences come later', function () {
@@ -187,13 +187,13 @@ it('slots a single-b row before the two-sided row whose b sentences come later',
     ]);
     seedResequenceSideJunction($bOnlyRow, $ruSentences[2], 'b');
 
-    $changed = SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
+    $changed = MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($entityMatch);
 
     expect($changed)->toBe(2)
         ->and($headRow->refresh()->order)->toBe(0)
         ->and($bOnlyRow->refresh()->order)->toBe(SparseOrderService::STRIDE, 'the unmatched RU sentence sorts before the row whose RU partner is later')
         ->and($lateBRow->refresh()->order)->toBe(SparseOrderService::STRIDE * 2)
-        ->and(SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch))->toBe(0);
+        ->and(MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($entityMatch))->toBe(0);
 });
 
 it('interleaves a-only, b-only, two-sided and junction-less rows into one document sequence', function () {
@@ -236,7 +236,7 @@ it('interleaves a-only, b-only, two-sided and junction-less rows into one docume
         'entity_match_id' => $entityMatch->id, 'order' => 0, 'similarity' => 0.0, 'alignment_chunk' => 1,
     ]);
 
-    SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
+    MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($entityMatch);
 
     $sequence = MeaningMatch::query()
         ->where('entity_match_id', $entityMatch->id)
@@ -290,7 +290,7 @@ it('drops a machine row fully duplicated by a better row before renumbering', fu
     ]);
     seedResequenceJunction($lastRow, $enSentences[1], $ruSentences[1]);
 
-    $changed = SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
+    $changed = MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($entityMatch);
 
     expect($changed)->toBe(3)
         ->and(MeaningMatch::query()->whereKey($dupeRow->id)->exists())->toBeFalse()
@@ -298,7 +298,7 @@ it('drops a machine row fully duplicated by a better row before renumbering', fu
         ->and($keeperRow->refresh()->order)->toBe(0)
         ->and($lastRow->refresh()->order)->toBe(SparseOrderService::STRIDE)
         ->and($enSentences[0]->refresh()->meaningJunctions()->count())->toBe(1)
-        ->and(SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch))->toBe(0);
+        ->and(MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($entityMatch))->toBe(0);
 });
 
 it('resolves a partial overlap by trimming the shared junction from the weaker row', function () {
@@ -334,7 +334,7 @@ it('resolves a partial overlap by trimming the shared junction from the weaker r
     seedResequenceSideJunction($overlappingRow, $enSentences[0], 'a');
     seedResequenceSideJunction($overlappingRow, $ruSentences[1], 'b');
 
-    $changed = SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
+    $changed = MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($entityMatch);
 
     expect($changed)->toBe(3, 'one trimmed junction + two order changes')
         ->and(MeaningMatch::where('entity_match_id', $entityMatch->id)->count())->toBe(2)
@@ -342,7 +342,7 @@ it('resolves a partial overlap by trimming the shared junction from the weaker r
         ->and($overlappingRow->refresh()->order)->toBe(SparseOrderService::STRIDE)
         ->and($enSentences[0]->refresh()->meaningJunctions()->count())->toBe(1, 'EN 1 keeps exactly one junction — the stronger row\'s')
         ->and($ruSentences[1]->refresh()->meaningJunctions()->count())->toBe(1)
-        ->and(SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch))->toBe(0);
+        ->and(MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($entityMatch))->toBe(0);
 });
 
 it('keeps a landmark junction against any machine row and against a later human row', function () {
@@ -396,7 +396,7 @@ it('keeps a landmark junction against any machine row and against a later human 
     ]);
     seedResequenceSideJunction($secondHuman, $enSentences[2], 'a');
 
-    SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($entityMatch);
+    MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($entityMatch);
 
     expect($enSentences[0]->refresh()->meaningJunctions()->count())->toBe(1)
         ->and($enSentences[0]->meaningJunctions()->first()->meaning_match_id)->toBe($humanRow->id, 'human row beats the machine row')

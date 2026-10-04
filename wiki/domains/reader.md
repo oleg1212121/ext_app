@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-03T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T18:40:00Z }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -21,7 +21,10 @@ sources:
     title: readingPosition.js (localStorage Reading position store)
   - id: side-flip-store
     resource: laravel/resources/js/lib/sideFlip.js
-    title: sideFlip.js (localStorage Side swap store)
+    title: sideFlip.js (shared localStorage Side swap store)
+  - id: side-flip-hook
+    resource: laravel/resources/js/hooks/useSideFlip.js
+    title: useSideFlip (shared Side swap hook)
   - id: routes
     resource: laravel/routes/web.php
     title: Routes
@@ -61,10 +64,13 @@ server ships them as `defaultSide` plus side-keyed `langs` / `wordMaps` /
 
 `ReaderApp` renders a two-option language radio (labelled with the actual
 language codes) whenever a translation side exists. Flipping is pure client
-display state — which canonical side each column shows is derived in render
-(`lib/readingRows.mjs`, the only flip-mapping module), no row copying, no
-reload — and persists as a **Side swap** (Working state) under
-`ext_app.reader.side-flip.v1` (`lib/sideFlip.js`), keyed by `positionKey`.
+display state — no row copying, no reload — and persists as a **Side swap**
+(Working state) under `ext_app.reader.side-flip.v1` (`lib/sideFlip.js`),
+keyed by `positionKey`. Both surfaces flip through the shared `useSideFlip`
+hook (`hooks/useSideFlip.js`), which owns the flip state and derives which
+canonical side each column shows on top of `lib/readingRows.mjs` (the only
+side-mapping module) — one flip per text, so a flip on the simulator opens
+the reader flipped for the same match (ADR 0037 amendment).
 
 # Frontend
 
@@ -110,9 +116,12 @@ on a valid page (`ReaderPageRequest` normalizes `?page` tolerantly rather
 than failing validation — it's a shareable URL, not a form field). The
 payload carries a flat `meta` prop (`current_page`, `per_page`, `total`,
 `last_page`) and the page's rows only. **Word maps are page-scoped too**:
-`wordMapForRows()` keeps only entries whose token occurs in the page's row
-texts (tokenized with the same `WordTokenizer` that built the `l_word`
-keys), so the payload no longer scales with the text's length.
+`ReadingRowsPresenter::wordMapsFor()` — the shared reading-surface payload
+seam since the ADR 0060 amendment (the simulator's `/text` uses the same
+builder and the same filtering) — keeps only entries whose token occurs in
+the page's row texts (tokenized with the same `WordTokenizer` that built
+the `l_word` keys), so the payload no longer scales with the text's length;
+`meta` comes from the presenter's `metaFor()` too.
 
 # Reading position
 

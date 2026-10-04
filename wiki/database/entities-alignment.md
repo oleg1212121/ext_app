@@ -5,7 +5,7 @@ description: Works grouping per-language entities, their sentences, and the mach
 tags: [database, schema, alignment, entities, works, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-01T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T19:00:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
@@ -23,8 +23,8 @@ sources:
      resource: laravel/database/migrations/2026_09_28_000002_add_illustration_columns_to_entity_sentences_table.php
      title: entity_sentences image_path/hash/width/height/mime (ADR 0050)
    - id: align-service
-     resource: laravel/app/Classes/SentenceAlignmentService.php
-     title: Writer of meaning matches
+     resource: laravel/app/Classes/MeaningMatchStore.php
+     title: Writer of meaning matches (the pipeline's write path, ADR 0063)
 ---
 
 # Tables
@@ -71,16 +71,21 @@ sources:
   (stride 1024) maintained by `SparseOrderService`; every creation path emits
   sparse values from birth (the split pipeline, the console importer, the
   entity *Sentences* tab, the Filament relation managers). Dense lists are
-  repaired by `entity-orders:rebalance`. Both `EntityController` and
-  `AlignmentEditorController` shift the whole sparse result up whenever a
-  rebalance would push the minimum order negative.
+  repaired by `entity-orders:rebalance`. The entity-sentence write paths
+  (entities frontend, alignment editor placement, Filament relation
+  manager) share `SentenceOrderService` (ADR 0064), which shifts the whole
+  sparse result up whenever a rebalance would push the minimum order
+  negative.
 * **Sentence orders are unique per entity**: `(entity_id, order)` carries a
   unique index; every sentence-order write is two-phase (changed rows parked
-  at unique negatives `-(id + 1e9)` before finals) —
-  `SparseOrderService::orderForInsertAfter`,
-  `AlignmentEditorPersister::syncSentences`,
-  `EntityController::persistSentenceOrders`,
-  `AlignmentEditorController::placeSideSentence`.
+  at unique negatives `-(id + 1e9)` before finals), owned by
+  `SentenceOrderService` for entity sentences (`place()` /
+  `placeAfterOrder()` over
+  `SparseOrderService::orderForInsertAfter`) — meaning-match row writes
+  (`AlignmentEditorService::persistRowOrderChanges`, `MeaningMatchStore`)
+  carry their own two-phase persistence. The service also bumps
+  `entities.sentences_updated_at` when an order changes: document order
+  feeds the text hash (ADR 0033).
 * **Document order is the single source of truth**: `entity_sentences.order`
   is the sentence's position in its text. The junction table is a pure
   association table (no `order` column); within-row display order is each

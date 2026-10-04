@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\EntitySentence;
 use App\Models\SentenceType;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -31,8 +32,26 @@ class StoreEntitySentenceRequest extends FormRequest
             'image' => $isIllustration
                 ? ['required', 'file', 'image', 'mimes:'.self::IMAGE_MIMES, 'max:10240']
                 : ['nullable', 'file', 'image', 'mimes:'.self::IMAGE_MIMES, 'max:10240'],
-            'after_sentence_id' => ['nullable', 'integer'],
+            'after_sentence_id' => ['nullable', 'integer', $this->anchorSentenceExists()],
         ];
+    }
+
+    /**
+     * after_sentence_id 0 is the "at the beginning" convention, not a
+     * sentence id; every other value must name a real sentence (a
+     * wrong-entity id surfaces as a 404 from the placement service).
+     */
+    private function anchorSentenceExists(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail): void {
+            if ($value === null || $value === 0) {
+                return; // null = append at the end; 0 = at the beginning
+            }
+
+            if (EntitySentence::query()->whereKey((int) $value)->doesntExist()) {
+                $fail('The insert position sentence does not exist.');
+            }
+        };
     }
 
     public function isIllustrationType(): bool

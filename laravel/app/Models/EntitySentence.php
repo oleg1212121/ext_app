@@ -95,9 +95,7 @@ class EntitySentence extends Model
                     $entityMatch = $meaningMatch->entityMatch;
                     $meaningMatch->delete();
 
-                    if ($entityMatch) {
-                        $entityMatch->update(['linked_count' => $entityMatch->meaningMatches()->count()]);
-                    }
+                    $entityMatch?->syncLinkedCount();
                 }
             }
         });
