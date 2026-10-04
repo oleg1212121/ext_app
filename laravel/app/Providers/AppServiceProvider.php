@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Support\UiStrings;
 use App\Translation\UiStringLoader;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -63,5 +64,12 @@ class AppServiceProvider extends ServiceProvider
                 && $user->isAdmin()
                 && $user->is_approved;
         });
+
+        // Daemon queue workers only sweep cyclic garbage when the GC root
+        // buffer overflows; each enrichment job leaves thousands of Eloquent
+        // cycles, so an unswept worker climbs past the CLI memory_limit (128M)
+        // and dies silently mid-job. Sweeping before every pop keeps the
+        // daemon's memory flat for the daemon's whole life.
+        Queue::looping(fn () => gc_collect_cycles());
     }
 }

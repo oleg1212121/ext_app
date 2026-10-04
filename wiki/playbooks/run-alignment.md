@@ -5,7 +5,7 @@ description: End-to-end workflow for aligning two same-work entities (any langua
 tags: [alignment, embeddings, jobs, howto]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-04T18:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T18:05:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -237,3 +237,15 @@ sources:
 * Queue capacity: set `DB_QUEUE_RETRY_AFTER=900` (≥ `AlignEntitySentences`'
   600s timeout) so the `database` queue does not re-lease a long-running
   chunk to a second worker. The `.env.example` ships with this default.
+* Worker memory: a daemon `queue:work` only sweeps cyclic garbage when the
+  GC root buffer overflows, and one enrichment job leaves thousands of
+  Eloquent cycles behind — an unswept worker climbs past the CLI
+  `memory_limit` (128M in this image) and dies silently mid-job after tens
+  of jobs (shell prompt returns, nothing in `failed_jobs`, the in-flight
+  job re-leases after `retry_after`). `AppServiceProvider` sweeps
+  `gc_collect_cycles()` before every pop (`Queue::looping`), which keeps
+  the daemon flat (~60MB, measured 2026-10-04). If the silent death
+  returns, suspect a new per-job allocation first; note `composer run
+  dev`'s `queue:listen` is immune (fresh process per job), so reproduce
+  with a manual `php artisan queue:work` — and give it `--timeout=620
+  --tries=1` like every house runner.

@@ -4014,3 +4014,23 @@ amendment). Simulator position entries are now `{page, row}`; the stale
 `flipped` key is stripped on write and old saved flips reset once (no
 migration). No PHP/routes/API changes; docs: ADR 0037 amendment block,
 CONTEXT.md Side swap term, reader + bilinguals-simulator concepts.
+
+## 2026-10-04 (queue workers died silently: sweep GC before every pop)
+
+Manual `php artisan queue:work --queue=default,low` runs (and, latently, the
+prod compose workers) died silently after tens of jobs — shell prompt
+returns, nothing in `failed_jobs`, pending count unmoved: PHP's 128M CLI
+`memory_limit` fatal in the long-lived daemon, whose in-flight job then
+re-leases after `retry_after`. Differential runs (Debugbar on/off, RSS
+sampled) exonerated Debugbar and pinned the mechanism: each enrichment job
+leaves thousands of cyclic Eloquent roots (model↔collection cycles), PHP's
+GC only sweeps on root-buffer overflow, so a daemon processing self-chaining
+`EnrichEntitySentences` work climbed ~1MB/job to the fatal (measured:
+124.5MB at job 74; user-visible death at 20-30 jobs on bigger early-cursor
+chunks). Fix: `AppServiceProvider` sweeps `gc_collect_cycles()` before every
+pop via `Queue::looping` — probe A/B: unswept worker fatal by ~75 jobs,
+swept worker flat at ~50-60MB over the same fuel. Also: `DB_QUEUE_RETRY_AFTER=900`
+set in dev `.env` (was falling back to 660; wiki already mandated 900), and
+the backlog drained to 0 pending / 0 failed. Repro + guidance now in
+`playbooks/run-alignment.md` (Failure handling); note `queue:listen` (composer
+`dev`) is immune — fresh process per job.
