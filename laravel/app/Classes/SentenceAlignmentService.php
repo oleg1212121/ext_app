@@ -16,11 +16,14 @@ class SentenceAlignmentService
 {
     private const VERIFY_THRESHOLD = 0.70;
 
-    public function __construct(private readonly PythonClient $python) {}
+    public function __construct(
+        private readonly PythonClient $python,
+        private readonly TextSignatureService $signatures,
+    ) {}
 
     public static function create(): self
     {
-        return new self(PythonClient::create());
+        return new self(PythonClient::create(), TextSignatureService::create());
     }
 
     /**
@@ -35,7 +38,7 @@ class SentenceAlignmentService
             return ['similarity' => 0.0, 'passed' => false, 'message' => 'Missing entity signatures'];
         }
 
-        $similarity = $this->cosineSimilarity($aSignature, $bSignature);
+        $similarity = $this->signatures->cosineSimilarity($aSignature, $bSignature);
         $passed = $similarity >= self::VERIFY_THRESHOLD;
 
         return [
@@ -266,28 +269,5 @@ class SentenceAlignmentService
         }
 
         return $path;
-    }
-
-    /**
-     * Cosine similarity between two vectors.
-     */
-    private function cosineSimilarity(array $a, array $b): float
-    {
-        return $this->dotProduct($a, $b);
-    }
-
-    /**
-     * Dot product of two vectors (optimized for L2-normalized vectors).
-     */
-    private function dotProduct(array $a, array $b): float
-    {
-        $dot = 0.0;
-        $count = min(count($a), count($b));
-
-        for ($i = 0; $i < $count; $i++) {
-            $dot += $a[$i] * $b[$i];
-        }
-
-        return $dot;
     }
 }

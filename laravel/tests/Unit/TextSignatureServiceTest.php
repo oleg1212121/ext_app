@@ -109,3 +109,22 @@ it('dispatches sentence splitting without calling the python service', function 
     Bus::assertDispatched(SplitEntityFileSentences::class);
     Http::assertSentCount(0);
 });
+
+it('computes cosine similarity for the signature gate', function () {
+    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
+
+    expect($service->cosineSimilarity([1.0, 0.0], [1.0, 0.0]))->toBe(1.0)
+        ->and($service->cosineSimilarity([1.0, 0.0], [0.0, 1.0]))->toBe(0.0)
+        ->and($service->cosineSimilarity([0.0, 0.0], [1.0, 1.0]))->toBe(0.0)
+        ->and($service->cosineSimilarity([1.0, 2.0], [2.0, 4.0]))->toEqualWithDelta(1.0, 0.000001)
+        ->and($service->cosineSimilarity([], [1.0]))->toBe(0.0);
+});
+
+it('truncates defensively when signature vectors differ in length', function () {
+    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
+
+    // The shared prefix decides the score; the extra dimension is ignored
+    // rather than warning on a missing index.
+    expect($service->cosineSimilarity([1.0, 0.0], [1.0, 0.0, 7.0]))->toBe(1.0)
+        ->and($service->cosineSimilarity([1.0, 0.0, 7.0], [1.0, 0.0]))->toBe(1.0);
+});

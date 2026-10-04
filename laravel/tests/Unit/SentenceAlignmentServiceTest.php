@@ -2,6 +2,7 @@
 
 use App\Classes\PythonClient;
 use App\Classes\SentenceAlignmentService;
+use App\Classes\TextSignatureService;
 use App\Models\EntitySentence;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -12,7 +13,10 @@ uses(TestCase::class);
 
 function makeAlignmentService(): SentenceAlignmentService
 {
-    return new SentenceAlignmentService(new PythonClient('http://ext_python:8000', 30, 300));
+    return new SentenceAlignmentService(
+        new PythonClient('http://ext_python:8000', 30, 300),
+        new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 300)),
+    );
 }
 
 function makeAAlignmentSentence(int $id, int $order): EntitySentence

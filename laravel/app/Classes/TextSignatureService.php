@@ -52,13 +52,21 @@ class TextSignatureService
         }
     }
 
+    /**
+     * Cosine similarity between two signature vectors — the one
+     * implementation in the codebase (the alignment pipeline's signature
+     * gate uses it too). Vectors are unit-normalized by the embedding
+     * service, but the explicit norms keep unnormalized or malformed
+     * vectors honest; shorter vectors defensively truncate (a dimension
+     * mismatch cannot inflate the score).
+     */
     public function cosineSimilarity(array $a, array $b): float
     {
         $dotProduct = 0.0;
         $normA = 0.0;
         $normB = 0.0;
 
-        $count = count($a);
+        $count = min(count($a), count($b));
         for ($i = 0; $i < $count; $i++) {
             $dotProduct += $a[$i] * $b[$i];
             $normA += $a[$i] * $a[$i];

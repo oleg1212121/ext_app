@@ -3,6 +3,7 @@
 use App\Classes\MeaningMatchStore;
 use App\Classes\PythonClient;
 use App\Classes\SentenceAlignmentService;
+use App\Classes\TextSignatureService;
 use App\Jobs\AlignEntitySentences;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
@@ -1938,7 +1939,10 @@ it('passes landmarks and high confidence to the alignment endpoint', function ()
     $bSentence = new EntitySentence(['content' => 'Russian.', 'order' => 1]);
     $bSentence->id = 1;
 
-    $service = new SentenceAlignmentService(new PythonClient('http://ext_python:8000', 30, 300));
+    $service = new SentenceAlignmentService(
+        new PythonClient('http://ext_python:8000', 30, 300),
+        new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 300)),
+    );
 
     $service->alignChunkRemote(
         collect([$aSentence]),
@@ -1971,7 +1975,10 @@ it('omits landmark and high confidence keys from the payload when not given', fu
     $bSentence = new EntitySentence(['content' => 'Russian.', 'order' => 1]);
     $bSentence->id = 1;
 
-    $service = new SentenceAlignmentService(new PythonClient('http://ext_python:8000', 30, 300));
+    $service = new SentenceAlignmentService(
+        new PythonClient('http://ext_python:8000', 30, 300),
+        new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 300)),
+    );
 
     $service->alignChunkRemote(
         collect([$aSentence]),
