@@ -856,7 +856,7 @@ editor-shaped row.
     editor honors the drop position: dragging a sentence — within a row,
     across rows, or from an unmatched pool into a row — renumbers its
     document order (`entity_sentences.order`) via
-    `AlignmentEditorController::placeSideSentence`, which picks the new order
+    `AlignmentEditorService::placeSideSentence`, which picks the new order
     from the side's **global document order** (midpoint between the sorted
     neighbours, not just the destination row's pair) and rebalances the sparse
     window through `SparseOrderService::orderForInsertAfter` when the
