@@ -5,16 +5,15 @@ namespace App\Classes;
 use App\Models\Entity;
 use App\Models\EntitySentence;
 use App\Models\SentenceType;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use Throwable;
 
 class SentenceSplitter
 {
-    public function __construct(private readonly SparseOrderService $sparseOrder) {}
+    public function __construct(
+        private readonly SparseOrderService $sparseOrder,
+        private readonly PythonClient $python,
+    ) {}
 
     private const BATCH_SIZE = 500;
 
@@ -27,8 +26,6 @@ class SentenceSplitter
      * retries and re-dispatches never re-split committed text.
      */
     private const DEFAULT_MAX_CHUNKS_PER_RUN = 8;
-
-    private const RETRY_DELAYS_MS = [500, 1_500, 3_000];
 
     private array $sentenceTypeMap = [];
 
@@ -266,31 +263,7 @@ class SentenceSplitter
      */
     private function splitViaPython(string $text, string $lang, bool $finalize): array
     {
-        $text = $this->decodeHtmlEntities($text);
-
-        $response = Http::timeout((int) config('services.python.timeout', 30))
-            ->retry(
-                self::RETRY_DELAYS_MS,
-                0,
-                fn (Throwable $exception, PendingRequest $request): bool => $exception instanceof ConnectionException,
-                false,
-            )
-            ->post(config('services.python.url', 'http://ext_python:8000').'/split', [
-                'text' => $text,
-                'language' => $lang,
-                'finalize' => $finalize,
-            ]);
-
-        if (! $response->successful()) {
-            throw new \RuntimeException(
-                "Python split service error: {$response->status()} - {$response->body()}"
-            );
-        }
-
-        return [
-            'sentences' => $response->json('sentences', []),
-            'remainder' => (string) $response->json('remainder', ''),
-        ];
+        return $this->python->split($this->decodeHtmlEntities($text), $lang, $finalize);
     }
 
     /**

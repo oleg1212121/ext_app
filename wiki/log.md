@@ -1,5 +1,30 @@
 # Directory Update Log
 
+## 2026-10-04 (refactor: One client for the python service, ADR 0061)
+
+The four scattered python-service call sites (`SentenceSplitter` /split,
+`SentenceAlignmentService` /align, `SentenceEnrichmentService` /enrich,
+`TextSignatureService` /embed), each carrying a byte-identical copy of the
+house transport idiom (base-URL config, connection-error-only retries at
+500/1500/3000 ms, `throw: false`, error envelope), are collapsed onto one
+seam: `App\Classes\PythonClient` — typed endpoint methods owning response
+unwrapping, `create()` factory reading `services.python.url/timeout/
+align_timeout` (dead 300 fallback removed; orphaned
+`has_similar_batch_size` key dropped). Non-2xx responses now throw
+`App\Exceptions\PythonClientException` (extends `RuntimeException`) with
+the preserved `Python {endpoint} service error: {status} - {body}` shape;
+`TextSignatureService` catches it for its deliberate best-effort null
+(embed must not block entity finalization). Payload assembly stays in the
+domain services; `WordTranslationProvider`'s lookalike idiom for external
+translation APIs is explicitly out of scope. The four services take the
+client via constructor injection and keep their `create()` factories, so
+production call sites are unchanged; `AppServiceProvider` binds the client
+for container-resolved `SentenceSplitter`. New
+`tests/Unit/PythonClientTest.php` (retry, endpoint-labelled envelope,
+per-endpoint unwrapping, embed null-on-missing-vector, factory URL);
+per-service tests keep their transport assertions through the seam. Full
+suite 910 passed.
+
 ## 2026-10-03 (fix: reading-rows review follow-ups)
 
 Review of the ADR 0060 branch caught two client bugs and a docs gap.

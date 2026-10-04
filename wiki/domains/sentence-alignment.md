@@ -5,11 +5,14 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-01T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T00:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
-    title: /align HTTP client + meaning-match storage
+    title: match adaptation + meaning-match storage (transport via PythonClient)
+  - id: python-client
+    resource: laravel/app/Classes/PythonClient.php
+    title: the one python transport seam (ADR 0061)
   - id: repair-command
     resource: laravel/app/Console/Commands/RepairEntityMatchAlignmentCommand.php
     title: alignments:repair — in-place dedupe + both-side backfill
@@ -264,8 +267,9 @@ editor-shaped row.
    first `AlignEntitySentences` job. Each `handle()` invocation reads the
    cursor from the model, slices one chunk of a-side and b-side sentences
    **sequentially** (b offset = a offset, no overlap), POSTs them to
-   `/align` via `SentenceAlignmentService::alignChunkRemote()`
-   (`services.python.align_timeout`, default 600), and writes the result via
+   `/align` via `SentenceAlignmentService::alignChunkRemote()` (transport
+   through `PythonClient::align()`; `services.python.align_timeout`,
+   default 600), and writes the result via
    `storeAlignmentSegmentFromMatches()` (one `MeaningMatch` per DP step +
    `SentenceMeaningMatch` junction rows carrying `side` `'a'`/`'b'`). The job
    commits only matches up to and including the **last confident anchor**
@@ -962,10 +966,11 @@ editor-shaped row.
   The `/embed` and `/split` requests carry the entity's language code from
   Laravel (`language` field).
 * Python writes **nothing** to Postgres — Laravel owns all DB writes.
-* Laravel talks to it via `services.python.url` (default
-  `http://ext_python:8000`) with retries at 500/1500/3000 ms; keys:
-  `timeout`, `align_timeout`, `has_similar_batch_size`,
-  `sentence_split_chunk_bytes`.
+* Laravel talks to it exclusively through `PythonClient` (ADR 0061 — the
+  one transport seam: base URL, timeouts, connection-error-only retries at
+  500/1500/3000 ms, `PythonClientException` envelope on non-2xx), built
+  from `services.python.url` (default `http://ext_python:8000`); keys:
+  `timeout`, `align_timeout`, `sentence_split_chunk_bytes`.
 * `TextSignatureService` also exposes `findCrossLanguage()` for cross-language
   alignment candidates. (`hasSimilar()` and the `/cosine/batch` dedup helpers
   were removed with the near-dup merging flow, ADR 0033.)

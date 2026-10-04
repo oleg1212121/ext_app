@@ -1,5 +1,6 @@
 <?php
 
+use App\Classes\PythonClient;
 use App\Classes\SentenceAlignmentService;
 use App\Models\EntitySentence;
 use Illuminate\Http\Client\ConnectionException;
@@ -8,6 +9,11 @@ use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class);
+
+function makeAlignmentService(): SentenceAlignmentService
+{
+    return new SentenceAlignmentService(new PythonClient('http://ext_python:8000', 30, 300));
+}
 
 function makeAAlignmentSentence(int $id, int $order): EntitySentence
 {
@@ -52,7 +58,7 @@ it('aligns a direct one sentence translation as one group', function () {
         ]),
     ]);
 
-    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+    $service = makeAlignmentService();
     $aSentences = collect([makeAAlignmentSentence(101, 1)]);
     $bSentences = collect([makeBAlignmentSentence(201, 1)]);
 
@@ -74,7 +80,7 @@ it('aligns one a side sentence to two b side sentences as one group', function (
         ]),
     ]);
 
-    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+    $service = makeAlignmentService();
     $aSentences = collect([makeAAlignmentSentence(101, 1)]);
     $bSentences = collect([
         makeBAlignmentSentence(201, 1),
@@ -96,7 +102,7 @@ it('aligns two a side sentences to one b side sentence as one group', function (
         ]),
     ]);
 
-    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+    $service = makeAlignmentService();
     $aSentences = collect([
         makeAAlignmentSentence(101, 1),
         makeAAlignmentSentence(102, 2),
@@ -118,7 +124,7 @@ it('produces skip steps for sentences before the matched span', function () {
         ]),
     ]);
 
-    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+    $service = makeAlignmentService();
     $aSentences = collect([
         makeAAlignmentSentence(101, 1),
         makeAAlignmentSentence(102, 2),
@@ -148,7 +154,7 @@ it('produces skip steps for sentences before the matched span', function () {
 it('returns a skip-only path without calling the service when a side is empty', function () {
     Http::fake();
 
-    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+    $service = makeAlignmentService();
 
     $noA = $service->alignChunkRemote(collect(), collect([
         makeBAlignmentSentence(201, 1),
@@ -176,7 +182,7 @@ it('sends sentence contents and max window to the alignment endpoint', function 
         '*' => Http::response(['matches' => []]),
     ]);
 
-    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+    $service = makeAlignmentService();
     $aSentences = collect([
         makeAAlignmentSentence(101, 1),
         makeAAlignmentSentence(102, 2),
@@ -196,7 +202,7 @@ it('sends sentence contents and max window to the alignment endpoint', function 
 it('throws when the alignment service responds with an error', function () {
     Http::fake(fn () => Http::response('service unavailable', 503));
 
-    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+    $service = makeAlignmentService();
 
     $service->alignChunkRemote(
         collect([makeAAlignmentSentence(101, 1)]),
@@ -222,7 +228,7 @@ it('retries transient alignment connection failures before succeeding', function
         ]);
     });
 
-    $service = new SentenceAlignmentService('http://ext_python:8000', 30, 300);
+    $service = makeAlignmentService();
 
     $result = $service->alignChunkRemote(
         collect([makeAAlignmentSentence(101, 1)]),

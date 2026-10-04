@@ -4,7 +4,7 @@ title: Docker & Services
 description: Containers, ports, mounts, and the rule that all PHP/Composer/NPM commands run inside the app container.
 tags: [docker, infrastructure, devops]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-01T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T00:00:00Z }
 sources:
   - id: compose
     resource: docker-compose.yml
@@ -45,7 +45,11 @@ Never run PHP/Composer/NPM on the host. There is no PHP toolchain on the host.
 | (vite dev) | inside `ext_app_laravel` | `8002` | Started by `composer run dev` / `npm run dev` |
 
 All services share the `ext_net` bridge network; the app reaches the python
-API at `http://ext_python:8000` (config `services.python.url`).
+API at `http://ext_python:8000` (config `services.python.url`). Every
+Laravel→python call goes through `App\Classes\PythonClient` (ADR 0061) —
+the single transport seam owning base URL, per-endpoint timeouts,
+connection-error-only retries and the `PythonClientException` error
+envelope.
 
 # Mounts
 

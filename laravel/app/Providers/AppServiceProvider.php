@@ -3,11 +3,12 @@
 namespace App\Providers;
 
 use App\Classes\AIModelResolver;
+use App\Classes\PythonClient;
 use App\Models\UiString;
 use App\Models\UiStringKey;
+use App\Models\User;
 use App\Support\UiStrings;
 use App\Translation\UiStringLoader;
-use App\Models\User;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -22,6 +23,10 @@ class AppServiceProvider extends ServiceProvider
         // constructor-injected controller share one resolver instance —
         // getProvider() caches the provider and loadModels() runs once.
         $this->app->singleton(AIModelResolver::class);
+
+        // The python transport seam (ADR 0061): config-resolved client, so
+        // container-resolved jobs and services share one construction path.
+        $this->app->bind(PythonClient::class, fn () => PythonClient::create());
 
         // Serve DB-backed UI strings to the translator in addition to lang files.
         $this->app->extend('translation.loader', fn ($loader, $app) => new UiStringLoader($app['files'], $app['path.lang']));

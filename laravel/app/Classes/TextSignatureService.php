@@ -2,19 +2,14 @@
 
 namespace App\Classes;
 
+use App\Exceptions\PythonClientException;
 use App\Models\Entity;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use Throwable;
 
 class TextSignatureService
 {
     private const SIMILARITY_THRESHOLD = 0.95;
-
-    private const RETRY_DELAYS_MS = [500, 1_500, 3_000];
 
     /** UTF-8 character counts sent to the python service (head + tail when over the combined limit). */
     private const SIGNATURE_HEAD_CHARS = 10_000;
@@ -23,17 +18,11 @@ class TextSignatureService
 
     private const SIGNATURE_SAMPLE_SEPARATOR = "\n\n…\n\n";
 
-    public function __construct(
-        private readonly string $apiUrl,
-        private readonly int $timeout,
-    ) {}
+    public function __construct(private readonly PythonClient $python) {}
 
     public static function create(): self
     {
-        return new self(
-            apiUrl: config('services.python.url', 'http://ext_python:8000'),
-            timeout: (int) config('services.python.timeout', 30),
-        );
+        return new self(PythonClient::create());
     }
 
     public static function readFileFromLocalPath(string $relativeFilePath): string
@@ -55,25 +44,12 @@ class TextSignatureService
     {
         $textForEmbed = $this->textSampleForSignatureEmbedding($text);
 
-        $response = Http::timeout($this->timeout)
-            ->retry(
-                self::RETRY_DELAYS_MS,
-                0,
-                fn (Throwable $exception, PendingRequest $request): bool => $exception instanceof ConnectionException,
-                false,
-            )
-            ->post("{$this->apiUrl}/embed", [
-                'text' => $textForEmbed,
-                'language' => $languageCode,
-            ]);
-
-        if (! $response->successful()) {
+        try {
+            return $this->python->embed($textForEmbed, $languageCode);
+        } catch (PythonClientException) {
+            // Best-effort: a signature failure must not block entity finalization.
             return null;
         }
-
-        $data = $response->json();
-
-        return $data['vector'] ?? null;
     }
 
     public function cosineSimilarity(array $a, array $b): float

@@ -7,18 +7,12 @@ use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Throwable;
 
 class SentenceAlignmentService
 {
     private const VERIFY_THRESHOLD = 0.70;
-
-    private const RETRY_DELAYS_MS = [500, 1_500, 3_000];
 
     /**
      * Similarity at or above which an auto-aligned row is a landmark: pinned
@@ -27,19 +21,11 @@ class SentenceAlignmentService
      */
     public const LANDMARK_THRESHOLD = 0.90;
 
-    public function __construct(
-        private readonly string $apiUrl,
-        private readonly int $timeout,
-        private readonly ?int $alignTimeout = null,
-    ) {}
+    public function __construct(private readonly PythonClient $python) {}
 
     public static function create(): self
     {
-        return new self(
-            apiUrl: config('services.python.url', 'http://ext_python:8000'),
-            timeout: (int) config('services.python.timeout', 30),
-            alignTimeout: (int) config('services.python.align_timeout', 300),
-        );
+        return new self(PythonClient::create());
     }
 
     /**
@@ -118,36 +104,7 @@ class SentenceAlignmentService
             $payload['high_confidence'] = $highConfidence;
         }
 
-        $response = Http::timeout($this->alignTimeout ?? $this->timeout)
-            ->retry(
-                self::RETRY_DELAYS_MS,
-                0,
-                fn (Throwable $exception, PendingRequest $request): bool => $exception instanceof ConnectionException,
-                false,
-            )
-            ->post("{$this->apiUrl}/align", $payload);
-
-        if (! $response->successful()) {
-            throw new \RuntimeException(
-                "Python alignment service error: {$response->status()} - {$response->body()}"
-            );
-        }
-
-        $matches = [];
-
-        foreach ($response->json('matches', []) as $raw) {
-            if (! is_array($raw)) {
-                continue;
-            }
-
-            $matches[] = [
-                'a_start' => (int) ($raw['a_start'] ?? 0),
-                'a_end' => (int) ($raw['a_end'] ?? 0),
-                'b_start' => (int) ($raw['b_start'] ?? 0),
-                'b_end' => (int) ($raw['b_end'] ?? 0),
-                'score' => (float) ($raw['score'] ?? 0.0),
-            ];
-        }
+        $matches = $this->python->align($payload);
 
         $adapted = $this->adaptMatches($matches, $aSentences, $bSentences);
 
