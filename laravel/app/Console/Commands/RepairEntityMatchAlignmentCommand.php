@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Classes\SentenceAlignmentService;
+use App\Classes\MeaningMatchStore;
 use App\Models\EntityMatch;
 use App\Models\MeaningMatch;
 use Illuminate\Console\Command;
@@ -96,7 +96,7 @@ class RepairEntityMatchAlignmentCommand extends Command
      */
     private function repair(EntityMatch $entityMatch): array
     {
-        $service = SentenceAlignmentService::create();
+        $store = MeaningMatchStore::create();
 
         $rowCount = fn (): int => (int) MeaningMatch::query()
             ->where('entity_match_id', $entityMatch->id)
@@ -104,7 +104,7 @@ class RepairEntityMatchAlignmentCommand extends Command
 
         $beforeDedupe = $rowCount();
 
-        $resequenced = $service->resequenceMatchesByDocumentPosition($entityMatch);
+        $resequenced = $store->resequenceMatchesByDocumentPosition($entityMatch);
 
         $removed = $beforeDedupe - $rowCount();
 
@@ -120,10 +120,10 @@ class RepairEntityMatchAlignmentCommand extends Command
         $created = 0;
 
         foreach (['a', 'b'] as $side) {
-            [$junctionless, $index] = $service->junctionlessSentencesFor($entityMatch, $side);
+            [$junctionless, $index] = $store->junctionlessSentencesFor($entityMatch, $side);
 
             if ($junctionless->isNotEmpty()) {
-                $created += $service->repairJunctionlessSentences(
+                $created += $store->repairJunctionlessSentences(
                     $entityMatch,
                     $side,
                     $junctionless,
@@ -134,7 +134,7 @@ class RepairEntityMatchAlignmentCommand extends Command
         }
 
         if ($created > 0) {
-            $resequenced += $service->resequenceMatchesByDocumentPosition($entityMatch);
+            $resequenced += $store->resequenceMatchesByDocumentPosition($entityMatch);
         }
 
         $entityMatch->syncLinkedCount();

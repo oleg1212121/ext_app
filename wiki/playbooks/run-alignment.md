@@ -5,7 +5,7 @@ description: End-to-end workflow for aligning two same-work entities (any langua
 tags: [alignment, embeddings, jobs, howto]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-01T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T18:00:00Z }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -219,7 +219,8 @@ sources:
 # Failure handling
 
 * The python HTTP client retries with backoff
-  (`RETRY_DELAYS_MS = [500, 1500, 3000]` in `SentenceAlignmentService`).
+  (`RETRY_DELAYS_MS = [500, 1500, 3000]` in `PythonClient`, the one
+  transport seam — ADR 0061).
   Persistent failures usually mean `ext_python` is down or still loading the
   model — check `docker logs ext_python`. `/align` calls use the longer
   `services.python.align_timeout` (default 600s); a 75-sentence chunk takes

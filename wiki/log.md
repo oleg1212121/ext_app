@@ -1,5 +1,34 @@
 # Directory Update Log
 
+## 2026-10-04 (refactor: MeaningMatchStore, ADR 0063)
+
+`SentenceAlignmentService` (971 lines) is split into two classes along its
+one real seam. It keeps only the python-match adapter: `verifyEntityPair`,
+`alignChunkRemote` (payload assembly + `/align` through `PythonClient`),
+and the links/dpPath path builders — `buildCommittedPath` /
+`buildSkipOnlyPath` are now public, their docblocks stating the array
+shapes as the adapter↔store contract. The new `App\Classes\MeaningMatchStore`
+(~600 lines) is the pipeline's meaning-match write path —
+`storeAlignmentSegmentFromMatches`, `storeSkipSentences`,
+`resequenceMatchesByDocumentPosition`, `junctionlessSentencesFor`,
+`repairJunctionlessSentences`, with `persistSegment`, the junction-dedupe
+keeper election and `claimOrder` private — the pipeline-side sibling of
+`AlignmentEditorService` (ADR 0062). Method bodies moved verbatim;
+transactions stay where they were (each store method owns its own, the
+job's `persistOffsets` nesting unchanged). Callers rewired directly, no
+facade: the job, `alignments:resequence`, `alignments:repair` and
+`AlignmentCopyService` call the store for writes and the service for
+verify/align; the dead `storeLinks` / `storeAlignmentSegment` surface is
+deleted. `LANDMARK_THRESHOLD` moved onto `MeaningMatch` (sibling of
+`HUMAN_CHUNK`) — the service const and the job's mirror are gone, and
+`EntityMatchResource`'s Re-align modal reads the model const. Context.md
+gains a **Landmark** glossary term; `wiki/domains/sentence-alignment.md`
+and `wiki/database/entities-alignment.md` updated; the stale
+`RETRY_DELAYS_MS` attribution in `wiki/playbooks/run-alignment.md`
+corrected. Tests: `ResequenceEntityMatchesTest`,
+`ChunkedEntityAlignmentTest` and `SentenceAlignmentServiceTest` pass with
+construction-site rewires only (894 passed overall).
+
 ## 2026-10-04 (refactor: One alignment-editing domain, ADR 0062)
 
 The Filament draft editor is retired: `EditEntityAlignment`,

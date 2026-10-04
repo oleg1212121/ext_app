@@ -5,11 +5,14 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-04T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T18:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
-    title: match adaptation + meaning-match storage (transport via PythonClient)
+    title: python-match adapter — pair verify, /align call, links/dpPath path builders (ADR 0063)
+  - id: meaning-match-store
+    resource: laravel/app/Classes/MeaningMatchStore.php
+    title: the pipeline's meaning-match write path — segments, resequence, junction-less repair (ADR 0063)
   - id: python-client
     resource: laravel/app/Classes/PythonClient.php
     title: the one python transport seam (ADR 0061)
@@ -102,7 +105,11 @@ sentences appear in document order — the per-sentence number shown in the
 reader and the alignment editor is exactly that rank, so a scrambled
 `meaning_matches.order` **is** a scrambled alignment on every display surface.
 
-Enforcement (all inside `SentenceAlignmentService`):
+Enforcement (all inside `MeaningMatchStore` — since ADR
+[0063](../../docs/adr/0063-meaning-match-store.md) the pipeline is two
+classes: `SentenceAlignmentService` is the stateless python-match adapter
+(verify gate, `/align` call, links/dpPath path builders), `MeaningMatchStore`
+is its write path):
 `resequenceMatchesByDocumentPosition()` renumbers a match's rows 0, 1024,
 2048… so the stored sequence equals document position — a-anchored rows
 (two-sided or a-only) sort by their a position; single-b rows have no a anchor
@@ -146,9 +153,11 @@ pipeline revisits completed matches).
 **Junction-uniqueness invariant (strict, ADR 0048).** One sentence is
 junctioned into at most one meaning match per side per entity match —
 partial overlaps included. Enforced in layers:
-`persistSegment()` deletes every machine row below the landmark bar
-(`alignment_chunk != -1` and `similarity <` `LANDMARK_THRESHOLD`, shared
-const with the job) that junctions any sentence of the segment it is about
+`persistSegment()` (on `MeaningMatchStore`) deletes every machine row below
+the landmark bar
+(`alignment_chunk != -1` and `similarity <` `MeaningMatch::LANDMARK_THRESHOLD`,
+homed on the model, ADR 0063) that junctions any sentence of the segment it
+is about
 to store — so a re-fed window (retry after a crash, duplicated job)
 **replaces** stale coverage instead of duplicating it — and **reserves**
 landmark-junctioned sentences: incoming machine windows skip their
@@ -270,7 +279,8 @@ editor-shaped row.
    `/align` via `SentenceAlignmentService::alignChunkRemote()` (transport
    through `PythonClient::align()`; `services.python.align_timeout`,
    default 600), and writes the result via
-   `storeAlignmentSegmentFromMatches()` (one `MeaningMatch` per DP step +
+   `MeaningMatchStore::storeAlignmentSegmentFromMatches()` (one
+   `MeaningMatch` per DP step +
    `SentenceMeaningMatch` junction rows carrying `side` `'a'`/`'b'`). The job
    commits only matches up to and including the **last confident anchor**
    (score ≥ `ANCHOR_SCORE_THRESHOLD` = 0.40): the DP force-aligns every
@@ -334,7 +344,7 @@ editor-shaped row.
     `resequenceMatchesByDocumentPosition()` over the whole match (same
     best-effort contract) so every completion path leaves the stored sequence
     equal to document position — see the order-preservation invariant above.
-    `storeSkipSentences()` on `SentenceAlignmentService` persists
+    `storeSkipSentences()` on `MeaningMatchStore` persists
     single-sided rows (side parameter `'a'|'b'`), and the crawl's empty-commit
     seams (`alignWholePool`, `alignPoolChunk`) use it to junction the first
     uncommitted sentence of whichever side's cursor advances (parked sides
@@ -629,7 +639,9 @@ editor-shaped row.
     b_end}` ints) and `high_confidence`. When neither is given the payload is
     **byte-identical to the previous shape** (no `landmarks`/`high_confidence`
     keys are sent), so existing callers and the request format are untouched.
-    `AlignEntitySentences` reserves `LANDMARK_THRESHOLD = 0.90` (inert until
+    `AlignEntitySentences` reserves the landmark bar
+    (`MeaningMatch::LANDMARK_THRESHOLD`, 0.90 — homed on the model since ADR
+    0063; inert until
     plan 08 turns human-edited rows into pins on re-align). Feature tests
     assert the keys appear in the payload when passed and are omitted when not.
 3. **Align (landmark-aware re-align, Plan 08, Aug 2026)** — the entry-point
@@ -673,7 +685,7 @@ editor-shaped row.
       `similarity = 1.0`. They are never deleted, never rolled back, and never
       re-aligned — the machine cannot cross them.
     - **Auto** — machine rows whose `similarity >= LANDMARK_THRESHOLD`
-      (`AlignEntitySentences::LANDMARK_THRESHOLD = 0.90`) are promoted to
+      (`MeaningMatch::LANDMARK_THRESHOLD` = 0.90) are promoted to
       landmarks on re-align: they survive the delete-only-sub-threshold wipe
       and become pool boundaries exactly like human rows.
     Both tiers feed `landmarkRows()` → `landmarkBounds()`, so both are pool

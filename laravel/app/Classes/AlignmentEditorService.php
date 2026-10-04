@@ -18,8 +18,8 @@ use Illuminate\Support\Facades\DB;
  * by one service so the invariant writes (syncLinkedCount, syncTotals,
  * HUMAN_CHUNK, two-phase order parking) live in exactly one place. The HTTP
  * controller keeps access gates, validation, 404/422 mapping, and payload
- * shaping; the aligner pipeline has its own write path
- * (SentenceAlignmentService) and does not come through here.
+ * shaping; the aligner pipeline has its own write path (MeaningMatchStore)
+ * and does not come through here.
  */
 class AlignmentEditorService
 {

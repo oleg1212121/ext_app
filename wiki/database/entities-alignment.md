@@ -5,7 +5,7 @@ description: Works grouping per-language entities, their sentences, and the mach
 tags: [database, schema, alignment, entities, works, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-01T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-04T18:00:00Z }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
@@ -23,8 +23,8 @@ sources:
      resource: laravel/database/migrations/2026_09_28_000002_add_illustration_columns_to_entity_sentences_table.php
      title: entity_sentences image_path/hash/width/height/mime (ADR 0050)
    - id: align-service
-     resource: laravel/app/Classes/SentenceAlignmentService.php
-     title: Writer of meaning matches
+     resource: laravel/app/Classes/MeaningMatchStore.php
+     title: Writer of meaning matches (the pipeline's write path, ADR 0063)
 ---
 
 # Tables

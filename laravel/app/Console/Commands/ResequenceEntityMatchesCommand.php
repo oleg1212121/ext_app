@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Classes\SentenceAlignmentService;
+use App\Classes\MeaningMatchStore;
 use App\Models\EntityMatch;
 use Illuminate\Console\Command;
 
@@ -22,7 +22,7 @@ class ResequenceEntityMatchesCommand extends Command
             return self::FAILURE;
         }
 
-        $changed = SentenceAlignmentService::create()
+        $changed = MeaningMatchStore::create()
             ->resequenceMatchesByDocumentPosition($entityMatch);
 
         $this->info("Resequenced {$changed} meaning match row(s) for entity match {$entityMatch->id}.");

@@ -158,7 +158,7 @@ class EntityMatchResource extends Resource
 
                         $confident = MeaningMatch::query()
                             ->where('entity_match_id', $record->id)
-                            ->where('similarity', '>=', AlignEntitySentences::LANDMARK_THRESHOLD)
+                            ->where('similarity', '>=', MeaningMatch::LANDMARK_THRESHOLD)
                             ->where('alignment_chunk', '!=', MeaningMatch::HUMAN_CHUNK)
                             ->count();
 

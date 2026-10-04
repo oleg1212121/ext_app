@@ -262,7 +262,7 @@ class AlignmentCopyService
 
         // A completed source can predate a resequence fix and carry a scrambled
         // order column; renormalize so the copy lands in document position.
-        SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($target);
+        MeaningMatchStore::create()->resequenceMatchesByDocumentPosition($target);
 
         $target->syncTotals();
         $target->syncLinkedCount();

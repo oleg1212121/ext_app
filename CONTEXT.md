@@ -108,6 +108,14 @@ Per-meaning-match aligner confidence (0–1). A human-confirmed grouping is trus
 at 1.0 (structural changes reset it).
 _Avoid_: score
 
+**Landmark**:
+A meaning match pinned against re-alignment, in either of two tiers: a
+human-made row (confirmed in the alignment editor) or a machine row whose
+similarity is at or above the landmark bar. A re-align keeps landmarks and
+re-derives only the low-confidence rows between them; the pipeline never
+deletes one, and no machine output may cross one. See ADR 0051.
+_Avoid_: pinned row, confident row (UI-count wording), human row (names only one tier)
+
 **Entity similarity**:
 `entity_similarity` on the entity match — the whole-pair embedding similarity,
 distinct from per-row similarity.
