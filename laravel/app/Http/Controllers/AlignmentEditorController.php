@@ -64,11 +64,11 @@ class AlignmentEditorController extends Controller
                 'entity_match_id' => $entityMatch->id,
                 'order' => $result['order'],
                 'similarity' => 1.0,
-                'alignment_chunk' => -1,
+                'alignment_chunk' => MeaningMatch::HUMAN_CHUNK,
             ]);
         });
 
-        $entityMatch->refresh()->update(['linked_count' => $entityMatch->meaningMatches()->count()]);
+        $entityMatch->syncLinkedCount();
 
         return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch)]);
     }
@@ -91,7 +91,7 @@ class AlignmentEditorController extends Controller
             $meaningMatch->sentenceMeaningMatches()->delete();
             $meaningMatch->delete();
 
-            $entityMatch->update(['linked_count' => $entityMatch->meaningMatches()->count()]);
+            $entityMatch->syncLinkedCount();
         });
 
         return $this->mutationResponse(
@@ -108,7 +108,7 @@ class AlignmentEditorController extends Controller
 
         abort_unless($meaningMatch->entity_match_id === $entityMatch->id, 404);
 
-        $meaningMatch->update(['similarity' => 1.0, 'alignment_chunk' => -1]);
+        $meaningMatch->update(['similarity' => 1.0, 'alignment_chunk' => MeaningMatch::HUMAN_CHUNK]);
 
         return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch->refresh())]);
     }
@@ -149,8 +149,7 @@ class AlignmentEditorController extends Controller
 
             $meaningMatch->update(['similarity' => 1.0]);
 
-            $totalColumn = $side === 'a' ? 'a_total_sentences' : 'b_total_sentences';
-            $entityMatch->update([$totalColumn => EntitySentence::query()->where('entity_id', $entityId)->withoutImage()->count()]);
+            $entityMatch->syncTotals();
         });
 
         return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch->refresh())]);
@@ -206,18 +205,12 @@ class AlignmentEditorController extends Controller
             abort(422, 'Linked sentences must be unlinked before deletion.');
         }
 
-        $entityId = $this->entityId($entityMatch, $side);
-
-        DB::transaction(function () use ($entityMatch, $sentenceModel, $side, $entityId): void {
+        DB::transaction(function () use ($entityMatch, $sentenceModel): void {
             $sentenceModel->delete();
 
             // The totals are the aligner's cursor space — image-less
             // sentences only (ADR 0050), matching AlignEntitySentences.
-            $totalColumn = $side === 'a' ? 'a_total_sentences' : 'b_total_sentences';
-            $entityMatch->update([$totalColumn => EntitySentence::query()
-                ->where('entity_id', $entityId)
-                ->withoutImage()
-                ->count()]);
+            $entityMatch->syncTotals();
         });
 
         return $this->mutationResponse($entityMatch, [], [], [$side]);

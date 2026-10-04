@@ -67,6 +67,59 @@ class EntityMatch extends Model
         return $this->hasMany(MeaningMatch::class);
     }
 
+    /**
+     * Monotonic per-run alignment chunk id (MAX+1, 0 for a fresh match).
+     * Human-edited rows use the MeaningMatch::HUMAN_CHUNK sentinel, so
+     * machine ids can never collide with it.
+     */
+    public function nextAlignmentChunk(): int
+    {
+        $max = $this->meaningMatches()->max('alignment_chunk');
+
+        return $max === null ? 0 : ((int) $max) + 1;
+    }
+
+    /**
+     * Recount the meaning matches and persist the result. Every writer of
+     * linked_count goes through this — the count is the progress bar shown
+     * on the alignment surfaces, and a site that forgets to resync
+     * desyncs it.
+     */
+    public function syncLinkedCount(): int
+    {
+        $this->update(['linked_count' => $this->meaningMatches()->count()]);
+
+        return (int) $this->linked_count;
+    }
+
+    /**
+     * The image-less sentence counts per side — the aligner's cursor space
+     * (ADR 0050): illustrations never enter a chunk window, a count, or a
+     * cursor.
+     *
+     * @return array{a: int, b: int}
+     */
+    public function recountTotals(): array
+    {
+        return [
+            'a' => (int) $this->aEntity->sentences()->withoutImage()->count(),
+            'b' => (int) $this->bEntity->sentences()->withoutImage()->count(),
+        ];
+    }
+
+    /**
+     * Recount and persist both sides' totals (see recountTotals).
+     */
+    public function syncTotals(): void
+    {
+        $totals = $this->recountTotals();
+
+        $this->update([
+            'a_total_sentences' => $totals['a'],
+            'b_total_sentences' => $totals['b'],
+        ]);
+    }
+
     public function getConfirmedCountAttribute(): int
     {
         return (int) $this->meaningMatches()

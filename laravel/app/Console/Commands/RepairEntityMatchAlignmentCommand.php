@@ -137,9 +137,7 @@ class RepairEntityMatchAlignmentCommand extends Command
             $resequenced += $service->resequenceMatchesByDocumentPosition($entityMatch);
         }
 
-        $entityMatch->update([
-            'linked_count' => $rowCount(),
-        ]);
+        $entityMatch->syncLinkedCount();
 
         return [$removed, $created, $resequenced];
     }

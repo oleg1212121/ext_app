@@ -298,7 +298,7 @@ class SentenceAlignmentService
             $sides = $row->sentenceMeaningMatches->pluck('side');
 
             $priorities[$row->id] = [
-                $row->alignment_chunk === -1
+                $row->alignment_chunk === MeaningMatch::HUMAN_CHUNK
                     || (float) $row->similarity >= self::LANDMARK_THRESHOLD ? 1 : 0,
                 $sides->contains('a') && $sides->contains('b') ? 1 : 0,
                 $row->sentenceMeaningMatches->count(),
@@ -684,7 +684,7 @@ class SentenceAlignmentService
         }
 
         $sparseOrder = app(SparseOrderService::class);
-        $alignmentChunk = $this->nextAlignmentChunk($entityMatch->id);
+        $alignmentChunk = $entityMatch->nextAlignmentChunk();
         $anchorIndexes = array_keys($anchors);
         $created = 0;
 
@@ -761,20 +761,6 @@ class SentenceAlignmentService
         return $order;
     }
 
-    /**
-     * Monotonic per-run alignment chunk id (mirrors the job's private
-     * helper). Human-edited rows use the -1 sentinel, so MAX+1 can never
-     * collide with it.
-     */
-    private function nextAlignmentChunk(int $entityMatchId): int
-    {
-        $max = MeaningMatch::query()
-            ->where('entity_match_id', $entityMatchId)
-            ->max('alignment_chunk');
-
-        return $max === null ? 0 : ((int) $max) + 1;
-    }
-
     private function persistSegment(
         EntityMatch $entityMatch,
         int $alignmentChunk,
@@ -812,7 +798,7 @@ class SentenceAlignmentService
             if ($incomingSentenceIds !== []) {
                 MeaningMatch::query()
                     ->where('entity_match_id', $entityMatch->id)
-                    ->where('alignment_chunk', '!=', -1)
+                    ->where('alignment_chunk', '!=', MeaningMatch::HUMAN_CHUNK)
                     ->where('similarity', '<', self::LANDMARK_THRESHOLD)
                     ->whereHas('sentenceMeaningMatches', fn ($query) => $query
                         ->whereIn('entity_sentence_id', $incomingSentenceIds))
@@ -830,7 +816,7 @@ class SentenceAlignmentService
                 ->whereHas('meaningMatch', fn ($query) => $query
                     ->where('entity_match_id', $entityMatch->id)
                     ->where(fn ($inner) => $inner
-                        ->where('alignment_chunk', -1)
+                        ->where('alignment_chunk', MeaningMatch::HUMAN_CHUNK)
                         ->orWhere('similarity', '>=', self::LANDMARK_THRESHOLD)))
                 ->pluck('entity_sentence_id')
                 ->flip()
@@ -923,9 +909,7 @@ class SentenceAlignmentService
                 ]);
             }
 
-            $entityMatch->update([
-                'linked_count' => $this->countLinkedPairs($entityMatch->id),
-            ]);
+            $entityMatch->syncLinkedCount();
 
             // Resequencing happens once at finalize() — a per-chunk pass here
             // re-read both entities' full sentence lists after every window,
@@ -942,13 +926,6 @@ class SentenceAlignmentService
         array $dpPathSegment,
     ): void {
         $this->storeAlignmentSegment($entityMatch, 0, $links, $dpPathSegment);
-    }
-
-    private function countLinkedPairs(int $entityMatchId): int
-    {
-        return (int) MeaningMatch::query()
-            ->where('entity_match_id', $entityMatchId)
-            ->count();
     }
 
     /**

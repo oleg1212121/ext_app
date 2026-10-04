@@ -153,13 +153,13 @@ class EntityMatchResource extends Resource
                     ->modalDescription(function (EntityMatch $record): string {
                         $humanMade = MeaningMatch::query()
                             ->where('entity_match_id', $record->id)
-                            ->where('alignment_chunk', -1)
+                            ->where('alignment_chunk', MeaningMatch::HUMAN_CHUNK)
                             ->count();
 
                         $confident = MeaningMatch::query()
                             ->where('entity_match_id', $record->id)
                             ->where('similarity', '>=', AlignEntitySentences::LANDMARK_THRESHOLD)
-                            ->where('alignment_chunk', '!=', -1)
+                            ->where('alignment_chunk', '!=', MeaningMatch::HUMAN_CHUNK)
                             ->count();
 
                         return "{$humanMade} human-made + {$confident} confident row(s) preserved; only low-confidence rows will be re-aligned.";
@@ -176,7 +176,7 @@ class EntityMatchResource extends Resource
 
                         $humanMadeCount = MeaningMatch::query()
                             ->where('entity_match_id', $record->id)
-                            ->where('alignment_chunk', -1)
+                            ->where('alignment_chunk', MeaningMatch::HUMAN_CHUNK)
                             ->count();
 
                         if ($humanMadeCount > 0) {

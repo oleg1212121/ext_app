@@ -8,6 +8,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MeaningMatch extends Model
 {
+    /**
+     * The alignment_chunk sentinel marking a human-made row: the Re-align
+     * pipeline pins it against deletion and re-alignment, and MAX(chunk)+1
+     * machine chunk ids can never collide with it.
+     */
+    public const HUMAN_CHUNK = -1;
+
     protected $fillable = [
         'entity_match_id',
         'order',

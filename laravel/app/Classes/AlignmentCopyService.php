@@ -264,11 +264,8 @@ class AlignmentCopyService
         // order column; renormalize so the copy lands in document position.
         SentenceAlignmentService::create()->resequenceMatchesByDocumentPosition($target);
 
-        $target->update([
-            'a_total_sentences' => $aEntity->sentences()->withoutImage()->count(),
-            'b_total_sentences' => $bEntity->sentences()->withoutImage()->count(),
-            'linked_count' => count($meaningRows),
-        ]);
+        $target->syncTotals();
+        $target->syncLinkedCount();
 
         return true;
     }
