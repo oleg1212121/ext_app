@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\EntityResource\RelationManagers;
 
+use App\Classes\SentenceOrderService;
 use App\Classes\SparseOrderService;
+use App\Enums\SentenceAnchor;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
@@ -15,6 +17,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class SentencesRelationManager extends RelationManager
@@ -58,10 +61,7 @@ class SentencesRelationManager extends RelationManager
                                 : (string) SparseOrderService::BEGINNING_SENTINEL;
                         }
 
-                        $previous = $owner->sentences()
-                            ->where('order', '<', $record->order)
-                            ->orderByDesc('order')
-                            ->first();
+                        $previous = $this->predecessorOf($owner, $record);
 
                         return $previous
                             ? (string) $previous->getKey()
@@ -117,13 +117,14 @@ class SentencesRelationManager extends RelationManager
                     ->createAnother(false)
                     ->using(function (array $data, RelationManager $livewire): EntitySentence {
                         $owner = $livewire->getOwnerRecord();
-                        $data['order'] = $this->computeOrder($owner, null, $data['insert_after']);
+
+                        $order = DB::transaction(
+                            fn (): int => app(SentenceOrderService::class)
+                                ->place($owner->id, $this->anchorFromOption($data['insert_after'])),
+                        );
                         unset($data['insert_after']);
 
-                        $sentence = new EntitySentence($data);
-                        $owner->sentences()->save($sentence);
-
-                        return $sentence;
+                        return $owner->sentences()->create([...$data, 'order' => $order]);
                     })
                     ->after(fn (RelationManager $livewire) => EntityMatch::syncTotalsForEntity($livewire->getOwnerRecord()->id)),
             ])
@@ -131,8 +132,21 @@ class SentencesRelationManager extends RelationManager
                 Actions\EditAction::make()
                     ->using(function (array $data, RelationManager $livewire, Model $record): EntitySentence {
                         $owner = $livewire->getOwnerRecord();
-                        $data['order'] = $this->computeOrder($owner, $record, $data['insert_after']);
+                        $insertAfter = (string) $data['insert_after'];
                         unset($data['insert_after']);
+
+                        // Only a changed drop position re-places the record —
+                        // a content-only edit must not renumber it.
+                        if ($this->positionChanged($owner, $record, $insertAfter)) {
+                            DB::transaction(function () use ($owner, $record, $insertAfter): void {
+                                app(SentenceOrderService::class)->place(
+                                    $owner->id,
+                                    $this->anchorFromOption($insertAfter),
+                                    $record->getKey(),
+                                );
+                            });
+                            $record->refresh();
+                        }
 
                         $record->update($data);
 
@@ -150,80 +164,47 @@ class SentencesRelationManager extends RelationManager
             ]);
     }
 
-    private function computeOrder(Entity $owner, ?EntitySentence $excluding, string $insertAfterId): int
+    /**
+     * The form's "insert after" select spells the beginning as the
+     * BEGINNING_SENTINEL string; every other option is a sentence id.
+     */
+    private function anchorFromOption(int|string $insertAfterId): SentenceAnchor
     {
-        $service = app(SparseOrderService::class);
-
-        $sentences = $owner->sentences()
-            ->when($excluding, fn ($query) => $query->whereKeyNot($excluding->getKey()))
-            ->orderBy('order')
-            ->orderBy('id')
-            ->get(['id', 'order']);
-
-        $isBeginning = $insertAfterId === (string) SparseOrderService::BEGINNING_SENTINEL;
-
-        $previous = null;
-        $next = null;
-
-        if ($isBeginning) {
-            $next = $sentences->first();
-        } else {
-            $found = false;
-
-            foreach ($sentences as $sentence) {
-                if ($found) {
-                    $next = $sentence;
-                    break;
-                }
-
-                if ((string) $sentence->getKey() === $insertAfterId) {
-                    $previous = $sentence;
-                    $found = true;
-                }
-            }
+        if ((string) $insertAfterId === (string) SparseOrderService::BEGINNING_SENTINEL) {
+            return SentenceAnchor::beginning();
         }
 
-        $order = $service->between(
-            $previous ? (int) $previous->order : null,
-            $next ? (int) $next->order : null,
-        );
+        return SentenceAnchor::after((int) $insertAfterId);
+    }
 
-        if ($order !== null) {
-            return $order;
-        }
+    /**
+     * Whether the chosen insert position differs from the record's current
+     * place in document order — its predecessor under the (order, id)
+     * sort.
+     */
+    private function positionChanged(Entity $owner, Model $record, string $insertAfterId): bool
+    {
+        $predecessor = $this->predecessorOf($owner, $record);
 
-        $service->rebalanceAll(EntitySentence::class, 'entity_id', $owner->id);
+        return $insertAfterId !== ($predecessor !== null
+            ? (string) $predecessor->getKey()
+            : (string) SparseOrderService::BEGINNING_SENTINEL);
+    }
 
-        $sentences = $owner->sentences()
-            ->when($excluding, fn ($query) => $query->whereKeyNot($excluding->getKey()))
-            ->orderBy('order')
-            ->orderBy('id')
-            ->get(['id', 'order']);
-
-        if ($isBeginning) {
-            $previous = null;
-            $next = $sentences->first();
-        } else {
-            $found = false;
-            $previous = null;
-            $next = null;
-
-            foreach ($sentences as $sentence) {
-                if ($found) {
-                    $next = $sentence;
-                    break;
-                }
-
-                if ((string) $sentence->getKey() === $insertAfterId) {
-                    $previous = $sentence;
-                    $found = true;
-                }
-            }
-        }
-
-        return $service->between(
-            $previous ? (int) $previous->order : null,
-            $next ? (int) $next->order : null,
-        ) ?? $service->initial($sentences->count());
+    /**
+     * The sentence immediately before $record in the (order, id) document
+     * order, or null at the beginning.
+     */
+    private function predecessorOf(Entity $owner, EntitySentence $record): ?EntitySentence
+    {
+        return $owner->sentences()
+            ->where(function ($query) use ($record): void {
+                $query
+                    ->where('order', '<', $record->order)
+                    ->orWhere(fn ($q) => $q->where('order', $record->order)->where('id', '<', $record->id));
+            })
+            ->orderByDesc('order')
+            ->orderByDesc('id')
+            ->first();
     }
 }

@@ -5,7 +5,8 @@ namespace App\Http\Controllers;
 use App\Classes\EntityAccessService;
 use App\Classes\EntityCreationService;
 use App\Classes\IllustrationStorage;
-use App\Classes\SparseOrderService;
+use App\Classes\SentenceOrderService;
+use App\Enums\SentenceAnchor;
 use App\Exceptions\ProcessingLimitReached;
 use App\Http\Requests\ReorderEntitySentenceRequest;
 use App\Http\Requests\StoreEntityRequest;
@@ -32,7 +33,7 @@ use Inertia\Response;
 class EntityController extends Controller
 {
     public function __construct(
-        private readonly SparseOrderService $sparseOrder,
+        private readonly SentenceOrderService $sentenceOrder,
         private readonly IllustrationStorage $illustrations = new IllustrationStorage,
         private readonly EntityCreationService $creation = new EntityCreationService,
     ) {}
@@ -271,28 +272,13 @@ class EntityController extends Controller
         $image = $this->isIllustrationType($data) ? $request->file('image') : null;
 
         $sentence = DB::transaction(function () use ($entity, $content, $data, $afterSentenceId, $image, $language): Model {
-            $sentences = EntitySentence::query()
-                ->where('entity_id', $entity->id)
-                ->orderBy('order')
-                ->orderBy('id')
-                ->get(['id', 'order'])
-                ->map(fn ($row): array => ['key' => 's-'.$row->id, 'order' => (int) $row->order])
-                ->values()
-                ->all();
-
-            $afterOrder = $this->resolveAfterOrder($afterSentenceId, $sentences);
-
-            $result = $this->sparseOrder->orderForInsertAfter($sentences, null, $afterOrder);
-
-            $result = $this->shiftOrdersNonNegative($result);
-
-            $this->persistSentenceOrders($entity->id, $this->ordersFromItems($result['items']));
+            $order = $this->sentenceOrder->place($entity->id, $this->sentenceAnchor($afterSentenceId));
 
             return EntitySentence::query()->create([
                 'entity_id' => $entity->id,
                 'sentence_type_id' => (int) $data['sentence_type_id'],
                 'content' => $content,
-                'order' => $result['order'],
+                'order' => $order,
                 ...$this->imageAttributes($image, $language->code),
             ]);
         });
@@ -399,30 +385,12 @@ class EntityController extends Controller
         $sentenceModel = $this->findEntitySentence($entity->id, $sentenceId);
 
         DB::transaction(function () use ($entity, $sentenceModel, $afterSentenceId): void {
-            $sentences = EntitySentence::query()
-                ->where('entity_id', $entity->id)
-                ->orderBy('order')
-                ->orderBy('id')
-                ->get(['id', 'order'])
-                ->map(fn ($row): array => ['key' => 's-'.$row->id, 'order' => (int) $row->order])
-                ->values()
-                ->all();
-
-            $afterOrder = $this->resolveAfterOrder($afterSentenceId, $sentences);
-
-            $result = $this->sparseOrder->orderForInsertAfter($sentences, 's-'.$sentenceModel->id, $afterOrder);
-
-            $result = $this->shiftOrdersNonNegative($result);
-
-            $orders = $this->ordersFromItems($result['items']);
-            $orders[$sentenceModel->id] = $result['order'];
-
-            $this->persistSentenceOrders($entity->id, $orders);
+            $this->sentenceOrder->place(
+                $entity->id,
+                $this->sentenceAnchor($afterSentenceId),
+                $sentenceModel->getKey(),
+            );
         });
-
-        // Reorder only rewrites order values in bulk (no model events), but
-        // the hash covers content in order — mark the sentence set changed.
-        $entity->touchSentences();
 
         $this->markMatchesStale($entity->id);
         EntityMatch::syncTotalsForEntity($entity->id);
@@ -494,24 +462,22 @@ class EntityController extends Controller
     }
 
     /**
-     * Resolve the anchor order for an insert/reorder operation.
-     * after_sentence_id = 0 means "at the beginning" (BEGINNING_SENTINEL);
-     * null means "at the end" (max order, or BEGINNING_SENTINEL if empty);
-     * any other integer is the sentence to insert after.
-     *
-     * @param  list<array{key: string, order: int}>  $sentences
+     * Translate the wire convention for an insert position into the anchor
+     * type: after_sentence_id 0 means "at the beginning", null means
+     * "append at the end", any other integer is the sentence to insert
+     * after.
      */
-    private function resolveAfterOrder(?int $afterSentenceId, array $sentences): int
+    private function sentenceAnchor(?int $afterSentenceId): SentenceAnchor
     {
         if ($afterSentenceId === 0) {
-            return SparseOrderService::BEGINNING_SENTINEL;
+            return SentenceAnchor::beginning();
         }
 
         if ($afterSentenceId !== null) {
-            return (int) EntitySentence::query()->whereKey($afterSentenceId)->value('order');
+            return SentenceAnchor::after($afterSentenceId);
         }
 
-        return $sentences !== [] ? (int) max(array_column($sentences, 'order')) : SparseOrderService::BEGINNING_SENTINEL;
+        return SentenceAnchor::end();
     }
 
     private function findEntitySentence(int $entityId, int $sentenceId): Model
@@ -524,58 +490,6 @@ class EntityController extends Controller
         abort_if($sentence === null, 404);
 
         return $sentence;
-    }
-
-    /**
-     * Persist sentence orders two-phase: every changed row is parked at a
-     * unique negative order before the finals are written. The final orders
-     * are collision-free as a set, but one row's final may be another row's
-     * current order, so a naive one-by-one write would trip the
-     * (entity_id, order) unique index mid-write.
-     *
-     * @param  array<int, int>  $orders  sentence id => final order
-     */
-    private function persistSentenceOrders(int $entityId, array $orders): void
-    {
-        $currentOrders = EntitySentence::query()
-            ->where('entity_id', $entityId)
-            ->get(['id', 'order'])
-            ->mapWithKeys(fn ($row): array => [$row->id => (int) $row->order]);
-
-        $changed = [];
-
-        foreach ($orders as $id => $order) {
-            if (($currentOrders->get($id) ?? null) !== $order) {
-                $changed[$id] = $order;
-            }
-        }
-
-        if ($changed === []) {
-            return;
-        }
-
-        foreach (array_keys($changed) as $id) {
-            EntitySentence::query()->whereKey($id)->update(['order' => -$id - 1_000_000_000]);
-        }
-
-        foreach ($changed as $id => $order) {
-            EntitySentence::query()->whereKey($id)->update(['order' => $order]);
-        }
-    }
-
-    /**
-     * @param  list<array{key: string, order: int}>  $items
-     * @return array<int, int>
-     */
-    private function ordersFromItems(array $items): array
-    {
-        $orders = [];
-
-        foreach ($items as $item) {
-            $orders[(int) substr($item['key'], 2)] = (int) $item['order'];
-        }
-
-        return $orders;
     }
 
     /**
@@ -711,34 +625,6 @@ class EntityController extends Controller
             'image_height' => $stored['height'],
             'image_mime' => $stored['mime'],
         ];
-    }
-
-    /**
-     * Shift every order in a SparseOrderService result so that the minimum is
-     * non-negative, preserving relative sequence. Mirrors the guard in
-     * AlignmentEditorController::storeSentence so entity-editor sentences never
-     * carry negative order values (which surface as negative display numbers).
-     *
-     * @param  array{order: int, items: list<array{key: string, order: int}>}  $result
-     * @return array{order: int, items: list<array{key: string, order: int}>}
-     */
-    private function shiftOrdersNonNegative(array $result): array
-    {
-        $orders = array_column($result['items'], 'order');
-        $orders[] = $result['order'];
-        $minOrder = min($orders);
-
-        if ($minOrder < 0) {
-            $shift = -$minOrder;
-            $result['order'] += $shift;
-
-            foreach ($result['items'] as &$item) {
-                $item['order'] += $shift;
-            }
-            unset($item);
-        }
-
-        return $result;
     }
 
     private function normalizePerPage(int $perPage): int

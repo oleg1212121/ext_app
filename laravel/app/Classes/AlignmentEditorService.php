@@ -23,7 +23,10 @@ use Illuminate\Support\Facades\DB;
  */
 class AlignmentEditorService
 {
-    public function __construct(private readonly SparseOrderService $sparseOrder) {}
+    public function __construct(
+        private readonly SparseOrderService $sparseOrder,
+        private readonly SentenceOrderService $sentenceOrder,
+    ) {}
 
     // ─── rows ────────────────────────────────────────────────────────────────
 
@@ -327,71 +330,16 @@ class AlignmentEditorService
 
     /**
      * Compute a collision-free order for a sentence placed after $afterOrder
-     * in the side's global document order, rebalancing neighbouring orders
-     * when the surrounding gap is exhausted. Order changes from a rebalance
-     * (and the placed sentence's own change) are persisted two-phase — parked
-     * at unique negatives first — so the (entity_id, order) unique index never
-     * sees a transient collision mid-write.
+     * in the side's global document order. The neighbourhood rebalance, the
+     * non-negative shift, the two-phase persistence and the
+     * sentences_updated_at bump (document order feeds the text hash) live on
+     * SentenceOrderService.
      *
      * @return int the order assigned to the placed sentence
      */
     private function placeSideSentence(EntityMatch $entityMatch, Side $side, ?int $sentenceId, int $afterOrder): int
     {
-        $entityId = $entityMatch->entityIdFor($side);
-
-        $currentOrders = EntitySentence::query()
-            ->where('entity_id', $entityId)
-            ->get(['id', 'order'])
-            ->mapWithKeys(fn ($sentence): array => [$sentence->id => (int) $sentence->order]);
-
-        $items = $currentOrders
-            ->map(fn (int $order, int $id): array => ['key' => 's-'.$id, 'order' => $order])
-            ->values()
-            ->all();
-
-        $result = $this->sparseOrder->orderForInsertAfter(
-            $items,
-            $sentenceId !== null ? 's-'.$sentenceId : null,
-            $afterOrder,
-        );
-
-        $allResultOrders = array_column($result['items'], 'order');
-        $allResultOrders[] = $result['order'];
-        $minOrder = min($allResultOrders);
-
-        if ($minOrder < 0) {
-            $shift = -$minOrder;
-            $result['order'] += $shift;
-
-            foreach ($result['items'] as &$item) {
-                $item['order'] += $shift;
-            }
-            unset($item);
-        }
-
-        $updates = [];
-
-        foreach ($result['items'] as $item) {
-            $id = (int) substr($item['key'], 2);
-
-            if (($currentOrders->get($id) ?? null) !== $item['order']) {
-                $updates[] = ['id' => $id, 'order' => $item['order']];
-            }
-        }
-
-        if ($sentenceId !== null && ($currentOrders->get($sentenceId) ?? null) !== $result['order']) {
-            $updates[] = ['id' => $sentenceId, 'order' => $result['order']];
-        }
-
-        foreach ($updates as $update) {
-            EntitySentence::query()->whereKey($update['id'])->update(['order' => -($update['id'] + 1_000_000_000)]);
-        }
-
-        foreach ($updates as $update) {
-            EntitySentence::query()->whereKey($update['id'])->update(['order' => $update['order']]);
-        }
-
-        return $result['order'];
+        return $this->sentenceOrder->placeAfterOrder($entityMatch->entityIdFor($side), $afterOrder, $sentenceId);
     }
 
     /**
