@@ -13,6 +13,7 @@ import {t, useI18n} from '../../i18n';
 import {getCsrfToken} from '../../lib/http';
 import {loadPositions, savePositions} from '../../lib/simulatorPosition';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
+import {useSideFlip} from '../../hooks/useSideFlip';
 import {patchWordMap, recordWordEvents, rowWordIds} from '../../lib/wordFamiliarity';
 import {rowsHaveAnnotation, sideTexts} from '../../lib/readingRows.mjs';
 import {renderMarkdown} from '../../lib/markdown';
@@ -157,10 +158,12 @@ const Bilinguals = (props) => {
     // match's POST /text response.
     const [languages, setLanguages] = React.useState(props.languages ?? {a: {code: null, name: null}, b: {code: null, name: null}});
     const [defaultLearningSide, setDefaultLearningSide] = React.useState(props.defaultLearningSide === 'b' ? 'b' : 'a');
-    const otherSide = (side) => (side === 'a' ? 'b' : 'a');
-    const [flipped, setFlipped] = React.useState(initialSaved?.flipped === true);
-    const learningSide = flipped ? otherSide(defaultLearningSide) : defaultLearningSide;
-    const baseSide = otherSide(learningSide);
+    let [currentText, setCurrentText] = React.useState(initialText);
+    // The per-device flip (Side swap, ADR 0037) is shared with the reader:
+    // one flip per text, keyed mm:{matchId} in the side-flip store.
+    const {firstSide, secondSide, toggleTo} = useSideFlip(defaultLearningSide, currentText ? `mm:${currentText}` : null);
+    const learningSide = firstSide;
+    const baseSide = secondSide;
 
     // The question is split: an admin-owned format template (shown read-only,
     // never editable) plus the user's editable task list. A saved task list is
@@ -191,7 +194,6 @@ const Bilinguals = (props) => {
     let [showStress, setShowStress] = React.useState(props.stressMarks ?? false)
     // Phrasal verbs toggle (ADR 0057): dotted underlines on English hits.
     let [showPhrasal, setShowPhrasal] = React.useState(props.phrasalVerbs ?? false)
-    let [currentText, setCurrentText] = React.useState(initialText)
     const [pending, setPending] = React.useState(false);
     const [aiAnswer, setAiAnswer] = React.useState('');
     const [aiError, setAiError] = React.useState(null);
@@ -262,9 +264,13 @@ const Bilinguals = (props) => {
     const persistPage = React.useCallback((page) => {
         const positions = loadPositions();
         positions.currentText = String(currentText);
+        // The flip left the position store for the shared side-flip store
+        // (useSideFlip); drop the key an older build may have written.
+        const entry = {...(positions.alignments?.[String(currentText)] ?? {})};
+        delete entry.flipped;
         positions.alignments = {
             ...(positions.alignments ?? {}),
-            [String(currentText)]: {...(positions.alignments?.[String(currentText)] ?? {}), page},
+            [String(currentText)]: {...entry, page},
         };
         savePositions(positions);
         return positions;
@@ -337,12 +343,12 @@ const Bilinguals = (props) => {
     }, []);
 
     // Picker entry: Load fetches the selected match in place; fetchPage
-    // restores the saved page and opened row, the flip is per-match too.
+    // restores the saved page and opened row (the flip follows the selected
+    // match through the side-flip store).
     const handleLoadText = React.useCallback(() => {
         const saved = loadPositions().alignments?.[String(currentText)] ?? null;
         const page = saved?.page ?? 1;
         setTextPage(page);
-        setFlipped(saved?.flipped === true);
         return fetchPage(page);
     }, [fetchPage, currentText]);
 
@@ -351,23 +357,6 @@ const Bilinguals = (props) => {
         setCurrentText(value);
         const positions = loadPositions();
         positions.currentText = String(value);
-        savePositions(positions);
-    };
-
-    // Persisting the flip joins the per-match Working state (page + last
-    // opened row) in the browser's position store.
-    const setLearningSide = (side) => {
-        const nextFlipped = side !== defaultLearningSide;
-        if (nextFlipped === flipped) {
-            return;
-        }
-        setFlipped(nextFlipped);
-        const positions = loadPositions();
-        const key = String(currentText);
-        positions.alignments = {
-            ...(positions.alignments ?? {}),
-            [key]: {...(positions.alignments?.[key] ?? {}), flipped: nextFlipped},
-        };
         savePositions(positions);
     };
 
@@ -381,10 +370,15 @@ const Bilinguals = (props) => {
             const open = rowState.target || rowState.base;
             const positions = loadPositions();
             const key = String(currentText);
+            // The flip left the position store for the shared side-flip
+            // store (useSideFlip); drop the key an older build may have
+            // written.
+            const entry = {...(positions.alignments?.[key] ?? {})};
+            delete entry.flipped;
             positions.alignments = {
                 ...(positions.alignments ?? {}),
                 [key]: {
-                    ...(positions.alignments?.[key] ?? {}),
+                    ...entry,
                     row: open ? {n, target: rowState.target, base: rowState.base} : null,
                 },
             };
@@ -413,11 +407,10 @@ const Bilinguals = (props) => {
         ? ((textMeta.current_page - 1) * textMeta.per_page)
         : 0;
 
-    // Display order: column 0 is the learning target (hidden until revealed),
-    // column 1 the base the Open/Ask actions and the workplace pair with.
-    // Rows stay canonical — the flip is just which side each column shows.
-    const firstSide = learningSide;
-    const secondSide = baseSide;
+    // Display order: column 0 (firstSide) is the learning target (hidden
+    // until revealed), column 1 (secondSide) the base the Open/Ask actions
+    // and the workplace pair with. Rows stay canonical — the flip is just
+    // which side each column shows.
 
     const hasStressedData = rowsHaveAnnotation(rows, 'stressed');
     const hasPhrasalData = rowsHaveAnnotation(rows, 'phrasal');
@@ -660,7 +653,7 @@ const Bilinguals = (props) => {
                                     name="simulator-learning-language"
                                     value={side}
                                     checked={learningSide === side}
-                                    onChange={() => setLearningSide(side)}
+                                    onChange={() => toggleTo(side)}
                                     className="sr-only"
                                 />
                                 {languages[side]?.code ?? side}

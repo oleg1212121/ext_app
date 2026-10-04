@@ -1,5 +1,14 @@
 # 0037 - Reading side defaults to the native language; the reader route drops its language segment
 
+> **Amendment (2026-10-04):** both surfaces' flips moved into the one shared
+> side-flip store (`ext_app.reader.side-flip.v1`, keyed by `positionKey`) via
+> the `useSideFlip` hook — one **Side swap** per text, so a flip made on the
+> reader carries into the simulator for the same match. The simulator no
+> longer keeps `flipped` inside its per-match position store entry (previously
+> saved flips reset once, no migration); the position store is now
+> `{page, row}` only. The decision itself is unchanged: the flip stays
+> per-device Working state, never sent to the server.
+
 Both reading surfaces hardcoded a side choice. The reader's
 `GET /reader/{lang}/{entityId}` treated the URL's entity as "the text you
 read" — the `{lang}` segment merely 404'd on mismatch and fed a header badge,

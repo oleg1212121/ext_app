@@ -700,8 +700,10 @@ positional, not language-derived).
 **Side swap**:
 A reader's per-device flip of the **Reading side** and **Translation side**
 around their computed default, via the pages' language toggle. A
-**Working state** kind: kept per device (keyed per text/match), never stored
-server-side, and the default always recomputes from the Native language.
+**Working state** kind: one flip per text shared by every reading surface
+(flipping on one surface flips the same text on the others), keyed per
+text/match, never stored server-side, and the default always recomputes
+from the Native language.
 _Avoid_: language setting (a durable UI setting it is not), reverse mode.
 
 **Word popup**:

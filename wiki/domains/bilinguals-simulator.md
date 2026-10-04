@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-03T00:00:00Z}
+generated: { by: agent:zcode, at: 2026-10-04T13:45:00Z}
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -22,6 +22,9 @@ sources:
   - id: routes
     resource: laravel/routes/web.php
     title: Routes
+  - id: side-flip-hook
+    resource: laravel/resources/js/hooks/useSideFlip.js
+    title: useSideFlip (shared Side swap hook)
 ---
 
 # What it does
@@ -83,10 +86,12 @@ variants.
   pairs with the workplace. A toolbar language radio picks the learning side
   around the server-computed `default_learning_side`
   (`EntityMatch::readingSideFor` — native side translates, then the work's
-  original, then A-side, shared with the reader). Rows arrive canonical
-  a/b (ADR 0060) and never move: the flip is just which canonical side each
-  column shows (`firstSide`/`secondSide` into `TextContent`,
-  `lib/readingRows.mjs`), and word maps stay keyed by real side letters.
+  original, then A-side, shared with the reader). The flip itself is the
+  shared **Side swap** (`useSideFlip` hook, `lib/sideFlip.js`): one per text,
+  the same store entry the reader flips (ADR 0037 amendment). Rows arrive
+  canonical a/b (ADR 0060) and never move: the flip is just which canonical
+  side each column shows (`firstSide`/`secondSide` into `TextContent`),
+  and word maps stay keyed by real side letters.
   Column headers show the sides' real language names and the toolbar badge
   the match's real codes — no more hardcoded EN/RU.
 * Two **entry points share one page** (ADR 0038): the pinned URL from an
@@ -95,8 +100,9 @@ variants.
   matches via `getEntityMatchTextList()`, preselecting the last picker
   choice from the per-device position store). Load fetches the chosen match
   in place via `POST /text`; switching text needs no reload. Saved per-device
-  positions (page, revealed row, flip) key on the match id either way, so a
-  reopen restores that match's last position.
+  positions (page, revealed row) key on the match id either way, so a reopen
+  restores that match's last position; the flip follows the match through the
+  shared side-flip store.
 * **Read access is gated per Entity, not per match.** The pinned route and
   `text()` both 403/filter on `EntityAccessService::canReadMatch` — the
   caller must hold an Access grant (or be admin) on **both** entities of the
@@ -239,10 +245,14 @@ Split by write frequency (ADR 0024):
   mirror the client clamps (`UpdateUiSettingsRequest`).
 * **Working state → localStorage, per device.** Key
   `ext_app.simulator.position.v1` (`lib/simulatorPosition.js`): current
-  entity match plus, per alignment, the last page, the last opened row
+  entity match plus, per alignment, the last page and the last opened row
   (`{n, target, base}` — global row number and which display halves were
-  revealed; legacy `{n, en, ru}` entries are read positionally), and the
-  language `flipped` flag. On mount the pinned match auto-loads at its saved
+  revealed; legacy `{n, en, ru}` entries are read positionally). The
+  language flip is NOT here — it lives in the shared side-flip store
+  (`ext_app.reader.side-flip.v1`, keyed `mm:{matchId}`) via the
+  `useSideFlip` hook, one **Side swap** per text across both surfaces
+  (ADR 0037 amendment; flips saved by pre-amendment simulator builds reset
+  once). On mount the pinned match auto-loads at its saved
   page; the saved row's checkboxes are re-checked (controlled `checkedRows`
   state in `TextContent.jsx`) and the row scrolls into view. The base-side
   master checkbox stays uncontrolled; `all_target` is controlled React state

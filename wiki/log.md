@@ -3976,3 +3976,21 @@ workers alike; the parent runner then drops every worker DB in its teardown
 recreated each run (~20s), accepted so orphans can never accumulate again.
 `tests/TestCase.php`'s `ext_app_test` guard is unaffected — Laravel appends
 the worker suffix after app boot.
+
+## 2026-10-04 (one side flip per text, shared by the reading surfaces)
+
+The two reading surfaces duplicated the flip mechanics: `Bilinguals.jsx`
+defined its own `otherSide` and hand-rolled the learning-side math instead
+of using `readingRows.mjs`, and each surface wired its own flip state +
+persistence in two different localStorage containers (reader:
+`ext_app.reader.side-flip.v1` keyed by `positionKey`; simulator: a
+`flipped` field inside its per-match position entry keyed by bare match id).
+A new `hooks/useSideFlip.js` now owns flip state, persistence, and the
+derived first/second sides for both surfaces (`ReaderApp.jsx` and
+`Bilinguals.jsx` consume it). The simulator's flip moved to the shared
+side-flip store keyed `mm:{matchId}` — one **Side swap** per text, so a
+flip on the reader carries into the simulator for the same match (ADR 0037
+amendment). Simulator position entries are now `{page, row}`; the stale
+`flipped` key is stripped on write and old saved flips reset once (no
+migration). No PHP/routes/API changes; docs: ADR 0037 amendment block,
+CONTEXT.md Side swap term, reader + bilinguals-simulator concepts.
