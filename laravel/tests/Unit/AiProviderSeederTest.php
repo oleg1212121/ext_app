@@ -29,6 +29,24 @@ it('is idempotent', function () {
     expect(AiProvider::query()->count())->toBe(6);
 });
 
+it('preserves admin-edited rows on re-seed', function () {
+    app(AiProviderSeeder::class)->run();
+
+    AiProvider::query()->where('key', 'gemini')->firstOrFail()->update([
+        'is_enabled' => false,
+        'name' => 'Custom Gemini',
+        'description' => 'admin note',
+    ]);
+
+    app(AiProviderSeeder::class)->run();
+
+    $provider = AiProvider::query()->where('key', 'gemini')->firstOrFail();
+    expect($provider->is_enabled)->toBeFalse();
+    expect($provider->name)->toBe('Custom Gemini');
+    expect($provider->description)->toBe('admin note');
+    expect(AiProvider::query()->count())->toBe(6);
+});
+
 it('exposes enabled and forKey scopes', function () {
     AiProvider::factory()->disabled()->create(['key' => 'off', 'name' => 'Off']);
     AiProvider::factory()->create(['key' => 'on', 'name' => 'On']);

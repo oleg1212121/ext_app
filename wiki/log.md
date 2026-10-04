@@ -1,5 +1,35 @@
 # Directory Update Log
 
+## 2026-10-04 (fix: PromptTemplateSeeder deploy-safe, added to per-deploy seeds)
+
+`PromptTemplateSeeder` switches `updateOrCreate` → `firstOrCreate` (same
+contract as the AiProviderSeeder fix below): rows are register-only, so
+admin-edited prompt text in the Filament "Prompt Templates" resource
+survives deploys; to restore a default an admin blanks the row's text
+(blank falls back to the code constant in `PromptTemplates::row()`). The
+seeder is now also in the per-deploy seed list (`deploy.sh`) — that was
+the actual gap: the 2026-09-24 move of the prompts into `prompt_templates`
+(ADR 0040) never seeded production, so the Filament screen shows an empty
+table there and the app silently runs on the fallback constants in
+`App\Support\PromptTemplates` (which is why AI kept working). The next
+`./deploy.sh` seeds the three rows on prod. Regression test added
+(`PromptTemplateSeederTest`); `wiki/domains/bilinguals-simulator.md`
+updated.
+
+## 2026-10-04 (fix: AiProviderSeeder no longer resets admin provider settings)
+
+`AiProviderSeeder` switches `updateOrCreate` → `firstOrCreate`: the per-deploy
+seed run (`deploy.sh` seeds it with `--force`) now only *registers* providers
+missing from `ai_providers` and never updates existing rows, so admin-edited
+`is_enabled` (the Filament enable/disable toggle), `name`, and `description`
+survive deploys instead of being re-enabled/reset every merge. Previously
+`'is_enabled' => true` sat in the update payload, so every deploy silently
+re-enabled all six providers. Tradeoff: code changes to a provider's
+`getProviderName()` no longer propagate to existing rows (the row is
+admin-owned after creation). Regression test added
+(`AiProviderSeederTest::preserves admin-edited rows on re-seed`);
+`wiki/domains/ai-providers.md` updated.
+
 ## 2026-10-04 (refactor: one word-map / meta payload builder, ADR 0060 amendment)
 
 `ReadingRowsPresenter` is now the reading surfaces' whole payload seam: it

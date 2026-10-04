@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-04T18:40:00Z}
+generated: { by: agent:zcode, at: 2026-10-04T18:11:19Z}
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -70,9 +70,12 @@ variants.
   shows the full "Add an API key…" sentence as a link while `canUseAi` is
   false). The assessment question is
   **split and assembled server-side** (ADR 0040): an admin-editable
-  **Question template** — the format-rules text, stored in the seeded
+  **Question template** — the format-rules text, stored in the
   `prompt_templates` rows (`App\Support\PromptTemplates`, Filament
-  "Prompt Templates" resource, Edit-only) — and a user-editable **task
+  "Prompt Templates" resource, Edit-only; rows are seeded register-only by
+  `PromptTemplateSeeder` — `firstOrCreate`, run per deploy via `deploy.sh`
+  — so admin-edited text survives deploys and blanking a row's text
+  restores the code fallback) — and a user-editable **task
   list** (default also a `prompt_templates` row). The client shows the
   template read-only above the tasks textarea, substituting **both**
   `:base` and `:learning` with the current columns' language names on every

@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent/zcode, at: 2026-09-22T15:30:00Z }
+generated: { by: agent/zcode, at: 2026-10-04T17:50:46Z }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base
@@ -182,8 +182,12 @@ Providers are persisted in the `ai_providers` table (`App\Models\AiProvider`)
 but only as an *enable-flag overlay*: each row holds `key` (unique, matching the
 hardcoded `getProviderKey()`), `name`, `is_enabled`, and `description`. The set
 of providers and their syncer classes stays hardcoded in `AIModelResolver` and
-`AiModelSyncRegistry` (ADR 0009). `Database\Seeders\AiProviderSeeder` seeds one
-enabled row per registered provider. Per-user API keys live in `user_api_keys`
+`AiModelSyncRegistry` (ADR 0009). `Database\Seeders\AiProviderSeeder` is
+register-only: on each deploy (`deploy.sh` seeds it with `--force`) it
+`firstOrCreate`s one enabled row per registered provider and never touches rows
+whose `key` already exists — `is_enabled`, `name`, and `description` on existing
+rows are admin-owned and survive deploys. Per-user API keys live in
+`user_api_keys`
 (encrypted via the `encrypt:` cast, ADR 0012) — the `.env` **System key**
 remains only for non-user paths (model sync, CLI, admin tooling). The admin
 `App\Filament\Resources\AiProviderResource` is therefore still **edit-only** (no
