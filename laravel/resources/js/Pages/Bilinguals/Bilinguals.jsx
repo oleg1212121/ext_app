@@ -114,21 +114,6 @@ const Bilinguals = (props) => {
         initial: props.workplaceHeight ?? 168,
     });
 
-    // Stable identity so memoized WordText columns don't re-render on every
-    // parent pass (the AI panel streams state updates ~20x/second). The
-    // model display fields feed the word popup's Models used popup; the
-    // answer label is simulator-only (the reader has no AI questions).
-    const explainConfig = React.useMemo(
-        () => ({
-            enabled: canUseAi,
-            modelKey: props.explanationModel?.id ?? null,
-            modelLabel: props.explanationModel?.label ?? null,
-            followsAnswer: props.explanationModel?.followsAnswer === true,
-            answerLabel: props.answerModel?.label ?? null,
-        }),
-        [canUseAi, props.explanationModel, props.answerModel],
-    );
-
     useUiSettingsAutosave('simulator', {
         font_size: fontSize,
         show_text: showText,
@@ -311,7 +296,7 @@ const Bilinguals = (props) => {
                                 allTarget={allTarget}
                                 onToggleAllTarget={toggleAllTarget}
                                 popupFontSize={popupFontSize}
-                                explain={explainConfig}
+                                explain={props.explain ?? null}
                             />
                         </>
                     }

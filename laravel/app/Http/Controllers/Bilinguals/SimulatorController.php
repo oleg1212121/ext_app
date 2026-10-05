@@ -120,6 +120,11 @@ class SimulatorController extends Controller
                     'followsAnswer' => $explanationFollowsAnswer,
                 ]
                 : null,
+            // The word popup's Context explanation config (the reader's
+            // sibling shape, built by the same resolver method); the answer
+            // label is simulator-only — the Models used popup names the
+            // model behind the assessment answer.
+            'explain' => $this->modelResolver->explainConfig($answerModel['label'] ?? null),
             'currentTasks' => $saved['question'] ?? null,
             'currentText' => $pinnedName !== null
                 ? (string) $pinned->id

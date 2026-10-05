@@ -66,7 +66,6 @@ class ReaderController extends Controller
         ['rows' => $rows, 'sideEntities' => $sideEntities, 'meta' => $meta, 'positionKey' => $positionKey, 'defaultSide' => $defaultSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
 
         ['wordMaps' => $wordMaps, 'highlightable' => $highlightable, 'explainable' => $explainable] = $this->readingRows->wordMapsFor($sideEntities, (int) auth()->id(), $nativeLanguageId, $rows);
-        $explanationModel = $this->modelResolver->resolveExplanationModel();
 
         // Rows are canonical a/b (ADR 0060) — which side reads first is the
         // client's flip around defaultSide. Languages, word maps and the
@@ -97,12 +96,7 @@ class ReaderController extends Controller
             // language" rule as highlighting; the model itself is the user's
             // stored explanation preference, resolved server-side.
             'explainable' => $explainable,
-            'explain' => [
-                'enabled' => auth()->user()->canUseAi(),
-                'modelKey' => $explanationModel['id'] ?? null,
-                'modelLabel' => $explanationModel['label'] ?? null,
-                'followsAnswer' => $this->modelResolver->explanationModelFollowsAnswer(),
-            ],
+            'explain' => $this->modelResolver->explainConfig(),
         ]);
     }
 
