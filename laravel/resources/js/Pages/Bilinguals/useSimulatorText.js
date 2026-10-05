@@ -3,7 +3,6 @@ import {useI18n} from '../../i18n';
 import {useSideFlip} from '../../hooks/useSideFlip';
 import {loadPositions, writeCurrentText, writePosition} from '../../lib/simulatorPosition';
 import {DEFAULT_PER_PAGE, fetchTextPage} from '../../lib/simulatorText.mjs';
-import {clampPage} from '../../lib/pagination.mjs';
 import {patchWordMap, patchWordStatus, recordWordEvents, rowWordIds} from '../../lib/wordFamiliarity';
 import {sideTexts} from '../../lib/readingRows.mjs';
 
@@ -229,21 +228,17 @@ export function useSimulatorText({pinnedMatch, textList, fallbackTextId, initial
         });
     }, [checkedRows, creditRead, currentText]);
 
-    const goToPage = useCallback(() => {
+    // Page input commit: the shared PageInput clamps and normalizes; here
+    // only the meta/pending guards and the fetch remain.
+    const commitPage = useCallback((target) => {
         if (!textMeta || textPending) {
             return;
         }
-        const parsed = parseInt(String(textPage), 10);
-        if (Number.isNaN(parsed)) {
-            setTextPage(textMeta.current_page);
-            return;
+        setTextPage(target);
+        if (target !== textMeta.current_page) {
+            fetchPage(target);
         }
-        const clamped = clampPage(parsed, textMeta.last_page);
-        setTextPage(clamped);
-        if (clamped !== textMeta.current_page) {
-            fetchPage(clamped);
-        }
-    }, [textMeta, textPage, textPending, fetchPage]);
+    }, [textMeta, textPending, fetchPage]);
 
     return {
         // Text identity + sides
@@ -275,8 +270,7 @@ export function useSimulatorText({pinnedMatch, textList, fallbackTextId, initial
         changeText,
         handleLoadText,
         fetchPage,
-        goToPage,
-        setTextPage,
+        commitPage,
         onToggleRow,
         onWordProgress,
         toggleAllTarget,

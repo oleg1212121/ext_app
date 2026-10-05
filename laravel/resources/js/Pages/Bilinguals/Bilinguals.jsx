@@ -7,11 +7,14 @@ import Button from "../../Components/Forms/Button.jsx";
 import Workplace from "./Components/Workplace.jsx";
 import AI from "./Components/AI.jsx";
 import TextContent from "./Components/TextContent.jsx";
-import {Icon} from "../../Components/icons.jsx";
+import ReadingSideRadiogroup from "../../Components/ReadingSideRadiogroup.jsx";
+import AnnotationToggle, { PanelToggleTab } from "../../Components/AnnotationToggle.jsx";
+import PageInput from "../../Components/PageInput.jsx";
 import {popupFontSizeFor} from "../../Components/WordPopup.jsx";
 import {useI18n} from '../../i18n';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 import {useDragResize} from '../../hooks/useDragResize';
+import {useFontSize} from '../../hooks/useFontSize';
 import {useSimulatorText} from './useSimulatorText';
 import {useAiStream} from './useAiStream';
 import {useAssessmentQuestion} from './useAssessmentQuestion';
@@ -25,35 +28,6 @@ const MIN_FONT_SIZE = 12;
 const MAX_FONT_SIZE = 48;
 
 const HAIRLINE = 'h-5 w-px bg-[var(--wbench-rule)] dark:bg-[var(--wbench-rule-night)]';
-
-function panelToggleIconClass(active) {
-    return `h-4 w-4 shrink-0 transition-colors ${active ? 'text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]' : 'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]'}`;
-}
-
-// The stress-marks toggle stays on persistently (autosaved preference), so
-// an accent fill would read as a plain accent-colored icon — it keeps grey
-// line-art always and the accent underline alone carries the on-state.
-const pronunciationIconClass = panelToggleIconClass(false);
-
-const tabClass = (isActive) => [
-    'relative inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium tracking-wide transition-colors duration-200 rounded-sm',
-    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]',
-    isActive
-        ? 'text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]'
-        : 'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]',
-].join(' ');
-
-const Underline = ({isActive}) => (
-    <span
-        aria-hidden="true"
-        className={[
-            'absolute left-1 right-1 -bottom-px h-[2px] bg-[var(--wbench-accent)] dark:bg-[var(--wbench-accent-night)]',
-            'transition-transform duration-300 origin-left',
-            isActive ? 'scale-x-100' : 'scale-x-0',
-        ].join(' ')}
-        style={{transformOrigin: 'left center'}}
-    />
-);
 
 const FontButton = ({onClick, label, children}) => (
     <button
@@ -84,7 +58,7 @@ const Bilinguals = (props) => {
         rows, textMeta, textPage, loadError, rowOffset, checkedRows, allTarget,
         targetWordMap, baseWordMap, targetHighlightable, baseHighlightable, targetExplainable, baseExplainable,
         textPending,
-        changeText, handleLoadText, fetchPage, goToPage, setTextPage,
+        changeText, handleLoadText, fetchPage, commitPage,
         onToggleRow, onWordProgress, toggleAllTarget,
     } = useSimulatorText({
         pinnedMatch,
@@ -121,7 +95,12 @@ const Bilinguals = (props) => {
     const workplaceRef = React.useRef(null);
     const pendingWorkplaceFocusRef = React.useRef(false);
 
-    const [fontSize, setFontSize] = React.useState(props.fontSize ?? DEFAULT_FONT_SIZE);
+    const {fontSize, adjust: adjustFontSize} = useFontSize({
+        initial: props.fontSize ?? DEFAULT_FONT_SIZE,
+        min: MIN_FONT_SIZE,
+        max: MAX_FONT_SIZE,
+        step: FONT_SIZE_STEP,
+    });
     // Word-popup typography follows the page's font setting (ADR 0031).
     const popupFontSize = popupFontSizeFor(fontSize);
     // Panel sizes: the shared drag hook owns state + drag mechanics; the
@@ -163,15 +142,6 @@ const Bilinguals = (props) => {
         ai_panel_width: aiPanelWidth,
         workplace_height: workplaceHeight,
     });
-
-    const changeFontSize = (direction) => {
-        setFontSize((prev) => {
-            const next = direction === '+'
-                ? Math.min(prev + FONT_SIZE_STEP, MAX_FONT_SIZE)
-                : Math.max(prev - FONT_SIZE_STEP, MIN_FONT_SIZE);
-            return next;
-        });
-    };
 
     React.useEffect(() => {
         updateResizeableFontStyles(fontSize);
@@ -226,8 +196,8 @@ const Bilinguals = (props) => {
     // and the workplace pair with. Rows stay canonical — the flip is just
     // which side each column shows.
 
-    const hasStressedData = rowsHaveAnnotation(rows, 'stressed');
-    const hasPhrasalData = rowsHaveAnnotation(rows, 'phrasal');
+    const hasStressedData = React.useMemo(() => rowsHaveAnnotation(rows, 'stressed'), [rows]);
+    const hasPhrasalData = React.useMemo(() => rowsHaveAnnotation(rows, 'phrasal'), [rows]);
 
     return (
         <div className="body w-full flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-sans)]">
@@ -255,124 +225,37 @@ const Bilinguals = (props) => {
                         </div>
                     )}
                     <span className={HAIRLINE} aria-hidden="true"/>
-                    <div
-                        role="radiogroup"
-                        aria-label={t('bilinguals.learning_language')}
-                        className="flex items-center gap-0.5 border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] rounded-sm p-0.5"
-                    >
-                        {['a', 'b'].map((side) => (
-                            <label
-                                key={side}
-                                title={t('bilinguals.learning_language')}
-                                className={[
-                                    'px-2 h-6 inline-flex items-center font-[var(--wbench-mono)] text-[11px] tracking-wide uppercase rounded-sm cursor-pointer select-none',
-                                    'transition-colors duration-200 focus-within:outline-none focus-within:ring-2 focus-within:ring-[var(--color-vermilion)]',
-                                    learningSide === side
-                                        ? 'bg-[var(--color-vermilion)] text-vellum dark:bg-[var(--color-vermilion-night)] dark:text-ink-night'
-                                        : 'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]',
-                                ].join(' ')}
-                            >
-                                <input
-                                    type="radio"
-                                    name="simulator-learning-language"
-                                    value={side}
-                                    checked={learningSide === side}
-                                    onChange={() => toggleTo(side)}
-                                    className="sr-only"
-                                />
-                                {languages[side]?.code ?? side}
-                            </label>
-                        ))}
-                    </div>
+                    <ReadingSideRadiogroup
+                        variant="sim"
+                        ariaLabel={t('bilinguals.learning_language')}
+                        name="simulator-learning-language"
+                        options={['a', 'b'].map((side) => ({
+                            value: side,
+                            label: languages[side]?.code ?? side,
+                            title: t('bilinguals.learning_language'),
+                        }))}
+                        value={learningSide}
+                        onChange={toggleTo}
+                    />
                     <span className={HAIRLINE} aria-hidden="true"/>
                     <div className="flex items-center gap-1">
-                        <FontButton aria-label={t('bilinguals.increase_font_size')} label={t('bilinguals.increase_font_size')} onClick={() => changeFontSize('+')}>+</FontButton>
-                        <FontButton aria-label={t('bilinguals.decrease_font_size')} label={t('bilinguals.decrease_font_size')} onClick={() => changeFontSize('-')}>−</FontButton>
+                        <FontButton aria-label={t('bilinguals.increase_font_size')} label={t('bilinguals.increase_font_size')} onClick={() => adjustFontSize(FONT_SIZE_STEP)}>+</FontButton>
+                        <FontButton aria-label={t('bilinguals.decrease_font_size')} label={t('bilinguals.decrease_font_size')} onClick={() => adjustFontSize(-FONT_SIZE_STEP)}>−</FontButton>
                     </div>
                     <div className="ml-auto flex items-end gap-0.5 border-b border-transparent">
-                        <button
-                            type="button"
-                            className={tabClass(showText)}
-                            aria-label={t('bilinguals.text')}
-                            aria-pressed={showText}
-                            title={t('bilinguals.text')}
-                            onClick={() => setShowText(!showText)}
-                        >
-                            <Icon name="bookOpen" className={panelToggleIconClass(showText)}/>
-                            <Underline isActive={showText}/>
-                        </button>
-                        <button
-                            type="button"
-                            className={tabClass(showWorkplace)}
-                            aria-label={t('bilinguals.workplace')}
-                            aria-pressed={showWorkplace}
-                            title={t('bilinguals.workplace')}
-                            onClick={() => setShowWorkplace(!showWorkplace)}
-                        >
-                            <Icon name="pencil" className={panelToggleIconClass(showWorkplace)}/>
-                            <Underline isActive={showWorkplace}/>
-                        </button>
+                        <PanelToggleTab active={showText} label={t('bilinguals.text')} icon="bookOpen" onClick={() => setShowText(!showText)}/>
+                        <PanelToggleTab active={showWorkplace} label={t('bilinguals.workplace')} icon="pencil" onClick={() => setShowWorkplace(!showWorkplace)}/>
                         {canUseAi && (
-                            <button
-                                type="button"
-                                className={tabClass(showQuestion)}
-                                aria-label={t('bilinguals.question')}
-                                aria-pressed={showQuestion}
-                                title={t('bilinguals.question')}
-                                onClick={() => setShowQuestion(!showQuestion)}
-                            >
-                                <Icon name="questionMarkCircle" className={panelToggleIconClass(showQuestion)}/>
-                                <Underline isActive={showQuestion}/>
-                            </button>
+                            <PanelToggleTab active={showQuestion} label={t('bilinguals.question')} icon="questionMarkCircle" onClick={() => setShowQuestion(!showQuestion)}/>
                         )}
-                        <button
-                            type="button"
-                            className={tabClass(highlightWords)}
-                            aria-label={t('bilinguals.highlight_words')}
-                            aria-pressed={highlightWords}
-                            title={t('bilinguals.highlight_words')}
-                            onClick={() => setHighlightWords(!highlightWords)}
-                        >
-                            <Icon name="highlighter" className={panelToggleIconClass(highlightWords)}/>
-                            <Underline isActive={highlightWords}/>
-                        </button>
+                        <PanelToggleTab active={highlightWords} label={t('bilinguals.highlight_words')} icon="highlighter" onClick={() => setHighlightWords(!highlightWords)}/>
                         {hasStressedData && (
-                            <button
-                                type="button"
-                                className={tabClass(showStress)}
-                                aria-label={t('bilinguals.stress_marks')}
-                                aria-pressed={showStress}
-                                title={t('bilinguals.stress_marks')}
-                                onClick={() => setShowStress(!showStress)}
-                            >
-                                <Icon name="stress" className={pronunciationIconClass}/>
-                                <Underline isActive={showStress}/>
-                            </button>
+                            <AnnotationToggle variant="sim" active={showStress} label={t('bilinguals.stress_marks')} icon="stress" onClick={() => setShowStress(!showStress)}/>
                         )}
                         {hasPhrasalData && (
-                            <button
-                                type="button"
-                                className={tabClass(showPhrasal)}
-                                aria-label={t('bilinguals.phrasal_verbs')}
-                                aria-pressed={showPhrasal}
-                                title={t('bilinguals.phrasal_verbs')}
-                                onClick={() => setShowPhrasal(!showPhrasal)}
-                            >
-                                <Icon name="phrasal" className={pronunciationIconClass}/>
-                                <Underline isActive={showPhrasal}/>
-                            </button>
+                            <AnnotationToggle variant="sim" active={showPhrasal} label={t('bilinguals.phrasal_verbs')} icon="phrasal" onClick={() => setShowPhrasal(!showPhrasal)}/>
                         )}
-                        <button
-                            type="button"
-                            className={tabClass(showAI)}
-                            aria-label={t('bilinguals.ai')}
-                            aria-pressed={showAI}
-                            title={t('bilinguals.ai')}
-                            onClick={() => setShowAI(!showAI)}
-                        >
-                            <Icon name="codeBracket" className={panelToggleIconClass(showAI)}/>
-                            <Underline isActive={showAI}/>
-                        </button>
+                        <PanelToggleTab active={showAI} label={t('bilinguals.ai')} icon="codeBracket" onClick={() => setShowAI(!showAI)}/>
                     </div>
                 </div>
             </div>
@@ -394,21 +277,13 @@ const Bilinguals = (props) => {
                                         <Button color="dark" size="xs" outline type="button"
                                                 disabled={textMeta.current_page <= 1 || textPending}
                                                 onClick={() => fetchPage(textMeta.current_page - 1)}>{t('bilinguals.previous')}</Button>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            max={textMeta.last_page}
-                                            value={textPage}
-                                            onChange={(e) => setTextPage(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    goToPage();
-                                                }
-                                            }}
+                                        <PageInput
+                                            variant="sim"
+                                            page={textPage}
+                                            lastPage={textMeta.last_page}
+                                            onCommit={commitPage}
                                             disabled={textPending}
-                                            aria-label={t('bilinguals.page_number')}
-                                            className="w-14 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-2 py-1 text-center font-[var(--wbench-mono)] text-xs text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
+                                            ariaLabel={t('bilinguals.page_number')}
                                         />
                                         <Button color="dark" size="xs" outline type="button"
                                                 disabled={textMeta.current_page >= textMeta.last_page || textPending}
