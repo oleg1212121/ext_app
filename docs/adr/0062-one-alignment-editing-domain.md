@@ -1,7 +1,7 @@
 # ADR 0062: One alignment-editing domain
 
 Date: 2026-10-04
-Status: Accepted (amends ADR 0002's two-editor split)
+Status: Accepted (amends ADR 0002's two-editor split; its totals bullet is corrected by ADR 0065)
 
 ## Context
 
@@ -61,10 +61,14 @@ byte-identical private copies.
   envelope. `AlignmentEditorApiTest` passing unmodified is the acceptance
   bar.
 - **Entity-frontend sentence mutations resync totals.** The entity CRUD
-  paths (`EntityController`, `SentencesRelationManager`) already flipped
-  matches stale without touching `a/b_total_sentences`, so the editor header
-  showed outdated counts until a Re-align; they now call
-  `syncTotals()` per affected match alongside the stale flip.
+  paths (`EntityController`, `SentencesRelationManager`) had the stale
+  flip without a totals resync, so the editor header showed outdated
+  counts until a Re-align; they now resync totals alongside the flip.
+  _Amendment (ADR 0065):_ the claim that both paths "already flipped
+  matches stale" was half false — `EntityController` did, the relation
+  manager did not (its totals-only `->after()` hooks raised no stale
+  flag). ADR 0065's `EntitySentenceStore` makes the whole flow
+  (mutate → stale → totals) one owned, atomic unit on both doors.
 
 ## Consequences
 

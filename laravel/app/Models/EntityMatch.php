@@ -141,8 +141,9 @@ class EntityMatch extends Model
      * Resync the totals of every match involving one entity after its
      * sentence set changed outside the alignment editor (the entities
      * frontend, the Filament relation manager). The stale flag those edits
-     * also raise (ADR 0055) says "re-align"; the resynced totals keep the
-     * editor header truthful meanwhile.
+     * raise alongside it (ADR 0055, via EntitySentenceStore — ADR 0065)
+     * says "re-align"; the resynced totals keep the editor header truthful
+     * meanwhile.
      */
     public static function syncTotalsForEntity(int $entityId): void
     {

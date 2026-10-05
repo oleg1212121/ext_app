@@ -1,5 +1,32 @@
 # Directory Update Log
 
+## 2026-10-05 (EntitySentenceStore: one sentence-mutation flow; Filament stale-flip gap fixed — ADR 0065)
+
+New ADR 0065. The mutate → stale-flip → totals-resync flow was a
+hand-composed convention per door, and the doors had drifted:
+`EntityController` composed the stale flip + totals *after* its write
+transaction (non-atomic), and the Filament relation manager resynced totals
+only — it never flipped matches stale, contradicting ADR 0062's totals
+bullet, this file's f4b44e4-era entry, and the `syncTotalsForEntity`
+docblock (a completed match edited in Filament stayed `completed`, with no
+re-align signal). Now `EntitySentenceStore` (`app/Classes/`, named after
+`MeaningMatchStore`) owns insert/update/delete/deleteMany/reorder for the
+entities frontend and the relation manager: each is one transaction wrapping
+placement (`SentenceOrderService`), the write (model events bump
+`sentences_updated_at`), the stale flip, and the totals resync; the
+illustration rules move in with the writes. The relation manager now flips
+stale (visible change: the badge appears after relation-manager edits).
+`AlignmentEditorService::updateSentenceContent` (moved out of the
+controller) keeps ADR 0062's no-stale rule, now pinned by tests in both
+directions; the importer exemption is recorded. Docs corrected rather than
+re-argued: ADR 0062's totals bullet carries an amendment note,
+`syncTotalsForEntity`'s docblock is fixed, CONTEXT.md's Stale/Edit-rule
+entries sharpened (dropped the retired "full editor save"), sentence-alignment
+§7 + ADR 0055 section and entities.md's Match staleness rewritten.
+Tests: new `EntitySentenceStoreTest` (flow + atomicity + pending rule);
+relation-manager suite gains stale assertions for create/edit/delete/bulk;
+editor API suite pins the no-stale rule and the content-edit hash bump.
+
 ## 2026-10-05 (fix: stress marks pinned to the sentence block — wrapped words no longer misplace marks or force a horizontal scrollbar)
 
 WordText positioned each empty `.stress-mark` at `glyphX − hostRect.left`,

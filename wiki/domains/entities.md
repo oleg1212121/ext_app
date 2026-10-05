@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-04T19:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-05T00:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -146,9 +146,13 @@ models' `deleting`/`deleted` hooks remove junctions, delete any meaning match
 left empty, and update `linked_count`. This diverges deliberately from the
 alignment editor's unlink-before-delete rule (422 if linked).
 
-**Match staleness (ADR 0055)**: every sentence mutation flips all `EntityMatch` rows
+**Match staleness (ADR 0055)**: every sentence mutation — the entities
+frontend endpoints and the Filament relation manager alike, through one
+write path (`EntitySentenceStore`, ADR 0065) — flips all `EntityMatch` rows
 involving the entity (either side) to `status = 'stale'`, surfacing the need
-to re-align; only an explicit Re-align / Run from scratch acts on it. The entity `signature` is intentionally left stale — but the
+to re-align; only an explicit Re-align / Run from scratch acts on it (the
+alignment editor's sentence edits never raise or clear the flag — ADR 0062).
+The entity `signature` is intentionally left stale — but the
 **text hash** is not: every mutation also bumps `entities.sentences_updated_at`
 (model events for Eloquent writes; explicit touches at the bulk sites), which
 the `entities:refresh-text-hashes` scheduler uses to rehash (see below).

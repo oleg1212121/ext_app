@@ -132,10 +132,13 @@ already-aligned chunks. _Avoid_: restart, retry.
 
 **Stale**:
 The display-only state of an entity match whose sentences changed (insert /
-update / delete / reorder) after its last alignment run. Purely a signal —
-the scheduler never picks it up; only an explicit human action (Re-align,
-Run from scratch, a full editor save, a sentence re-import) acts on it or
-clears it. Holds no processing slot. See ADR 0055. _Avoid_: pending (that is
+update / delete / reorder) after its last alignment run. Raised by every
+entity-level sentence mutation — one mutation flow serving the entities
+frontend and the Filament relation manager alike (ADR 0065); the alignment
+editor's own sentence edits never raise or clear it (ADR 0062). Purely a
+signal — the scheduler never picks it up; only an explicit human action
+(Re-align, Run from scratch, a sentence re-import) acts on it or clears it.
+Holds no processing slot. See ADR 0055. _Avoid_: pending (that is
 the fresh-match state), outdated.
 
 **Alignment copy**:
@@ -449,8 +452,10 @@ frontend. A Restricted entity is editable by admin and grantees; a Public
 entity is editable by any approved user. The rule mirrors read —
 `EntityAccessService::canEdit` is structurally identical to `canRead` — except
 that an **Approved entity** is editable by admin only. Sentence mutations
-(insert / update / delete / reorder) flip every entity match involving the
-entity to **Stale**. Deleting a junctioned sentence cascades
+(insert / update / delete / reorder) go through one mutation flow (ADR 0065)
+that flips every entity match involving the entity to **Stale** and resyncs
+its totals; the alignment editor's sentence edits are exempt (ADR 0062).
+Deleting a junctioned sentence cascades
 (junctions removed, emptied meaning matches deleted, `linked_count` updated)
 — a deliberate divergence from the alignment editor's unlink-before-delete
 rule. See ADR 0015, ADR 0034 and ADR 0055.

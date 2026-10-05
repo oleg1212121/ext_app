@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-04T19:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-05T00:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -741,9 +741,11 @@ editor-shaped row.
     (a sentence edit on a hand-tuned match let the scheduler re-derive every
     weak machine row in a new order five minutes later) ended the
     sentence-mutation → `pending` rule of ADR 0015:
-    - Sentence mutations on the entity page flip affected matches to a
-      **display-only `stale`** status (`EntityController::markMatchesStale()`:
-      `aligning`/`completed`/`failed` → `stale`; a `pending` fresh match stays
+    - Sentence mutations on the entity-level paths (entities frontend and
+      relation manager, through `EntitySentenceStore` — ADR 0065) flip
+      affected matches to a **display-only `stale`** status
+      (`aligning`/`completed`/`failed` → `stale`; a `pending` fresh match
+      stays
       pending). `pending` now means only "fresh match awaiting its one
       automatic run".
     - The scheduler is unchanged — it picks only `pending`, so stale matches
@@ -922,15 +924,16 @@ editor-shaped row.
 7. **Sentence editing** — individual entity sentences can be created, edited,
    deleted, and reordered from the *Sentences* tab on each entity's edit page
    in the Filament `EntityResource` (one merged resource with language and
-   work selects). The relation manager places inserts and reorders through
-   `SentenceOrderService` (same pipeline as the entities frontend, so
-   two-phase writes, the non-negative shift and the text-hash bump cannot
-   drift per surface); deleting a sentence cleans up any now-empty meaning
-   matches. Every sentence mutation on these entity-level paths (the
-   entities frontend endpoints and the relation manager) also resyncs the
-   image-less totals of every match involving the entity
-   (`EntityMatch::syncTotalsForEntity`) alongside the stale flip, so the
-   alignment editor's header stays truthful between re-aligns (ADR 0062).
+   work selects), and from the entities frontend endpoints. Both doors go
+   through **`EntitySentenceStore`** (ADR 0065), which owns the whole
+   mutation flow — placement via `SentenceOrderService`, the write, the
+   stale flip, and the image-less totals resync
+   (`EntityMatch::syncTotalsForEntity`) — inside one transaction, so the
+   invariants cannot drift or be half-applied per surface; the alignment
+   editor's own sentence edits are deliberately exempt (ADR 0062's no-stale
+   rule, via `AlignmentEditorService::updateSentenceContent`), as is the
+   importer (it wipes and rebuilds and marks the match `completed`
+   itself).
 
 # Python microservice
 

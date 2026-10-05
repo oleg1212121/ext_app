@@ -204,6 +204,22 @@ class AlignmentEditorService
     }
 
     /**
+     * Edit a sentence's content — the editor's one content write. A plain
+     * model write on purpose: per ADR 0062 the editor never flips a match
+     * stale and never completes it (only Re-align / Run from scratch / a
+     * sentence re-import do), so this deliberately stays out of the
+     * EntitySentenceStore mutation flow. The updated model event bumps
+     * sentences_updated_at, so the text hash follows the new content
+     * (ADR 0033).
+     */
+    public function updateSentenceContent(EntitySentence $sentence, string $content): EntitySentence
+    {
+        $sentence->update(['content' => $content]);
+
+        return $sentence->refresh();
+    }
+
+    /**
      * Hard-delete an unmatched sentence (linked sentences must be unlinked
      * first — the controller refuses those). The totals are the aligner's
      * cursor space — image-less sentences only (ADR 0050), matching

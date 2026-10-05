@@ -2,11 +2,10 @@
 
 namespace App\Filament\Resources\EntityResource\RelationManagers;
 
-use App\Classes\SentenceOrderService;
+use App\Classes\EntitySentenceStore;
 use App\Classes\SparseOrderService;
 use App\Enums\SentenceAnchor;
 use App\Models\Entity;
-use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\SentenceType;
 use Filament\Actions;
@@ -17,7 +16,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class SentencesRelationManager extends RelationManager
@@ -117,16 +116,11 @@ class SentencesRelationManager extends RelationManager
                     ->createAnother(false)
                     ->using(function (array $data, RelationManager $livewire): EntitySentence {
                         $owner = $livewire->getOwnerRecord();
-
-                        $order = DB::transaction(
-                            fn (): int => app(SentenceOrderService::class)
-                                ->place($owner->id, $this->anchorFromOption($data['insert_after'])),
-                        );
+                        $anchor = $this->anchorFromOption($data['insert_after']);
                         unset($data['insert_after']);
 
-                        return $owner->sentences()->create([...$data, 'order' => $order]);
-                    })
-                    ->after(fn (RelationManager $livewire) => EntityMatch::syncTotalsForEntity($livewire->getOwnerRecord()->id)),
+                        return app(EntitySentenceStore::class)->insert($owner, $data, $anchor);
+                    }),
             ])
             ->recordActions([
                 Actions\EditAction::make()
@@ -137,29 +131,25 @@ class SentencesRelationManager extends RelationManager
 
                         // Only a changed drop position re-places the record —
                         // a content-only edit must not renumber it.
-                        if ($this->positionChanged($owner, $record, $insertAfter)) {
-                            DB::transaction(function () use ($owner, $record, $insertAfter): void {
-                                app(SentenceOrderService::class)->place(
-                                    $owner->id,
-                                    $this->anchorFromOption($insertAfter),
-                                    $record->getKey(),
-                                );
-                            });
-                            $record->refresh();
-                        }
+                        $anchor = $this->positionChanged($owner, $record, $insertAfter)
+                            ? $this->anchorFromOption($insertAfter)
+                            : null;
 
-                        $record->update($data);
-
-                        return $record;
-                    })
-                    ->after(fn (RelationManager $livewire) => EntityMatch::syncTotalsForEntity($livewire->getOwnerRecord()->id)),
+                        return app(EntitySentenceStore::class)->update($record, $data, $anchor);
+                    }),
                 Actions\DeleteAction::make()
-                    ->after(fn (RelationManager $livewire) => EntityMatch::syncTotalsForEntity($livewire->getOwnerRecord()->id)),
+                    ->using(function (Model $record): bool {
+                        app(EntitySentenceStore::class)->delete($record);
+
+                        return true;
+                    }),
             ])
             ->toolbarActions([
                 Actions\BulkActionGroup::make([
                     Actions\DeleteBulkAction::make()
-                        ->after(fn (RelationManager $livewire) => EntityMatch::syncTotalsForEntity($livewire->getOwnerRecord()->id)),
+                        ->using(function (Collection $records): void {
+                            app(EntitySentenceStore::class)->deleteMany($records);
+                        }),
                 ]),
             ]);
     }

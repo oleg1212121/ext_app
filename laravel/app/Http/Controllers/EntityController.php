@@ -4,8 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Classes\EntityAccessService;
 use App\Classes\EntityCreationService;
-use App\Classes\IllustrationStorage;
-use App\Classes\SentenceOrderService;
+use App\Classes\EntitySentenceStore;
 use App\Enums\SentenceAnchor;
 use App\Exceptions\ProcessingLimitReached;
 use App\Http\Requests\ReorderEntitySentenceRequest;
@@ -25,16 +24,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class EntityController extends Controller
 {
     public function __construct(
-        private readonly SentenceOrderService $sentenceOrder,
-        private readonly IllustrationStorage $illustrations = new IllustrationStorage,
+        private readonly EntitySentenceStore $sentences,
         private readonly EntityCreationService $creation = new EntityCreationService,
     ) {}
 
@@ -269,22 +265,10 @@ class EntityController extends Controller
         $content = trim((string) ($data['content'] ?? ''));
         $afterSentenceId = $data['after_sentence_id'] ?? null;
 
-        $image = $this->isIllustrationType($data) ? $request->file('image') : null;
-
-        $sentence = DB::transaction(function () use ($entity, $content, $data, $afterSentenceId, $image, $language): Model {
-            $order = $this->sentenceOrder->place($entity->id, $this->sentenceAnchor($afterSentenceId));
-
-            return EntitySentence::query()->create([
-                'entity_id' => $entity->id,
-                'sentence_type_id' => (int) $data['sentence_type_id'],
-                'content' => $content,
-                'order' => $order,
-                ...$this->imageAttributes($image, $language->code),
-            ]);
-        });
-
-        $this->markMatchesStale($entity->id);
-        EntityMatch::syncTotalsForEntity($entity->id);
+        $sentence = $this->sentences->insert($entity, [
+            'content' => $content,
+            'sentence_type_id' => (int) $data['sentence_type_id'],
+        ], $this->sentenceAnchor($afterSentenceId), $request->file('image'));
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
@@ -311,37 +295,13 @@ class EntityController extends Controller
 
         $sentenceModel = $this->findEntitySentence($entity->id, $sentence);
 
-        $updates = [
+        $sentenceModel = $this->sentences->update($sentenceModel, [
             'content' => trim((string) ($data['content'] ?? '')),
             'sentence_type_id' => (int) $data['sentence_type_id'],
-        ];
-
-        $image = $sentenceModel->isIllustration() || $this->isIllustrationType($data)
-            ? $request->file('image')
-            : null;
-
-        if ($image !== null) {
-            $oldPath = $sentenceModel->image_path;
-
-            DB::transaction(function () use ($sentenceModel, $updates, $image, $language): void {
-                $sentenceModel->update([
-                    ...$updates,
-                    ...$this->imageAttributes($image, $language->code),
-                ]);
-            });
-
-            if ($oldPath !== null) {
-                $this->illustrations->releaseIfOrphaned($oldPath);
-            }
-        } else {
-            $sentenceModel->update($updates);
-        }
-
-        $this->markMatchesStale($entity->id);
-        EntityMatch::syncTotalsForEntity($entity->id);
+        ], null, $request->file('image'));
 
         return response()->json([
-            'sentence' => $this->sentencePayload($sentenceModel->refresh()),
+            'sentence' => $this->sentencePayload($sentenceModel),
         ]);
     }
 
@@ -357,10 +317,7 @@ class EntityController extends Controller
 
         $sentenceModel = $this->findEntitySentence($entity->id, $sentence);
 
-        DB::transaction(fn () => $sentenceModel->delete());
-
-        $this->markMatchesStale($entity->id);
-        EntityMatch::syncTotalsForEntity($entity->id);
+        $this->sentences->delete($sentenceModel);
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
@@ -384,20 +341,10 @@ class EntityController extends Controller
 
         $sentenceModel = $this->findEntitySentence($entity->id, $sentenceId);
 
-        DB::transaction(function () use ($entity, $sentenceModel, $afterSentenceId): void {
-            $this->sentenceOrder->place(
-                $entity->id,
-                $this->sentenceAnchor($afterSentenceId),
-                $sentenceModel->getKey(),
-            );
-        });
-
-        $this->markMatchesStale($entity->id);
-        EntityMatch::syncTotalsForEntity($entity->id);
+        $sentenceModel = $this->sentences->reorder($sentenceModel, $this->sentenceAnchor($afterSentenceId));
 
         $page = $request->integer('page', 1);
         $perPage = $this->normalizePerPage($request->integer('per_page', 25));
-        $sentenceModel->refresh();
         $position = $this->positionOf($entity, $sentenceModel);
         $targetPage = (int) floor($position / $perPage) + 1;
 
@@ -480,7 +427,7 @@ class EntityController extends Controller
         return SentenceAnchor::end();
     }
 
-    private function findEntitySentence(int $entityId, int $sentenceId): Model
+    private function findEntitySentence(int $entityId, int $sentenceId): EntitySentence
     {
         $sentence = EntitySentence::query()
             ->whereKey($sentenceId)
@@ -490,24 +437,6 @@ class EntityController extends Controller
         abort_if($sentence === null, 404);
 
         return $sentence;
-    }
-
-    /**
-     * Flip every EntityMatch involving this entity to status = 'stale',
-     * surfacing the need to re-align. Stale is display-only: the scheduler
-     * never picks it up, so only an explicit Re-align re-aligns. Fresh
-     * matches stay 'pending' (their one automatic run is the feature). See
-     * ADR 0055, superseding ADR 0015's pending-on-edit rule.
-     */
-    private function markMatchesStale(int $entityId): void
-    {
-        EntityMatch::query()
-            ->where(function (Builder $query) use ($entityId): void {
-                $query->where('a_entity_id', $entityId)
-                    ->orWhere('b_entity_id', $entityId);
-            })
-            ->whereIn('status', ['aligning', 'completed', 'failed'])
-            ->update(['status' => 'stale']);
     }
 
     private function alignmentCount(int $entityId): int
@@ -589,42 +518,6 @@ class EntityController extends Controller
                     ->orWhere(fn ($q) => $q->where('order', $sentence->order)->where('id', '<', $sentence->id));
             })
             ->count();
-    }
-
-    /**
-     * Whether the submitted type is the seeded illustration type.
-     *
-     * @param  array<string, mixed>  $data
-     */
-    private function isIllustrationType(array $data): bool
-    {
-        $illustrationId = SentenceType::illustrationId();
-
-        return $illustrationId !== null
-            && (int) ($data['sentence_type_id'] ?? 0) === $illustrationId;
-    }
-
-    /**
-     * Sentence columns for an uploaded illustration; empty for plain
-     * sentences (a stray file on a non-illustration type is ignored).
-     *
-     * @return array{image_path?: string, image_hash?: string, image_width?: ?int, image_height?: ?int, image_mime?: ?string}
-     */
-    private function imageAttributes(?UploadedFile $image, string $langCode): array
-    {
-        if ($image === null) {
-            return [];
-        }
-
-        $stored = $this->illustrations->store($image, $langCode);
-
-        return [
-            'image_path' => $stored['path'],
-            'image_hash' => $stored['hash'],
-            'image_width' => $stored['width'],
-            'image_height' => $stored['height'],
-            'image_mime' => $stored['mime'],
-        ];
     }
 
     private function normalizePerPage(int $perPage): int
