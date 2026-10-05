@@ -1037,44 +1037,15 @@ class AlignEntitySentences implements ShouldQueue
      * left over after the other side was exhausted, or skipped during a
      * re-align) is junctioned into a single-sided meaning match — total
      * completeness, so the reader never hides a sentence. The repair is
-     * best-effort — if it fails, a warning is logged and completion proceeds
-     * regardless.
+     * whole-or-nothing (one transaction in repairCoverage) and best-effort —
+     * if it fails, a warning is logged and completion proceeds regardless.
      */
     private function finalize(EntityMatch $entityMatch): void
     {
         $store = MeaningMatchStore::create();
 
-        // Order values already taken by this match's rows, shared across both
-        // sides' repairs: opposite-side runs between the same anchors compute
-        // identical spread values, and the claim check prevents the second
-        // insert from violating unique(entity_match_id, order).
-        $claimedOrders = array_fill_keys(
-            MeaningMatch::query()
-                ->where('entity_match_id', $entityMatch->id)
-                ->pluck('order')
-                ->map(fn ($order) => (int) $order)
-                ->all(),
-            true,
-        );
-
-        foreach (['a', 'b'] as $side) {
-            [$junctionless, $index] = $store->junctionlessSentencesFor($entityMatch, $side);
-
-            if ($junctionless->isNotEmpty()) {
-                try {
-                    $store->repairJunctionlessSentences($entityMatch, $side, $junctionless, $index, $claimedOrders);
-                } catch (Throwable $exception) {
-                    Log::warning('Failed to junction sentences on alignment completion', [
-                        'entity_match_id' => $entityMatch->id,
-                        'side' => $side,
-                        'error' => $exception->getMessage(),
-                    ]);
-                }
-            }
-        }
-
         try {
-            $resequenced = $store->resequenceMatchesByDocumentPosition($entityMatch);
+            [, $resequenced] = $store->repairCoverage($entityMatch);
 
             if ($resequenced > 0) {
                 Log::info('Resequenced meaning matches by document position on completion', [
@@ -1083,7 +1054,7 @@ class AlignEntitySentences implements ShouldQueue
                 ]);
             }
         } catch (Throwable $exception) {
-            Log::warning('Failed to resequence meaning matches on alignment completion', [
+            Log::warning('Failed to repair coverage on alignment completion', [
                 'entity_match_id' => $entityMatch->id,
                 'error' => $exception->getMessage(),
             ]);

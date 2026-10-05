@@ -115,3 +115,28 @@ source, no image rebuild or deploy stamp.
   the `sentences_updated_at` bump/no-op behavior; an editor-API test pins
   the drag bump; cosine math tests cover identical/orthogonal/zero/
   mismatched-length vectors.
+
+> **Amendment (2026-10-05): one two-phase persist primitive.**
+> The 2026-10-05 architecture-review pass found the two-phase parking write —
+> the part of the ordering invariant with the subtlest failure mode — still
+> spelled out at four sites in two drifting formulas
+> (`-($id + 1_000_000_000)` vs the editor's bare `-$id`). This lifts decision
+> 3's "meaning-match row orders are untouched" for the shared *mechanics*
+> only: the editor's and the pipeline's row-write domains stay separate, but
+> the write idiom gets one home.
+>
+> - **`SparseOrderService::persistOrdersTwoPhase(modelClass, updates)`** owns
+>   the park-then-final write inside one transaction (a savepoint under a
+>   caller's transaction), chunked at 1000. Rewired onto it:
+>   `SentenceOrderService::persistChanged` (which keeps the
+>   `sentences_updated_at` bump), `SparseOrderService::rebalanceAll`,
+>   `MeaningMatchStore::resequenceMatchesByDocumentPosition` (whose deletes
+>   share its own transaction), and `AlignmentEditorService::
+>   persistRowOrderChanges` — whose bare-`-$id` formula retires with the
+>   drift.
+> - **`rebalanceAll` becomes transactional** — the consequence above ("the
+>   command are unchanged") narrows: `entity-orders:rebalance` still parks
+>   position-preserving, but its parks are no longer visible to concurrent
+>   readers (the command is scheduled daily).
+> - `SparseOrderServiceTwoPhaseTest` pins the past-each-other swap, savepoint
+>   nesting, rollback-with-caller, and the empty no-op.

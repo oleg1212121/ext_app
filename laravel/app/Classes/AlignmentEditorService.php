@@ -596,16 +596,6 @@ class AlignmentEditorService
             }
         }
 
-        if ($updates === []) {
-            return;
-        }
-
-        foreach ($updates as $update) {
-            MeaningMatch::query()->whereKey($update['id'])->update(['order' => -$update['id']]);
-        }
-
-        foreach ($updates as $update) {
-            MeaningMatch::query()->whereKey($update['id'])->update(['order' => $update['order']]);
-        }
+        app(SparseOrderService::class)->persistOrdersTwoPhase(MeaningMatch::class, $updates);
     }
 }

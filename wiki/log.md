@@ -1,5 +1,39 @@
 # Directory Update Log
 
+## 2026-10-05 (One coverage repair, one two-phase persist primitive)
+
+The junction-less repair stopped being a caller-held protocol:
+`MeaningMatchStore::repairCoverage(EntityMatch)` (ADR 0063, amended) is the
+one coverage-repair interface — one transaction seeding the claimed-orders
+set, backfilling both sides' junction-less sentences, resequencing by
+document position (unconditionally, idempotent) and syncing `linked_count`,
+returning `[created, resequenced]`. The two-method protocol
+(`junctionlessSentencesFor` + `repairJunctionlessSentences(&claimedOrders)`)
+went private, and both callers collapsed to one call: the align job's
+`finalize()` (which keeps the status write; failure semantics tighten from
+best-effort per side to whole-or-nothing with one warning — no more
+half-repaired state only `alignments:repair` could finish) and the
+`alignments:repair` command (which keeps its dedupe-first pass and reporting;
+its conditional second resequence now always runs as a no-op-capable
+idempotent pass). Alongside, the two-phase parking write got one home:
+`SparseOrderService::persistOrdersTwoPhase(modelClass, updates)` — park at
+unique negatives, then the finals, inside one transaction (savepoint under a
+caller's), chunked at 1000. Rewired onto it: `SentenceOrderService::
+persistChanged` (keeps the text-hash bump), `rebalanceAll` (now
+transactional — the scheduled daily `entity-orders:rebalance` no longer
+exposes parks to concurrent readers), `MeaningMatchStore::
+resequenceMatchesByDocumentPosition`, and `AlignmentEditorService::
+persistRowOrderChanges` (whose divergent bare-`-$id` park formula retires) —
+ADR 0064 amended: shared mechanics, row-write domains still separate. New
+tests: `MeaningMatchStoreRepairCoverageTest` (both-sides backfill, the
+claimed-orders nudge, document order, idempotency) and
+`SparseOrderServiceTwoPhaseTest` (past-each-other swap, savepoint nesting
+and rollback-with-caller, empty no-op); all affected suites
+(`ChunkedEntityAlignment`, `RepairEntityMatchAlignment`,
+`ResequenceEntityMatches`, `RebalanceEntityOrdersCommand`,
+`SentenceOrderService`, `AlignmentEditorApi`, `EntityEditing`) pass
+unmodified. CONTEXT.md gains **Coverage repair**.
+
 ## 2026-10-05 (Bounded enrichment sweep scan)
 
 `entities:enrich` no longer hydrates every enrichable-language entity and

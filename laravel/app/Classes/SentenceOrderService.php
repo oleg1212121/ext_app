@@ -141,11 +141,10 @@ class SentenceOrderService
     }
 
     /**
-     * Persist sentence orders two-phase: every changed row is parked at a
-     * unique negative order before the finals are written. The final orders
-     * are collision-free as a set, but one row's final may be another row's
-     * current order, so a naive one-by-one write would trip the
-     * (entity_id, order) unique index mid-write.
+     * Persist sentence orders two-phase via SparseOrderService::persistOrdersTwoPhase
+     * (park at unique negatives first, then the finals), then bump the entity's
+     * sentences_updated_at. Runs inside the caller's transaction — the primitive
+     * nests as a savepoint.
      *
      * @param  Collection<int, int>  $currentOrders
      * @param  array{order: int, items: list<array{key: string, order: int}>}  $result
@@ -171,13 +170,7 @@ class SentenceOrderService
             return;
         }
 
-        foreach ($updates as $update) {
-            EntitySentence::query()->whereKey($update['id'])->update(['order' => -($update['id'] + 1_000_000_000)]);
-        }
-
-        foreach ($updates as $update) {
-            EntitySentence::query()->whereKey($update['id'])->update(['order' => $update['order']]);
-        }
+        app(SparseOrderService::class)->persistOrdersTwoPhase(EntitySentence::class, $updates);
 
         Entity::touchSentencesFor($entityId);
     }

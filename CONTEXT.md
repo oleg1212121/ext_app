@@ -130,6 +130,18 @@ The cursor — the per-side sentence offsets where the next chunk starts — is 
 only state a resume reads, so a stopped run can continue without wiping
 already-aligned chunks. _Avoid_: restart, retry.
 
+**Coverage repair**:
+The whole-or-nothing repair that closes a match's total-completeness gap:
+every junction-less sentence of either side is junctioned into a single-sided
+meaning match, the rows are resequenced into document order, and
+`linked_count` is synced — all in one transaction
+(`MeaningMatchStore::repairCoverage`). The align job's completion gate and
+`alignments:repair` are its only callers; a failure rolls the whole repair
+back, so a match is never left half-repaired. See ADR 0063 (amended
+2026-10-05). _Avoid_: finalize (the job's gate is a caller, not the repair),
+backfill (names only the junction step), junction-less repair (the old
+two-method protocol).
+
 **Stale**:
 The display-only state of an entity match whose sentences changed (insert /
 update / delete / reorder) after its last alignment run. Raised by every
