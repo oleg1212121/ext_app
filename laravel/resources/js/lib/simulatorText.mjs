@@ -25,13 +25,6 @@ export function mapTextPayload(payload, {page, perPage} = {}) {
 }
 
 /**
- * Clamp a 1-based page number into [1, lastPage].
- */
-export function clampPage(page, lastPage) {
-    return Math.min(Math.max(1, page), lastPage);
-}
-
-/**
  * POST /text for one page of an entity match and map the payload. Throws
  * with the endpoint's error message (or the caller's per-status fallback,
  * so i18n stays out of this module).

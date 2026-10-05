@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {clampPage, mapTextPayload} from './simulatorText.mjs';
+import {mapTextPayload} from './simulatorText.mjs';
 
 describe('mapTextPayload', () => {
     it('renames the snake_case wire shape to the page shape (ADR 0060)', () => {
@@ -33,19 +33,5 @@ describe('mapTextPayload', () => {
         expect(mapped.languages).toBeNull();
         expect(mapped.defaultLearningSide).toBeNull();
         expect(mapped.meta).toEqual({current_page: 4, per_page: 50, total: 2, last_page: 1});
-    });
-});
-
-describe('clampPage', () => {
-    it('keeps in-range pages', () => {
-        expect(clampPage(3, 5)).toBe(3);
-        expect(clampPage(1, 5)).toBe(1);
-        expect(clampPage(5, 5)).toBe(5);
-    });
-
-    it('clamps below 1 and beyond lastPage', () => {
-        expect(clampPage(0, 5)).toBe(1);
-        expect(clampPage(-2, 5)).toBe(1);
-        expect(clampPage(9, 5)).toBe(5);
     });
 });

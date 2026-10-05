@@ -2,8 +2,9 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import {useI18n} from '../../i18n';
 import {useSideFlip} from '../../hooks/useSideFlip';
 import {loadPositions, writeCurrentText, writePosition} from '../../lib/simulatorPosition';
-import {DEFAULT_PER_PAGE, clampPage, fetchTextPage} from '../../lib/simulatorText.mjs';
-import {patchWordMap, recordWordEvents, rowWordIds} from '../../lib/wordFamiliarity';
+import {DEFAULT_PER_PAGE, fetchTextPage} from '../../lib/simulatorText.mjs';
+import {clampPage} from '../../lib/pagination.mjs';
+import {patchWordMap, patchWordStatus, recordWordEvents, rowWordIds} from '../../lib/wordFamiliarity';
 import {sideTexts} from '../../lib/readingRows.mjs';
 
 // Legacy saved rows keyed the reveal halves 'en'/'ru'; map them onto the
@@ -93,13 +94,7 @@ export function useSimulatorText({pinnedMatch, textList, fallbackTextId, initial
 
     // Word progress changed in a popup: recolor the word on both sides.
     const onWordProgress = useCallback((key, status) => {
-        setWordMaps((maps) => {
-            if (!maps) {
-                return maps;
-            }
-            const apply = (side) => (maps[side]?.[key] ? {...maps[side], [key]: {...maps[side][key], s: status}} : maps[side]);
-            return {...maps, a: apply('a'), b: apply('b')};
-        });
+        setWordMaps((maps) => patchWordStatus(maps, key, status));
     }, []);
 
     // Revealing a row's target sentence credits its dictionary words a read

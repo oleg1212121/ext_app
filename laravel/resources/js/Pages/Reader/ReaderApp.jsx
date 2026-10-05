@@ -8,6 +8,8 @@ import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 import {loadReadingPositions, saveReadingPositions} from '../../lib/readingPosition';
 import {useSideFlip} from '../../hooks/useSideFlip';
 import {rowsHaveAnnotation} from '../../lib/readingRows.mjs';
+import {clampPage} from '../../lib/pagination.mjs';
+import {patchWordStatus} from '../../lib/wordFamiliarity';
 
 const MIN_FONT_SIZE = 16;
 const MAX_FONT_SIZE = 38;
@@ -149,8 +151,7 @@ export default function ReaderApp({
     // Word progress changed in a popup: recolor the same word everywhere (a
     // token can appear on both canonical sides).
     const handleWordProgress = useCallback((key, status) => {
-        const apply = (map) => (map[key] ? {...map, [key]: {...map[key], s: status}} : map);
-        setWordMaps((maps) => ({a: apply(maps.a), b: apply(maps.b)}));
+        setWordMaps((maps) => patchWordStatus(maps, key, status));
     }, []);
 
     // The language toggle only exists when the text has a translation side;
@@ -304,7 +305,7 @@ export default function ReaderApp({
     // must be resynced by hand: useState initializers don't re-run on a
     // preserved-state visit.
     const goToPage = useCallback((page) => {
-        const target = Math.max(1, Math.min(lastPage, page));
+        const target = clampPage(page, lastPage);
         if (target === currentPage) {
             return;
         }
@@ -325,7 +326,7 @@ export default function ReaderApp({
 
     const submitPageInput = () => {
         const parsed = Number.parseInt(pageInput, 10);
-        const target = Number.isNaN(parsed) ? currentPage : Math.max(1, Math.min(lastPage, parsed));
+        const target = Number.isNaN(parsed) ? currentPage : clampPage(parsed, lastPage);
         setPageInput(String(target));
         if (target !== currentPage) {
             goToPage(target);
@@ -361,7 +362,7 @@ export default function ReaderApp({
 
         const positions = loadReadingPositions();
         const saved = Number.isInteger(positions[positionKey]) ? positions[positionKey] : 1;
-        const clamped = Math.max(1, Math.min(lastPage, saved));
+        const clamped = clampPage(saved, lastPage);
 
         if (saved !== clamped) {
             savePosition(clamped);
