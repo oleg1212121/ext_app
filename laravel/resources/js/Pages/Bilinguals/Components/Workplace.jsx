@@ -3,33 +3,8 @@ import {useI18n} from '../../../i18n';
 
 export default function Workplace(props) {
     const {t} = useI18n();
+    const startDrag = props.startDrag;
     const workplaceHeight = props.height ?? 168;
-    const setWorkplaceHeight = (updater) => props.onHeightChange(
-        typeof updater === 'function' ? updater(workplaceHeight) : updater
-    );
-
-    const startDrag = (event) => {
-        event.preventDefault();
-        const startY = event.clientY;
-        const startHeight = workplaceHeight;
-
-        const onMove = (e) => {
-            const delta = e.clientY - startY;
-            setWorkplaceHeight(Math.max(80, Math.min(Math.round(window.innerHeight * 0.6), startHeight - delta)));
-        };
-
-        const onUp = () => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-            document.body.style.userSelect = '';
-            document.body.style.cursor = '';
-        };
-
-        document.body.style.userSelect = 'none';
-        document.body.style.cursor = 'row-resize';
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-    };
 
     return (
         <div className="mt-auto shrink-0 flex flex-col">

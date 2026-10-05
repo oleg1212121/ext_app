@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useI18n} from '../../i18n';
+import {useDragResize} from '../../hooks/useDragResize';
 import {completeCrossword, fetchCrossword} from './api';
 import {
     ALLOWED_KEYS,
@@ -64,7 +65,14 @@ export function useCrossword({works: initialWorks = [], languages = [], levels =
     const [solvedWords, setSolvedWords] = useState([]);
     const [vector, setVector] = useState(true);
     const [altPressed, setAltPressed] = useState(false);
-    const [rightPanelWidth, setRightPanelWidth] = useState(() => getDefaultPanelWidth());
+    // Right panel resize is ephemeral (no UI settings on this page); the
+    // shared hook owns the drag + clamp math, max evaluated at drag start.
+    const {size: rightPanelWidth, startDrag: startDragRightPanel} = useDragResize({
+        axis: 'x',
+        min: MIN_PANEL_WIDTH,
+        max: getMaxPanelWidth,
+        initial: getDefaultPanelWidth(),
+    });
     const [cellValues, setCellValues] = useState({});
     const [isError, setIsError] = useState(false);
 
@@ -466,29 +474,6 @@ export function useCrossword({works: initialWorks = [], languages = [], levels =
                 definitions: crossword.dictionary[word].definitions ?? [],
             }));
     }, [crossword, solvedWords]);
-
-    const startDragRightPanel = useCallback((event) => {
-        const startX = event.clientX;
-        const startWidth = rightPanelWidth;
-        const maxWidth = getMaxPanelWidth();
-
-        const onMove = (e) => {
-            const delta = e.clientX - startX;
-            setRightPanelWidth(Math.max(MIN_PANEL_WIDTH, Math.min(maxWidth, startWidth - delta)));
-        };
-
-        const onUp = () => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-            document.body.style.userSelect = '';
-            document.body.style.cursor = '';
-        };
-
-        document.body.style.userSelect = 'none';
-        document.body.style.cursor = 'col-resize';
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-    }, [rightPanelWidth]);
 
     const setAltBlock = useCallback(() => setAltPressed(true), []);
     const unsetAltBlock = useCallback(() => setAltPressed(false), []);

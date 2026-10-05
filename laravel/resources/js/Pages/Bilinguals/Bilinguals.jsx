@@ -14,6 +14,7 @@ import {getCsrfToken} from '../../lib/http';
 import {loadPositions, savePositions} from '../../lib/simulatorPosition';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 import {useSideFlip} from '../../hooks/useSideFlip';
+import {useDragResize} from '../../hooks/useDragResize';
 import {patchWordMap, recordWordEvents, rowWordIds} from '../../lib/wordFamiliarity';
 import {rowsHaveAnnotation, sideTexts} from '../../lib/readingRows.mjs';
 import {renderMarkdown} from '../../lib/markdown';
@@ -235,8 +236,16 @@ const Bilinguals = (props) => {
         }),
         [canUseAi, props.explanationModel, props.answerModel],
     );
-    const [aiPanelWidth, setAiPanelWidth] = React.useState(props.aiPanelWidth ?? 560);
-    const [workplaceHeight, setWorkplaceHeight] = React.useState(props.workplaceHeight ?? 168);
+    // Panel sizes: the shared drag hook owns state + drag mechanics; the
+    // autosave persists them as UI settings. The AI panel has no max; the
+    // workplace clamps at 60% of the viewport height.
+    const {size: aiPanelWidth, startDrag: startAiPanelDrag} = useDragResize({axis: 'x', min: 280, initial: props.aiPanelWidth ?? 560});
+    const {size: workplaceHeight, startDrag: startWorkplaceDrag} = useDragResize({
+        axis: 'y',
+        min: 80,
+        max: () => Math.round(window.innerHeight * 0.6),
+        initial: props.workplaceHeight ?? 168,
+    });
     const [checkedRows, setCheckedRows] = React.useState(() => {
         const saved = normalizeSavedRow(initialSaved?.row);
         return saved ? {[saved.n]: {target: saved.target, base: saved.base}} : {};
@@ -841,11 +850,11 @@ const Bilinguals = (props) => {
                         </>
                     }
                     {showWorkplace === true &&
-                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={effectiveTasks} questionInfo={questionInfo} onResetQuestion={resetQuestion} questionResetKey={questionResetKey} canResetQuestion={customTasks !== null} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)} canUseAi={canUseAi} height={workplaceHeight} onHeightChange={setWorkplaceHeight}/>
+                        <Workplace workplaceRef={workplaceRef} changeQuestion={changeQuestion} questionRef={questionRef} currentQuestion={effectiveTasks} questionInfo={questionInfo} onResetQuestion={resetQuestion} questionResetKey={questionResetKey} canResetQuestion={customTasks !== null} showQuestion={showQuestion} onToggleQuestion={() => setShowQuestion(!showQuestion)} canUseAi={canUseAi} height={workplaceHeight} startDrag={startWorkplaceDrag}/>
                     }
                 </div>
                 {showAI === true &&
-                    <AI aiAnswer={aiAnswer} pending={pending} aiError={aiError} onRetry={retryAsk} canUseAi={canUseAi} answerModel={answerModel} explanationModel={props.explanationModel ?? null} width={aiPanelWidth} onWidthChange={setAiPanelWidth}/>
+                    <AI aiAnswer={aiAnswer} pending={pending} aiError={aiError} onRetry={retryAsk} canUseAi={canUseAi} answerModel={answerModel} explanationModel={props.explanationModel ?? null} width={aiPanelWidth} startDrag={startAiPanelDrag}/>
                 }
             </div>
         </div>
