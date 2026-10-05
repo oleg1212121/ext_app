@@ -1,6 +1,7 @@
 import React, {useCallback, useMemo, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {segmentText} from '../lib/wordTokenizer.mjs';
+import {stressOffsets} from '../lib/stressMarks.mjs';
 import {FAMILIARITY_MAX, FAMILIARITY_STRONG_AT, FAMILIARITY_PROGRESS_AT, recordWordEvents} from '../lib/wordFamiliarity';
 import WordPopup from './WordPopup.jsx';
 import IllustrationFigure from './IllustrationFigure.jsx';
@@ -24,6 +25,32 @@ function tierClass(familiarity, highlight) {
     return 'word-token word-unknown';
 }
 
+// Children for one segment: the characters at stress offsets (absolute into
+// the sentence text) render inside .stress-mark spans; text content is never
+// altered, so the segment's textContent stays the plain word.
+function stressChildren(text, stress, base) {
+    if (!stress) {
+        return text;
+    }
+    const children = [];
+    let cursor = 0;
+    for (const offset of stress) {
+        const local = offset - base;
+        if (local < cursor || local >= text.length) {
+            continue;
+        }
+        if (local > cursor) {
+            children.push(text.slice(cursor, local));
+        }
+        children.push(<span key={offset} className="stress-mark">{text[local]}</span>);
+        cursor = local + 1;
+    }
+    if (cursor < text.length) {
+        children.push(text.slice(cursor));
+    }
+    return children.length > 0 ? children : text;
+}
+
 /**
  * Renders one reading row side (ADR 0060): the side's sentence objects in
  * document order — illustrations as figures, text sentences split into
@@ -41,15 +68,17 @@ function tierClass(familiarity, highlight) {
  * rowKey (optional) scopes this row side for familiarity bookkeeping: the
  * first popup lookup of a word within the row costs -2, credited once.
  *
- * Stress marks (ADR 0052): when showStress is on, a sentence's `stressed`
- * variant displays instead of `text` — the word map still resolves because
- * keys strip combining marks.
+ * Stress marks (ADR 0052): when showStress is on, characters stressed in a
+ * sentence's `stressed` variant are wrapped in .stress-mark spans whose CSS
+ * ::after draws the acute. The DOM always carries the plain `text` — never
+ * the stressed string — so selection, copy/paste, double-click dictionary
+ * extensions, and browser find only ever see original characters (no U+0301,
+ * no е→ё). stressOffsets() maps the variant back onto the plain text; any
+ * divergence renders that sentence plain.
  *
  * Phrasal verbs (ADR 0057): when showPhrasal is on, the tokens each hit
  * covers get a dotted underline with the matched headword as tooltip. Hit
- * spans index the sentence's plain text, so marks are computed from the
- * original; the stressed variant keeps the token sequence (marks attach
- * inside tokens), so the mapping transfers.
+ * spans index the sentence's plain text, which is what gets segmented.
  *
  * With `explain` ({sentenceId-carrying popup config}) present — enabled or
  * not — WordPopup gets an explain payload keyed by the clicked sentence's
@@ -70,12 +99,28 @@ function WordText({
 }) {
     const interactive = Object.keys(wordMap ?? {}).length > 0;
 
-    // Display variant per sentence: the stressed form when the toggle is on
-    // and the sentence carries one.
-    const displayTexts = useMemo(
-        () => sentences.map((sentence) => (showStress && sentence.stressed ? sentence.stressed : sentence.text)),
-        [sentences, showStress],
+    // Display segments always come from the plain text; the stressed variant
+    // is only consulted for mark placement, never rendered.
+    const segmentLists = useMemo(
+        () => sentences.map((sentence) => segmentText(sentence.text)),
+        [sentences],
     );
+
+    // Per sentence: a Set of offsets into the plain text whose characters
+    // get a stress overlay, or null when the toggle is off / no variant /
+    // no marks resolved.
+    const stressMaps = useMemo(() => {
+        if (!showStress) {
+            return null;
+        }
+        return sentences.map((sentence) => {
+            if (sentence.image !== undefined || !sentence.stressed) {
+                return null;
+            }
+            const offsets = stressOffsets(sentence.text, sentence.stressed);
+            return offsets.length > 0 ? new Set(offsets) : null;
+        });
+    }, [sentences, showStress]);
 
     // Per text sentence: token index -> matched headword, over the
     // key-bearing segments of the ORIGINAL text (hit spans index content).
@@ -106,11 +151,6 @@ function WordText({
             return marks.size > 0 ? marks : null;
         });
     }, [sentences, showPhrasal]);
-
-    const segmentLists = useMemo(
-        () => displayTexts.map((text) => segmentText(text)),
-        [displayTexts],
-    );
 
     const [popup, setPopup] = useState(null);
 
@@ -163,34 +203,41 @@ function WordText({
 
     const renderTextSentence = (sentence, index, renderToken) => {
         const segments = segmentLists[index];
-        const marks = phrasalMarks !== null ? (phrasalMarks[index] ?? null) : null;
+        const phrasal = phrasalMarks !== null ? (phrasalMarks[index] ?? null) : null;
+        const stress = stressMaps !== null ? (stressMaps[index] ?? null) : null;
         let tokenIndex = 0;
+        // Segments tile the sentence text contiguously, so each segment's
+        // base offset is the running total of the lengths before it.
+        let charOffset = 0;
         return (
             <span className="inline">
-                {segments.map((segment, index) => {
+                {segments.map((segment, segmentIndex) => {
+                    const base = charOffset;
+                    charOffset += segment.text.length;
                     if (segment.key !== null) {
-                        const markLabel = marks !== null ? (marks.get(tokenIndex++) ?? null) : null;
+                        const markLabel = phrasal !== null ? (phrasal.get(tokenIndex++) ?? null) : null;
                         const entry = wordMap[segment.key];
                         const markClass = markLabel !== null ? ' phrasal-hit' : '';
+                        const children = stressChildren(segment.text, stress, base);
                         if (entry?.w) {
-                            return renderToken(segment, index, entry, markClass, markLabel);
+                            return renderToken(segment, segmentIndex, entry, markClass, markLabel, children);
                         }
                         if (markLabel !== null) {
                             return (
-                                <span key={index} className={'word-token phrasal-hit'} title={markLabel}>
-                                    {segment.text}
+                                <span key={segmentIndex} className={'word-token phrasal-hit'} title={markLabel}>
+                                    {children}
                                 </span>
                             );
                         }
-                        return <React.Fragment key={index}>{segment.text}</React.Fragment>;
+                        return <React.Fragment key={segmentIndex}>{children}</React.Fragment>;
                     }
-                    return <React.Fragment key={index}>{segment.text}</React.Fragment>;
+                    return <React.Fragment key={segmentIndex}>{stressChildren(segment.text, stress, base)}</React.Fragment>;
                 })}
             </span>
         );
     };
 
-    const interactiveToken = (sentence, segment, index, entry, markClass, markLabel) => (
+    const interactiveToken = (sentence, segment, index, entry, markClass, markLabel, children) => (
         <span
             key={index}
             role="button"
@@ -212,11 +259,11 @@ function WordText({
                 }
             }}
         >
-            {segment.text}
+            {children ?? segment.text}
         </span>
     );
 
-    // displayTexts/segmentLists/phrasalMarks are indexed by position in the
+    // segmentLists/phrasalMarks/stressMaps are indexed by position in the
     // full sentence list (illustrations included), so text sentences must
     // look up their memo by that same index — not by a text-only count.
     const firstTextIndex = sentences.findIndex((sentence) => sentence.image === undefined);
@@ -230,19 +277,20 @@ function WordText({
                 const separator = index !== firstTextIndex ? ' ' : null;
                 if (!interactive) {
                     // Plain fast path: no word map for this side (entity_words
-                    // still building, or text not indexed) — render the raw
-                    // display text.
+                    // still building, or text not indexed) — render the plain
+                    // text with stress overlays.
+                    const stress = stressMaps !== null ? (stressMaps[index] ?? null) : null;
                     return (
                         <React.Fragment key={sentence.id}>
                             {separator}
-                            <span className="inline">{displayTexts[index]}</span>
+                            <span className="inline">{stressChildren(sentence.text, stress, 0)}</span>
                         </React.Fragment>
                     );
                 }
                 return (
                     <React.Fragment key={sentence.id}>
                         {separator}
-                        {renderTextSentence(sentence, index, (segment, segmentIndex, entry, markClass, markLabel) => interactiveToken(sentence, segment, segmentIndex, entry, markClass, markLabel))}
+                        {renderTextSentence(sentence, index, (segment, segmentIndex, entry, markClass, markLabel, children) => interactiveToken(sentence, segment, segmentIndex, entry, markClass, markLabel, children))}
                     </React.Fragment>
                 );
             })}

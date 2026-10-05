@@ -1,5 +1,29 @@
 # Directory Update Log
 
+## 2026-10-05 (fix: stress marks render as a CSS overlay over plain text)
+
+The stress-marks toggle used to substitute `stressed_content` (U+0301
+combining acutes + Silero's е→ё) into the DOM, so everything reading the
+page as text broke: copy/paste and double-click dictionary extensions got
+marked characters, and a е→ё swap even changed word-map keys. Now
+`WordText` always segments and renders the plain `text`; the new
+`resources/js/lib/stressMarks.mjs` (`stressOffsets()`) walks the plain and
+stressed strings in lockstep (inserted acutes, е→ё, pre-marked source
+marks, divergence ⇒ plain) and returns the plain-text offsets whose
+characters get wrapped in a `.stress-mark` span whose CSS `::after`
+(`app.css`) draws the acute above the vowel — no combining character and
+no ё substitution ever reaches the DOM, so selection, copy/paste,
+extensions, and browser find see original characters on both the simulator
+and the reader (shared renderer). Stressed е now displays as е́ (accent
+over plain е) instead of ё — deliberate. Enrichment pipeline, payload
+shape, and popups unchanged; `--font-reading` comment + reader concept
+updated (single-font rule now only guards source content that itself
+carries combining marks). No PHP/routes/commands changed. Verified via
+in-container node: `stressOffsets` unit cases + SSR-rendered `WordText`
+DOM assertions (23 checks: no U+0301 in DOM, plain textContent, marks on
+the right vowels, fast path, phrasal-hit + stress composition, divergence
+fallback).
+
 ## 2026-10-04 (fix: PromptTemplateSeeder deploy-safe, added to per-deploy seeds)
 
 `PromptTemplateSeeder` switches `updateOrCreate` → `firstOrCreate` (same

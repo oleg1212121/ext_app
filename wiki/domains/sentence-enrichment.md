@@ -5,7 +5,7 @@ description: Local-only per-sentence enrichment — Russian/English stress marks
 tags: [enrichment, stress-marks, multi-word-verbs, enrichers, python-service, spacy, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-04T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-05T00:00:00Z }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -40,6 +40,9 @@ sources:
    - id: reclass
      resource: laravel/app/Console/Commands/ReclassMultiwordWordsCommand.php
      title: words:reclass-multiword
+   - id: overlay
+     resource: laravel/resources/js/lib/stressMarks.mjs
+     title: stressOffsets (stress overlay placement)
    - id: adr
      resource: docs/adr/0052-local-sentence-enrichment.md
      title: ADR 0052
@@ -196,19 +199,26 @@ notice when the package is absent).
   carries `stressed` and `phrasal` keys — present only when the data
   exists — beside its `text`. Stress marks are a **per-user preference**
   (`stress_marks` in the reader + simulator `ui_settings` sections,
-  autosaved, default off): it swaps `text` → `stressed`. Multi-word
+  autosaved, default off): the DOM always renders the plain `text` — never
+  the `stressed` string — and `stressOffsets()`
+  (`resources/js/lib/stressMarks.mjs`) maps the variant back onto the plain
+  text so each stressed character is wrapped in a `.stress-mark` span whose
+  CSS `::after` draws the acute above it. No U+0301 and no е→ё substitution
+  ever reaches the DOM, so selection, copy/paste, double-click dictionary
+  extensions, and browser find all see original characters; a divergent
+  variant degrades to plain (no marks). Multi-word
   verbs are the same kind of preference (`phrasal_verbs`, default off): it
   underlines the tokens each hit's span covers with a dotted verdigris
   underline (`phrasal-hit` class) and shows the matched `phrase` as tooltip;
-  spans index the plain text, so marks are computed per sentence from the
-  original and transfer to the stressed variant (the token sequence is
-  unchanged). Both toggles render only when data exists; toolbar controls
+  spans index the plain text, which is what gets segmented, so the mapping
+  is direct. Both toggles render only when data exists; toolbar controls
   draw from the shared grey line-art icon set (`icons.jsx`; WordText is the
   shared renderer). Filament previews both columns in
   SentencesRelationManager (visible by default).
 - **Tokenizer keys strip combining marks** on both sides (`WordTokenizer::
-  lookupKey`, `wordTokenizer.mjs`) — the dictionary's `l_word` normalization
-  — so stressed tokens still resolve the word map and popups.
+  lookupKey`, `wordTokenizer.mjs`) — the dictionary's `l_word` normalization,
+  and what keeps pre-marked source content resolving; since the overlay
+  renders plain text, word-map keys always come from unstressed characters.
   `TokenizerParityTest` carries stress-marked samples. `WordController::show`
   strips marks from popup surfaces defensively.
 

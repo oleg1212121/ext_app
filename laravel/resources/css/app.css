@@ -16,11 +16,13 @@
 @theme {
     --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     --font-serif: 'Fraunces', 'Figtree', Georgia, 'Times New Roman', serif;
-    /* Reading text only: must be a single font covering Latin + Cyrillic +
-       U+0301 — if a combining stress mark and its base letter resolve from
-       different fonts, mark attachment breaks and the acute renders as a
-       spacing glyph (huge gaps after stressed vowels). Fraunces has no
-       Cyrillic subset, so it must not lead this stack. */
+    /* Reading text only: a single font covering Latin + Cyrillic, so glyphs
+       never switch fonts mid-word. The stress toggle draws acutes via CSS
+       (.stress-mark::after) and renders no U+0301, but source content itself
+       may still carry combining marks — if such a mark and its base letter
+       resolve from different fonts, mark attachment breaks and the acute
+       renders as a spacing glyph (huge gaps after stressed vowels). Fraunces
+       has no Cyrillic subset, so it must not lead this stack. */
     --font-reading: 'Source Serif 4', Georgia, 'Times New Roman', serif;
 
     --color-vellum: #ECE4D0;
@@ -240,4 +242,26 @@ b, strong {
     text-decoration-thickness: from-font;
     text-underline-offset: 4px;
     cursor: help;
+}
+
+/* Stress-mark overlay (ADR 0052 rendering): the DOM text stays unstressed —
+   selection, copy/paste, and dictionary extensions see original characters —
+   and the acute is drawn by this pseudo-element above the vowel. currentColor
+   keeps the mark in the word's tier color; carrying no text content, it can
+   never reach the clipboard. */
+.stress-mark {
+    position: relative;
+}
+
+.stress-mark::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 0.82em;
+    width: 0.32em;
+    height: 0.21em;
+    transform: translateX(-50%);
+    background: currentColor;
+    clip-path: polygon(62% 0, 100% 0, 38% 100%, 0 100%);
+    pointer-events: none;
 }
