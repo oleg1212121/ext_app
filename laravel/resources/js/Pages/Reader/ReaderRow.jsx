@@ -8,8 +8,9 @@ import {sideHasContent, sideSentences} from '../../lib/readingRows.mjs';
 //
 // A row is one Reading row object (ADR 0060: {key, a, b} canonical sides of
 // sentence objects); first/second are display-column descriptors the reader
-// page derives once per render — {side, wordMap, highlightable, explainable}.
-// `second` is null for single-language texts.
+// page derives once per render — {side, language, wordMap, highlightable,
+// explainable}, the shared reading-surface shape. `second` is null for
+// single-language texts.
 function ReaderRow({
     index,
     row,

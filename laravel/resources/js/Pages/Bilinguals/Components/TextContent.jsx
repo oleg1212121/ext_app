@@ -4,7 +4,7 @@ import Button from "../../../Components/Forms/Button.jsx";
 import WordText from "../../../Components/WordText.jsx";
 import {useI18n} from '../../../i18n';
 import {sideSentences} from '../../../lib/readingRows.mjs';
-import React, {useMemo} from "react";
+import React from "react";
 
 const SIMULATOR_FIGURE_PROPS = {
     figureClassName: 'mb-1 text-center',
@@ -17,25 +17,15 @@ const SIMULATOR_FIGURE_PROPS = {
  * display-oriented, not side letters: the left column is the learning
  * target (hidden until revealed, read-credited), the right column the base
  * the learner translates from (Open/Ask actions). Rows arrive canonical;
- * firstSide/secondSide name which canonical side plays each column — the
- * caller's flip is just that choice, no row copying.
+ * first/second are display-column descriptors — {side, language, wordMap,
+ * highlightable, explainable}, the reader's shape plus the column language
+ * for the headers — which the caller derives once per render, memoized. The
+ * caller's flip is just which side plays each column, no row copying.
  */
 export default function TextContent(props) {
     const {t} = useI18n();
     const rowOffset = props.rowOffset ?? 0;
     const hasRows = (props.rows?.length ?? 0) > 0;
-
-    // Passed through whenever the side is language-eligible — enabled or
-    // not — so keyless users still get the word popup's tab strip and its
-    // Models used popup; `enabled` rides along for the guidance states.
-    const targetExplain = useMemo(
-        () => (props.targetExplainable ? props.explain : undefined),
-        [props.explain, props.targetExplainable],
-    );
-    const baseExplain = useMemo(
-        () => (props.baseExplainable ? props.explain : undefined),
-        [props.explain, props.baseExplainable],
-    );
 
     if (!hasRows) {
         return (
@@ -68,10 +58,10 @@ export default function TextContent(props) {
         );
     }
 
-    const targetLabel = props.targetLanguage?.name ?? props.targetLanguage?.code ?? '';
-    const baseLabel = props.baseLanguage?.name ?? props.baseLanguage?.code ?? '';
-    const targetGlyph = (props.targetLanguage?.code ?? '').toUpperCase();
-    const baseGlyph = (props.baseLanguage?.code ?? '').toUpperCase();
+    const targetLabel = props.first.language?.name ?? props.first.language?.code ?? '';
+    const baseLabel = props.second.language?.name ?? props.second.language?.code ?? '';
+    const targetGlyph = (props.first.language?.code ?? '').toUpperCase();
+    const baseGlyph = (props.second.language?.code ?? '').toUpperCase();
 
     return (
         <div className="flex-1 overflow-y-auto bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] pb-5">
@@ -115,13 +105,17 @@ export default function TextContent(props) {
                             <span className="ribbon-mark absolute left-0 top-0 bottom-0" aria-hidden="true"/>
                             <span className="target content resizeable_element block w-full break-words text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-serif)]">
                                 <WordText
-                                    sentences={sideSentences(row, props.firstSide)}
-                                    wordMap={props.targetWordMap}
-                                    highlight={props.highlightWords && props.targetHighlightable}
+                                    sentences={sideSentences(row, props.first.side)}
+                                    wordMap={props.first.wordMap}
+                                    highlight={props.highlightWords && props.first.highlightable}
                                     rowKey={row.key}
                                     onWordProgress={props.onWordProgress}
                                     popupFontSize={props.popupFontSize}
-                                    explain={targetExplain}
+                                    // Passed through whenever the side is
+                                    // language-eligible — enabled or not — so
+                                    // keyless users still get the word popup's
+                                    // tab strip and its Models used popup.
+                                    explain={props.first.explainable ? props.explain ?? undefined : undefined}
                                     showStress={props.showStress}
                                     showPhrasal={props.showPhrasal}
                                     figureProps={SIMULATOR_FIGURE_PROPS}
@@ -147,13 +141,13 @@ export default function TextContent(props) {
                             <div className="flex w-full flex-col gap-1.5">
                                 <span className="base content resizeable_element block w-full break-words text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-serif)]">
                                     <WordText
-                                        sentences={sideSentences(row, props.secondSide)}
-                                        wordMap={props.baseWordMap}
-                                        highlight={props.highlightWords && props.baseHighlightable}
+                                        sentences={sideSentences(row, props.second.side)}
+                                        wordMap={props.second.wordMap}
+                                        highlight={props.highlightWords && props.second.highlightable}
                                         rowKey={row.key}
                                         onWordProgress={props.onWordProgress}
                                         popupFontSize={props.popupFontSize}
-                                        explain={baseExplain}
+                                        explain={props.second.explainable ? props.explain ?? undefined : undefined}
                                         showStress={props.showStress}
                                         showPhrasal={props.showPhrasal}
                                         figureProps={SIMULATOR_FIGURE_PROPS}

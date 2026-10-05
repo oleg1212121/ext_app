@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useI18n} from '../../i18n';
 import {useSideFlip} from '../../hooks/useSideFlip';
 import {loadPositions, writeCurrentText, writePosition} from '../../lib/simulatorPosition';
@@ -79,6 +79,25 @@ export function useSimulatorText({pinnedMatch, textList, fallbackTextId, initial
     const baseHighlightable = !!highlightable[baseSide];
     const targetExplainable = !!explainable[learningSide];
     const baseExplainable = !!explainable[baseSide];
+
+    // Display-column descriptors (the reader's shape, plus the side's
+    // language for the column headers): memoized so the memoized WordText
+    // columns keep stable props across parent re-renders (the AI panel
+    // streams ~20x/second).
+    const learningDescriptor = useMemo(() => ({
+        side: learningSide,
+        language: languages[learningSide] ?? null,
+        wordMap: wordMaps?.[learningSide] ?? {},
+        highlightable: !!highlightable[learningSide],
+        explainable: !!explainable[learningSide],
+    }), [learningSide, languages, wordMaps, highlightable, explainable]);
+    const baseDescriptor = useMemo(() => ({
+        side: baseSide,
+        language: languages[baseSide] ?? null,
+        wordMap: wordMaps?.[baseSide] ?? {},
+        highlightable: !!highlightable[baseSide],
+        explainable: !!explainable[baseSide],
+    }), [baseSide, languages, wordMaps, highlightable, explainable]);
 
     // Apply {wordId: familiarity} results from the familiarity API: recolor
     // every occurrence of the touched words on both sides.
@@ -246,8 +265,6 @@ export function useSimulatorText({pinnedMatch, textList, fallbackTextId, initial
         languages,
         learningSide,
         baseSide,
-        firstSide,
-        secondSide,
         toggleTo,
         // Loaded content
         rows,
@@ -257,13 +274,9 @@ export function useSimulatorText({pinnedMatch, textList, fallbackTextId, initial
         rowOffset,
         checkedRows,
         allTarget,
-        // Projected display maps (post-flip)
-        targetWordMap,
-        baseWordMap,
-        targetHighlightable,
-        baseHighlightable,
-        targetExplainable,
-        baseExplainable,
+        // Projected display descriptors (post-flip)
+        learningDescriptor,
+        baseDescriptor,
         // Loading
         textPending,
         // Actions

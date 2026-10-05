@@ -160,16 +160,18 @@ export default function ReaderApp({
 
     const firstDescriptor = useMemo(() => ({
         side: firstSide,
+        language: {code: langs[firstSide] ?? null, name: null},
         wordMap: wordMaps[firstSide] ?? {},
         highlightable: !!highlightable[firstSide],
         explainable: !!explainable[firstSide],
-    }), [firstSide, wordMaps, highlightable, explainable]);
+    }), [firstSide, langs, wordMaps, highlightable, explainable]);
     const secondDescriptor = useMemo(() => (secondSide === null ? null : {
         side: secondSide,
+        language: {code: langs[secondSide] ?? null, name: null},
         wordMap: wordMaps[secondSide] ?? {},
         highlightable: !!highlightable[secondSide],
         explainable: !!explainable[secondSide],
-    }), [secondSide, wordMaps, highlightable, explainable]);
+    }), [secondSide, langs, wordMaps, highlightable, explainable]);
 
     const setReadingLang = useCallback((side) => {
         // Both sides can share a language code; picking the other radio is

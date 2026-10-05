@@ -54,9 +54,9 @@ const Bilinguals = (props) => {
     const pinnedMatch = props.pinnedMatch ?? null
 
     const {
-        currentText, languages, learningSide, baseSide, firstSide, secondSide, toggleTo,
+        currentText, languages, learningSide, baseSide, toggleTo,
         rows, textMeta, textPage, loadError, rowOffset, checkedRows, allTarget,
-        targetWordMap, baseWordMap, targetHighlightable, baseHighlightable, targetExplainable, baseExplainable,
+        learningDescriptor, baseDescriptor,
         textPending,
         changeText, handleLoadText, fetchPage, commitPage,
         onToggleRow, onWordProgress, toggleAllTarget,
@@ -191,10 +191,10 @@ const Bilinguals = (props) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [showWorkplace]);
 
-    // Display order: column 0 (firstSide) is the learning target (hidden
-    // until revealed), column 1 (secondSide) the base the Open/Ask actions
-    // and the workplace pair with. Rows stay canonical — the flip is just
-    // which side each column shows.
+    // Display order: column 0 (the learning descriptor) is the learning
+    // target (hidden until revealed), column 1 (the base descriptor) the
+    // base the Open/Ask actions and the workplace pair with. Rows stay
+    // canonical — the flip is just which side each column shows.
 
     const hasStressedData = React.useMemo(() => rowsHaveAnnotation(rows, 'stressed'), [rows]);
     const hasPhrasalData = React.useMemo(() => rowsHaveAnnotation(rows, 'phrasal'), [rows]);
@@ -295,8 +295,8 @@ const Bilinguals = (props) => {
                                 ask={ask}
                                 focusOnWorkplace={focusOnWorkplace}
                                 rows={rows}
-                                firstSide={firstSide}
-                                secondSide={secondSide}
+                                first={learningDescriptor}
+                                second={baseDescriptor}
                                 rowOffset={rowOffset}
                                 loadError={loadError}
                                 hasText={!!currentText}
@@ -304,14 +304,6 @@ const Bilinguals = (props) => {
                                 canUseAi={canUseAi}
                                 checkedRows={checkedRows}
                                 onToggleRow={onToggleRow}
-                                targetLanguage={languages[learningSide]}
-                                baseLanguage={languages[baseSide]}
-                                targetWordMap={targetWordMap}
-                                baseWordMap={baseWordMap}
-                                targetHighlightable={targetHighlightable}
-                                baseHighlightable={baseHighlightable}
-                                targetExplainable={targetExplainable}
-                                baseExplainable={baseExplainable}
                                 highlightWords={highlightWords}
                                 showStress={showStress}
                                 showPhrasal={showPhrasal}
