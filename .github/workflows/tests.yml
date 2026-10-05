@@ -89,3 +89,26 @@ jobs:
       - run: composer install --no-interaction --prefer-dist
 
       - run: vendor/bin/pint --test
+
+  frontend:
+    name: Vitest (pure JS logic)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: laravel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: laravel/package-lock.json
+
+      # Only production-relevant npm plumbing — no laravel-vite plugin, no
+      # asset build: the suite pins pure lib/ modules in Node (ADR 0066).
+      - run: npm ci
+
+      - run: npm run test
+
