@@ -692,6 +692,16 @@ looked up in the dictionary and tinted by the reader's **Word familiarity**.
 
 ## Language
 
+**Reading-surface kit**:
+The shared toolbar chrome of the reading surfaces (ADR 0068): the side
+radiogroup, the annotation toggle, the font-size stepper, and the page
+input — one module each, parameterized by surface variant (palettes, type,
+commit policy). What stays per surface: font application, page-commit
+transport, persistence, and the value conventions (side letters vs
+language codes).
+_Avoid_: toolbar component (it is several modules), shared components
+(names the directory, not the concept).
+
 **Interactive word**:
 A dictionary-linked token rendered as clickable text on a reading surface;
 Ctrl-clicking it opens the **Word popup** — a plain click does nothing.

@@ -1,5 +1,43 @@
 # Directory Update Log
 
+## 2026-10-05 (Reading-surface chrome kit + one JSON envelope)
+
+The toolbar mechanics ADR 0067 deferred now have one home each (ADR 0068):
+`ReadingSideRadiogroup` (presentational, `variant: 'sim' | 'reader'` —
+palettes and type stay per surface, value semantics stay with the pages:
+side letters + `toggleTo` on the simulator, language codes + the
+same-code no-op guard on the reader), `AnnotationToggle` (the grey-icon
+rule stated once; the simulator's panel tabs share its primitives via
+`PanelToggleTab`), `useFontSize` (numeric-delta clamp/step state;
+application and autosave stay per surface), and `PageInput` (mirroring,
+commit policy — Enter on the simulator, blur on the reader — NaN handling,
+clamping via the new `lib/pagination.mjs`). Pure primitives one-homed:
+`patchWordStatus` (the popup progress recolor both surfaces repeated) and
+`loadJson`/`saveJson` under the three Working-state stores; the reader's
+restore placeholder reuses `SpinnerSvg`. `TextContent` takes the
+descriptor contract — `{side, language, wordMap, highlightable,
+explainable}`, the reader's shape plus the column language — replacing
+its six exploded `target*`/`base*` props (28 → 21); descriptors are
+memoized on raw state in `useSimulatorText`, and the reader's gain the
+`language` field. Deliberately not unified: font ranges, paging transport,
+autosave key names, i18n namespaces.
+
+The reading surfaces' JSON endpoints answer one envelope (ADR 0069): the
+`['data' => ['data' => ..., 'code' => ...]]` double wrap is gone — success
+is `{data: ...}`, errors `{error}` plus the HTTP status (the flat
+`/word-events` convention); `/text`'s inner ADR 0060 keys are untouched.
+The AI answers (`askAi`, `askAiStreamed`, `explainWord`) moved from
+`SimulatorController` to `ReadingAiController` — the word-explain endpoint
+serves the reader's word popup too; paths, names, throttle unchanged.
+`EntityAccessService` is constructor-injected in both surface controllers,
+and `SavedUiSettings` owns the clamped saved-settings seeding both
+repeated (int/bool/annotation prefs). The explain config is built
+server-side for both surfaces by `AIModelResolver::explainConfig()` — the
+simulator ships it as an `explain` prop (with the simulator-only
+`answerLabel`) instead of assembling it client-side. Clients updated in
+lockstep (`responseErrorMessage`, `fetchTextPage`, `WordPopup`); ADRs 0068
+and 0069 recorded; `web-routes.md` regenerated.
+
 ## 2026-10-05 (One coverage repair, one two-phase persist primitive)
 
 The junction-less repair stopped being a caller-held protocol:

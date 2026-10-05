@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-05T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-05T23:10:48+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -161,9 +161,13 @@ side (`{a, b}`; the b map empty when rows are single-language), plus
 `highlight` (the saved `reader.highlight` setting) and the `highlightable`
 language flags (side language ≠ the user's native language). The same rule
 now gates the AI Context explanation tab: `explainable` flags and `explain`
-(`{enabled, modelKey}` from `AIModelResolver::resolveExplanationModel()`,
-ADR 0035). `ReaderRow` takes two display-column descriptors
-(`{side, wordMap, highlightable, explainable}`) and renders both row halves
+(`{enabled, modelKey, modelLabel, followsAnswer, answerLabel}` — assembled
+server-side by `AIModelResolver::explainConfig()`, the same builder the
+simulator ships from; the reader's `answerLabel` is null — ADR 0035).
+`ReaderRow` takes two display-column descriptors
+(`{side, language, wordMap, highlightable, explainable}` — the reading
+surfaces' shared shape, ADR 0068; the reader's `language` carries the code
+only) and renders both row halves
 through the shared `WordText`/`WordPopup` components (each gets the row's
 `key`, so clicking a word fires a ledger-deduplicated **lookup** event —
 the reader never credits reads); the primary line is a `role="button"` div

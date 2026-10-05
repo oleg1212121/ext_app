@@ -5,7 +5,7 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-10-04T18:40:00Z+03:00}
+generated: { by: agent:zcode, at: 2026-10-05T23:10:48+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -24,7 +24,7 @@ sources:
     title: EntityWordAdoption (entity tokens become dictionary words)
   - id: word-explain-endpoint
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
-    title: SimulatorController::explainWord (AI Context explanation)
+    title: ReadingAiController::explainWord (AI Context explanation)
   - id: word-explain-request
     resource: laravel/app/Http/Requests/AiWordExplainRequest.php
     title: AiWordExplainRequest (explain payload validation)
@@ -300,7 +300,7 @@ outside-click closing — the word popup underneath stays put.
 | Route | Handler | Purpose |
 |-------|---------|---------|
 | `GET /words/{word}` | `WordController::show` | Word popup payload: the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked) |
-| `POST /ai/word-explain` | `SimulatorController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |
+| `POST /ai/word-explain` | `ReadingAiController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |
 | `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |
 | `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to untouched) |
 | `POST /word-events` | `WordController::recordEvents` | Ledger-deduplicated read/lookup events; returns resulting familiarity per word |
