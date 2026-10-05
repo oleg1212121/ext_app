@@ -20,11 +20,6 @@ class TextSignatureService
 
     public function __construct(private readonly PythonClient $python) {}
 
-    public static function create(): self
-    {
-        return new self(PythonClient::create());
-    }
-
     public static function readFileFromLocalPath(string $relativeFilePath): string
     {
         $fullPath = Storage::disk('local')->path($relativeFilePath);

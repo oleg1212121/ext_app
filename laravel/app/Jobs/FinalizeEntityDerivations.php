@@ -64,7 +64,7 @@ class FinalizeEntityDerivations implements ShouldQueue
 
         if (! $copiedSignature && $entity->signature === null) {
             $content = TextSignatureService::readFileFromLocalPath($this->filePath);
-            $signature = TextSignatureService::create()
+            $signature = app(TextSignatureService::class)
                 ->generateSignature($content, $entity->language->code);
 
             if ($signature === null) {

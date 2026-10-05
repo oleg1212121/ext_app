@@ -78,7 +78,7 @@ class AlignEntitySentences implements ShouldQueue
             return;
         }
 
-        $service = SentenceAlignmentService::create();
+        $service = app(SentenceAlignmentService::class);
 
         $verification = $service->verifyEntityPair($aEntity, $bEntity);
 
@@ -561,7 +561,7 @@ class AlignEntitySentences implements ShouldQueue
             return;
         }
 
-        $service = SentenceAlignmentService::create();
+        $service = app(SentenceAlignmentService::class);
 
         $matches = $service->alignChunkRemote(
             $aSentences,
@@ -699,7 +699,7 @@ class AlignEntitySentences implements ShouldQueue
         $aSentences = $this->sentenceSlice($aEntity->id, $aOffset, $aLimit);
         $bSentences = $this->sentenceSlice($bEntity->id, $bOffset, $bLimit);
 
-        $service = SentenceAlignmentService::create();
+        $service = app(SentenceAlignmentService::class);
 
         $matches = $service->alignChunkRemote(
             $aSentences,

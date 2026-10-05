@@ -31,7 +31,7 @@ class MeaningMatchStore
 
     public static function create(): self
     {
-        return new self(SentenceAlignmentService::create());
+        return new self(app(SentenceAlignmentService::class));
     }
 
     /**

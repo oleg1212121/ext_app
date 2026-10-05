@@ -21,11 +21,6 @@ class SentenceAlignmentService
         private readonly TextSignatureService $signatures,
     ) {}
 
-    public static function create(): self
-    {
-        return new self(PythonClient::create(), TextSignatureService::create());
-    }
-
     /**
      * Verify that two entities are translations of the same text.
      */

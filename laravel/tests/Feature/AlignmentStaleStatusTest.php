@@ -9,10 +9,8 @@ use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Http;
 
 if (! function_exists('approvedUser')) {
     function approvedUser(): User
@@ -28,10 +26,9 @@ if (! function_exists('grantAccess')) {
     }
 }
 
-// Guard: these tests stop at Bus::fake(), but anything that leaks an HTTP call
-// must fail loudly instead of hanging on the Python service timeout. Tests
-// that need responses register their own fake.
-beforeEach(fn () => Http::preventStrayRequests());
+// Guard: these tests stop at Bus::fake(); a stray python call fails loudly
+// on the unconfigured fake instead of hanging on the real service timeout.
+beforeEach(fn () => fakePython());
 
 /**
  * A completed match with a human landmark (en1-ru1) and a low-confidence
@@ -96,19 +93,7 @@ function createStaleRunFixture(): array
 
 function fakePoolAlignment(): void
 {
-    Http::fake(function (Request $request) {
-        $a = $request->data()['a_sentences'] ?? [];
-        $b = $request->data()['b_sentences'] ?? [];
-
-        $count = min(count($a), count($b));
-        $matches = [];
-
-        for ($i = 0; $i < $count; $i++) {
-            $matches[] = ['a_start' => $i, 'a_end' => $i + 1, 'b_start' => $i, 'b_end' => $i + 1, 'score' => 0.9];
-        }
-
-        return Http::response(['matches' => $matches, 'unmatched_a' => [], 'unmatched_b' => []]);
-    });
+    fakePython()->aligningDiagonal();
 }
 
 function drainAlignmentChain(EntityMatch $entityMatch): void

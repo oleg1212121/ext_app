@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, and the vitest suite for pure JS logic.
 tags: [testing, pest, vitest]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-05T20:05:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-05T20:55:00+03:00 }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -15,6 +15,9 @@ sources:
   - id: testcase
     resource: laravel/tests/TestCase.php
     title: Base test case (test-database guard, withoutVite)
+  - id: fakepython
+    resource: laravel/tests/Support/FakePythonClient.php
+    title: FakePythonClient (the in-memory python transport adapter for tests)
   - id: envtesting
     resource: laravel/.env.testing.example
     title: Testing environment file template (tracked; .env.testing is gitignored)
@@ -211,10 +214,18 @@ Rules for any new or modified test:
   code executing *before* a dispatch runs inline: a test with only
   `Bus::fake()` still makes real network calls if any pre-dispatch code
   touches the Python service — and `SentenceAlignmentService` timeouts reach
-  600s with retries, i.e. minutes per leaked call. Add `Http::fake()`: a
-  file-level `beforeEach(fn () => Http::fake())` guard suffices when tests
-  only assert dispatches (see `FilamentReAlignActionTest.php`); stub explicit
-  responses when payloads matter (see `ChunkedEntityAlignmentTest.php`).
+  600s with retries, i.e. minutes per leaked call. Python calls go through
+  the `PythonClient` seam (ADR 0061), so bind the in-memory adapter instead
+  of faking the wire: `fakePython()` (tests/Pest.php) binds
+  `Tests\Support\FakePythonClient` for the current test; give it canned
+  responses (`->aligning([...])`, `->aligningDiagonal()`, `->embedding([...])`,
+  `->enrichingNothing()`) and read the recorded payloads
+  (`$fake->alignPayloads`, `enrichPayloads`, `embedPayloads`). Unconfigured
+  endpoints throw `PythonClientException` — the same failure shape a 5xx
+  maps to in production — so an unexpected call fails loudly. Wire-level
+  `Http::fake()` lives only in `PythonClientTest` (the adapter's own tests);
+  a file-level `beforeEach(fn () => fakePython())` suffices when tests only
+  assert dispatches (see `FilamentReAlignActionTest.php`).
 * **Cap drain loops.** A `while` loop that re-runs a job until the match
   leaves `aligning` needs a small guard (`$guard < 10`) *and* a convergence
   assertion after the loop (`status === 'completed'`) so a stalled job fails

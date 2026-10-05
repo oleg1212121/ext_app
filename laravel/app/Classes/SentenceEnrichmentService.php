@@ -34,15 +34,6 @@ class SentenceEnrichmentService
         private readonly EnricherRegistry $registry,
     ) {}
 
-    public static function create(): self
-    {
-        return new self(
-            python: PythonClient::create(),
-            tokenizer: app(WordTokenizer::class),
-            registry: app(EnricherRegistry::class),
-        );
-    }
-
     /**
      * The entity's language enrichers that currently need to run (never
      * enriched, a newly registered enricher, or sentence changes since).

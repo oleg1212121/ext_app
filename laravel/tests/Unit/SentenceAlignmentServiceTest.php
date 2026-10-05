@@ -1,22 +1,17 @@
 <?php
 
-use App\Classes\PythonClient;
 use App\Classes\SentenceAlignmentService;
 use App\Classes\TextSignatureService;
 use App\Models\EntitySentence;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class);
 
 function makeAlignmentService(): SentenceAlignmentService
 {
-    return new SentenceAlignmentService(
-        new PythonClient('http://ext_python:8000', 30, 300),
-        new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 300)),
-    );
+    $python = fakePython();
+
+    return new SentenceAlignmentService($python, new TextSignatureService($python));
 }
 
 function makeAAlignmentSentence(int $id, int $order): EntitySentence
@@ -54,12 +49,8 @@ function alignmentGroupShapes(array $links): array
 }
 
 it('aligns a direct one sentence translation as one group', function () {
-    Http::fake([
-        '*' => Http::response([
-            'matches' => [
-                ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.92],
-            ],
-        ]),
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.92],
     ]);
 
     $service = makeAlignmentService();
@@ -76,12 +67,8 @@ it('aligns a direct one sentence translation as one group', function () {
 });
 
 it('aligns one a side sentence to two b side sentences as one group', function () {
-    Http::fake([
-        '*' => Http::response([
-            'matches' => [
-                ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 2, 'score' => 0.94],
-            ],
-        ]),
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 2, 'score' => 0.94],
     ]);
 
     $service = makeAlignmentService();
@@ -98,12 +85,8 @@ it('aligns one a side sentence to two b side sentences as one group', function (
 });
 
 it('aligns two a side sentences to one b side sentence as one group', function () {
-    Http::fake([
-        '*' => Http::response([
-            'matches' => [
-                ['a_start' => 0, 'a_end' => 2, 'b_start' => 0, 'b_end' => 1, 'score' => 0.94],
-            ],
-        ]),
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 2, 'b_start' => 0, 'b_end' => 1, 'score' => 0.94],
     ]);
 
     $service = makeAlignmentService();
@@ -120,12 +103,8 @@ it('aligns two a side sentences to one b side sentence as one group', function (
 });
 
 it('produces skip steps for sentences before the matched span', function () {
-    Http::fake([
-        '*' => Http::response([
-            'matches' => [
-                ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.8],
-            ],
-        ]),
+    fakePython()->aligning([
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.8],
     ]);
 
     $service = makeAlignmentService();
@@ -156,7 +135,7 @@ it('produces skip steps for sentences before the matched span', function () {
 });
 
 it('returns a skip-only path without calling the service when a side is empty', function () {
-    Http::fake();
+    $fake = fakePython();
 
     $service = makeAlignmentService();
 
@@ -178,13 +157,11 @@ it('returns a skip-only path without calling the service when a side is empty', 
             ['type' => 'skip_a', 'a_sentence_id' => 101, 'alignment_order' => 0],
         ]);
 
-    Http::assertNothingSent();
+    expect($fake->alignPayloads)->toBe([]);
 });
 
 it('sends sentence contents and max window to the alignment endpoint', function () {
-    Http::fake([
-        '*' => Http::response(['matches' => []]),
-    ]);
+    $fake = fakePython()->aligning([]);
 
     $service = makeAlignmentService();
     $aSentences = collect([
@@ -195,51 +172,17 @@ it('sends sentence contents and max window to the alignment endpoint', function 
 
     $service->alignChunkRemote($aSentences, $bSentences, 5);
 
-    Http::assertSent(function (Request $request): bool {
-        return str_ends_with($request->url(), '/align')
-            && $request->data()['a_sentences'] === ['English sentence 1.', 'English sentence 2.']
-            && $request->data()['b_sentences'] === ['Russian sentence 1.']
-            && $request->data()['max_window'] === 5;
-    });
+    expect($fake->alignPayloads[0]['a_sentences'] ?? [])->toBe(['English sentence 1.', 'English sentence 2.'])
+        ->and($fake->alignPayloads[0]['b_sentences'] ?? [])->toBe(['Russian sentence 1.'])
+        ->and($fake->alignPayloads[0]['max_window'] ?? null)->toBe(5);
 });
 
 it('throws when the alignment service responds with an error', function () {
-    Http::fake(fn () => Http::response('service unavailable', 503));
-
-    $service = makeAlignmentService();
-
-    $service->alignChunkRemote(
+    // The unconfigured fake throws the same PythonClientException a 503 maps
+    // to in production — alignChunkRemote lets it propagate.
+    makeAlignmentService()->alignChunkRemote(
         collect([makeAAlignmentSentence(101, 1)]),
         collect([makeBAlignmentSentence(201, 1)]),
         6,
     );
 })->throws(RuntimeException::class, 'Python alignment service error');
-
-it('retries transient alignment connection failures before succeeding', function () {
-    $attempts = 0;
-
-    Http::fake(function () use (&$attempts) {
-        $attempts++;
-
-        if ($attempts < 3) {
-            throw new ConnectionException('Python service timed out');
-        }
-
-        return Http::response([
-            'matches' => [
-                ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-            ],
-        ]);
-    });
-
-    $service = makeAlignmentService();
-
-    $result = $service->alignChunkRemote(
-        collect([makeAAlignmentSentence(101, 1)]),
-        collect([makeBAlignmentSentence(201, 1)]),
-        6,
-    );
-
-    expect($result['links'])->toHaveCount(1)
-        ->and($attempts)->toBe(3);
-});

@@ -1,17 +1,13 @@
 <?php
 
 use App\Classes\MeaningMatchStore;
-use App\Classes\PythonClient;
 use App\Classes\SentenceAlignmentService;
-use App\Classes\TextSignatureService;
 use App\Jobs\AlignEntitySentences;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Http;
 
 it('configures the alignment job to retry with backoff', function () {
     $job = new AlignEntitySentences(1);
@@ -151,20 +147,11 @@ it('drains the original side as skip rows when one side has no sentences', funct
 });
 
 it('runs a small entity as a single chunk regardless of the configured chunk size', function () {
-    $calls = [];
-    Http::fake(function (Request $request) use (&$calls) {
-        $calls[] = count($request->data()['a_sentences'] ?? []);
-
-        return Http::response([
-            'matches' => [
-                ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-                ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
-                ['a_start' => 2, 'a_end' => 3, 'b_start' => 2, 'b_end' => 3, 'score' => 0.9],
-            ],
-            'unmatched_a' => [],
-            'unmatched_b' => [],
-        ]);
-    });
+    $fake = fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
+        ['a_start' => 2, 'a_end' => 3, 'b_start' => 2, 'b_end' => 3, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -207,7 +194,7 @@ it('runs a small entity as a single chunk regardless of the configured chunk siz
     $entityMatch->refresh();
 
     expect($entityMatch->chunk_size)->toBe(3)
-        ->and($calls)->toBe([3])
+        ->and(collect($fake->alignPayloads)->map(fn ($payload) => count($payload['a_sentences'] ?? []))->all())->toBe([3])
         ->and($entityMatch->status)->toBe('completed')
         ->and($entityMatch->a_last_sentence_offset)->toBe(3)
         ->and($entityMatch->b_last_sentence_offset)->toBe(3)
@@ -217,15 +204,9 @@ it('runs a small entity as a single chunk regardless of the configured chunk siz
 });
 
 it('persists one alignment chunk as meaning matches and junction rows', function () {
-    Http::fake(function (Request $request) {
-        return Http::response([
-            'matches' => [
-                ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-            ],
-            'unmatched_a' => [],
-            'unmatched_b' => [],
-        ]);
-    });
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -285,13 +266,9 @@ it('persists one alignment chunk as meaning matches and junction rows', function
 });
 
 it('preserves cursor and recreates the job when more sentences remain', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -344,13 +321,9 @@ it('preserves cursor and recreates the job when more sentences remain', function
 });
 
 it('completes when reaching the final chunk', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -403,11 +376,7 @@ it('completes when reaching the final chunk', function () {
 });
 
 it('drains remaining original sentences when RU sentences are exhausted before EN', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([]);
 
     Bus::fake();
 
@@ -459,11 +428,7 @@ it('drains remaining original sentences when RU sentences are exhausted before E
 });
 
 it('stores a single-sided skip row when a chunk commits no matches and advances', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([]);
 
     Bus::fake();
 
@@ -514,11 +479,7 @@ it('stores a single-sided skip row when a chunk commits no matches and advances'
 });
 
 it('drains the RU original tail as skip rows when RU is the original side and longer', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([]);
 
     Bus::fake();
 
@@ -762,13 +723,9 @@ it('skips stale alignment jobs when the entity match has been deleted', function
 });
 
 it('persists one english sentence linked to five russian sentences in a single chunk', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 5, 'score' => 0.95],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 5, 'score' => 0.95],
+    ]);
 
     Bus::fake();
 
@@ -852,13 +809,7 @@ it('keeps the cursor untouched on failure so a re-run can resume', function () {
 });
 
 it('sends full sentence contents to the alignment endpoint without php-side sampling', function () {
-    Http::fake(function (Request $request) {
-        return Http::response([
-            'matches' => [],
-            'unmatched_a' => [0, 1],
-            'unmatched_b' => [0],
-        ]);
-    });
+    $fake = fakePython()->aligning([]);
 
     Bus::fake();
 
@@ -904,35 +855,19 @@ it('sends full sentence contents to the alignment endpoint without php-side samp
 
     (new AlignEntitySentences($entityMatch->id))->handle();
 
-    Http::assertSent(function (Request $request): bool {
-        $aTexts = $request->data()['a_sentences'] ?? [];
-        $bTexts = $request->data()['b_sentences'] ?? [];
+    $payload = $fake->alignPayloads[0] ?? [];
 
-        return str_ends_with($request->url(), '/align')
-            && $aTexts === [str_repeat('a', 100), str_repeat('b', 100)]
-            && $bTexts === [str_repeat('c', 100)]
-            && $request->data()['max_window'] === 1;
-    });
+    expect($payload['a_sentences'] ?? [])->toBe([str_repeat('a', 100), str_repeat('b', 100)])
+        ->and($payload['b_sentences'] ?? [])->toBe([str_repeat('c', 100)])
+        ->and($payload['max_window'] ?? null)->toBe(1);
 });
 
 it('uses a sequential slice where the RU window tracks the EN window without overlap', function () {
-    $capturedOffsets = [];
-    Http::fake(function (Request $request) use (&$capturedOffsets) {
-        $capturedOffsets[] = [
-            'a_count' => count($request->data()['a_sentences'] ?? []),
-            'b_count' => count($request->data()['b_sentences'] ?? []),
-        ];
-
-        return Http::response([
-            'matches' => [
-                ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-                ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
-                ['a_start' => 2, 'a_end' => 3, 'b_start' => 2, 'b_end' => 3, 'score' => 0.9],
-            ],
-            'unmatched_a' => [],
-            'unmatched_b' => [],
-        ]);
-    });
+    $fake = fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
+        ['a_start' => 2, 'a_end' => 3, 'b_start' => 2, 'b_end' => 3, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -974,7 +909,10 @@ it('uses a sequential slice where the RU window tracks the EN window without ove
 
     (new AlignEntitySentences($entityMatch->id))->handle();
 
-    expect($capturedOffsets)->toBe([
+    expect(collect($fake->alignPayloads)->map(fn ($payload) => [
+        'a_count' => count($payload['a_sentences'] ?? []),
+        'b_count' => count($payload['b_sentences'] ?? []),
+    ])->all())->toBe([
         ['a_count' => 3, 'b_count' => 3],
     ]);
 
@@ -988,14 +926,10 @@ it('uses a sequential slice where the RU window tracks the EN window without ove
 });
 
 it('trims low-score tail matches and advances the cursor to the last anchor', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-            ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.3],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.3],
+    ]);
 
     Bus::fake();
 
@@ -1042,14 +976,10 @@ it('trims low-score tail matches and advances the cursor to the last anchor', fu
 });
 
 it('falls back to committing all matches when no match reaches the anchor threshold', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.3],
-            ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.2],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.3],
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.2],
+    ]);
 
     Bus::fake();
 
@@ -1096,13 +1026,9 @@ it('falls back to committing all matches when no match reaches the anchor thresh
 });
 
 it('commits every match on the final chunk regardless of score', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 2, 'b_start' => 0, 'b_end' => 2, 'score' => 0.2],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 2, 'b_start' => 0, 'b_end' => 2, 'score' => 0.2],
+    ]);
 
     Bus::fake();
 
@@ -1150,13 +1076,9 @@ it('commits every match on the final chunk regardless of score', function () {
 });
 
 it('assigns monotonic alignment chunk ids across trimmed chunks', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 2, 'b_start' => 0, 'b_end' => 2, 'score' => 0.9],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 2, 'b_start' => 0, 'b_end' => 2, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -1213,17 +1135,13 @@ it('assigns monotonic alignment chunk ids across trimmed chunks', function () {
 });
 
 it('rolls back the last two meaning matches and re-aligns them with backward context', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-            ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
-            ['a_start' => 2, 'a_end' => 3, 'b_start' => 2, 'b_end' => 3, 'score' => 0.9],
-            ['a_start' => 3, 'a_end' => 4, 'b_start' => 3, 'b_end' => 4, 'score' => 0.9],
-            ['a_start' => 4, 'a_end' => 5, 'b_start' => 4, 'b_end' => 5, 'score' => 0.9],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
+        ['a_start' => 2, 'a_end' => 3, 'b_start' => 2, 'b_end' => 3, 'score' => 0.9],
+        ['a_start' => 3, 'a_end' => 4, 'b_start' => 3, 'b_end' => 4, 'score' => 0.9],
+        ['a_start' => 4, 'a_end' => 5, 'b_start' => 4, 'b_end' => 5, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -1292,21 +1210,9 @@ it('rolls back the last two meaning matches and re-aligns them with backward con
 });
 
 it('skips rollback on the first chunk when no prior matches exist', function () {
-    $capturedOffsets = [];
-    Http::fake(function (Request $request) use (&$capturedOffsets) {
-        $capturedOffsets[] = [
-            'a_count' => count($request->data()['a_sentences'] ?? []),
-            'b_count' => count($request->data()['b_sentences'] ?? []),
-        ];
-
-        return Http::response([
-            'matches' => [
-                ['a_start' => 0, 'a_end' => 2, 'b_start' => 0, 'b_end' => 2, 'score' => 0.9],
-            ],
-            'unmatched_a' => [],
-            'unmatched_b' => [],
-        ]);
-    });
+    $fake = fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 2, 'b_start' => 0, 'b_end' => 2, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -1342,7 +1248,10 @@ it('skips rollback on the first chunk when no prior matches exist', function () 
 
     (new AlignEntitySentences($entityMatch->id))->handle();
 
-    expect($capturedOffsets)->toBe([
+    expect(collect($fake->alignPayloads)->map(fn ($payload) => [
+        'a_count' => count($payload['a_sentences'] ?? []),
+        'b_count' => count($payload['b_sentences'] ?? []),
+    ])->all())->toBe([
         ['a_count' => 3, 'b_count' => 3],
     ]);
 
@@ -1357,16 +1266,12 @@ it('skips rollback on the first chunk when no prior matches exist', function () 
 });
 
 it('rolls back a single prior match when the previous chunk committed just one', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-            ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
-            ['a_start' => 2, 'a_end' => 3, 'b_start' => 2, 'b_end' => 3, 'score' => 0.9],
-            ['a_start' => 3, 'a_end' => 4, 'b_start' => 3, 'b_end' => 4, 'score' => 0.9],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
+        ['a_start' => 2, 'a_end' => 3, 'b_start' => 2, 'b_end' => 3, 'score' => 0.9],
+        ['a_start' => 3, 'a_end' => 4, 'b_start' => 3, 'b_end' => 4, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -1428,22 +1333,10 @@ it('rolls back a single prior match when the previous chunk committed just one',
 });
 
 it('does not roll back human-edit sentinel matches', function () {
-    $capturedOffsets = [];
-    Http::fake(function (Request $request) use (&$capturedOffsets) {
-        $capturedOffsets[] = [
-            'a_count' => count($request->data()['a_sentences'] ?? []),
-            'b_count' => count($request->data()['b_sentences'] ?? []),
-        ];
-
-        return Http::response([
-            'matches' => [
-                ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-                ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
-            ],
-            'unmatched_a' => [],
-            'unmatched_b' => [],
-        ]);
-    });
+    $fake = fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -1494,7 +1387,10 @@ it('does not roll back human-edit sentinel matches', function () {
 
     (new AlignEntitySentences($entityMatch->id))->handle();
 
-    expect($capturedOffsets)->toBe([
+    expect(collect($fake->alignPayloads)->map(fn ($payload) => [
+        'a_count' => count($payload['a_sentences'] ?? []),
+        'b_count' => count($payload['b_sentences'] ?? []),
+    ])->all())->toBe([
         ['a_count' => 2, 'b_count' => 2],
     ]);
 
@@ -1514,13 +1410,9 @@ it('does not roll back human-edit sentinel matches', function () {
 });
 
 it('force-advances the a cursor past a mid-pool stall while the b cursor stays', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -1582,13 +1474,9 @@ it('force-advances the a cursor past a mid-pool stall while the b cursor stays',
 });
 
 it('advances the cursors to the window end when the last chunk stores trailing skips', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -1659,11 +1547,7 @@ it('advances the cursors to the window end when the last chunk stores trailing s
 });
 
 it('does not junction the parked original-side head into a premature skip row', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([]);
 
     Bus::fake();
 
@@ -1730,13 +1614,9 @@ it('does not junction the parked original-side head into a premature skip row', 
 });
 
 it('keeps meaning match order in document position while re-aligning around a landmark', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [
-            ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.5],
-        ],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.5],
+    ]);
 
     Bus::fake();
 
@@ -1928,23 +1808,14 @@ it('does not junction landmark sentences from a re-fed machine window', function
 });
 
 it('passes landmarks and high confidence to the alignment endpoint', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    $fake = fakePython()->aligning([]);
 
     $aSentence = new EntitySentence(['content' => 'English.', 'order' => 1]);
     $aSentence->id = 1;
     $bSentence = new EntitySentence(['content' => 'Russian.', 'order' => 1]);
     $bSentence->id = 1;
 
-    $service = new SentenceAlignmentService(
-        new PythonClient('http://ext_python:8000', 30, 300),
-        new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 300)),
-    );
-
-    $service->alignChunkRemote(
+    app(SentenceAlignmentService::class)->alignChunkRemote(
         collect([$aSentence]),
         collect([$bSentence]),
         5,
@@ -1954,41 +1825,27 @@ it('passes landmarks and high confidence to the alignment endpoint', function ()
         highConfidence: 0.9,
     );
 
-    Http::assertSent(function (Request $request): bool {
-        return str_ends_with($request->url(), '/align')
-            && $request->data()['landmarks'] === [
-                ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1],
-            ]
-            && $request->data()['high_confidence'] === 0.9;
-    });
+    expect($fake->alignPayloads[0]['landmarks'] ?? null)->toBe([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1],
+    ])
+        ->and($fake->alignPayloads[0]['high_confidence'] ?? null)->toBe(0.9);
 });
 
 it('omits landmark and high confidence keys from the payload when not given', function () {
-    Http::fake(fn (Request $request) => Http::response([
-        'matches' => [],
-        'unmatched_a' => [],
-        'unmatched_b' => [],
-    ]));
+    $fake = fakePython()->aligning([]);
 
     $aSentence = new EntitySentence(['content' => 'English.', 'order' => 1]);
     $aSentence->id = 1;
     $bSentence = new EntitySentence(['content' => 'Russian.', 'order' => 1]);
     $bSentence->id = 1;
 
-    $service = new SentenceAlignmentService(
-        new PythonClient('http://ext_python:8000', 30, 300),
-        new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 300)),
-    );
-
-    $service->alignChunkRemote(
+    app(SentenceAlignmentService::class)->alignChunkRemote(
         collect([$aSentence]),
         collect([$bSentence]),
         5,
     );
 
-    Http::assertSent(function (Request $request): bool {
-        return str_ends_with($request->url(), '/align')
-            && ! array_key_exists('landmarks', $request->data())
-            && ! array_key_exists('high_confidence', $request->data());
-    });
+    expect($fake->alignPayloads)->toHaveCount(1)
+        ->and(array_key_exists('landmarks', $fake->alignPayloads[0]))->toBeFalse()
+        ->and(array_key_exists('high_confidence', $fake->alignPayloads[0]))->toBeFalse();
 });

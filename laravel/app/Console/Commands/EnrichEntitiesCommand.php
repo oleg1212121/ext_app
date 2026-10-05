@@ -17,13 +17,10 @@ class EnrichEntitiesCommand extends Command
 
     protected $description = 'Dispatch the sentence enrichment pipeline for the enrichers each entity is stale for (ADR 0057). Scheduled every five minutes.';
 
-    public function handle(EnricherRegistry $registry): int
+    public function handle(EnricherRegistry $registry, SentenceEnrichmentService $enrichment): int
     {
         $limit = max(1, (int) $this->option('limit'));
         $dryRun = (bool) $this->option('dry-run');
-        // Not container-resolvable (primitive constructor args): the create()
-        // factory is the canonical construction path.
-        $enrichment = SentenceEnrichmentService::create();
 
         if (($forced = $this->option('enricher')) !== null) {
             return $this->forceEnricher((string) $forced, $registry, $limit, $dryRun);

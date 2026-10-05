@@ -8,23 +8,13 @@ use App\Jobs\SplitEntityFileSentences;
 use App\Models\Entity;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
-beforeEach(function () {
-    Http::fake(function (Request $request) {
-        if (str_contains($request->url(), '/embed')) {
-            return Http::response(['vector' => [0.1, 0.2, 0.3]], 200);
-        }
-
-        return Http::response(['similarities' => [0.0]], 200);
-    });
-});
+beforeEach(fn () => fakePython()->embedding([0.1, 0.2, 0.3]));
 
 if (! function_exists('storedTextEntity')) {
     function storedTextEntity(array $attributes = []): Entity

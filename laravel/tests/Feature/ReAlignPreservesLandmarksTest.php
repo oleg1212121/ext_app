@@ -5,10 +5,8 @@ use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 
 function seedMeaningMatchJunction(MeaningMatch $match, EntitySentence $a, EntitySentence $b): void
 {
@@ -25,21 +23,7 @@ function seedMeaningMatchJunction(MeaningMatch $match, EntitySentence $a, Entity
 }
 
 it('preserves human rows and auto-landmarks, deletes low-confidence rows, and re-aligns the gaps', function () {
-    $calls = [];
-    Http::fake(function (Request $request) use (&$calls) {
-        $a = $request->data()['a_sentences'] ?? [];
-        $b = $request->data()['b_sentences'] ?? [];
-        $calls[] = ['a' => $a, 'b' => $b];
-
-        $count = min(count($a), count($b));
-        $matches = [];
-
-        for ($i = 0; $i < $count; $i++) {
-            $matches[] = ['a_start' => $i, 'a_end' => $i + 1, 'b_start' => $i, 'b_end' => $i + 1, 'score' => 0.9];
-        }
-
-        return Http::response(['matches' => $matches, 'unmatched_a' => [], 'unmatched_b' => []]);
-    });
+    $fake = fakePython()->aligningDiagonal();
 
     Bus::fake();
 
@@ -166,6 +150,11 @@ it('preserves human rows and auto-landmarks, deletes low-confidence rows, and re
         ->unique()
         ->all())->toEqual([1, 2, 3]);
 
+    $calls = collect($fake->alignPayloads)->map(fn ($payload) => [
+        'a' => $payload['a_sentences'] ?? [],
+        'b' => $payload['b_sentences'] ?? [],
+    ])->all();
+
     expect(array_column($calls, 'a'))->toBe([
         ['English 1.'],
         ['English 3.'],
@@ -247,21 +236,7 @@ it('wipes every row including human-edited ones when starting from scratch', fun
 });
 
 it('carves pools that never overlap a 1:N human landmark span', function () {
-    $calls = [];
-    Http::fake(function (Request $request) use (&$calls) {
-        $a = $request->data()['a_sentences'] ?? [];
-        $b = $request->data()['b_sentences'] ?? [];
-        $calls[] = ['a' => $a, 'b' => $b];
-
-        $count = min(count($a), count($b));
-        $matches = [];
-
-        for ($i = 0; $i < $count; $i++) {
-            $matches[] = ['a_start' => $i, 'a_end' => $i + 1, 'b_start' => $i, 'b_end' => $i + 1, 'score' => 0.9];
-        }
-
-        return Http::response(['matches' => $matches, 'unmatched_a' => [], 'unmatched_b' => []]);
-    });
+    $fake = fakePython()->aligningDiagonal();
 
     Bus::fake();
 
@@ -336,6 +311,11 @@ it('carves pools that never overlap a 1:N human landmark span', function () {
         ->and($entityMatch->a_last_sentence_offset)->toBe(9)
         ->and($entityMatch->b_last_sentence_offset)->toBe(9);
 
+    $calls = collect($fake->alignPayloads)->map(fn ($payload) => [
+        'a' => $payload['a_sentences'] ?? [],
+        'b' => $payload['b_sentences'] ?? [],
+    ])->all();
+
     expect($calls)->toHaveCount(2)
         ->and(array_column($calls, 'a'))->toBe([
             ['English 1.', 'English 2.', 'English 3.', 'English 4.'],
@@ -361,21 +341,7 @@ it('carves pools that never overlap a 1:N human landmark span', function () {
 });
 
 it('refreshes stale totals and chunk size when sentences were added since the snapshot', function () {
-    $calls = [];
-    Http::fake(function (Request $request) use (&$calls) {
-        $a = $request->data()['a_sentences'] ?? [];
-        $b = $request->data()['b_sentences'] ?? [];
-        $calls[] = ['a' => $a, 'b' => $b];
-
-        $count = min(count($a), count($b));
-        $matches = [];
-
-        for ($i = 0; $i < $count; $i++) {
-            $matches[] = ['a_start' => $i, 'a_end' => $i + 1, 'b_start' => $i, 'b_end' => $i + 1, 'score' => 0.9];
-        }
-
-        return Http::response(['matches' => $matches, 'unmatched_a' => [], 'unmatched_b' => []]);
-    });
+    $fake = fakePython()->aligningDiagonal();
 
     Bus::fake();
 
@@ -444,6 +410,11 @@ it('refreshes stale totals and chunk size when sentences were added since the sn
         ->and($entityMatch->b_last_sentence_offset)->toBe(5);
 
     // The pool after the landmark spans through the newly added sentences.
+    $calls = collect($fake->alignPayloads)->map(fn ($payload) => [
+        'a' => $payload['a_sentences'] ?? [],
+        'b' => $payload['b_sentences'] ?? [],
+    ])->all();
+
     expect($calls)->toHaveCount(1)
         ->and($calls[0]['a'])->toBe(['English 2.', 'English 3.', 'English 4.', 'English 5.'])
         ->and($calls[0]['b'])->toBe(['Russian 2.', 'Russian 3.', 'Russian 4.', 'Russian 5.']);
@@ -453,7 +424,7 @@ it('refreshes stale totals and chunk size when sentences were added since the sn
 });
 
 it('delegates to beginFromScratch for a match with no rows', function () {
-    Http::fake();
+    fakePython();
     Bus::fake();
 
     $sentenceType = SentenceType::create(['name' => 'Narration']);

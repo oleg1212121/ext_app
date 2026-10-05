@@ -10,9 +10,7 @@ use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Http;
 
 if (! function_exists('approvedUser')) {
     function approvedUser(): User
@@ -56,18 +54,10 @@ beforeEach(function () {
 // ─── pipeline ────────────────────────────────────────────────────────────────
 
 it('excludes illustrations from the aligner and backfills them single-sided', function () {
-    $capturedPayloads = [];
-
-    Http::fake(function (Request $request) use (&$capturedPayloads) {
-        $capturedPayloads[] = $request->data();
-
-        return Http::response([
-            'matches' => [
-                ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
-                ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
-            ],
-        ]);
-    });
+    $fake = fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.9],
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.9],
+    ]);
 
     Bus::fake();
 
@@ -98,8 +88,8 @@ it('excludes illustrations from the aligner and backfills them single-sided', fu
 
     // The illustration's caption never reached the python service, and the
     // request carried only the two text sentences.
-    expect($capturedPayloads)->not->toBeEmpty();
-    foreach ($capturedPayloads as $payload) {
+    expect($fake->alignPayloads)->not->toBeEmpty();
+    foreach ($fake->alignPayloads as $payload) {
         expect($payload['a_sentences'])->not->toContain('The lighthouse.')
             ->and($payload['a_sentences'])->toHaveCount(2);
     }
@@ -135,7 +125,7 @@ it('excludes illustrations from the aligner and backfills them single-sided', fu
 });
 
 it('finalizes an illustration-only entity without calling the aligner', function () {
-    Http::fake();
+    $fake = fakePython();
 
     Bus::fake();
 
@@ -155,7 +145,7 @@ it('finalizes an illustration-only entity without calling the aligner', function
 
     expect($entityMatch->status)->toBe('completed');
 
-    Http::assertNothingSent();
+    expect($fake->alignPayloads)->toBe([]);
 
     $junctionedIds = SentenceMeaningMatch::query()
         ->where('entity_match_id', $entityMatch->id)
@@ -228,7 +218,7 @@ it('keeps the totals recount in alignable space', function () {
 });
 
 it('writes alignable totals when an alignment is copied onto illustrated copies', function () {
-    Http::fake();
+    fakePython();
     Bus::fake();
 
     $work = createWork();

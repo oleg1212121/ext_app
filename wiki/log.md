@@ -1,5 +1,31 @@
 # Directory Update Log
 
+## 2026-10-05 (One construction path through the python seam)
+
+The three domain services that talk to python (`SentenceEnrichmentService`,
+`TextSignatureService`, `SentenceAlignmentService`) lost their `::create()`
+static factories: all nine production call sites (the enrich job + sweep
+command, the signature job + finalize job + Filament findMatch action, the
+align job ×3) now resolve through the container, making the
+`AppServiceProvider` `PythonClient` binding (ADR 0061) the one construction
+path it always claimed to be — `MeaningMatchStore::create()` and
+`PythonClient::create()` (the factory the binding itself uses) stay. Tests
+followed the seam: new `Tests\Support\FakePythonClient` (in-memory adapter;
+`enrich` echoes the keyed ADR 0057/0067 contract by default, other
+endpoints throw the production `PythonClientException` until given a canned
+response) bound via a `fakePython()` helper in tests/Pest.php; wire-level
+`Http::fake()` now lives only in `PythonClientTest`. Migrated:
+EntityEnrichmentTest (the `fakeEnrichResponse` helper became the fake's
+default echo), ChunkedEntityAlignmentTest, AlignmentStaleStatusTest,
+ReAlignPreservesLandmarksTest, EntityIllustrationAlignmentTest,
+EntityStatusLifecycleTest, EntityTextHashRefreshTest, and the unit
+TextSignatureService/SentenceAlignmentService tests — whose transport-retry
+cases were deleted as duplicates of `PythonClientTest`'s. Also dropped:
+`EnrichEntitiesCommand`'s stale "not container-resolvable" comment. The
+test-faking guidance in playbooks/running-tests.md now describes
+`fakePython()` instead of `Http::fake()`. No schema, route or command
+changes — no `wiki:sync` needed.
+
 ## 2026-10-05 (Annotation descriptor; python version parity — ADR 0067)
 
 New ADR 0067. The enrichment display layer got its own declarative unit:

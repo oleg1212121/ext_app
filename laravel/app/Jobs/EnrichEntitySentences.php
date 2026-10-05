@@ -86,7 +86,7 @@ class EnrichEntitySentences implements ShouldQueue
     public function handle(): void
     {
         $entity = Entity::with('language')->findOrFail($this->entityId);
-        $enrichment = SentenceEnrichmentService::create();
+        $enrichment = app(SentenceEnrichmentService::class);
         $registry = app(EnricherRegistry::class);
         $code = $entity->language?->code ?? '';
 

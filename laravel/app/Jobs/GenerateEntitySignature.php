@@ -35,7 +35,7 @@ class GenerateEntitySignature implements ShouldQueue
 
     public function handle(): void
     {
-        $service = TextSignatureService::create();
+        $service = app(TextSignatureService::class);
 
         $entity = Entity::with('language')->findOrFail($this->entityId);
 

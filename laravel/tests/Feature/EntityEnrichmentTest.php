@@ -18,7 +18,6 @@ use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\User;
 use App\Models\Word;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 
@@ -29,10 +28,13 @@ if (! function_exists('approvedUser')) {
     }
 }
 
-// Guard: tests that reach the python service register their own fake — a bare
-// Http::fake() here would shadow them (stub callbacks resolve
-// first-registered-wins), so stray-request prevention is the guard instead.
-beforeEach(fn () => Http::preventStrayRequests());
+// Guard: tests that reach the python service never touch the wire — the
+// fake client is bound for every test here, and anything that still tries
+// an HTTP call fails the run.
+beforeEach(function () {
+    Http::preventStrayRequests();
+    fakePython();
+});
 
 function enrichableEntity(string $code, array $sentences): Entity
 {
@@ -45,42 +47,7 @@ function enrichableEntity(string $code, array $sentences): Entity
     return $entity->refresh();
 }
 
-/**
- * Fake /enrich honouring the keyed contract (ADR 0057): each active
- * enricher's output rides results[].output under its key, and the declared
- * python versions ride the response (ADR 0067).
- */
-function fakeEnrichResponse(): void
-{
-    $registry = new EnricherRegistry;
-
-    Http::fake(function (Request $request) use ($registry) {
-        $data = $request->data();
-        $enrichers = $data['enrichers'] ?? [];
-        $results = collect($data['sentences'] ?? [])
-            ->map(fn (array $sentence): array => [
-                'id' => $sentence['id'],
-                'output' => array_filter([
-                    'ru_stress' => in_array('ru_stress', $enrichers, true) ? $sentence['text'].'́' : null,
-                    'en_stress' => in_array('en_stress', $enrichers, true) ? $sentence['text'] : null,
-                    'en_phrasal' => in_array('en_phrasal', $enrichers, true) ? [] : null,
-                ], fn ($output): bool => $output !== null),
-            ])
-            ->all();
-
-        $versions = [];
-
-        foreach ($enrichers as $key) {
-            $versions[$key] = $registry->forKey($key)?->pythonVersion() ?? 1;
-        }
-
-        return Http::response(['results' => $results, 'versions' => $versions]);
-    });
-}
-
 it('enriches a chunk without bumping sentence timestamps or entity staleness markers', function () {
-    fakeEnrichResponse();
-
     $entity = enrichableEntity('ru', ['Она произносит это красиво.']);
     $entity->update(['text_hash' => 'hash-before', 'sentences_updated_at' => now()->subDay()]);
     $before = EntitySentence::query()->where('entity_id', $entity->id)->first();
@@ -91,7 +58,7 @@ it('enriches a chunk without bumping sentence timestamps or entity staleness mar
     // bumping updated_at would make enrichment mark the entity stale forever.
     expect($sentenceUpdatedAt)->not->toBeNull();
 
-    $service = SentenceEnrichmentService::create();
+    $service = app(SentenceEnrichmentService::class);
     $result = $service->enrichChunk($entity, collect([$before]));
     expect($result['written'])->toBe(1)
         // The declared python versions ride the chunk result (ADR 0067).
@@ -117,8 +84,6 @@ it('maps enrichers to languages declaratively', function () {
 });
 
 it('runs the whole entity through the job and stamps every enricher', function () {
-    fakeEnrichResponse();
-
     $entity = enrichableEntity('en', ['One.', 'Two.', 'Three.']);
     EntitySentence::create(['entity_id' => $entity->id, 'content' => '', 'order' => 999999]);
 
@@ -165,7 +130,7 @@ it('marks a non-enrichable language done when its job runs', function () {
     (new EnrichEntitySentences($frenchEntity->id))->handle();
 
     expect($frenchEntity->refresh()->enrichment_stamps)->toBe([])
-        ->and(SentenceEnrichmentService::create()->isStale($frenchEntity))->toBeFalse();
+        ->and(app(SentenceEnrichmentService::class)->isStale($frenchEntity))->toBeFalse();
 });
 
 it('skips freshly enriched entities in the sweep', function () {
@@ -187,10 +152,9 @@ it('re-enriches an entity whose stamps predate the python version parity', funct
     $entity = enrichableEntity('ru', ['Привет.']);
     $entity->update(['enrichment_stamps' => ['ru_stress' => now()->toISOString()]]);
 
-    $service = SentenceEnrichmentService::create();
+    $service = app(SentenceEnrichmentService::class);
     expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['ru_stress']);
 
-    fakeEnrichResponse();
     (new EnrichEntitySentences($entity->id, 0, ['ru_stress']))->handle();
 
     expect($entity->refresh()->enrichment_stamps['ru_stress']['pv'])->toBe(1)
@@ -201,7 +165,7 @@ it('re-enriches an entity whose sentences changed after enrichment', function ()
     $entity = enrichableEntity('ru', ['Привет.']);
     $entity->update(['enrichment_stamps' => ['ru_stress' => now()->subDay()->toISOString()]]);
 
-    $service = SentenceEnrichmentService::create();
+    $service = app(SentenceEnrichmentService::class);
     expect($service->isStale($entity->refresh()))->toBeTrue();
 
     // A content edit after enrichment flips staleness (the touch bumps
@@ -211,8 +175,6 @@ it('re-enriches an entity whose sentences changed after enrichment', function ()
 });
 
 it('re-enriches only the enricher missing a stamp (retro-processing)', function () {
-    fakeEnrichResponse();
-
     // State of an entity enriched before en_phrasal existed: only the stress
     // enricher carries a stamp (at the current versions, ADR 0067), and its
     // sentence already has stress marks.
@@ -223,7 +185,7 @@ it('re-enriches only the enricher missing a stamp (retro-processing)', function 
         'v' => 1, 'pv' => 1, 'at' => now()->toISOString(),
     ]]]);
 
-    $service = SentenceEnrichmentService::create();
+    $service = app(SentenceEnrichmentService::class);
     $stale = $service->staleEnrichers($entity->refresh());
     expect(collect($stale)->map->key()->all())->toBe(['en_phrasal']);
 
@@ -242,31 +204,21 @@ it('re-enriches only the enricher missing a stamp (retro-processing)', function 
 });
 
 it('never sends phrasal data for a russian entity', function () {
-    $captured = null;
-    Http::fake(function (Request $request) use (&$captured) {
-        $captured = $request->data();
-
-        return Http::response(['results' => []]);
-    });
+    $fake = fakePython()->enrichingNothing();
 
     $entity = enrichableEntity('ru', ['Привет.']);
 
-    SentenceEnrichmentService::create()->enrichChunk(
+    app(SentenceEnrichmentService::class)->enrichChunk(
         $entity,
         EntitySentence::query()->where('entity_id', $entity->id)->get(),
     );
 
-    expect($captured['enrichers'])->toBe(['ru_stress'])
-        ->and($captured)->not->toHaveKey('phrasal_lexicon');
+    expect($fake->enrichPayloads[0]['enrichers'])->toBe(['ru_stress'])
+        ->and($fake->enrichPayloads[0])->not->toHaveKey('phrasal_lexicon');
 });
 
 it('skips the stress hints when only the phrasal enricher runs', function () {
-    $captured = null;
-    Http::fake(function (Request $request) use (&$captured) {
-        $captured = $request->data();
-
-        return Http::response(['results' => []]);
-    });
+    $fake = fakePython()->enrichingNothing();
 
     $entity = enrichableEntity('en', ['Dictionary.']);
     $dictionary = createWord('en', 'dictionary', 'noun');
@@ -281,16 +233,16 @@ it('skips the stress hints when only the phrasal enricher runs', function () {
     ]);
 
     $registry = new EnricherRegistry;
-    $service = SentenceEnrichmentService::create();
+    $service = app(SentenceEnrichmentService::class);
     $service->enrichChunk(
         $entity,
         EntitySentence::query()->where('entity_id', $entity->id)->get(),
         [$registry->forKey('en_phrasal')],
     );
 
-    $token = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'Dictionary');
-    expect($captured['enrichers'])->toBe(['en_phrasal'])
-        ->and($captured['phrasal_lexicon'])->toBeArray()
+    $token = collect($fake->enrichPayloads[0]['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'Dictionary');
+    expect($fake->enrichPayloads[0]['enrichers'])->toBe(['en_phrasal'])
+        ->and($fake->enrichPayloads[0]['phrasal_lexicon'])->toBeArray()
         // Hint fields ship per contributing enricher (ADR 0067): with only
         // the phrasal enricher active, the IPA hint is not on the wire at all.
         ->and($token)->not->toHaveKey('ipa');
@@ -298,7 +250,6 @@ it('skips the stress hints when only the phrasal enricher runs', function () {
 
 it('dispatches enrichment at the end of the upload pipeline', function () {
     Bus::fake();
-    Http::fake();
 
     $entity = enrichableEntity('en', ['One.']);
     $entity->update(['signature' => json_encode([1.0]), 'status' => 'completed']);
@@ -311,12 +262,7 @@ it('dispatches enrichment at the end of the upload pipeline', function () {
 });
 
 it('sends dictionary hints with the enrichment request', function () {
-    $captured = null;
-    Http::fake(function (Request $request) use (&$captured) {
-        $captured = $request->data();
-
-        return Http::response(['results' => []]);
-    });
+    $fake = fakePython()->enrichingNothing();
 
     $entity = enrichableEntity('en', ['She gave up smoking.']);
     $give = createWord('en', 'give', 'verb');
@@ -342,26 +288,21 @@ it('sends dictionary hints with the enrichment request', function () {
         'word_id' => $give->id,
     ]);
 
-    SentenceEnrichmentService::create()->enrichChunk(
+    app(SentenceEnrichmentService::class)->enrichChunk(
         $entity->refresh(),
         EntitySentence::query()->where('entity_id', $entity->id)->get(),
     );
 
-    $gave = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'gave');
-    expect($captured['language'])->toBe('en')
-        ->and($captured['phrasal_lexicon'])->toContain('give up')
+    $gave = collect($fake->enrichPayloads[0]['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'gave');
+    expect($fake->enrichPayloads[0]['language'])->toBe('en')
+        ->and($fake->enrichPayloads[0]['phrasal_lexicon'])->toContain('give up')
         ->and($gave)->not->toBeNull()
         ->and($gave['cls'])->toBe('verb')
         ->and($gave['lemma'])->toBe('give');
 });
 
 it('sends verb-lemma candidates for leads buried under another class', function () {
-    $captured = null;
-    Http::fake(function (Request $request) use (&$captured) {
-        $captured = $request->data();
-
-        return Http::response(['results' => []]);
-    });
+    $fake = fakePython()->enrichingNothing();
 
     $entity = enrichableEntity('en', ['She came forward.']);
 
@@ -385,17 +326,17 @@ it('sends verb-lemma candidates for leads buried under another class', function 
     $base = createWord('en', 'come', 'verb');
     Form::query()->create(['word_id' => $base->id, 'form' => 'came', 'l_word' => 'came']);
 
-    SentenceEnrichmentService::create()->enrichChunk(
+    app(SentenceEnrichmentService::class)->enrichChunk(
         $entity->refresh(),
         EntitySentence::query()->where('entity_id', $entity->id)->get(),
     );
 
-    $cameToken = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'came');
+    $cameToken = collect($fake->enrichPayloads[0]['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'came');
     expect($cameToken['cls'])->toBe('noun')
         ->and($cameToken['lemma'])->toBe('came')
         ->and($cameToken['verb_lemmas'])->toBe(['came', 'come'])
         // A surface with no verb pages ships none.
-        ->and(collect($captured['sentences'][0]['tokens'])->firstWhere('surface', 'forward')['verb_lemmas'])->toBeNull()
+        ->and(collect($fake->enrichPayloads[0]['sentences'][0]['tokens'])->firstWhere('surface', 'forward')['verb_lemmas'])->toBeNull()
         // The inflected page and the noun page are distinct dictionary rows.
         ->and($inflected->id)->not->toBe($came->id);
 });
@@ -485,12 +426,7 @@ it('strips stress marks from word popup surfaces', function () {
 });
 
 it('enriches english ipa hints through transcriptions', function () {
-    $captured = null;
-    Http::fake(function (Request $request) use (&$captured) {
-        $captured = $request->data();
-
-        return Http::response(['results' => []]);
-    });
+    $fake = fakePython()->enrichingNothing();
 
     $entity = enrichableEntity('en', ['Dictionary.']);
     $dictionary = createWord('en', 'dictionary', 'noun');
@@ -504,24 +440,19 @@ it('enriches english ipa hints through transcriptions', function () {
         'transcription' => '/ˈdɪk.ʃə.nə.ɹi/',
     ]);
 
-    SentenceEnrichmentService::create()->enrichChunk(
+    app(SentenceEnrichmentService::class)->enrichChunk(
         $entity,
         EntitySentence::query()->where('entity_id', $entity->id)->get(),
     );
 
-    $token = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'Dictionary');
+    $token = collect($fake->enrichPayloads[0]['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'Dictionary');
     expect($token['ipa'])->toBe(['/ˈdɪk.ʃə.nə.ɹi/'])
         ->and($token['cls'])->toBe('noun')
         ->and($token['lemma'])->toBe('dictionary');
 });
 
 it('prefers stress-bearing ipa variants when capping variants per word', function () {
-    $captured = null;
-    Http::fake(function (Request $request) use (&$captured) {
-        $captured = $request->data();
-
-        return Http::response(['results' => []]);
-    });
+    $fake = fakePython()->enrichingNothing();
 
     $entity = enrichableEntity('en', ['Dictionary.']);
     $dictionary = createWord('en', 'dictionary', 'noun');
@@ -541,12 +472,12 @@ it('prefers stress-bearing ipa variants when capping variants per word', functio
         ]);
     }
 
-    SentenceEnrichmentService::create()->enrichChunk(
+    app(SentenceEnrichmentService::class)->enrichChunk(
         $entity,
         EntitySentence::query()->where('entity_id', $entity->id)->get(),
     );
 
-    $token = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'Dictionary');
+    $token = collect($fake->enrichPayloads[0]['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'Dictionary');
     expect($token['ipa'])->toBe([
         '/ˈdɪk.ʃə.nə.ɹi/',
         '/dɪkʃənəɹi/',
@@ -555,12 +486,7 @@ it('prefers stress-bearing ipa variants when capping variants per word', functio
 });
 
 it('sends per-part ipa for hyphenated compounds the dictionary lacks', function () {
-    $captured = null;
-    Http::fake(function (Request $request) use (&$captured) {
-        $captured = $request->data();
-
-        return Http::response(['results' => []]);
-    });
+    $fake = fakePython()->enrichingNothing();
 
     $entity = enrichableEntity('en', ['A seven-sided die.']);
     $seven = createWord('en', 'seven', 'noun');
@@ -574,12 +500,12 @@ it('sends per-part ipa for hyphenated compounds the dictionary lacks', function 
         'transcription' => '/ˈsɛvən/',
     ]);
 
-    SentenceEnrichmentService::create()->enrichChunk(
+    app(SentenceEnrichmentService::class)->enrichChunk(
         $entity,
         EntitySentence::query()->where('entity_id', $entity->id)->get(),
     );
 
-    $token = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'seven-sided');
+    $token = collect($fake->enrichPayloads[0]['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'seven-sided');
     expect($token)->not->toHaveKey('ipa')
         ->and($token['parts'])->toBe([
             ['surface' => 'seven', 'ipa' => ['/ˈsɛvən/']],
@@ -589,7 +515,7 @@ it('sends per-part ipa for hyphenated compounds the dictionary lacks', function 
 
 it('re-enriches an entity stamped by an older algorithm version', function () {
     $entity = enrichableEntity('en', ['She gave up smoking.']);
-    $service = SentenceEnrichmentService::create();
+    $service = app(SentenceEnrichmentService::class);
 
     // v1-era stamps were bare ISO strings: stale for both the versioned
     // (v3) and the python-parity (pv) phrasal analysis, stale for the
