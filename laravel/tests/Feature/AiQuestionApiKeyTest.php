@@ -25,7 +25,7 @@ it('refuses an AI question when the user has no available answer model', functio
             'tasks' => '',
         ])
         ->assertStatus(400)
-        ->assertJsonPath('data.data.error', 'Choose an AI model in your profile settings.');
+        ->assertJsonPath('error', 'Choose an AI model in your profile settings.');
 });
 
 it('asks with the answer model the resolver fell back to after the picked provider key was removed', function () {

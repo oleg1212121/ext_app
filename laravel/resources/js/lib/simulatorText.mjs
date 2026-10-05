@@ -41,9 +41,8 @@ export async function fetchTextPage(entityMatchId, page, perPage = DEFAULT_PER_P
         body: JSON.stringify({entity_match_id: parseInt(String(entityMatchId), 10), page, per_page: perPage}),
     });
     const json = await res.json();
-    const code = json?.data?.code ?? res.status;
-    if (!res.ok || code !== 200) {
+    if (!res.ok) {
         throw new Error(responseErrorMessage(json, res.status, fallbackForStatus?.(res.status)));
     }
-    return mapTextPayload(json.data.data, {page, perPage});
+    return mapTextPayload(json.data, {page, perPage});
 }

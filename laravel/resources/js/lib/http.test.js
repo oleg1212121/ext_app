@@ -2,8 +2,8 @@ import {describe, expect, it} from 'vitest';
 import {responseErrorMessage} from './http';
 
 describe('responseErrorMessage', () => {
-    it('prefers the deep JSON envelope error', () => {
-        expect(responseErrorMessage({data: {code: 422, data: {error: 'No such match'}}}, 422, 'fb')).toBe('No such match');
+    it('prefers the flat JSON error envelope', () => {
+        expect(responseErrorMessage({error: 'No such match'}, 404, 'fb')).toBe('No such match');
     });
 
     it('falls back to the plain message field', () => {

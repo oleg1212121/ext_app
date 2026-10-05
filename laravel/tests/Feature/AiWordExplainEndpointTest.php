@@ -77,7 +77,6 @@ it('explains a word with the sentence before and after in the same entity', func
         ->postJson('/ai/word-explain', explainPayload($fixture));
 
     $response->assertOk()
-        ->assertJsonPath('data.code', 200)
         ->assertJsonPath('data.answer', 'Тестовый ответ');
 
     // Reply language comes from the user's Native language setting.
@@ -165,7 +164,7 @@ it('refuses an entity-sentence explanation for a restricted entity the user cann
             'surface' => 'bank',
         ])
         ->assertStatus(403)
-        ->assertJsonPath('data.data.error', 'You do not have access to this text.');
+        ->assertJsonPath('error', 'You do not have access to this text.');
 });
 
 it('refuses the explanation when the user has not chosen an explanation model', function () {
@@ -181,7 +180,7 @@ it('refuses the explanation when the user has not chosen an explanation model', 
     $this->actingAs($fixture['user'])
         ->postJson('/ai/word-explain', explainPayload($fixture))
         ->assertStatus(400)
-        ->assertJsonPath('data.data.error', 'Choose an AI model in your profile settings.');
+        ->assertJsonPath('error', 'Choose an AI model in your profile settings.');
 });
 
 it('refuses a restricted entity the user cannot read', function () {
@@ -193,7 +192,7 @@ it('refuses a restricted entity the user cannot read', function () {
     $this->actingAs($fixture['user'])
         ->postJson('/ai/word-explain', explainPayload($fixture))
         ->assertStatus(403)
-        ->assertJsonPath('data.data.error', 'You do not have access to this text.');
+        ->assertJsonPath('error', 'You do not have access to this text.');
 });
 
 it('requires the entity sentence id — the positional address is retired', function () {
@@ -239,8 +238,7 @@ it('surfaces a provider error as a friendly message without leaking internals', 
     $this->actingAs($fixture['user'])
         ->postJson('/ai/word-explain', explainPayload($fixture))
         ->assertStatus(429)
-        ->assertJsonPath('data.code', 429)
-        ->assertJsonPath('data.data.error', 'The AI service is busy. Please try again in a moment.');
+        ->assertJsonPath('error', 'The AI service is busy. Please try again in a moment.');
 });
 
 it('rate-limits the word explain endpoint after 20 requests per minute', function () {

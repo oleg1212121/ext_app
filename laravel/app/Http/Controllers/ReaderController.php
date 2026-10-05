@@ -11,9 +11,9 @@ use App\Http\Requests\ReaderPageRequest;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\Language;
+use App\Support\SavedUiSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -30,6 +30,7 @@ class ReaderController extends Controller
         protected ReadingRowsPresenter $readingRows,
         protected AIModelResolver $modelResolver,
         protected EnricherRegistry $enrichers,
+        protected EntityAccessService $access,
     ) {}
 
     /**
@@ -57,7 +58,7 @@ class ReaderController extends Controller
     {
         $entity = Entity::query()->with('language')->findOrFail($entityId);
 
-        if (! $this->access()->canRead(auth()->user(), $entity)) {
+        if (! $this->access->canRead(auth()->user(), $entity)) {
             abort(403);
         }
 
@@ -66,6 +67,7 @@ class ReaderController extends Controller
         ['rows' => $rows, 'sideEntities' => $sideEntities, 'meta' => $meta, 'positionKey' => $positionKey, 'defaultSide' => $defaultSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
 
         ['wordMaps' => $wordMaps, 'highlightable' => $highlightable, 'explainable' => $explainable] = $this->readingRows->wordMapsFor($sideEntities, (int) auth()->id(), $nativeLanguageId, $rows);
+        $saved = SavedUiSettings::section('reader');
 
         // Rows are canonical a/b (ADR 0060) — which side reads first is the
         // client's flip around defaultSide. Languages, word maps and the
@@ -84,12 +86,12 @@ class ReaderController extends Controller
             ],
             'meta' => $meta,
             'positionKey' => $positionKey,
-            'fontSize' => $this->savedReaderFontSize(),
-            'highlight' => $this->savedHighlight(),
+            'fontSize' => SavedUiSettings::int($saved, 'font_size', 16, 38, 20),
+            'highlight' => SavedUiSettings::bool($saved, 'highlight', true),
             // The annotation display preferences (ADR 0067): one prop per
             // registry annotation, camelCased from its setting key —
             // stressMarks, phrasalVerbs, ...
-            ...$this->savedAnnotationPrefs(),
+            ...SavedUiSettings::annotations($saved, $this->enrichers->annotations()),
             'wordMaps' => $wordMaps,
             'highlightable' => $highlightable,
             // The AI explanation tab follows the same "not your native
@@ -98,41 +100,6 @@ class ReaderController extends Controller
             'explainable' => $explainable,
             'explain' => $this->modelResolver->explainConfig(),
         ]);
-    }
-
-    private function savedReaderFontSize(): int
-    {
-        $saved = auth()->user()->settings?->ui_settings['reader']['font_size'] ?? null;
-
-        if (! is_numeric($saved)) {
-            return 20;
-        }
-
-        return max(16, min(38, (int) $saved));
-    }
-
-    private function savedHighlight(): bool
-    {
-        return (bool) (auth()->user()->settings?->ui_settings['reader']['highlight'] ?? true);
-    }
-
-    /**
-     * The saved annotation display preferences (ADR 0067), keyed by the
-     * camelCased setting key the page expects as its prop name; default off.
-     *
-     * @return array<string, bool>
-     */
-    private function savedAnnotationPrefs(): array
-    {
-        $saved = auth()->user()->settings?->ui_settings['reader'] ?? [];
-
-        $props = [];
-
-        foreach ($this->enrichers->annotations() as $annotation) {
-            $props[Str::camel($annotation->settingKey)] = (bool) ($saved[$annotation->settingKey] ?? false);
-        }
-
-        return $props;
     }
 
     /**
@@ -161,8 +128,8 @@ class ReaderController extends Controller
         $translationEntity = $defaultSide === 'a' ? $entityMatch->bEntity : $entityMatch->aEntity;
 
         if ($readingEntity === null || $translationEntity === null
-            || ! $this->access()->canRead(auth()->user(), $readingEntity)
-            || ! $this->access()->canRead(auth()->user(), $translationEntity)) {
+            || ! $this->access->canRead(auth()->user(), $readingEntity)
+            || ! $this->access->canRead(auth()->user(), $translationEntity)) {
             return $this->singleLanguageRows($entity, $page);
         }
 
@@ -241,7 +208,7 @@ class ReaderController extends Controller
      */
     private function entitiesForLanguage(Language $language): array
     {
-        return $this->access()
+        return $this->access
             ->readableQuery(auth()->user(), $language->id)
             ->select('id', 'name')
             ->orderBy('name')
@@ -256,10 +223,5 @@ class ReaderController extends Controller
             ->enabled()
             ->where('code', $lang)
             ->firstOrFail();
-    }
-
-    private function access(): EntityAccessService
-    {
-        return new EntityAccessService;
     }
 }

@@ -401,7 +401,7 @@ it('ships image sentences in the simulator text payload', function () {
         'entity_match_id' => $entityMatch->id,
         'page' => 1,
         'per_page' => 50,
-    ])->assertOk()->assertJsonPath('data.code', 200)
-        ->assertJsonPath('data.data.rows.1.a.sentences.0.text', 'The lighthouse.')
-        ->assertJsonPath('data.data.rows.1.b.sentences', []);
+    ])->assertOk()
+        ->assertJsonPath('data.rows.1.a.sentences.0.text', 'The lighthouse.')
+        ->assertJsonPath('data.rows.1.b.sentences', []);
 });

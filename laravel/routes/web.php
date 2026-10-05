@@ -9,6 +9,7 @@ use App\Http\Controllers\EntityIllustrationController;
 use App\Http\Controllers\LibraryController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
+use App\Http\Controllers\ReadingAiController;
 use App\Http\Controllers\UiSettingsController;
 use App\Http\Controllers\WordController;
 use Illuminate\Support\Facades\Route;
@@ -195,7 +196,10 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('entityMatch')
         ->name('bilinguals.simulator.forMatch');
     Route::post('/text', [SimulatorController::class, 'text']);
-    Route::post('/ai/question', [SimulatorController::class, 'askAi'])->name('ai.question')->middleware('throttle:20,1');
-    Route::post('/ai/question/stream', [SimulatorController::class, 'askAiStreamed'])->name('ai.question.stream')->middleware('throttle:20,1');
-    Route::post('/ai/word-explain', [SimulatorController::class, 'explainWord'])->name('ai.word-explain')->middleware('throttle:20,1');
+    // The AI answers are the reading surfaces' shared endpoints (the word
+    // popup's Context explanation serves the reader too); paths, names and
+    // throttle are unchanged — only the controller moved.
+    Route::post('/ai/question', [ReadingAiController::class, 'askAi'])->name('ai.question')->middleware('throttle:20,1');
+    Route::post('/ai/question/stream', [ReadingAiController::class, 'askAiStreamed'])->name('ai.question.stream')->middleware('throttle:20,1');
+    Route::post('/ai/word-explain', [ReadingAiController::class, 'explainWord'])->name('ai.word-explain')->middleware('throttle:20,1');
 });
