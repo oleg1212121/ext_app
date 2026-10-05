@@ -27,6 +27,10 @@ WORD_RE = regex.compile(r"[\p{L}\p{M}\x01]+(?:['’\-][\p{L}\p{M}\x01]+)*")
 RU_VOWELS = set("аеиоуыэюяёАЕИОУЫЭЮЯЁ")
 COMBINING_ACUTE = "\u0301"
 
+# Reported on every /enrich response and stamped by Laravel; a bump here
+# must be mirrored in RussianStressEnricher::pythonVersion() (ADR 0067).
+ALGORITHM_VERSION = 1
+
 
 def strip_marks(text: str) -> str:
     """Remove combining marks (U+0300..) so Silero does not double-mark."""

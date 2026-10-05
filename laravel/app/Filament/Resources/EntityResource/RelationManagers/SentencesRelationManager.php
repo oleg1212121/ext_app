@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\EntityResource\RelationManagers;
 
+use App\Classes\Enrichment\Annotation;
+use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\EntitySentenceStore;
 use App\Classes\SparseOrderService;
 use App\Enums\SentenceAnchor;
@@ -95,18 +97,11 @@ class SentencesRelationManager extends RelationManager
                     ->searchable(),
                 TextColumn::make('sentenceType.name')
                     ->label('Type'),
-                TextColumn::make('stressed_content')
-                    ->label('Stress marks')
-                    ->wrap()
-                    ->toggleable(isToggledHiddenByDefault: true)
-                    ->placeholder('—'),
-                TextColumn::make('phrasal_verbs.label')
-                    ->label('Phrasal verbs')
-                    ->state(fn (EntitySentence $record): string => collect($record->phrasal_verbs ?? [])
-                        ->map(fn (array $hit) => $hit['verb'].' '.implode(' ', $hit['particles'] ?? []))
-                        ->implode(', '))
-                    ->toggleable()
-                    ->placeholder('—'),
+                // One preview column per registry annotation (ADR 0067) —
+                // the enrichers own their admin preview.
+                ...collect(app(EnricherRegistry::class)->annotations())
+                    ->map(fn (Annotation $annotation): TextColumn => ($annotation->adminPreview)())
+                    ->all(),
             ])
             ->filters([
                 //

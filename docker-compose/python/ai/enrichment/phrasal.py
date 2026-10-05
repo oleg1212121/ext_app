@@ -30,6 +30,12 @@ the endpoint fails loudly instead of writing empty enrichment (ADR 0059).
 
 MODEL_NAME = "en_core_web_md"
 
+# Reported on every /enrich response and stamped by Laravel; bump on any
+# matcher-behavior change and mirror it in
+# EnglishPhrasalVerbEnricher::pythonVersion() (ADR 0067). v3 = the
+# directional-adverb guard (ADR 0059).
+ALGORITHM_VERSION = 3
+
 # A particle immediately followed by one of these goal/path prepositions
 # marks the directional reading of the adverb ("swung over toward Max",
 # "followed Max down to the basement") — not a particle of an idiomatic

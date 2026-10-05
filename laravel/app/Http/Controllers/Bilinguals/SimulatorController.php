@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Bilinguals;
 
 use App\Classes\AIModelResolver;
+use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\EntityAccessService;
 use App\Classes\ReadingRowsPresenter;
 use App\Exceptions\AiProviderException;
@@ -18,6 +19,7 @@ use App\Support\PromptTemplates;
 use Exception;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use InvalidArgumentException;
@@ -28,6 +30,7 @@ class SimulatorController extends Controller
     public function __construct(
         protected AIModelResolver $modelResolver,
         protected ReadingRowsPresenter $readingRows,
+        protected EnricherRegistry $enrichers,
     ) {}
 
     /**
@@ -125,9 +128,29 @@ class SimulatorController extends Controller
             'aiPanelWidth' => $this->clampInt($saved['ai_panel_width'] ?? null, 280, 1200, 560),
             'workplaceHeight' => $this->clampInt($saved['workplace_height'] ?? null, 80, 800, 168),
             'highlightWords' => (bool) ($saved['highlight_words'] ?? true),
-            'stressMarks' => (bool) ($saved['stress_marks'] ?? false),
-            'phrasalVerbs' => (bool) ($saved['phrasal_verbs'] ?? false),
+            // The annotation display preferences (ADR 0067): one prop per
+            // registry annotation, camelCased from its setting key —
+            // stressMarks, phrasalVerbs, ...
+            ...$this->annotationPrefs($saved),
         ]);
+    }
+
+    /**
+     * The saved annotation display preferences (ADR 0067), keyed by the
+     * camelCased setting key the page expects as its prop name; default off.
+     *
+     * @param  array<string, mixed>  $saved  the user's ui_settings['simulator'] section
+     * @return array<string, bool>
+     */
+    private function annotationPrefs(array $saved): array
+    {
+        $props = [];
+
+        foreach ($this->enrichers->annotations() as $annotation) {
+            $props[Str::camel($annotation->settingKey)] = (bool) ($saved[$annotation->settingKey] ?? false);
+        }
+
+        return $props;
     }
 
     /**

@@ -22,14 +22,19 @@ class RussianStressEnricher implements Enricher
         return 1;
     }
 
+    public function pythonVersion(): int
+    {
+        return 1;
+    }
+
     public function languages(): array
     {
         return ['ru'];
     }
 
-    public function column(): string
+    public function annotation(): Annotation
     {
-        return 'stressed_content';
+        return Annotation::stress();
     }
 
     public function tokenHints(Entity $entity, array $keys, array $resolved): array

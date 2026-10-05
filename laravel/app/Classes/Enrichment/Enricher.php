@@ -12,7 +12,9 @@ use App\Models\Entity;
  *
  * Everything an enricher contributes rides a single python /enrich call the
  * service makes per sentence chunk: token hints and request extras go into
- * the request, and the python output comes back keyed by key().
+ * the request, and the python output comes back keyed by key(). Its display
+ * side — column, payload key, preference, admin preview — is the Annotation
+ * it declares (ADR 0067).
  */
 interface Enricher
 {
@@ -23,12 +25,20 @@ interface Enricher
     public function key(): string;
 
     /**
-     * The analysis algorithm version. The completion stamp records it, and
-     * a bump makes every already-enriched entity stale again — the
-     * five-minute sweep re-runs the analysis over the corpus without any
-     * manual backfill (ADR 0059).
+     * The Laravel-side analysis algorithm version. The completion stamp
+     * records it, and a bump makes every already-enriched entity stale
+     * again — the five-minute sweep re-runs the analysis over the corpus
+     * without any manual backfill (ADR 0059).
      */
     public function version(): int;
+
+    /**
+     * The python-side algorithm version this enricher expects the service to
+     * report under key() (ADR 0067): the reported value is what the stamp
+     * records, and a reported value older than this re-stales the entity so
+     * the sweep re-runs once the python module catches up.
+     */
+    public function pythonVersion(): int;
 
     /**
      * The ISO language codes this enricher applies to ("en" for phrasal
@@ -40,14 +50,17 @@ interface Enricher
     public function languages(): array;
 
     /**
-     * The entity_sentences column this enricher's result persists into.
+     * The reader-facing vertical this enricher feeds (ADR 0067). Two
+     * stress enrichers declare the same Annotation — one display vertical,
+     * two analyses.
      */
-    public function column(): string;
+    public function annotation(): Annotation;
 
     /**
      * Per-token dictionary hints contributed to the python payload, keyed by
      * the chunk's lookup keys; each entry maps token payload field names
-     * (ipa, parts, stressed, ...) to values.
+     * (ipa, parts, stressed, ...) to values. Contributed field names ship
+     * dynamically — a field no active enricher contributes is not sent.
      *
      * @param  list<string>  $keys
      * @param  array<string, array{cls: ?string, lemma: ?string, headword: ?string, word_id: ?int}>  $resolved
@@ -68,7 +81,7 @@ interface Enricher
 
     /**
      * Convert the python output returned under key() into the value written
-     * into column(); null clears the column.
+     * into the annotation's column; null clears the column.
      */
     public function toStorage(mixed $output): mixed;
 }

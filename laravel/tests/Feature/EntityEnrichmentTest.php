@@ -2,6 +2,7 @@
 
 use App\Classes\Enrichment\EnglishPhrasalVerbEnricher;
 use App\Classes\Enrichment\EnricherRegistry;
+use App\Classes\Enrichment\RussianStressEnricher;
 use App\Classes\EntityTextHasher;
 use App\Classes\SentenceEnrichmentService;
 use App\Jobs\EnrichEntitySentences;
@@ -46,11 +47,14 @@ function enrichableEntity(string $code, array $sentences): Entity
 
 /**
  * Fake /enrich honouring the keyed contract (ADR 0057): each active
- * enricher's output rides results[].output under its key.
+ * enricher's output rides results[].output under its key, and the declared
+ * python versions ride the response (ADR 0067).
  */
 function fakeEnrichResponse(): void
 {
-    Http::fake(function (Request $request) {
+    $registry = new EnricherRegistry;
+
+    Http::fake(function (Request $request) use ($registry) {
         $data = $request->data();
         $enrichers = $data['enrichers'] ?? [];
         $results = collect($data['sentences'] ?? [])
@@ -64,7 +68,13 @@ function fakeEnrichResponse(): void
             ])
             ->all();
 
-        return Http::response(['results' => $results]);
+        $versions = [];
+
+        foreach ($enrichers as $key) {
+            $versions[$key] = $registry->forKey($key)?->pythonVersion() ?? 1;
+        }
+
+        return Http::response(['results' => $results, 'versions' => $versions]);
     });
 }
 
@@ -82,7 +92,10 @@ it('enriches a chunk without bumping sentence timestamps or entity staleness mar
     expect($sentenceUpdatedAt)->not->toBeNull();
 
     $service = SentenceEnrichmentService::create();
-    expect($service->enrichChunk($entity, collect([$before])))->toBe(1);
+    $result = $service->enrichChunk($entity, collect([$before]));
+    expect($result['written'])->toBe(1)
+        // The declared python versions ride the chunk result (ADR 0067).
+        ->and($result['versions'])->toBe(['ru_stress' => 1]);
 
     $after = $before->refresh();
     expect($after->stressed_content)->toBe('Она произносит это красиво.́')
@@ -157,12 +170,31 @@ it('marks a non-enrichable language done when its job runs', function () {
 
 it('skips freshly enriched entities in the sweep', function () {
     $fresh = enrichableEntity('ru', ['Привет.']);
-    $fresh->update(['enrichment_stamps' => ['ru_stress' => now()->toISOString()]]);
+    // A stamp written at the current versions, parity-checked (ADR 0067).
+    $fresh->update(['enrichment_stamps' => ['ru_stress' => [
+        'v' => 1, 'pv' => (new RussianStressEnricher)->pythonVersion(), 'at' => now()->toISOString(),
+    ]]]);
 
     Bus::fake();
     $this->artisan('entities:enrich')->assertSuccessful();
 
     Bus::assertNotDispatched(EnrichEntitySentences::class);
+});
+
+it('re-enriches an entity whose stamps predate the python version parity', function () {
+    // The {v, at} stamps written before ADR 0067 carry no python version:
+    // exactly the one-time corpus re-run the parity change accepted.
+    $entity = enrichableEntity('ru', ['Привет.']);
+    $entity->update(['enrichment_stamps' => ['ru_stress' => now()->toISOString()]]);
+
+    $service = SentenceEnrichmentService::create();
+    expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['ru_stress']);
+
+    fakeEnrichResponse();
+    (new EnrichEntitySentences($entity->id, 0, ['ru_stress']))->handle();
+
+    expect($entity->refresh()->enrichment_stamps['ru_stress']['pv'])->toBe(1)
+        ->and($service->isStale($entity->refresh()))->toBeFalse();
 });
 
 it('re-enriches an entity whose sentences changed after enrichment', function () {
@@ -182,11 +214,14 @@ it('re-enriches only the enricher missing a stamp (retro-processing)', function 
     fakeEnrichResponse();
 
     // State of an entity enriched before en_phrasal existed: only the stress
-    // enricher carries a stamp, and its sentence already has stress marks.
+    // enricher carries a stamp (at the current versions, ADR 0067), and its
+    // sentence already has stress marks.
     $entity = enrichableEntity('en', ['She gave up smoking.']);
     $sentence = EntitySentence::query()->where('entity_id', $entity->id)->first();
     $sentence->forceFill(['stressed_content' => 'pre-existing marks'])->saveQuietly();
-    $entity->update(['enrichment_stamps' => ['en_stress' => now()->toISOString()]]);
+    $entity->update(['enrichment_stamps' => ['en_stress' => [
+        'v' => 1, 'pv' => 1, 'at' => now()->toISOString(),
+    ]]]);
 
     $service = SentenceEnrichmentService::create();
     $stale = $service->staleEnrichers($entity->refresh());
@@ -256,7 +291,9 @@ it('skips the stress hints when only the phrasal enricher runs', function () {
     $token = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'Dictionary');
     expect($captured['enrichers'])->toBe(['en_phrasal'])
         ->and($captured['phrasal_lexicon'])->toBeArray()
-        ->and($token['ipa'])->toBeNull();
+        // Hint fields ship per contributing enricher (ADR 0067): with only
+        // the phrasal enricher active, the IPA hint is not on the wire at all.
+        ->and($token)->not->toHaveKey('ipa');
 });
 
 it('dispatches enrichment at the end of the upload pipeline', function () {
@@ -543,7 +580,7 @@ it('sends per-part ipa for hyphenated compounds the dictionary lacks', function 
     );
 
     $token = collect($captured['sentences'][0]['tokens'] ?? [])->firstWhere('surface', 'seven-sided');
-    expect($token['ipa'])->toBeNull()
+    expect($token)->not->toHaveKey('ipa')
         ->and($token['parts'])->toBe([
             ['surface' => 'seven', 'ipa' => ['/ˈsɛvən/']],
             ['surface' => 'sided', 'ipa' => null],
@@ -554,26 +591,53 @@ it('re-enriches an entity stamped by an older algorithm version', function () {
     $entity = enrichableEntity('en', ['She gave up smoking.']);
     $service = SentenceEnrichmentService::create();
 
-    // v1-era stamps were bare ISO strings: stale for the current-version
-    // phrasal analysis, fresh for the v1 stress analysis (ADR 0059).
+    // v1-era stamps were bare ISO strings: stale for both the versioned
+    // (v3) and the python-parity (pv) phrasal analysis, stale for the
+    // python parity of the stress analysis too (ADR 0059, ADR 0067).
     $entity->update(['enrichment_stamps' => [
         'en_phrasal' => now()->toISOString(),
         'en_stress' => now()->toISOString(),
     ]]);
-    expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['en_phrasal']);
+    expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['en_stress', 'en_phrasal']);
 
-    // Once re-stamped at the current versions, nothing is stale.
+    // A {v, at} stamp without pv still re-stales (the one-time parity
+    // re-run), even at the current Laravel version.
     $version = (new EnglishPhrasalVerbEnricher)->version();
     $entity->update(['enrichment_stamps' => [
         'en_phrasal' => ['v' => $version, 'at' => now()->toISOString()],
         'en_stress' => ['v' => 1, 'at' => now()->toISOString()],
     ]]);
+    expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['en_stress', 'en_phrasal']);
+
+    // Once re-stamped at the current versions on BOTH sides, nothing is
+    // stale.
+    $entity->update(['enrichment_stamps' => [
+        'en_phrasal' => ['v' => $version, 'pv' => (new EnglishPhrasalVerbEnricher)->pythonVersion(), 'at' => now()->toISOString()],
+        'en_stress' => ['v' => 1, 'pv' => 1, 'at' => now()->toISOString()],
+    ]]);
     expect($service->isStale($entity->refresh()))->toBeFalse();
 
-    // markEnriched writes the versioned shape.
+    // A python version older than declared re-stales (the sweep keeps
+    // re-running until the two sides agree); a NEWER reported version is
+    // fine — newer results than declared are strictly more advanced.
+    $entity->update(['enrichment_stamps' => [
+        'en_phrasal' => ['v' => $version, 'pv' => (new EnglishPhrasalVerbEnricher)->pythonVersion() - 1, 'at' => now()->toISOString()],
+        'en_stress' => ['v' => 1, 'pv' => 1, 'at' => now()->toISOString()],
+    ]]);
+    expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['en_phrasal']);
+
+    $entity->update(['enrichment_stamps' => [
+        'en_phrasal' => ['v' => $version, 'pv' => (new EnglishPhrasalVerbEnricher)->pythonVersion() + 1, 'at' => now()->toISOString()],
+        'en_stress' => ['v' => 1, 'pv' => 1, 'at' => now()->toISOString()],
+    ]]);
+    expect($service->isStale($entity->refresh()))->toBeFalse();
+
+    // markEnriched writes the fully versioned shape.
     $service->markEnriched($entity, [(new EnricherRegistry)->forKey('en_phrasal')]);
     $stamp = $entity->refresh()->enrichment_stamps['en_phrasal'];
-    expect($stamp['v'])->toBe($version)->and($stamp['at'])->not->toBeNull();
+    expect($stamp['v'])->toBe($version)
+        ->and($stamp['pv'])->toBe((new EnglishPhrasalVerbEnricher)->pythonVersion())
+        ->and($stamp['at'])->not->toBeNull();
 });
 
 it('gates the phrasal lexicon to the particle/preposition shape', function () {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Classes\Enrichment\EnricherRegistry;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateUiSettingsRequest extends FormRequest
@@ -13,7 +14,7 @@ class UpdateUiSettingsRequest extends FormRequest
 
     public function rules(): array
     {
-        return [
+        $rules = [
             'simulator' => ['nullable', 'array'],
             'simulator.font_size' => ['integer', 'min:12', 'max:48'],
             'simulator.show_text' => ['boolean'],
@@ -26,13 +27,9 @@ class UpdateUiSettingsRequest extends FormRequest
             'simulator.ai_panel_width' => ['integer', 'min:280', 'max:1200'],
             'simulator.workplace_height' => ['integer', 'min:80', 'max:800'],
             'simulator.highlight_words' => ['boolean'],
-            'simulator.stress_marks' => ['boolean'],
-            'simulator.phrasal_verbs' => ['boolean'],
             'reader' => ['nullable', 'array'],
             'reader.font_size' => ['integer', 'min:16', 'max:38'],
             'reader.highlight' => ['boolean'],
-            'reader.stress_marks' => ['boolean'],
-            'reader.phrasal_verbs' => ['boolean'],
             // Word popup section visibility (the profile's Popups tab): a key
             // absent from the saved map means visible, so only explicit
             // opt-outs travel.
@@ -49,5 +46,14 @@ class UpdateUiSettingsRequest extends FormRequest
             'popup.etymologies' => ['boolean'],
             'popup.explanation' => ['boolean'],
         ];
+
+        // The annotation display preferences are registry-owned (ADR 0067):
+        // every annotation accepts its key on both surfaces.
+        foreach (app(EnricherRegistry::class)->annotations() as $annotation) {
+            $rules["simulator.{$annotation->settingKey}"] = ['boolean'];
+            $rules["reader.{$annotation->settingKey}"] = ['boolean'];
+        }
+
+        return $rules;
     }
 }

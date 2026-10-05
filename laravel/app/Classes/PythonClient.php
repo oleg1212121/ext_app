@@ -80,7 +80,11 @@ class PythonClient
     }
 
     /**
-     * @return list<array{id: int, output: array<string, mixed>}>
+     * @param  array<string, mixed>  $payload
+     * @return array{results: list<array{id: int, output: array<string, mixed>}>, versions: array<string, int>}
+     *                                                                                                          results plus each dispatched enricher's python-reported
+     *                                                                                                          algorithm version (ADR 0067; missing entries are simply
+     *                                                                                                          absent — the caller decides what a silent service means)
      */
     public function enrich(array $payload): array
     {
@@ -99,7 +103,15 @@ class PythonClient
             ];
         }
 
-        return $results;
+        $versions = [];
+
+        foreach ($response->json('versions', []) as $key => $version) {
+            if (is_string($key) && is_numeric($version)) {
+                $versions[$key] = (int) $version;
+            }
+        }
+
+        return ['results' => $results, 'versions' => $versions];
     }
 
     /**

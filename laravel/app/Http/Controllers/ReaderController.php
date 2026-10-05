@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Classes\AIModelResolver;
+use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\EntityAccessService;
 use App\Classes\MeaningMatchPresenter;
 use App\Classes\ReadingRowsPresenter;
@@ -12,6 +13,7 @@ use App\Models\EntityMatch;
 use App\Models\Language;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -27,6 +29,7 @@ class ReaderController extends Controller
         protected MeaningMatchPresenter $presenter,
         protected ReadingRowsPresenter $readingRows,
         protected AIModelResolver $modelResolver,
+        protected EnricherRegistry $enrichers,
     ) {}
 
     /**
@@ -84,8 +87,10 @@ class ReaderController extends Controller
             'positionKey' => $positionKey,
             'fontSize' => $this->savedReaderFontSize(),
             'highlight' => $this->savedHighlight(),
-            'stressMarks' => $this->savedStressMarks(),
-            'phrasalVerbs' => $this->savedPhrasalVerbs(),
+            // The annotation display preferences (ADR 0067): one prop per
+            // registry annotation, camelCased from its setting key —
+            // stressMarks, phrasalVerbs, ...
+            ...$this->savedAnnotationPrefs(),
             'wordMaps' => $wordMaps,
             'highlightable' => $highlightable,
             // The AI explanation tab follows the same "not your native
@@ -117,14 +122,23 @@ class ReaderController extends Controller
         return (bool) (auth()->user()->settings?->ui_settings['reader']['highlight'] ?? true);
     }
 
-    private function savedStressMarks(): bool
+    /**
+     * The saved annotation display preferences (ADR 0067), keyed by the
+     * camelCased setting key the page expects as its prop name; default off.
+     *
+     * @return array<string, bool>
+     */
+    private function savedAnnotationPrefs(): array
     {
-        return (bool) (auth()->user()->settings?->ui_settings['reader']['stress_marks'] ?? false);
-    }
+        $saved = auth()->user()->settings?->ui_settings['reader'] ?? [];
 
-    private function savedPhrasalVerbs(): bool
-    {
-        return (bool) (auth()->user()->settings?->ui_settings['reader']['phrasal_verbs'] ?? false);
+        $props = [];
+
+        foreach ($this->enrichers->annotations() as $annotation) {
+            $props[Str::camel($annotation->settingKey)] = (bool) ($saved[$annotation->settingKey] ?? false);
+        }
+
+        return $props;
     }
 
     /**
@@ -183,10 +197,18 @@ class ReaderController extends Controller
      */
     private function singleLanguageRows(Entity $entity, int $page): array
     {
+        // The annotation columns ride along so the presenter can ship them
+        // (ADR 0067) — one per registry annotation.
+        $columns = ['id', 'content', 'image_path', 'image_width', 'image_height'];
+
+        foreach ($this->enrichers->annotations() as $annotation) {
+            $columns[] = $annotation->column;
+        }
+
         $paginator = $this->paginateRows(
             $entity->sentences()->orderBy('order')->getQuery(),
             $page,
-            ['id', 'content', 'image_path', 'image_width', 'image_height', 'stressed_content', 'phrasal_verbs'],
+            $columns,
         );
 
         return [

@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Sentence enrichment (stress marks, multi-word verbs)
-description: Local-only per-sentence enrichment — Russian/English stress marks and English multi-word-verb hits — computed by the Python service (Silero Stress, spaCy dependency parsing, caller-supplied dictionary data incl. CMUdict), orchestrated as declaratively language-scoped, version-stamped enrichers with per-enricher staleness, stored beside sentence content, and rendered behind per-user toggles on the reading surfaces (ADR 0052, ADR 0053, ADR 0057, ADR 0059).
-tags: [enrichment, stress-marks, multi-word-verbs, enrichers, python-service, spacy, reader, simulator, silero]
+description: Local-only per-sentence enrichment — Russian/English stress marks and English multi-word-verb hits — computed by the Python service (Silero Stress, spaCy dependency parsing, caller-supplied dictionary data incl. CMUdict), orchestrated as declaratively language-scoped, version-stamped enrichers with per-enricher staleness and python version parity, stored beside sentence content, and rendered behind per-user annotation preferences on the reading surfaces (ADR 0052, ADR 0053, ADR 0057, ADR 0059, ADR 0067).
+tags: [enrichment, stress-marks, multi-word-verbs, enrichers, annotations, python-service, spacy, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-05T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-05T18:00:00Z }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -13,6 +13,12 @@ sources:
    - id: enricher
      resource: laravel/app/Classes/Enrichment/Enricher.php
      title: Enricher interface
+   - id: annotation
+     resource: laravel/app/Classes/Enrichment/Annotation.php
+     title: Annotation (the display vertical)
+   - id: adr67
+     resource: docs/adr/0067-annotation-descriptor-and-python-version-parity.md
+     title: ADR 0067
    - id: registry
      resource: laravel/app/Classes/Enrichment/EnricherRegistry.php
      title: EnricherRegistry
@@ -73,33 +79,54 @@ spaCy and dictionary data only):
 text hash under exact-copy detection, and flip entity matches to `pending`
 (ADR 0015). All spans index `content`, so they stay valid forever.
 
-## Enrichers (ADR 0057)
+## Enrichers (ADR 0057) and Annotations (ADR 0067)
 
 Each analysis is an `Enricher` (`App\Classes\Enrichment`): `key()` (python
-dispatch key + stamp key), `version()` (algorithm version — a bump re-stales
-the whole corpus; ADR 0059), `languages()` (declared applicability),
-`column()`, `tokenHints()` (per-token dictionary hints), `requestExtras()`
+dispatch key + stamp key), `version()` (Laravel-side algorithm version — a
+bump re-stales the whole corpus; ADR 0059), `pythonVersion()` (the python
+version it expects the service to report; ADR 0067), `languages()`
+(declared applicability), `annotation()` (its display vertical),
+`tokenHints()` (per-token dictionary hints), `requestExtras()`
 (request-level payload), `toStorage()`. `EnricherRegistry::forLanguage(code)`
 answers "what should be included in the enrichment process" for a language:
 `ru` → `ru_stress` (RussianStressEnricher), `en` → `en_stress`
 (EnglishStressEnricher) + `en_phrasal` (EnglishPhrasalVerbEnricher); any
 other language → nothing (never dispatched, never stale). Adding an analysis
-is one class + one registry entry. The service resolves the shared base
-per chunk (entity word link wins, then class-priority direct match;
+is one class + one registry entry.
+
+The **Annotation** is the display-side unit (ADR 0067): payloadKey
+(`stressed`/`phrasal` — the Reading-row key), column
+(`stressed_content`/`phrasal_verbs`), settingKey (`stress_marks`/
+`phrasal_verbs` — the ui_settings key both surfaces read) and the Filament
+preview column. Two stress enrichers feed one Annotation
+(`Annotation::stress()`); `EnricherRegistry::annotations()` hands out the
+deduplicated set, and the derived sites loop it — `UpdateUiSettingsRequest`
+rules, ReaderController/SimulatorController preference seeding (props are
+the camelCased setting keys: `stressMarks`, `phrasalVerbs`), the
+single-language column select, `ReadingRowsPresenter`'s payload guard, the
+SentencesRelationManager columns, and the service's write loop and dynamic
+token-hint passthrough. The drift guard is
+`tests/Feature/EnrichmentVerticalTest.php`. The service resolves the shared
+base per chunk (entity word link wins, then class-priority direct match;
 `cls`/`lemma`/`headword`/`word_id` per key) and merges each enricher's
-contributions into one python payload.
+contributions into one python payload — a hint field no active enricher
+contributes is not sent.
 
 ## Engines (Python service `POST /enrich`)
 
 `{language, enrichers: ["ru_stress"|"en_stress"|"en_phrasal"], phrasal_lexicon:
 [headwords], sentences: [{id, text, tokens: [{surface, start, end, cls, lemma,
-ipa, parts, stressed, verb_lemmas}]}]}` → `{results: [{id, output: {[key]: value}]}}` —
-the request's `enrichers` (pydantic `Literal`, validity = dispatchability)
-selects the modules and each result's output is keyed by enricher key. One
-HTTP round trip per batch; a partial run (only the stale enrichers) skips the
-others. Laravel owns the dictionary and sends everything the service needs as
-per-token hints; Python owns model inference and writes nothing anywhere —
-the same split as `/split` and `/align`.
+...contributed hints}]}]}` → `{results: [{id, output: {[key]: value}]}], versions:
+{[key]: int}}` — the request's `enrichers` (pydantic `Literal`, validity =
+dispatchability) selects the modules and each result's output is keyed by
+enricher key; the response reports each dispatched module's
+`ALGORITHM_VERSION` (ADR 0067 parity: Laravel compares it with the
+enricher's declared `pythonVersion()`, warns on mismatch, and stamps what
+actually ran). One HTTP round trip per batch; a partial run (only the
+stale enrichers) skips the others. Laravel owns the dictionary and sends
+everything the service needs as per-token hints; Python owns model
+inference and writes nothing anywhere — the same split as `/split` and
+`/align`.
 
 - **ru stress** (`ai/enrichment/ru_stress.py`): Silero Stress
   (`pip silero-stress`, weights bundled, lazy-loaded via `ModelCache`)
@@ -172,16 +199,22 @@ notice when the package is absent).
   and make enrichment mark the entity stale forever (infinite re-enrich
   loop). A regression test pins `updated_at`/`sentences_updated_at`/
   `text_hash` unchanged.
-- **Per-enricher staleness** (ADR 0057, versioned in ADR 0059):
-  `entities.enrichment_stamps` jsonb `{enricher key: {v, at}}` (v1-era
-  bare ISO strings read as version 1). `EnricherRegistry::staleFor(entity)`
-  returns the language's enrichers whose stamp is missing (a newly
-  registered enricher backfills itself), whose recorded version is older
-  than the enricher's `version()` — a bump re-stales the whole corpus so
-  the sweep re-runs the analysis everywhere with no manual reset — or
-  older than the last sentence change. A language with no enrichers is
-  never stale; its job run stamps `{}` once. Stamps merge via jsonb `||`
-  so concurrent stampers cannot clobber each other.
+- **Per-enricher staleness** (ADR 0057, versioned in ADR 0059, python
+  parity in ADR 0067): `entities.enrichment_stamps` jsonb
+  `{enricher key: {v, pv, at}}` — `v` the Laravel-side algorithm version,
+  `pv` the python-reported `ALGORITHM_VERSION` the run actually ran with
+  (missing/legacy stamps read both as stale: v1-era bare ISO strings as
+  version 1, missing `pv` as 0 — the one-time corpus re-run). A reported
+  `pv` older than the enricher's declared `pythonVersion()` re-stales the
+  entity (the sweep keeps re-running until the sides agree); a newer one
+  is fine. `EnricherRegistry::staleFor(entity)` returns the language's
+  enrichers whose stamp is missing (a newly registered enricher backfills
+  itself), whose recorded versions are older than declared — a bump on
+  either side re-stales the whole corpus so the sweep re-runs the analysis
+  everywhere with no manual reset — or older than the last sentence
+  change. A language with no enrichers is never stale; its job run stamps
+  `{}` once. Stamps merge via jsonb `||` so concurrent stampers cannot
+  clobber each other.
 - `EnrichEntitySentences` job (low lane, self-re-dispatching, 2×75 sentences
   per run) dispatched from three places: the end of
   `FinalizeEntityDerivations` and the Filament "Enrich" action (`begin()` —
@@ -194,10 +227,12 @@ notice when the package is absent).
 
 ## Rendering
 
-- Reader (`ReaderController`) and simulator (`SimulatorController::text`)
-  ship enrichment inside the Reading rows (ADR 0060): each sentence object
-  carries `stressed` and `phrasal` keys — present only when the data
-  exists — beside its `text`. Stress marks are a **per-user preference**
+- The display preferences are the registry's Annotation set (ADR 0067):
+  Reader (`ReaderController`) and simulator (`SimulatorController`)
+  seed one camelCased prop per annotation (`stressMarks`, `phrasalVerbs`)
+  from the matching `ui_settings` section, and the Reading rows (ADR 0060)
+  carry `stressed`/`phrasal` on each sentence object — present only when
+  the data exists. Stress marks are a **per-user preference**
   (`stress_marks` in the reader + simulator `ui_settings` sections,
   autosaved, default off): the DOM always renders the plain `text` — never
   the `stressed` string — and `stressOffsets()`
@@ -231,6 +266,15 @@ notice when the package is absent).
   strips marks from popup surfaces defensively.
 
 ## Deployment note
+
+After the ADR 0067 deploy every pre-parity stamp lacks `pv`, so the whole
+corpus goes stale exactly once and the bounded five-minute sweep rewrites
+the stamps in the `{v, pv, at}` shape (accelerate with
+`entities:enrich --enricher=<key> --limit=N`); a python-side code change
+without a `requirements.txt` change ships on the normal deploy path below —
+bump `ALGORITHM_VERSION` in the module and mirror it in the enricher's
+`pythonVersion()` in the same PR, or the mismatch warning fires and the
+sweep re-runs the analysis until they agree.
 
 `silero-stress==1.5` (ADR 0052), `pyphen>=0.18` (ADR 0053) and
 `spacy==3.8.16` + the `en_core_web_md` model wheel (ADR 0059) live in

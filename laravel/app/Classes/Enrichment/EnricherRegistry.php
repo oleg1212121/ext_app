@@ -89,6 +89,24 @@ class EnricherRegistry
     }
 
     /**
+     * The deduplicated display verticals (ADR 0067): one Annotation per
+     * payload key even where two enrichers feed it (both stress analyses
+     * share the stress marks annotation).
+     *
+     * @return list<Annotation>
+     */
+    public function annotations(): array
+    {
+        $byPayloadKey = [];
+
+        foreach ($this->enrichers as $enricher) {
+            $byPayloadKey[$enricher->annotation()->payloadKey] ??= $enricher->annotation();
+        }
+
+        return array_values($byPayloadKey);
+    }
+
+    /**
      * Every registered enricher key, manifest order.
      *
      * @return list<string>
@@ -139,6 +157,16 @@ class EnricherRegistry
                 }
 
                 if ((int) (is_array($stamp) ? ($stamp['v'] ?? 1) : 1) < $enricher->version()) {
+                    return true;
+                }
+
+                // The python-side algorithm version the stamp was written
+                // with (ADR 0067). Legacy stamps carry no pv — read as 0, so
+                // every pre-parity stamp is stale exactly once and the sweep
+                // rewrites it in the versioned shape.
+                $pythonVersion = (int) (is_array($stamp) ? ($stamp['pv'] ?? 0) : 0);
+
+                if ($pythonVersion < $enricher->pythonVersion()) {
                     return true;
                 }
 

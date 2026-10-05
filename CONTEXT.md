@@ -871,6 +871,17 @@ stale. See ADR 0052, ADR 0057, ADR 0059.
 _Avoid_: enrichment status (there is no processing state, only staleness),
 dirty.
 
+**Annotation**:
+The reader-facing vertical of one enrichment analysis — the
+`entity_sentences` column its results persist into, the Reading-row
+payload key they ship under, and the per-user display preference both
+reading surfaces read. Distinct from the Enricher (the analysis): the two
+stress enrichers (ru, en) feed one Annotation. Validation, controller
+preference seeding, payload building and the Filament preview derive from
+the registry's Annotation set. See ADR 0067.
+_Avoid_: overlay, toggle, display (each names one layer, not the vertical),
+enrichment (the whole process).
+
 # Phoneme Reference Context
 
 **Resources menu**:

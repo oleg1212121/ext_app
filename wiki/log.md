@@ -1,5 +1,28 @@
 # Directory Update Log
 
+## 2026-10-05 (Annotation descriptor; python version parity — ADR 0067)
+
+New ADR 0067. The enrichment display layer got its own declarative unit:
+`Annotation` (payloadKey + column + settingKey + Filament preview) — two
+stress enrichers feed one annotation, and `EnricherRegistry::annotations()`
+now drives every derived site (ui_settings validation rules, Reader/
+Simulator preference seeding — wire props unchanged, single-language column
+select, ReadingRowsPresenter payload guard, SentencesRelationManager
+columns, the service's write loop and dynamic token-hint passthrough: a
+hint field no active enricher contributes is no longer sent). Python side:
+each enrichment module exports `ALGORITHM_VERSION`, `/enrich` responses
+report `versions`, enrichers declare `pythonVersion()`, stamps became
+`{v, pv, at}`, and `staleFor` re-stales on a reported python version older
+than declared — algorithm drift across the python boundary now warns and
+self-heals instead of silently keeping old results. Missing `pv` (every
+pre-parity stamp) reads as stale: one accepted corpus-wide re-run through
+the bounded sweep after deploy. New drift guard
+`tests/Feature/EnrichmentVerticalTest.php`; EntityEnrichmentTest and
+PythonClientTest adapted; python test_enrichment.py gained version checks.
+CONTEXT.md gained the Annotation term (Sentence Enrichment Context);
+domains/sentence-enrichment.md updated. No schema, route or command
+changes — no `wiki:sync` needed.
+
 ## 2026-10-05 (Bilinguals engine extraction; vitest for pure JS logic; one useDragResize — ADR 0066)
 
 New ADR 0066. The 856-line `Bilinguals.jsx` became layout + toolbar + wiring

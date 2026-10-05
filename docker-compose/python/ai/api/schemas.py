@@ -145,3 +145,8 @@ class EnrichResult(BaseModel):
 
 class EnrichResponse(BaseModel):
     results: list[EnrichResult]
+    # Enricher key -> that module's algorithm version (ADR 0067): Laravel
+    # compares it against the enricher's declared python version and stamps
+    # what actually ran, so a python-side edit without a version bump
+    # re-stales instead of silently keeping old results.
+    versions: dict[str, int] = Field(default_factory=dict)
