@@ -202,11 +202,19 @@ notice when the package is absent).
   autosaved, default off): the DOM always renders the plain `text` — never
   the `stressed` string — and `stressOffsets()`
   (`resources/js/lib/stressMarks.mjs`) maps the variant back onto the plain
-  text so each stressed character is wrapped in a `.stress-mark` span whose
-  CSS `::after` draws the acute above it. No U+0301 and no е→ё substitution
-  ever reaches the DOM, so selection, copy/paste, double-click dictionary
-  extensions, and browser find all see original characters; a divergent
-  variant degrades to plain (no marks). Multi-word
+  text so each stressed word hosts empty, absolutely-positioned
+  `.stress-mark` children that WordText's layout effect pins over their
+  glyphs in both axes against the sentence-level positioned block
+  (`relative` on the reader side divs and the simulator `<td>`s) — never
+  against the inline host word, which once it wraps across lines would hand
+  marks a wrong line-start offset and widen the scrollable overflow into a
+  horizontal scrollbar. Glyph rects only change with font metrics or
+  wrapping, so re-measuring on font loads and parent-block resizes
+  (font-size settings, zoom, side reveal) suffices. Words are never split into
+  multiple text nodes and no U+0301 or е→ё substitution ever reaches the
+  DOM, so selection, copy/paste, double-click dictionary extensions
+  (Yomitan reads per text node), and browser find all see whole original
+  characters; a divergent variant degrades to plain (no marks). Multi-word
   verbs are the same kind of preference (`phrasal_verbs`, default off): it
   underlines the tokens each hit's span covers with a dotted verdigris
   underline (`phrasal-hit` class) and shows the matched `phrase` as tooltip;

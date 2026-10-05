@@ -143,7 +143,7 @@ export default function TextContent(props) {
                                 <CheckboxInput className="check_base cursor-pointer" checked={!!(props.checkedRows?.[n]?.base)} onChange={() => props.onToggleRow(n, 'base')}/>
                             </div>
                         </td>
-                        <td className="px-4 py-2 align-top hide_base">
+                        <td className="px-4 py-2 align-top hide_base relative">
                             <div className="flex w-full flex-col gap-1.5">
                                 <span className="base content resizeable_element block w-full break-words text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-serif)]">
                                     <WordText

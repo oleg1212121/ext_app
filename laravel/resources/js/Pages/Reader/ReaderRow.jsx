@@ -74,7 +74,7 @@ function ReaderRow({
                     onKeyDown={handleActivation}
                     aria-expanded={toggleable ? isVisible : undefined}
                     className={[
-                        'primary-line block text-left w-full',
+                        'primary-line relative block text-left w-full',
                         'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]',
                         toggleable ? 'cursor-pointer' : 'cursor-default',
                         'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] focus-visible:rounded-sm',
@@ -119,7 +119,7 @@ function ReaderRow({
                         aria-hidden={!isVisible}
                     >
                         <div
-                            className="whitespace-pre-line italic"
+                            className="relative whitespace-pre-line italic"
                             style={{
                                 paddingLeft: sideBySide ? undefined : '1.25rem',
                                 borderLeft: sideBySide ? undefined : '1px solid var(--color-verdigris)',

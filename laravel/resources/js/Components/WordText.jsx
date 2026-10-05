@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import React, {useCallback, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {segmentText} from '../lib/wordTokenizer.mjs';
 import {stressOffsets} from '../lib/stressMarks.mjs';
@@ -25,30 +25,76 @@ function tierClass(familiarity, highlight) {
     return 'word-token word-unknown';
 }
 
-// Children for one segment: the characters at stress offsets (absolute into
-// the sentence text) render inside .stress-mark spans; text content is never
-// altered, so the segment's textContent stays the plain word.
-function stressChildren(text, stress, base) {
-    if (!stress) {
-        return text;
+// Mirror of the tokenizer's word pattern: the gaps between key segments can
+// still pack single-letter words (я, о, а) that a stress mark can land on.
+const WORD_RUN_PATTERN = /[\p{L}\p{M}]+(?:['’\-][\p{L}\p{M}]+)*/gu;
+
+const renderStressMarks = (offsets) => offsets.map((offset) => (
+    <span key={offset} className="stress-mark" data-offset={offset} aria-hidden="true"/>
+));
+
+/**
+ * Sub-pieces of one segment under the stress overlay: pieces containing a
+ * stress offset become "hosts" — a span keeping the word's text as ONE
+ * intact text node plus empty, absolutely-positioned mark children (offsets
+ * are relative to the piece text). Words are never split into multiple text
+ * nodes, so selection, copy/paste, and double-click dictionary extensions
+ * (Yomitan reads per text node) always see whole original words.
+ */
+function stressPieces(segment, base, marks) {
+    if (!marks) {
+        return null;
     }
-    const children = [];
+    const within = [];
+    for (const offset of marks) {
+        if (offset >= base && offset < base + segment.text.length) {
+            within.push(offset - base);
+        }
+    }
+    if (within.length === 0) {
+        return null;
+    }
+    if (segment.key !== null) {
+        // A key segment is one word: the whole token hosts its marks.
+        return [{text: segment.text, host: true, offsets: within}];
+    }
+    // A gap can pack several single-letter words around punctuation — split
+    // it at word boundaries and host only the marked words.
+    const pieces = [];
     let cursor = 0;
-    for (const offset of stress) {
-        const local = offset - base;
-        if (local < cursor || local >= text.length) {
-            continue;
+    for (const match of segment.text.matchAll(WORD_RUN_PATTERN)) {
+        const start = match.index;
+        const end = start + match[0].length;
+        if (start > cursor) {
+            pieces.push({text: segment.text.slice(cursor, start), host: false});
         }
-        if (local > cursor) {
-            children.push(text.slice(cursor, local));
-        }
-        children.push(<span key={offset} className="stress-mark">{text[local]}</span>);
-        cursor = local + 1;
+        const offsets = within
+            .filter((offset) => offset >= start && offset < end)
+            .map((offset) => offset - start);
+        pieces.push({text: match[0], host: offsets.length > 0, offsets});
+        cursor = end;
     }
-    if (cursor < text.length) {
-        children.push(text.slice(cursor));
+    if (cursor < segment.text.length) {
+        pieces.push({text: segment.text.slice(cursor), host: false});
     }
-    return children.length > 0 ? children : text;
+    return pieces;
+}
+
+// Content of a segment that renders as bare text (no word-token span): host
+// pieces get their own span grouping the word's text with its empty mark
+// children; everything else stays plain text.
+function stressContent(segment, pieces) {
+    if (pieces === null) {
+        return segment.text;
+    }
+    return pieces.map((piece, pieceIndex) => piece.host ? (
+        <span key={pieceIndex} className="stress-host">
+            {piece.text}
+            {renderStressMarks(piece.offsets)}
+        </span>
+    ) : (
+        <React.Fragment key={pieceIndex}>{piece.text}</React.Fragment>
+    ));
 }
 
 /**
@@ -65,16 +111,14 @@ function stressChildren(text, stress, base) {
  * They stay focusable with the same keyboard contract a button had
  * (Ctrl+Enter/Ctrl+Space opens the popup).
  *
- * rowKey (optional) scopes this row side for familiarity bookkeeping: the
- * first popup lookup of a word within the row costs -2, credited once.
- *
  * Stress marks (ADR 0052): when showStress is on, characters stressed in a
- * sentence's `stressed` variant are wrapped in .stress-mark spans whose CSS
- * ::after draws the acute. The DOM always carries the plain `text` — never
- * the stressed string — so selection, copy/paste, double-click dictionary
- * extensions, and browser find only ever see original characters (no U+0301,
- * no е→ё). stressOffsets() maps the variant back onto the plain text; any
- * divergence renders that sentence plain.
+ * sentence's `stressed` variant get an accent drawn above them. The DOM
+ * text is never altered and words are never split — each stressed word
+ * hosts empty, absolutely-positioned .stress-mark children whose horizontal
+ * position is measured from the stressed glyph, so selection, copy/paste,
+ * double-click dictionary extensions, and browser find only ever see whole
+ * original words (no U+0301, no е→ё). stressOffsets() maps the variant back
+ * onto the plain text; any divergence renders that sentence plain.
  *
  * Phrasal verbs (ADR 0057): when showPhrasal is on, the tokens each hit
  * covers get a dotted underline with the matched headword as tooltip. Hit
@@ -152,6 +196,69 @@ function WordText({
         });
     }, [sentences, showPhrasal]);
 
+    const rootRef = useRef(null);
+
+    // Pin each rendered mark over its stressed glyph, in both axes, against
+    // the sentence-level positioned block (mark.offsetParent). The inline
+    // host word cannot serve as the anchor: once it wraps across lines, its
+    // union bounding rect no longer matches the box the browser anchors
+    // abspos children of a fragmented inline to, so a mark could land a
+    // line-start offset away — past the column edge, widening the scrollable
+    // overflow. A one-character Range never spans lines, so the glyph rect
+    // always sits on the mark's own line. Measuring on mount/structural
+    // change, on web-font loads, and when the parent block resizes
+    // (font-size settings, zoom, side reveal) covers every case where the
+    // offsets can actually change.
+    useLayoutEffect(() => {
+        const root = rootRef.current;
+        if (!root || stressMaps === null) {
+            return;
+        }
+        const measure = () => {
+            const range = document.createRange();
+            for (const mark of root.querySelectorAll('.stress-mark')) {
+                const host = mark.parentElement;
+                const textNode = host !== null
+                    ? Array.from(host.childNodes).find((node) => node.nodeType === Node.TEXT_NODE && node.data.length > 0)
+                    : null;
+                const offset = Number(mark.dataset.offset);
+                if (textNode === null || !(offset >= 0 && offset < textNode.data.length)) {
+                    continue;
+                }
+                const block = mark.offsetParent;
+                if (block === null) {
+                    // display:none subtree — unmeasurable until revealed,
+                    // where the resize observer re-measures.
+                    continue;
+                }
+                range.setStart(textNode, offset);
+                range.setEnd(textNode, offset + 1);
+                const charRect = range.getBoundingClientRect();
+                const blockRect = block.getBoundingClientRect();
+                mark.style.left = `${charRect.left + charRect.width / 2 - blockRect.left}px`;
+                // Vertical base only — .stress-mark adds its hand-tuned
+                // offset in CSS; an inline style.top would override it.
+                mark.style.setProperty('--stress-mark-line-top', `${charRect.top - blockRect.top}px`);
+            }
+        };
+        measure();
+        let frame = 0;
+        const observer = new ResizeObserver(() => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(measure);
+        });
+        if (root.parentElement) {
+            observer.observe(root.parentElement);
+        }
+        document.fonts?.ready.then(measure);
+        document.fonts?.addEventListener('loadingdone', measure);
+        return () => {
+            observer.disconnect();
+            cancelAnimationFrame(frame);
+            document.fonts?.removeEventListener('loadingdone', measure);
+        };
+    }, [segmentLists, stressMaps, interactive]);
+
     const [popup, setPopup] = useState(null);
 
     const openPopup = useCallback((event, segment, sentenceId) => {
@@ -203,7 +310,7 @@ function WordText({
 
     const renderTextSentence = (sentence, index, renderToken) => {
         const segments = segmentLists[index];
-        const phrasal = phrasalMarks !== null ? (phrasalMarks[index] ?? null) : null;
+        const phrasal = interactive && phrasalMarks !== null ? (phrasalMarks[index] ?? null) : null;
         const stress = stressMaps !== null ? (stressMaps[index] ?? null) : null;
         let tokenIndex = 0;
         // Segments tile the sentence text contiguously, so each segment's
@@ -214,30 +321,29 @@ function WordText({
                 {segments.map((segment, segmentIndex) => {
                     const base = charOffset;
                     charOffset += segment.text.length;
+                    const pieces = stressPieces(segment, base, stress);
                     if (segment.key !== null) {
                         const markLabel = phrasal !== null ? (phrasal.get(tokenIndex++) ?? null) : null;
                         const entry = wordMap[segment.key];
                         const markClass = markLabel !== null ? ' phrasal-hit' : '';
-                        const children = stressChildren(segment.text, stress, base);
                         if (entry?.w) {
-                            return renderToken(segment, segmentIndex, entry, markClass, markLabel, children);
+                            return renderToken(segment, segmentIndex, entry, markClass, markLabel, pieces);
                         }
                         if (markLabel !== null) {
                             return (
                                 <span key={segmentIndex} className={'word-token phrasal-hit'} title={markLabel}>
-                                    {children}
+                                    {stressContent(segment, pieces)}
                                 </span>
                             );
                         }
-                        return <React.Fragment key={segmentIndex}>{children}</React.Fragment>;
                     }
-                    return <React.Fragment key={segmentIndex}>{stressChildren(segment.text, stress, base)}</React.Fragment>;
+                    return <React.Fragment key={segmentIndex}>{stressContent(segment, pieces)}</React.Fragment>;
                 })}
             </span>
         );
     };
 
-    const interactiveToken = (sentence, segment, index, entry, markClass, markLabel, children) => (
+    const interactiveToken = (sentence, segment, index, entry, markClass, markLabel, pieces) => (
         <span
             key={index}
             role="button"
@@ -259,7 +365,12 @@ function WordText({
                 }
             }}
         >
-            {children ?? segment.text}
+            {pieces === null ? segment.text : (
+                <React.Fragment>
+                    {segment.text}
+                    {pieces.flatMap((piece) => renderStressMarks(piece.offsets))}
+                </React.Fragment>
+            )}
         </span>
     );
 
@@ -269,28 +380,16 @@ function WordText({
     const firstTextIndex = sentences.findIndex((sentence) => sentence.image === undefined);
 
     return (
-        <span className={className}>
+        <span ref={rootRef} className={className}>
             {sentences.map((sentence, index) => {
                 if (sentence.image !== undefined) {
                     return <IllustrationFigure key={sentence.id} sentence={sentence} {...(figureProps ?? {})}/>;
                 }
                 const separator = index !== firstTextIndex ? ' ' : null;
-                if (!interactive) {
-                    // Plain fast path: no word map for this side (entity_words
-                    // still building, or text not indexed) — render the plain
-                    // text with stress overlays.
-                    const stress = stressMaps !== null ? (stressMaps[index] ?? null) : null;
-                    return (
-                        <React.Fragment key={sentence.id}>
-                            {separator}
-                            <span className="inline">{stressChildren(sentence.text, stress, 0)}</span>
-                        </React.Fragment>
-                    );
-                }
                 return (
                     <React.Fragment key={sentence.id}>
                         {separator}
-                        {renderTextSentence(sentence, index, (segment, segmentIndex, entry, markClass, markLabel, children) => interactiveToken(sentence, segment, segmentIndex, entry, markClass, markLabel, children))}
+                        {renderTextSentence(sentence, index, (segment, segmentIndex, entry, markClass, markLabel, pieces) => interactiveToken(sentence, segment, segmentIndex, entry, markClass, markLabel, pieces))}
                     </React.Fragment>
                 );
             })}

@@ -1,5 +1,47 @@
 # Directory Update Log
 
+## 2026-10-05 (fix: stress marks pinned to the sentence block — wrapped words no longer misplace marks or force a horizontal scrollbar)
+
+WordText positioned each empty `.stress-mark` at `glyphX − hostRect.left`,
+but when a host word wrapped across lines (a hyphenated compound on a
+narrow window), the host's union bounding rect no longer matched the box
+the browser anchors abspos children of a fragmented inline to: marks landed
+a line-start offset to the right — past the column edge — widening the
+scrollable overflow of `main#contentContainer` (reader) / the TextContent
+root div (simulator) into a horizontal scrollbar, and the static vertical
+position followed the word's last line instead of the glyph's. Fix:
+`.word-token`/`.stress-host` give up `position: relative` and WordText pins
+every mark in both axes against `mark.offsetParent` — a stable
+sentence-level block, made explicit with `relative` on ReaderRow's side
+divs and the simulator base `<td>` (the target td already had it for the
+ribbon-mark) — measured from the glyph's one-character Range rect (a single
+character never spans lines). Visual unchanged (mark's left edge at glyph
+center, ascent-zone vertical); unmeasured marks fall back to their static
+position beside the word. No PHP/routes changes; docs:
+sentence-enrichment concept.
+
+## 2026-10-05 (fix: Yomitan compat — stressed words keep one intact text node)
+
+The first overlay pass wrapped each stressed vowel in its own
+`.stress-mark` span, splitting every stressed word into three text nodes
+("floated" → "fl" + "o" + "ated") — Yomitan reads text per text node, so
+lookups only saw the fragment under the cursor. Now the stressed word's
+text is never wrapped or split: it stays one intact text node of original
+characters, and the accent is an *empty* absolutely-positioned
+`.stress-mark` child of the word's span (`aria-hidden`, `pointer-events:
+none`) pinned horizontally by WordText's layout effect — a DOM Range over
+the `data-offset` character gives the glyph center relative to the host
+span. Within-word offsets depend only on font metrics (not layout,
+wrapping, or column widths), so re-measuring on structural change
+(including the async word map arriving), `document.fonts.ready`/
+`loadingdone`, and a parent-block `ResizeObserver` (font-size settings,
+zoom) covers every case where offsets can move. Gap segments sub-split at
+word boundaries so single-letter words («я́», «о́») host their own mark
+without splitting anything. `.word-token` gained `position: relative`;
+keyless hosts use `.stress-host`. Verified by 28 SSR DOM assertions
+(whole-word contiguity inside host spans, correct `data-offset`s, fast
+path, phrasal+stress composition, divergence fallback). No PHP changes.
+
 ## 2026-10-05 (fix: stress marks render as a CSS overlay over plain text)
 
 The stress-marks toggle used to substitute `stressed_content` (U+0301

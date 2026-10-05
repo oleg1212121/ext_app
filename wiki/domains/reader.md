@@ -172,12 +172,12 @@ the line itself still toggles the translation, word clicks stop
 propagation. Both reading lines style themselves with
 `var(--font-reading)` — `'Source Serif 4', Georgia, …` (see
 `conventions/design-system.md`): a single font must cover Latin + Cyrillic
-so glyphs never switch mid-word. The stress toggle draws acutes via CSS
-(`.stress-mark::after`) and renders no U+0301, but source content itself
-can still carry combining marks — if such a mark and its base letter
-resolve from different fonts, attachment breaks and the acute renders as a
-spacing glyph (gaps after stressed vowels; the old Fraunces-first
-`--font-serif` had exactly that defect).
+so glyphs never switch mid-word. The stress toggle draws acutes as empty
+positioned marks (`.stress-mark`) over intact plain text — no U+0301 is
+rendered — but source content itself can still carry combining marks: if
+such a mark and its base letter resolve from different fonts, attachment
+breaks and the acute renders as a spacing glyph (gaps after stressed
+vowels; the old Fraunces-first `--font-serif` had exactly that defect).
 
 # Rendering cost
 
