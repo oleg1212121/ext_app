@@ -33,7 +33,7 @@ export default function Workplace(props) {
                             )}
                         </div>
                         <p className="mb-2 text-xs leading-relaxed text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">{props.questionInfo}</p>
-                        <Textarea onChange={props.changeQuestion} ref={props.questionRef} label={t('bilinguals.question')} value={props.currentQuestion} key={props.questionResetKey} placeholder={t('bilinguals.question_placeholder')} className="resizeable_element" rows={3}/>
+                        <Textarea onChange={props.changeQuestion} label={t('bilinguals.question')} value={props.currentQuestion} key={props.questionResetKey} placeholder={t('bilinguals.question_placeholder')} className="resizeable_element" rows={3}/>
                     </div>
                 )}
                 {props.canUseAi && props.showQuestion !== true && (
