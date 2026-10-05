@@ -4130,3 +4130,16 @@ set in dev `.env` (was falling back to 660; wiki already mandated 900), and
 the backlog drained to 0 pending / 0 failed. Repro + guidance now in
 `playbooks/run-alignment.md` (Failure handling); note `queue:listen` (composer
 `dev`) is immune — fresh process per job.
+
+## 2026-10-05 (simulator language toggle retinted to the reader's vermilion)
+
+The learning-language segmented toggle (EN↔RU) in the simulator toolbar
+(`Bilinguals.jsx`) painted its active side with `--wbench-accent`
+(ultramarine `#1F3DDB`) while the reader's identical reading-language toggle
+uses the `--color-vermilion` family (rust `#B0451E` / night `#D4562F`), so the
+same control looked blue on one page and brownish on the other. Retinted the
+simulator toggle's active + focus-ring classes to the reader's exact
+vermilion classes (incl. `text-vellum`/`dark:text-ink-night`); inactive-side
+and hover colors stay `--wbench-*`. Documented as a deliberate exception to
+the "new Inertia pages use `--wbench-*`" guidance in
+`conventions/design-system.md` (parity with the reader wins).

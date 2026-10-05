@@ -657,9 +657,9 @@ const Bilinguals = (props) => {
                                 title={t('bilinguals.learning_language')}
                                 className={[
                                     'px-2 h-6 inline-flex items-center font-[var(--wbench-mono)] text-[11px] tracking-wide uppercase rounded-sm cursor-pointer select-none',
-                                    'transition-colors duration-200 focus-within:outline-none focus-within:ring-2 focus-within:ring-[var(--wbench-accent)]',
+                                    'transition-colors duration-200 focus-within:outline-none focus-within:ring-2 focus-within:ring-[var(--color-vermilion)]',
                                     learningSide === side
-                                        ? 'bg-[var(--wbench-accent)] text-white dark:bg-[var(--wbench-accent-night)]'
+                                        ? 'bg-[var(--color-vermilion)] text-vellum dark:bg-[var(--color-vermilion-night)] dark:text-ink-night'
                                         : 'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]',
                                 ].join(' ')}
                             >
