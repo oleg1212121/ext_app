@@ -1,5 +1,32 @@
 # Directory Update Log
 
+## 2026-10-05 (Bilinguals engine extraction; vitest for pure JS logic; one useDragResize — ADR 0066)
+
+New ADR 0066. The 856-line `Bilinguals.jsx` became layout + toolbar + wiring
+(~460 lines) over three page-local engine hooks: `useSimulatorText` (match
+selection, Reading-row pages, position store, side flip, familiarity
+crediting, `textPending`), `useAiStream` (SSE answer stream, retry,
+`aiPending`), `useAssessmentQuestion` (template/task-list split). The pure
+logic underneath moved to `lib/` — `sseStream.mjs`, `simulatorText.mjs`,
+`aiAsk.mjs`, plus pure additions to `simulatorPosition.js`
+(`writePosition`/`writeCurrentText`, one home for the flip-migration shim)
+and `http.js` (`responseErrorMessage`) — and is now pinned by the repo's
+first JS test runner: vitest (27 tests, Node only, no jsdom/React —
+components stay Pest/manual territory), run via `docker exec … npm run test`
+and a new `frontend` CI job, deliberately not chained into `composer run
+test`. Deliberate behavior change decided in the 2026-10-05 architecture
+review: the shared `pending` flag split into `textPending` + `aiPending` —
+asking no longer aborts during a page fetch and streaming no longer disables
+page turns (the Spinner shows on either). Dead code removed (the unused
+`pending` prop to `TextContent`, the never-read `questionRef`); the ask
+prompt's unmotivated first-asterisk strip is pinned verbatim in
+`lib/aiAsk.mjs`. Also one shared `hooks/useDragResize` replacing three
+hand-rolled copies (simulator AI panel + workplace, crossword right panel —
+still drag-only/ephemeral on the crossword). Wiki: architecture/frontend.md
+gained the JS module layering + vitest sections; bilinguals-simulator.md's
+Frontend section rewritten around the engines; crossword.md and
+running-tests.md updated.
+
 ## 2026-10-05 (EntitySentenceStore: one sentence-mutation flow; Filament stale-flip gap fixed — ADR 0065)
 
 New ADR 0065. The mutate → stale-flip → totals-resync flow was a

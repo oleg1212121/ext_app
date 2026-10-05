@@ -5,7 +5,7 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-09-29T19:54:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-05T20:05:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/CrosswordController.php
@@ -153,7 +153,9 @@ Reached from the navbar's **Puzzles** dropdown (`nav.puzzles`), whose only
 entry is Crossword (`/crossword`) — grouping intended for future puzzle
 features. Inertia pages under `resources/js/Pages/Crossword/` — `Crossword` (wrapper,
 `Main` layout), `CrosswordApp`, `useCrossword` (state: cell values, arrow
-navigation, word checking, right-panel width, language filter), and
+navigation, word checking, language filter; the right-panel width lives in
+the shared `hooks/useDragResize` — drag only, deliberately not persisted),
+and
 `Components/` (grid, cells, header with language-filter / work-grouped
 entity / level selects, right panel with Definitions and Translations tabs
 plus the unsolved-words modal). The work select renders one `<optgroup>` per

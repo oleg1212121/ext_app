@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-04T18:11:19Z}
+generated: { by: agent:zcode, at: 2026-10-05T20:05:00+03:00}
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -25,6 +25,15 @@ sources:
   - id: side-flip-hook
     resource: laravel/resources/js/hooks/useSideFlip.js
     title: useSideFlip (shared Side swap hook)
+  - id: text-engine-hook
+    resource: laravel/resources/js/Pages/Bilinguals/useSimulatorText.js
+    title: useSimulatorText (text engine: rows, paging, position store, side flip, familiarity)
+  - id: ai-stream-hook
+    resource: laravel/resources/js/Pages/Bilinguals/useAiStream.js
+    title: useAiStream (AI answer engine: SSE stream, aiPending, retry)
+  - id: question-hook
+    resource: laravel/resources/js/Pages/Bilinguals/useAssessmentQuestion.js
+    title: useAssessmentQuestion (question template / task-list split)
 ---
 
 # What it does
@@ -210,7 +219,32 @@ variants.
 # Frontend
 
 React page `resources/js/Pages/Bilinguals/` (`Bilinguals.jsx` plus `AI/`,
-`TextContent/`, `Workplace/` sub-components). Props include `pinnedMatch`
+`TextContent/`, `Workplace/` sub-components). The page is layout + toolbar +
+wiring over three page-local engine hooks (ADR 0066's layering;
+`wiki/architecture/frontend.md`):
+
+* **`useSimulatorText`** — the text engine: match selection (pinned vs
+  picker + position store), Reading-row page loading (`POST /text` via
+  `lib/simulatorText.mjs`), the position store, the Side swap (it calls
+  `useSideFlip` itself and exposes `firstSide`/`secondSide`/`toggleTo`),
+  reveal state (`checkedRows`, `allTarget`), word familiarity crediting,
+  and `textPending`. Paging and page-turn gating key off `textPending`
+  alone.
+* **`useAiStream`** — the AI answer engine: `POST /ai/question/stream`
+  fetch-loop over the pinned SSE parser (`lib/sseStream.mjs`), throttled
+  markdown re-render, last-payload retry, and `aiPending`. Asking gates on
+  `aiPending` alone — asking during a page fetch is allowed and streaming
+  no longer disables page turns (the page's Spinner shows on either flag).
+* **`useAssessmentQuestion`** — the question template / task-list split
+  (ADR 0040): effective tasks, the `:base`/`:learning` substitution, reset.
+
+Panel drag-resize goes through the shared `hooks/useDragResize` (the AI
+panel and the workplace pass `startDrag` down; sizes persist via UI
+settings). The page's font size still applies through the injected
+`<style>` element (`lib/simulatorFontStyles.js`), which styles
+`.resizeable_element` markers and `#ai_answer_div`.
+
+Props include `pinnedMatch`
 (`{id, text}` — the URL-pinned match and its toolbar label; **null** on the
 `/simulator` picker entry, where `textList` (`[{id, text}]`, the readable
 matches) drives the Select + Load header instead), `languages`

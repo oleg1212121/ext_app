@@ -1,10 +1,10 @@
 ---
 type: Playbook
 title: Running Tests
-description: How to run the Pest test suite against the dedicated ext_app_test database.
-tags: [testing, pest]
+description: How to run the Pest test suite against the dedicated ext_app_test database, and the vitest suite for pure JS logic.
+tags: [testing, pest, vitest]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-03T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-05T20:05:00+03:00 }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -20,10 +20,13 @@ sources:
     title: Testing environment file template (tracked; .env.testing is gitignored)
   - id: ciworkflow
     resource: .github/workflows/tests.yml
-    title: Tests workflow (CI env provisioning, wiki mtime skip)
+    title: Tests workflow (CI env provisioning, wiki mtime skip, frontend vitest job)
   - id: wikiconfig
     resource: laravel/config/wiki.php
     title: Wiki validation config (skip_mtime_staleness flag)
+  - id: packagejson
+    resource: laravel/package.json
+    title: NPM scripts (vitest run)
 ---
 
 # Facts
@@ -105,6 +108,25 @@ sources:
   when the two files land in different workers. If more than one file uses
   a helper, define it in `tests/Pest.php`.
 
+# Frontend (vitest, pure JS logic only)
+
+* `docker exec ext_app_laravel npm run test` (= `vitest run`) executes
+  `resources/js/**/*.test.{js,mjs}` in Node. The suite pins pure `lib/`
+  modules only (SSE parsing, payload mapping, clamps, position store, error
+  chains) — **no jsdom, no React/component tests**: pages and hooks are
+  wiring, covered by Pest and manual verification (ADR 0066).
+* `vitest.config.js` is standalone and deliberately does NOT load the
+  laravel-vite plugin or the app's `vite.config.js` — keep it that way, or
+  the suite becomes a build.
+* CI runs it as the **`frontend`** job in `tests.yml` (`npm ci` + `npm run
+  test`; Node with npm cache off `package-lock.json` — the lockfile is
+  load-bearing). `composer run test` deliberately does NOT chain it: Pest
+  runs without Vite/npm and must stay PHP-only.
+* Test files are colocated next to the module they pin
+  (`resources/js/lib/*.test.*`). When extracting logic from a page, put the
+  pure part in `lib/` (`.mjs` if it must stay framework-free) so it has a
+  home to test in.
+
 # Commands
 
 ```bash
@@ -132,6 +154,9 @@ docker exec ext_app_laravel composer run test:tia
 # also required once after a container rebuild, when the graph is gone and
 # `gh` cannot fetch the CI baseline unauthenticated)
 docker exec ext_app_laravel sh -c 'cd /var/www && PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/var/www/scripts/php-ini php vendor/bin/pest --parallel --tia --drop-databases --coverage --fresh'
+
+# Frontend: pure-logic JS tests (vitest, Node only — no DB, no build)
+docker exec ext_app_laravel npm run test
 ```
 
 # Gotchas
