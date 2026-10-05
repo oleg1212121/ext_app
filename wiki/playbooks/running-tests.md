@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, and the vitest suite for pure JS logic.
 tags: [testing, pest, vitest]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-05T20:55:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-05T21:35:00+03:00 }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml

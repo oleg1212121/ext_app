@@ -5,7 +5,7 @@ description: Local-only per-sentence enrichment — Russian/English stress marks
 tags: [enrichment, stress-marks, multi-word-verbs, enrichers, annotations, python-service, spacy, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-05T18:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-05T21:30:00+03:00 }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -212,7 +212,9 @@ notice when the package is absent).
   itself), whose recorded versions are older than declared — a bump on
   either side re-stales the whole corpus so the sweep re-runs the analysis
   everywhere with no manual reset — or older than the last sentence
-  change. A language with no enrichers is never stale; its job run stamps
+  change; `staleForMany(entities)` is the batch form (one grouped
+  `max(updated_at)` query, shared `filterStale` predicate) the sweep uses.
+  A language with no enrichers is never stale; its job run stamps
   `{}` once. Stamps merge via jsonb `||` so concurrent stampers cannot
   clobber each other.
 - `EnrichEntitySentences` job (low lane, self-re-dispatching, 2×75 sentences
@@ -220,7 +222,10 @@ notice when the package is absent).
   `FinalizeEntityDerivations` and the Filament "Enrich" action (`begin()` —
   a FULL run of the language's enrichers), and the 5-minute `entities:enrich`
   sweep (`beginEnrichers()` — only the stale set; `--enricher=` forces one
-  key across its languages, `--dry-run` reports). Empty-content sentences
+  key across its languages, `--dry-run` reports). The sweep's scan is
+  bounded like its dispatch (ADR 0043): it walks entities `chunkById`,
+  decides staleness per chunk through `staleForMany`, and stops at the
+  `--limit` cap in id order. Empty-content sentences
   never reach Python (schema rejects empty text) and keep null columns.
 - Re-enrichment is idempotent and free — sentence edits re-stale the
   entity's enrichers and the sweep rebuilds it.

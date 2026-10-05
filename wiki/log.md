@@ -1,5 +1,21 @@
 # Directory Update Log
 
+## 2026-10-05 (Bounded enrichment sweep scan)
+
+`entities:enrich` no longer hydrates every enrichable-language entity and
+runs one `max(entity_sentences.updated_at)` query per entity each five
+minutes: `EnricherRegistry::staleForMany()` decides staleness for a whole
+batch with one grouped query (the predicate moved into a private
+`filterStale` shared with `staleFor`, unchanged per-entity), and the command
+walks `chunkById`, stopping at the `--limit` dispatch cap instead of
+scanning the whole catalog — ADR 0043's bounded-sweep rule now covers the
+scan, not just the dispatch. The sweep also stopped evaluating
+`staleEnrichers` twice per dispatched entity, and its `SentenceEnrichmentService`
+injection (added when `::create()` died) is gone — the sweep talks to the
+registry alone. Tests: `staleForMany`↔`staleFor` parity (fresh stamp,
+missing stamp, sentence-less entity) and the id-ordered `--limit` cap.
+Domains/commands unchanged — no `wiki:sync` needed.
+
 ## 2026-10-05 (One construction path through the python seam)
 
 The three domain services that talk to python (`SentenceEnrichmentService`,

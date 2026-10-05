@@ -146,6 +146,46 @@ it('skips freshly enriched entities in the sweep', function () {
     Bus::assertNotDispatched(EnrichEntitySentences::class);
 });
 
+it('caps the sweep at the dispatch limit in id order', function () {
+    $first = enrichableEntity('ru', ['Первый.']);
+    $second = enrichableEntity('ru', ['Второй.']);
+    $third = enrichableEntity('ru', ['Третий.']);
+
+    Bus::fake();
+    $this->artisan('entities:enrich', ['--limit' => 2])->assertSuccessful();
+
+    Bus::assertDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $first->id);
+    Bus::assertDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $second->id);
+    Bus::assertNotDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $third->id);
+    Bus::assertDispatched(EnrichEntitySentences::class, 2);
+});
+
+it('staleForMany agrees with staleFor for every entity in the batch', function () {
+    $service = app(SentenceEnrichmentService::class);
+    $registry = new EnricherRegistry;
+
+    // Fresh stamp, missing stamp, and no sentences at all (null last change).
+    $fresh = enrichableEntity('ru', ['Привет.']);
+    $fresh->update(['enrichment_stamps' => ['ru_stress' => [
+        'v' => 1, 'pv' => (new RussianStressEnricher)->pythonVersion(), 'at' => now()->toISOString(),
+    ]]]);
+    $stale = enrichableEntity('ru', ['Устарел.']);
+    $empty = enrichableEntity('en', []);
+
+    $batch = [$fresh->refresh(), $stale->refresh(), $empty->refresh()];
+
+    $map = $registry->staleForMany($batch);
+
+    foreach ($batch as $entity) {
+        expect(collect($map[$entity->id] ?? [])->map->key()->all())
+            ->toBe(collect($service->staleEnrichers($entity))->map->key()->all());
+    }
+
+    expect($map[$fresh->id])->toBe([])
+        ->and(collect($map[$stale->id])->map->key()->all())->toBe(['ru_stress'])
+        ->and(collect($map[$empty->id])->map->key()->all())->toBe(['en_stress', 'en_phrasal']);
+});
+
 it('re-enriches an entity whose stamps predate the python version parity', function () {
     // The {v, at} stamps written before ADR 0067 carry no python version:
     // exactly the one-time corpus re-run the parity change accepted.
