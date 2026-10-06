@@ -5,7 +5,7 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-10-05T20:05:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-06T12:30:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/CrosswordController.php
@@ -34,6 +34,9 @@ sources:
   - id: accrue-command
     resource: laravel/app/Console/Commands/AccrueEntityWordFrequencyCommand.php
     title: words:accrue-entity-frequency sweep
+  - id: frequency-lists-command
+    resource: laravel/app/Console/Commands/ImportFrequencyListsCommand.php
+    title: words:import-frequency-lists (band word lists)
   - id: levels
     resource: laravel/app/Classes/CrosswordLevel.php
     title: CrosswordLevel bands
@@ -132,6 +135,15 @@ in id order, bounded by `--limit` (200). Dev:
    never created. A successful import clears `frequency_counted_at` for
    the imported language's entities so the correction re-applies once
    against the fresh ranks.
+   `words:import-frequency-lists {--path=} {--dry-run}` clamps ranks from
+   the curated band word lists in `storage/app/frequency-lists/` (line 1:
+   language, line 2: band, one word per line): every word in a file gets
+   the file's band via `frequency = least(current, band)` — it only
+   lowers, never overwrites — matched both by direct `l_word` and through
+   `forms.l_word` onto base words (all matches get the min; misses are
+   counted, never created). It touches nothing but `words.frequency`: no
+   `frequency_counted_at` reset (ADR
+   [0070](../../docs/adr/0070-frequency-lists-min-merge.md)).
    **Frequency correction** — `WordFrequencyAccrual` processes each entity
    exactly once (`entities.frequency_counted_at`): the entity's linked
    word list is ranked by occurrence count and each word's rank is pulled

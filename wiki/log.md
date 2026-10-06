@@ -1,5 +1,23 @@
 # Directory Update Log
 
+## 2026-10-06 (Band word lists min-merge onto frequency ranks)
+
+New command `words:import-frequency-lists {--path=} {--dry-run}` (ADR
+[0070](../docs/adr/0070-frequency-lists-min-merge.md)): reads the curated
+band word lists in `storage/app/frequency-lists/` (moved out of
+`public/frequencies`; gitignored — machine-local, copy to prod manually)
+and applies `words.frequency = least(current, band)` — every word in a
+file gets the file's line-2 band, only ever lowering a rank. Matching is
+direct `l_word` plus the forms path (`forms.l_word → word_id` onto base
+words, aggregated with `min(rank)` so fan-out joins can't pick an
+arbitrary band), all word-class rows together; misses are counted, words
+are never created, and `entities.frequency_counted_at` stays untouched —
+a clamp is not an authoritative re-baseline. Header validation happens
+for all files before any write. `ImportFrequencyListsTest` covers the
+clamp, the forms path, homographs, idempotency, dry-run, per-language
+isolation and stress-mark stripping; `wiki:sync` regenerated the command
+reference.
+
 ## 2026-10-06 (Review polish: bounds + construction paths)
 
 Two-axis review (standards + spec) of the six-candidate implementation
