@@ -4391,3 +4391,24 @@ matching header keeps its whole group); pure filter/flatten logic in
 prop renamed `textList` → `workGroups`, and the default preselection moved
 from "newest match overall" to the first option of the first work. Feature
 tests updated in `SimulatorPickerTest` / `SimulatorPinnedMatchTest`.
+
+## 2026-10-06 (word test: frequency-rank placement with a presumed-known baseline)
+
+New page (`/word-test`, separate nav link before Resources): draws a fresh
+Placement sample — 50 headwords over 20 equal-count Buckets of the
+language's ranked inventory (`words.frequency` ≤ 20000, distinct per
+`l_word`, `WordTestService`) — as a shuffled checkbox list; submit computes
+the Word test score (each bucket credits 1000 × its known share, 0–20000)
+and writes the Presumed-known baseline (`UserWord::PLACEMENT_BASELINE` = 50,
+raise-only `GREATEST` upsert-select) over every tested-language word at
+rank ≤ score. Bucket boundaries are inventory quantiles, not literal
+0–1000…19000–20000 rank groups — ADR 0070's band ties leave 12 of 20 such
+groups empty, and quantiles self-heal after a corpus import (ADR 0071).
+Samples are server-cached under a uuid token (24 h); submits must present
+the token and a subset of its ids (Form Request closures → 422). No
+persistence beyond the `user_word` rows: retakes only ever raise. Languages
+without ranked words (ru today) get an in-page empty state. UI strings in
+`seeders/ui-strings/wordtest.php` + `nav.word_test`; tests
+`WordTestScoringTest` (pure scorer) + `WordTestPageTest` (page, sampling
+invariants, exact score/marked set, raise-only, 422s). Docs: ADR 0071,
+CONTEXT.md Word Test context, `wiki/domains/word-test.md`.

@@ -12,6 +12,7 @@ use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\ReadingAiController;
 use App\Http\Controllers\UiSettingsController;
 use App\Http\Controllers\WordController;
+use App\Http\Controllers\WordTestController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -67,6 +68,12 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::get('/crossword', [CrosswordController::class, 'index'])->name('crossword');
     Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');
     Route::post('/crossword/complete', [CrosswordController::class, 'complete'])->name('crossword.complete');
+
+    // Word test: GET draws a fresh frequency-rank sample, POST scores it and
+    // bulk-marks the presumed-known range (ADR 0071). The server keeps the
+    // served sample in the cache — submits score against it, not the client.
+    Route::get('/word-test', [WordTestController::class, 'index'])->name('word-test.show');
+    Route::post('/word-test/submit', [WordTestController::class, 'submit'])->name('word-test.submit');
 
     // Resources → Pronunciation guide: a static client-side chart (ADR 0054);
     // no props beyond the shared auth/uiStrings payload (ADR 0056).

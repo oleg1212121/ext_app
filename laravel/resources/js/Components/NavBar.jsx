@@ -80,6 +80,7 @@ export default function NavBar() {
                 {href: '/works/alignments', label: t('nav.alignments'), match: (u) => u.startsWith('/works/alignments') || /^\/works\/\d+\/alignments/.test(u)},
             ]},
             {label: t('nav.puzzles'), children: [{href: '/crossword', label: t('nav.crossword')}]},
+            {href: '/word-test', label: t('nav.word_test')},
             {label: t('nav.resources'), children: [{href: '/resources/pronunciation-guide', label: t('nav.pronunciation_reference')}]},
             ...(canAccessAdminPanel ? [{href: '/admin', label: t('nav.admin'), external: true}] : []),
         ]
