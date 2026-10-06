@@ -19,6 +19,13 @@ class UserWord extends Model
 
     public const CROSSWORD_BONUS = 5;
 
+    /**
+     * Familiarity a passed Word test writes across the presumed-known range —
+     * seen-enough territory, below the known threshold and crossword-eligible
+     * (ADR 0071).
+     */
+    public const PLACEMENT_BASELINE = 50;
+
     public const KIND_READ = 'read';
 
     public const KIND_LOOKUP = 'lookup';

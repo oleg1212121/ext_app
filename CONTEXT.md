@@ -961,3 +961,53 @@ An English card's note where British Received Pronunciation differs from the
 taught General American form (a different symbol, a non-rhotic realization).
 Never a second chart — one variant per note.
 _Avoid_: British chart, RP tab.
+
+# Word Test Context
+
+The domain of the self-assessment that places a learner on a language's
+frequency scale. One Word test draws a Placement sample across the ranked
+inventory; the learner's answers produce a Word test score, and the test
+writes the Presumed-known baseline over the range at or below it. The
+vocabulary it moves is **Word familiarity** (see the Crossword context);
+the scale it measures against is **Frequency rank** (same context).
+
+**Word test**:
+The self-assessment that places a learner on a language's 0–20 000
+frequency scale: tick the sampled words you know, submit once, and the
+Presumed-known baseline is written across the range at or below your Word
+test score. A retake draws a fresh Placement sample and can only raise
+familiarity, never lower it.
+_Avoid_: placement (as a page or feature name), vocabulary test, knowledge check.
+
+**Placement sample**:
+The 50 headwords — one dictionary entry per spelling, not one per word
+class — drawn fresh for every test from the language's ranked inventory
+(rank ≤ 20 000). Served in shuffled order with no rarity hints; the draw
+and its Bucket layout live only on the server between page load and
+submit.
+_Avoid_: quiz (nothing is right or wrong), word list (that means the
+Entity word list).
+
+**Bucket**:
+One of the 20 equal-count slices of a language's ranked inventory. The
+Placement sample draws proportionally from every Bucket, and the Word test
+score credits each Bucket by the share of its sampled words the learner
+marked. Equal word counts, not equal rank widths — with the coarse band
+ties of the current rank data (ADR 0070), rank-width slices would come up
+empty.
+_Avoid_: band (the imported band word lists), Level (the crossword sense).
+
+**Word test score**:
+The learner's position on the 0–20 000 frequency scale, summed from the
+Placement sample: each Bucket contributes 1 000 × the known share of its
+sampled words. A word at rank ≤ score is presumed known; a word above it
+is not, even if the learner ticked it.
+_Avoid_: level (that means crossword Level), knowledge, rank (a word's
+property, not a person's), result.
+
+**Presumed-known baseline**:
+The Word familiarity value (50) a passed Word test writes — raise-only —
+for every tested-language word at rank ≤ the Word test score. It marks a
+word as seen-enough without certifying it: reads and crosswords still
+grow it toward known (100), and any higher existing value is untouched.
+_Avoid_: known (that means familiarity 100), certified knowledge.

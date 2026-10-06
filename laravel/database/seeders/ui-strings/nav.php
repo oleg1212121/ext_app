@@ -19,6 +19,7 @@ return [
     'nav.resources' => ['en' => 'Resources', 'ru' => 'Ресурсы'],
     'nav.dashboard' => ['en' => 'Dashboard', 'ru' => 'Панель'],
     'nav.crossword' => ['en' => 'Crossword', 'ru' => 'Кроссворд'],
+    'nav.word_test' => ['en' => 'Word test', 'ru' => 'Тест слов'],
     'nav.toggle_dark_mode' => ['en' => 'Toggle dark mode', 'ru' => 'Переключить тёмную тему'],
     'nav.pronunciation_reference' => ['en' => 'Pronunciation guide', 'ru' => 'Справочник произношения'],
 ];
