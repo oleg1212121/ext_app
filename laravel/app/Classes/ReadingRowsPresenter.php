@@ -27,9 +27,9 @@ class ReadingRowsPresenter
     /** @var list<Annotation> */
     private array $annotations;
 
-    public function __construct(?EnricherRegistry $enrichers = null)
+    public function __construct(EnricherRegistry $enrichers)
     {
-        $this->annotations = ($enrichers ?? new EnricherRegistry)->annotations();
+        $this->annotations = $enrichers->annotations();
     }
 
     /**

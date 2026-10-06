@@ -320,7 +320,7 @@ it('moves illustration captions into the row payload as image sentences', functi
         ->orderBy('order')
         ->get();
 
-    $presenter = new ReadingRowsPresenter;
+    $presenter = app(ReadingRowsPresenter::class);
 
     $payload = $presenter->toReadingRows($rows);
 

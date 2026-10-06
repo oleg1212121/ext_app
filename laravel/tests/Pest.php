@@ -230,6 +230,11 @@ function enableTranslationProviders(): void
     ]);
 }
 
+function approvedUser(): User
+{
+    return User::factory()->create(['is_approved' => true]);
+}
+
 function nativeRuUser(): User
 {
     createLanguages();

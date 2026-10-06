@@ -59,7 +59,7 @@ class SimulatorController extends Controller
         $textList = $pinned !== null ? [] : $this->getEntityMatchTextList();
         $firstId = $textList[0]['id'] ?? null;
 
-        $saved = SavedUiSettings::section('simulator');
+        $saved = SavedUiSettings::section(auth()->user(), 'simulator');
 
         // The saved question now holds only the user's customized task list
         // and ships verbatim; null lets the client show the default tasks.
@@ -121,9 +121,9 @@ class SimulatorController extends Controller
             'currentText' => $pinnedName !== null
                 ? (string) $pinned->id
                 : ($firstId !== null ? (string) $firstId : ''),
-            'fontSize' => SavedUiSettings::int($saved, 'font_size', 12, 48, 26),
-            'aiPanelWidth' => SavedUiSettings::int($saved, 'ai_panel_width', 280, 1200, 560),
-            'workplaceHeight' => SavedUiSettings::int($saved, 'workplace_height', 80, 800, 168),
+            'fontSize' => SavedUiSettings::int($saved, 'font_size', ...SavedUiSettings::SIMULATOR_FONT_SIZE),
+            'aiPanelWidth' => SavedUiSettings::int($saved, 'ai_panel_width', ...SavedUiSettings::SIMULATOR_AI_PANEL_WIDTH),
+            'workplaceHeight' => SavedUiSettings::int($saved, 'workplace_height', ...SavedUiSettings::SIMULATOR_WORKPLACE_HEIGHT),
             'highlightWords' => SavedUiSettings::bool($saved, 'highlight_words', true),
             // The annotation display preferences (ADR 0067): one prop per
             // registry annotation, camelCased from its setting key —

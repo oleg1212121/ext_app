@@ -1,5 +1,23 @@
 # Directory Update Log
 
+## 2026-10-06 (Review polish: bounds + construction paths)
+
+Two-axis review (standards + spec) of the six-candidate implementation
+(ADR 0065–0069): no defects found; all suites green (Pest 939, vitest 30,
+build). Follow-up polish from the standards axis: `SavedUiSettings` now
+owns the bounded integer settings as constants (`READER_FONT_SIZE`,
+`SIMULATOR_FONT_SIZE`, `SIMULATOR_AI_PANEL_WIDTH`,
+`SIMULATOR_WORKPLACE_HEIGHT`) and the save-request rules
+(`UpdateUiSettingsRequest::integerRule`) plus both surface controllers'
+clamp seeding read the same min/max/default. `UpdateUiSettingsRequest`
+constructor-injects `EnricherRegistry` (no `app()` inside `rules()`),
+`ReadingRowsPresenter` lost its nullable-registry fallback (tests resolve
+it through the container or construct it with the real registry), and
+`SavedUiSettings::section()` takes the user explicitly instead of reading
+`auth()->user()` internally. The one-off `verticalApprovedUser` guard
+helper became `approvedUser()` in `tests/Pest.php`, per the cross-file
+helper convention.
+
 ## 2026-10-05 (Reading-surface chrome kit + one JSON envelope)
 
 The toolbar mechanics ADR 0067 deferred now have one home each (ADR 0068):

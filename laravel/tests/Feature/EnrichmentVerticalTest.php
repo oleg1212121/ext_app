@@ -5,15 +5,7 @@ use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\ReadingRowsPresenter;
 use App\Http\Requests\UpdateUiSettingsRequest;
 use App\Models\EntitySentence;
-use App\Models\User;
 use Illuminate\Support\Str;
-
-if (! function_exists('verticalApprovedUser')) {
-    function verticalApprovedUser(): User
-    {
-        return User::factory()->create(['is_approved' => true]);
-    }
-}
 
 /**
  * The annotation vertical's drift guard (ADR 0067): every registered
@@ -22,7 +14,9 @@ if (! function_exists('verticalApprovedUser')) {
  * a derived site fails here.
  */
 it('derives the whole annotation vertical from the registry', function () {
-    $rules = (new UpdateUiSettingsRequest)->rules();
+    // Constructed directly with its registry: resolving through the
+    // container would run the authorize/validate hooks, which need a user.
+    $rules = (new UpdateUiSettingsRequest(new EnricherRegistry))->rules();
     $fillable = (new EntitySentence)->getFillable();
     $readerStrings = require database_path('seeders/ui-strings/reader.php');
     $bilingualsStrings = require database_path('seeders/ui-strings/bilinguals.php');
@@ -49,7 +43,7 @@ it('emits each annotation under its payload key when the column holds data', fun
         $sentence = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Hello.', 'order' => 1024]);
 
         // Nothing stored: the payload key is absent (no null-for-absent level).
-        $payload = (new ReadingRowsPresenter)->forEntitySentences(collect([$sentence]));
+        $payload = app(ReadingRowsPresenter::class)->forEntitySentences(collect([$sentence]));
         expect($payload[0]['a']['sentences'][0])->not->toHaveKey($annotation->payloadKey);
 
         // Stored: the payload key ships the stored value under its key.
@@ -60,13 +54,13 @@ it('emits each annotation under its payload key when the column holds data', fun
         };
         $sentence->forceFill([$annotation->column => $stored])->saveQuietly();
 
-        $payload = (new ReadingRowsPresenter)->forEntitySentences(collect([$sentence->refresh()]));
+        $payload = app(ReadingRowsPresenter::class)->forEntitySentences(collect([$sentence->refresh()]));
         expect($payload[0]['a']['sentences'][0][$annotation->payloadKey])->toEqual($stored);
     }
 });
 
 it('seeds one page prop per annotation from the saved reader preferences', function () {
-    $user = verticalApprovedUser();
+    $user = approvedUser();
     $entity = createEntity('en');
 
     $props = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk()->inertiaPage()['props'];
@@ -94,7 +88,7 @@ it('seeds one page prop per annotation from the saved reader preferences', funct
 });
 
 it('validates annotation preference keys on both surfaces', function () {
-    $user = verticalApprovedUser();
+    $user = approvedUser();
 
     // The saved preference round-trips through PATCH /ui-settings for every
     // annotation on both surfaces — a drifted validation site would 422.

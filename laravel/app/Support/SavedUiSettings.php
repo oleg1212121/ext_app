@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\User;
 use Illuminate\Support\Str;
 
 /**
@@ -13,13 +14,26 @@ use Illuminate\Support\Str;
 final class SavedUiSettings
 {
     /**
-     * One ui_settings section of the authenticated user.
+     * The bounded integer settings, one home for the numbers: the save
+     * request's validation rules and the render-time clamping below read
+     * the same min / max / default.
+     */
+    public const READER_FONT_SIZE = ['min' => 16, 'max' => 38, 'default' => 20];
+
+    public const SIMULATOR_FONT_SIZE = ['min' => 12, 'max' => 48, 'default' => 26];
+
+    public const SIMULATOR_AI_PANEL_WIDTH = ['min' => 280, 'max' => 1200, 'default' => 560];
+
+    public const SIMULATOR_WORKPLACE_HEIGHT = ['min' => 80, 'max' => 800, 'default' => 168];
+
+    /**
+     * One ui_settings section of the given user's settings row.
      *
      * @return array<string, mixed>
      */
-    public static function section(string $name): array
+    public static function section(?User $user, string $name): array
     {
-        return auth()->user()->settings?->ui_settings[$name] ?? [];
+        return $user?->settings?->ui_settings[$name] ?? [];
     }
 
     /**

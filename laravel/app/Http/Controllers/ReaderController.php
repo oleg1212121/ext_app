@@ -67,7 +67,7 @@ class ReaderController extends Controller
         ['rows' => $rows, 'sideEntities' => $sideEntities, 'meta' => $meta, 'positionKey' => $positionKey, 'defaultSide' => $defaultSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
 
         ['wordMaps' => $wordMaps, 'highlightable' => $highlightable, 'explainable' => $explainable] = $this->readingRows->wordMapsFor($sideEntities, (int) auth()->id(), $nativeLanguageId, $rows);
-        $saved = SavedUiSettings::section('reader');
+        $saved = SavedUiSettings::section(auth()->user(), 'reader');
 
         // Rows are canonical a/b (ADR 0060) — which side reads first is the
         // client's flip around defaultSide. Languages, word maps and the
@@ -86,7 +86,7 @@ class ReaderController extends Controller
             ],
             'meta' => $meta,
             'positionKey' => $positionKey,
-            'fontSize' => SavedUiSettings::int($saved, 'font_size', 16, 38, 20),
+            'fontSize' => SavedUiSettings::int($saved, 'font_size', ...SavedUiSettings::READER_FONT_SIZE),
             'highlight' => SavedUiSettings::bool($saved, 'highlight', true),
             // The annotation display preferences (ADR 0067): one prop per
             // registry annotation, camelCased from its setting key —
