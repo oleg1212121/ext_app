@@ -25,8 +25,8 @@ test('the pinned simulator route preloads the match from the url', function () {
             ->where('currentText', (string) $match->id)
             ->where('pinnedMatch.id', $match->id)
             ->where('pinnedMatch.text', 'Pinned EN / Pinned RU')
-            // The picker entry shares the page; pinned ships an empty list.
-            ->where('textList', []));
+            // The picker entry shares the page; pinned ships no work groups.
+            ->where('workGroups', []));
 });
 
 test('the pinned simulator route is forbidden without access to both sides', function () {

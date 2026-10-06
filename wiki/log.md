@@ -4372,3 +4372,22 @@ vermilion classes (incl. `text-vellum`/`dark:text-ink-night`); inactive-side
 and hover colors stay `--wbench-*`. Documented as a deliberate exception to
 the "new Inertia pages use `--wbench-*`" guidance in
 `conventions/design-system.md` (parity with the reader wins).
+
+## 2026-10-06 (simulator alignment picker: work-grouped and searchable)
+
+The Practice → Simulator alignment picker stopped being a flat list of every
+readable match. `SimulatorController::getWorkGroups()` now ships `workGroups`
+(`[{id, label, options: [{id, text}]}]`): matches grouped under their work
+(the A-side entity's work), works labeled `Title — Author` and sorted A→Z,
+each work's newest match first — and only `completed`/`stale` matches list,
+so pending/aligning/failed pairs no longer offer an empty read. A work
+appears only when it holds at least one such match (works carry no access
+semantics; readable-count scoping via `readableMatchQuery`). The select was
+rebuilt as `Components/Forms/SearchableSelect.jsx` — a searchable, keyboard-
+navigable popup (case-insensitive filter over work and option labels, a
+matching header keeps its whole group); pure filter/flatten logic in
+`lib/groupedOptions.mjs` with vitest coverage. The old flat
+`Components/Forms/Select.jsx` (sole consumer was this page) is deleted, the
+prop renamed `textList` → `workGroups`, and the default preselection moved
+from "newest match overall" to the first option of the first work. Feature
+tests updated in `SimulatorPickerTest` / `SimulatorPinnedMatchTest`.

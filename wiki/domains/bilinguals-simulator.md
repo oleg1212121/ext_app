@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-05T23:10:48+03:00 }
+generated: { by: agent:zcode, at: 2026-10-06T15:58:38+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -49,7 +49,7 @@ variants.
 
 | Route | Method | Handler | Purpose |
 |-------|--------|---------|---------|
-| `/simulator` | GET | `SimulatorController::simulator` | The standalone page with the **alignment picker** (Practice → Simulator, ADR 0038): same Inertia page `Bilinguals/Bilinguals`, no pinned match — a Select + Load header control lists the readable matches and loads one in place via `POST /text`. The old picker URL `/bilinguals/en/ru/simulator` stays deleted (404, test-guarded) |
+| `/simulator` | GET | `SimulatorController::simulator` | The standalone page with the **alignment picker** (Practice → Simulator, ADR 0038): same Inertia page `Bilinguals/Bilinguals`, no pinned match — a searchable Select + Load header control lists the readable completed/stale matches grouped by work and loads one in place via `POST /text`. The old picker URL `/bilinguals/en/ru/simulator` stays deleted (404, test-guarded) |
 | `/bilinguals/simulator/{entityMatch}` | GET | `SimulatorController::simulatorForMatch` | Inertia page `Bilinguals/Bilinguals` with the match **pinned by the URL** (opened from an alignment card's Simulator button, ADR 0036): no text selector, the match label is shown instead, 403 without `canReadMatch` |
 | `/text` | POST | `SimulatorController::text` | Paginated aligned text content (JSON) |
 | `/ai/question` | POST | `ReadingAiController::askAi` | Ask an AI model about the text (JSON), named `ai.question` — the reading surfaces' shared AI-answer controller (ADR 0069) |
@@ -108,13 +108,27 @@ variants.
   the match's real codes — no more hardcoded EN/RU.
 * Two **entry points share one page** (ADR 0038): the pinned URL from an
   alignment card (match fixed, label shown in the toolbar) and the Practice
-  menu's `/simulator` (no pin — the Select + Load picker lists the readable
-  matches via `getEntityMatchTextList()`, preselecting the last picker
-  choice from the per-device position store). Load fetches the chosen match
+  menu's `/simulator` (no pin — the alignment picker selects the text).
+  Load fetches the chosen match
   in place via `POST /text`; switching text needs no reload. Saved per-device
   positions (page, revealed row) key on the match id either way, so a reopen
   restores that match's last position; the flip follows the match through the
   shared side-flip store.
+* The **alignment picker** (`Components/Forms/SearchableSelect.jsx`) is a
+  searchable, work-grouped select: the controller ships `workGroups`
+  (`[{id, label, options: [{id, text}]}]` from
+  `getWorkGroups()`) — one group per work (the A-side entity's work;
+  same-work is enforced at creation), labeled `Title — Author` (author
+  dropped when null), options labeled by their two sides' entity names,
+  works sorted A→Z by label and each work's newest match first. Only
+  `completed` and `stale` matches list — the states holding aligned rows to
+  read — and only works holding at least one of them. The search filters
+  case-insensitively over the work label and option labels (a matching
+  header keeps its whole group), with arrow/Enter/Escape keyboard
+  navigation in the popup; the pure filter/flatten logic lives in
+  `lib/groupedOptions.mjs` (vitest-covered). With no saved position the
+  first option preselects; the per-device position store still wins when it
+  names a listed match.
 * **Read access is gated per Entity, not per match.** The pinned route and
   `text()` both 403/filter on `EntityAccessService::canReadMatch` — the
   caller must hold an Access grant (or be admin) on **both** entities of the
@@ -251,8 +265,9 @@ settings). The page's font size still applies through the injected
 
 Props include `pinnedMatch`
 (`{id, text}` — the URL-pinned match and its toolbar label; **null** on the
-`/simulator` picker entry, where `textList` (`[{id, text}]`, the readable
-matches) drives the Select + Load header instead), `languages`
+`/simulator` picker entry, where `workGroups` (the searchable, work-grouped
+picker options — see the picker bullet under Key behavior) drives the
+SearchableSelect + Load header instead), `languages`
 (`{a: {code, name}, b: …}` — labels the columns and feeds the question
 template; client state on the picker entry, updated from each `/text`
 response), `defaultLearningSide`

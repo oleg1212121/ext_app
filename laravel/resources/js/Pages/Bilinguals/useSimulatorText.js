@@ -2,6 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useI18n} from '../../i18n';
 import {useSideFlip} from '../../hooks/useSideFlip';
 import {loadPositions, writeCurrentText, writePosition} from '../../lib/simulatorPosition';
+import {flattenGroups} from '../../lib/groupedOptions.mjs';
 import {DEFAULT_PER_PAGE, fetchTextPage} from '../../lib/simulatorText.mjs';
 import {patchWordMap, patchWordStatus, recordWordEvents, rowWordIds} from '../../lib/wordFamiliarity';
 import {sideTexts} from '../../lib/readingRows.mjs';
@@ -18,7 +19,7 @@ function normalizeSavedRow(saved) {
 // (Reading rows, ADR 0060), the position store, the side flip, and the
 // word-familiarity read crediting. Owns textPending alone. The page only
 // wires the returned state into the toolbar and the TextContent columns.
-export function useSimulatorText({pinnedMatch, textList, fallbackTextId, initialLanguages, initialDefaultSide}) {
+export function useSimulatorText({pinnedMatch, workGroups, fallbackTextId, initialLanguages, initialDefaultSide}) {
     const {t} = useI18n();
 
     // Position restore: a pinned match wins; otherwise the last text the
@@ -26,7 +27,7 @@ export function useSimulatorText({pinnedMatch, textList, fallbackTextId, initial
     // default. The saved page + opened row restore on the first load.
     const initialPositions = loadPositions();
     const savedTextExists = initialPositions.currentText != null
-        && textList.some((item) => String(item.id) === String(initialPositions.currentText));
+        && flattenGroups(workGroups).some((item) => String(item.id) === String(initialPositions.currentText));
     const initialText = pinnedMatch
         ? String(pinnedMatch.id)
         : (savedTextExists ? String(initialPositions.currentText) : String(fallbackTextId ?? ''));
@@ -228,9 +229,9 @@ export function useSimulatorText({pinnedMatch, textList, fallbackTextId, initial
         return fetchPage(page);
     }, [fetchPage, currentText]);
 
-    const changeText = useCallback((event) => {
-        const value = event.target.value;
-        setCurrentText(value);
+    // The picker hands over the selected option's id as a string.
+    const changeText = useCallback((value) => {
+        setCurrentText(String(value));
         writeCurrentText(value);
     }, []);
 

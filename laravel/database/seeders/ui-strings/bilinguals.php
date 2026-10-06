@@ -30,6 +30,9 @@ return [
     'bilinguals.no_aligned_rows' => ['en' => 'This pair has no aligned sentences yet.', 'ru' => 'У этой пары пока нет выровненных предложений.'],
     // Alignment picker (Practice → Simulator entry).
     'bilinguals.load' => ['en' => 'Load', 'ru' => 'Загрузить'],
+    'bilinguals.picker_choose' => ['en' => 'Choose an alignment', 'ru' => 'Выбрать выравнивание'],
+    'bilinguals.picker_search' => ['en' => 'Search works or alignments…', 'ru' => 'Поиск по произведениям и выравниваниям…'],
+    'bilinguals.picker_no_results' => ['en' => 'Nothing found', 'ru' => 'Ничего не найдено'],
     'bilinguals.press' => ['en' => 'Press', 'ru' => 'Нажмите'],
     'bilinguals.load_hint_tail' => ['en' => 'to bring in the selected text.', 'ru' => ', чтобы загрузить выбранный текст.'],
     'bilinguals.no_text_selected' => ['en' => 'No text selected', 'ru' => 'Текст не выбран'],
