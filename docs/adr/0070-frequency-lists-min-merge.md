@@ -76,13 +76,17 @@ clamp to a coarse band is not an authoritative re-baseline — the entity
 corrections already applied remain valid against it, and re-applying them
 would compound drift for zero benefit.
 
-### 3. Location: storage/app, outside version control
+### 3. Location: storage/app, tracked in git
 
-The lists live in `storage/app/frequency-lists/` (gitignored), next to the
-corpus downloads of `words:import-frequency`. Consequence, accepted by the
-user: the files are machine-local — `deploy.sh` ships code via git pull,
-so prod needs a manual copy before running the command there, and git does
-not back them up.
+The lists live in `storage/app/frequency-lists/`, next to the corpus
+downloads of `words:import-frequency`, but unlike those they are **tracked
+in git** (a `!frequency-lists/**` exception in `storage/app/.gitignore` —
+that file's unanchored `*` also needs the parent-directory negation).
+They are small, hand-compiled by the user from scratch — no third-party
+source, no attribution obligation — and not re-downloadable, while
+`deploy.sh` ships code via git pull, so tracking is what carries them to
+prod and backs them up. The corpus downloads stay ignored: they are large
+and fetched on demand.
 
 ## Consequences
 
@@ -93,4 +97,5 @@ not back them up.
   band ("left" → "leave"); entity corrections re-loosen it.
 - The corpus-side forms aggregation (ADR 0041's deferred upgrade) remains
   open — this ADR covers only the list path.
-- The lists are unversioned data: losing `storage/app` loses them.
+- The lists are versioned data: edits to them are reviewable in git
+  history and ship to prod with the next deploy.

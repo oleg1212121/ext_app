@@ -5,7 +5,9 @@
 New command `words:import-frequency-lists {--path=} {--dry-run}` (ADR
 [0070](../docs/adr/0070-frequency-lists-min-merge.md)): reads the curated
 band word lists in `storage/app/frequency-lists/` (moved out of
-`public/frequencies`; gitignored — machine-local, copy to prod manually)
+`public/frequencies`; tracked in git via a `!frequency-lists/**`
+exception in `storage/app/.gitignore` — the lists are hand-compiled from
+scratch, and tracking is what carries them to prod and backs them up)
 and applies `words.frequency = least(current, band)` — every word in a
 file gets the file's line-2 band, only ever lowering a rank. Matching is
 direct `l_word` plus the forms path (`forms.l_word → word_id` onto base
