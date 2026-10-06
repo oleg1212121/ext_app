@@ -10,7 +10,9 @@ router = APIRouter()
 @router.post("/enrich", response_model=EnrichResponse)
 def enrich(req: EnrichRequest, request: Request):
     accentor = None
+    versions: dict[str, int] = {}
     if "ru_stress" in req.enrichers:
+        versions["ru_stress"] = ru_stress.ALGORITHM_VERSION
         try:
             accentor = ModelCache(request.app.state).stress_model()
         except Exception as exc:
@@ -23,6 +25,7 @@ def enrich(req: EnrichRequest, request: Request):
     # empty enrichment that would get stamped as done.
     phrasal_hits: list | None = None
     if "en_phrasal" in req.enrichers:
+        versions["en_phrasal"] = phrasal.ALGORITHM_VERSION
         try:
             phrasal_hits = phrasal.find_multiword_verbs(
                 [
@@ -33,6 +36,9 @@ def enrich(req: EnrichRequest, request: Request):
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if "en_stress" in req.enrichers:
+        versions["en_stress"] = en_stress.ALGORITHM_VERSION
 
     results: list[EnrichResult] = []
     for sentence in req.sentences:
@@ -47,4 +53,4 @@ def enrich(req: EnrichRequest, request: Request):
             output["en_phrasal"] = phrasal_hits.pop(0)
 
         results.append(EnrichResult(id=sentence.id, output=output))
-    return EnrichResponse(results=results)
+    return EnrichResponse(results=results, versions=versions)

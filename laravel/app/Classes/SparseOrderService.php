@@ -3,6 +3,7 @@
 namespace App\Classes;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class SparseOrderService
 {
@@ -11,6 +12,9 @@ class SparseOrderService
     public const WINDOW_SIZE = 100;
 
     public const BEGINNING_SENTINEL = PHP_INT_MIN;
+
+    /** Park offset for two-phase order writes — id + offset is unique per row and far from any real order. */
+    public const PARK_OFFSET = 1_000_000_000;
 
     public function initial(int $index): int
     {
@@ -137,6 +141,43 @@ class SparseOrderService
     }
 
     /**
+     * Persist a batch of order finals two-phase: every row is parked at a
+     * unique negative order (id + PARK_OFFSET, negated) before the finals
+     * are written. The finals are collision-free as a set, but one row's
+     * final may equal another row's current order, so a naive one-by-one
+     * write would trip the (scope, order) unique index mid-write. Owns one
+     * transaction — a savepoint when the caller already holds one — so
+     * concurrent readers never observe the parks. Chunks at 1000.
+     *
+     * @param  class-string<Model>  $modelClass
+     * @param  list<array{id: int, order: int}>  $updates
+     */
+    public function persistOrdersTwoPhase(string $modelClass, array $updates): void
+    {
+        if ($updates === []) {
+            return;
+        }
+
+        DB::transaction(function () use ($modelClass, $updates): void {
+            foreach (array_chunk($updates, 1000) as $chunk) {
+                foreach ($chunk as $update) {
+                    $modelClass::query()
+                        ->whereKey($update['id'])
+                        ->update(['order' => -($update['id'] + self::PARK_OFFSET)]);
+                }
+            }
+
+            foreach (array_chunk($updates, 1000) as $chunk) {
+                foreach ($chunk as $update) {
+                    $modelClass::query()
+                        ->whereKey($update['id'])
+                        ->update(['order' => $update['order']]);
+                }
+            }
+        });
+    }
+
+    /**
      * @param  class-string<Model>  $modelClass
      */
     public function rebalanceAll(string $modelClass, string $scopeColumn, int $scopeId, bool $dryRun = false): int
@@ -166,21 +207,7 @@ class SparseOrderService
             return count($updates);
         }
 
-        foreach (array_chunk($updates, 1000) as $chunk) {
-            foreach ($chunk as $update) {
-                $modelClass::query()
-                    ->whereKey($update['id'])
-                    ->update(['order' => -($update['id'] + 1_000_000_000)]);
-            }
-        }
-
-        foreach (array_chunk($updates, 1000) as $chunk) {
-            foreach ($chunk as $update) {
-                $modelClass::query()
-                    ->whereKey($update['id'])
-                    ->update(['order' => $update['order']]);
-            }
-        }
+        $this->persistOrdersTwoPhase($modelClass, $updates);
 
         return count($updates);
     }

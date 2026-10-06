@@ -181,7 +181,7 @@ function ExplainPane({explain, explainKey, preview = false}) {
                 const json = await res.json().catch(() => null);
                 if (!res.ok) {
                     throw new Error(
-                        json?.data?.data?.error
+                        json?.error
                             ?? json?.message
                             ?? t('word.explain_failed', {status: res.status}),
                     );

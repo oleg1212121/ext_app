@@ -297,6 +297,28 @@ class AIModelResolver
     }
 
     /**
+     * The word-popup Context explanation config both reading surfaces ship
+     * as their `explain` prop — assembled server-side once, so no surface
+     * rebuilds it client-side. $answerLabel rides along on the simulator
+     * only (its Models used popup also names the model behind the
+     * assessment answer; the reader has no AI question and passes null).
+     *
+     * @return array{enabled: bool, modelKey: int|null, modelLabel: string|null, followsAnswer: bool, answerLabel: string|null}
+     */
+    public function explainConfig(?string $answerLabel = null): array
+    {
+        $explanationModel = $this->resolveExplanationModel();
+
+        return [
+            'enabled' => Auth::user()?->canUseAi() ?? false,
+            'modelKey' => $explanationModel['id'] ?? null,
+            'modelLabel' => $explanationModel['label'] ?? null,
+            'followsAnswer' => $this->explanationModelFollowsAnswer(),
+            'answerLabel' => $answerLabel,
+        ];
+    }
+
+    /**
      * Find a stored ai_models.id among the user's available choices. A null
      * stored id is "unset", not "unavailable" — it returns null without
      * falling back; a stale id only falls back when $fallbackToCheapest.

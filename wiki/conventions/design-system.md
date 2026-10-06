@@ -4,7 +4,7 @@ title: Design System
 description: Visual language for the app — colors, type, layout, and signature patterns to keep new pages consistent with the Bilinguals simulator redesign.
 tags: [design, frontend, ui, tailwind, tokens]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-30T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-05T00:00:00Z }
 ---
 
 # Design System
@@ -52,6 +52,11 @@ needed, re-read the layout; an accent is a signal, not decoration.
 > The legacy `--color-vellum/*` token family (warm cream + vermilion) remains in
 > `app.css` for backward compatibility with other pages and Blade/Alpine views.
 > New Inertia/React pages should use `--wbench-*`, not `--color-*`.
+>
+> Exception (2026-10-05): the reading-language segmented toggle paints its active
+> side with the `--color-vermilion` family on **both** the reader and the
+> simulator (`Bilinguals.jsx`), so the same control reads identically across
+> pages — parity with the reader wins over the `--wbench-*`-only guidance here.
 
 ## Type — three roles (serif reading, sans chrome, mono data), each full Latin + Cyrillic
 

@@ -45,6 +45,14 @@ it('shows the stored answer model and explanation model', function () {
             ->where('answerModel.label', 'Cheap (free)')
             ->where('explanationModel.id', $fancy->id)
             ->where('explanationModel.followsAnswer', false)
+            // The word popup's Context explanation config, assembled
+            // server-side like the reader's; answerLabel names the model
+            // behind the assessment answer (simulator-only).
+            ->where('explain.enabled', true)
+            ->where('explain.modelKey', $fancy->id)
+            ->where('explain.modelLabel', 'Fancy ($500,000.00/$500,000.00)')
+            ->where('explain.followsAnswer', false)
+            ->where('explain.answerLabel', 'Cheap (free)')
         );
 });
 
@@ -82,6 +90,9 @@ it('renders an empty state when the user has no keys', function () {
             ->where('answerModel', null)
             ->where('explanationModel', null)
             ->where('canUseAi', false)
+            ->where('explain.enabled', false)
+            ->where('explain.modelKey', null)
+            ->where('explain.answerLabel', null)
             // The panel itself is not AI-gated anymore: keyless users see it
             // with the add-an-API-key call to action in its header.
             ->where('showAI', true)

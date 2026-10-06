@@ -27,6 +27,10 @@ except ImportError:  # pragma: no cover - pyphen is in requirements.txt
 
 COMBINING_ACUTE = "\u0301"
 
+# Reported on every /enrich response and stamped by Laravel; a bump here
+# must be mirrored in EnglishStressEnricher::pythonVersion() (ADR 0067).
+ALGORITHM_VERSION = 1
+
 # IPA vowel symbols (base letters; combining diacritics after them do not
 # start a new nucleus because they are not in this set).
 IPA_VOWELS = set("aeiouyæɑɒøœəɪɛʌʊɔɜɚɝɐɞɤʉ")

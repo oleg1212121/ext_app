@@ -16,11 +16,13 @@
 @theme {
     --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     --font-serif: 'Fraunces', 'Figtree', Georgia, 'Times New Roman', serif;
-    /* Reading text only: must be a single font covering Latin + Cyrillic +
-       U+0301 — if a combining stress mark and its base letter resolve from
-       different fonts, mark attachment breaks and the acute renders as a
-       spacing glyph (huge gaps after stressed vowels). Fraunces has no
-       Cyrillic subset, so it must not lead this stack. */
+    /* Reading text only: a single font covering Latin + Cyrillic, so glyphs
+       never switch fonts mid-word. The stress toggle draws acutes via CSS
+       (.stress-mark spans) and renders no U+0301, but source content itself
+       may still carry combining marks — if such a mark and its base letter
+       resolve from different fonts, mark attachment breaks and the acute
+       renders as a spacing glyph (huge gaps after stressed vowels). Fraunces
+       has no Cyrillic subset, so it must not lead this stack. */
     --font-reading: 'Source Serif 4', Georgia, 'Times New Roman', serif;
 
     --color-vellum: #ECE4D0;
@@ -177,6 +179,7 @@ b, strong {
     --word-known: #16a34a;
     --phrasal-underline: var(--color-verdigris);
     --phrasal-hit-background: gainsboro;
+    --stress-mark-color: red;
 }
 
 .dark {
@@ -240,4 +243,31 @@ b, strong {
     text-decoration-thickness: from-font;
     text-underline-offset: 4px;
     cursor: help;
+}
+
+/* Stress-mark overlay (ADR 0052 rendering): each stressed word hosts empty,
+   absolutely-positioned .stress-mark children — the word's text stays one
+   intact text node of original characters, so selection, copy/paste, and
+   double-click dictionary extensions (Yomitan reads per text node) see
+   exactly the plain word. WordText's layout effect pins each mark over its
+   glyph in both axes against the sentence-level positioned block (the
+   reader side div / simulator cell) — never against the inline host word:
+   a host that wraps across lines would hand the mark a wrong line-start
+   offset and widen the scrollable overflow into a horizontal scrollbar.
+   Unmeasured marks fall back to their static position beside the word.
+   Being text-free, marks can never reach the clipboard. */
+
+.stress-mark {
+    position: absolute;
+    /* Vertical placement: WordText measures the stressed glyph's line top
+       (px, relative to the sentence block) into --stress-mark-line-top; the
+       offset here is the hand-tuned accent position. Marks without a
+       measurement substitute auto and fall back to their static position
+       beside the word. */
+    top: calc(var(--stress-mark-line-top, auto) - 5px);
+    width: 0.32em;
+    height: 0.21em;
+    background: var(--stress-mark-color);
+    clip-path: polygon(62% 0, 100% 0, 20% 100%, 0 100%);
+    pointer-events: none;
 }

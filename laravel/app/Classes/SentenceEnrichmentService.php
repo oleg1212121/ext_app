@@ -10,6 +10,7 @@ use App\Models\EntityWord;
 use App\Models\Word;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Sentence enrichment: the per-language analyses (stress marks ru/en, phrasal
@@ -33,15 +34,6 @@ class SentenceEnrichmentService
         private readonly EnricherRegistry $registry,
     ) {}
 
-    public static function create(): self
-    {
-        return new self(
-            python: PythonClient::create(),
-            tokenizer: app(WordTokenizer::class),
-            registry: app(EnricherRegistry::class),
-        );
-    }
-
     /**
      * The entity's language enrichers that currently need to run (never
      * enriched, a newly registered enricher, or sentence changes since).
@@ -61,15 +53,18 @@ class SentenceEnrichmentService
     /**
      * Stamp the given enrichers done on entities.enrichment_stamps (quiet
      * base-builder write, jsonb merge so concurrent stampers can't clobber
-     * each other's keys). Each stamp carries the enricher's algorithm
-     * version, so a version bump re-stales the whole corpus (ADR 0059).
-     * Null stamps every enricher of the entity's language — the
+     * each other's keys). Each stamp carries the Laravel algorithm version
+     * and the python-reported algorithm version, so a bump on either side
+     * re-stales the whole corpus (ADR 0059, ADR 0067); a version the chunk
+     * run did not report falls back to the enricher's declared python
+     * version. Null stamps every enricher of the entity's language — the
      * whole-run-done stamp; a language with no enrichers ends as an empty
      * map so it never counts as stale again.
      *
      * @param  list<Enricher>|null  $enrichers
+     * @param  array<string, int>  $reportedVersions  enricher key -> python-reported version
      */
-    public function markEnriched(Entity $entity, ?array $enrichers = null): void
+    public function markEnriched(Entity $entity, ?array $enrichers = null, array $reportedVersions = []): void
     {
         $enrichers ??= $this->registry->forLanguage($entity->language?->code ?? '');
 
@@ -78,6 +73,7 @@ class SentenceEnrichmentService
         foreach ($enrichers as $enricher) {
             $stamps[$enricher->key()] = [
                 'v' => $enricher->version(),
+                'pv' => $reportedVersions[$enricher->key()] ?? $enricher->pythonVersion(),
                 'at' => now()->toISOString(),
             ];
         }
@@ -107,14 +103,16 @@ class SentenceEnrichmentService
      *
      * @param  Collection<int, EntitySentence>  $sentences
      * @param  list<Enricher>|null  $enrichers
-     * @return int Number of sentences written.
+     * @return array{written: int, versions: array<string, int>} sentences
+     *                                                           written and the python-reported algorithm versions — the
+     *                                                           stamp's input (ADR 0067)
      */
-    public function enrichChunk(Entity $entity, Collection $sentences, ?array $enrichers = null): int
+    public function enrichChunk(Entity $entity, Collection $sentences, ?array $enrichers = null): array
     {
         $enrichers ??= $this->registry->forLanguage($entity->language?->code ?? '');
 
         if ($enrichers === []) {
-            return 0;
+            return ['written' => 0, 'versions' => []];
         }
 
         $language = $entity->language?->code ?? '';
@@ -128,10 +126,15 @@ class SentenceEnrichmentService
         $resolved = $this->resolveBase($entity, $keys);
 
         $hintFields = [];
+        $hintFieldNames = [];
 
         foreach ($enrichers as $enricher) {
             foreach ($enricher->tokenHints($entity, $keys, $resolved) as $key => $fields) {
                 $hintFields[$key] = array_merge($hintFields[$key] ?? [], $fields);
+
+                foreach (array_keys($fields) as $name) {
+                    $hintFieldNames[$name] = true;
+                }
             }
         }
 
@@ -160,13 +163,16 @@ class SentenceEnrichmentService
                 'id' => $sentence->id,
                 'text' => $sentence->content,
                 'tokens' => array_map(
-                    fn (array $t): array => $this->tokenPayload($t, $resolved, $hintFields),
+                    fn (array $t): array => $this->tokenPayload($t, $resolved, $hintFields, array_keys($hintFieldNames)),
                     $tokenized[$sentence->id],
                 ),
             ];
         }
 
-        $results = $this->python->enrich($payload);
+        $response = $this->python->enrich($payload);
+        $results = $response['results'];
+        $versions = $response['versions'];
+        $this->checkVersionParity($entity, $enrichers, $versions);
 
         foreach ($empty as $id) {
             $results[] = ['id' => $id, 'output' => []];
@@ -179,7 +185,7 @@ class SentenceEnrichmentService
                 $row = [];
 
                 foreach ($enrichers as $enricher) {
-                    $row[$enricher->column()] = $enricher->toStorage($result['output'][$enricher->key()] ?? null);
+                    $row[$enricher->annotation()->column] = $enricher->toStorage($result['output'][$enricher->key()] ?? null);
                 }
 
                 EntitySentence::query()
@@ -190,33 +196,64 @@ class SentenceEnrichmentService
             }
         });
 
-        return $written;
+        return ['written' => $written, 'versions' => $versions];
+    }
+
+    /**
+     * The version contract (ADR 0067): the python service is expected to
+     * report each dispatched enricher's algorithm version, and every
+     * reported value must match the enricher's declared python version. A
+     * mismatch only warns — the stamp records what actually ran, so
+     * staleFor re-stales the entity against the declared version and the
+     * sweep re-runs the analysis once the two sides agree.
+     *
+     * @param  list<Enricher>  $enrichers
+     * @param  array<string, int>  $reported
+     */
+    private function checkVersionParity(Entity $entity, array $enrichers, array $reported): void
+    {
+        foreach ($enrichers as $enricher) {
+            $version = $reported[$enricher->key()] ?? null;
+
+            if ($version !== $enricher->pythonVersion()) {
+                Log::warning('Enrichment algorithm version mismatch: the python service reports a version the enricher does not expect — the stamp records what ran, and the sweep will re-run the analysis (ADR 0067).', [
+                    'entity_id' => $entity->id,
+                    'enricher' => $enricher->key(),
+                    'expected' => $enricher->pythonVersion(),
+                    'reported' => $version,
+                ]);
+            }
+        }
     }
 
     /**
      * Attach dictionary hints to a token: the shared base resolution (word
-     * class, lemma) plus whatever fields the active enrichers contributed.
+     * class, lemma) plus whatever fields the active enrichers contributed —
+     * a field no active enricher contributes is not sent (ADR 0067).
      *
      * @param  array{surface: string, start: int, end: int}  $token
      * @param  array<string, array{cls: ?string, lemma: ?string, headword: ?string, word_id: ?int}>  $resolved
      * @param  array<string, array<string, mixed>>  $hintFields
+     * @param  list<string>  $hintFieldNames
      */
-    private function tokenPayload(array $token, array $resolved, array $hintFields): array
+    private function tokenPayload(array $token, array $resolved, array $hintFields, array $hintFieldNames): array
     {
         $key = $this->tokenizer->lookupKey($token['surface']);
         $hint = array_merge($resolved[$key] ?? [], $hintFields[$key] ?? []);
 
-        return [
+        $payload = [
             'surface' => $token['surface'],
             'start' => $token['start'],
             'end' => $token['end'],
             'cls' => $hint['cls'] ?? null,
             'lemma' => $hint['lemma'] ?? null,
-            'ipa' => $hint['ipa'] ?? null,
-            'parts' => $hint['parts'] ?? null,
-            'stressed' => $hint['stressed'] ?? null,
-            'verb_lemmas' => $hint['verb_lemmas'] ?? null,
         ];
+
+        foreach ($hintFieldNames as $name) {
+            $payload[$name] = $hint[$name] ?? null;
+        }
+
+        return $payload;
     }
 
     /**

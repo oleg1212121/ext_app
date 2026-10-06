@@ -49,6 +49,19 @@ export function rowWordIds(text, wordMap = {}) {
 }
 
 /**
+ * Set one word's familiarity status on both canonical sides of a word-map
+ * pair, returning a new pair (null maps stay null). The shared recolor step
+ * behind a popup progress change on every reading surface.
+ */
+export function patchWordStatus(maps, key, status) {
+    if (!maps) {
+        return maps;
+    }
+    const apply = (map) => (map?.[key] ? {...map, [key]: {...map[key], s: status}} : map);
+    return {a: apply(maps.a), b: apply(maps.b)};
+}
+
+/**
  * Apply {wordId: familiarity} updates to a word map, returning a new map
  * (or the same one when nothing matches).
  */

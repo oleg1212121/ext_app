@@ -89,6 +89,24 @@ class EnricherRegistry
     }
 
     /**
+     * The deduplicated display verticals (ADR 0067): one Annotation per
+     * payload key even where two enrichers feed it (both stress analyses
+     * share the stress marks annotation).
+     *
+     * @return list<Annotation>
+     */
+    public function annotations(): array
+    {
+        $byPayloadKey = [];
+
+        foreach ($this->enrichers as $enricher) {
+            $byPayloadKey[$enricher->annotation()->payloadKey] ??= $enricher->annotation();
+        }
+
+        return array_values($byPayloadKey);
+    }
+
+    /**
      * Every registered enricher key, manifest order.
      *
      * @return list<string>
@@ -116,11 +134,66 @@ class EnricherRegistry
             return [];
         }
 
-        $stamps = $entity->enrichment_stamps ?? [];
-        $lastSentenceChange = EntitySentence::query()
-            ->where('entity_id', $entity->id)
-            ->max('updated_at');
+        return $this->filterStale(
+            $enrichers,
+            $entity->enrichment_stamps ?? [],
+            EntitySentence::query()
+                ->where('entity_id', $entity->id)
+                ->max('updated_at'),
+        );
+    }
 
+    /**
+     * staleFor for many entities at once: one grouped max(updated_at) query
+     * instead of one per entity, so the sweep's scan stays bounded no matter
+     * how large the catalog grows (ADR 0043).
+     *
+     * @param  iterable<int, Entity>  $entities
+     * @return array<int, list<Enricher>> entity id -> its stale enrichers
+     */
+    public function staleForMany(iterable $entities): array
+    {
+        $byId = [];
+
+        foreach ($entities as $entity) {
+            $byId[$entity->id] = $entity;
+        }
+
+        if ($byId === []) {
+            return [];
+        }
+
+        $lastChanges = EntitySentence::query()
+            ->whereIn('entity_id', array_keys($byId))
+            ->groupBy('entity_id')
+            ->selectRaw('entity_id, max(updated_at) as last_change')
+            ->pluck('last_change', 'entity_id');
+
+        $stale = [];
+
+        foreach ($byId as $id => $entity) {
+            $stale[$id] = $this->filterStale(
+                $this->forLanguage($entity->language?->code ?? ''),
+                $entity->enrichment_stamps ?? [],
+                $lastChanges[$id] ?? null,
+            );
+        }
+
+        return $stale;
+    }
+
+    /**
+     * The staleness predicate behind staleFor/staleForMany: a missing stamp,
+     * an older algorithm version on either side, or a sentence change after
+     * the stamp makes the enricher stale.
+     *
+     * @param  list<Enricher>  $enrichers
+     * @param  array<string, mixed>  $stamps
+     * @param  string|null  $lastSentenceChange  raw aggregate value, not a cast datetime
+     * @return list<Enricher>
+     */
+    private function filterStale(array $enrichers, array $stamps, ?string $lastSentenceChange): array
+    {
         return array_values(array_filter(
             $enrichers,
             function (Enricher $enricher) use ($stamps, $lastSentenceChange): bool {
@@ -139,6 +212,16 @@ class EnricherRegistry
                 }
 
                 if ((int) (is_array($stamp) ? ($stamp['v'] ?? 1) : 1) < $enricher->version()) {
+                    return true;
+                }
+
+                // The python-side algorithm version the stamp was written
+                // with (ADR 0067). Legacy stamps carry no pv — read as 0, so
+                // every pre-parity stamp is stale exactly once and the sweep
+                // rewrites it in the versioned shape.
+                $pythonVersion = (int) (is_array($stamp) ? ($stamp['pv'] ?? 0) : 0);
+
+                if ($pythonVersion < $enricher->pythonVersion()) {
                     return true;
                 }
 

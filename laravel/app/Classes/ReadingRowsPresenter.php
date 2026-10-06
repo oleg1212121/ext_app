@@ -2,6 +2,8 @@
 
 namespace App\Classes;
 
+use App\Classes\Enrichment\Annotation;
+use App\Classes\Enrichment\EnricherRegistry;
 use App\Models\Entity;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
@@ -22,6 +24,14 @@ use Illuminate\Support\Collection;
  */
 class ReadingRowsPresenter
 {
+    /** @var list<Annotation> */
+    private array $annotations;
+
+    public function __construct(EnricherRegistry $enrichers)
+    {
+        $this->annotations = $enrichers->annotations();
+    }
+
     /**
      * @param  Collection<int, MeaningMatch>  $meaningMatches
      * @return list<array{key: string, a: array, b: array}>
@@ -188,12 +198,17 @@ class ReadingRowsPresenter
             'text' => $sentence->content,
         ];
 
-        if ($sentence->stressed_content !== null) {
-            $payload['stressed'] = $sentence->stressed_content;
-        }
+        // The annotation keys ride the registry's verticals (ADR 0067):
+        // present only when the sentence has the data — no null-for-absent
+        // level anywhere in the shape.
+        foreach ($this->annotations as $annotation) {
+            $value = $sentence->{$annotation->column};
 
-        if (! empty($sentence->phrasal_verbs)) {
-            $payload['phrasal'] = array_values($sentence->phrasal_verbs);
+            if ($value === null || $value === []) {
+                continue;
+            }
+
+            $payload[$annotation->payloadKey] = is_array($value) ? array_values($value) : $value;
         }
 
         return $payload;

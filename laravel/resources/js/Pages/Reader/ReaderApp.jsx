@@ -3,26 +3,28 @@ import {router} from '@inertiajs/react';
 import ReaderRow from './ReaderRow.jsx';
 import {popupFontSizeFor} from '../../Components/WordPopup.jsx';
 import {Icon} from '../../Components/icons.jsx';
+import {SpinnerSvg} from '../../Components/Spinner.jsx';
+import ReadingSideRadiogroup from '../../Components/ReadingSideRadiogroup.jsx';
+import AnnotationToggle from '../../Components/AnnotationToggle.jsx';
+import PageInput from '../../Components/PageInput.jsx';
 import {useI18n} from '../../i18n';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
+import {useFontSize} from '../../hooks/useFontSize';
 import {loadReadingPositions, saveReadingPositions} from '../../lib/readingPosition';
 import {useSideFlip} from '../../hooks/useSideFlip';
 import {rowsHaveAnnotation} from '../../lib/readingRows.mjs';
+import {clampPage} from '../../lib/pagination.mjs';
+import {patchWordStatus} from '../../lib/wordFamiliarity';
 
-const MIN_FONT_SIZE = 16;
-const MAX_FONT_SIZE = 38;
 const DEFAULT_FONT_SIZE = 20;
 const FONT_STEP = 2;
+const MIN_FONT_SIZE = 16;
+const MAX_FONT_SIZE = 38;
 
 // Props a page turn replaces; everything else (entity, fontSize, audio
 // state) survives the visit untouched. With one row payload there is
 // nothing that can go stale relative to another prop.
 const PAGED_PROPS = ['rows', 'wordMaps', 'meta'];
-
-const LANG_GLYPH = {
-    en: 'EN',
-    ru: 'RU',
-};
 
 const IconButton = ({onClick, disabled, label, children}) => (
     <button
@@ -44,7 +46,7 @@ const IconButton = ({onClick, disabled, label, children}) => (
     </button>
 );
 
-const ToggleButton = ({onClick, active, label, monochrome = false, children}) => (
+const ToggleButton = ({onClick, active, label, children}) => (
     <button
         type="button"
         onClick={onClick}
@@ -56,12 +58,7 @@ const ToggleButton = ({onClick, active, label, monochrome = false, children}) =>
             'border transition-colors duration-150',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
             active
-                ? monochrome
-                    ? // The stress-marks toggle stays on persistently (autosaved
-                      // preference), so a tinted fill reads as a colored icon —
-                      // the border alone carries the on-state.
-                      'border-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70'
-                    : 'border-[var(--color-vermilion)] text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] dark:text-[var(--color-vermilion-night)]'
+                ? 'border-[var(--color-vermilion)] text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] dark:text-[var(--color-vermilion-night)]'
                 : 'border-[var(--color-hairline)] text-[var(--color-ink-soft)] dark:border-[var(--color-hairline-night)] dark:text-[var(--color-vellum-night)]/70 hover:border-[var(--color-ink)] dark:hover:border-[var(--color-vellum-night)] hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
         ].join(' ')}
     >
@@ -90,7 +87,12 @@ export default function ReaderApp({
     explain = null,
 }) {
     const {t} = useI18n();
-    const [fontSize, setFontSize] = useState(savedFontSize ?? DEFAULT_FONT_SIZE);
+    const {fontSize, adjust: adjustFontSize} = useFontSize({
+        initial: savedFontSize ?? DEFAULT_FONT_SIZE,
+        min: MIN_FONT_SIZE,
+        max: MAX_FONT_SIZE,
+        step: FONT_STEP,
+    });
     // Word-popup typography follows the page's font setting (ADR 0031).
     const popupFontSize = popupFontSizeFor(fontSize);
     const [highlight, setHighlight] = useState(savedHighlight);
@@ -111,7 +113,6 @@ export default function ReaderApp({
     const [audioStatus, setAudioStatus] = useState('');
     const [audioReady, setAudioReady] = useState(false);
     const [audioPlaying, setAudioPlaying] = useState(false);
-    const [pageInput, setPageInput] = useState('1');
 
     const contentRef = useRef(null);
     const audioRef = useRef(null);
@@ -130,10 +131,6 @@ export default function ReaderApp({
         };
     }, []);
 
-    const adjustFontSize = useCallback((delta) => {
-        setFontSize((current) => Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, current + delta)));
-    }, []);
-
     const toggleRow = useCallback((index) => {
         setExpandedRows((prev) => {
             const next = new Set(prev);
@@ -149,8 +146,7 @@ export default function ReaderApp({
     // Word progress changed in a popup: recolor the same word everywhere (a
     // token can appear on both canonical sides).
     const handleWordProgress = useCallback((key, status) => {
-        const apply = (map) => (map[key] ? {...map, [key]: {...map[key], s: status}} : map);
-        setWordMaps((maps) => ({a: apply(maps.a), b: apply(maps.b)}));
+        setWordMaps((maps) => patchWordStatus(maps, key, status));
     }, []);
 
     // The language toggle only exists when the text has a translation side;
@@ -164,16 +160,18 @@ export default function ReaderApp({
 
     const firstDescriptor = useMemo(() => ({
         side: firstSide,
+        language: {code: langs[firstSide] ?? null, name: null},
         wordMap: wordMaps[firstSide] ?? {},
         highlightable: !!highlightable[firstSide],
         explainable: !!explainable[firstSide],
-    }), [firstSide, wordMaps, highlightable, explainable]);
+    }), [firstSide, langs, wordMaps, highlightable, explainable]);
     const secondDescriptor = useMemo(() => (secondSide === null ? null : {
         side: secondSide,
+        language: {code: langs[secondSide] ?? null, name: null},
         wordMap: wordMaps[secondSide] ?? {},
         highlightable: !!highlightable[secondSide],
         explainable: !!explainable[secondSide],
-    }), [secondSide, wordMaps, highlightable, explainable]);
+    }), [secondSide, langs, wordMaps, highlightable, explainable]);
 
     const setReadingLang = useCallback((side) => {
         // Both sides can share a language code; picking the other radio is
@@ -304,7 +302,7 @@ export default function ReaderApp({
     // must be resynced by hand: useState initializers don't re-run on a
     // preserved-state visit.
     const goToPage = useCallback((page) => {
-        const target = Math.max(1, Math.min(lastPage, page));
+        const target = clampPage(page, lastPage);
         if (target === currentPage) {
             return;
         }
@@ -317,21 +315,8 @@ export default function ReaderApp({
         });
     }, [currentPage, lastPage, savePosition]);
 
-    // The page picker mirrors the page the reader is on; typed values commit
-    // on Enter or blur, clamped into range.
-    useEffect(() => {
-        setPageInput(String(currentPage));
-    }, [currentPage]);
-
-    const submitPageInput = () => {
-        const parsed = Number.parseInt(pageInput, 10);
-        const target = Number.isNaN(parsed) ? currentPage : Math.max(1, Math.min(lastPage, parsed));
-        setPageInput(String(target));
-        if (target !== currentPage) {
-            goToPage(target);
-        }
-    };
-
+    // The page picker input is the shared PageInput; goToPage stays the
+    // commit action (an Inertia partial reload).
     const previousPageRef = useRef(currentPage);
     useEffect(() => {
         if (previousPageRef.current === currentPage) {
@@ -361,7 +346,7 @@ export default function ReaderApp({
 
         const positions = loadReadingPositions();
         const saved = Number.isInteger(positions[positionKey]) ? positions[positionKey] : 1;
-        const clamped = Math.max(1, Math.min(lastPage, saved));
+        const clamped = clampPage(saved, lastPage);
 
         if (saved !== clamped) {
             savePosition(clamped);
@@ -419,43 +404,26 @@ export default function ReaderApp({
                     <div className="min-w-0 flex items-baseline gap-3">
                         <h1 className="truncate font-serif text-lg sm:text-xl tracking-tight">{entityTitle}</h1>
                         <span className="font-sans text-[10px] tracking-[0.2em] uppercase text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
-                            {LANG_GLYPH[readingLang] ?? readingLang}
+                            {readingLang?.toUpperCase() ?? readingLang}
                         </span>
                     </div>
 
                     <div className="ml-auto flex flex-wrap items-center gap-2 sm:gap-3">
                         {hasTranslation && (
-                            <div
-                                role="radiogroup"
-                                aria-label={t('reader.reading_language')}
-                                className="flex items-center gap-0.5 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm p-0.5"
-                            >
-                                {['a', 'b'].map((side) => {
-                                    const code = langs[side];
-                                    return (
-                                        <label
-                                            key={side}
-                                            className={[
-                                                'px-2 h-7 inline-flex items-center font-sans text-xs tracking-wide rounded-sm cursor-pointer select-none',
-                                                'transition-colors duration-150 focus-within:outline-none focus-within:ring-2 focus-within:ring-[var(--color-vermilion)]',
-                                                readingLang === code
-                                                    ? 'bg-[var(--color-vermilion)] text-vellum dark:bg-[var(--color-vermilion-night)] dark:text-ink-night'
-                                                    : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
-                                            ].join(' ')}
-                                        >
-                                            <input
-                                                type="radio"
-                                                name="reader-reading-language"
-                                                value={code}
-                                                checked={readingLang === code}
-                                                onChange={() => setReadingLang(side)}
-                                                className="sr-only"
-                                            />
-                                            {LANG_GLYPH[code] ?? code}
-                                        </label>
-                                    );
-                                })}
-                            </div>
+                            <ReadingSideRadiogroup
+                                variant="reader"
+                                ariaLabel={t('reader.reading_language')}
+                                name="reader-reading-language"
+                                options={['a', 'b'].map((side) => ({
+                                    value: langs[side],
+                                    label: (langs[side] ?? '').toUpperCase(),
+                                }))}
+                                value={readingLang}
+                                // Values are language codes (both sides may share
+                                // one); map back to the canonical side for the
+                                // same-code no-op guard.
+                                onChange={(code) => setReadingLang(langs.a === code ? 'a' : 'b')}
+                            />
                         )}
 
                         <div className="flex items-center gap-0.5 border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm">
@@ -483,14 +451,10 @@ export default function ReaderApp({
                             <Icon name="highlighter" className="h-4 w-4"/>
                         </ToggleButton>
                         {hasStressedData ? (
-                            <ToggleButton active={showStress} monochrome label={t('reader.stress_marks')} onClick={() => setShowStress((v) => !v)}>
-                                <Icon name="stress" className="h-4 w-4"/>
-                            </ToggleButton>
+                            <AnnotationToggle active={showStress} label={t('reader.stress_marks')} icon="stress" onClick={() => setShowStress((v) => !v)}/>
                         ) : null}
                         {hasPhrasalData ? (
-                            <ToggleButton active={showPhrasal} monochrome label={t('reader.phrasal_verbs')} onClick={() => setShowPhrasal((v) => !v)}>
-                                <Icon name="phrasal" className="h-4 w-4"/>
-                            </ToggleButton>
+                            <AnnotationToggle active={showPhrasal} label={t('reader.phrasal_verbs')} icon="phrasal" onClick={() => setShowPhrasal((v) => !v)}/>
                         ) : null}
                         <ToggleButton active={sideBySide} label={sideBySide ? t('reader.stacked') : t('reader.side_by_side')} onClick={() => setSideBySide((v) => !v)}>
                             <Icon name="columns" className="h-4 w-4"/>
@@ -587,15 +551,7 @@ export default function ReaderApp({
                     <ol role="list" className="list-none m-0 p-0 space-y-1">
                         {restoring ? (
                             <li className="flex justify-center py-24" aria-busy="true">
-                                <svg
-                                    className="animate-spin h-6 w-6 text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                                </svg>
+                                <SpinnerSvg className="animate-spin h-6 w-6 text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]"/>
                             </li>
                         ) : rows.map((row, index) => (
                             <ReaderRow
@@ -639,26 +595,13 @@ export default function ReaderApp({
                             <Icon name="chevronLeft" className="h-4 w-4"/>
                         </IconButton>
                         <span className="flex items-center gap-1.5 font-sans text-xs tabular-nums text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
-                            <input
+                            <PageInput
+                                variant="reader"
                                 id="readerPagePicker"
-                                // type="text" + inputMode, not type="number":
-                                // Chrome's number input spins the value on
-                                // wheel while focused, an unneeded re-render
-                                // trigger under the cursor in a scroll area.
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                value={pageInput}
-                                aria-label={t('reader.go_to_page')}
-                                onChange={(event) => setPageInput(event.target.value)}
-                                onBlur={submitPageInput}
-                                onKeyDown={(event) => {
-                                    if (event.key === 'Enter') {
-                                        event.preventDefault();
-                                        event.currentTarget.blur();
-                                    }
-                                }}
-                                className="w-14 h-7 px-1 text-center bg-transparent border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
+                                page={currentPage}
+                                lastPage={lastPage}
+                                onCommit={goToPage}
+                                ariaLabel={t('reader.go_to_page')}
                             />
                             <span>{t('reader.page_of', {last: lastPage})}</span>
                         </span>

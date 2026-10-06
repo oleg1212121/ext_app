@@ -88,9 +88,10 @@ class RepairEntityMatchAlignmentCommand extends Command
 
     /**
      * The in-place repair for one match: strict junction-uniqueness pass +
-     * resequence (one service call), then the finalize-style junction-less
-     * backfill on both sides, then a final resequence so the created rows sit
-     * in document order.
+     * resequence (one store call, the dedupe's $removed count comes from the
+     * row delta), then repairCoverage — the junction-less backfill on both
+     * sides, its resequence, and the linked_count sync, whole-or-nothing in
+     * one transaction.
      *
      * @return array{0: int, 1: int, 2: int} [rows removed by the dedupe, single-sided rows created, total order/junction changes]
      */
@@ -108,37 +109,8 @@ class RepairEntityMatchAlignmentCommand extends Command
 
         $removed = $beforeDedupe - $rowCount();
 
-        $claimedOrders = array_fill_keys(
-            MeaningMatch::query()
-                ->where('entity_match_id', $entityMatch->id)
-                ->pluck('order')
-                ->map(fn ($order) => (int) $order)
-                ->all(),
-            true,
-        );
+        [$created, $coverageResequenced] = $store->repairCoverage($entityMatch);
 
-        $created = 0;
-
-        foreach (['a', 'b'] as $side) {
-            [$junctionless, $index] = $store->junctionlessSentencesFor($entityMatch, $side);
-
-            if ($junctionless->isNotEmpty()) {
-                $created += $store->repairJunctionlessSentences(
-                    $entityMatch,
-                    $side,
-                    $junctionless,
-                    $index,
-                    $claimedOrders,
-                );
-            }
-        }
-
-        if ($created > 0) {
-            $resequenced += $store->resequenceMatchesByDocumentPosition($entityMatch);
-        }
-
-        $entityMatch->syncLinkedCount();
-
-        return [$removed, $created, $resequenced];
+        return [$removed, $created, $resequenced + $coverageResequenced];
     }
 }

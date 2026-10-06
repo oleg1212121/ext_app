@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-04T18:40:00Z}
+generated: { by: agent:zcode, at: 2026-10-05T23:10:48+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -25,6 +25,15 @@ sources:
   - id: side-flip-hook
     resource: laravel/resources/js/hooks/useSideFlip.js
     title: useSideFlip (shared Side swap hook)
+  - id: text-engine-hook
+    resource: laravel/resources/js/Pages/Bilinguals/useSimulatorText.js
+    title: useSimulatorText (text engine: rows, paging, position store, side flip, familiarity)
+  - id: ai-stream-hook
+    resource: laravel/resources/js/Pages/Bilinguals/useAiStream.js
+    title: useAiStream (AI answer engine: SSE stream, aiPending, retry)
+  - id: question-hook
+    resource: laravel/resources/js/Pages/Bilinguals/useAssessmentQuestion.js
+    title: useAssessmentQuestion (question template / task-list split)
 ---
 
 # What it does
@@ -43,9 +52,9 @@ variants.
 | `/simulator` | GET | `SimulatorController::simulator` | The standalone page with the **alignment picker** (Practice → Simulator, ADR 0038): same Inertia page `Bilinguals/Bilinguals`, no pinned match — a Select + Load header control lists the readable matches and loads one in place via `POST /text`. The old picker URL `/bilinguals/en/ru/simulator` stays deleted (404, test-guarded) |
 | `/bilinguals/simulator/{entityMatch}` | GET | `SimulatorController::simulatorForMatch` | Inertia page `Bilinguals/Bilinguals` with the match **pinned by the URL** (opened from an alignment card's Simulator button, ADR 0036): no text selector, the match label is shown instead, 403 without `canReadMatch` |
 | `/text` | POST | `SimulatorController::text` | Paginated aligned text content (JSON) |
-| `/ai/question` | POST | `SimulatorController::askAi` | Ask an AI model about the text (JSON), named `ai.question` |
-| `/ai/question/stream` | POST | `SimulatorController::askAiStreamed` | SSE-streamed variant, named `ai.question.stream` |
-| `/ai/word-explain` | POST | `SimulatorController::explainWord` | AI Context explanation of a Ctrl-clicked word in its sentence (JSON), named `ai.word-explain` |
+| `/ai/question` | POST | `ReadingAiController::askAi` | Ask an AI model about the text (JSON), named `ai.question` — the reading surfaces' shared AI-answer controller (ADR 0069) |
+| `/ai/question/stream` | POST | `ReadingAiController::askAiStreamed` | SSE-streamed variant, named `ai.question.stream` |
+| `/ai/word-explain` | POST | `ReadingAiController::explainWord` | AI Context explanation of a Ctrl-clicked word in its sentence (JSON), named `ai.word-explain` — shared with the reader's word popup |
 | `/ui-settings` | PATCH | `UiSettingsController::update` | Debounced autosave of UI settings sections (`simulator` / `reader`), named `ui-settings.update` |
 
 # Key behavior
@@ -70,9 +79,12 @@ variants.
   shows the full "Add an API key…" sentence as a link while `canUseAi` is
   false). The assessment question is
   **split and assembled server-side** (ADR 0040): an admin-editable
-  **Question template** — the format-rules text, stored in the seeded
+  **Question template** — the format-rules text, stored in the
   `prompt_templates` rows (`App\Support\PromptTemplates`, Filament
-  "Prompt Templates" resource, Edit-only) — and a user-editable **task
+  "Prompt Templates" resource, Edit-only; rows are seeded register-only by
+  `PromptTemplateSeeder` — `firstOrCreate`, run per deploy via `deploy.sh`
+  — so admin-edited text survives deploys and blanking a row's text
+  restores the code fallback) — and a user-editable **task
   list** (default also a `prompt_templates` row). The client shows the
   template read-only above the tasks textarea, substituting **both**
   `:base` and `:learning` with the current columns' language names on every
@@ -127,9 +139,14 @@ variants.
   native language"; the wire stays snake_case and the client renames)
   and — so the picker page's language toggle tracks the loaded match
   (ADR 0038) — `languages` (`{a, b}` code/name) and `default_learning_side`
-  (the same side rule the pinned route applies at render time);
+  (the same side rule the pinned route applies at render time).
+  Responses use the reading surfaces' one JSON envelope (ADR 0069):
+  success wraps the payload in `data`; errors are a top-level `error`
+  plus the HTTP status — no `data.data`, no mirrored `code` key.
   `TextContent` renders both cells through the shared `WordText`/`WordPopup`
-  components with a `simulator.highlight_words` toolbar toggle.
+  components with a `simulator.highlight_words` toolbar toggle; its columns
+  take the reading surfaces' display-column descriptors
+  (`{side, language, wordMap, highlightable, explainable}`, ADR 0068).
 * **Revealing a row's target cell credits a read** (+1 familiarity to the
   learning side's dictionary words, ADR 0028): `onToggleRow` fires one
   best-effort `POST /word-events` scoped to the row's `row_key`; the
@@ -207,7 +224,32 @@ variants.
 # Frontend
 
 React page `resources/js/Pages/Bilinguals/` (`Bilinguals.jsx` plus `AI/`,
-`TextContent/`, `Workplace/` sub-components). Props include `pinnedMatch`
+`TextContent/`, `Workplace/` sub-components). The page is layout + toolbar +
+wiring over three page-local engine hooks (ADR 0066's layering;
+`wiki/architecture/frontend.md`):
+
+* **`useSimulatorText`** — the text engine: match selection (pinned vs
+  picker + position store), Reading-row page loading (`POST /text` via
+  `lib/simulatorText.mjs`), the position store, the Side swap (it calls
+  `useSideFlip` itself and exposes `firstSide`/`secondSide`/`toggleTo`),
+  reveal state (`checkedRows`, `allTarget`), word familiarity crediting,
+  and `textPending`. Paging and page-turn gating key off `textPending`
+  alone.
+* **`useAiStream`** — the AI answer engine: `POST /ai/question/stream`
+  fetch-loop over the pinned SSE parser (`lib/sseStream.mjs`), throttled
+  markdown re-render, last-payload retry, and `aiPending`. Asking gates on
+  `aiPending` alone — asking during a page fetch is allowed and streaming
+  no longer disables page turns (the page's Spinner shows on either flag).
+* **`useAssessmentQuestion`** — the question template / task-list split
+  (ADR 0040): effective tasks, the `:base`/`:learning` substitution, reset.
+
+Panel drag-resize goes through the shared `hooks/useDragResize` (the AI
+panel and the workplace pass `startDrag` down; sizes persist via UI
+settings). The page's font size still applies through the injected
+`<style>` element (`lib/simulatorFontStyles.js`), which styles
+`.resizeable_element` markers and `#ai_answer_div`.
+
+Props include `pinnedMatch`
 (`{id, text}` — the URL-pinned match and its toolbar label; **null** on the
 `/simulator` picker entry, where `textList` (`[{id, text}]`, the readable
 matches) drives the Select + Load header instead), `languages`
@@ -221,7 +263,11 @@ the default task list), `answerModel`
 Models used popup), `explanationModel` (`{id, label, followsAnswer}` or
 null — the resolved explanation model: `id` discriminates the word popup's
 client cache, the label and the follows-answer flag feed the Models used
-popup), `show*` feature flags
+popup), `explain` (`{enabled, modelKey, modelLabel, followsAnswer,
+answerLabel}` — the word popup's Context explanation config, assembled
+server-side by `AIModelResolver::explainConfig()` exactly like the
+reader's; `answerLabel` is simulator-only, naming the model behind the
+assessment answer), `show*` feature flags
 (`showWorkplace`, `showQuestion`, `showText`, `showAI`), plus the saved UI
 settings seeds (`fontSize`, `aiPanelWidth`, `workplaceHeight`, and the
 `show*` props; `currentTasks` ships **null** unless the user customized

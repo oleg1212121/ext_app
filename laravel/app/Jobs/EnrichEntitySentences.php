@@ -86,7 +86,7 @@ class EnrichEntitySentences implements ShouldQueue
     public function handle(): void
     {
         $entity = Entity::with('language')->findOrFail($this->entityId);
-        $enrichment = SentenceEnrichmentService::create();
+        $enrichment = app(SentenceEnrichmentService::class);
         $registry = app(EnricherRegistry::class);
         $code = $entity->language?->code ?? '';
 
@@ -106,6 +106,11 @@ class EnrichEntitySentences implements ShouldQueue
         }
 
         $cursor = $this->cursor;
+        // The python-reported algorithm versions of the run's chunks — the
+        // stamp's input (ADR 0067); last chunk wins (same service, same
+        // versions, and an entity with no sentences stamps the declared
+        // fallback).
+        $reportedVersions = [];
 
         for ($i = 0; $i < self::BATCHES_PER_RUN; $i++) {
             $sentences = EntitySentence::query()
@@ -116,7 +121,7 @@ class EnrichEntitySentences implements ShouldQueue
                 ->get();
 
             if ($sentences->isEmpty()) {
-                $enrichment->markEnriched($entity, $enrichers);
+                $enrichment->markEnriched($entity, $enrichers, $reportedVersions);
                 Log::info('EnrichEntitySentences completed', [
                     'entity_id' => $entity->id,
                     'language' => $code,
@@ -126,7 +131,8 @@ class EnrichEntitySentences implements ShouldQueue
                 return;
             }
 
-            $enrichment->enrichChunk($entity, $sentences, $enrichers);
+            $result = $enrichment->enrichChunk($entity, $sentences, $enrichers);
+            $reportedVersions = $result['versions'];
             $cursor = $sentences->last()->id;
         }
 

@@ -1,5 +1,330 @@
 # Directory Update Log
 
+## 2026-10-06 (Band word lists min-merge onto frequency ranks)
+
+New command `words:import-frequency-lists {--path=} {--dry-run}` (ADR
+[0070](../docs/adr/0070-frequency-lists-min-merge.md)): reads the curated
+band word lists in `storage/app/frequency-lists/` (moved out of
+`public/frequencies`; tracked in git via a `!frequency-lists/**`
+exception in `storage/app/.gitignore` — the lists are hand-compiled from
+scratch, and tracking is what carries them to prod and backs them up)
+and applies `words.frequency = least(current, band)` — every word in a
+file gets the file's line-2 band, only ever lowering a rank. Matching is
+direct `l_word` plus the forms path (`forms.l_word → word_id` onto base
+words, aggregated with `min(rank)` so fan-out joins can't pick an
+arbitrary band), all word-class rows together; misses are counted, words
+are never created, and `entities.frequency_counted_at` stays untouched —
+a clamp is not an authoritative re-baseline. Header validation happens
+for all files before any write. `ImportFrequencyListsTest` covers the
+clamp, the forms path, homographs, idempotency, dry-run, per-language
+isolation and stress-mark stripping; `wiki:sync` regenerated the command
+reference.
+
+## 2026-10-06 (Review polish: bounds + construction paths)
+
+Two-axis review (standards + spec) of the six-candidate implementation
+(ADR 0065–0069): no defects found; all suites green (Pest 939, vitest 30,
+build). Follow-up polish from the standards axis: `SavedUiSettings` now
+owns the bounded integer settings as constants (`READER_FONT_SIZE`,
+`SIMULATOR_FONT_SIZE`, `SIMULATOR_AI_PANEL_WIDTH`,
+`SIMULATOR_WORKPLACE_HEIGHT`) and the save-request rules
+(`UpdateUiSettingsRequest::integerRule`) plus both surface controllers'
+clamp seeding read the same min/max/default. `UpdateUiSettingsRequest`
+constructor-injects `EnricherRegistry` (no `app()` inside `rules()`),
+`ReadingRowsPresenter` lost its nullable-registry fallback (tests resolve
+it through the container or construct it with the real registry), and
+`SavedUiSettings::section()` takes the user explicitly instead of reading
+`auth()->user()` internally. The one-off `verticalApprovedUser` guard
+helper became `approvedUser()` in `tests/Pest.php`, per the cross-file
+helper convention.
+
+## 2026-10-05 (Reading-surface chrome kit + one JSON envelope)
+
+The toolbar mechanics ADR 0067 deferred now have one home each (ADR 0068):
+`ReadingSideRadiogroup` (presentational, `variant: 'sim' | 'reader'` —
+palettes and type stay per surface, value semantics stay with the pages:
+side letters + `toggleTo` on the simulator, language codes + the
+same-code no-op guard on the reader), `AnnotationToggle` (the grey-icon
+rule stated once; the simulator's panel tabs share its primitives via
+`PanelToggleTab`), `useFontSize` (numeric-delta clamp/step state;
+application and autosave stay per surface), and `PageInput` (mirroring,
+commit policy — Enter on the simulator, blur on the reader — NaN handling,
+clamping via the new `lib/pagination.mjs`). Pure primitives one-homed:
+`patchWordStatus` (the popup progress recolor both surfaces repeated) and
+`loadJson`/`saveJson` under the three Working-state stores; the reader's
+restore placeholder reuses `SpinnerSvg`. `TextContent` takes the
+descriptor contract — `{side, language, wordMap, highlightable,
+explainable}`, the reader's shape plus the column language — replacing
+its six exploded `target*`/`base*` props (28 → 21); descriptors are
+memoized on raw state in `useSimulatorText`, and the reader's gain the
+`language` field. Deliberately not unified: font ranges, paging transport,
+autosave key names, i18n namespaces.
+
+The reading surfaces' JSON endpoints answer one envelope (ADR 0069): the
+`['data' => ['data' => ..., 'code' => ...]]` double wrap is gone — success
+is `{data: ...}`, errors `{error}` plus the HTTP status (the flat
+`/word-events` convention); `/text`'s inner ADR 0060 keys are untouched.
+The AI answers (`askAi`, `askAiStreamed`, `explainWord`) moved from
+`SimulatorController` to `ReadingAiController` — the word-explain endpoint
+serves the reader's word popup too; paths, names, throttle unchanged.
+`EntityAccessService` is constructor-injected in both surface controllers,
+and `SavedUiSettings` owns the clamped saved-settings seeding both
+repeated (int/bool/annotation prefs). The explain config is built
+server-side for both surfaces by `AIModelResolver::explainConfig()` — the
+simulator ships it as an `explain` prop (with the simulator-only
+`answerLabel`) instead of assembling it client-side. Clients updated in
+lockstep (`responseErrorMessage`, `fetchTextPage`, `WordPopup`); ADRs 0068
+and 0069 recorded; `web-routes.md` regenerated.
+
+## 2026-10-05 (One coverage repair, one two-phase persist primitive)
+
+The junction-less repair stopped being a caller-held protocol:
+`MeaningMatchStore::repairCoverage(EntityMatch)` (ADR 0063, amended) is the
+one coverage-repair interface — one transaction seeding the claimed-orders
+set, backfilling both sides' junction-less sentences, resequencing by
+document position (unconditionally, idempotent) and syncing `linked_count`,
+returning `[created, resequenced]`. The two-method protocol
+(`junctionlessSentencesFor` + `repairJunctionlessSentences(&claimedOrders)`)
+went private, and both callers collapsed to one call: the align job's
+`finalize()` (which keeps the status write; failure semantics tighten from
+best-effort per side to whole-or-nothing with one warning — no more
+half-repaired state only `alignments:repair` could finish) and the
+`alignments:repair` command (which keeps its dedupe-first pass and reporting;
+its conditional second resequence now always runs as a no-op-capable
+idempotent pass). Alongside, the two-phase parking write got one home:
+`SparseOrderService::persistOrdersTwoPhase(modelClass, updates)` — park at
+unique negatives, then the finals, inside one transaction (savepoint under a
+caller's), chunked at 1000. Rewired onto it: `SentenceOrderService::
+persistChanged` (keeps the text-hash bump), `rebalanceAll` (now
+transactional — the scheduled daily `entity-orders:rebalance` no longer
+exposes parks to concurrent readers), `MeaningMatchStore::
+resequenceMatchesByDocumentPosition`, and `AlignmentEditorService::
+persistRowOrderChanges` (whose divergent bare-`-$id` park formula retires) —
+ADR 0064 amended: shared mechanics, row-write domains still separate. New
+tests: `MeaningMatchStoreRepairCoverageTest` (both-sides backfill, the
+claimed-orders nudge, document order, idempotency) and
+`SparseOrderServiceTwoPhaseTest` (past-each-other swap, savepoint nesting
+and rollback-with-caller, empty no-op); all affected suites
+(`ChunkedEntityAlignment`, `RepairEntityMatchAlignment`,
+`ResequenceEntityMatches`, `RebalanceEntityOrdersCommand`,
+`SentenceOrderService`, `AlignmentEditorApi`, `EntityEditing`) pass
+unmodified. CONTEXT.md gains **Coverage repair**.
+
+## 2026-10-05 (Bounded enrichment sweep scan)
+
+`entities:enrich` no longer hydrates every enrichable-language entity and
+runs one `max(entity_sentences.updated_at)` query per entity each five
+minutes: `EnricherRegistry::staleForMany()` decides staleness for a whole
+batch with one grouped query (the predicate moved into a private
+`filterStale` shared with `staleFor`, unchanged per-entity), and the command
+walks `chunkById`, stopping at the `--limit` dispatch cap instead of
+scanning the whole catalog — ADR 0043's bounded-sweep rule now covers the
+scan, not just the dispatch. The sweep also stopped evaluating
+`staleEnrichers` twice per dispatched entity, and its `SentenceEnrichmentService`
+injection (added when `::create()` died) is gone — the sweep talks to the
+registry alone. Tests: `staleForMany`↔`staleFor` parity (fresh stamp,
+missing stamp, sentence-less entity) and the id-ordered `--limit` cap.
+Domains/commands unchanged — no `wiki:sync` needed.
+
+## 2026-10-05 (One construction path through the python seam)
+
+The three domain services that talk to python (`SentenceEnrichmentService`,
+`TextSignatureService`, `SentenceAlignmentService`) lost their `::create()`
+static factories: all nine production call sites (the enrich job + sweep
+command, the signature job + finalize job + Filament findMatch action, the
+align job ×3) now resolve through the container, making the
+`AppServiceProvider` `PythonClient` binding (ADR 0061) the one construction
+path it always claimed to be — `MeaningMatchStore::create()` and
+`PythonClient::create()` (the factory the binding itself uses) stay. Tests
+followed the seam: new `Tests\Support\FakePythonClient` (in-memory adapter;
+`enrich` echoes the keyed ADR 0057/0067 contract by default, other
+endpoints throw the production `PythonClientException` until given a canned
+response) bound via a `fakePython()` helper in tests/Pest.php; wire-level
+`Http::fake()` now lives only in `PythonClientTest`. Migrated:
+EntityEnrichmentTest (the `fakeEnrichResponse` helper became the fake's
+default echo), ChunkedEntityAlignmentTest, AlignmentStaleStatusTest,
+ReAlignPreservesLandmarksTest, EntityIllustrationAlignmentTest,
+EntityStatusLifecycleTest, EntityTextHashRefreshTest, and the unit
+TextSignatureService/SentenceAlignmentService tests — whose transport-retry
+cases were deleted as duplicates of `PythonClientTest`'s. Also dropped:
+`EnrichEntitiesCommand`'s stale "not container-resolvable" comment. The
+test-faking guidance in playbooks/running-tests.md now describes
+`fakePython()` instead of `Http::fake()`. No schema, route or command
+changes — no `wiki:sync` needed.
+
+## 2026-10-05 (Annotation descriptor; python version parity — ADR 0067)
+
+New ADR 0067. The enrichment display layer got its own declarative unit:
+`Annotation` (payloadKey + column + settingKey + Filament preview) — two
+stress enrichers feed one annotation, and `EnricherRegistry::annotations()`
+now drives every derived site (ui_settings validation rules, Reader/
+Simulator preference seeding — wire props unchanged, single-language column
+select, ReadingRowsPresenter payload guard, SentencesRelationManager
+columns, the service's write loop and dynamic token-hint passthrough: a
+hint field no active enricher contributes is no longer sent). Python side:
+each enrichment module exports `ALGORITHM_VERSION`, `/enrich` responses
+report `versions`, enrichers declare `pythonVersion()`, stamps became
+`{v, pv, at}`, and `staleFor` re-stales on a reported python version older
+than declared — algorithm drift across the python boundary now warns and
+self-heals instead of silently keeping old results. Missing `pv` (every
+pre-parity stamp) reads as stale: one accepted corpus-wide re-run through
+the bounded sweep after deploy. New drift guard
+`tests/Feature/EnrichmentVerticalTest.php`; EntityEnrichmentTest and
+PythonClientTest adapted; python test_enrichment.py gained version checks.
+CONTEXT.md gained the Annotation term (Sentence Enrichment Context);
+domains/sentence-enrichment.md updated. No schema, route or command
+changes — no `wiki:sync` needed.
+
+## 2026-10-05 (Bilinguals engine extraction; vitest for pure JS logic; one useDragResize — ADR 0066)
+
+New ADR 0066. The 856-line `Bilinguals.jsx` became layout + toolbar + wiring
+(~460 lines) over three page-local engine hooks: `useSimulatorText` (match
+selection, Reading-row pages, position store, side flip, familiarity
+crediting, `textPending`), `useAiStream` (SSE answer stream, retry,
+`aiPending`), `useAssessmentQuestion` (template/task-list split). The pure
+logic underneath moved to `lib/` — `sseStream.mjs`, `simulatorText.mjs`,
+`aiAsk.mjs`, plus pure additions to `simulatorPosition.js`
+(`writePosition`/`writeCurrentText`, one home for the flip-migration shim)
+and `http.js` (`responseErrorMessage`) — and is now pinned by the repo's
+first JS test runner: vitest (27 tests, Node only, no jsdom/React —
+components stay Pest/manual territory), run via `docker exec … npm run test`
+and a new `frontend` CI job, deliberately not chained into `composer run
+test`. Deliberate behavior change decided in the 2026-10-05 architecture
+review: the shared `pending` flag split into `textPending` + `aiPending` —
+asking no longer aborts during a page fetch and streaming no longer disables
+page turns (the Spinner shows on either). Dead code removed (the unused
+`pending` prop to `TextContent`, the never-read `questionRef`); the ask
+prompt's unmotivated first-asterisk strip is pinned verbatim in
+`lib/aiAsk.mjs`. Also one shared `hooks/useDragResize` replacing three
+hand-rolled copies (simulator AI panel + workplace, crossword right panel —
+still drag-only/ephemeral on the crossword). Wiki: architecture/frontend.md
+gained the JS module layering + vitest sections; bilinguals-simulator.md's
+Frontend section rewritten around the engines; crossword.md and
+running-tests.md updated.
+
+## 2026-10-05 (EntitySentenceStore: one sentence-mutation flow; Filament stale-flip gap fixed — ADR 0065)
+
+New ADR 0065. The mutate → stale-flip → totals-resync flow was a
+hand-composed convention per door, and the doors had drifted:
+`EntityController` composed the stale flip + totals *after* its write
+transaction (non-atomic), and the Filament relation manager resynced totals
+only — it never flipped matches stale, contradicting ADR 0062's totals
+bullet, this file's f4b44e4-era entry, and the `syncTotalsForEntity`
+docblock (a completed match edited in Filament stayed `completed`, with no
+re-align signal). Now `EntitySentenceStore` (`app/Classes/`, named after
+`MeaningMatchStore`) owns insert/update/delete/deleteMany/reorder for the
+entities frontend and the relation manager: each is one transaction wrapping
+placement (`SentenceOrderService`), the write (model events bump
+`sentences_updated_at`), the stale flip, and the totals resync; the
+illustration rules move in with the writes. The relation manager now flips
+stale (visible change: the badge appears after relation-manager edits).
+`AlignmentEditorService::updateSentenceContent` (moved out of the
+controller) keeps ADR 0062's no-stale rule, now pinned by tests in both
+directions; the importer exemption is recorded. Docs corrected rather than
+re-argued: ADR 0062's totals bullet carries an amendment note,
+`syncTotalsForEntity`'s docblock is fixed, CONTEXT.md's Stale/Edit-rule
+entries sharpened (dropped the retired "full editor save"), sentence-alignment
+§7 + ADR 0055 section and entities.md's Match staleness rewritten.
+Tests: new `EntitySentenceStoreTest` (flow + atomicity + pending rule);
+relation-manager suite gains stale assertions for create/edit/delete/bulk;
+editor API suite pins the no-stale rule and the content-edit hash bump.
+
+## 2026-10-05 (fix: stress marks pinned to the sentence block — wrapped words no longer misplace marks or force a horizontal scrollbar)
+
+WordText positioned each empty `.stress-mark` at `glyphX − hostRect.left`,
+but when a host word wrapped across lines (a hyphenated compound on a
+narrow window), the host's union bounding rect no longer matched the box
+the browser anchors abspos children of a fragmented inline to: marks landed
+a line-start offset to the right — past the column edge — widening the
+scrollable overflow of `main#contentContainer` (reader) / the TextContent
+root div (simulator) into a horizontal scrollbar, and the static vertical
+position followed the word's last line instead of the glyph's. Fix:
+`.word-token`/`.stress-host` give up `position: relative` and WordText pins
+every mark in both axes against `mark.offsetParent` — a stable
+sentence-level block, made explicit with `relative` on ReaderRow's side
+divs and the simulator base `<td>` (the target td already had it for the
+ribbon-mark) — measured from the glyph's one-character Range rect (a single
+character never spans lines). Visual unchanged (mark's left edge at glyph
+center, ascent-zone vertical); unmeasured marks fall back to their static
+position beside the word. No PHP/routes changes; docs:
+sentence-enrichment concept.
+
+## 2026-10-05 (fix: Yomitan compat — stressed words keep one intact text node)
+
+The first overlay pass wrapped each stressed vowel in its own
+`.stress-mark` span, splitting every stressed word into three text nodes
+("floated" → "fl" + "o" + "ated") — Yomitan reads text per text node, so
+lookups only saw the fragment under the cursor. Now the stressed word's
+text is never wrapped or split: it stays one intact text node of original
+characters, and the accent is an *empty* absolutely-positioned
+`.stress-mark` child of the word's span (`aria-hidden`, `pointer-events:
+none`) pinned horizontally by WordText's layout effect — a DOM Range over
+the `data-offset` character gives the glyph center relative to the host
+span. Within-word offsets depend only on font metrics (not layout,
+wrapping, or column widths), so re-measuring on structural change
+(including the async word map arriving), `document.fonts.ready`/
+`loadingdone`, and a parent-block `ResizeObserver` (font-size settings,
+zoom) covers every case where offsets can move. Gap segments sub-split at
+word boundaries so single-letter words («я́», «о́») host their own mark
+without splitting anything. `.word-token` gained `position: relative`;
+keyless hosts use `.stress-host`. Verified by 28 SSR DOM assertions
+(whole-word contiguity inside host spans, correct `data-offset`s, fast
+path, phrasal+stress composition, divergence fallback). No PHP changes.
+
+## 2026-10-05 (fix: stress marks render as a CSS overlay over plain text)
+
+The stress-marks toggle used to substitute `stressed_content` (U+0301
+combining acutes + Silero's е→ё) into the DOM, so everything reading the
+page as text broke: copy/paste and double-click dictionary extensions got
+marked characters, and a е→ё swap even changed word-map keys. Now
+`WordText` always segments and renders the plain `text`; the new
+`resources/js/lib/stressMarks.mjs` (`stressOffsets()`) walks the plain and
+stressed strings in lockstep (inserted acutes, е→ё, pre-marked source
+marks, divergence ⇒ plain) and returns the plain-text offsets whose
+characters get wrapped in a `.stress-mark` span whose CSS `::after`
+(`app.css`) draws the acute above the vowel — no combining character and
+no ё substitution ever reaches the DOM, so selection, copy/paste,
+extensions, and browser find see original characters on both the simulator
+and the reader (shared renderer). Stressed е now displays as е́ (accent
+over plain е) instead of ё — deliberate. Enrichment pipeline, payload
+shape, and popups unchanged; `--font-reading` comment + reader concept
+updated (single-font rule now only guards source content that itself
+carries combining marks). No PHP/routes/commands changed. Verified via
+in-container node: `stressOffsets` unit cases + SSR-rendered `WordText`
+DOM assertions (23 checks: no U+0301 in DOM, plain textContent, marks on
+the right vowels, fast path, phrasal-hit + stress composition, divergence
+fallback).
+
+## 2026-10-04 (fix: PromptTemplateSeeder deploy-safe, added to per-deploy seeds)
+
+`PromptTemplateSeeder` switches `updateOrCreate` → `firstOrCreate` (same
+contract as the AiProviderSeeder fix below): rows are register-only, so
+admin-edited prompt text in the Filament "Prompt Templates" resource
+survives deploys; to restore a default an admin blanks the row's text
+(blank falls back to the code constant in `PromptTemplates::row()`). The
+seeder is now also in the per-deploy seed list (`deploy.sh`) — that was
+the actual gap: the 2026-09-24 move of the prompts into `prompt_templates`
+(ADR 0040) never seeded production, so the Filament screen shows an empty
+table there and the app silently runs on the fallback constants in
+`App\Support\PromptTemplates` (which is why AI kept working). The next
+`./deploy.sh` seeds the three rows on prod. Regression test added
+(`PromptTemplateSeederTest`); `wiki/domains/bilinguals-simulator.md`
+updated.
+
+## 2026-10-04 (fix: AiProviderSeeder no longer resets admin provider settings)
+
+`AiProviderSeeder` switches `updateOrCreate` → `firstOrCreate`: the per-deploy
+seed run (`deploy.sh` seeds it with `--force`) now only *registers* providers
+missing from `ai_providers` and never updates existing rows, so admin-edited
+`is_enabled` (the Filament enable/disable toggle), `name`, and `description`
+survive deploys instead of being re-enabled/reset every merge. Previously
+`'is_enabled' => true` sat in the update payload, so every deploy silently
+re-enabled all six providers. Tradeoff: code changes to a provider's
+`getProviderName()` no longer propagate to existing rows (the row is
+admin-owned after creation). Regression test added
+(`AiProviderSeederTest::preserves admin-edited rows on re-seed`);
+`wiki/domains/ai-providers.md` updated.
+
 ## 2026-10-04 (refactor: one word-map / meta payload builder, ADR 0060 amendment)
 
 `ReadingRowsPresenter` is now the reading surfaces' whole payload seam: it
@@ -4034,3 +4359,16 @@ set in dev `.env` (was falling back to 660; wiki already mandated 900), and
 the backlog drained to 0 pending / 0 failed. Repro + guidance now in
 `playbooks/run-alignment.md` (Failure handling); note `queue:listen` (composer
 `dev`) is immune — fresh process per job.
+
+## 2026-10-05 (simulator language toggle retinted to the reader's vermilion)
+
+The learning-language segmented toggle (EN↔RU) in the simulator toolbar
+(`Bilinguals.jsx`) painted its active side with `--wbench-accent`
+(ultramarine `#1F3DDB`) while the reader's identical reading-language toggle
+uses the `--color-vermilion` family (rust `#B0451E` / night `#D4562F`), so the
+same control looked blue on one page and brownish on the other. Retinted the
+simulator toggle's active + focus-ring classes to the reader's exact
+vermilion classes (incl. `text-vellum`/`dark:text-ink-night`); inactive-side
+and hover colors stay `--wbench-*`. Documented as a deliberate exception to
+the "new Inertia pages use `--wbench-*`" guidance in
+`conventions/design-system.md` (parity with the reader wins).

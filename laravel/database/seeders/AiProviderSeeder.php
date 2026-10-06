@@ -15,7 +15,9 @@ class AiProviderSeeder extends Seeder
         foreach ($resolver->keys() as $key) {
             $class = $resolver->providerClass($key);
 
-            AiProvider::query()->updateOrCreate(
+            // Register-only: existing rows are admin-owned (is_enabled, name,
+            // description) and must survive the per-deploy seed run.
+            AiProvider::query()->firstOrCreate(
                 ['key' => $key],
                 [
                     'name' => $class::getProviderName(),

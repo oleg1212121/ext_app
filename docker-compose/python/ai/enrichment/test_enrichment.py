@@ -314,6 +314,20 @@ try:
 except ImportError:
     print("silero-stress unavailable — ru_stress tests skipped")
 
+# --- algorithm versions (ADR 0067) ------------------------------------------
+# Each module reports its version on every /enrich response; Laravel stamps
+# the reported value and re-stales when it disagrees with the enricher's
+# declared pythonVersion().
+from ai.api.schemas import EnrichResponse
+from ai.enrichment import ru_stress
+
+check("versions: ru_stress module declares v1", ru_stress.ALGORITHM_VERSION, 1)
+check("versions: en_stress module declares v1", en_stress.ALGORITHM_VERSION, 1)
+check("versions: phrasal module declares v3", phrasal.ALGORITHM_VERSION, 3)
+
+response = EnrichResponse(results=[], versions={"en_phrasal": phrasal.ALGORITHM_VERSION})
+check("versions: ride the /enrich response schema", response.versions, {"en_phrasal": 3})
+
 if failures:
     print(f"FAIL ({len(failures)}):")
     for f in failures:

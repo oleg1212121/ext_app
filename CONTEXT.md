@@ -130,12 +130,27 @@ The cursor — the per-side sentence offsets where the next chunk starts — is 
 only state a resume reads, so a stopped run can continue without wiping
 already-aligned chunks. _Avoid_: restart, retry.
 
+**Coverage repair**:
+The whole-or-nothing repair that closes a match's total-completeness gap:
+every junction-less sentence of either side is junctioned into a single-sided
+meaning match, the rows are resequenced into document order, and
+`linked_count` is synced — all in one transaction
+(`MeaningMatchStore::repairCoverage`). The align job's completion gate and
+`alignments:repair` are its only callers; a failure rolls the whole repair
+back, so a match is never left half-repaired. See ADR 0063 (amended
+2026-10-05). _Avoid_: finalize (the job's gate is a caller, not the repair),
+backfill (names only the junction step), junction-less repair (the old
+two-method protocol).
+
 **Stale**:
 The display-only state of an entity match whose sentences changed (insert /
-update / delete / reorder) after its last alignment run. Purely a signal —
-the scheduler never picks it up; only an explicit human action (Re-align,
-Run from scratch, a full editor save, a sentence re-import) acts on it or
-clears it. Holds no processing slot. See ADR 0055. _Avoid_: pending (that is
+update / delete / reorder) after its last alignment run. Raised by every
+entity-level sentence mutation — one mutation flow serving the entities
+frontend and the Filament relation manager alike (ADR 0065); the alignment
+editor's own sentence edits never raise or clear it (ADR 0062). Purely a
+signal — the scheduler never picks it up; only an explicit human action
+(Re-align, Run from scratch, a sentence re-import) acts on it or clears it.
+Holds no processing slot. See ADR 0055. _Avoid_: pending (that is
 the fresh-match state), outdated.
 
 **Alignment copy**:
@@ -449,8 +464,10 @@ frontend. A Restricted entity is editable by admin and grantees; a Public
 entity is editable by any approved user. The rule mirrors read —
 `EntityAccessService::canEdit` is structurally identical to `canRead` — except
 that an **Approved entity** is editable by admin only. Sentence mutations
-(insert / update / delete / reorder) flip every entity match involving the
-entity to **Stale**. Deleting a junctioned sentence cascades
+(insert / update / delete / reorder) go through one mutation flow (ADR 0065)
+that flips every entity match involving the entity to **Stale** and resyncs
+its totals; the alignment editor's sentence edits are exempt (ADR 0062).
+Deleting a junctioned sentence cascades
 (junctions removed, emptied meaning matches deleted, `linked_count` updated)
 — a deliberate divergence from the alignment editor's unlink-before-delete
 rule. See ADR 0015, ADR 0034 and ADR 0055.
@@ -675,6 +692,16 @@ looked up in the dictionary and tinted by the reader's **Word familiarity**.
 
 ## Language
 
+**Reading-surface kit**:
+The shared toolbar chrome of the reading surfaces (ADR 0068): the side
+radiogroup, the annotation toggle, the font-size stepper, and the page
+input — one module each, parameterized by surface variant (palettes, type,
+commit policy). What stays per surface: font application, page-commit
+transport, persistence, and the value conventions (side letters vs
+language codes).
+_Avoid_: toolbar component (it is several modules), shared components
+(names the directory, not the concept).
+
 **Interactive word**:
 A dictionary-linked token rendered as clickable text on a reading surface;
 Ctrl-clicking it opens the **Word popup** — a plain click does nothing.
@@ -865,6 +892,17 @@ sentence changed since it did. A language with no enrichers cannot go
 stale. See ADR 0052, ADR 0057, ADR 0059.
 _Avoid_: enrichment status (there is no processing state, only staleness),
 dirty.
+
+**Annotation**:
+The reader-facing vertical of one enrichment analysis — the
+`entity_sentences` column its results persist into, the Reading-row
+payload key they ship under, and the per-user display preference both
+reading surfaces read. Distinct from the Enricher (the analysis): the two
+stress enrichers (ru, en) feed one Annotation. Validation, controller
+preference seeding, payload building and the Filament preview derive from
+the registry's Annotation set. See ADR 0067.
+_Avoid_: overlay, toggle, display (each names one layer, not the vertical),
+enrichment (the whole process).
 
 # Phoneme Reference Context
 

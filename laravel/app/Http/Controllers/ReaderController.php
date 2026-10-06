@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Classes\AIModelResolver;
+use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\EntityAccessService;
 use App\Classes\MeaningMatchPresenter;
 use App\Classes\ReadingRowsPresenter;
@@ -10,6 +11,7 @@ use App\Http\Requests\ReaderPageRequest;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\Language;
+use App\Support\SavedUiSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
@@ -27,6 +29,8 @@ class ReaderController extends Controller
         protected MeaningMatchPresenter $presenter,
         protected ReadingRowsPresenter $readingRows,
         protected AIModelResolver $modelResolver,
+        protected EnricherRegistry $enrichers,
+        protected EntityAccessService $access,
     ) {}
 
     /**
@@ -54,7 +58,7 @@ class ReaderController extends Controller
     {
         $entity = Entity::query()->with('language')->findOrFail($entityId);
 
-        if (! $this->access()->canRead(auth()->user(), $entity)) {
+        if (! $this->access->canRead(auth()->user(), $entity)) {
             abort(403);
         }
 
@@ -63,7 +67,7 @@ class ReaderController extends Controller
         ['rows' => $rows, 'sideEntities' => $sideEntities, 'meta' => $meta, 'positionKey' => $positionKey, 'defaultSide' => $defaultSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
 
         ['wordMaps' => $wordMaps, 'highlightable' => $highlightable, 'explainable' => $explainable] = $this->readingRows->wordMapsFor($sideEntities, (int) auth()->id(), $nativeLanguageId, $rows);
-        $explanationModel = $this->modelResolver->resolveExplanationModel();
+        $saved = SavedUiSettings::section(auth()->user(), 'reader');
 
         // Rows are canonical a/b (ADR 0060) — which side reads first is the
         // client's flip around defaultSide. Languages, word maps and the
@@ -82,49 +86,20 @@ class ReaderController extends Controller
             ],
             'meta' => $meta,
             'positionKey' => $positionKey,
-            'fontSize' => $this->savedReaderFontSize(),
-            'highlight' => $this->savedHighlight(),
-            'stressMarks' => $this->savedStressMarks(),
-            'phrasalVerbs' => $this->savedPhrasalVerbs(),
+            'fontSize' => SavedUiSettings::int($saved, 'font_size', ...SavedUiSettings::READER_FONT_SIZE),
+            'highlight' => SavedUiSettings::bool($saved, 'highlight', true),
+            // The annotation display preferences (ADR 0067): one prop per
+            // registry annotation, camelCased from its setting key —
+            // stressMarks, phrasalVerbs, ...
+            ...SavedUiSettings::annotations($saved, $this->enrichers->annotations()),
             'wordMaps' => $wordMaps,
             'highlightable' => $highlightable,
             // The AI explanation tab follows the same "not your native
             // language" rule as highlighting; the model itself is the user's
             // stored explanation preference, resolved server-side.
             'explainable' => $explainable,
-            'explain' => [
-                'enabled' => auth()->user()->canUseAi(),
-                'modelKey' => $explanationModel['id'] ?? null,
-                'modelLabel' => $explanationModel['label'] ?? null,
-                'followsAnswer' => $this->modelResolver->explanationModelFollowsAnswer(),
-            ],
+            'explain' => $this->modelResolver->explainConfig(),
         ]);
-    }
-
-    private function savedReaderFontSize(): int
-    {
-        $saved = auth()->user()->settings?->ui_settings['reader']['font_size'] ?? null;
-
-        if (! is_numeric($saved)) {
-            return 20;
-        }
-
-        return max(16, min(38, (int) $saved));
-    }
-
-    private function savedHighlight(): bool
-    {
-        return (bool) (auth()->user()->settings?->ui_settings['reader']['highlight'] ?? true);
-    }
-
-    private function savedStressMarks(): bool
-    {
-        return (bool) (auth()->user()->settings?->ui_settings['reader']['stress_marks'] ?? false);
-    }
-
-    private function savedPhrasalVerbs(): bool
-    {
-        return (bool) (auth()->user()->settings?->ui_settings['reader']['phrasal_verbs'] ?? false);
     }
 
     /**
@@ -153,8 +128,8 @@ class ReaderController extends Controller
         $translationEntity = $defaultSide === 'a' ? $entityMatch->bEntity : $entityMatch->aEntity;
 
         if ($readingEntity === null || $translationEntity === null
-            || ! $this->access()->canRead(auth()->user(), $readingEntity)
-            || ! $this->access()->canRead(auth()->user(), $translationEntity)) {
+            || ! $this->access->canRead(auth()->user(), $readingEntity)
+            || ! $this->access->canRead(auth()->user(), $translationEntity)) {
             return $this->singleLanguageRows($entity, $page);
         }
 
@@ -183,10 +158,18 @@ class ReaderController extends Controller
      */
     private function singleLanguageRows(Entity $entity, int $page): array
     {
+        // The annotation columns ride along so the presenter can ship them
+        // (ADR 0067) — one per registry annotation.
+        $columns = ['id', 'content', 'image_path', 'image_width', 'image_height'];
+
+        foreach ($this->enrichers->annotations() as $annotation) {
+            $columns[] = $annotation->column;
+        }
+
         $paginator = $this->paginateRows(
             $entity->sentences()->orderBy('order')->getQuery(),
             $page,
-            ['id', 'content', 'image_path', 'image_width', 'image_height', 'stressed_content', 'phrasal_verbs'],
+            $columns,
         );
 
         return [
@@ -225,7 +208,7 @@ class ReaderController extends Controller
      */
     private function entitiesForLanguage(Language $language): array
     {
-        return $this->access()
+        return $this->access
             ->readableQuery(auth()->user(), $language->id)
             ->select('id', 'name')
             ->orderBy('name')
@@ -240,10 +223,5 @@ class ReaderController extends Controller
             ->enabled()
             ->where('code', $lang)
             ->firstOrFail();
-    }
-
-    private function access(): EntityAccessService
-    {
-        return new EntityAccessService;
     }
 }

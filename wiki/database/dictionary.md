@@ -5,7 +5,7 @@ description: One words table (+ satellites) keyed by language, per-language word
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2026-12-27
-generated: { by: agent:zcode, at: 2026-09-29T19:54:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-06T12:30:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -91,7 +91,11 @@ sources:
   `book_word`, `saved_phrases`) was deleted with the 2026-09 rework.
 * `words.frequency` is populated by `words:import-frequency {source}`
   (local `rank,word` CSV or named download — OpenSubtitles 2018 for en,
-  RNC lemmas for ru) and then nudged per entity by
-  `WordFrequencyAccrual` — semantics, sources and the correction math in
-  ADR [0041](../../docs/adr/0041-frequency-rank-semantics-and-entity-correction.md)
-  and [Crossword](/domains/crossword.md).
+  RNC lemmas for ru; authoritative overwrite) and clamped down by
+  `words:import-frequency-lists` (curated band lists, `least(current,
+  band)` through direct and form matches, frequency column only), then
+  nudged per entity by `WordFrequencyAccrual` — semantics, sources and the
+  correction math in ADR
+  [0041](../../docs/adr/0041-frequency-rank-semantics-and-entity-correction.md)
+  and [0070](../../docs/adr/0070-frequency-lists-min-merge.md), the
+  pipeline in [Crossword](/domains/crossword.md).

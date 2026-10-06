@@ -1,13 +1,10 @@
 <?php
 
-use App\Classes\PythonClient;
 use App\Classes\TextSignatureService;
 use App\Jobs\GenerateEntitySignature;
 use App\Jobs\ProcessEntityFile;
 use App\Jobs\SplitEntityFileSentences;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -15,28 +12,9 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-it('retries transient embedding connection failures before succeeding', function () {
-    $attempts = 0;
-
-    Http::fake(function () use (&$attempts) {
-        $attempts++;
-
-        if ($attempts < 3) {
-            throw new ConnectionException('Embedding service timed out');
-        }
-
-        return Http::response([
-            'vector' => [0.1, 0.2, 0.3],
-        ]);
-    });
-
-    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
-
-    expect($service->generateSignature('A short sample text'))
-        ->toEqual([0.1, 0.2, 0.3]);
-
-    expect($attempts)->toBe(3);
-});
+// The container binds the fake python client; anything that still tries the
+// wire fails here instead of reaching for the real service.
+beforeEach(fn () => Http::preventStrayRequests());
 
 it('configures entity embedding jobs to retry with backoff', function () {
     $processJob = new ProcessEntityFile(1, 'entities/example.txt');
@@ -55,22 +33,18 @@ it('configures entity embedding jobs to retry with backoff', function () {
 });
 
 it('sends only a head and tail sample for long texts to the python service', function () {
-    Http::fake([
-        '*' => Http::response(['vector' => array_fill(0, 384, 0.01)], 200),
-    ]);
+    $fake = fakePython()->embedding(array_fill(0, 384, 0.01));
 
-    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
+    $service = new TextSignatureService($fake);
 
     $long = str_repeat('x', 21_000);
     expect(strlen($long))->toBeGreaterThan(20_000);
 
     expect($service->generateSignature($long))->toBeArray();
 
-    Http::assertSentCount(1);
+    expect($fake->embedPayloads)->toHaveCount(1);
 
-    /** @var Request $request */
-    $request = Http::recorded()[0][0];
-    $sent = $request->data()['text'] ?? '';
+    $sent = $fake->embedPayloads[0]['text'];
 
     expect(strlen($sent))->toBeLessThanOrEqual(20_000 + 16)
         ->and(str_starts_with($sent, str_repeat('x', 10_000)))
@@ -78,18 +52,14 @@ it('sends only a head and tail sample for long texts to the python service', fun
 });
 
 it('sends short text unchanged to the python service', function () {
-    Http::fake([
-        '*' => Http::response(['vector' => [0.1, 0.2, 0.3]], 200),
-    ]);
+    $fake = fakePython()->embedding([0.1, 0.2, 0.3]);
 
-    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
+    $service = new TextSignatureService($fake);
 
     expect($service->generateSignature('hello'))->toEqual([0.1, 0.2, 0.3]);
 
-    Http::assertSent(function (Request $request): bool {
-        return ($request->data()['text'] ?? '') === 'hello'
-            && ($request->data()['language'] ?? null) === 'en';
-    });
+    expect($fake->embedPayloads[0]['text'] ?? '')->toBe('hello')
+        ->and($fake->embedPayloads[0]['language'] ?? '')->toBe('en');
 });
 
 it('dispatches sentence splitting without calling the python service', function () {
@@ -101,17 +71,16 @@ it('dispatches sentence splitting without calling the python service', function 
 
     $entity = createEntity('en', null, ['name' => 'Entity', 'file_path' => $dir]);
 
-    // The embedding service being down must not block the pipeline start.
-    Http::fake(fn () => Http::response('bad gateway', 502));
-
+    // The embedding service being down must not block the pipeline start:
+    // the unconfigured fake throws the same PythonClientException a 502 maps
+    // to in production.
     (new ProcessEntityFile($entity->id, $dir))->handle();
 
     Bus::assertDispatched(SplitEntityFileSentences::class);
-    Http::assertSentCount(0);
 });
 
 it('computes cosine similarity for the signature gate', function () {
-    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
+    $service = new TextSignatureService(fakePython());
 
     expect($service->cosineSimilarity([1.0, 0.0], [1.0, 0.0]))->toBe(1.0)
         ->and($service->cosineSimilarity([1.0, 0.0], [0.0, 1.0]))->toBe(0.0)
@@ -121,7 +90,7 @@ it('computes cosine similarity for the signature gate', function () {
 });
 
 it('truncates defensively when signature vectors differ in length', function () {
-    $service = new TextSignatureService(new PythonClient('http://ext_python:8000', 30, 600));
+    $service = new TextSignatureService(fakePython());
 
     // The shared prefix decides the score; the extra dimension is ignored
     // rather than warning on a missing index.

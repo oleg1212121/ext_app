@@ -122,6 +122,7 @@ docker exec ext_app_laravel php artisan db:seed --class=SentenceTypeSeeder --for
 docker exec ext_app_laravel php artisan db:seed --class=AiProviderSeeder --force
 docker exec ext_app_laravel php artisan db:seed --class=LanguageSeeder --force
 docker exec ext_app_laravel php artisan db:seed --class=UiStringSeeder --force
+docker exec ext_app_laravel php artisan db:seed --class=PromptTemplateSeeder --force
 
 docker exec ext_app_laravel php artisan queue:restart
 

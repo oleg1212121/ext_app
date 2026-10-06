@@ -32,7 +32,6 @@ it('accepts an empty task list and assembles the default instruction', function 
     ]);
 
     $response->assertOk()
-        ->assertJsonPath('data.code', 200)
         ->assertJsonPath('data.answer', 'Test answer');
 });
 
@@ -111,8 +110,7 @@ it('refuses the question when the user has not chosen an answer model', function
     ]);
 
     $response->assertStatus(400)
-        ->assertJsonPath('data.code', 400)
-        ->assertJsonPath('data.data.error', 'Choose an AI model in your profile settings.');
+        ->assertJsonPath('error', 'Choose an AI model in your profile settings.');
 });
 
 it('surfaces a provider error as a friendly message without leaking internals', function () {
@@ -137,8 +135,7 @@ it('surfaces a provider error as a friendly message without leaking internals', 
     ]);
 
     $response->assertStatus(429)
-        ->assertJsonPath('data.code', 429)
-        ->assertJsonPath('data.data.error', 'The AI service is busy. Please try again in a moment.');
+        ->assertJsonPath('error', 'The AI service is busy. Please try again in a moment.');
 
     // Raw provider internals must never reach the client.
     $payload = json_encode($response->json());
@@ -166,6 +163,5 @@ it('returns a friendly message when the model resolver rejects the model', funct
     ]);
 
     $response->assertStatus(400)
-        ->assertJsonPath('data.code', 400)
-        ->assertJsonPath('data.data.error', 'Invalid model selection.');
+        ->assertJsonPath('error', 'Invalid model selection.');
 });

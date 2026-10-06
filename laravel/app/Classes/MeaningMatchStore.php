@@ -17,13 +17,15 @@ use Illuminate\Support\Facades\DB;
  * never writes on the editor's behalf. Path composition (links / dpPath
  * arrays) lives on SentenceAlignmentService; this class owns every DB write
  * and each method opens its own transaction (the job's persistOffsets wraps
- * store calls in an outer one, which nests as a savepoint).
+ * store calls in an outer one, which nests as a savepoint) — repairCoverage
+ * wraps the whole coverage repair in one.
  *
  * Write idioms are deliberate: single-row creates go through Eloquent events
  * (SentenceMeaningMatch::creating backfills the denormalized entity_match_id,
- * ADR 0048), bulk deletes and the two-phase order parking use the quiet
- * Eloquent builder, and the hot junction-insert path uses base-builder
- * insert() with hand-set timestamps because it bypasses that hook.
+ * ADR 0048), bulk deletes and the two-phase order parking (via
+ * SparseOrderService::persistOrdersTwoPhase) use the quiet Eloquent builder,
+ * and the hot junction-insert path uses base-builder insert() with hand-set
+ * timestamps because it bypasses that hook.
  */
 class MeaningMatchStore
 {
@@ -31,7 +33,7 @@ class MeaningMatchStore
 
     public static function create(): self
     {
-        return new self(SentenceAlignmentService::create());
+        return new self(app(SentenceAlignmentService::class));
     }
 
     /**
@@ -237,17 +239,7 @@ class MeaningMatchStore
                 SentenceMeaningMatch::query()->whereKey($deleteJunctionIds)->delete();
             }
 
-            foreach ($changes as $change) {
-                MeaningMatch::query()
-                    ->whereKey($change['id'])
-                    ->update(['order' => -($change['id'] + 1_000_000_000)]);
-            }
-
-            foreach ($changes as $change) {
-                MeaningMatch::query()
-                    ->whereKey($change['id'])
-                    ->update(['order' => $change['order']]);
-            }
+            app(SparseOrderService::class)->persistOrdersTwoPhase(MeaningMatch::class, $changes);
         });
 
         return count($changes) + count($deleteJunctionIds) + count($deleteRowIds);
@@ -347,6 +339,61 @@ class MeaningMatchStore
     }
 
     /**
+     * Total-completeness repair for one entity match, whole-or-nothing in a
+     * single transaction: every junction-less sentence of EITHER side is
+     * junctioned into a single-sided meaning match (similarity 0.0, next
+     * machine alignment chunk), the rows are resequenced into document
+     * order, and linked_count is synced. The one primitive behind the align
+     * job's completion gate and alignments:repair — a failure rolls the
+     * whole repair back, leaving no half-repaired state.
+     *
+     * The resequence runs unconditionally: it is idempotent (returns 0 when
+     * nothing is out of place) and normalizes both the pre-existing sequence
+     * and the rows this repair creates.
+     *
+     * @return array{0: int, 1: int} [single-sided rows created, order/junction changes]
+     */
+    public function repairCoverage(EntityMatch $entityMatch): array
+    {
+        return DB::transaction(function () use ($entityMatch): array {
+            // Order values already taken by this match's rows, shared across
+            // both sides' repairs: opposite-side runs between the same anchors
+            // compute identical spread values, and the claim check prevents
+            // the second insert from violating unique(entity_match_id, order).
+            $claimedOrders = array_fill_keys(
+                MeaningMatch::query()
+                    ->where('entity_match_id', $entityMatch->id)
+                    ->pluck('order')
+                    ->map(fn ($order) => (int) $order)
+                    ->all(),
+                true,
+            );
+
+            $created = 0;
+
+            foreach (['a', 'b'] as $side) {
+                [$junctionless, $index] = $this->junctionlessSentencesFor($entityMatch, $side);
+
+                if ($junctionless->isNotEmpty()) {
+                    $created += $this->repairJunctionlessSentences(
+                        $entityMatch,
+                        $side,
+                        $junctionless,
+                        $index,
+                        $claimedOrders,
+                    );
+                }
+            }
+
+            $resequenced = $this->resequenceMatchesByDocumentPosition($entityMatch);
+
+            $entityMatch->syncLinkedCount();
+
+            return [$created, $resequenced];
+        });
+    }
+
+    /**
      * The junction-less sentences of one side in document order, plus the
      * sentence-id => document-index map that anchors their position among the
      * meaning matches.
@@ -354,7 +401,7 @@ class MeaningMatchStore
      * @param  'a'|'b'  $side
      * @return array{0: Collection<int, EntitySentence>, 1: array<int, int>}
      */
-    public function junctionlessSentencesFor(EntityMatch $entityMatch, string $side): array
+    private function junctionlessSentencesFor(EntityMatch $entityMatch, string $side): array
     {
         $entityId = $side === 'a' ? $entityMatch->a_entity_id : $entityMatch->b_entity_id;
 
@@ -391,11 +438,12 @@ class MeaningMatchStore
      *
      * $claimedOrders carries the meaning-match order values already taken
      * (pre-seeded with every existing row, shared across both sides' repairs
-     * by the caller): runs on opposite sides between the same anchors compute
-     * identical spread values, and without the claim check the second insert
-     * would violate unique(entity_match_id, order) and roll the whole side's
-     * repair back. Claimed orders are nudged past collisions, which keeps the
-     * relative order — the resequence pass normalizes the values afterwards.
+     * by repairCoverage): runs on opposite sides between the same anchors
+     * compute identical spread values, and without the claim check the
+     * second insert would violate unique(entity_match_id, order) and roll
+     * the whole side's repair back. Claimed orders are nudged past
+     * collisions, which keeps the relative order — the resequence pass
+     * normalizes the values afterwards.
      *
      * @param  'a'|'b'  $side
      * @param  Collection<int, EntitySentence>  $junctionless
@@ -403,7 +451,7 @@ class MeaningMatchStore
      * @param  array<int, true>  $claimedOrders
      * @return int The number of single-sided rows created
      */
-    public function repairJunctionlessSentences(
+    private function repairJunctionlessSentences(
         EntityMatch $entityMatch,
         string $side,
         Collection $junctionless,

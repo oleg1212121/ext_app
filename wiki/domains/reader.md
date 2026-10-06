@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-04T18:40:00Z }
+generated: { by: agent:zcode, at: 2026-10-05T23:10:48+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -161,9 +161,13 @@ side (`{a, b}`; the b map empty when rows are single-language), plus
 `highlight` (the saved `reader.highlight` setting) and the `highlightable`
 language flags (side language ≠ the user's native language). The same rule
 now gates the AI Context explanation tab: `explainable` flags and `explain`
-(`{enabled, modelKey}` from `AIModelResolver::resolveExplanationModel()`,
-ADR 0035). `ReaderRow` takes two display-column descriptors
-(`{side, wordMap, highlightable, explainable}`) and renders both row halves
+(`{enabled, modelKey, modelLabel, followsAnswer, answerLabel}` — assembled
+server-side by `AIModelResolver::explainConfig()`, the same builder the
+simulator ships from; the reader's `answerLabel` is null — ADR 0035).
+`ReaderRow` takes two display-column descriptors
+(`{side, language, wordMap, highlightable, explainable}` — the reading
+surfaces' shared shape, ADR 0068; the reader's `language` carries the code
+only) and renders both row halves
 through the shared `WordText`/`WordPopup` components (each gets the row's
 `key`, so clicking a word fires a ledger-deduplicated **lookup** event —
 the reader never credits reads); the primary line is a `role="button"` div
@@ -171,10 +175,13 @@ the reader never credits reads); the primary line is a `role="button"` div
 the line itself still toggles the translation, word clicks stop
 propagation. Both reading lines style themselves with
 `var(--font-reading)` — `'Source Serif 4', Georgia, …` (see
-`conventions/design-system.md`): the stack must put a single font covering
-Latin + Cyrillic + U+0301 first, or combining stress marks can't attach to
-their base letter and render as spacing glyphs (gaps after stressed vowels;
-the old Fraunces-first `--font-serif` had exactly that defect).
+`conventions/design-system.md`): a single font must cover Latin + Cyrillic
+so glyphs never switch mid-word. The stress toggle draws acutes as empty
+positioned marks (`.stress-mark`) over intact plain text — no U+0301 is
+rendered — but source content itself can still carry combining marks: if
+such a mark and its base letter resolve from different fonts, attachment
+breaks and the acute renders as a spacing glyph (gaps after stressed
+vowels; the old Fraunces-first `--font-serif` had exactly that defect).
 
 # Rendering cost
 

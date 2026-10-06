@@ -60,7 +60,7 @@ it('unwraps align matches with numeric casts and skips malformed rows', function
     ]);
 });
 
-it('unwraps enrich results and normalizes the output map', function () {
+it('unwraps enrich results, normalizes the output map, and passes the versions through', function () {
     Http::fake([
         '*/enrich' => Http::response([
             'results' => [
@@ -68,12 +68,27 @@ it('unwraps enrich results and normalizes the output map', function () {
                 ['id' => 6],
                 'not-a-row',
             ],
+            'versions' => ['ru_stress' => '1', 'en_phrasal' => 3, 'junk' => 'x'],
         ]),
     ]);
 
     expect(makePythonClient()->enrich(['sentences' => []]))->toEqual([
-        ['id' => 5, 'output' => ['ru_stress' => 'ok']],
-        ['id' => 6, 'output' => []],
+        'results' => [
+            ['id' => 5, 'output' => ['ru_stress' => 'ok']],
+            ['id' => 6, 'output' => []],
+        ],
+        'versions' => ['ru_stress' => 1, 'en_phrasal' => 3],
+    ]);
+});
+
+it('defaults missing enrich versions to an empty map', function () {
+    Http::fake([
+        '*/enrich' => Http::response(['results' => []]),
+    ]);
+
+    expect(makePythonClient()->enrich(['sentences' => []]))->toEqual([
+        'results' => [],
+        'versions' => [],
     ]);
 });
 

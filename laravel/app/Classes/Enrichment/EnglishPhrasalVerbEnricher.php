@@ -4,8 +4,10 @@ namespace App\Classes\Enrichment;
 
 use App\Classes\MultiwordVerbShape;
 use App\Models\Entity;
+use App\Models\EntitySentence;
 use App\Models\Form;
 use App\Models\Word;
+use Filament\Tables\Columns\TextColumn;
 
 /**
  * English multi-word verbs: spaCy dependency parsing finds verb + particle/
@@ -35,14 +37,30 @@ class EnglishPhrasalVerbEnricher implements Enricher
         return 3;
     }
 
+    public function pythonVersion(): int
+    {
+        return 3;
+    }
+
     public function languages(): array
     {
         return ['en'];
     }
 
-    public function column(): string
+    public function annotation(): Annotation
     {
-        return 'phrasal_verbs';
+        return new Annotation(
+            payloadKey: 'phrasal',
+            column: 'phrasal_verbs',
+            settingKey: 'phrasal_verbs',
+            adminPreview: fn (): TextColumn => TextColumn::make('phrasal_verbs.label')
+                ->label('Phrasal verbs')
+                ->state(fn (EntitySentence $record): string => collect($record->phrasal_verbs ?? [])
+                    ->map(fn (array $hit) => $hit['verb'].' '.implode(' ', $hit['particles'] ?? []))
+                    ->implode(', '))
+                ->toggleable()
+                ->placeholder('—'),
+        );
     }
 
     public function tokenHints(Entity $entity, array $keys, array $resolved): array

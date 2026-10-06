@@ -1,5 +1,6 @@
 <?php
 
+use App\Classes\PythonClient;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\Language;
@@ -9,6 +10,7 @@ use App\Models\WordClass;
 use App\Models\Work;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakePythonClient;
 use Tests\TestCase;
 
 /*
@@ -228,6 +230,11 @@ function enableTranslationProviders(): void
     ]);
 }
 
+function approvedUser(): User
+{
+    return User::factory()->create(['is_approved' => true]);
+}
+
 function nativeRuUser(): User
 {
     createLanguages();
@@ -243,4 +250,33 @@ function nativeRuUser(): User
 function ruLanguageId(): int
 {
     return (int) Language::query()->where('code', 'ru')->value('id');
+}
+
+/*
+|--------------------------------------------------------------------------
+| Python transport seam fixtures (ADR 0061)
+|--------------------------------------------------------------------------
+|
+| Defined here — not inside a single test file — because ChunkedEntity-
+| AlignmentTest, EntityEnrichmentTest, EntityStatusLifecycleTest and the
+| unit service tests all bind the fake without loading one shared file.
+*/
+
+/**
+ * Bind (or return the already-bound) in-memory python client for the current
+ * test. Container-resolved domain services pick it up through the
+ * PythonClient binding, so domain tests never fake the HTTP wire.
+ */
+function fakePython(): FakePythonClient
+{
+    $bound = app()->bound(PythonClient::class) ? app(PythonClient::class) : null;
+
+    if ($bound instanceof FakePythonClient) {
+        return $bound;
+    }
+
+    $fake = new FakePythonClient;
+    app()->instance(PythonClient::class, $fake);
+
+    return $fake;
 }

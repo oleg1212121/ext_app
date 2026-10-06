@@ -22,9 +22,9 @@ use Illuminate\Http\JsonResponse;
 /**
  * The HTTP surface of the alignment-editing domain (ADR 0062): access
  * gates, request validation, 404/422 mapping, and the mutation envelope.
- * Every alignment mutation — rows, junctions, ordering, totals — goes
- * through AlignmentEditorService; sentence content edits are plain model
- * writes with no alignment invariant attached.
+ * Every alignment mutation — rows, junctions, ordering, totals, sentence
+ * content — goes through AlignmentEditorService, whose writes never flip a
+ * match stale (the editor's no-stale rule).
  */
 class AlignmentEditorController extends Controller
 {
@@ -96,10 +96,9 @@ class AlignmentEditorController extends Controller
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $side = Side::from($request->validated('side'));
-        $content = trim((string) $request->validated('content'));
 
         $sentenceModel = $this->findSideSentence($entityMatch, $side, $sentence);
-        $sentenceModel->update(['content' => $content]);
+        $this->editor->updateSentenceContent($sentenceModel, trim((string) $request->validated('content')));
 
         $rowId = $this->editor->rowIdOfSentence($entityMatch, $side, $sentenceModel->id);
 

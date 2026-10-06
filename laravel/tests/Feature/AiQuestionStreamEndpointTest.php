@@ -155,5 +155,5 @@ it('refuses the stream with a JSON error before any SSE output when no answer mo
     ]);
 
     $response->assertStatus(400)
-        ->assertJsonPath('data.data.error', 'Choose an AI model in your profile settings.');
+        ->assertJsonPath('error', 'Choose an AI model in your profile settings.');
 });

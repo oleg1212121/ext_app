@@ -8,25 +8,23 @@ use Illuminate\Database\Seeder;
 
 class PromptTemplateSeeder extends Seeder
 {
-    /**
-     * Seed the prompt templates. updateOrCreate keeps admin edits
-     * authoritative in normal operation (the seeder only refreshes text on an
-     * explicit re-seed, admin may still edit afterwards) — the same contract
-     * as UiStringSeeder.
-     */
     public function run(): void
     {
-        PromptTemplate::updateOrCreate(
+        // Register-only: existing rows are admin-owned (their text may have
+        // been edited in the Filament "Prompt Templates" resource) and must
+        // survive the per-deploy seed run. To restore a default, blank the
+        // row's text — blank text falls back to the code constant.
+        PromptTemplate::query()->firstOrCreate(
             ['key' => PromptTemplates::FORMAT_KEY],
             ['text' => PromptTemplates::FORMAT_FALLBACK],
         );
 
-        PromptTemplate::updateOrCreate(
+        PromptTemplate::query()->firstOrCreate(
             ['key' => PromptTemplates::TASKS_KEY],
             ['text' => PromptTemplates::TASKS_FALLBACK],
         );
 
-        PromptTemplate::updateOrCreate(
+        PromptTemplate::query()->firstOrCreate(
             ['key' => PromptTemplates::EXPLANATION_KEY],
             ['text' => PromptTemplates::EXPLANATION_FALLBACK],
         );

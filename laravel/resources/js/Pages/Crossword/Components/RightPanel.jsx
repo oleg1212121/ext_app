@@ -59,10 +59,7 @@ export default function RightPanel({
                 role="separator"
                 aria-orientation="vertical"
                 title={t('crossword.tab_definitions')}
-                onMouseDown={(e) => {
-                    e.preventDefault();
-                    onStartDrag(e);
-                }}
+                onMouseDown={onStartDrag}
             />
 
             <div

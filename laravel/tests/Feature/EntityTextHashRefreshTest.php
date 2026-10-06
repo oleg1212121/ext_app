@@ -7,8 +7,6 @@ use App\Models\Entity;
 use App\Models\EntitySentence;
 use App\Models\SentenceType;
 use App\Models\User;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
@@ -138,13 +136,10 @@ test('FinalizeEntityDerivations computes the hash and embeds when no exact copy 
     $path = 'entities/en/lone.txt';
     Storage::disk('local')->put($path, 'Alpha. Beta.');
 
-    Http::fake([
-        '*/embed' => Http::response(['vector' => [0.1, 0.2, 0.3]]),
-        // The enrichment pipeline rides behind finalization (ADR 0052) and
-        // runs inline on the sync test queue.
-        '*/enrich' => Http::response(['results' => []]),
-        '*' => Http::response(['error' => 'unexpected'], 500),
-    ]);
+    // The enrichment pipeline rides behind finalization (ADR 0052) and runs
+    // inline on the sync test queue; any endpoint without a canned response
+    // (align, split) throws instead.
+    fakePython()->embedding([0.1, 0.2, 0.3])->enrichingNothing();
 
     (new FinalizeEntityDerivations($entity->id, $path))->handle(new EntityTextHasher);
     $entity->refresh();
@@ -177,13 +172,10 @@ test('FinalizeEntityDerivations copies signature and word statistics from an exa
     $path = 'entities/en/target.txt';
     Storage::disk('local')->put($path, 'Alpha. Beta.');
 
-    Http::fake([
-        '*/embed' => Http::response(['error' => 'must not embed'], 500),
-        // Enrichment rides behind finalization even on the exact-copy path
-        // (ADR 0052); only the embed call is forbidden here.
-        '*/enrich' => Http::response(['results' => []]),
-        '*' => Http::response(['error' => 'unexpected'], 500),
-    ]);
+    // Enrichment rides behind finalization even on the exact-copy path
+    // (ADR 0052); only the embed call is forbidden here — the unconfigured
+    // embed throws, and the payload guard below fails the test if it ran.
+    $fake = fakePython()->enrichingNothing();
 
     (new FinalizeEntityDerivations($target->id, $path))->handle(new EntityTextHasher);
     $target->refresh();
@@ -191,7 +183,6 @@ test('FinalizeEntityDerivations copies signature and word statistics from an exa
     expect($target->text_hash)->toBe($source->text_hash)
         ->and($target->signature)->toBe($source->signature)
         ->and($target->entityWords()->count())->toBe(1)
-        ->and($target->words_indexed_at)->not->toBeNull();
-
-    Http::assertNotSent(fn (Request $request) => str_contains($request->url(), '/embed'));
+        ->and($target->words_indexed_at)->not->toBeNull()
+        ->and($fake->embedPayloads)->toBe([]);
 });

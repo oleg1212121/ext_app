@@ -5,14 +5,14 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-04T19:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-05T12:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
     title: python-match adapter — pair verify, /align call, links/dpPath path builders (ADR 0063)
   - id: meaning-match-store
     resource: laravel/app/Classes/MeaningMatchStore.php
-    title: the pipeline's meaning-match write path — segments, resequence, junction-less repair (ADR 0063)
+    title: the pipeline's meaning-match write path — segments, resequence, repairCoverage (ADR 0063, amended 2026-10-05)
   - id: python-client
     resource: laravel/app/Classes/PythonClient.php
     title: the one python transport seam (ADR 0061)
@@ -39,7 +39,7 @@ sources:
     title: Sentence splitting (/split streaming client)
   - id: sparse
     resource: laravel/app/Classes/SparseOrderService.php
-    title: Sparse ordering
+    title: Sparse ordering — placement math + the shared two-phase persist primitive (ADR 0064, amended 2026-10-05)
   - id: python-api
     resource: docker-compose/python/ai/main.py
     title: FastAPI python service (BGE-M3)
@@ -130,9 +130,14 @@ conflict keeps the earlier-ordered row). The invariant is also DB-enforced:
 `sentence_meaning_matches.entity_match_id` (denormalized, auto-filled by a
 model `creating` hook) carries a unique `(entity_match_id,
 entity_sentence_id)` index. It runs:
-- at the **completion gate** — `finalize()` after the junction-less repair
-  (best-effort: a failure logs a warning and completion proceeds). This is
-  the pipeline's **only** pass (ADR 0043 removed the per-chunk write-time
+- at the **completion gate** — `MeaningMatchStore::repairCoverage()` (ADR 0063,
+  amended 2026-10-05), called from the align job's `finalize()` and from
+  `alignments:repair`: the junction-less backfill on both sides, the
+  resequence, and the `linked_count` sync run **whole-or-nothing in one
+  transaction**; best-effort at the job level (a failure logs one warning and
+  completion proceeds — a rolled-back repair leaves no half-repaired state).
+  This is the pipeline's **only** resequence pass (ADR 0043 removed the
+  per-chunk write-time
   call: it re-read both entities' full sentence lists after every window,
   quadratic across a run). Accepted: mid-run rows sit append-after-max and a
   subsumed duplicate lingers until completion — nothing in the pipeline
@@ -148,8 +153,10 @@ Manual repairs for a single match: `php artisan alignments:resequence {id}`
 (`ResequenceEntityMatchesCommand`; idempotent — reports 0 changes when the
 order column already equals document position; also resolves duplicate
 junctions) and `php artisan alignments:repair {id} [--all]`
-(`RepairEntityMatchAlignmentCommand`) — the repair adds the finalize-style
-junction-less backfill on **both** sides before the resequence, and `--all`
+(`RepairEntityMatchAlignmentCommand`) — the repair adds a junction-less
+backfill on **both** sides via `MeaningMatchStore::repairCoverage()`
+(whole-or-nothing, resequence + `linked_count` included) after its own
+dedupe-first resequence, and `--all`
 sweeps every existing match (the production cleanup path: nothing in the
 pipeline revisits completed matches).
 
@@ -337,15 +344,19 @@ editor-shaped row.
     Sept 2026): `skipSides()` returns both sides unconditionally — it
     superseded the original-side-only scope (which left translation-side
     sentences invisible in the reader; the editor's live unmatched pools were
-    their only surface). Both sides' repairs share a **claimed-orders** set
-    seeded with every existing row order: opposite-side runs between the same
-    anchors compute identical spread values, and without the claim check the
-    second insert violated `unique(entity_match_id, order)` and rolled the
-    whole side's repair back (the old silent translation↔translation failure).
-    The repair is best-effort: if it fails, a warning is logged and completion
-    proceeds regardless. `finalize()` then runs
-    `resequenceMatchesByDocumentPosition()` over the whole match (same
-    best-effort contract) so every completion path leaves the stored sequence
+    their only surface). The whole repair is
+    `MeaningMatchStore::repairCoverage()` (ADR 0063, amended 2026-10-05):
+    one transaction that seeds a **claimed-orders** set with every existing
+    row order and backfills both sides against it — opposite-side runs
+    between the same anchors compute identical spread values, and without the
+    claim check the second insert would violate `unique(entity_match_id,
+    order)` (the old silent translation↔translation failure) — then
+    resequences and syncs `linked_count`, whole-or-nothing. The repair is
+    best-effort at the job level: if it fails, one warning is logged and
+    completion proceeds regardless (a failure rolls the whole repair back —
+    no half-repaired state). The resequence inside `repairCoverage()` runs
+    unconditionally (idempotent) so every completion path leaves the stored
+    sequence
     equal to document position — see the order-preservation invariant above.
     `storeSkipSentences()` on `MeaningMatchStore` persists
     single-sided rows (side parameter `'a'|'b'`), and the crawl's empty-commit
@@ -741,9 +752,11 @@ editor-shaped row.
     (a sentence edit on a hand-tuned match let the scheduler re-derive every
     weak machine row in a new order five minutes later) ended the
     sentence-mutation → `pending` rule of ADR 0015:
-    - Sentence mutations on the entity page flip affected matches to a
-      **display-only `stale`** status (`EntityController::markMatchesStale()`:
-      `aligning`/`completed`/`failed` → `stale`; a `pending` fresh match stays
+    - Sentence mutations on the entity-level paths (entities frontend and
+      relation manager, through `EntitySentenceStore` — ADR 0065) flip
+      affected matches to a **display-only `stale`** status
+      (`aligning`/`completed`/`failed` → `stale`; a `pending` fresh match
+      stays
       pending). `pending` now means only "fresh match awaiting its one
       automatic run".
     - The scheduler is unchanged — it picks only `pending`, so stale matches
@@ -922,15 +935,16 @@ editor-shaped row.
 7. **Sentence editing** — individual entity sentences can be created, edited,
    deleted, and reordered from the *Sentences* tab on each entity's edit page
    in the Filament `EntityResource` (one merged resource with language and
-   work selects). The relation manager places inserts and reorders through
-   `SentenceOrderService` (same pipeline as the entities frontend, so
-   two-phase writes, the non-negative shift and the text-hash bump cannot
-   drift per surface); deleting a sentence cleans up any now-empty meaning
-   matches. Every sentence mutation on these entity-level paths (the
-   entities frontend endpoints and the relation manager) also resyncs the
-   image-less totals of every match involving the entity
-   (`EntityMatch::syncTotalsForEntity`) alongside the stale flip, so the
-   alignment editor's header stays truthful between re-aligns (ADR 0062).
+   work selects), and from the entities frontend endpoints. Both doors go
+   through **`EntitySentenceStore`** (ADR 0065), which owns the whole
+   mutation flow — placement via `SentenceOrderService`, the write, the
+   stale flip, and the image-less totals resync
+   (`EntityMatch::syncTotalsForEntity`) — inside one transaction, so the
+   invariants cannot drift or be half-applied per surface; the alignment
+   editor's own sentence edits are deliberately exempt (ADR 0062's no-stale
+   rule, via `AlignmentEditorService::updateSentenceContent`), as is the
+   importer (it wipes and rebuilds and marks the match `completed`
+   itself).
 
 # Python microservice
 

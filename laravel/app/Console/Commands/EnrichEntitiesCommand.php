@@ -3,7 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Classes\Enrichment\EnricherRegistry;
-use App\Classes\SentenceEnrichmentService;
 use App\Jobs\EnrichEntitySentences;
 use App\Models\Entity;
 use Illuminate\Console\Command;
@@ -21,46 +20,58 @@ class EnrichEntitiesCommand extends Command
     {
         $limit = max(1, (int) $this->option('limit'));
         $dryRun = (bool) $this->option('dry-run');
-        // Not container-resolvable (primitive constructor args): the create()
-        // factory is the canonical construction path.
-        $enrichment = SentenceEnrichmentService::create();
 
         if (($forced = $this->option('enricher')) !== null) {
             return $this->forceEnricher((string) $forced, $registry, $limit, $dryRun);
         }
 
-        $stale = Entity::query()
+        $picked = 0;
+
+        Entity::query()
             ->with('language')
             // SQL-side filter: a language no enricher applies to can never
             // be stale, so its entities are not even loaded.
             ->whereHas('language', fn ($query) => $query->whereIn('code', $registry->languages()))
-            ->orderBy('id')
-            ->get()
-            ->filter(fn (Entity $entity) => $enrichment->staleEnrichers($entity) !== [])
-            ->take($limit);
+            // The scan is bounded like the dispatch (ADR 0043): chunked, and
+            // the walk stops at the dispatch cap instead of hydrating the
+            // whole catalog.
+            ->chunkById(200, function ($entities) use ($registry, $limit, $dryRun, &$picked) {
+                $staleMap = $registry->staleForMany($entities);
 
-        if ($stale->isEmpty()) {
+                foreach ($entities as $entity) {
+                    $enrichers = $staleMap[$entity->id] ?? [];
+
+                    if ($enrichers === []) {
+                        continue;
+                    }
+
+                    // Only the enrichers whose stamps are missing or stale
+                    // run — a newly registered enricher backfills itself
+                    // here (ADR 0057).
+                    $keys = collect($enrichers)
+                        ->map(fn ($enricher) => $enricher->key())
+                        ->values()
+                        ->all();
+
+                    if ($dryRun) {
+                        $this->line("Would enrich entity #{$entity->id} ({$entity->language?->code}): ".implode(', ', $keys));
+                    } else {
+                        EnrichEntitySentences::beginEnrichers($entity, $keys);
+                        $this->info("Dispatched enrichment for entity #{$entity->id} ({$entity->language?->code}): ".implode(', ', $keys));
+                    }
+
+                    $picked++;
+
+                    if ($picked >= $limit) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+
+        if ($picked === 0) {
             $this->info('No entities need enrichment.');
-
-            return self::SUCCESS;
-        }
-
-        foreach ($stale as $entity) {
-            // Only the enrichers whose stamps are missing or stale run — a
-            // newly registered enricher backfills itself here (ADR 0057).
-            $keys = collect($enrichment->staleEnrichers($entity))
-                ->map(fn ($enricher) => $enricher->key())
-                ->values()
-                ->all();
-
-            if ($dryRun) {
-                $this->line("Would enrich entity #{$entity->id} ({$entity->language?->code}): ".implode(', ', $keys));
-
-                continue;
-            }
-
-            EnrichEntitySentences::beginEnrichers($entity, $keys);
-            $this->info("Dispatched enrichment for entity #{$entity->id} ({$entity->language?->code}): ".implode(', ', $keys));
         }
 
         return self::SUCCESS;

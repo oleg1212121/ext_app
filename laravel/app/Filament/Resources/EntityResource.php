@@ -175,7 +175,7 @@ class EntityResource extends Resource
                     ->icon('heroicon-o-language')
                     ->color('info')
                     ->form(function (Entity $record): array {
-                        $service = TextSignatureService::create();
+                        $service = app(TextSignatureService::class);
                         $matches = $service->findCrossLanguage($record)
                             ->filter(fn (array $match): bool => $match['entity']->work_id === $record->work_id);
 

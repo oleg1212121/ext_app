@@ -79,13 +79,12 @@ it('returns paginated alignment rows for entity_match_id', function () {
     ]);
 
     $response->assertOk()
-        ->assertJsonPath('data.code', 200)
-        ->assertJsonPath('data.data.meta.total', 2)
-        ->assertJsonPath('data.data.meta.last_page', 2)
-        ->assertJsonPath('data.data.meta.per_page', 1)
-        ->assertJsonPath('data.data.meta.current_page', 1);
+        ->assertJsonPath('data.meta.total', 2)
+        ->assertJsonPath('data.meta.last_page', 2)
+        ->assertJsonPath('data.meta.per_page', 1)
+        ->assertJsonPath('data.meta.current_page', 1);
 
-    $rows = $response->json('data.data.rows');
+    $rows = $response->json('data.rows');
     expect($rows)->toHaveCount(1)
         // Reading rows are canonical a/b objects (ADR 0060).
         ->and($rows[0]['key'])->toBe('mm:'.$matchRow->id)
@@ -99,11 +98,11 @@ it('returns paginated alignment rows for entity_match_id', function () {
     ]);
 
     $page2->assertOk();
-    $skipPayload = $page2->json('data.data.rows.0');
-    expect($page2->json('data.data.rows'))->toHaveCount(1)
+    $skipPayload = $page2->json('data.rows.0');
+    expect($page2->json('data.rows'))->toHaveCount(1)
         ->and($skipPayload['a']['sentences'])->toBe([])
         ->and($skipPayload['b']['sentences'][0]['text'])->toBe('Second RU.')
-        ->and($page2->json('data.data.meta.current_page'))->toBe(2);
+        ->and($page2->json('data.meta.current_page'))->toBe(2);
 });
 
 it('rejects the retired filename mode', function () {
@@ -184,13 +183,13 @@ it('includes word maps for both sides of the match', function () {
     ]);
 
     $response->assertOk()
-        ->assertJsonPath('data.data.word_maps.a.cat.w', $enCat->id)
-        ->assertJsonPath('data.data.word_maps.a.cat.s', null)
-        ->assertJsonPath('data.data.word_maps.b.кот.s', 3)
-        ->assertJsonPath('data.data.highlightable.a', false)
-        ->assertJsonPath('data.data.highlightable.b', true)
-        ->assertJsonPath('data.data.explainable.a', false)
-        ->assertJsonPath('data.data.explainable.b', true);
+        ->assertJsonPath('data.word_maps.a.cat.w', $enCat->id)
+        ->assertJsonPath('data.word_maps.a.cat.s', null)
+        ->assertJsonPath('data.word_maps.b.кот.s', 3)
+        ->assertJsonPath('data.highlightable.a', false)
+        ->assertJsonPath('data.highlightable.b', true)
+        ->assertJsonPath('data.explainable.a', false)
+        ->assertJsonPath('data.explainable.b', true);
 });
 
 it('scopes the word map to the rows on the current page', function () {
@@ -264,8 +263,8 @@ it('scopes the word map to the rows on the current page', function () {
     ]);
 
     $page1->assertOk()
-        ->assertJsonPath('data.data.word_maps.a.cat.w', $enCat->id)
-        ->assertJsonPath('data.data.word_maps.a.orbit', null);
+        ->assertJsonPath('data.word_maps.a.cat.w', $enCat->id)
+        ->assertJsonPath('data.word_maps.a.orbit', null);
 
     $page2 = $this->actingAs($user)->postJson('/text', [
         'entity_match_id' => $entityMatch->id,
@@ -274,6 +273,6 @@ it('scopes the word map to the rows on the current page', function () {
     ]);
 
     $page2->assertOk()
-        ->assertJsonPath('data.data.word_maps.a.orbit.w', $enOrbit->id)
-        ->assertJsonPath('data.data.word_maps.a.cat', null);
+        ->assertJsonPath('data.word_maps.a.orbit.w', $enOrbit->id)
+        ->assertJsonPath('data.word_maps.a.cat', null);
 });

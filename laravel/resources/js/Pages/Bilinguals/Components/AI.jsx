@@ -6,33 +6,8 @@ import {useI18n} from '../../../i18n';
 export default function AI(props) {
     const {t} = useI18n();
     const [modelsOpen, setModelsOpen] = useState(false);
+    const startDrag = props.startDrag;
     const panelWidth = props.width ?? 560;
-    const setPanelWidth = (updater) => props.onWidthChange(
-        typeof updater === 'function' ? updater(panelWidth) : updater
-    );
-
-    const startDrag = (event) => {
-        event.preventDefault();
-        const startX = event.clientX;
-        const startWidth = panelWidth;
-
-        const onMove = (e) => {
-            const delta = e.clientX - startX;
-            setPanelWidth(Math.max(280, startWidth - delta));
-        };
-
-        const onUp = () => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-            document.body.style.userSelect = '';
-            document.body.style.cursor = '';
-        };
-
-        document.body.style.userSelect = 'none';
-        document.body.style.cursor = 'col-resize';
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-    };
 
     const hasAnswer = Boolean(props.aiAnswer);
     const isLoading = props.pending === true;

@@ -78,3 +78,29 @@ shared pieces:
 - The stale `wiki/playbooks/run-alignment.md` retry-delay attribution
   (pointing at `SentenceAlignmentService` after ADR 0061) is corrected in
   the same pass.
+
+> **Amendment (2026-10-05): one `repairCoverage`, protocol gone private.**
+> The 2026-10-05 architecture-review pass found the coverage repair shallow:
+> `junctionlessSentencesFor` + `repairJunctionlessSentences` were a two-method
+> protocol whose state (the claimed-orders map, seeded from every existing row
+> and shared across sides by reference) was caller-held, and both callers — the
+> align job's `finalize()` and `alignments:repair` — duplicated the same
+> orchestration around it. Three changes:
+>
+> - **`MeaningMatchStore::repairCoverage(EntityMatch)` is the one coverage-
+>   repair interface.** In a single transaction it seeds the claimed-orders
+>   set, backfills both sides' junction-less sentences, resequences by document
+>   position (unconditionally — idempotent), and syncs `linked_count`;
+>   returning `[rows created, order/junction changes]`. Whole-or-nothing: a
+>   failure rolls the entire repair back, so no half-repaired state survives
+>   for `alignments:repair` to finish. Both protocol methods are now private —
+>   the "signatures unchanged" roster above loses its two public members.
+> - **Failure semantics tighten.** The job's repair was best-effort per side
+>   (side B backfilled after a side-A failure); it is now best-effort per
+>   *repair* — one warning, completion proceeds (the command stays fail-loud
+>   via its per-match try/catch). The command's conditional post-backfill
+>   resequence now always runs inside `repairCoverage` (no-op returns 0).
+> - **Status writes stay with the callers.** The job keeps the
+>   refresh/`completed` transition; the command keeps the dedupe pass and its
+>   reporting. `MeaningMatchStoreRepairCoverageTest` pins the both-sides
+>   backfill, the claimed-orders nudge, and idempotency.

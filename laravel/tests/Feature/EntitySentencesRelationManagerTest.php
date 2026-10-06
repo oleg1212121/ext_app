@@ -10,6 +10,7 @@ use App\Models\SentenceType;
 use App\Models\User;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Livewire\Livewire;
 
@@ -204,6 +205,9 @@ it('deletes a sentence and removes empty meaning matches', function (string $lan
     expect(EntitySentence::find($sentence->id))->toBeNull();
     expect(MeaningMatch::find($meaningMatch->id))->toBeNull();
     expect($entityMatch->refresh()->linked_count)->toBe(0);
+    // The relation manager is an entity-level mutation door: the deletion
+    // also raises the stale flag (ADR 0055, via EntitySentenceStore).
+    expect($entityMatch->status)->toBe('stale');
 })->with($languageConfigs);
 
 it('resyncs the match totals when a sentence is created through the relation manager', function (string $languageCode) {
@@ -234,5 +238,60 @@ it('resyncs the match totals when a sentence is created through the relation man
 
     // The sentinel 99 was recounted to the real alignable count on the
     // side carrying the entity (ADR 0062 totals resync).
-    expect($entityMatch->refresh()->{"{$side}_total_sentences"})->toBe(1);
+    expect($entityMatch->refresh()->{"{$side}_total_sentences"})->toBe(1)
+        ->and($entityMatch->status)->toBe('stale');
+})->with($languageConfigs);
+
+it('flips completed matches stale when a sentence is edited through the relation manager', function (string $languageCode) {
+    $work = createWork();
+    $entity = createEntity($languageCode, $work, ['name' => 'Stale edit']);
+    $otherLanguageCode = $languageCode === 'en' ? 'ru' : 'en';
+    $other = createEntity($otherLanguageCode, $work, ['name' => "Pair {$otherLanguageCode}"]);
+    $sentenceTypeId = SentenceType::where('name', 'sentence')->value('id');
+
+    $sentence = EntitySentence::create([
+        'entity_id' => $entity->id,
+        'content' => 'Original',
+        'order' => 0,
+        'sentence_type_id' => $sentenceTypeId,
+    ]);
+
+    $entityMatch = createEntityMatch($entity, $other, ['status' => 'completed']);
+
+    Livewire::test(SentencesRelationManager::class, [
+        'ownerRecord' => $entity,
+        'pageClass' => EditEntity::class,
+    ])
+        ->callTableAction(EditAction::class, $sentence, data: [
+            'content' => 'Edited',
+            'sentence_type_id' => $sentenceTypeId,
+            'insert_after' => SparseOrderService::BEGINNING_SENTINEL, // unchanged position: content-only edit
+        ])
+        ->assertHasNoTableActionErrors();
+
+    expect($entityMatch->refresh()->status)->toBe('stale');
+})->with($languageConfigs);
+
+it('flips completed matches stale when sentences are bulk-deleted through the relation manager', function (string $languageCode) {
+    $work = createWork();
+    $entity = createEntity($languageCode, $work, ['name' => 'Stale bulk']);
+    $otherLanguageCode = $languageCode === 'en' ? 'ru' : 'en';
+    $other = createEntity($otherLanguageCode, $work, ['name' => "Pair {$otherLanguageCode}"]);
+    $sentenceTypeId = SentenceType::where('name', 'sentence')->value('id');
+
+    $first = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'First', 'order' => 0, 'sentence_type_id' => $sentenceTypeId]);
+    $second = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Second', 'order' => 1024, 'sentence_type_id' => $sentenceTypeId]);
+
+    $entityMatch = createEntityMatch($entity, $other, ['status' => 'completed']);
+
+    Livewire::test(SentencesRelationManager::class, [
+        'ownerRecord' => $entity,
+        'pageClass' => EditEntity::class,
+    ])
+        ->callTableBulkAction(DeleteBulkAction::class, [$first, $second])
+        ->assertHasNoTableBulkActionErrors();
+
+    expect(EntitySentence::find($first->id))->toBeNull()
+        ->and(EntitySentence::find($second->id))->toBeNull()
+        ->and($entityMatch->refresh()->status)->toBe('stale');
 })->with($languageConfigs);

@@ -355,6 +355,58 @@ test('edits sentence content', function () {
     $this->assertDatabaseHas('entity_sentences', ['id' => $sentence->id, 'content' => 'Edited content.']);
 });
 
+test('a content edit leaves a stale match stale (ADR 0062 no-stale rule)', function () {
+    $world = editorWorld([100]);
+    $world['match']->update(['status' => 'stale']);
+    $row = makeRow($world['match']->id, 100);
+    $sentence = $world['enSentences'][0];
+    linkSentence('a', $sentence->id, $row->id);
+
+    actingAs(User::factory()->create())
+        ->patchJson("/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
+            'side' => 'a',
+            'content' => 'Edited while stale.',
+        ])
+        ->assertOk();
+
+    expect($world['match']->refresh()->status)->toBe('stale');
+});
+
+test('a content edit leaves a fresh pending match pending for the scheduler', function () {
+    $world = editorWorld([100]);
+    $row = makeRow($world['match']->id, 100);
+    $sentence = $world['enSentences'][0];
+    linkSentence('a', $sentence->id, $row->id);
+
+    actingAs(User::factory()->create())
+        ->patchJson("/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
+            'side' => 'a',
+            'content' => 'Edited while pending.',
+        ])
+        ->assertOk();
+
+    expect($world['match']->refresh()->status)->toBe('pending');
+});
+
+test('a content edit bumps sentences_updated_at (the text hash follows the content)', function () {
+    $world = editorWorld([100]);
+    $row = makeRow($world['match']->id, 100);
+    $sentence = $world['enSentences'][0];
+    linkSentence('a', $sentence->id, $row->id);
+
+    $world['en']->forceFill(['sentences_updated_at' => now()->subHour()])->save();
+    $before = $world['en']->refresh()->sentences_updated_at;
+
+    actingAs(User::factory()->create())
+        ->patchJson("/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
+            'side' => 'a',
+            'content' => 'Edited content.',
+        ])
+        ->assertOk();
+
+    expect($world['en']->refresh()->sentences_updated_at->greaterThan($before))->toBeTrue();
+});
+
 test('unlinks a sentence to unmatched', function () {
     $world = editorWorld([100]);
     $row = makeRow($world['match']->id, 100);

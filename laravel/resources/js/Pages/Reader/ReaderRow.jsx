@@ -8,8 +8,9 @@ import {sideHasContent, sideSentences} from '../../lib/readingRows.mjs';
 //
 // A row is one Reading row object (ADR 0060: {key, a, b} canonical sides of
 // sentence objects); first/second are display-column descriptors the reader
-// page derives once per render — {side, wordMap, highlightable, explainable}.
-// `second` is null for single-language texts.
+// page derives once per render — {side, language, wordMap, highlightable,
+// explainable}, the shared reading-surface shape. `second` is null for
+// single-language texts.
 function ReaderRow({
     index,
     row,
@@ -74,7 +75,7 @@ function ReaderRow({
                     onKeyDown={handleActivation}
                     aria-expanded={toggleable ? isVisible : undefined}
                     className={[
-                        'primary-line block text-left w-full',
+                        'primary-line relative block text-left w-full',
                         'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]',
                         toggleable ? 'cursor-pointer' : 'cursor-default',
                         'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] focus-visible:rounded-sm',
@@ -119,7 +120,7 @@ function ReaderRow({
                         aria-hidden={!isVisible}
                     >
                         <div
-                            className="whitespace-pre-line italic"
+                            className="relative whitespace-pre-line italic"
                             style={{
                                 paddingLeft: sideBySide ? undefined : '1.25rem',
                                 borderLeft: sideBySide ? undefined : '1px solid var(--color-verdigris)',
