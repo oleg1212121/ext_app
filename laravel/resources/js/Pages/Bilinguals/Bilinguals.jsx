@@ -2,7 +2,7 @@ import React from 'react';
 import { Head } from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx'
 import Spinner from '../../Components/Spinner.jsx'
-import Select from "../../Components/Forms/Select.jsx";
+import SearchableSelect from "../../Components/Forms/SearchableSelect.jsx";
 import Button from "../../Components/Forms/Button.jsx";
 import Workplace from "./Components/Workplace.jsx";
 import AI from "./Components/AI.jsx";
@@ -48,7 +48,9 @@ const Bilinguals = (props) => {
     const answerModel = props.answerModel
     const canUseAi = props.canUseAi
     const errors = props.errors
-    const textList = props.textList ?? []
+    // The alignment picker's options, grouped under each match's work; the
+    // hook flattens it for the saved-position membership check.
+    const workGroups = props.workGroups ?? []
     // Pinned from an alignment card the match is fixed by the URL; from the
     // Practice menu there is no pin — the alignment picker selects the text.
     const pinnedMatch = props.pinnedMatch ?? null
@@ -62,7 +64,7 @@ const Bilinguals = (props) => {
         onToggleRow, onWordProgress, toggleAllTarget,
     } = useSimulatorText({
         pinnedMatch,
-        textList,
+        workGroups,
         fallbackTextId: props.currentText,
         initialLanguages: props.languages,
         initialDefaultSide: props.defaultLearningSide,
@@ -204,8 +206,8 @@ const Bilinguals = (props) => {
                         </span>
                     ) : (
                         <div className="flex items-center gap-2">
-                            <Select value={currentText} onChange={changeText}
-                                    items={textList}/>
+                            <SearchableSelect value={currentText} onChange={changeText}
+                                              groups={workGroups}/>
                             <Button color="green" onClick={() => handleLoadText()} type='button'>{t('bilinguals.load')}</Button>
                         </div>
                     )}

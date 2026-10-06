@@ -221,6 +221,16 @@ clearing it falls back to the admin-managed default. The server joins the
 Question template and the task list into the assessment question it sends.
 _Avoid_: question (that is the assembled whole), tasks, prompt.
 
+**Alignment picker**:
+The simulator's searchable select of the entity matches the reader can
+open, grouped under their Work (shown "Title — Author") with each option
+named by its two sides' entity names. Lists completed and stale matches
+only — the states holding aligned rows to read — and only works holding at
+least one of them. With no saved position the first option preselects; a
+URL-pinned match replaces the picker entirely. _Avoid_: text list (the
+retired flat shape), text selector, work select (the Work is the grouping,
+never the choice).
+
 # Language Catalog Context
 
 The domain of the admin-managed registry of languages available in the application, surfaced through the Filament `/admin` panel.

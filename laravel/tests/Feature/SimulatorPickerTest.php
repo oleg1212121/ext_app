@@ -10,9 +10,9 @@ test('guests are redirected from the simulator picker', function () {
     $this->get('/simulator')->assertRedirect(route('login'));
 });
 
-test('the practice simulator ships the alignment picker', function () {
+test('the practice simulator ships the work-grouped picker', function () {
     $user = User::factory()->create();
-    $work = createWork();
+    $work = createWork(['title' => 'Alice in Wonderland', 'author' => 'Lewis Carroll']);
     $match = createEntityMatch(
         createEntity('en', $work, ['name' => 'Picker EN']),
         createEntity('ru', $work, ['name' => 'Picker RU']),
@@ -25,9 +25,11 @@ test('the practice simulator ships the alignment picker', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('Bilinguals/Bilinguals')
             ->where('pinnedMatch', null)
-            ->where('textList.0.id', $match->id)
-            ->where('textList.0.text', 'Picker EN / Picker RU')
-            // The first match preselects in the picker.
+            ->where('workGroups.0.id', $work->id)
+            ->where('workGroups.0.label', 'Alice in Wonderland — Lewis Carroll')
+            ->where('workGroups.0.options.0.id', $match->id)
+            ->where('workGroups.0.options.0.text', 'Picker EN / Picker RU')
+            // The first option preselects in the picker.
             ->where('currentText', (string) $match->id));
 });
 
@@ -45,23 +47,73 @@ test('the picker lists only matches the user can read', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Bilinguals/Bilinguals')
-            ->where('textList', []));
+            ->where('workGroups', []));
 });
 
-test('the text endpoint ships languages and the side-rule default for the picker', function () {
+test('the picker lists only completed and stale matches', function () {
     $user = User::factory()->create();
     $work = createWork();
-    $match = createEntityMatch(
-        createEntity('en', $work, ['name' => 'Picker EN']),
-        createEntity('ru', $work, ['name' => 'Picker RU']),
+    $completed = createEntityMatch(
+        createEntity('en', $work, ['name' => 'Done EN']),
+        createEntity('ru', $work, ['name' => 'Done RU']),
         ['status' => 'completed'],
+    );
+    $stale = createEntityMatch(
+        createEntity('en', $work, ['name' => 'Stale EN']),
+        createEntity('ru', $work, ['name' => 'Stale RU']),
+        ['status' => 'stale'],
+    );
+    createEntityMatch(
+        createEntity('en', $work, ['name' => 'Running EN']),
+        createEntity('ru', $work, ['name' => 'Running RU']),
+        ['status' => 'pending'],
+    );
+    createEntityMatch(
+        createEntity('en', $work, ['name' => 'Broken EN']),
+        createEntity('ru', $work, ['name' => 'Broken RU']),
+        ['status' => 'failed'],
     );
 
     $this->actingAs($user)
-        ->post('/text', ['entity_match_id' => $match->id, 'per_page' => 50])
+        ->get('/simulator')
         ->assertOk()
-        ->assertJsonPath('data.languages.a.code', 'en')
-        ->assertJsonPath('data.languages.b.code', 'ru')
-        // Native-EN factory user: the side rule reads the RU (B) side.
-        ->assertJsonPath('data.default_learning_side', 'b');
+        ->assertInertia(fn (Assert $page) => $page
+            // Newest qualifying match leads within the work.
+            ->where('workGroups.0.options.0.id', $stale->id)
+            ->where('workGroups.0.options.1.id', $completed->id)
+            ->where('currentText', (string) $stale->id));
+});
+
+test('the picker groups matches under their works, sorted A to Z', function () {
+    $user = User::factory()->create();
+    $zebra = createWork(['title' => 'Zebra', 'author' => 'Leo Tolstoy']);
+    createEntityMatch(
+        createEntity('en', $zebra, ['name' => 'Zebra EN']),
+        createEntity('ru', $zebra, ['name' => 'Zebra RU']),
+        ['status' => 'completed'],
+    );
+    // Created later but sorts first by title.
+    $aardvark = createWork(['title' => 'Aardvark']);
+    $aardvarkMatch = createEntityMatch(
+        createEntity('en', $aardvark, ['name' => 'Aardvark EN']),
+        createEntity('ru', $aardvark, ['name' => 'Aardvark RU']),
+        ['status' => 'completed'],
+    );
+    // A work holding no readable, completed/stale alignment never shows.
+    $hollow = createWork(['title' => 'Hollow']);
+    createEntityMatch(
+        createEntity('en', $hollow, ['name' => 'Hollow EN']),
+        createEntity('ru', $hollow, ['name' => 'Hollow RU']),
+        ['status' => 'aligning'],
+    );
+
+    $this->actingAs($user)
+        ->get('/simulator')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('workGroups.0.id', $aardvark->id)
+            ->where('workGroups.0.label', 'Aardvark')
+            ->where('workGroups.0.options.0.id', $aardvarkMatch->id)
+            ->where('workGroups.1.label', 'Zebra — Leo Tolstoy')
+            ->where('currentText', (string) $aardvarkMatch->id));
 });

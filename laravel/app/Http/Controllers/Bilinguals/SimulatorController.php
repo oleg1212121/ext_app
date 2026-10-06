@@ -56,8 +56,8 @@ class SimulatorController extends Controller
             $pinnedName = null;
         }
 
-        $textList = $pinned !== null ? [] : $this->getEntityMatchTextList();
-        $firstId = $textList[0]['id'] ?? null;
+        $workGroups = $pinned !== null ? [] : $this->getWorkGroups();
+        $firstId = $workGroups[0]['options'][0]['id'] ?? null;
 
         $saved = SavedUiSettings::section(auth()->user(), 'simulator');
 
@@ -71,7 +71,7 @@ class SimulatorController extends Controller
         $explanationFollowsAnswer = $this->modelResolver->explanationModelFollowsAnswer();
 
         return Inertia::render('Bilinguals/Bilinguals', [
-            'textList' => $textList,
+            'workGroups' => $workGroups,
             'pinnedMatch' => $pinnedName !== null ? ['id' => $pinned->id, 'text' => $pinnedName] : null,
             // Both sides' languages: the client labels the columns and
             // substitutes the question template from these. Null on the
@@ -133,23 +133,47 @@ class SimulatorController extends Controller
     }
 
     /**
-     * @return array<int, array{id: int, text: string}>
+     * The alignment picker's options, grouped under each match's work (the
+     * A-side entity's work — same-work is enforced at creation). Only
+     * completed and stale matches appear: the states holding aligned rows
+     * to read. A work shows up only with at least one such match, works
+     * sort A→Z by label and each work's newest match leads.
+     *
+     * @return list<array{id: int, label: string, options: list<array{id: int, text: string}>}>
      */
-    private function getEntityMatchTextList(): array
+    private function getWorkGroups(): array
     {
         try {
             $matches = $this->access
                 ->readableMatchQuery(auth()->user())
-                ->with(['aEntity.language', 'bEntity.language'])
-                ->latest('id')
+                ->whereIn('status', ['completed', 'stale'])
+                ->with(['aEntity.language', 'aEntity.work', 'bEntity.language'])
+                ->orderByDesc('id')
                 ->get();
 
-            $result = [];
+            $groups = [];
             foreach ($matches as $match) {
-                $result[] = ['id' => $match->id, 'text' => $this->matchLabel($match)];
+                $work = $match->aEntity->work;
+                if ($work === null) {
+                    continue;
+                }
+
+                if (! array_key_exists($work->id, $groups)) {
+                    $groups[$work->id] = [
+                        'id' => (int) $work->id,
+                        'label' => $work->author
+                            ? "{$work->title} — {$work->author}"
+                            : $work->title,
+                        'options' => [],
+                    ];
+                }
+
+                $groups[$work->id]['options'][] = ['id' => $match->id, 'text' => $this->matchLabel($match)];
             }
 
-            return $result;
+            usort($groups, fn (array $a, array $b) => strcasecmp($a['label'], $b['label']));
+
+            return array_values($groups);
         } catch (Exception $e) {
             error_log('Entity matches not loaded: '.$e->getMessage());
 
