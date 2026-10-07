@@ -1,5 +1,28 @@
 # Directory Update Log
 
+## 2026-10-07 (Entity pages show word knowledge)
+
+Entity detail pages gained a per-user **Word knowledge** percentage (ADR
+[0074](../docs/adr/0074-entity-word-knowledge.md)): the occurrence-weighted
+share of the entity's dictionary-linked word occurrences the viewer knows —
+`Σ(count × min(familiarity, 60)) / (60 × Σ count)`, no `user_word` row = 0,
+unlinked tokens excluded, null when nothing is linked. `EntityWordKnowledge`
+snapshots land in the new `user_entity_word_knowledge` table (one row per
+user+entity, updated in place, no history), written by
+`EntityWordKnowledgeService::ensure` on first/stale view — never while
+`EntityWordIndexer::isStale` (the page shows "calculating") — and kept
+current for non-visitors by the new `entities:refresh-word-knowledge`
+scheduler entry (every 5 min, limit-bounded) against the dual staleness
+trigger: word-list rebuild (`computed_at < words_indexed_at`) or 3-day age.
+The 60 cap intentionally equals the frontend's `FAMILIARITY_STRONG_AT`, so
+placement-baseline words (50) read as partially known, not mastered.
+`EntityController::show` passes `word_knowledge` + `needs_word_test` (a
+word-test hint accompanies a blank-slate 0%); the stat renders in the
+`Entities/Show` header. `EntityWordKnowledgeTest` pins the math, the
+snapshot lifecycle, the sweep triggers/limit, and the page payload. Docs:
+ADR 0074, CONTEXT.md (**Word knowledge** in the Library context),
+`wiki/domains/entities.md`.
+
 ## 2026-10-07 (Entity routes move onto the work branch)
 
 The whole flat entity surface left the language-segmented

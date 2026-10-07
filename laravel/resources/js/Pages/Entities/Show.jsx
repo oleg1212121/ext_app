@@ -37,7 +37,7 @@ const PageLink = ({disabled, href, children}) => {
     );
 };
 
-export default function Show({language, entity, entityMatches = [], sentences = [], sentences_meta, can_edit: canEdit = false, can_change_approval: canChangeApproval = false}) {
+export default function Show({language, entity, entityMatches = [], sentences = [], sentences_meta, word_knowledge = null, needs_word_test = false, can_edit: canEdit = false, can_change_approval: canChangeApproval = false}) {
     const {t} = useI18n();
     const fileName = entity.file_path ? entity.file_path.split('/').pop() : null;
     const pageOffset = ((sentences_meta?.current_page ?? 1) - 1) * (sentences_meta?.per_page ?? 20);
@@ -73,6 +73,33 @@ export default function Show({language, entity, entityMatches = [], sentences = 
                                     {entity.work_title}{language ? ` · ${language.name}` : ''}{entity.label ? ` · ${entity.label}` : ''}
                                 </p>
                             )}
+                            <p className="mt-2 font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                {word_knowledge === null ? (
+                                    <>
+                                        {t('entities.word_knowledge')} · {t('entities.word_knowledge_building')}
+                                    </>
+                                ) : (
+                                    <>
+                                        {t('entities.word_knowledge')} ·{' '}
+                                        <span className="text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]">
+                                            {word_knowledge.score === null ? '—' : `${Math.round(word_knowledge.score)}%`}
+                                        </span>
+                                        {' · '}
+                                        {t('entities.word_knowledge_share')}
+                                        {needs_word_test && word_knowledge.score !== null && (
+                                            <>
+                                                {' · '}
+                                                <Link
+                                                    href="/word-test"
+                                                    className="underline decoration-dotted underline-offset-4 transition-colors hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
+                                                >
+                                                    {t('entities.word_knowledge_take_test')}
+                                                </Link>
+                                            </>
+                                        )}
+                                    </>
+                                )}
+                            </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                             {entity.is_approved && (

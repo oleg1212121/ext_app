@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Classes\EntityAccessService;
 use App\Classes\EntitySentenceStore;
+use App\Classes\EntityWordKnowledgeService;
 use App\Enums\SentenceAnchor;
 use App\Http\Requests\ReorderEntitySentenceRequest;
 use App\Http\Requests\StoreEntitySentenceRequest;
@@ -15,6 +16,7 @@ use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\Language;
 use App\Models\SentenceType;
+use App\Models\UserWord;
 use App\Models\Work;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -28,6 +30,7 @@ class EntityController extends Controller
 {
     public function __construct(
         private readonly EntitySentenceStore $sentences,
+        private readonly EntityWordKnowledgeService $knowledge,
     ) {}
 
     public function show(Work $work, Entity $entity): Response
@@ -54,6 +57,11 @@ class EntityController extends Controller
             ->orderBy('order')
             ->paginate(20);
 
+        // Word knowledge (ADR 0074): the viewer's stored snapshot, computed
+        // on the spot when missing or stale; null while the word list is
+        // being (re)built.
+        $knowledge = $this->knowledge->ensure($entity, auth()->user());
+
         return Inertia::render('Entities/Show', [
             'language' => $this->languagePayload($entity->language),
             'entity' => [
@@ -72,6 +80,11 @@ class EntityController extends Controller
                 'updated_at' => $entity->updated_at?->toISOString(),
             ],
             'entityMatches' => $entityMatches,
+            'word_knowledge' => $knowledge === null ? null : [
+                'score' => $knowledge->score,
+                'computed_at' => $knowledge->computed_at?->toISOString(),
+            ],
+            'needs_word_test' => ! UserWord::query()->where('user_id', auth()->id())->exists(),
             'can_edit' => $canEdit,
             'can_change_approval' => $this->access()->canChangeApproval(auth()->user(), $entity),
             'sentences' => $sentences->through(function (object $sentence): array {

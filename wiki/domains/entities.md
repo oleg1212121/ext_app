@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Library & entities (management surface)
-description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, per-work landing/branch pages (ADR 0039), and the work-nested entity detail/edit pages with their sentence JSON API (ADR 0073), plus inline illustration upload (ADR 0050), driven by enabled languages.
-tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations]
+description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, per-work landing/branch pages (ADR 0039), and the work-nested entity detail/edit pages with their sentence JSON API (ADR 0073), plus inline illustration upload (ADR 0050) and the per-user word-knowledge stat (ADR 0074), driven by enabled languages.
+tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge]
 status: stable
-stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-07T00:00:00Z }
+stale_after: 2026-12-20
+generated: { by: agent:zcode, at: 2026-10-07T12:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -19,6 +19,12 @@ sources:
    - id: hasher
      resource: laravel/app/Classes/EntityTextHasher.php
      title: EntityTextHasher
+   - id: knowledge
+     resource: laravel/app/Classes/EntityWordKnowledgeService.php
+     title: EntityWordKnowledgeService
+   - id: knowledge-command
+     resource: laravel/app/Console/Commands/RefreshEntityWordKnowledgeCommand.php
+     title: RefreshEntityWordKnowledgeCommand
    - id: request
      resource: laravel/app/Http/Requests/StoreWorkEntityRequest.php
      title: StoreWorkEntityRequest
@@ -104,7 +110,9 @@ original-language chip, readable count), `Library/CreateWork`,
 `Library/CreateEntity` (work fixed, language select), `Library/CreateAlignment`
 (work fixed, two entity selects + chunk params), plus
 `Entities/Show` (back link "← {work title} entities" to the work's Entities
-page; language shown in the subtitle) and `Entities/Edit` (metadata form +
+page; language shown in the subtitle; the viewer's
+[word knowledge](#word-knowledge-adr-0074) percentage in the header) and
+`Entities/Edit` (metadata form +
 dnd-kit sortable sentence manager; back link and cancel to the entity's
 view page). The navbar's **Library** dropdown groups
 **Works / Entities / Alignments** (ADR 0039; each child carries an explicit
@@ -245,6 +253,33 @@ alignment-copy lookup (`AlignmentCopyService`) recomputes synchronously when
 stale — a local sha256, not a service call. Equal text hashes ⇒ exact copies ⇒
 a completed alignment between one copy pair is reused for another (see
 [sentence alignment](/domains/sentence-alignment.md)).
+
+# Word knowledge (ADR 0074)
+
+The entity Show page carries a per-user **Word knowledge** percentage (see
+the [Library context](../../CONTEXT.md#library-context) for the term):
+the occurrence-weighted share of the text's dictionary-linked word
+occurrences the viewer knows, `100 × Σ(count × min(familiarity, 60)) /
+(60 × Σ count)` over `entity_words` joined to the viewer's `user_word`
+rows — 0–60 familiarity maps linearly onto 0–100%, above 60 is fully
+known, a word with no `user_word` row counts as unknown, and unlinked
+tokens are excluded from both sides. An entity with no linked words has
+a null score.
+
+`EntityWordKnowledgeService` computes the score in one aggregate SQL and
+stores it in `user_entity_word_knowledge` — one sparse, in-place-updated
+row per (user, entity), created the first time that user opens the page
+and refreshed whenever it is stale: stale means computed before the
+entity's word list was last rebuilt (`computed_at <
+entities.words_indexed_at`, which sentence edits cause via the
+`crossword:refresh` sweep) or older than three days (familiarity drift
+from reads/lookups/crosswords). `ensure` refuses to compute while
+`EntityWordIndexer::isStale` — the page then shows a "calculating" state
+— and a viewer with zero `user_word` rows sees their 0% with a hint
+linking to the word test. The scheduled `entities:refresh-word-knowledge`
+command (every 5 min, `withoutOverlapping`, `--limit=100`) recomputes
+stale pairs without a visit, skipping entities whose index is
+mid-rebuild.
 
 # Approval edit-lock (ADR 0034)
 

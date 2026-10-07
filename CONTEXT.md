@@ -594,6 +594,17 @@ form lives on, never a picker choice. An individual match's editor keeps
 its own standalone address. _Avoid_: alignment list (the removed global
 surface), global alignments, alignments tab (retired with the tab layout).
 
+**Word knowledge**:
+The per-user percentage shown on an entity's page — the occurrence-weighted
+share of the text's dictionary-linked word occurrences the viewer knows,
+0–100, where familiarity 0–60 maps linearly onto it, anything above 60 is
+fully known, and a word the user has never touched counts as unknown. A
+snapshot computed on first view and refreshed when the text's word list is
+rebuilt or three days pass. It describes one viewer against one text; it is
+not a comparison between users. See ADR 0074. _Avoid_: percentile (a rank
+against other users), coverage (the alignment term), knowledge score ("score"
+is the word-test result).
+
 **Work catalog**:
 The complete set of **Works**, visible to every approved user regardless of
 entity access — including works with no entities yet. A Work carries no access

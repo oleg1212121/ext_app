@@ -31,3 +31,7 @@ Schedule::command('entities:refresh-text-hashes')
 Schedule::command('entities:enrich')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+Schedule::command('entities:refresh-word-knowledge')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

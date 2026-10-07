@@ -54,4 +54,8 @@ return [
     'entities.replace_image' => ['en' => 'Replace image', 'ru' => 'Заменить изображение'],
     'entities.illustration_type_locked' => ['en' => 'An illustration keeps its type', 'ru' => 'Тип иллюстрации не меняется'],
     'entities.illustration' => ['en' => 'Illustration', 'ru' => 'Иллюстрация'],
+    'entities.word_knowledge' => ['en' => 'Word knowledge', 'ru' => 'Знание слов'],
+    'entities.word_knowledge_building' => ['en' => 'calculating…', 'ru' => 'вычисляется…'],
+    'entities.word_knowledge_share' => ['en' => "share of this text's words you know", 'ru' => 'доля слов этого текста, которые вы знаете'],
+    'entities.word_knowledge_take_test' => ['en' => 'Take the word test to set your baseline', 'ru' => 'Пройдите тест слов, чтобы определить базовый уровень'],
 ];
