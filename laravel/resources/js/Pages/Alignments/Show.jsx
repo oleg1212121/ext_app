@@ -15,6 +15,7 @@ import UnmatchedSection from './components/UnmatchedSection.jsx';
 import NeedsReviewSection from './components/NeedsReviewSection.jsx';
 import Pagination from './components/Pagination.jsx';
 import {alignmentsApi} from './components/api.js';
+import {mergeMutationRows} from '../../lib/alignmentRowMerge.js';
 import Main from '../../Layouts/Main.jsx';
 import {useI18n} from '../../i18n';
 
@@ -267,26 +268,8 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         }
 
         if (res.rows?.length) {
-            const incoming = res.rows;
-            rows = rows.filter((row) => typeof row.id === 'number');
-            rows = rows.map((row) => incoming.find((next) => next.id === row.id) ?? row);
-            if (newRowAnchor.current !== null) {
-                const anchorIndex = rows.findIndex((existing) => existing.id === newRowAnchor.current);
-                let insertIndex = anchorIndex < 0 ? rows.length : anchorIndex + 1;
-                incoming.forEach((row) => {
-                    if (!rows.some((existing) => existing.id === row.id)) {
-                        rows.splice(insertIndex, 0, row);
-                        insertIndex++;
-                    }
-                });
-                newRowAnchor.current = null;
-            } else {
-                incoming.forEach((row) => {
-                    if (!rows.some((existing) => existing.id === row.id)) {
-                        rows.push(row);
-                    }
-                });
-            }
+            rows = mergeMutationRows(rows, res.rows, newRowAnchor.current);
+            newRowAnchor.current = null;
         }
 
         const nextRowsMeta = {
