@@ -58,13 +58,13 @@ test('the uploader and admins may flip approval, others may not', function () {
     [$entity] = approvalFixture($creator);
 
     $this->actingAs(approvalApprovedUser())
-        ->patch("/entities/en/{$entity->id}/approved", ['is_approved' => true])
+        ->patch("/works/{$entity->work_id}/entities/{$entity->id}/approved", ['is_approved' => true])
         ->assertForbidden();
 
     expect($entity->refresh()->is_approved)->toBeFalse();
 
     $this->actingAs($creator)
-        ->patch("/entities/en/{$entity->id}/approved", ['is_approved' => true])
+        ->patch("/works/{$entity->work_id}/entities/{$entity->id}/approved", ['is_approved' => true])
         ->assertRedirect()
         ->assertSessionHas('status');
 
@@ -72,7 +72,7 @@ test('the uploader and admins may flip approval, others may not', function () {
 
     // And back, by admin.
     $this->actingAs(approvalAdmin())
-        ->patch("/entities/en/{$entity->id}/approved", ['is_approved' => false])
+        ->patch("/works/{$entity->work_id}/entities/{$entity->id}/approved", ['is_approved' => false])
         ->assertRedirect();
 
     expect($entity->refresh()->is_approved)->toBeFalse();
@@ -85,14 +85,14 @@ test('an approved entity blocks metadata and sentence edits for everyone but adm
     $sentence = $entity->sentences()->first();
 
     foreach ([
-        ['patch', "/entities/en/{$entity->id}", ['name' => 'Renamed', 'description' => null]],
-        ['post', "/entities/en/{$entity->id}/sentences", [
+        ['patch', "/works/{$entity->work_id}/entities/{$entity->id}", ['name' => 'Renamed', 'description' => null]],
+        ['post', "/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
             'content' => 'New.', 'sentence_type_id' => $sentence->sentence_type_id, 'after_sentence_id' => null,
         ]],
-        ['patch', "/entities/en/{$entity->id}/sentences/{$sentence->id}", [
+        ['patch', "/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}", [
             'content' => 'Changed.', 'sentence_type_id' => $sentence->sentence_type_id,
         ]],
-        ['delete', "/entities/en/{$entity->id}/sentences/{$sentence->id}", []],
+        ['delete', "/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}", []],
     ] as [$verb, $url, $payload]) {
         // Even the uploader is locked out while approved.
         $this->actingAs($creator)->{$verb}($url, $payload)->assertForbidden();
@@ -102,7 +102,7 @@ test('an approved entity blocks metadata and sentence edits for everyone but adm
 
     // Admins bypass the lock.
     $this->actingAs(approvalAdmin())
-        ->patch("/entities/en/{$entity->id}", ['name' => 'Renamed', 'description' => null])
+        ->patch("/works/{$entity->work_id}/entities/{$entity->id}", ['name' => 'Renamed', 'description' => null])
         ->assertRedirect();
 
     expect($entity->refresh()->name)->toBe('Renamed');
@@ -185,13 +185,13 @@ test('alignments resume skips matches involving an approved entity', function ()
 test('the entity show page exposes approval state and toggle permission', function () {
     [$entity] = approvalFixture($creator);
 
-    $response = $this->actingAs($creator)->get("/entities/en/{$entity->id}");
+    $response = $this->actingAs($creator)->get("/works/{$entity->work_id}/entities/{$entity->id}");
     $response->assertOk()->assertInertia(fn ($page) => $page
         ->where('entity.is_approved', false)
         ->where('can_change_approval', true));
 
     $this->actingAs(approvalApprovedUser())
-        ->get("/entities/en/{$entity->id}")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('can_change_approval', false));
@@ -199,7 +199,7 @@ test('the entity show page exposes approval state and toggle permission', functi
     $entity->update(['is_approved' => true]);
 
     $this->actingAs($creator)
-        ->get("/entities/en/{$entity->id}")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('entity.is_approved', true)

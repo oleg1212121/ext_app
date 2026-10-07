@@ -342,7 +342,7 @@ class LibraryController extends Controller
             return back()->withErrors(['limit' => $e->getMessage()]);
         }
 
-        return $this->redirectFromCreation($result, $language->code);
+        return $this->redirectFromCreation($result);
     }
 
     public function createAlignment(Request $request, int $work): Response
@@ -474,13 +474,15 @@ class LibraryController extends Controller
      * Map an EntityCreationService outcome to its redirect: the freshly
      * created entity's page, with an extra status when the upload was an
      * exact copy and the entity was cloned with precomputed derivations.
-     * Mirrors EntityController::store.
      *
      * @param  array{status: string, entity: Entity, source: ?Entity}  $result
      */
-    private function redirectFromCreation(array $result, string $lang): RedirectResponse
+    private function redirectFromCreation(array $result): RedirectResponse
     {
-        $redirect = redirect()->route('entities.show', ['lang' => $lang, 'entity' => $result['entity']->id]);
+        $redirect = redirect()->route('entities.show', [
+            'work' => $result['entity']->work_id,
+            'entity' => $result['entity']->id,
+        ]);
 
         if ($result['status'] === 'created_from_copy') {
             return $redirect->with('status', 'Your upload is an exact copy of an existing text — your own entity was created with sentences and word statistics precomputed.');

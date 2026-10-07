@@ -70,7 +70,7 @@ export default function WorkEntities({work, entities = [], meta, q = ''}) {
                     </Link>
 
                     {entities.map((entity) => (
-                        <EntityCard key={entity.id} entity={entity}/>
+                        <EntityCard key={entity.id} entity={entity} work={work}/>
                     ))}
                 </div>
 
@@ -102,11 +102,11 @@ export default function WorkEntities({work, entities = [], meta, q = ''}) {
     );
 }
 
-function EntityCard({entity}) {
+function EntityCard({entity, work}) {
     const {t} = useI18n();
     return (
         <Link
-            href={`/entities/${entity.language?.code}/${entity.id}`}
+            href={`/works/${work.id}/entities/${entity.id}`}
             className="group flex flex-col gap-2 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-5 transition-colors hover:border-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
         >
             <div className="flex items-baseline justify-between gap-3">

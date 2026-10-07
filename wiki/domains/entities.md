@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Library & entities (management surface)
-description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, and per-work landing/branch pages (ADR 0039) — plus the language-scoped entity create/detail/edit pages with inline illustration upload (ADR 0050), driven by enabled languages.
+description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, per-work landing/branch pages (ADR 0039), and the work-nested entity detail/edit pages with their sentence JSON API (ADR 0073), plus inline illustration upload (ADR 0050), driven by enabled languages.
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-05T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-07T00:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -20,8 +20,8 @@ sources:
      resource: laravel/app/Classes/EntityTextHasher.php
      title: EntityTextHasher
    - id: request
-     resource: laravel/app/Http/Requests/StoreEntityRequest.php
-     title: StoreEntityRequest
+     resource: laravel/app/Http/Requests/StoreWorkEntityRequest.php
+     title: StoreWorkEntityRequest
    - id: routes
      resource: laravel/routes/web.php
      title: Routes
@@ -50,9 +50,11 @@ linking onward), and the former tab contents are standalone pages —
 (the former global `/alignments` surface is gone — see
 [sentence alignment](/domains/sentence-alignment.md)). The old `/library/*`
 URLs were removed without redirects (ADR 0039); the pre-existing `/entities`,
-`/entities/{lang}` legacy redirects now target `/works/entities`. Entity
-detail, editing, and sentence management keep their language-scoped
-`/entities/{lang}/...` URLs so Alignments/Reader deep links survive. Entity
+`/entities/{lang}` legacy redirects still target `/works/entities`. Entity
+detail, editing, and sentence management are work-nested too
+(`/works/{work}/entities/{entity}...`, ADR 0073) — the language segment is
+gone (the entity carries its language) and the URL names the work; the old
+flat `/entities/{lang}/...` routes are gone without redirects. Entity
 deletion remains admin-only (Filament).
 
 Since ADR
@@ -62,7 +64,8 @@ a work may hold several entities in the same language, told apart by
 `entities.label` (translator/edition).
 
 The surface is a production consumer of the `Language` model — language
-selects and every `{lang}` route are driven by `Language::enabled()`. See ADR
+selects and the language shown on entity pages are driven by
+`Language::enabled()`. See ADR
 0002 (languages table wired into a production code path).
 
 # Routes
@@ -74,19 +77,17 @@ selects and every `{lang}` route are driven by `Language::enabled()`. See ADR
 | `/works/{work}` | `LibraryController::showWork` | Work landing page (ADR 0039): catalog metadata + readable `entities_count` / `alignments_count`, each linking to the work's branch page. Named `works.show` |
 | `/works/{work}/entities` | `LibraryController::workEntities` | The work's readable entities (former entities tab): `?q=` search (name/label), 15/page, plus-card → add entity. Named `works.entities.show` |
 | `/works/{work}/alignments` | `LibraryController::workAlignments` | The work's readable entity matches (former alignments tab; ADR 0036): either side's name search, each payload via `AlignmentEditorApiPresenter::matchPayload` + a server-computed `reader_target` (the non-native side; original-side then A-side tiebreaks), plus-card → add alignment. Named `works.alignments.show` |
-| `/works/{work}/entities/create` (GET) + POST `/works/{work}/entities` | `LibraryController::createEntity` / `storeEntity` | Work-scoped entity creation: work fixed, language picked from enabled languages; no existing/new-work choice. Runs the shared `EntityCreationService` pipeline. Named `works.entities.create` / `works.entities.store` |
+| `/works/{work}/entities/create` (GET) + POST `/works/{work}/entities` | `LibraryController::createEntity` / `storeEntity` | Work-scoped entity creation (the only create surface since ADR 0073): work fixed, language picked from enabled languages. Runs the shared `EntityCreationService` pipeline; redirects to the new entity's work-nested page. Named `works.entities.create` / `works.entities.store` |
+| `/works/{work}/entities/{entity}` (GET/PATCH) | `EntityController::show` / `update` | Detail page / metadata update, named `entities.show` / `entities.update` (ADR 0073). Binds `Work $work, Entity $entity` and 404s unless `$entity->work_id === $work->id` |
+| `/works/{work}/entities/{entity}/approved` (PATCH) | `EntityController::updateApproved` | Flip the approval edit-lock (uploader or admin), named `entities.approved.update` |
+| `/works/{work}/entities/{entity}/edit` | `EntityController::edit` | Combined edit page: metadata form + drag-and-drop sentence manager (ADR 0015), named `entities.edit` |
+| `/works/{work}/entities/{entity}/sentences` (GET/POST) + `/reorder` + `/{sentence}` (PATCH/DELETE) | `EntityController::sentences*` | JSON sentence list + insert / reorder / update / delete, named `entities.sentences.*` — same work-nested prefix and wrong-work 404 as the pages |
 | `/works/{work}/alignments/create` (GET) + POST `/works/{work}/alignments` | `LibraryController::createAlignment` / `storeAlignment` | Work-scoped entity-match creation (ADR 0036): two entity selects of the work's alignable entities (readable + signature + sentences), `chunk_size`/`max_n`; canonical a/b order, duplicate-pair guard, alignment-copy fast path else `AlignEntitySentences::beginFromScratch`; redirects back to the work's Alignments page. Named `works.alignments.create` / `works.alignments.store` |
-| `/entities`, `/entities/{lang}` | redirect → `/works/entities` | Legacy language-first browse pages (picker + per-language table) |
-| `/entities/{lang}/create` | `EntityController::create` | Language-first create form (work picker + inline "new work" fields), named `entities.create` |
-| `/entities/{lang}` (POST) | `EntityController::store` | Creates the entity under the resolved work via `EntityCreationService`; stores an optional file and dispatches `ProcessEntityFile`, named `entities.store` |
-| `/entities/{lang}/{entity}` (GET/PATCH) | `EntityController::show` / `update` | Detail page / metadata update, named `entities.show` / `entities.update` |
-| `/entities/{lang}/{entity}/approved` (PATCH) | `EntityController::updateApproved` | Flip the approval edit-lock (uploader or admin), named `entities.approved.update` |
-| `/entities/{lang}/{entity}/edit` | `EntityController::edit` | Combined edit page: metadata form + drag-and-drop sentence manager (ADR 0015), named `entities.edit` |
-| `/entities/{lang}/{entity}/sentences` (GET/POST) + `/reorder` + `/{sentence}` (PATCH/DELETE) | `EntityController::sentences*` | JSON sentence list + insert / reorder / update / delete, named `entities.sentences.*` |
+| `/entities`, `/entities/{lang}` | redirect → `/works/entities` | Legacy language-first browse pages (picker + per-language table). The deeper `/entities/{lang}/...` routes are gone without redirects (ADR 0073) |
 
-All routes sit in the `['auth','approved']` group. `{lang}` is validated against
-enabled language codes (404 otherwise), not the hardcoded `en|ru` regex used by
-other surfaces; `{work}` is numeric.
+All routes sit in the `['auth','approved']` group. Route names keep the
+`entities.*` prefix (`works.entities.show`/`index` are already the per-work
+list and the global browse); `{work}`/`{entity}`/`{sentence}` are numeric.
 
 # Frontend
 
@@ -97,13 +98,15 @@ dashed plus-card on the catalog only, work cards: title, author,
 original-language chip, readable count), `Library/CreateWork`,
 `Library/ShowWork` (the work landing page: metadata + two branch cards),
 `Library/WorkEntities` (per-tab search + plus-card; entity cards linking to
-`/entities/{code}/{id}`), `Library/WorkAlignments` (alignment cards via
+`/works/{work}/entities/{entity}`), `Library/WorkAlignments` (alignment cards via
 `Components/AlignmentCard.jsx` — stretched link to the editor
-`/alignments/{id}` with Simulator / Read·{LANG} buttons on top),
+`/works/{work}/alignments/{id}/edit` with Simulator / Read·{LANG} buttons on top),
 `Library/CreateEntity` (work fixed, language select), `Library/CreateAlignment`
-(work fixed, two entity selects + chunk params), plus the surviving
-`Entities/Create`, `Entities/Show`, `Entities/Edit` (metadata form + dnd-kit
-sortable sentence manager). The navbar's **Library** dropdown groups
+(work fixed, two entity selects + chunk params), plus
+`Entities/Show` (back link "← {work title} entities" to the work's Entities
+page; language shown in the subtitle) and `Entities/Edit` (metadata form +
+dnd-kit sortable sentence manager; back link and cancel to the entity's
+view page). The navbar's **Library** dropdown groups
 **Works / Entities / Alignments** (ADR 0039; each child carries an explicit
 URL match rule because the branches share the `/works` prefix), alongside
 **Practice** (the restored Reader index + Simulator picker, ADR 0038); the
@@ -159,11 +162,12 @@ the `entities:refresh-text-hashes` scheduler uses to rehash (see below).
 
 # Creation pipeline (ADR 0033)
 
-Both entry points — the Library's work-scoped form (work fixed, language
-chosen) and the legacy language-first form (language fixed, existing-or-new
-work) — run `App\Classes\EntityCreationService::create()`. Entity fields are
+The Library's work-scoped form (`/works/{work}/entities`, work fixed,
+language chosen — the only entry point since ADR 0073 removed the
+language-first form) runs `App\Classes\EntityCreationService::create()`.
+Entity fields are
 `name` (required), `label` (optional), `description` (optional), `file`
-(optional `.txt`), plus the language and the resolved work. The service stores
+(optional `.txt`), plus the language and the path's work. The service stores
 the file to `entities/{lang}` on the `local` disk and hashes the raw bytes
 (`file_hash`, local sha256 — **no Python call is made synchronously and an
 upload never fails because of the embedding service**):
@@ -222,7 +226,7 @@ entities with status `processing`. The count-then-create runs inside
 (`ProcessingLimits::underCreatorLock`), so parallel submissions cannot both
 pass; born-`completed` outcomes (no file, finished clone) skip the check.
 Hitting the limit deletes the just-stored upload and redirects back with a
-`limit` validation error, shown as a banner on both create forms. Approved
+`limit` validation error, shown as a banner on the create form. Approved
 admins are exempt (same bypass as `EntityAccessService`).
 
 # Text hash maintenance

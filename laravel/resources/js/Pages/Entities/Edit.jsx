@@ -308,7 +308,7 @@ function SortableSentence({sentence, displayOrder, sentenceTypes, illustrationTy
     );
 }
 
-export default function Edit({lang, language, entity, sentenceTypes = [], alignmentCount, sentencesEndpoint}) {
+export default function Edit({entity, sentenceTypes = [], alignmentCount, sentencesEndpoint}) {
     const {t} = useI18n();
     const {data, setData, patch, processing, errors, reset} = useForm({
         name: entity.name ?? '',
@@ -367,7 +367,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
 
     const submitMetadata = (e) => {
         e.preventDefault();
-        patch(`/entities/${lang}/${entity.id}`, {preserveScroll: true});
+        patch(`/works/${entity.work_id}/entities/${entity.id}`, {preserveScroll: true});
     };
 
     const onStartEdit = (sentence) => {
@@ -401,7 +401,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                 headers['Content-Type'] = 'application/json';
                 body = JSON.stringify({content: editDraft, sentence_type_id: parseInt(editType, 10)});
             }
-            const res = await fetch(`/entities/${lang}/${entity.id}/sentences/${sentence.id}`, {
+            const res = await fetch(`/works/${entity.work_id}/entities/${entity.id}/sentences/${sentence.id}`, {
                 method: 'PATCH',
                 headers,
                 body,
@@ -424,7 +424,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
         setBusyId(sentence.id);
         setAddError('');
         try {
-            const res = await fetch(`/entities/${lang}/${entity.id}/sentences/${sentence.id}?page=${page}&per_page=${perPage}`, {
+            const res = await fetch(`/works/${entity.work_id}/entities/${entity.id}/sentences/${sentence.id}?page=${page}&per_page=${perPage}`, {
                 method: 'DELETE',
                 headers: {'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken},
             });
@@ -461,7 +461,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
         setBusyId(active.id);
         setAddError('');
         try {
-            const res = await fetch(`/entities/${lang}/${entity.id}/sentences/reorder?page=${page}&per_page=${perPage}`, {
+            const res = await fetch(`/works/${entity.work_id}/entities/${entity.id}/sentences/reorder?page=${page}&per_page=${perPage}`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken},
                 body: JSON.stringify({sentence_id: active.id, after_sentence_id: afterSentenceId}),
@@ -533,7 +533,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                     after_sentence_id: afterSentenceId,
                 });
             }
-            const res = await fetch(`/entities/${lang}/${entity.id}/sentences?page=${page}&per_page=${perPage}`, {
+            const res = await fetch(`/works/${entity.work_id}/entities/${entity.id}/sentences?page=${page}&per_page=${perPage}`, {
                 method: 'POST',
                 headers,
                 body,
@@ -568,7 +568,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
             <div className="mx-auto flex max-w-4xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
                 <header className="flex flex-col gap-3 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] pb-4">
                     <Link
-                        href={`/entities/${lang}/${entity.id}`}
+                        href={`/works/${entity.work_id}/entities/${entity.id}`}
                         className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                     >
                         ← {t('entities.back_to', {name: entity.name})}
@@ -614,7 +614,7 @@ export default function Edit({lang, language, entity, sentenceTypes = [], alignm
                     </div>
                     <div className="flex items-center gap-3">
                         <PrimaryButton disabled={processing}>{t('entities.save_metadata')}</PrimaryButton>
-                        <Link href={`/entities/${lang}/${entity.id}`} className="font-sans text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]">
+                        <Link href={`/works/${entity.work_id}/entities/${entity.id}`} className="font-sans text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]">
                             {t('entities.cancel')}
                         </Link>
                     </div>

@@ -33,11 +33,12 @@ if (! function_exists('storedTextEntity')) {
 test('an entity created without a file is born completed', function () {
     Queue::fake();
     createLanguages();
+    $work = createWork();
 
     $this->actingAs(User::factory()->create())
-        ->post('/entities/en', [
+        ->post("/works/{$work->id}/entities", [
+            'language_id' => $work->original_language_id,
             'name' => 'Metadata Only',
-            'new_work_title' => 'Metadata Work',
         ]);
 
     $entity = Entity::query()->where('name', 'Metadata Only')->firstOrFail();
@@ -49,11 +50,12 @@ test('an entity created with a file is born processing and dispatches the pipeli
     Storage::fake('local');
     Queue::fake();
     createLanguages();
+    $work = createWork();
 
     $this->actingAs(User::factory()->create())
-        ->post('/entities/en', [
+        ->post("/works/{$work->id}/entities", [
+            'language_id' => $work->original_language_id,
             'name' => 'With File',
-            'new_work_title' => 'File Work',
             'file' => UploadedFile::fake()->create('text.txt', 5, 'text/plain'),
         ]);
 

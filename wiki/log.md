@@ -1,5 +1,32 @@
 # Directory Update Log
 
+## 2026-10-07 (Entity routes move onto the work branch)
+
+The whole flat entity surface left the language-segmented
+`/entities/{lang}/{entity}` namespace for the work branch (ADR
+[0073](../docs/adr/0073-work-nested-entity-routes.md)): view, edit,
+metadata PATCH, approval toggle, and the five sentence JSON endpoints now
+live at `/works/{work}/entities/{entity}...`, keeping their `entities.*`
+route names (`works.entities.show`/`index` were already the per-work list
+and the global browse). The `{lang}` segment is gone — the entity carries
+its language, so it was two addresses for one resource with one always a
+404; the wrong-language 404 becomes a wrong-work 404 via
+`abort_unless($entity->work_id === $work->id, 404)` on every action (the
+ADR 0072 pattern). Old flat routes are deleted without redirects, and the
+language-first create/store pair (`/entities/{lang}/create`,
+`POST /entities/{lang}`) died with them along with its `Entities/Create`
+page and `StoreEntityRequest` — the work-scoped Library form (ADR 0039) is
+the only create surface. Client links all build from payload `work_id`:
+the entity page's back link lands on the work's Entities page ("← {work
+title} entities", language moved into the subtitle), the editor's back
+link and cancel return to the entity's view page, and the per-work list's
+cards target the nested view URL. Route-name asymmetry with the alignment
+editor accepted. `EntityControllerTest` pins the nested pages, the
+wrong-work 404, and every flat route's 404; its flat-store tests were
+ported to the work-nested store or dropped where `LibraryTest` already
+covered them. Docs: ADR 0073, CONTEXT.md (**Entities page** — entity
+view/edit addresses), `wiki/domains/entities.md`.
+
 ## 2026-10-07 (Alignment editor moves onto the work branch)
 
 The alignment editor's page and all eleven JSON endpoints left the flat

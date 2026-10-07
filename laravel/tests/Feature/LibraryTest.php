@@ -529,7 +529,7 @@ test('store entity creates a restricted entity under the work with a creator gra
         ->and($entity->grantedUsers()->whereKey($user->id)->exists())->toBeTrue()
         ->and($entity->grantedUsers()->whereKey($user->id)->first()->pivot->similarity)->toBeNull();
 
-    $response->assertRedirect("/entities/en/{$entity->id}");
+    $response->assertRedirect("/works/{$work->id}/entities/{$entity->id}");
 });
 
 test('store entity with a file stores it and dispatches the pipeline', function () {
@@ -562,7 +562,7 @@ test('store entity with a file stores it and dispatches the pipeline', function 
     Storage::disk('local')->assertExists($entity->file_path);
     Queue::assertPushed(ProcessEntityFile::class);
 
-    $response->assertRedirect("/entities/en/{$entity->id}");
+    $response->assertRedirect("/works/{$work->id}/entities/{$entity->id}");
 });
 
 test('store entity validates the language and name', function () {

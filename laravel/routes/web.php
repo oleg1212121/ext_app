@@ -113,6 +113,50 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::post('/works/{work}/entities', [LibraryController::class, 'storeEntity'])
         ->whereNumber('work')
         ->name('works.entities.store');
+    // Entity view/edit and its sentence JSON API are work-nested too
+    // (ADR 0073): the language segment was redundant — the entity carries
+    // its language — and the URL now names the work the text belongs to.
+    // The old flat /entities/{lang}/{entity} routes are gone without
+    // redirects. Route names keep the entities.* prefix: works.entities.*
+    // is already the browse page and the per-work list.
+    Route::get('/works/{work}/entities/{entity}', [EntityController::class, 'show'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.show');
+    Route::get('/works/{work}/entities/{entity}/edit', [EntityController::class, 'edit'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.edit');
+    Route::patch('/works/{work}/entities/{entity}', [EntityController::class, 'update'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.update');
+    Route::patch('/works/{work}/entities/{entity}/approved', [EntityController::class, 'updateApproved'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.approved.update');
+    Route::get('/works/{work}/entities/{entity}/sentences', [EntityController::class, 'sentences'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.sentences');
+    Route::post('/works/{work}/entities/{entity}/sentences', [EntityController::class, 'storeSentence'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.sentences.store');
+    Route::post('/works/{work}/entities/{entity}/sentences/reorder', [EntityController::class, 'reorderSentences'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.sentences.reorder');
+    Route::patch('/works/{work}/entities/{entity}/sentences/{sentence}', [EntityController::class, 'updateSentence'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->whereNumber('sentence')
+        ->name('entities.sentences.update');
+    Route::delete('/works/{work}/entities/{entity}/sentences/{sentence}', [EntityController::class, 'destroySentence'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->whereNumber('sentence')
+        ->name('entities.sentences.destroy');
     Route::get('/works/{work}/alignments', [LibraryController::class, 'workAlignments'])
         ->whereNumber('work')
         ->name('works.alignments.show');
@@ -123,53 +167,10 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('work')
         ->name('works.alignments.store');
 
-    // The language-first browse pages moved to the works Entities branch
+    // The language-first browse pages moved to the works Entities branch;
+    // the flat /entities/{lang}/... entity routes are gone (ADR 0073).
     Route::redirect('/entities', '/works/entities');
     Route::redirect('/entities/{lang}', '/works/entities')->where('lang', '[a-z]{2}');
-    Route::get('/entities/{lang}/create', [EntityController::class, 'create'])
-        ->where('lang', '[a-z]{2}')
-        ->name('entities.create');
-    Route::post('/entities/{lang}', [EntityController::class, 'store'])
-        ->where('lang', '[a-z]{2}')
-        ->name('entities.store');
-    Route::get('/entities/{lang}/{entity}', [EntityController::class, 'show'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.show');
-    Route::get('/entities/{lang}/{entity}/edit', [EntityController::class, 'edit'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.edit');
-    Route::patch('/entities/{lang}/{entity}', [EntityController::class, 'update'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.update');
-    Route::patch('/entities/{lang}/{entity}/approved', [EntityController::class, 'updateApproved'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.approved.update');
-    Route::get('/entities/{lang}/{entity}/sentences', [EntityController::class, 'sentences'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.sentences');
-    Route::post('/entities/{lang}/{entity}/sentences', [EntityController::class, 'storeSentence'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.sentences.store');
-    Route::post('/entities/{lang}/{entity}/sentences/reorder', [EntityController::class, 'reorderSentences'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.sentences.reorder');
-    Route::patch('/entities/{lang}/{entity}/sentences/{sentence}', [EntityController::class, 'updateSentence'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->whereNumber('sentence')
-        ->name('entities.sentences.update');
-    Route::delete('/entities/{lang}/{entity}/sentences/{sentence}', [EntityController::class, 'destroySentence'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->whereNumber('sentence')
-        ->name('entities.sentences.destroy');
     // Illustration files live on the private local disk; this route is the
     // only way they leave it — gated by the owning entity's read access.
     Route::get('/illustrations/{sentence}', [EntityIllustrationController::class, 'show'])

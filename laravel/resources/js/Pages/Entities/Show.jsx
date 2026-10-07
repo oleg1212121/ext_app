@@ -37,14 +37,14 @@ const PageLink = ({disabled, href, children}) => {
     );
 };
 
-export default function Show({lang, language, entity, entityMatches = [], sentences = [], sentences_meta, can_edit: canEdit = false, can_change_approval: canChangeApproval = false}) {
+export default function Show({language, entity, entityMatches = [], sentences = [], sentences_meta, can_edit: canEdit = false, can_change_approval: canChangeApproval = false}) {
     const {t} = useI18n();
     const fileName = entity.file_path ? entity.file_path.split('/').pop() : null;
     const pageOffset = ((sentences_meta?.current_page ?? 1) - 1) * (sentences_meta?.per_page ?? 20);
 
     const toggleApproved = () => {
         router.patch(
-            `/entities/${lang}/${entity.id}/approved`,
+            `/works/${entity.work_id}/entities/${entity.id}/approved`,
             {is_approved: ! entity.is_approved},
             {preserveScroll: true},
         );
@@ -55,10 +55,10 @@ export default function Show({lang, language, entity, entityMatches = [], senten
             <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
                 <header className="flex flex-col gap-3 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] pb-4">
                     <Link
-                        href={`/entities/${lang}`}
+                        href={`/works/${entity.work_id}/entities`}
                         className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)]"
                     >
-                        ← {language.name} {t('entities.entities')}
+                        ← {entity.work_title} {t('entities.entities')}
                     </Link>
                     <div className="flex flex-wrap items-end justify-between gap-3">
                         <div>
@@ -70,7 +70,7 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                             </h1>
                             {entity.work_title && (
                                 <p className="mt-1 text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                    {entity.work_title}{entity.label ? ` · ${entity.label}` : ''}
+                                    {entity.work_title}{language ? ` · ${language.name}` : ''}{entity.label ? ` · ${entity.label}` : ''}
                                 </p>
                             )}
                         </div>
@@ -100,7 +100,7 @@ export default function Show({lang, language, entity, entityMatches = [], senten
                             </Link>
                             {canEdit && (
                                 <Link
-                                    href={`/entities/${lang}/${entity.id}/edit`}
+                                    href={`/works/${entity.work_id}/entities/${entity.id}/edit`}
                                     className="inline-flex h-9 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
                                 >
                                     {t('entities.edit')}
@@ -202,13 +202,13 @@ export default function Show({lang, language, entity, entityMatches = [], senten
 
                 {sentences_meta && sentences_meta.last_page > 1 && (
                     <nav aria-label={t('entities.pagination')} className="flex items-center justify-between border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
-                        <PageLink disabled={sentences_meta.current_page <= 1} href={`/entities/${lang}/${entity.id}?page=${sentences_meta.current_page - 1}`}>
+                        <PageLink disabled={sentences_meta.current_page <= 1} href={`/works/${entity.work_id}/entities/${entity.id}?page=${sentences_meta.current_page - 1}`}>
                             {t('entities.prev')}
                         </PageLink>
                         <span className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                             {sentences_meta.current_page} / {sentences_meta.last_page}
                         </span>
-                        <PageLink disabled={sentences_meta.current_page >= sentences_meta.last_page} href={`/entities/${lang}/${entity.id}?page=${sentences_meta.current_page + 1}`}>
+                        <PageLink disabled={sentences_meta.current_page >= sentences_meta.last_page} href={`/works/${entity.work_id}/entities/${entity.id}?page=${sentences_meta.current_page + 1}`}>
                             {t('entities.next')}
                         </PageLink>
                     </nav>

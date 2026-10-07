@@ -3,12 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Classes\EntityAccessService;
-use App\Classes\EntityCreationService;
 use App\Classes\EntitySentenceStore;
 use App\Enums\SentenceAnchor;
-use App\Exceptions\ProcessingLimitReached;
 use App\Http\Requests\ReorderEntitySentenceRequest;
-use App\Http\Requests\StoreEntityRequest;
 use App\Http\Requests\StoreEntitySentenceRequest;
 use App\Http\Requests\UpdateEntityApprovalRequest;
 use App\Http\Requests\UpdateEntityRequest;
@@ -31,63 +28,17 @@ class EntityController extends Controller
 {
     public function __construct(
         private readonly EntitySentenceStore $sentences,
-        private readonly EntityCreationService $creation = new EntityCreationService,
     ) {}
 
-    public function create(string $lang): Response
+    public function show(Work $work, Entity $entity): Response
     {
-        $language = $this->resolveLanguage($lang);
-
-        return Inertia::render('Entities/Create', [
-            'lang' => $lang,
-            'language' => $this->languagePayload($language),
-            'works' => $this->worksForSelect(),
-            'languages' => Language::query()->enabled()->orderBy('sort_order')->get()
-                ->map(fn (Language $item): array => [
-                    ...$this->languagePayload($item),
-                    'id' => $item->id,
-                ])->all(),
-        ]);
-    }
-
-    public function store(StoreEntityRequest $request, string $lang): RedirectResponse
-    {
-        $language = $this->resolveLanguage($lang);
-
-        $work = $this->resolveWork($request, $language);
-
-        try {
-            $result = $this->creation->create(
-                $request->user(),
-                $work,
-                $language,
-                $request->validated(),
-                $request->file('file'),
-            );
-        } catch (ProcessingLimitReached $e) {
-            return back()->withErrors(['limit' => $e->getMessage()]);
-        }
-
-        if ($result['status'] === 'created_from_copy') {
-            return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $result['entity']->id])
-                ->with('status', 'Your upload is an exact copy of an existing text — your own entity was created with sentences and word statistics precomputed.');
-        }
-
-        return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $result['entity']->id]);
-    }
-
-    public function show(string $lang, int $entityId): Response
-    {
-        $language = $this->resolveLanguage($lang);
-
-        $entity = Entity::query()
-            ->where('language_id', $language->id)
-            ->withCount('sentences')
-            ->findOrFail($entityId);
+        $this->abortUnlessInWork($work, $entity);
 
         if (! $this->access()->canRead(auth()->user(), $entity)) {
             abort(403);
         }
+
+        $entity->load(['language', 'work'])->loadCount('sentences');
 
         $canEdit = $this->access()->canEdit(auth()->user(), $entity);
 
@@ -104,8 +55,7 @@ class EntityController extends Controller
             ->paginate(20);
 
         return Inertia::render('Entities/Show', [
-            'lang' => $lang,
-            'language' => $this->languagePayload($language),
+            'language' => $this->languagePayload($entity->language),
             'entity' => [
                 'id' => $entity->id,
                 'name' => $entity->name,
@@ -148,16 +98,13 @@ class EntityController extends Controller
         ]);
     }
 
-    public function edit(string $lang, int $entityId): Response
+    public function edit(Work $work, Entity $entity): Response
     {
-        $language = $this->resolveLanguage($lang);
-
-        $entity = Entity::query()
-            ->where('language_id', $language->id)
-            ->withCount('sentences')
-            ->findOrFail($entityId);
+        $this->abortUnlessInWork($work, $entity);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
+
+        $entity->load(['language', 'work'])->loadCount('sentences');
 
         $sentenceTypes = SentenceType::query()
             ->orderBy('name')
@@ -166,8 +113,7 @@ class EntityController extends Controller
         $alignmentCount = $this->alignmentCount($entity->id);
 
         return Inertia::render('Entities/Edit', [
-            'lang' => $lang,
-            'language' => $this->languagePayload($language),
+            'language' => $this->languagePayload($entity->language),
             'entity' => [
                 'id' => $entity->id,
                 'name' => $entity->name,
@@ -185,17 +131,13 @@ class EntityController extends Controller
             ])->all(),
             'alignmentCount' => $alignmentCount,
             'can_change_approval' => $this->access()->canChangeApproval(auth()->user(), $entity),
-            'sentencesEndpoint' => route('entities.sentences', ['lang' => $lang, 'entity' => $entity->id]),
+            'sentencesEndpoint' => route('entities.sentences', ['work' => $work->id, 'entity' => $entity->id]),
         ]);
     }
 
-    public function update(UpdateEntityRequest $request, string $lang, int $entityId): RedirectResponse
+    public function update(Work $work, Entity $entity, UpdateEntityRequest $request): RedirectResponse
     {
-        $language = $this->resolveLanguage($lang);
-
-        $entity = Entity::query()
-            ->where('language_id', $language->id)
-            ->findOrFail($entityId);
+        $this->abortUnlessInWork($work, $entity);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
@@ -206,7 +148,7 @@ class EntityController extends Controller
             'description' => $data['description'] ?? null,
         ]);
 
-        return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $entity->id])
+        return redirect()->route('entities.show', ['work' => $work->id, 'entity' => $entity->id])
             ->with('status', 'Entity updated.');
     }
 
@@ -215,13 +157,9 @@ class EntityController extends Controller
      * even while the entity is approved — this is the one change that stays
      * possible under the lock (ADR 0034).
      */
-    public function updateApproved(UpdateEntityApprovalRequest $request, string $lang, int $entityId): RedirectResponse
+    public function updateApproved(Work $work, Entity $entity, UpdateEntityApprovalRequest $request): RedirectResponse
     {
-        $language = $this->resolveLanguage($lang);
-
-        $entity = Entity::query()
-            ->where('language_id', $language->id)
-            ->findOrFail($entityId);
+        $this->abortUnlessInWork($work, $entity);
 
         abort_unless($this->access()->canChangeApproval($request->user(), $entity), 403);
 
@@ -231,17 +169,13 @@ class EntityController extends Controller
             ? 'Entity approved — editing is locked.'
             : 'Approval removed — editing unlocked.';
 
-        return redirect()->route('entities.show', ['lang' => $lang, 'entity' => $entity->id])
+        return redirect()->route('entities.show', ['work' => $work->id, 'entity' => $entity->id])
             ->with('status', $status);
     }
 
-    public function sentences(string $lang, int $entityId, Request $request): JsonResponse
+    public function sentences(Work $work, Entity $entity, Request $request): JsonResponse
     {
-        $language = $this->resolveLanguage($lang);
-
-        $entity = Entity::query()
-            ->where('language_id', $language->id)
-            ->findOrFail($entityId);
+        $this->abortUnlessInWork($work, $entity);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
@@ -251,13 +185,9 @@ class EntityController extends Controller
         return response()->json($this->pageResponse($entity, $page, $perPage));
     }
 
-    public function storeSentence(StoreEntitySentenceRequest $request, string $lang, int $entityId): JsonResponse
+    public function storeSentence(Work $work, Entity $entity, StoreEntitySentenceRequest $request): JsonResponse
     {
-        $language = $this->resolveLanguage($lang);
-
-        $entity = Entity::query()
-            ->where('language_id', $language->id)
-            ->findOrFail($entityId);
+        $this->abortUnlessInWork($work, $entity);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
@@ -281,13 +211,9 @@ class EntityController extends Controller
         ]);
     }
 
-    public function updateSentence(UpdateEntitySentenceRequest $request, string $lang, int $entityId, int $sentence): JsonResponse
+    public function updateSentence(Work $work, Entity $entity, int $sentence, UpdateEntitySentenceRequest $request): JsonResponse
     {
-        $language = $this->resolveLanguage($lang);
-
-        $entity = Entity::query()
-            ->where('language_id', $language->id)
-            ->findOrFail($entityId);
+        $this->abortUnlessInWork($work, $entity);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
@@ -305,13 +231,9 @@ class EntityController extends Controller
         ]);
     }
 
-    public function destroySentence(string $lang, int $entityId, int $sentence, Request $request): JsonResponse
+    public function destroySentence(Work $work, Entity $entity, int $sentence, Request $request): JsonResponse
     {
-        $language = $this->resolveLanguage($lang);
-
-        $entity = Entity::query()
-            ->where('language_id', $language->id)
-            ->findOrFail($entityId);
+        $this->abortUnlessInWork($work, $entity);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
@@ -325,13 +247,9 @@ class EntityController extends Controller
         return response()->json($this->pageResponse($entity, $page, $perPage));
     }
 
-    public function reorderSentences(ReorderEntitySentenceRequest $request, string $lang, int $entityId): JsonResponse
+    public function reorderSentences(Work $work, Entity $entity, ReorderEntitySentenceRequest $request): JsonResponse
     {
-        $language = $this->resolveLanguage($lang);
-
-        $entity = Entity::query()
-            ->where('language_id', $language->id)
-            ->findOrFail($entityId);
+        $this->abortUnlessInWork($work, $entity);
 
         abort_unless($this->access()->canEdit(auth()->user(), $entity), 403);
 
@@ -351,32 +269,14 @@ class EntityController extends Controller
         return response()->json($this->pageResponse($entity, $targetPage, $perPage));
     }
 
-    private function resolveLanguage(string $lang): Language
-    {
-        return Language::query()
-            ->enabled()
-            ->where('code', $lang)
-            ->firstOrFail();
-    }
-
     /**
-     * Resolve the work for a new entity: an existing work id, or a newly
-     * created one from the inline "new work" fields. When the original
-     * language is not given it defaults to the entity's own language.
+     * Entity routes nest under the work (ADR 0073). The entity carries its
+     * language, so the work segment is verified, not used for lookup — a
+     * URL naming another work is a 404, not a wrong-language 404.
      */
-    private function resolveWork(StoreEntityRequest $request, Language $language): Work
+    private function abortUnlessInWork(Work $work, Entity $entity): void
     {
-        $workId = $request->validated('work_id');
-
-        if ($workId !== null) {
-            return Work::query()->findOrFail((int) $workId);
-        }
-
-        return Work::query()->create([
-            'title' => $request->validated('new_work_title'),
-            'author' => $request->validated('new_work_author'),
-            'original_language_id' => (int) ($request->validated('new_work_original_language_id') ?? $language->id),
-        ]);
+        abort_unless($entity->work_id === $work->id, 404);
     }
 
     private function access(): EntityAccessService
@@ -394,18 +294,6 @@ class EntityController extends Controller
             'name' => $language->name,
             'native_name' => $language->native_name,
         ];
-    }
-
-    /**
-     * @return list<array{id: int, title: string}>
-     */
-    private function worksForSelect(): array
-    {
-        return Work::query()
-            ->orderBy('title')
-            ->get(['id', 'title'])
-            ->map(fn (Work $work): array => ['id' => $work->id, 'title' => $work->title])
-            ->all();
     }
 
     /**

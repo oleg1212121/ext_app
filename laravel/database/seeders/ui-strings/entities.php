@@ -1,24 +1,10 @@
 <?php
 
-// UI strings: Entities pages (create, edit, details).
+// UI strings: Entities pages (edit, details).
 return [
     'entities.entities' => ['en' => 'entities', 'ru' => 'тексты'],
-    'entities.new_entity' => ['en' => 'New entity', 'ru' => 'Новый текст'],
-    'entities.create_a_entity' => ['en' => 'Create a :code entity', 'ru' => 'Создать текст (:code)'],
-    'entities.work' => ['en' => 'Work', 'ru' => 'Произведение'],
-    'entities.existing_work' => ['en' => 'Existing work', 'ru' => 'Существующее произведение'],
-    'entities.new_work' => ['en' => 'New work', 'ru' => 'Новое произведение'],
-    'entities.work_title_placeholder' => ['en' => 'Work title (e.g. War and Peace)', 'ru' => 'Название произведения (например, «Война и мир»)'],
-    'entities.author_optional' => ['en' => 'Author (optional)', 'ru' => 'Автор (необязательно)'],
-    'entities.original_language_defaults' => ['en' => 'Original language — defaults to :name', 'ru' => 'Язык оригинала — по умолчанию :name'],
-    'entities.this_text' => ['en' => ' (this text)', 'ru' => ' (этот текст)'],
     'entities.name' => ['en' => 'Name', 'ru' => 'Название'],
-    'entities.translator_edition_note' => ['en' => 'Translator / edition note', 'ru' => 'Примечание о переводе / издании'],
-    'entities.label_placeholder' => ['en' => 'Optional — tells same-language entities of one work apart', 'ru' => 'Необязательно — различает тексты одного произведения на одном языке'],
     'entities.description' => ['en' => 'Description', 'ru' => 'Описание'],
-    'entities.text_file' => ['en' => 'Text file', 'ru' => 'Текстовый файл'],
-    'entities.text_file_hint' => ['en' => 'Optional. A plain text (.txt) file. If provided, it is split into sentences and a signature is generated.', 'ru' => 'Необязательно. Обычный текстовый файл (.txt). Если загружен, он разбивается на предложения и для него генерируется сигнатура.'],
-    'entities.create_entity' => ['en' => 'Create entity', 'ru' => 'Создать текст'],
     'entities.cancel' => ['en' => 'Cancel', 'ru' => 'Отмена'],
     'entities.back_to' => ['en' => '← Back to :name', 'ru' => '← Вернуться к «:name»'],
     'entities.edit_entity' => ['en' => 'Edit entity', 'ru' => 'Редактирование текста'],

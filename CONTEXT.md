@@ -579,8 +579,12 @@ any of a work's pages), work detail.
 
 **Entities page**:
 A work's page (`/works/{id}/entities`) listing the per-language texts of
-that work the user can read — where new texts are uploaded to the work.
-_Avoid_: entities tab (retired with the tab layout), text list.
+that work the user can read — where new texts are uploaded to the work. An
+individual text's view and edit pages live on the work branch too
+(`/works/{id}/entities/{entity}`) — the URL names the work, never the
+language (the Entity carries it). _Avoid_: entities tab (retired with the
+tab layout), text list, language entities (the old language-scoped
+back-link wording).
 
 **Alignments page**:
 A work's page (`/works/{id}/alignments`) listing the **Entity matches** of
