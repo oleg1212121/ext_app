@@ -84,7 +84,7 @@ class EntityController extends Controller
                 'score' => $knowledge->score,
                 'computed_at' => $knowledge->computed_at?->toISOString(),
             ],
-            'needs_word_test' => ! UserWord::query()->where('user_id', auth()->id())->exists(),
+            'has_no_familiarity' => ! UserWord::query()->where('user_id', auth()->id())->exists(),
             'can_edit' => $canEdit,
             'can_change_approval' => $this->access()->canChangeApproval(auth()->user(), $entity),
             'sentences' => $sentences->through(function (object $sentence): array {

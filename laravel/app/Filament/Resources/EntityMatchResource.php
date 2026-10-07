@@ -144,7 +144,7 @@ class EntityMatchResource extends Resource
                 Actions\Action::make('editAlignment')
                     ->label('Edit alignment')
                     ->icon('heroicon-o-pencil-square')
-                    ->url(fn (EntityMatch $record): string => route('works.alignments.edit', ['work' => $record->aEntity?->work_id ?? $record->bEntity?->work_id, 'entityMatch' => $record])),
+                    ->url(fn (EntityMatch $record): string => route('works.alignments.edit', ['work' => $record->aEntity?->work_id, 'entityMatch' => $record])),
                 Actions\Action::make('realign')
                     ->label('Re-align')
                     ->icon('heroicon-o-arrow-path')

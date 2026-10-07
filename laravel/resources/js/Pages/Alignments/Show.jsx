@@ -51,6 +51,21 @@ function syncUrlPages({rowsMeta, unmatchedA, unmatchedB, needsReview}) {
     window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
 }
 
+// Every paginated section clamps its page after the first response: a page
+// past last_page (the last item of a page was approved away, a shared URL
+// overshoots) is refetched as the final page instead of showing an empty
+// list.
+async function fetchClampedPage(fetchPage, page) {
+    let res = await fetchPage(page);
+    const finalPage = Math.min(page, Math.max(res.meta.last_page, 1));
+
+    if (finalPage !== page) {
+        res = await fetchPage(finalPage);
+    }
+
+    return res;
+}
+
 // Drop-slot droppable ids look like "slot:<containerKey>:#<n>", where n is the
 // boundary to drop on: 0 = first position, keys.length = after the last.
 const isSlotId = (id) => typeof id === 'string' && id.startsWith('slot:');
@@ -186,13 +201,10 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setPoolError((prev) => ({...prev, [side]: null}));
 
         try {
-            let res = await alignmentsApi.unmatched(initialMatch.work_id, initialMatch.id, side, page);
-            const lastPage = Math.max(res.meta.last_page, 1);
-            const finalPage = Math.min(page, lastPage);
-
-            if (finalPage !== page) {
-                res = await alignmentsApi.unmatched(initialMatch.work_id, initialMatch.id, side, finalPage);
-            }
+            const res = await fetchClampedPage(
+                (target) => alignmentsApi.unmatched(initialMatch.work_id, initialMatch.id, side, target),
+                page,
+            );
 
             const key = side === 'a' ? 'unmatchedA' : 'unmatchedB';
             applyData({...lastServer.current, [key]: res});
@@ -208,13 +220,10 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setNeedsReviewBusy(true);
 
         try {
-            let res = await alignmentsApi.needsReview(initialMatch.work_id, initialMatch.id, page);
-            const lastPage = Math.max(res.meta.last_page, 1);
-            const finalPage = Math.min(page, lastPage);
-
-            if (finalPage !== page) {
-                res = await alignmentsApi.needsReview(initialMatch.work_id, initialMatch.id, finalPage);
-            }
+            const res = await fetchClampedPage(
+                (target) => alignmentsApi.needsReview(initialMatch.work_id, initialMatch.id, target),
+                page,
+            );
 
             applyData({...lastServer.current, needsReview: res});
             syncUrlPages(lastServer.current);

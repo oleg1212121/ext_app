@@ -25,7 +25,7 @@ class ViewEntityMatch extends ViewRecord
             Action::make('editAlignment')
                 ->label('Edit alignment')
                 ->icon('heroicon-o-pencil-square')
-                ->url(fn (): string => route('works.alignments.edit', ['work' => $this->record->aEntity?->work_id ?? $this->record->bEntity?->work_id, 'entityMatch' => $this->record])),
+                ->url(fn (): string => route('works.alignments.edit', ['work' => $this->record->aEntity?->work_id, 'entityMatch' => $this->record])),
         ];
     }
 

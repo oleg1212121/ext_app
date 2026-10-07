@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-07T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-07T19:15:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -879,7 +879,16 @@ editor-shaped row.
     (The previous scheme read an index assigned inside a `setState` updater
     synchronously after the dispatch — React 19 evaluates updaters eagerly
     only on the first dispatch after mount, so every later "Create below"
-    landed at the top of the page until refresh.) **Every endpoint is gated
+    landed at the top of the page until refresh.) The merge itself lives
+    in `lib/alignmentRowMerge.js` (`mergeMutationRows`, pinned by vitest
+    per the lib-only JS test convention): on-page rows are replaced in
+    place, a new row splices in after its anchor, optimistic temp rows
+    (non-numeric ids) are dropped — and payload rows for rows **not on
+    the displayed page are skipped**, because appending them would fake
+    an extra "next page" preview row at the end of the list (approving
+    straight from the needs-review list returns such off-page rows; the
+    server holds their truth, and `loadRows` refetches the page on
+    demand). **Every endpoint is gated
     first by `EntityAccessService::canReadMatch($user, $entityMatch)`** — a
     non-granted user (who cannot read BOTH entities of the match) receives
     `403` on every read and mutation, so a restricted match is neither

@@ -37,7 +37,7 @@ const PageLink = ({disabled, href, children}) => {
     );
 };
 
-export default function Show({language, entity, entityMatches = [], sentences = [], sentences_meta, word_knowledge = null, needs_word_test = false, can_edit: canEdit = false, can_change_approval: canChangeApproval = false}) {
+export default function Show({language, entity, entityMatches = [], sentences = [], sentences_meta, word_knowledge = null, has_no_familiarity = false, can_edit: canEdit = false, can_change_approval: canChangeApproval = false}) {
     const {t} = useI18n();
     const fileName = entity.file_path ? entity.file_path.split('/').pop() : null;
     const pageOffset = ((sentences_meta?.current_page ?? 1) - 1) * (sentences_meta?.per_page ?? 20);
@@ -86,7 +86,7 @@ export default function Show({language, entity, entityMatches = [], sentences = 
                                         </span>
                                         {' · '}
                                         {t('entities.word_knowledge_share')}
-                                        {needs_word_test && word_knowledge.score !== null && (
+                                        {has_no_familiarity && word_knowledge.score !== null && (
                                             <>
                                                 {' · '}
                                                 <Link

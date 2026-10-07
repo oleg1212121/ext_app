@@ -1,5 +1,25 @@
 # Directory Update Log
 
+## 2026-10-07 (Review polish: A-side URLs, clamp helper, has_no_familiarity rename)
+
+Two-axis review (standards + spec) of the five dev commits (ADR 0072–0074
+plus the two needs-review fixes) produced this follow-up batch. The match
+payload's `work_id` and both Filament "Edit alignment" URL builders now
+read the A-side entity's `work_id` only, per ADR 0072's single
+verified path — the dropped `bEntity` fallback could build URLs the
+controllers would 404 (`a_entity_id` is non-nullable, so the fallback was
+dead weight). The off-page merge-row skip (needs-review approve fix) is
+folded into `wiki/domains/sentence-alignment.md` — whose `generated.at`
+had been left unbumped by the earlier flash-fix edit — and the stale
+`wiki/index.md` entities line no longer advertises the deleted
+language-scoped create pages. `Alignments/Show.jsx`'s duplicated
+page-clamp shape (needs review + unmatched pools) is one
+`fetchClampedPage` helper. `EntityController::show`'s `needs_word_test`
+prop is renamed `has_no_familiarity`: the check is "no `user_word` rows
+of any kind" (word test, crossword markers, adoptions), not "hasn't
+taken the test" — ADR 0074's blank-slate hint semantics are unchanged;
+`Entities/Show` and `EntityWordKnowledgeTest` follow the rename.
+
 ## 2026-10-07 (Entity pages show word knowledge)
 
 Entity detail pages gained a per-user **Word knowledge** percentage (ADR

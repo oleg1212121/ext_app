@@ -135,7 +135,7 @@ test('the show page carries the snapshot and the word-test hint', function () {
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('word_knowledge.score', 100)
-            ->where('needs_word_test', false));
+            ->where('has_no_familiarity', false));
 
     // A viewer with no familiarity data at all scores 0% and is pointed at
     // the word test.
@@ -146,7 +146,7 @@ test('the show page carries the snapshot and the word-test hint', function () {
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('word_knowledge.score', 0)
-            ->where('needs_word_test', true));
+            ->where('has_no_familiarity', true));
 
     expect(UserEntityWordKnowledge::query()->where('user_id', $blank->id)->count())->toBe(1);
 });
@@ -171,9 +171,11 @@ test('the refresh sweep recomputes aged snapshots and skips fresh ones', functio
     [$otherEntity, $otherUser] = knowledgeEntity([['river', 2, createWord('en', 'river')]], ['river' => 50]);
     $otherPair = $service->ensure($otherEntity, $otherUser);
     // Fresh: 2 days old (inside the 3-day cap) and newer than the entity's
-    // last index build.
+    // last index build. The expected moment is captured at write time — a
+    // fresh now() at assertion time drifts across the second boundary.
+    $freshAt = now()->subDays(2);
     $otherEntity->forceFill(['words_indexed_at' => now()->subDays(3)])->save();
-    $otherPair->forceFill(['computed_at' => now()->subDays(2)])->save();
+    $otherPair->forceFill(['computed_at' => $freshAt])->save();
 
     $this->artisan('entities:refresh-word-knowledge')->assertSuccessful();
 
@@ -182,7 +184,7 @@ test('the refresh sweep recomputes aged snapshots and skips fresh ones', functio
 
     expect($pair->score)->toBe(100.0)
         ->and($pair->computed_at->timestamp)->toBeGreaterThan(now()->subMinute()->timestamp)
-        ->and($otherPair->computed_at->timestamp)->toBe(now()->subDays(2)->timestamp)
+        ->and($otherPair->computed_at->format('Y-m-d H:i:s'))->toBe($freshAt->format('Y-m-d H:i:s'))
         ->and($otherPair->score)->toBe(83.33);
 });
 
