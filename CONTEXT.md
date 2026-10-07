@@ -1036,3 +1036,23 @@ for every tested-language word at rank ≤ the Word test score. It marks a
 word as seen-enough without certifying it: reads and crosswords still
 grow it toward known (100), and any higher existing value is untouched.
 _Avoid_: known (that means familiarity 100), certified knowledge.
+
+# Recommendations Context
+
+The domain of the personalized reading queue — the page that re-ranks the
+texts the viewer has already opened by their Word knowledge, so they can
+pick the least-known text they can still read comfortably.
+
+## Language
+
+**Recommendations page**:
+The page at `/recommendations` listing the viewer's readable, completed
+texts whose **Word knowledge** snapshot sits at or above the chosen
+threshold (default 90%), grouped under their Work and ordered least known
+first — an easy-read finder, not a challenge finder. It reads the stored
+snapshots only: a text enters the page the first time the viewer opens it;
+a text never opened never appears (see Word knowledge in the Library
+Context). Search covers work and text fields; the language filter defaults
+to English. See ADR 0075. _Avoid_: discovery engine (the page never
+surfaces unopened texts), percentile (a rank against other users),
+knowledge threshold as a ceiling (it is a minimum).

@@ -10,6 +10,7 @@ use App\Http\Controllers\LibraryController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\ReadingAiController;
+use App\Http\Controllers\RecommendationsController;
 use App\Http\Controllers\UiSettingsController;
 use App\Http\Controllers\WordController;
 use App\Http\Controllers\WordTestController;
@@ -80,6 +81,12 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::get('/resources/pronunciation-guide', function () {
         return Inertia::render('Resources/PronunciationGuide');
     })->name('resources.pronunciation-guide');
+
+    // Recommendations (ADR 0075): the viewer's readable texts re-ranked by
+    // their stored word-knowledge snapshots — a read-only pass over
+    // user_entity_word_knowledge, never a computation.
+    Route::get('/recommendations', [RecommendationsController::class, 'index'])
+        ->name('recommendations.index');
 
     Route::get('/words/{word}', [WordController::class, 'show'])
         ->whereNumber('word')

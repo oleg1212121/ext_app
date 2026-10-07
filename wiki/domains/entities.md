@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-10-07T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-07T15:00:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -279,7 +279,9 @@ from reads/lookups/crosswords). `ensure` refuses to compute while
 linking to the word test. The scheduled `entities:refresh-word-knowledge`
 command (every 5 min, `withoutOverlapping`, `--limit=100`) recomputes
 stale pairs without a visit, skipping entities whose index is
-mid-rebuild.
+mid-rebuild. The table's only consumer beside the Show page is the
+[Recommendations](/domains/recommendations.md) page (ADR 0075), which
+reads it without ever writing.
 
 # Approval edit-lock (ADR 0034)
 

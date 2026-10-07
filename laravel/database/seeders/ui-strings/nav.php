@@ -22,4 +22,5 @@ return [
     'nav.word_test' => ['en' => 'Word test', 'ru' => 'Тест слов'],
     'nav.toggle_dark_mode' => ['en' => 'Toggle dark mode', 'ru' => 'Переключить тёмную тему'],
     'nav.pronunciation_reference' => ['en' => 'Pronunciation guide', 'ru' => 'Справочник произношения'],
+    'nav.recommendations' => ['en' => 'Recommendations', 'ru' => 'Рекомендации'],
 ];

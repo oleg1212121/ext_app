@@ -1,5 +1,30 @@
 # Directory Update Log
 
+## 2026-10-07 (Recommendations page)
+
+New personalized reading queue at `/recommendations` (ADR
+[0075](../docs/adr/0075-recommendations-page.md), new
+`wiki/domains/recommendations.md`): the viewer's readable completed texts
+grouped under works, filtered to texts whose **Word knowledge** snapshot
+(ADR 0074) sits at or above a threshold (default 90%, clamped; minimum,
+not ceiling), ordered least known first — an easy-read finder.
+`RecommendationsController` runs one qualifying filter twice: grouped per
+work (`MIN(score)` through a `joinSub`, keeping `paginate()`'s count
+correct, 15 works/page) and per page-work texts, all in SQL over
+`user_entity_word_knowledge` with the mid-rebuild guard mirrored from
+`EntityWordKnowledgeService::refreshStale`. The page is a **read-only**
+pass over the snapshot table (no backfill, no computation — a deliberate
+ADR 0075 decision), so it re-ranks previously opened texts; search
+matches work title/author or qualifying text names, `lang` defaults to
+`en` (unknown code → 404), and unrankable texts (null score, mid-rebuild
+index, non-completed, unreadable-restricted) are excluded silently. React
+page `Recommendations/Index.jsx` follows the Library list idiom (GET
+form + `LinkPagination`, wbench palette) with expandable work rows;
+top-level `nav.recommendations` sits after Resources; strings seeded from
+the new `ui-strings/recommendations.php` + `nav.php`. Tests:
+`RecommendationsTest` (12 tests). `entities.md` gains a cross-link from
+its ADR 0074 section and a `generated.at` bump.
+
 ## 2026-10-07 (Review polish: A-side URLs, clamp helper, has_no_familiarity rename)
 
 Two-axis review (standards + spec) of the five dev commits (ADR 0072–0074
