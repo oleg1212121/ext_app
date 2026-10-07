@@ -116,19 +116,19 @@ test('an approved entity blocks alignment-editor mutations on both sides', funct
 
     // Mutations are locked…
     $this->actingAs($user)
-        ->post("/alignments/{$match->id}/rows", ['after_row_id' => null])
+        ->post("/works/{$entity->work_id}/alignments/{$match->id}/rows", ['after_row_id' => null])
         ->assertForbidden();
 
     // …but reads stay open (both entities are public).
     $this->actingAs($user)
-        ->get("/alignments/{$match->id}/rows", ['page' => 1, 'per_page' => 25])
+        ->get("/works/{$entity->work_id}/alignments/{$match->id}/rows", ['page' => 1, 'per_page' => 25])
         ->assertOk();
 
     // Un-approve and the mutation goes through.
     $entity->update(['is_approved' => false]);
 
     $this->actingAs($user)
-        ->post("/alignments/{$match->id}/rows", ['after_row_id' => null])
+        ->post("/works/{$entity->work_id}/alignments/{$match->id}/rows", ['after_row_id' => null])
         ->assertOk();
 });
 

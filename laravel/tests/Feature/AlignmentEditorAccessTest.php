@@ -30,7 +30,7 @@ function restrictedEditorWorld(): array
         'alignment_chunk' => 0,
     ]);
 
-    return compact('en', 'ru', 'match', 'row');
+    return compact('work', 'en', 'ru', 'match', 'row');
 }
 
 test('non-granted user is forbidden from every editor read and mutation endpoint', function (Closure $case) {
@@ -44,12 +44,13 @@ test('non-granted user is forbidden from every editor read and mutation endpoint
 
     $response->assertForbidden();
 })->with([
-    'rows' => fn (array $w) => ['getJson', "/alignments/{$w['match']->id}/rows?page=1&per_page=25", []],
-    'unmatched' => fn (array $w) => ['getJson', "/alignments/{$w['match']->id}/unmatched?side=a&page=1", []],
-    'needs-review' => fn (array $w) => ['getJson', "/alignments/{$w['match']->id}/needs-review?page=1", []],
-    'storeRow' => fn (array $w) => ['postJson', "/alignments/{$w['match']->id}/rows", ['after_row_id' => null]],
-    'approveRow' => fn (array $w) => ['postJson', "/alignments/{$w['match']->id}/rows/{$w['row']->id}/approve", []],
-    'storeSentence' => fn (array $w) => ['postJson', "/alignments/{$w['match']->id}/sentences", [
+    'rows' => fn (array $w) => ['getJson', "/works/{$w['work']->id}/alignments/{$w['match']->id}/rows?page=1&per_page=25", []],
+    'unmatched' => fn (array $w) => ['getJson', "/works/{$w['work']->id}/alignments/{$w['match']->id}/unmatched?side=a&page=1", []],
+    'needs-review' => fn (array $w) => ['getJson', "/works/{$w['work']->id}/alignments/{$w['match']->id}/needs-review?page=1", []],
+    'storeRow' => fn (array $w) => ['postJson', "/works/{$w['work']->id}/alignments/{$w['match']->id}/rows", ['after_row_id' => null]],
+    'approveRow' => fn (array $w) => ['postJson', "/works/{$w['work']->id}/alignments/{$w['match']->id}/rows/{$w['row']->id}/approve", []],
+    'disapproveRow' => fn (array $w) => ['postJson', "/works/{$w['work']->id}/alignments/{$w['match']->id}/rows/{$w['row']->id}/disapprove", []],
+    'storeSentence' => fn (array $w) => ['postJson', "/works/{$w['work']->id}/alignments/{$w['match']->id}/sentences", [
         'side' => 'a',
         'meaning_match_id' => $w['row']->id,
         'content' => 'A new sentence.',
@@ -67,20 +68,20 @@ test('granted user may read and mutate a restricted editor match after both-side
 
     // Reads are allowed.
     actingAs($user)
-        ->getJson("/alignments/{$world['match']->id}/rows?page=1&per_page=25")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows?page=1&per_page=25")
         ->assertOk();
 
     actingAs($user)
-        ->getJson("/alignments/{$world['match']->id}/unmatched?side=a&page=1")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/unmatched?side=a&page=1")
         ->assertOk();
 
     actingAs($user)
-        ->getJson("/alignments/{$world['match']->id}/needs-review?page=1")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/needs-review?page=1")
         ->assertOk();
 
     // The approve mutation is allowed and flips similarity to 1.0.
     actingAs($user)
-        ->postJson("/alignments/{$world['match']->id}/rows/{$world['row']->id}/approve")
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows/{$world['row']->id}/approve")
         ->assertOk()
         ->assertJsonPath('rows.0.similarity', 1);
 });

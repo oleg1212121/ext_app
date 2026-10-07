@@ -33,6 +33,7 @@ class AlignmentEditorApiPresenter
             'b_entity_name' => $entityMatch->bEntity?->name ?? '',
             'a_language_code' => $entityMatch->aEntity?->language?->code ?? '',
             'b_language_code' => $entityMatch->bEntity?->language?->code ?? '',
+            'work_id' => $entityMatch->aEntity?->work_id ?? $entityMatch->bEntity?->work_id,
             'work_title' => $entityMatch->aEntity?->work?->title ?? $entityMatch->bEntity?->work?->title ?? '',
             'original_language_code' => $entityMatch->aEntity?->work?->originalLanguage?->code
                 ?? $entityMatch->bEntity?->work?->originalLanguage?->code

@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-05T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-07T12:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -823,22 +823,46 @@ editor-shaped row.
     with an error plus an "Open existing match" link (flash
     `existing_match_id`), and creating a match involving an entity the user
     cannot read is `403`. Each match card links (stretched link) to the
-    editor `/alignments/{id}` and carries Simulator / Read·{LANG} buttons —
+    work-nested editor `/works/{work}/alignments/{match}/edit` (ADR 0072)
+    and carries Simulator / Read·{LANG} buttons —
     `GET /bilinguals/simulator/{entityMatch}` (pinned simulator) and the
     reader, with the reading side resolved server-side as the
-    non-native-language side. The editor itself is
-    a parallel entry point backed by the surgical `AlignmentEditorController`
-    endpoints — create/delete pair, approve pair (set `similarity = 1.0` +
-    `alignment_chunk = -1`, promoting a row to a hard landmark), add/edit/
+    non-native-language side. The editor itself
+    (route `works.alignments.edit`, `AlignmentController@show`) is a
+    parallel entry point backed by the surgical `AlignmentEditorController`
+    endpoints under the same work-nested prefix (ADR 0072: the page at
+    `GET /works/{work}/alignments/{entityMatch}/edit`, all eleven JSON
+    endpoints beside it; every action binds `Work` and 404s when the match
+    path names another work, and the old flat `/alignments/{id}` routes are
+    deleted without redirects) — create/delete pair, approve pair (set
+    `similarity = 1.0` + `alignment_chunk = -1`, promoting a row to a hard
+    landmark), **disapprove pair** (`POST .../rows/{row}/disapprove` →
+    `AlignmentEditorService::rejectRow`: `similarity = 0.0` only, the chunk
+    sentinel untouched — a rejection is a number, not a verdict, so the
+    row stays in Needs review and a later Re-align's below-0.90 delete pass
+    removes it and re-pairs its sentences), add/edit/
      unlink/hard-delete sentence, and
      `sentences/move` (within-row reorder / cross-row move / to-or-from the
      unmatched pool; every drop into a row renumbers document order) — with
      immediate persistence, sparse orders via
     `SparseOrderService`, and JSON payloads shaped by `AlignmentEditorApiPresenter`
     (rows carry `a_sentences`/`b_sentences` per row; `rows` + per-side
-    `unmatched_a`/`unmatched_b` pools with pagination, `last_page` included;
-    the rows table's `Pagination` component shows Prev/Next + numbered page
-    buttons with ellipsis and a custom per-page dropdown). Every rows page
+    `unmatched_a`/`unmatched_b` pools with pagination, `last_page` included).
+    Each row's header rail is icon-only — approve ✓, disapprove ⊘
+    (ban-circle), create-below ＋, delete 🗑 — with `title`/`aria-label`
+    tooltips instead of the former text buttons. The shared `Pagination`
+    component (rows table, both unmatched pools, and the needs-review
+    section) shows Prev/Next + numbered page buttons with ellipsis, a
+    "go to page" jump input (clamped to `1..last_page`, hidden when there
+    is only one page), and — rows only — a custom per-page dropdown.
+    **The editor's pagination state lives in the URL query** (ADR 0072):
+    `rows_page`, `rows_per_page`, `unmatched_a_page`, `unmatched_b_page`,
+    `review_page` are seeded server-side on page load
+    (`AlignmentEditorPageRequest`, out-of-range values clamped to the last
+    page) and mirrored client-side via `history.replaceState` on every
+    page/per-page change, so copying the URL shares the exact view
+    (defaults are omitted from the URL; section open/closed state stays
+    client-local). Every rows page
     carries a **three-row lookahead tail** (`ROWS_LOOKAHEAD`): each page
     serves `per_page` rows plus the first three rows of the next page, so
     the editor always has rows below the page boundary to place sentences
@@ -873,10 +897,17 @@ editor-shaped row.
     clicking it jumps the editor's rows table to the exact page
     (`ceil(rank / per_page)`, the server returns page-independent per-row
     `rank`) and briefly highlights the row (client-side scroll, no URL
-    change). Paginated 25/page via
-    `GET /alignments/{entityMatch}/needs-review`
+    change). Each row also carries a hover-revealed **approve icon
+    button** that approves in place — similarity goes to 1.0, the row
+    leaves the list immediately (optimistic removal, then the refetch
+    lands on a clamped page when the last item of a page was approved).
+    Paginated 25/page via
+    `GET /works/{work}/alignments/{entityMatch}/needs-review`
     (`AlignmentEditorController::needsReview`, `NeedsReviewRequest`); the
-    section refetches its current page after every editor mutation. A
+    section refetches its current page after every editor mutation. The
+    header eyebrow ("Alignments") links back to the work's Alignments
+    page; the match payload's `work_id` (new) feeds that link, the
+    client's API base path, and the card/entity/duplicate-match links. A
     round floating button pinned at the top-center of the scroll area
     (sticky in `Show.jsx`, always rendered) scrolls the page down to the
     review sections — the unmatched pools when either has content, else the

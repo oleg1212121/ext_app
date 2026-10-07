@@ -103,6 +103,17 @@ class AlignmentEditorService
         $meaningMatch->update(['similarity' => 1.0, 'alignment_chunk' => MeaningMatch::HUMAN_CHUNK]);
     }
 
+    /**
+     * Reject a row: similarity drops to 0 only. The chunk sentinel is left
+     * untouched on purpose — a rejection is a number, not a permanent human
+     * verdict, so a later Re-align may re-pair or overwrite the row. The row
+     * stays in the needs-review list (similarity below the threshold).
+     */
+    public function rejectRow(MeaningMatch $meaningMatch): void
+    {
+        $meaningMatch->update(['similarity' => 0.0]);
+    }
+
     // ─── sentences ───────────────────────────────────────────────────────────
 
     /**

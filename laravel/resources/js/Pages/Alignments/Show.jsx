@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {Link} from '@inertiajs/react';
 import {
     DndContext,
     PointerSensor,
@@ -18,6 +19,36 @@ import Main from '../../Layouts/Main.jsx';
 import {useI18n} from '../../i18n';
 
 const ROW_PER_PAGE_OPTIONS = [10, 25, 50, 100];
+
+const DEFAULT_ROWS_PER_PAGE = 25;
+
+// The editor's pagination state lives in the URL (ADR 0072) so a page view
+// can be copied and shared: rows_page, rows_per_page, unmatched_a_page,
+// unmatched_b_page, review_page. Defaults are omitted to keep URLs clean,
+// and replaceState (no history spam) preserves Inertia's own entry state.
+function syncUrlPages({rowsMeta, unmatchedA, unmatchedB, needsReview}) {
+    const params = new URLSearchParams();
+
+    if (rowsMeta.current_page > 1) {
+        params.set('rows_page', String(rowsMeta.current_page));
+    }
+    if (rowsMeta.per_page !== DEFAULT_ROWS_PER_PAGE) {
+        params.set('rows_per_page', String(rowsMeta.per_page));
+    }
+    if (unmatchedA.meta.current_page > 1) {
+        params.set('unmatched_a_page', String(unmatchedA.meta.current_page));
+    }
+    if (unmatchedB.meta.current_page > 1) {
+        params.set('unmatched_b_page', String(unmatchedB.meta.current_page));
+    }
+    if (needsReview.meta.current_page > 1) {
+        params.set('review_page', String(needsReview.meta.current_page));
+    }
+
+    const query = params.toString();
+
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+}
 
 // Drop-slot droppable ids look like "slot:<containerKey>:#<n>", where n is the
 // boundary to drop on: 0 = first position, keys.length = after the last.
@@ -139,49 +170,66 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setTableError(null);
 
         try {
-            const res = await alignmentsApi.rows(initialMatch.id, page, perPage);
+            const res = await alignmentsApi.rows(initialMatch.work_id, initialMatch.id, page, perPage);
             applyData({...lastServer.current, rows: res.rows, rowsMeta: res.meta, sentencesBefore: res.sentences_before, match: res.match});
+            syncUrlPages(lastServer.current);
         } catch (error) {
             setTableError(error.message);
         } finally {
             setTableBusy(false);
         }
-    }, [initialMatch.id, applyData]);
+    }, [initialMatch.work_id, initialMatch.id, applyData]);
 
     const loadUnmatched = useCallback(async (side, page) => {
         setPoolBusy((prev) => ({...prev, [side]: true}));
         setPoolError((prev) => ({...prev, [side]: null}));
 
         try {
-            let res = await alignmentsApi.unmatched(initialMatch.id, side, page);
+            let res = await alignmentsApi.unmatched(initialMatch.work_id, initialMatch.id, side, page);
             const lastPage = Math.max(res.meta.last_page, 1);
             const finalPage = Math.min(page, lastPage);
 
             if (finalPage !== page) {
-                res = await alignmentsApi.unmatched(initialMatch.id, side, finalPage);
+                res = await alignmentsApi.unmatched(initialMatch.work_id, initialMatch.id, side, finalPage);
             }
 
             const key = side === 'a' ? 'unmatchedA' : 'unmatchedB';
             applyData({...lastServer.current, [key]: res});
+            syncUrlPages(lastServer.current);
         } catch (error) {
             setPoolError((prev) => ({...prev, [side]: error.message}));
         } finally {
             setPoolBusy((prev) => ({...prev, [side]: false}));
         }
-    }, [initialMatch.id, applyData]);
+    }, [initialMatch.work_id, initialMatch.id, applyData]);
 
     const loadNeedsReview = useCallback(async (page) => {
         setNeedsReviewBusy(true);
 
         try {
-            const res = await alignmentsApi.needsReview(initialMatch.id, page);
+            let res = await alignmentsApi.needsReview(initialMatch.work_id, initialMatch.id, page);
+            const lastPage = Math.max(res.meta.last_page, 1);
+            const finalPage = Math.min(page, lastPage);
+
+            if (finalPage !== page) {
+                res = await alignmentsApi.needsReview(initialMatch.work_id, initialMatch.id, finalPage);
+            }
+
             applyData({...lastServer.current, needsReview: res});
+            syncUrlPages(lastServer.current);
         } catch {
             // keep the last list on failure
         } finally {
             setNeedsReviewBusy(false);
         }
-    }, [initialMatch.id, applyData]);
+    }, [initialMatch.work_id, initialMatch.id, applyData]);
+
+    // Landing from a shared or hand-edited URL: the server may have clamped
+    // an out-of-range page, so the URL is rewritten to the pages actually
+    // shown before the user copies it anywhere.
+    useEffect(() => {
+        syncUrlPages(lastServer.current);
+    }, []);
 
     useEffect(() => {
         if (highlightedRowId === null) {
@@ -334,7 +382,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setAdding(null);
         setAddDraft('');
 
-        await runMutation(() => alignmentsApi.addSentence(initialMatch.id, {side, meaning_match_id: rowId, content}));
+        await runMutation(() => alignmentsApi.addSentence(initialMatch.work_id, initialMatch.id, {side, meaning_match_id: rowId, content}));
     }, [addDraft, adding, initialMatch.id, runMutation]);
 
     const onStartEdit = useCallback((key, side) => {
@@ -379,7 +427,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         setEditing(null);
 
         await runMutation(
-            () => alignmentsApi.updateSentence(initialMatch.id, item.id, {side: editing.side, content}),
+            () => alignmentsApi.updateSentence(initialMatch.work_id, initialMatch.id, item.id, {side: editing.side, content}),
         );
     }, [editing, lookup, initialMatch.id, runMutation, withRowSentence]);
 
@@ -408,9 +456,9 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         });
 
         await runMutation(
-            () => alignmentsApi.unlinkSentence(initialMatch.id, item.id, item.side),
+            () => alignmentsApi.unlinkSentence(initialMatch.work_id, initialMatch.id, item.id, item.side),
         );
-    }, [actionBusy, initialMatch.id, runMutation]);
+    }, [actionBusy, initialMatch.work_id, initialMatch.id, runMutation]);
 
     const onRemove = useCallback(async (item) => {
         if (actionBusy) {
@@ -431,9 +479,9 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         });
 
         await runMutation(
-            () => alignmentsApi.destroyUnmatched(initialMatch.id, item.id, item.side),
+            () => alignmentsApi.destroyUnmatched(initialMatch.work_id, initialMatch.id, item.id, item.side),
         );
-    }, [actionBusy, initialMatch.id, runMutation]);
+    }, [actionBusy, initialMatch.work_id, initialMatch.id, runMutation]);
 
     const onCreateBelow = useCallback(async (row) => {
         if (actionBusy) {
@@ -458,8 +506,8 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             [`row:${tmpId}:b`]: [],
         }));
 
-        await runMutation(() => alignmentsApi.createRow(initialMatch.id, row.id), row.id);
-    }, [actionBusy, initialMatch.id, runMutation]);
+        await runMutation(() => alignmentsApi.createRow(initialMatch.work_id, initialMatch.id, row.id), row.id);
+    }, [actionBusy, initialMatch.work_id, initialMatch.id, runMutation]);
 
     const onDeleteRow = useCallback(async (row) => {
         if (actionBusy) {
@@ -477,8 +525,8 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             return next;
         });
 
-        await runMutation(() => alignmentsApi.deleteRow(initialMatch.id, row.id));
-    }, [actionBusy, initialMatch.id, runMutation]);
+        await runMutation(() => alignmentsApi.deleteRow(initialMatch.work_id, initialMatch.id, row.id));
+    }, [actionBusy, initialMatch.work_id, initialMatch.id, runMutation]);
 
     const onApprove = useCallback(async (row) => {
         if (actionBusy) {
@@ -491,8 +539,42 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
             rows: prev.rows.map((existing) => (existing.id === row.id ? {...existing, similarity: 1} : existing)),
         }));
 
-        await runMutation(() => alignmentsApi.approveRow(initialMatch.id, row.id));
-    }, [actionBusy, initialMatch.id, runMutation]);
+        await runMutation(() => alignmentsApi.approveRow(initialMatch.work_id, initialMatch.id, row.id));
+    }, [actionBusy, initialMatch.work_id, initialMatch.id, runMutation]);
+
+    const onDisapprove = useCallback(async (row) => {
+        if (actionBusy) {
+            return;
+        }
+
+        setEditing(null);
+        setData((prev) => ({
+            ...prev,
+            rows: prev.rows.map((existing) => (existing.id === row.id ? {...existing, similarity: 0} : existing)),
+        }));
+
+        await runMutation(() => alignmentsApi.disapproveRow(initialMatch.work_id, initialMatch.id, row.id));
+    }, [actionBusy, initialMatch.work_id, initialMatch.id, runMutation]);
+
+    // Approve straight from the needs-review list: the row leaves the list
+    // optimistically; the mutation response then refetches the clamped page.
+    const onReviewApprove = useCallback(async (item) => {
+        if (actionBusy) {
+            return;
+        }
+
+        setEditing(null);
+        setData((prev) => ({
+            ...prev,
+            needsReview: {
+                ...prev.needsReview,
+                items: prev.needsReview.items.filter((existing) => existing.id !== item.id),
+                meta: {...prev.needsReview.meta, total: Math.max(prev.needsReview.meta.total - 1, 0)},
+            },
+        }));
+
+        await runMutation(() => alignmentsApi.approveRow(initialMatch.work_id, initialMatch.id, item.id));
+    }, [actionBusy, initialMatch.work_id, initialMatch.id, runMutation]);
 
     const containerOf = useCallback((id) => {
         if (typeof id === 'string' && isSlotId(id)) {
@@ -619,14 +701,14 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         const toRowId = targetContainer.startsWith('row:') ? Number(targetContainer.split(':')[1]) : null;
 
         await runMutation(
-            () => alignmentsApi.moveSentence(initialMatch.id, {
+            () => alignmentsApi.moveSentence(initialMatch.work_id, initialMatch.id, {
                 side: item.side,
                 sentence_id: item.id,
                 to_row_id: toRowId,
                 index,
             }),
         );
-    }, [containerOf, containers, initialMatch.id, lookup, runMutation]);
+    }, [containerOf, containers, initialMatch.work_id, initialMatch.id, lookup, runMutation]);
 
     const sideLabels = {
         a: (match.a_language_code || 'a').toUpperCase(),
@@ -682,9 +764,12 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                 <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
                     <header className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] pb-4">
                         <div>
-                            <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                            <Link
+                                href={`/works/${match.work_id}/alignments`}
+                                className="inline-block rounded-sm font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] transition-colors hover:text-[var(--wbench-accent)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
+                            >
                                 {t('alignments.title')}
-                            </p>
+                            </Link>
                             <h1 className="mt-1 font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
                                 {match.a_entity_name || 'A'} ↔ {match.b_entity_name || 'B'}
                             </h1>
@@ -756,6 +841,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                                         onCreateBelow={onCreateBelow}
                                         onDelete={onDeleteRow}
                                         onApprove={onApprove}
+                                        onDisapprove={onDisapprove}
                                     />
                                 ))}
 
@@ -801,6 +887,7 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                             rowsPerPage={rowsMeta.per_page}
                             onPageChange={(page) => loadNeedsReview(page)}
                             onRowClick={jumpToRow}
+                            onApprove={onReviewApprove}
                         />
                     </div>
                 </div>

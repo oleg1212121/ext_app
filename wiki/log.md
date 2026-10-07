@@ -1,5 +1,33 @@
 # Directory Update Log
 
+## 2026-10-07 (Alignment editor moves onto the work branch)
+
+The alignment editor's page and all eleven JSON endpoints left the flat
+`/alignments/{id}` namespace for the work branch (ADR
+[0072](../docs/adr/0072-work-nested-alignment-editor-routes.md)): the page
+is now `GET /works/{work}/alignments/{entityMatch}/edit`
+(`works.alignments.edit`), every `AlignmentEditorController` action binds
+`Work` and 404s when the match path names another work, the old flat routes
+are deleted without redirects, and all client link builders (alignment
+cards, entity page, duplicate-match flash link, Filament edit actions) plus
+every `AlignmentEditorApiTest`/`AlignmentEditorAccessTest` URL were
+rewritten — the match payload now carries `work_id`, which feeds the
+client's API base path and the header's new back link to the work's
+Alignments page. New editor action **disapprove** (`rejectRow`): similarity
+→ 0.0 with the chunk sentinel untouched — a number, not a verdict — so a
+rejected row stays in Needs review (pure-similarity rule unchanged) and a
+later Re-align deletes it below the landmark bar; the row rail is
+icon-only now (✓ / ⊘ / ＋ / 🗑), rows approve in place from the
+Needs-review list, and the shared `Pagination` gained a "go to page" jump
+input (unmatched pools upgraded from bare arrows). Editor pagination state
+moved into the URL (`rows_page`, `rows_per_page`, `unmatched_a_page`,
+`unmatched_b_page`, `review_page`): seeded server-side via the new
+`AlignmentEditorPageRequest` with out-of-range clamping, mirrored
+client-side with `history.replaceState`. `AlignmentPagesTest` pins the
+nested page, URL seeding/clamping, and the 404s. Docs: ADR 0072,
+CONTEXT.md (**Rejected pair**, rewritten **Alignment editor**),
+`wiki/domains/sentence-alignment.md`.
+
 ## 2026-10-06 (Band word lists min-merge onto frequency ranks)
 
 New command `words:import-frequency-lists {--path=} {--dry-run}` (ADR

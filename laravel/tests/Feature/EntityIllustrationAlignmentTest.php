@@ -189,7 +189,7 @@ it('keeps the editor add-sentence recount in alignable space', function () {
     SentenceType::firstOrCreate(['name' => 'sentence']);
 
     $this->actingAs(approvedUser())
-        ->postJson("/alignments/{$entityMatch->id}/sentences", [
+        ->postJson("/works/{$entityMatch->aEntity->work_id}/alignments/{$entityMatch->id}/sentences", [
             'side' => 'a',
             'meaning_match_id' => $row->id,
             'content' => 'A brand new sentence.',

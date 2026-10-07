@@ -49,6 +49,14 @@ A meaning match with junctions on exactly one side — the junctioned sentence(s
 display with the other column empty. How the pipeline keeps an unmatched original
 sentence visible. _Avoid_: skip row (implementation term), empty match
 
+**Rejected pair**:
+A meaning match a human disapproved in the Alignment editor: its similarity is
+set to 0 while everything else — junctions, order, the human-chunk sentinel —
+stays untouched. A rejection is a number, not a permanent verdict: the row stays
+in **Needs review**, and a later Re-align deletes it like any low-confidence row
+so its sentences can re-pair. _Avoid_: banned pair (nothing forbids the pairing
+machine-side), human verdict (only approval is remembered by the pipeline)
+
 **Needs review**:
 A meaning match a human should inspect because it is low-confidence (similarity
 below the pipeline's acceptance floor) or one-sided (incomplete) and not
@@ -59,15 +67,17 @@ _Avoid_: low-similarity match (score-only wording, misses one-sided rows), resol
 
 **Alignment editor**:
 The human-refinement surface for one Entity match — the React page at
-`/alignments/{id}`, backed by the surgical `AlignmentEditorController`
-endpoints, where sentences are added, edited, dragged between rows and the
-unmatched pool, and rows are created, approved, and deleted. Opened from the
+`/works/{work}/alignments/{match}/edit` (work-nested, ADR 0072), backed by
+the surgical `AlignmentEditorController` endpoints under the same prefix,
+where sentences are added, edited, dragged between rows and the unmatched
+pool, and rows are created, approved, rejected, and deleted. Its URL query
+carries each section's pagination so a view can be shared. Opened from the
 work's Alignments page cards, the entity page, and the Filament Sentence
 Alignment list's edit link. The one editing surface (ADR 0062); the Filament
 resource remains the operations console (Re-align, Run from scratch) over
 the same data.
 _Avoid_: Filament editor (the retired draft editor), draft editor, alignment
-editor page (there is only one).
+editor page (there is only one), flat /alignments/{id} URL (removed).
 
 **Sentence**:
 A split sentence of an entity. Its entity-global `order` is the **document order** —

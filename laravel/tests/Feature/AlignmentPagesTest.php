@@ -18,16 +18,34 @@ test('guests are redirected from the alignment editor', function () {
         ['status' => 'pending'],
     );
 
-    $this->get(route('alignments.show', $entityMatch))
+    $this->get(route('works.alignments.edit', ['work' => $work->id, 'entityMatch' => $entityMatch]))
         ->assertRedirect(route('login'));
 });
 
-test('the global alignments list and create pages are gone', function () {
+test('the global alignments pages and the flat editor route are gone', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)->get('/alignments')->assertNotFound();
     $this->actingAs($user)->get('/alignments/create')->assertNotFound();
     $this->actingAs($user)->post('/alignments', [])->assertNotFound();
+    $this->actingAs($user)->get('/alignments/18')->assertNotFound();
+    $this->actingAs($user)->getJson('/alignments/18/rows')->assertNotFound();
+});
+
+test('the editor 404s when the match path names another work', function () {
+    $user = User::factory()->create();
+
+    $work = createWork();
+    $otherWork = createWork(['title' => 'Other work']);
+    $entityMatch = createEntityMatch(
+        createEntity('en', $work, ['name' => 'English text']),
+        createEntity('ru', $work, ['name' => 'Russian text']),
+        ['status' => 'pending'],
+    );
+
+    $this->actingAs($user)
+        ->get("/works/{$otherWork->id}/alignments/{$entityMatch->id}/edit")
+        ->assertNotFound();
 });
 
 test('the per-work alignments page lists the work\'s readable entity matches', function () {
@@ -89,7 +107,7 @@ test('users cannot see restricted entity matches they are not granted', function
 
     // Not granted → opening the detail page is forbidden.
     $this->actingAs($user)
-        ->get(route('alignments.show', $entityMatch))
+        ->get(route('works.alignments.edit', ['work' => $work->id, 'entityMatch' => $entityMatch]))
         ->assertForbidden();
 
     // Granted on both sides → the match becomes visible.
@@ -162,18 +180,97 @@ test('authenticated users can view alignment details', function () {
 
     $response = $this
         ->actingAs($user)
-        ->get(route('alignments.show', $entityMatch));
+        ->get(route('works.alignments.edit', ['work' => $work->id, 'entityMatch' => $entityMatch]));
 
     $response->assertOk();
     $response->assertInertia(fn (Assert $page) => $page
         ->component('Alignments/Show')
         ->where('match.a_entity_name', 'English chapter')
         ->where('match.b_entity_name', 'Russian chapter')
+        ->where('match.work_id', $work->id)
         ->has('rows.0.a_sentences', 1)
         ->where('rows.0.a_sentences.0.content', 'The first English sentence.')
         ->has('rows.0.b_sentences', 1)
         ->where('rows.0.b_sentences.0.content', 'Первое русское предложение.')
         ->where('needs_review.meta.total', 0));
+});
+
+test('the editor seeds each section\'s page from the URL query', function () {
+    $user = User::factory()->create();
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $entityMatch = createEntityMatch(
+        createEntity('en', $work, ['name' => 'EN']),
+        createEntity('ru', $work, ['name' => 'RU']),
+        ['status' => 'pending'],
+    );
+
+    // 12 rows × 2 sentences, per_page=10 → rows page 2 exists. Row 12 sits on
+    // rows page 2 and is low-similarity, so needs-review page 1 holds it and
+    // review_page=2 is past the end (clamped back to 1).
+    for ($i = 1; $i <= 12; $i++) {
+        $mm = MeaningMatch::create([
+            'entity_match_id' => $entityMatch->id,
+            'order' => $i,
+            'similarity' => 0.1,
+            'alignment_chunk' => 0,
+        ]);
+
+        foreach (['a' => $entityMatch->a_entity_id, 'b' => $entityMatch->b_entity_id] as $side => $entityId) {
+            SentenceMeaningMatch::create([
+                'entity_sentence_id' => EntitySentence::create([
+                    'entity_id' => $entityId,
+                    'sentence_type_id' => $sentenceType->id,
+                    'content' => "Sentence {$i} ({$side}).",
+                    'order' => $i,
+                ])->id,
+                'meaning_match_id' => $mm->id,
+                'side' => $side,
+            ]);
+        }
+    }
+
+    $response = $this
+        ->actingAs($user)
+        ->get("/works/{$work->id}/alignments/{$entityMatch->id}/edit?rows_page=2&rows_per_page=10&review_page=2");
+
+    $response->assertOk();
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('Alignments/Show')
+        ->where('rows_meta.current_page', 2)
+        ->where('rows_meta.per_page', 10)
+        ->where('needs_review.meta.current_page', 1)
+        ->where('needs_review.meta.total', 12));
+});
+
+test('the editor clamps a hand-edited out-of-range rows page to the last page', function () {
+    $user = User::factory()->create();
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $entityMatch = createEntityMatch(
+        createEntity('en', $work, ['name' => 'EN']),
+        createEntity('ru', $work, ['name' => 'RU']),
+        ['status' => 'pending'],
+    );
+
+    for ($i = 1; $i <= 3; $i++) {
+        MeaningMatch::create([
+            'entity_match_id' => $entityMatch->id,
+            'order' => $i,
+            'similarity' => 1.0,
+            'alignment_chunk' => 0,
+        ]);
+    }
+
+    $response = $this
+        ->actingAs($user)
+        ->get("/works/{$work->id}/alignments/{$entityMatch->id}/edit?rows_page=99&rows_per_page=10");
+
+    $response->assertOk();
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('Alignments/Show')
+        ->where('rows_meta.current_page', 1)
+        ->where('rows_meta.last_page', 1));
 });
 
 test('rows endpoint returns sentences_before offset for page 1', function () {
@@ -221,7 +318,7 @@ test('rows endpoint returns sentences_before offset for page 1', function () {
 
     $response = $this
         ->actingAs($user)
-        ->getJson("/alignments/{$entityMatch->id}/rows?page=1&per_page=10");
+        ->getJson("/works/{$work->id}/alignments/{$entityMatch->id}/rows?page=1&per_page=10");
 
     $response->assertOk();
     $response->assertJsonPath('sentences_before.a', 0);
@@ -277,7 +374,7 @@ test('rows endpoint returns correct sentences_before for page 2', function () {
 
     $response = $this
         ->actingAs($user)
-        ->getJson("/alignments/{$entityMatch->id}/rows?page=2&per_page=10");
+        ->getJson("/works/{$work->id}/alignments/{$entityMatch->id}/rows?page=2&per_page=10");
 
     $response->assertOk();
     $response->assertJsonPath('sentences_before.a', 10);

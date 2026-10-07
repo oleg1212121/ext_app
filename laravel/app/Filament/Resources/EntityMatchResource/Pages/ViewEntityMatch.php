@@ -20,12 +20,12 @@ class ViewEntityMatch extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            // The React editor at /alignments/{id} is the one editing
-            // surface; the Filament view page is read-only.
+            // The React editor at /works/{work}/alignments/{match}/edit is
+            // the one editing surface; the Filament view page is read-only.
             Action::make('editAlignment')
                 ->label('Edit alignment')
                 ->icon('heroicon-o-pencil-square')
-                ->url(fn (): string => route('alignments.show', ['entityMatch' => $this->record])),
+                ->url(fn (): string => route('works.alignments.edit', ['work' => $this->record->aEntity?->work_id ?? $this->record->bEntity?->work_id, 'entityMatch' => $this->record])),
         ];
     }
 

@@ -175,23 +175,38 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::get('/illustrations/{sentence}', [EntityIllustrationController::class, 'show'])
         ->whereNumber('sentence')
         ->name('illustrations.show');
-    // The global alignments browse pages moved under each work
-    // (/works/{work}/alignments); only the editor stays global.
-    Route::get('/alignments/{entityMatch}', [AlignmentController::class, 'show'])
+    // The alignment editor is work-nested too (ADR 0072): both of the pair's
+    // entities belong to one work, and the JSON editor API shares the prefix.
+    // The old flat /alignments/{id} routes are gone without redirects.
+    Route::get('/works/{work}/alignments/{entityMatch}/edit', [AlignmentController::class, 'show'])
+        ->whereNumber('work')
         ->whereNumber('entityMatch')
-        ->name('alignments.show');
+        ->name('works.alignments.edit');
 
-    Route::get('/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'rows']);
-    Route::get('/alignments/{entityMatch}/unmatched', [AlignmentEditorController::class, 'unmatched']);
-    Route::get('/alignments/{entityMatch}/needs-review', [AlignmentEditorController::class, 'needsReview']);
-    Route::post('/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'storeRow']);
-    Route::delete('/alignments/{entityMatch}/rows/{meaningMatch}', [AlignmentEditorController::class, 'destroyRow']);
-    Route::post('/alignments/{entityMatch}/rows/{meaningMatch}/approve', [AlignmentEditorController::class, 'approveRow']);
-    Route::post('/alignments/{entityMatch}/sentences', [AlignmentEditorController::class, 'storeSentence']);
-    Route::post('/alignments/{entityMatch}/sentences/move', [AlignmentEditorController::class, 'moveSentence']);
-    Route::patch('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'updateSentence'])->whereNumber('sentence');
-    Route::delete('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'unlinkSentence'])->whereNumber('sentence');
-    Route::delete('/alignments/{entityMatch}/unmatched/{sentence}', [AlignmentEditorController::class, 'destroyUnmatched'])->whereNumber('sentence');
+    Route::get('/works/{work}/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'rows'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::get('/works/{work}/alignments/{entityMatch}/unmatched', [AlignmentEditorController::class, 'unmatched'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::get('/works/{work}/alignments/{entityMatch}/needs-review', [AlignmentEditorController::class, 'needsReview'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::post('/works/{work}/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'storeRow'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::delete('/works/{work}/alignments/{entityMatch}/rows/{meaningMatch}', [AlignmentEditorController::class, 'destroyRow'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::post('/works/{work}/alignments/{entityMatch}/rows/{meaningMatch}/approve', [AlignmentEditorController::class, 'approveRow'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::post('/works/{work}/alignments/{entityMatch}/rows/{meaningMatch}/disapprove', [AlignmentEditorController::class, 'disapproveRow'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::post('/works/{work}/alignments/{entityMatch}/sentences', [AlignmentEditorController::class, 'storeSentence'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::post('/works/{work}/alignments/{entityMatch}/sentences/move', [AlignmentEditorController::class, 'moveSentence'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::patch('/works/{work}/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'updateSentence'])
+        ->whereNumber('work')->whereNumber('entityMatch')->whereNumber('sentence');
+    Route::delete('/works/{work}/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'unlinkSentence'])
+        ->whereNumber('work')->whereNumber('entityMatch')->whereNumber('sentence');
+    Route::delete('/works/{work}/alignments/{entityMatch}/unmatched/{sentence}', [AlignmentEditorController::class, 'destroyUnmatched'])
+        ->whereNumber('work')->whereNumber('entityMatch')->whereNumber('sentence');
     // Practice → Simulator: the standalone page with the alignment picker;
     // the pinned route below stays the deep-link entry from alignment cards.
     Route::get('/simulator', [SimulatorController::class, 'simulator'])

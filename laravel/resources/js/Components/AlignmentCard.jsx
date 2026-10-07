@@ -16,7 +16,7 @@ export default function AlignmentCard({run}) {
     return (
         <div className="relative flex min-h-32 flex-col gap-3 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-5 transition-colors hover:border-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)]">
             <Link
-                href={`/alignments/${run.id}`}
+                href={`/works/${run.work_id}/alignments/${run.id}/edit`}
                 className="after:absolute after:inset-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
             >
                 <span className="sr-only">{t('library.open_alignment_editor')}</span>
