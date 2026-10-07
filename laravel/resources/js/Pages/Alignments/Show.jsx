@@ -539,25 +539,43 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         await runMutation(() => alignmentsApi.disapproveRow(initialMatch.work_id, initialMatch.id, row.id));
     }, [actionBusy, initialMatch.work_id, initialMatch.id, runMutation]);
 
-    // Approve straight from the needs-review list: the row leaves the list
-    // optimistically; the mutation response then refetches the clamped page.
+    // Approve straight from the needs-review list. The optimistic removal is
+    // applied through applyData — not a bare setData — so the server snapshot
+    // (lastServer) agrees with what is on screen: applyMutation rebuilds the
+    // page from that snapshot, and a snapshot that still held the row would
+    // resurrect it for the frames between the merge and the needs-review
+    // refetch (the row blinking back in before vanishing again). This path
+    // bypasses runMutation on purpose: rollback needs the pre-removal
+    // needs-review snapshot, which runMutation's generic revert cannot know.
     const onReviewApprove = useCallback(async (item) => {
         if (actionBusy) {
             return;
         }
 
         setEditing(null);
-        setData((prev) => ({
-            ...prev,
-            needsReview: {
-                ...prev.needsReview,
-                items: prev.needsReview.items.filter((existing) => existing.id !== item.id),
-                meta: {...prev.needsReview.meta, total: Math.max(prev.needsReview.meta.total - 1, 0)},
-            },
-        }));
+        setActionBusy(true);
+        setActionError(null);
 
-        await runMutation(() => alignmentsApi.approveRow(initialMatch.work_id, initialMatch.id, item.id));
-    }, [actionBusy, initialMatch.work_id, initialMatch.id, runMutation]);
+        const snapshot = lastServer.current.needsReview;
+
+        applyData({
+            ...lastServer.current,
+            needsReview: {
+                items: snapshot.items.filter((existing) => existing.id !== item.id),
+                meta: {...snapshot.meta, total: Math.max(snapshot.meta.total - 1, 0)},
+            },
+        });
+
+        try {
+            const res = await alignmentsApi.approveRow(initialMatch.work_id, initialMatch.id, item.id);
+            await applyMutation(res);
+        } catch (error) {
+            applyData({...lastServer.current, needsReview: snapshot});
+            setActionError(error.message);
+        } finally {
+            setActionBusy(false);
+        }
+    }, [actionBusy, applyData, applyMutation, initialMatch.work_id, initialMatch.id]);
 
     const containerOf = useCallback((id) => {
         if (typeof id === 'string' && isSlotId(id)) {

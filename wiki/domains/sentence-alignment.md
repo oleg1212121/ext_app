@@ -899,8 +899,12 @@ editor-shaped row.
     `rank`) and briefly highlights the row (client-side scroll, no URL
     change). Each row also carries a hover-revealed **approve icon
     button** that approves in place — similarity goes to 1.0, the row
-    leaves the list immediately (optimistic removal, then the refetch
-    lands on a clamped page when the last item of a page was approved).
+    leaves the list immediately. The optimistic removal is written through
+    `applyData` into the server snapshot (`lastServer`), not a bare
+    `setData`: the mutation merge rebuilds state from that snapshot, so a
+    snapshot still holding the row would resurrect it for the frames
+    before the needs-review refetch lands (which also clamps the page when
+    the last item of a page was approved).
     Paginated 25/page via
     `GET /works/{work}/alignments/{entityMatch}/needs-review`
     (`AlignmentEditorController::needsReview`, `NeedsReviewRequest`); the

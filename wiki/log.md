@@ -26,7 +26,12 @@ moved into the URL (`rows_page`, `rows_per_page`, `unmatched_a_page`,
 client-side with `history.replaceState`. `AlignmentPagesTest` pins the
 nested page, URL seeding/clamping, and the 404s. Docs: ADR 0072,
 CONTEXT.md (**Rejected pair**, rewritten **Alignment editor**),
-`wiki/domains/sentence-alignment.md`.
+`wiki/domains/sentence-alignment.md`. Follow-ups on the same branch: the
+mutation merge moved to `lib/alignmentRowMerge.js` (response rows for
+other pages are skipped — approving from Needs review no longer appends a
+phantom "next page" row), and the approve-in-place optimistic removal now
+goes through the server snapshot so the merge cannot resurrect the row
+(no three-render flash).
 
 ## 2026-10-06 (Band word lists min-merge onto frequency ranks)
 
