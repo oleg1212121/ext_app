@@ -176,6 +176,36 @@ test('entities of another work are rejected even under a valid work route', func
     expect(EntityMatch::query()->count())->toBe(0);
 });
 
+test('two entities of another work are rejected against the route work', function () {
+    Bus::fake();
+    $user = User::factory()->create();
+    $routeWork = createWork(['title' => 'Route work']);
+    $otherWork = createWork(['title' => 'Other work']);
+    $enEntity = createEntity('en', $otherWork, [
+        'name' => 'Other work EN',
+        'signature' => json_encode([1.0, 0.0]),
+    ]);
+    $ruEntity = createEntity('ru', $otherWork, [
+        'name' => 'Other work RU',
+        'signature' => json_encode([1.0, 0.0]),
+    ]);
+
+    $this->actingAs($user)
+        ->from("/works/{$routeWork->id}/alignments/create")
+        ->post("/works/{$routeWork->id}/alignments", [
+            'first_entity_id' => $enEntity->id,
+            'second_entity_id' => $ruEntity->id,
+            'chunk_size' => 75,
+            'max_n' => 6,
+        ])
+        ->assertRedirect("/works/{$routeWork->id}/alignments/create")
+        ->assertSessionHasErrors(['second_entity_id' => 'Both entities must belong to the selected work.']);
+
+    expect(EntityMatch::query()->count())->toBe(0);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
 test('a mixed pair — one entity of the work, one of another — is rejected', function () {
     Bus::fake();
     $user = User::factory()->create();
