@@ -1,5 +1,47 @@
 # Directory Update Log
 
+## 2026-10-08 (One Entity-match creation module)
+
+Opening an Entity match — pairing two same-Work entities so the alignment
+pipeline can run — now lives behind one module,
+`laravel/app/Classes/EntityMatchCreationService.php`
+(spec `.scratch/entity-match-creation/spec.md`; ADRs
+[0019](../docs/adr/0019-same-language-entity-matches.md),
+[0033](../docs/adr/0033-exact-copy-cloning-and-hash-based-alignment-reuse.md),
+[0044](../docs/adr/0044-per-user-processing-limits.md)).
+`create($creator, $first, $second, ?$chunkSize, ?$maxN)` returns
+`created` / `created_from_copy` / `duplicate` (carrying the existing match)
+or throws `CrossWorkEntityPair` / `ProcessingLimitReached`; same-Work
+validation, canonical a/b sides, knob defaults (75/6), the Processing
+limit, the copy-reuse decision, and the dispatch decision live only there.
+All four creation surfaces became thin callers: the Library Alignments form
+(`LibraryController::storeAlignment` — external behavior unchanged:
+duplicate still a validation error with the `existing_match_id` flash,
+limit still a `limit` error) and the three Filament surfaces (the
+`EntityMatchResource` create page, the match list's "New Alignment" header
+action, the entity table's "Find Match" action), which render outcomes as
+notifications — on duplicate, one linking to the existing match. Behavior
+changes: **duplicates are rejected everywhere and nothing ever deletes
+meaning matches as a side effect of creation** — the Filament actions'
+destructive delete-on-duplicate (which wiped existing matches including
+their human-curated rows) is gone, and deletion stays the explicit
+Delete / DeleteBulk / "Run from scratch" operator actions; the entity-page
+Find Match action gains Alignment copy reuse (ADR 0033 — Exact-copy pairs
+complete instantly there too); Filament creations now respect the per-user
+Processing limit under the creator's locked user row (ADR 0044, admins
+exempt). No schema, route, or permission change (the machine-owned wiki
+references re-sync diff-free). Tests: new `EntityMatchCreationTest` (the
+module contract), extended `FilamentEntityAlignmentCreatePageTest` /
+`FilamentEntityAlignmentListActionTest` (duplicate + limit behavior), and
+new `FilamentEntityFindMatchActionTest` (the Find Match action's first
+coverage). Full suite: 1020 passed (5340 assertions).
+`sentence-alignment.md` gains the creation-module section, moves the ADR
+0044 count-then-create into the module's name, and fixes the copy fast
+path's stale `AlignmentController::store` citation (it means
+`LibraryController::storeAlignment`; four surfaces, not three);
+`entities.md`'s Alignments-create route row now describes the thin caller —
+both concepts with `generated.at` bumps.
+
 ## 2026-10-07 (Recommendations page)
 
 New personalized reading queue at `/recommendations` (ADR

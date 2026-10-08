@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-07T19:15:00Z }
+generated: { by: agent:zcode, at: 2026-10-08T14:48:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -25,6 +25,9 @@ sources:
   - id: copy-service
     resource: laravel/app/Classes/AlignmentCopyService.php
     title: Alignment reuse for exact-copy entity pairs
+  - id: match-creation
+    resource: laravel/app/Classes/EntityMatchCreationService.php
+    title: the one Entity-match creation module (ADR 0019/0033/0044)
   - id: signature-service
     resource: laravel/app/Classes/TextSignatureService.php
     title: Text signatures / cross-language candidates (/embed client); one cosineSimilarity implementation (ADR 0064)
@@ -77,6 +80,47 @@ contract (`a_sentences`/`b_sentences`, match spans
 side is the original language (two translations of a third-language original —
 first-class pairs).
 
+# Opening a match — one creation module
+
+**`EntityMatchCreationService::create()` is the one writer of new Entity
+matches.** All four creation surfaces are thin callers that resolve their two
+entities and translate the outcome: the Library Alignments form
+(`LibraryController::storeAlignment` — it keeps its own readable-access
+check, `403` when the user cannot read either entity), the Filament
+`EntityMatchResource` create page (`CreateEntityMatch`), the match list's
+"New Alignment" header action (`ListEntityMatches`), and the entity table's
+"Find Match" action (`EntityResource::findMatch`). The three Filament
+surfaces render outcomes as notifications — on duplicate, one that links to
+the existing match.
+
+`create(User $creator, Entity $first, Entity $second, ?int $chunkSize, ?int $maxN)`
+returns `{status, match, existing}` with exactly three outcomes: `created`
+(the new match, pending-born with the creator recorded; the pipeline
+dispatch happens only after the creation transaction commits — the
+dispatch's synchronous preamble leaves the row `aligning`),
+`created_from_copy` (the new match completed by cloning a completed
+alignment between exact copies of both sides — ADR 0033), and `duplicate`
+(nothing created and nothing deleted; `existing` carries the match the
+canonical pair already has, whatever its status). A cross-Work pair throws
+`CrossWorkEntityPair`; a limit hit throws `ProcessingLimitReached` (ADR
+0044).
+
+The module owns every creation rule, so the surfaces cannot diverge again:
+same-Work validation; canonical sides (lower entity id = a side, ADR 0019,
+so `unique(a_entity_id, b_entity_id)` covers both orders); **duplicates are
+rejected everywhere, never deleted** — the Filament actions' former
+destructive delete-on-duplicate (which also wiped the existing match's
+meaning matches, human-curated rows included) is gone; deleting a match
+stays an explicit operator action — the Filament Delete / DeleteBulk
+actions and "Run from scratch", the latter warning about human rows. The
+count-then-create Processing limit runs under the creator's locked user
+row, so Filament creations respect it too (admins exempt per
+`ProcessingLimits`), and a unique-constraint loss (two different users
+racing the same pair to the insert) is converted to the duplicate outcome
+by re-running the lookup. Knob defaults (chunk 75, max N 6 — the
+`entity_matches` column defaults) and the copy-vs-pipeline dispatch
+decision live here as well.
+
 # Order-preservation invariant
 
 **Alignment ownership & per-user limit (ADR 0044).** `entity_matches.created_by`
@@ -86,8 +130,10 @@ a-side uploader, set at every creation point (the Library form and all
 admin-only Filament actions), and nullable (`nullOnDelete`). A non-admin may
 hold at most `limits.alignments_processing_per_user` (default 1) matches with
 `status IN ('pending','aligning')`; the count-then-create runs under the
-creator's locked user row in `LibraryController::storeAlignment`, rejecting
-with a `limit` validation error (banner on the create form). The limit gates
+creator's locked user row inside the creation module
+(`EntityMatchCreationService`, see the creation module section above),
+rejecting with a `limit` validation error on the Library form and a danger
+notification on the Filament surfaces. The limit gates
 creation only: sentence-mutation staleness, `alignments:resume`, and the
 admin re-align actions skip it (a stale match holds no slot — ADR 0055).
 Accepted exposure: a match frozen by the
@@ -260,9 +306,11 @@ editor-shaped row.
    Match" action) and `verifyEntityPair()`, which rejects pairs whose cosine
    similarity < **0.70** before alignment is attempted. Duplicate detection is
    the job of the local `EntityTextHasher` sha256 hashes, not the embedding.
-2b. **Copy (fast path)** — before any pipeline run, the three match-creation
-   entry points (`AlignmentController::store`, Filament
-   `CreateEntityMatch::afterCreate`, the ListEntityMatches header action) try
+2b. **Copy (fast path)** — before any pipeline run, the one creation module
+   (`EntityMatchCreationService::create()`, which all four creation surfaces
+   call — the Library Alignments form via `LibraryController::storeAlignment`,
+   the Filament create page, the ListEntityMatches "New Alignment" header
+   action, and the EntityResource "Find Match" action) tries
    `AlignmentCopyService::copyFor()`: if a **completed** match exists between
    entities whose `text_hash` and language equal the new pair's (either
    orientation), its meaning matches and junctions are cloned with a
@@ -797,7 +845,7 @@ editor-shaped row.
     [Library & entities](/domains/entities.md)) lists the work's readable
     matches and its "Add alignment" card leads to
     `/works/{work}/alignments/create`
-    (`LibraryController@createAlignment`/`@store`, routes
+    (`LibraryController@createAlignment`/`@storeAlignment`, routes
     `works.alignments.create`/`works.alignments.store`; the former
     global `/alignments` list, `/alignments/create` form, and the navbar
     item are gone). The form is the old create minus the work picker: two
@@ -813,16 +861,18 @@ editor-shaped row.
     work-mode radios) must use the functional form
     `setData((current) => ({...current, ...}))` — the object form silently
     dropped `chunk_size`/`max_n`, which emptied both entity selects the
-    moment an entity was picked. Store validates that **both entities
-    belong to the route work** (same-language pairs such as exercises and
-    answers are valid — ADR 0019), canonicalizes the pair
-    order (lower id = a side, so the `unique(a_entity_id, b_entity_id)`
-    constraint covers both orders), creates the match (`status='pending'`),
-    dispatches `AlignEntitySentences::beginFromScratch($id)`, and redirects
-    to the work's Alignments page with a flash; a duplicate pair is blocked
-    with an error plus an "Open existing match" link (flash
-    `existing_match_id`), and creating a match involving an entity the user
-    cannot read is `403`. Each match card links (stretched link) to the
+    moment an entity was picked. Store resolves the two entities, checks
+    readability (creating a match involving an entity the user cannot read
+    is `403`), and hands them to the one creation module
+    (`EntityMatchCreationService` — same-Work validation (same-language
+    pairs such as exercises and answers are valid — ADR 0019), canonical
+    sides, duplicate rejection, the Processing limit, and the
+    copy-vs-pipeline decision all live there, see the creation module
+    section above); it translates the outcome — redirect to the work's
+    Alignments page with a flash, a duplicate pair blocked with an error
+    plus an "Open existing match" link (flash `existing_match_id`), a
+    cross-Work pair the form's same-work error, a limit hit a `limit`
+    error. Each match card links (stretched link) to the
     work-nested editor `/works/{work}/alignments/{match}/edit` (ADR 0072)
     and carries Simulator / Read·{LANG} buttons —
     `GET /bilinguals/simulator/{entityMatch}` (pinned simulator) and the

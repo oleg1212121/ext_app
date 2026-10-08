@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-10-07T15:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-08T14:48:00Z }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -88,7 +88,7 @@ selects and the language shown on entity pages are driven by
 | `/works/{work}/entities/{entity}/approved` (PATCH) | `EntityController::updateApproved` | Flip the approval edit-lock (uploader or admin), named `entities.approved.update` |
 | `/works/{work}/entities/{entity}/edit` | `EntityController::edit` | Combined edit page: metadata form + drag-and-drop sentence manager (ADR 0015), named `entities.edit` |
 | `/works/{work}/entities/{entity}/sentences` (GET/POST) + `/reorder` + `/{sentence}` (PATCH/DELETE) | `EntityController::sentences*` | JSON sentence list + insert / reorder / update / delete, named `entities.sentences.*` — same work-nested prefix and wrong-work 404 as the pages |
-| `/works/{work}/alignments/create` (GET) + POST `/works/{work}/alignments` | `LibraryController::createAlignment` / `storeAlignment` | Work-scoped entity-match creation (ADR 0036): two entity selects of the work's alignable entities (readable + signature + sentences), `chunk_size`/`max_n`; canonical a/b order, duplicate-pair guard, alignment-copy fast path else `AlignEntitySentences::beginFromScratch`; redirects back to the work's Alignments page. Named `works.alignments.create` / `works.alignments.store` |
+| `/works/{work}/alignments/create` (GET) + POST `/works/{work}/alignments` | `LibraryController::createAlignment` / `storeAlignment` | Work-scoped entity-match creation (ADR 0036): two entity selects of the work's alignable entities (readable + signature + sentences), `chunk_size`/`max_n`; `storeAlignment` checks readability and calls the shared `EntityMatchCreationService` — every creation rule (same-Work guard, canonical sides, duplicate rejection with the `existing_match_id` flash, Processing limit, copy-vs-pipeline) lives in that module, see [sentence alignment](/domains/sentence-alignment.md); redirects back to the work's Alignments page. Named `works.alignments.create` / `works.alignments.store` |
 | `/entities`, `/entities/{lang}` | redirect → `/works/entities` | Legacy language-first browse pages (picker + per-language table). The deeper `/entities/{lang}/...` routes are gone without redirects (ADR 0073) |
 
 All routes sit in the `['auth','approved']` group. Route names keep the
