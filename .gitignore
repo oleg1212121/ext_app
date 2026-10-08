@@ -100,7 +100,8 @@ homepage-current.png
 actions-runner
 laravel/.env.testing
 errors.txt
-.zcode/plans/*
-# Agent skills are local-only tooling, never part of the app repo
+# Agent tooling (ZCode, Aider Desk) — local-only, never part of the app repo
 .agents/
+.zcode/
+.aider-desk/
 skills-lock.json
