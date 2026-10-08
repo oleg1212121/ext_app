@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-08T14:48:00Z }
+generated: { by: agent:zcode, at: 2026-10-08T16:47:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -91,7 +91,11 @@ check, `403` when the user cannot read either entity), the Filament
 "New Alignment" header action (`ListEntityMatches`), and the entity table's
 "Find Match" action (`EntityResource::findMatch`). The three Filament
 surfaces render outcomes as notifications — on duplicate, one that links to
-the existing match.
+the existing match — and their two entity selects enforce `different` (the
+Library form's request rule does the same), so a self-pair never reaches
+the module; a stale submission whose entity vanished between render and
+submit stops with an "Entity not found." danger notification instead of a
+404.
 
 `create(User $creator, Entity $first, Entity $second, ?int $chunkSize, ?int $maxN)`
 returns `{status, match, existing}` with exactly three outcomes: `created`
@@ -102,11 +106,12 @@ dispatch's synchronous preamble leaves the row `aligning`),
 alignment between exact copies of both sides — ADR 0033), and `duplicate`
 (nothing created and nothing deleted; `existing` carries the match the
 canonical pair already has, whatever its status). A cross-Work pair throws
-`CrossWorkEntityPair`; a limit hit throws `ProcessingLimitReached` (ADR
-0044).
+`CrossWorkEntityPair`; an entity paired with itself throws `SelfEntityPair`;
+a limit hit throws `ProcessingLimitReached` (ADR 0044).
 
 The module owns every creation rule, so the surfaces cannot diverge again:
-same-Work validation; canonical sides (lower entity id = a side, ADR 0019,
+distinct-pair and same-Work validation; canonical sides (lower entity id = a
+side, ADR 0019,
 so `unique(a_entity_id, b_entity_id)` covers both orders); **duplicates are
 rejected everywhere, never deleted** — the Filament actions' former
 destructive delete-on-duplicate (which also wiped the existing match's
@@ -127,7 +132,7 @@ decision live here as well.
 records the user who created the match — its **alignment owner**, distinct from
 the two side entities' uploaders (who can differ). It is backfilled from the
 a-side uploader, set at every creation point (the Library form and all
-admin-only Filament actions), and nullable (`nullOnDelete`). A non-admin may
+three Filament actions), and nullable (`nullOnDelete`). A non-admin may
 hold at most `limits.alignments_processing_per_user` (default 1) matches with
 `status IN ('pending','aligning')`; the count-then-create runs under the
 creator's locked user row inside the creation module

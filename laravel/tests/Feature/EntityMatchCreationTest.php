@@ -4,6 +4,7 @@ use App\Classes\EntityMatchCreationService;
 use App\Classes\EntityTextHasher;
 use App\Exceptions\CrossWorkEntityPair;
 use App\Exceptions\ProcessingLimitReached;
+use App\Exceptions\SelfEntityPair;
 use App\Jobs\AlignEntitySentences;
 use App\Models\Entity;
 use App\Models\EntityMatch;
@@ -261,6 +262,22 @@ test('entities of different works are rejected regardless of argument order', fu
         ->toThrow(CrossWorkEntityPair::class);
 
     expect(EntityMatch::query()->count())->toBe(0);
+});
+
+test('an entity paired with itself is rejected', function () {
+    Bus::fake();
+    $user = User::factory()->create();
+    $work = createWork();
+    $entity = createEntity('en', $work, ['name' => 'Self-pair entity']);
+
+    expect(fn () => mcCreationService()->create($user, $entity, $entity))
+        ->toThrow(SelfEntityPair::class);
+    expect(fn () => mcCreationService()->create($user, $entity, $entity))
+        ->toThrow('An entity cannot be matched with itself.');
+
+    expect(EntityMatch::query()->count())->toBe(0);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
 });
 
 test('sides are canonical whichever order the caller passes', function () {

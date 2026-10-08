@@ -1,5 +1,29 @@
 # Directory Update Log
 
+## 2026-10-08 (Creation-module hardening: self-pair guard, uniform stale handling, limit coverage)
+
+Follow-up review of the creation module surfaced three small gaps, now
+closed. **Self-pair guard:** `EntityMatchCreationService::create()` now
+throws `SelfEntityPair` ("An entity cannot be matched with itself.") when
+both arguments are the same entity — previously only the Library form's
+`different` rule blocked it; the Filament create form and the match list's
+header action now declare `different` on their second entity select too
+(the Find Match action needs none: its candidate query already excludes
+the record), and all surfaces translate the exception into their own UX
+(back-error on the Library form, danger notification on Filament).
+**Uniform stale-entity handling:** the match list's header action and the
+entity table's Find Match action now resolve their entity with `find()` +
+"Entity not found." notification instead of `findOrFail()`'s 404, matching
+the create page. **Limit coverage:** the Filament panel is authenticated,
+not admin-gated, so the `ProcessingLimitReached` danger-notification branch
+was reachable yet untested — each of the three Filament creation surfaces
+now has a non-admin-at-the-limit test (the wrong "panel is admin-only"
+comments in two tests and one wiki phrase corrected). New tests: module
+self-pair, create-page self-pair form rejection, stale-submission backstop
+on both actions, three limit notifications. Concepts updated:
+[sentence alignment](/domains/sentence-alignment.md),
+[entities](/domains/entities.md).
+
 ## 2026-10-08 (One Entity-match creation module)
 
 Opening an Entity match — pairing two same-Work entities so the alignment

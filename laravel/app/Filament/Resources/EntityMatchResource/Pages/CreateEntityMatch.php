@@ -5,6 +5,7 @@ namespace App\Filament\Resources\EntityMatchResource\Pages;
 use App\Classes\EntityMatchCreationService;
 use App\Exceptions\CrossWorkEntityPair;
 use App\Exceptions\ProcessingLimitReached;
+use App\Exceptions\SelfEntityPair;
 use App\Filament\Resources\EntityMatchResource;
 use App\Models\Entity;
 use App\Models\User;
@@ -46,7 +47,7 @@ class CreateEntityMatch extends CreateRecord
                 filled($data['chunk_size'] ?? null) ? (int) $data['chunk_size'] : null,
                 filled($data['max_n'] ?? null) ? (int) $data['max_n'] : null,
             );
-        } catch (CrossWorkEntityPair|ProcessingLimitReached $exception) {
+        } catch (CrossWorkEntityPair|SelfEntityPair|ProcessingLimitReached $exception) {
             Notification::make()
                 ->title($exception->getMessage())
                 ->danger()

@@ -10,6 +10,7 @@ use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
+use Filament\Actions\Action;
 use Filament\Notifications\Livewire\Notifications;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Bus;
@@ -203,8 +204,8 @@ function fmCompletedSource(Entity $a, Entity $b): EntityMatch
 test('find match action creates the match through the creation module', function () {
     Bus::fake();
 
-    // The panel is admin-only; non-admin limit enforcement is pinned at the
-    // module level (EntityMatchCreationTest), not re-tested per surface.
+    // An admin is immune to processing limits, keeping this success path
+    // independent of the limit behavior covered further down.
     $admin = User::factory()->admin()->approved()->create();
     $work = createWork();
     $enEntity = fmAlignableEntity('en', $work, 'FM En Original');
@@ -302,6 +303,67 @@ test('find match action completes an exact-copy pair by copy without the pipelin
 
     // This action used to always run the full pipeline; copy reuse is the
     // migration's headline gain here.
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
+test('a stale find-match submission whose entity vanished is reported, not a 404', function () {
+    Bus::fake();
+
+    $admin = User::factory()->admin()->approved()->create();
+    $work = createWork();
+    $enEntity = fmAlignableEntity('en', $work, 'Stale FM En');
+
+    $page = Livewire::actingAs($admin)
+        ->test(ListEntities::class)
+        ->instance();
+
+    // A stale form submission: the entity id was offered by the candidate
+    // select when the form rendered, but is gone by the time the action
+    // runs. Reached directly because Filament's own options validation
+    // already stops unknown ids in the normal form flow — this pins the
+    // action's graceful backstop (find + notification) instead of
+    // findOrFail's 404.
+    $action = collect($page->getTable()->getRecordActions())
+        ->first(fn (Action $action): bool => $action->getName() === 'findMatch');
+
+    $action->getActionFunction()($enEntity, ['other_entity_id' => 999999999]);
+
+    $notifications = new Notifications;
+    $notifications->mount();
+    $sent = $notifications->notifications->first(
+        fn (Notification $notification): bool => $notification->getTitle() === 'Entity not found.',
+    );
+
+    expect($sent)->not->toBeNull()
+        ->and(EntityMatch::query()->count())->toBe(0);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
+test('find match action stops a non-admin at the alignment limit with a danger notification', function () {
+    Bus::fake();
+
+    config(['limits.alignments_processing_per_user' => 1]);
+
+    $user = User::factory()->create();
+    $work = createWork();
+    $limitEn = fmAlignableEntity('en', $work, 'FM Limit Occupied En');
+    $limitRu = fmAlignableEntity('ru', $work, 'FM Limit Occupied Ru');
+    createEntityMatch($limitEn, $limitRu, ['created_by' => $user->id, 'status' => 'pending']);
+
+    $enEntity = fmAlignableEntity('en', $work, 'FM Limit Rejected En');
+    $ruEntity = fmAlignableEntity('ru', $work, 'FM Limit Rejected Ru');
+
+    Livewire::actingAs($user)
+        ->test(ListEntities::class)
+        ->callTableAction('findMatch', $enEntity, data: [
+            'other_entity_id' => $ruEntity->id,
+        ])
+        // The module's message, not an action-local guard's.
+        ->assertNotified('You already have an alignment being processed. Wait for it to finish before starting another.');
+
+    expect(EntityMatch::query()->count())->toBe(1);
+
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
 

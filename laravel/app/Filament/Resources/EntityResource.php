@@ -7,6 +7,7 @@ use App\Classes\EntityMatchCreationService;
 use App\Classes\TextSignatureService;
 use App\Exceptions\CrossWorkEntityPair;
 use App\Exceptions\ProcessingLimitReached;
+use App\Exceptions\SelfEntityPair;
 use App\Filament\Resources\EntityResource\Pages;
 use App\Filament\Resources\EntityResource\RelationManagers;
 use App\Jobs\EnrichEntitySentences;
@@ -203,7 +204,19 @@ class EntityResource extends Resource
                     })
                     // The creation module is the only writer of Entity matches; this action resolves the two entities, calls it once, and renders the outcome as notifications. No knobs are offered, so nulls pass and the module's defaults apply.
                     ->action(function (Entity $record, array $data) {
-                        $other = Entity::query()->findOrFail((int) $data['other_entity_id']);
+                        $other = Entity::query()->find((int) $data['other_entity_id']);
+
+                        if ($other === null) {
+                            // A stale form submission: the entity was
+                            // deleted between render and submit. Nothing is
+                            // created.
+                            Notification::make()
+                                ->title('Entity not found.')
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
 
                         $creator = auth()->user();
 
@@ -211,7 +224,7 @@ class EntityResource extends Resource
 
                         try {
                             $result = (new EntityMatchCreationService)->create($creator, $record, $other);
-                        } catch (CrossWorkEntityPair|ProcessingLimitReached $exception) {
+                        } catch (CrossWorkEntityPair|SelfEntityPair|ProcessingLimitReached $exception) {
                             Notification::make()
                                 ->title($exception->getMessage())
                                 ->danger()

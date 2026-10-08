@@ -5,6 +5,7 @@ namespace App\Filament\Resources\EntityMatchResource\Pages;
 use App\Classes\EntityMatchCreationService;
 use App\Exceptions\CrossWorkEntityPair;
 use App\Exceptions\ProcessingLimitReached;
+use App\Exceptions\SelfEntityPair;
 use App\Filament\Resources\EntityMatchResource;
 use App\Models\Entity;
 use App\Models\User;
@@ -35,6 +36,7 @@ class ListEntityMatches extends ListRecords
                         ->label('Second Entity (same work)')
                         ->required()
                         ->options(fn (): array => $this->eligibleEntityOptions())
+                        ->different('first_entity_id')
                         ->searchable()
                         ->preload(),
                     TextInput::make('chunk_size')
@@ -53,9 +55,20 @@ class ListEntityMatches extends ListRecords
                 // The creation module is the only writer of Entity matches; this action resolves the two entities, calls it once, and renders the outcome as notifications.
                 ->action(function (array $data) {
                     [$first, $second] = [
-                        Entity::query()->findOrFail((int) $data['first_entity_id']),
-                        Entity::query()->findOrFail((int) $data['second_entity_id']),
+                        Entity::query()->find((int) $data['first_entity_id']),
+                        Entity::query()->find((int) $data['second_entity_id']),
                     ];
+
+                    if ($first === null || $second === null) {
+                        // A stale form submission: an entity was deleted
+                        // between render and submit. Nothing is created.
+                        Notification::make()
+                            ->title('Entity not found.')
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
 
                     $creator = auth()->user();
 
@@ -71,7 +84,7 @@ class ListEntityMatches extends ListRecords
                             filled($data['chunk_size'] ?? null) ? (int) $data['chunk_size'] : null,
                             filled($data['max_n'] ?? null) ? (int) $data['max_n'] : null,
                         );
-                    } catch (CrossWorkEntityPair|ProcessingLimitReached $exception) {
+                    } catch (CrossWorkEntityPair|SelfEntityPair|ProcessingLimitReached $exception) {
                         Notification::make()
                             ->title($exception->getMessage())
                             ->danger()

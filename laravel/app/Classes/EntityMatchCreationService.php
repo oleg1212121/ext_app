@@ -4,6 +4,7 @@ namespace App\Classes;
 
 use App\Exceptions\CrossWorkEntityPair;
 use App\Exceptions\ProcessingLimitReached;
+use App\Exceptions\SelfEntityPair;
 use App\Jobs\AlignEntitySentences;
 use App\Models\Entity;
 use App\Models\EntityMatch;
@@ -17,6 +18,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
  * UX; the creation rules live only here, so the surfaces cannot diverge.
  *
  * Owned rules:
+ *  - Distinct pair: an entity paired with itself throws SelfEntityPair.
  *  - Same-Work validation: a cross-Work pair throws CrossWorkEntityPair.
  *  - Canonical sides (ADR 0019): the lower entity id is the A-side, whatever
  *    order the caller passes, so the unique(a_entity_id, b_entity_id)
@@ -69,6 +71,7 @@ class EntityMatchCreationService
      *                                                                                                               match the canonical pair already has.
      *
      * @throws CrossWorkEntityPair
+     * @throws SelfEntityPair
      * @throws ProcessingLimitReached
      */
     public function create(
@@ -78,6 +81,10 @@ class EntityMatchCreationService
         ?int $chunkSize = null,
         ?int $maxN = null,
     ): array {
+        if ($first->id === $second->id) {
+            throw new SelfEntityPair('An entity cannot be matched with itself.');
+        }
+
         if ((string) $first->work_id !== (string) $second->work_id) {
             throw new CrossWorkEntityPair('Both entities must belong to the same work.');
         }

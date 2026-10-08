@@ -390,6 +390,27 @@ test('a cross-work pair is rejected by the module with a danger notification', f
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
 
+test('a self-pair submitted on the page is rejected by the form validation', function () {
+    Bus::fake();
+
+    $admin = User::factory()->admin()->approved()->create();
+    ['en' => $enEntity] = fcAlignablePair();
+
+    Livewire::actingAs($admin)
+        ->test(CreateEntityMatch::class)
+        ->fillForm([
+            'first_entity_id' => $enEntity->id,
+            'second_entity_id' => $enEntity->id,
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['second_entity_id' => 'different'])
+        ->assertNoRedirect();
+
+    expect(EntityMatch::query()->count())->toBe(0);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
 test('a stale submission whose entity vanished is reported, not a 404', function () {
     Bus::fake();
 
@@ -426,6 +447,33 @@ test('a stale submission whose entity vanished is reported, not a 404', function
 
     expect($sent)->not->toBeNull()
         ->and(EntityMatch::query()->count())->toBe(0);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
+test('a non-admin at the alignment limit is stopped with a danger notification', function () {
+    Bus::fake();
+
+    config(['limits.alignments_processing_per_user' => 1]);
+
+    $user = User::factory()->create();
+    ['en' => $limitEn, 'ru' => $limitRu] = fcAlignablePair();
+    createEntityMatch($limitEn, $limitRu, ['created_by' => $user->id, 'status' => 'pending']);
+
+    ['en' => $enEntity, 'ru' => $ruEntity] = fcAlignablePair();
+
+    Livewire::actingAs($user)
+        ->test(CreateEntityMatch::class)
+        ->fillForm([
+            'first_entity_id' => $enEntity->id,
+            'second_entity_id' => $ruEntity->id,
+        ])
+        ->call('create')
+        // The module's message, not a page-local guard's.
+        ->assertNotified('You already have an alignment being processed. Wait for it to finish before starting another.')
+        ->assertNoRedirect();
+
+    expect(EntityMatch::query()->count())->toBe(1);
 
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });

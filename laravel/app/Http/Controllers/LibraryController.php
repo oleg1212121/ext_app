@@ -8,6 +8,7 @@ use App\Classes\EntityCreationService;
 use App\Classes\EntityMatchCreationService;
 use App\Exceptions\CrossWorkEntityPair;
 use App\Exceptions\ProcessingLimitReached;
+use App\Exceptions\SelfEntityPair;
 use App\Http\Requests\StoreEntityMatchRequest;
 use App\Http\Requests\StoreWorkEntityRequest;
 use App\Http\Requests\StoreWorkRequest;
@@ -393,11 +394,12 @@ class LibraryController extends Controller
                 (int) $data['chunk_size'],
                 (int) $data['max_n'],
             );
-        } catch (CrossWorkEntityPair) {
-            // Unreachable behind the route-work guard above; the module's
-            // own same-Work rule is the backstop for any future caller.
+        } catch (CrossWorkEntityPair|SelfEntityPair $exception) {
+            // Unreachable behind the route-work guard and the form's
+            // different rule above; the module's own pair rules are the
+            // backstop for any future caller.
             return back()->withErrors([
-                'second_entity_id' => 'Both entities must belong to the selected work.',
+                'second_entity_id' => $exception->getMessage(),
             ]);
         } catch (ProcessingLimitReached $e) {
             return back()->withErrors(['limit' => $e->getMessage()]);

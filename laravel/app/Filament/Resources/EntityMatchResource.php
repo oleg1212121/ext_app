@@ -50,6 +50,7 @@ class EntityMatchResource extends Resource
                             ->label('Second Entity')
                             ->options(fn (): array => self::entityOptions())
                             ->required()
+                            ->different('first_entity_id')
                             ->searchable(),
                     ]),
                 TextInput::make('chunk_size')
