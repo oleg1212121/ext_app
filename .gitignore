@@ -105,3 +105,6 @@ errors.txt
 .zcode/
 .aider-desk/
 skills-lock.json
+# Skill-workflow docs (to-spec / to-tickets / issue tracker) — local-only
+.scratch/
+docs/agents/
