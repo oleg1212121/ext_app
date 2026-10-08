@@ -17,6 +17,7 @@ use App\Http\Requests\UpdateSentenceRequest;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
+use App\Models\Work;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -24,7 +25,8 @@ use Illuminate\Http\JsonResponse;
  * gates, request validation, 404/422 mapping, and the mutation envelope.
  * Every alignment mutation — rows, junctions, ordering, totals, sentence
  * content — goes through AlignmentEditorService, whose writes never flip a
- * match stale (the editor's no-stale rule).
+ * match stale (the editor's no-stale rule). All routes are work-nested
+ * (ADR 0072); a match path under the wrong work is a 404.
  */
 class AlignmentEditorController extends Controller
 {
@@ -38,8 +40,10 @@ class AlignmentEditorController extends Controller
         return new EntityAccessService;
     }
 
-    public function storeRow(EntityMatch $entityMatch, StoreMeaningMatchRequest $request): JsonResponse
+    public function storeRow(Work $work, EntityMatch $entityMatch, StoreMeaningMatchRequest $request): JsonResponse
     {
+        $this->abortUnlessInWork($work, $entityMatch);
+
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $meaningMatch = $this->editor->createRow($entityMatch, $request->validated('after_row_id'));
@@ -47,8 +51,10 @@ class AlignmentEditorController extends Controller
         return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch)]);
     }
 
-    public function destroyRow(EntityMatch $entityMatch, MeaningMatch $meaningMatch): JsonResponse
+    public function destroyRow(Work $work, EntityMatch $entityMatch, MeaningMatch $meaningMatch): JsonResponse
     {
+        $this->abortUnlessInWork($work, $entityMatch);
+
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         abort_unless($meaningMatch->entity_match_id === $entityMatch->id, 404);
@@ -63,8 +69,10 @@ class AlignmentEditorController extends Controller
         );
     }
 
-    public function approveRow(EntityMatch $entityMatch, MeaningMatch $meaningMatch): JsonResponse
+    public function approveRow(Work $work, EntityMatch $entityMatch, MeaningMatch $meaningMatch): JsonResponse
     {
+        $this->abortUnlessInWork($work, $entityMatch);
+
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         abort_unless($meaningMatch->entity_match_id === $entityMatch->id, 404);
@@ -74,8 +82,23 @@ class AlignmentEditorController extends Controller
         return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch->refresh())]);
     }
 
-    public function storeSentence(EntityMatch $entityMatch, AddSentenceRequest $request): JsonResponse
+    public function disapproveRow(Work $work, EntityMatch $entityMatch, MeaningMatch $meaningMatch): JsonResponse
     {
+        $this->abortUnlessInWork($work, $entityMatch);
+
+        abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
+
+        abort_unless($meaningMatch->entity_match_id === $entityMatch->id, 404);
+
+        $this->editor->rejectRow($meaningMatch);
+
+        return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch->refresh())]);
+    }
+
+    public function storeSentence(Work $work, EntityMatch $entityMatch, AddSentenceRequest $request): JsonResponse
+    {
+        $this->abortUnlessInWork($work, $entityMatch);
+
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $side = Side::from($request->validated('side'));
@@ -91,8 +114,10 @@ class AlignmentEditorController extends Controller
         return $this->mutationResponse($entityMatch, [$this->presenter->rowPayload($meaningMatch->refresh())]);
     }
 
-    public function updateSentence(EntityMatch $entityMatch, int $sentence, UpdateSentenceRequest $request): JsonResponse
+    public function updateSentence(Work $work, EntityMatch $entityMatch, int $sentence, UpdateSentenceRequest $request): JsonResponse
     {
+        $this->abortUnlessInWork($work, $entityMatch);
+
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $side = Side::from($request->validated('side'));
@@ -105,8 +130,10 @@ class AlignmentEditorController extends Controller
         return $this->mutationResponse($entityMatch, $this->rowPayloadsByIds($entityMatch, $rowId !== null ? [$rowId] : []));
     }
 
-    public function unlinkSentence(EntityMatch $entityMatch, int $sentence, SentenceSideRequest $request): JsonResponse
+    public function unlinkSentence(Work $work, EntityMatch $entityMatch, int $sentence, SentenceSideRequest $request): JsonResponse
     {
+        $this->abortUnlessInWork($work, $entityMatch);
+
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $side = Side::from($request->validated('side'));
@@ -126,8 +153,10 @@ class AlignmentEditorController extends Controller
         );
     }
 
-    public function destroyUnmatched(EntityMatch $entityMatch, int $sentence, SentenceSideRequest $request): JsonResponse
+    public function destroyUnmatched(Work $work, EntityMatch $entityMatch, int $sentence, SentenceSideRequest $request): JsonResponse
     {
+        $this->abortUnlessInWork($work, $entityMatch);
+
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $side = Side::from($request->validated('side'));
@@ -143,8 +172,10 @@ class AlignmentEditorController extends Controller
         return $this->mutationResponse($entityMatch, [], [], [$side->value]);
     }
 
-    public function moveSentence(EntityMatch $entityMatch, MoveSentenceRequest $request): JsonResponse
+    public function moveSentence(Work $work, EntityMatch $entityMatch, MoveSentenceRequest $request): JsonResponse
     {
+        $this->abortUnlessInWork($work, $entityMatch);
+
         abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
 
         $side = Side::from($request->validated('side'));
@@ -164,8 +195,10 @@ class AlignmentEditorController extends Controller
         );
     }
 
-    public function rows(EntityMatch $entityMatch, RowsRequest $request): JsonResponse
+    public function rows(Work $work, EntityMatch $entityMatch, RowsRequest $request): JsonResponse
     {
+        $this->abortUnlessInWork($work, $entityMatch);
+
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
         $payload = $this->presenter->rowsPagePayload($entityMatch, $request->page(), $request->perPage());
@@ -178,8 +211,10 @@ class AlignmentEditorController extends Controller
         ]);
     }
 
-    public function unmatched(EntityMatch $entityMatch, UnmatchedRequest $request): JsonResponse
+    public function unmatched(Work $work, EntityMatch $entityMatch, UnmatchedRequest $request): JsonResponse
     {
+        $this->abortUnlessInWork($work, $entityMatch);
+
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
         return response()->json(
@@ -187,13 +222,23 @@ class AlignmentEditorController extends Controller
         );
     }
 
-    public function needsReview(EntityMatch $entityMatch, NeedsReviewRequest $request): JsonResponse
+    public function needsReview(Work $work, EntityMatch $entityMatch, NeedsReviewRequest $request): JsonResponse
     {
+        $this->abortUnlessInWork($work, $entityMatch);
+
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
         return response()->json(
             $this->presenter->needsReviewPagePayload($entityMatch, $request->page()),
         );
+    }
+
+    /**
+     * A match path under the wrong work is a 404, same as a missing one.
+     */
+    private function abortUnlessInWork(Work $work, EntityMatch $entityMatch): void
+    {
+        abort_unless($entityMatch->aEntity?->work_id === $work->id, 404);
     }
 
     /**

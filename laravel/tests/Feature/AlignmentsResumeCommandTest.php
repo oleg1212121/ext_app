@@ -182,7 +182,7 @@ it('never re-aligns a match that a sentence edit made stale', function () {
 
     // The user edits a sentence on the entity page; the match flips to stale.
     $this->actingAs(approvedUser())
-        ->patchJson("/entities/en/{$enEntity->id}/sentences/{$enSentences[0]->id}", [
+        ->patchJson("/works/{$enEntity->work_id}/entities/{$enEntity->id}/sentences/{$enSentences[0]->id}", [
             'content' => 'English 1 edited.',
             'sentence_type_id' => $typeId,
         ])

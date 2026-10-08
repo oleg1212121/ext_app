@@ -215,7 +215,7 @@ export default function CreateAlignment({work, entities = {}}) {
                                     {t('alignments.duplicate_match')}
                                 </p>
                                 <Link
-                                    href={`/alignments/${flash.existing_match_id}`}
+                                    href={`/works/${work.id}/alignments/${flash.existing_match_id}/edit`}
                                     className="mt-1 inline-block text-[var(--wbench-danger)] dark:text-[var(--wbench-danger-night)] underline"
                                 >
                                     {t('alignments.open_existing_match')}

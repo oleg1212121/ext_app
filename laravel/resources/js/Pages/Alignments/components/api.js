@@ -42,64 +42,74 @@ async function request(url, options = {}) {
     return res.json();
 }
 
+// The editor API is work-nested like its page (ADR 0072); match payloads
+// carry work_id, so every caller has both ids at hand.
+function base(workId, matchId) {
+    return `/works/${workId}/alignments/${matchId}`;
+}
+
 export const alignmentsApi = {
-    rows(matchId, page, perPage) {
-        return request(`/alignments/${matchId}/rows?page=${page}&per_page=${perPage}`);
+    rows(workId, matchId, page, perPage) {
+        return request(`${base(workId, matchId)}/rows?page=${page}&per_page=${perPage}`);
     },
 
-    unmatched(matchId, side, page) {
-        return request(`/alignments/${matchId}/unmatched?side=${side}&page=${page}`);
+    unmatched(workId, matchId, side, page) {
+        return request(`${base(workId, matchId)}/unmatched?side=${side}&page=${page}`);
     },
 
-    needsReview(matchId, page) {
-        return request(`/alignments/${matchId}/needs-review?page=${page}`);
+    needsReview(workId, matchId, page) {
+        return request(`${base(workId, matchId)}/needs-review?page=${page}`);
     },
 
-    createRow(matchId, afterRowId) {
-        return request(`/alignments/${matchId}/rows`, {
+    createRow(workId, matchId, afterRowId) {
+        return request(`${base(workId, matchId)}/rows`, {
             method: 'POST',
             body: JSON.stringify({after_row_id: afterRowId}),
         });
     },
 
-    deleteRow(matchId, rowId) {
-        return request(`/alignments/${matchId}/rows/${rowId}`, {method: 'DELETE'});
+    deleteRow(workId, matchId, rowId) {
+        return request(`${base(workId, matchId)}/rows/${rowId}`, {method: 'DELETE'});
     },
 
-    approveRow(matchId, rowId) {
-        return request(`/alignments/${matchId}/rows/${rowId}/approve`, {method: 'POST'});
+    approveRow(workId, matchId, rowId) {
+        return request(`${base(workId, matchId)}/rows/${rowId}/approve`, {method: 'POST'});
     },
 
-    addSentence(matchId, {side, meaning_match_id, content}) {
-        return request(`/alignments/${matchId}/sentences`, {
+    disapproveRow(workId, matchId, rowId) {
+        return request(`${base(workId, matchId)}/rows/${rowId}/disapprove`, {method: 'POST'});
+    },
+
+    addSentence(workId, matchId, {side, meaning_match_id, content}) {
+        return request(`${base(workId, matchId)}/sentences`, {
             method: 'POST',
             body: JSON.stringify({side, meaning_match_id, content}),
         });
     },
 
-    updateSentence(matchId, sentenceId, {side, content}) {
-        return request(`/alignments/${matchId}/sentences/${sentenceId}`, {
+    updateSentence(workId, matchId, sentenceId, {side, content}) {
+        return request(`${base(workId, matchId)}/sentences/${sentenceId}`, {
             method: 'PATCH',
             body: JSON.stringify({side, content}),
         });
     },
 
-    unlinkSentence(matchId, sentenceId, side) {
-        return request(`/alignments/${matchId}/sentences/${sentenceId}`, {
+    unlinkSentence(workId, matchId, sentenceId, side) {
+        return request(`${base(workId, matchId)}/sentences/${sentenceId}`, {
             method: 'DELETE',
             body: JSON.stringify({side}),
         });
     },
 
-    destroyUnmatched(matchId, sentenceId, side) {
-        return request(`/alignments/${matchId}/unmatched/${sentenceId}`, {
+    destroyUnmatched(workId, matchId, sentenceId, side) {
+        return request(`${base(workId, matchId)}/unmatched/${sentenceId}`, {
             method: 'DELETE',
             body: JSON.stringify({side}),
         });
     },
 
-    moveSentence(matchId, payload) {
-        return request(`/alignments/${matchId}/sentences/move`, {
+    moveSentence(workId, matchId, payload) {
+        return request(`${base(workId, matchId)}/sentences/move`, {
             method: 'POST',
             body: JSON.stringify(payload),
         });

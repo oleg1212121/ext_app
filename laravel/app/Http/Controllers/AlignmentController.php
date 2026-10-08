@@ -4,14 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Classes\AlignmentEditorApiPresenter;
 use App\Classes\EntityAccessService;
+use App\Http\Requests\AlignmentEditorPageRequest;
 use App\Models\EntityMatch;
+use App\Models\Work;
 use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Renders the alignment editor page. The browse/create surface lives under
- * each work (/works/{work}/alignments, ADR 0036/0039); only the editor
- * route stays global.
+ * Renders the alignment editor page. It lives on the work branch
+ * (/works/{work}/alignments/{match}/edit, ADR 0072) — both of the pair's
+ * entities belong to one work — and seeds each section's initial page from
+ * the URL so a shared link opens exactly the pages the sender saw.
  */
 class AlignmentController extends Controller
 {
@@ -24,22 +27,52 @@ class AlignmentController extends Controller
         return new EntityAccessService;
     }
 
-    public function show(EntityMatch $entityMatch): Response
+    public function show(Work $work, EntityMatch $entityMatch, AlignmentEditorPageRequest $request): Response
     {
+        abort_unless($entityMatch->aEntity?->work_id === $work->id, 404);
+
         abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
 
         $entityMatch->load(['aEntity.language', 'bEntity.language', 'aEntity.work.originalLanguage']);
 
-        $payload = $this->presenter->rowsPagePayload($entityMatch, 1, 25);
+        $rows = $this->clampedPagePayload(
+            fn (int $page) => $this->presenter->rowsPagePayload($entityMatch, $page, $request->rowsPerPage()),
+            $request->rowsPage(),
+        );
 
         return Inertia::render('Alignments/Show', [
             'match' => $this->presenter->matchPayload($entityMatch),
-            'rows' => $payload['rows'],
-            'rows_meta' => $payload['meta'],
-            'sentences_before' => $payload['sentences_before'],
-            'unmatched_a' => $this->presenter->unmatchedPayload($entityMatch, 'a', 1),
-            'unmatched_b' => $this->presenter->unmatchedPayload($entityMatch, 'b', 1),
-            'needs_review' => $this->presenter->needsReviewPagePayload($entityMatch, 1),
+            'rows' => $rows['rows'],
+            'rows_meta' => $rows['meta'],
+            'sentences_before' => $rows['sentences_before'],
+            'unmatched_a' => $this->clampedPagePayload(
+                fn (int $page) => $this->presenter->unmatchedPayload($entityMatch, 'a', $page),
+                $request->unmatchedAPage(),
+            ),
+            'unmatched_b' => $this->clampedPagePayload(
+                fn (int $page) => $this->presenter->unmatchedPayload($entityMatch, 'b', $page),
+                $request->unmatchedBPage(),
+            ),
+            'needs_review' => $this->clampedPagePayload(
+                fn (int $page) => $this->presenter->needsReviewPagePayload($entityMatch, $page),
+                $request->reviewPage(),
+            ),
         ]);
+    }
+
+    /**
+     * Fetch a paged payload, landing a stale or hand-edited ?page= on the
+     * nearest valid page (same spirit as ReaderController::paginateRows).
+     *
+     * @param  callable(int): array{meta: array{last_page: int}}  $fetch
+     * @return array{meta: array{last_page: int}}
+     */
+    private function clampedPagePayload(callable $fetch, int $page): array
+    {
+        $payload = $fetch($page);
+
+        $lastPage = max((int) $payload['meta']['last_page'], 1);
+
+        return $page > $lastPage ? $fetch($lastPage) : $payload;
     }
 }

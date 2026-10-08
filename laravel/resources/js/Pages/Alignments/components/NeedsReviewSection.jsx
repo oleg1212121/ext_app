@@ -1,11 +1,12 @@
 import Pagination from './Pagination.jsx';
+import {CheckIcon} from './icons.jsx';
 import {useI18n} from '../../../i18n';
 
 function targetPage(item, rowsPerPage) {
     return Math.max(Math.ceil(item.rank / rowsPerPage), 1);
 }
 
-export default function NeedsReviewSection({expanded, onToggle, items, meta, busy, rowsPerPage, onPageChange, onRowClick}) {
+export default function NeedsReviewSection({expanded, onToggle, items, meta, busy, rowsPerPage, onPageChange, onRowClick, onApprove}) {
     const {t} = useI18n();
     return (
         <section className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
@@ -30,30 +31,46 @@ export default function NeedsReviewSection({expanded, onToggle, items, meta, bus
                             const page = targetPage(item, rowsPerPage);
 
                             return (
-                                <button
+                                <div
                                     key={item.key}
-                                    type="button"
-                                    onClick={() => onRowClick(item, page)}
-                                    className="grid grid-cols-1 gap-x-3 gap-y-0.5 px-3 py-2 text-left hover:bg-[var(--wbench-paper-deep)] dark:hover:bg-[var(--wbench-paper-deep-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-baseline"
+                                    className="group flex items-center gap-1 pr-2 hover:bg-[var(--wbench-paper-deep)] dark:hover:bg-[var(--wbench-paper-deep-night)] focus-within:bg-[var(--wbench-paper-deep)] dark:focus-within:bg-[var(--wbench-paper-deep-night)]"
                                 >
-                                    <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                        #{item.rank}
-                                        {item.one_sided && (
-                                            <span className="ml-1.5 text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]">
-                                                {t('alignments.one_sided')}
-                                            </span>
-                                        )}
+                                    <button
+                                        type="button"
+                                        onClick={() => onRowClick(item, page)}
+                                        className="min-w-0 flex-1 grid grid-cols-1 gap-x-3 gap-y-0.5 px-3 py-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--wbench-accent)] sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-baseline"
+                                    >
+                                        <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                            #{item.rank}
+                                            {item.one_sided && (
+                                                <span className="ml-1.5 text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)]">
+                                                    {t('alignments.one_sided')}
+                                                </span>
+                                            )}
+                                        </span>
+                                        <span className="font-serif text-[13px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] line-clamp-2">
+                                            {item.a_part || '—'}
+                                        </span>
+                                        <span className="font-serif text-[13px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] line-clamp-2">
+                                            {item.b_part || '—'}
+                                        </span>
+                                        <span className="font-mono text-[10px] tabular-nums text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                            {item.similarity !== null ? `${t('alignments.sim')} ${Number(item.similarity).toFixed(4)}` : `${t('alignments.sim')} —`} · {t('alignments.page_short', {page})}
+                                        </span>
+                                    </button>
+                                    <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                                        <button
+                                            type="button"
+                                            onClick={() => onApprove(item)}
+                                            disabled={busy}
+                                            title={t('alignments.approve')}
+                                            aria-label={`${t('alignments.approve_pair')} #${item.rank}`}
+                                            className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-accent)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            <CheckIcon/>
+                                        </button>
                                     </span>
-                                    <span className="font-serif text-[13px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] line-clamp-2">
-                                        {item.a_part || '—'}
-                                    </span>
-                                    <span className="font-serif text-[13px] leading-snug text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] line-clamp-2">
-                                        {item.b_part || '—'}
-                                    </span>
-                                    <span className="font-mono text-[10px] tabular-nums text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                                        {item.similarity !== null ? `${t('alignments.sim')} ${Number(item.similarity).toFixed(4)}` : `${t('alignments.sim')} —`} · {t('alignments.page_short', {page})}
-                                    </span>
-                                </button>
+                                </div>
                             );
                         })}
 

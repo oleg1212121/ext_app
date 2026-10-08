@@ -82,6 +82,7 @@ export default function NavBar() {
             {label: t('nav.puzzles'), children: [{href: '/crossword', label: t('nav.crossword')}]},
             {href: '/word-test', label: t('nav.word_test')},
             {label: t('nav.resources'), children: [{href: '/resources/pronunciation-guide', label: t('nav.pronunciation_reference')}]},
+            {href: '/recommendations', label: t('nav.recommendations')},
             ...(canAccessAdminPanel ? [{href: '/admin', label: t('nav.admin'), external: true}] : []),
         ]
     }, [isAuthenticated, isApproved, canAccessAdminPanel, t])

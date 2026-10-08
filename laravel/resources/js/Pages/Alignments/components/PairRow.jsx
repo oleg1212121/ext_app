@@ -3,12 +3,13 @@ import {useDndContext} from '@dnd-kit/core';
 import {SortableContext, verticalListSortingStrategy} from '@dnd-kit/sortable';
 import SentenceItem from './SentenceItem.jsx';
 import DropSlot from './DropSlot.jsx';
+import {CheckIcon, BanIcon, PlusIcon, TrashIcon} from './icons.jsx';
 import {useI18n} from '../../../i18n';
 
 const railBtn = [
-    'inline-flex h-7 items-center px-2.5 font-mono text-[11px] uppercase tracking-[0.14em]',
+    'inline-flex h-7 w-7 items-center justify-center rounded-sm',
     'text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]',
-    'border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] rounded-sm',
+    'border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]',
     'hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)]',
     'dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)]',
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]',
@@ -108,7 +109,7 @@ function SentenceColumn({side, sideLabel, containerKey, keys, lookup, adding, dr
     );
 }
 
-export default function PairRow({row, position, preview = false, aKeys, bKeys, sideLabels, lookup, editing, adding, draft, busy, highlighted, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete, onApprove}) {
+export default function PairRow({row, position, preview = false, aKeys, bKeys, sideLabels, lookup, editing, adding, draft, busy, highlighted, onAddStart, onAddChange, onAddCommit, onAddCancel, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onUnlink, onCreateBelow, onDelete, onApprove, onDisapprove}) {
     const {t} = useI18n();
     return (
         <section
@@ -137,13 +138,16 @@ export default function PairRow({row, position, preview = false, aKeys, bKeys, s
 
                 <div className="flex items-center gap-1.5">
                     <button type="button" onClick={() => onApprove(row)} disabled={busy} title={t('alignments.approve')} aria-label={t('alignments.approve_pair')} className={railBtn}>
-                        {t('alignments.approve')}
+                        <CheckIcon/>
                     </button>
-                    <button type="button" onClick={() => onCreateBelow(row)} disabled={busy} className={railBtn}>
-                        {t('alignments.create_below')}
+                    <button type="button" onClick={() => onDisapprove(row)} disabled={busy} title={t('alignments.disapprove_hint')} aria-label={t('alignments.disapprove_pair')} className={railBtn}>
+                        <BanIcon/>
+                    </button>
+                    <button type="button" onClick={() => onCreateBelow(row)} disabled={busy} title={t('alignments.create_below')} aria-label={t('alignments.create_below_pair')} className={railBtn}>
+                        <PlusIcon/>
                     </button>
                     <button type="button" onClick={() => onDelete(row)} disabled={busy} aria-label={t('alignments.delete_pair')} title={t('alignments.delete_pair_hint')} className={`${railBtn} hover:border-[var(--wbench-danger)] hover:text-[var(--wbench-danger)] dark:hover:border-[var(--wbench-danger-night)] dark:hover:text-[var(--wbench-danger-night)]`}>
-                        {t('alignments.delete')}
+                        <TrashIcon/>
                     </button>
                 </div>
             </div>

@@ -49,6 +49,14 @@ A meaning match with junctions on exactly one side — the junctioned sentence(s
 display with the other column empty. How the pipeline keeps an unmatched original
 sentence visible. _Avoid_: skip row (implementation term), empty match
 
+**Rejected pair**:
+A meaning match a human disapproved in the Alignment editor: its similarity is
+set to 0 while everything else — junctions, order, the human-chunk sentinel —
+stays untouched. A rejection is a number, not a permanent verdict: the row stays
+in **Needs review**, and a later Re-align deletes it like any low-confidence row
+so its sentences can re-pair. _Avoid_: banned pair (nothing forbids the pairing
+machine-side), human verdict (only approval is remembered by the pipeline)
+
 **Needs review**:
 A meaning match a human should inspect because it is low-confidence (similarity
 below the pipeline's acceptance floor) or one-sided (incomplete) and not
@@ -59,15 +67,17 @@ _Avoid_: low-similarity match (score-only wording, misses one-sided rows), resol
 
 **Alignment editor**:
 The human-refinement surface for one Entity match — the React page at
-`/alignments/{id}`, backed by the surgical `AlignmentEditorController`
-endpoints, where sentences are added, edited, dragged between rows and the
-unmatched pool, and rows are created, approved, and deleted. Opened from the
+`/works/{work}/alignments/{match}/edit` (work-nested, ADR 0072), backed by
+the surgical `AlignmentEditorController` endpoints under the same prefix,
+where sentences are added, edited, dragged between rows and the unmatched
+pool, and rows are created, approved, rejected, and deleted. Its URL query
+carries each section's pagination so a view can be shared. Opened from the
 work's Alignments page cards, the entity page, and the Filament Sentence
 Alignment list's edit link. The one editing surface (ADR 0062); the Filament
 resource remains the operations console (Re-align, Run from scratch) over
 the same data.
 _Avoid_: Filament editor (the retired draft editor), draft editor, alignment
-editor page (there is only one).
+editor page (there is only one), flat /alignments/{id} URL (removed).
 
 **Sentence**:
 A split sentence of an entity. Its entity-global `order` is the **document order** —
@@ -569,8 +579,12 @@ any of a work's pages), work detail.
 
 **Entities page**:
 A work's page (`/works/{id}/entities`) listing the per-language texts of
-that work the user can read — where new texts are uploaded to the work.
-_Avoid_: entities tab (retired with the tab layout), text list.
+that work the user can read — where new texts are uploaded to the work. An
+individual text's view and edit pages live on the work branch too
+(`/works/{id}/entities/{entity}`) — the URL names the work, never the
+language (the Entity carries it). _Avoid_: entities tab (retired with the
+tab layout), text list, language entities (the old language-scoped
+back-link wording).
 
 **Alignments page**:
 A work's page (`/works/{id}/alignments`) listing the **Entity matches** of
@@ -579,6 +593,17 @@ match. Creating a match happens from this page: the work is the page the
 form lives on, never a picker choice. An individual match's editor keeps
 its own standalone address. _Avoid_: alignment list (the removed global
 surface), global alignments, alignments tab (retired with the tab layout).
+
+**Word knowledge**:
+The per-user percentage shown on an entity's page — the occurrence-weighted
+share of the text's dictionary-linked word occurrences the viewer knows,
+0–100, where familiarity 0–60 maps linearly onto it, anything above 60 is
+fully known, and a word the user has never touched counts as unknown. A
+snapshot computed on first view and refreshed when the text's word list is
+rebuilt or three days pass. It describes one viewer against one text; it is
+not a comparison between users. See ADR 0074. _Avoid_: percentile (a rank
+against other users), coverage (the alignment term), knowledge score ("score"
+is the word-test result).
 
 **Work catalog**:
 The complete set of **Works**, visible to every approved user regardless of
@@ -1011,3 +1036,23 @@ for every tested-language word at rank ≤ the Word test score. It marks a
 word as seen-enough without certifying it: reads and crosswords still
 grow it toward known (100), and any higher existing value is untouched.
 _Avoid_: known (that means familiarity 100), certified knowledge.
+
+# Recommendations Context
+
+The domain of the personalized reading queue — the page that re-ranks the
+texts the viewer has already opened by their Word knowledge, so they can
+pick the least-known text they can still read comfortably.
+
+## Language
+
+**Recommendations page**:
+The page at `/recommendations` listing the viewer's readable, completed
+texts whose **Word knowledge** snapshot sits at or above the chosen
+threshold (default 90%), grouped under their Work and ordered least known
+first — an easy-read finder, not a challenge finder. It reads the stored
+snapshots only: a text enters the page the first time the viewer opens it;
+a text never opened never appears (see Word knowledge in the Library
+Context). Search covers work and text fields; the language filter defaults
+to English. See ADR 0075. _Avoid_: discovery engine (the page never
+surfaces unopened texts), percentile (a rank against other users),
+knowledge threshold as a ceiling (it is a minimum).

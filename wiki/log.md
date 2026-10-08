@@ -1,5 +1,199 @@
 # Directory Update Log
 
+## 2026-10-08 (Creation-module hardening: self-pair guard, uniform stale handling, limit coverage)
+
+Follow-up review of the creation module surfaced three small gaps, now
+closed. **Self-pair guard:** `EntityMatchCreationService::create()` now
+throws `SelfEntityPair` ("An entity cannot be matched with itself.") when
+both arguments are the same entity — previously only the Library form's
+`different` rule blocked it; the Filament create form and the match list's
+header action now declare `different` on their second entity select too
+(the Find Match action needs none: its candidate query already excludes
+the record), and all surfaces translate the exception into their own UX
+(back-error on the Library form, danger notification on Filament).
+**Uniform stale-entity handling:** the match list's header action and the
+entity table's Find Match action now resolve their entity with `find()` +
+"Entity not found." notification instead of `findOrFail()`'s 404, matching
+the create page. **Limit coverage:** the Filament panel is authenticated,
+not admin-gated, so the `ProcessingLimitReached` danger-notification branch
+was reachable yet untested — each of the three Filament creation surfaces
+now has a non-admin-at-the-limit test (the wrong "panel is admin-only"
+comments in two tests and one wiki phrase corrected). New tests: module
+self-pair, create-page self-pair form rejection, stale-submission backstop
+on both actions, three limit notifications. Concepts updated:
+[sentence alignment](/domains/sentence-alignment.md),
+[entities](/domains/entities.md).
+
+## 2026-10-08 (One Entity-match creation module)
+
+Opening an Entity match — pairing two same-Work entities so the alignment
+pipeline can run — now lives behind one module,
+`laravel/app/Classes/EntityMatchCreationService.php`
+(spec `.scratch/entity-match-creation/spec.md`; ADRs
+[0019](../docs/adr/0019-same-language-entity-matches.md),
+[0033](../docs/adr/0033-exact-copy-cloning-and-hash-based-alignment-reuse.md),
+[0044](../docs/adr/0044-per-user-processing-limits.md)).
+`create($creator, $first, $second, ?$chunkSize, ?$maxN)` returns
+`created` / `created_from_copy` / `duplicate` (carrying the existing match)
+or throws `CrossWorkEntityPair` / `ProcessingLimitReached`; same-Work
+validation, canonical a/b sides, knob defaults (75/6), the Processing
+limit, the copy-reuse decision, and the dispatch decision live only there.
+All four creation surfaces became thin callers: the Library Alignments form
+(`LibraryController::storeAlignment` — external behavior unchanged:
+duplicate still a validation error with the `existing_match_id` flash,
+limit still a `limit` error) and the three Filament surfaces (the
+`EntityMatchResource` create page, the match list's "New Alignment" header
+action, the entity table's "Find Match" action), which render outcomes as
+notifications — on duplicate, one linking to the existing match. Behavior
+changes: **duplicates are rejected everywhere and nothing ever deletes
+meaning matches as a side effect of creation** — the Filament actions'
+destructive delete-on-duplicate (which wiped existing matches including
+their human-curated rows) is gone, and deletion stays the explicit
+Delete / DeleteBulk / "Run from scratch" operator actions; the entity-page
+Find Match action gains Alignment copy reuse (ADR 0033 — Exact-copy pairs
+complete instantly there too); Filament creations now respect the per-user
+Processing limit under the creator's locked user row (ADR 0044, admins
+exempt). No schema, route, or permission change (the machine-owned wiki
+references re-sync diff-free). Tests: new `EntityMatchCreationTest` (the
+module contract), extended `FilamentEntityAlignmentCreatePageTest` /
+`FilamentEntityAlignmentListActionTest` (duplicate + limit behavior), and
+new `FilamentEntityFindMatchActionTest` (the Find Match action's first
+coverage). Full suite: 1020 passed (5340 assertions).
+`sentence-alignment.md` gains the creation-module section, moves the ADR
+0044 count-then-create into the module's name, and fixes the copy fast
+path's stale `AlignmentController::store` citation (it means
+`LibraryController::storeAlignment`; four surfaces, not three);
+`entities.md`'s Alignments-create route row now describes the thin caller —
+both concepts with `generated.at` bumps.
+
+## 2026-10-07 (Recommendations page)
+
+New personalized reading queue at `/recommendations` (ADR
+[0075](../docs/adr/0075-recommendations-page.md), new
+`wiki/domains/recommendations.md`): the viewer's readable completed texts
+grouped under works, filtered to texts whose **Word knowledge** snapshot
+(ADR 0074) sits at or above a threshold (default 90%, clamped; minimum,
+not ceiling), ordered least known first — an easy-read finder.
+`RecommendationsController` runs one qualifying filter twice: grouped per
+work (`MIN(score)` through a `joinSub`, keeping `paginate()`'s count
+correct, 15 works/page) and per page-work texts, all in SQL over
+`user_entity_word_knowledge` with the mid-rebuild guard mirrored from
+`EntityWordKnowledgeService::refreshStale`. The page is a **read-only**
+pass over the snapshot table (no backfill, no computation — a deliberate
+ADR 0075 decision), so it re-ranks previously opened texts; search
+matches work title/author or qualifying text names, `lang` defaults to
+`en` (unknown code → 404), and unrankable texts (null score, mid-rebuild
+index, non-completed, unreadable-restricted) are excluded silently. React
+page `Recommendations/Index.jsx` follows the Library list idiom (GET
+form + `LinkPagination`, wbench palette) with expandable work rows;
+top-level `nav.recommendations` sits after Resources; strings seeded from
+the new `ui-strings/recommendations.php` + `nav.php`. Tests:
+`RecommendationsTest` (12 tests). `entities.md` gains a cross-link from
+its ADR 0074 section and a `generated.at` bump.
+
+## 2026-10-07 (Review polish: A-side URLs, clamp helper, has_no_familiarity rename)
+
+Two-axis review (standards + spec) of the five dev commits (ADR 0072–0074
+plus the two needs-review fixes) produced this follow-up batch. The match
+payload's `work_id` and both Filament "Edit alignment" URL builders now
+read the A-side entity's `work_id` only, per ADR 0072's single
+verified path — the dropped `bEntity` fallback could build URLs the
+controllers would 404 (`a_entity_id` is non-nullable, so the fallback was
+dead weight). The off-page merge-row skip (needs-review approve fix) is
+folded into `wiki/domains/sentence-alignment.md` — whose `generated.at`
+had been left unbumped by the earlier flash-fix edit — and the stale
+`wiki/index.md` entities line no longer advertises the deleted
+language-scoped create pages. `Alignments/Show.jsx`'s duplicated
+page-clamp shape (needs review + unmatched pools) is one
+`fetchClampedPage` helper. `EntityController::show`'s `needs_word_test`
+prop is renamed `has_no_familiarity`: the check is "no `user_word` rows
+of any kind" (word test, crossword markers, adoptions), not "hasn't
+taken the test" — ADR 0074's blank-slate hint semantics are unchanged;
+`Entities/Show` and `EntityWordKnowledgeTest` follow the rename.
+
+## 2026-10-07 (Entity pages show word knowledge)
+
+Entity detail pages gained a per-user **Word knowledge** percentage (ADR
+[0074](../docs/adr/0074-entity-word-knowledge.md)): the occurrence-weighted
+share of the entity's dictionary-linked word occurrences the viewer knows —
+`Σ(count × min(familiarity, 60)) / (60 × Σ count)`, no `user_word` row = 0,
+unlinked tokens excluded, null when nothing is linked. `EntityWordKnowledge`
+snapshots land in the new `user_entity_word_knowledge` table (one row per
+user+entity, updated in place, no history), written by
+`EntityWordKnowledgeService::ensure` on first/stale view — never while
+`EntityWordIndexer::isStale` (the page shows "calculating") — and kept
+current for non-visitors by the new `entities:refresh-word-knowledge`
+scheduler entry (every 5 min, limit-bounded) against the dual staleness
+trigger: word-list rebuild (`computed_at < words_indexed_at`) or 3-day age.
+The 60 cap intentionally equals the frontend's `FAMILIARITY_STRONG_AT`, so
+placement-baseline words (50) read as partially known, not mastered.
+`EntityController::show` passes `word_knowledge` + `needs_word_test` (a
+word-test hint accompanies a blank-slate 0%); the stat renders in the
+`Entities/Show` header. `EntityWordKnowledgeTest` pins the math, the
+snapshot lifecycle, the sweep triggers/limit, and the page payload. Docs:
+ADR 0074, CONTEXT.md (**Word knowledge** in the Library context),
+`wiki/domains/entities.md`.
+
+## 2026-10-07 (Entity routes move onto the work branch)
+
+The whole flat entity surface left the language-segmented
+`/entities/{lang}/{entity}` namespace for the work branch (ADR
+[0073](../docs/adr/0073-work-nested-entity-routes.md)): view, edit,
+metadata PATCH, approval toggle, and the five sentence JSON endpoints now
+live at `/works/{work}/entities/{entity}...`, keeping their `entities.*`
+route names (`works.entities.show`/`index` were already the per-work list
+and the global browse). The `{lang}` segment is gone — the entity carries
+its language, so it was two addresses for one resource with one always a
+404; the wrong-language 404 becomes a wrong-work 404 via
+`abort_unless($entity->work_id === $work->id, 404)` on every action (the
+ADR 0072 pattern). Old flat routes are deleted without redirects, and the
+language-first create/store pair (`/entities/{lang}/create`,
+`POST /entities/{lang}`) died with them along with its `Entities/Create`
+page and `StoreEntityRequest` — the work-scoped Library form (ADR 0039) is
+the only create surface. Client links all build from payload `work_id`:
+the entity page's back link lands on the work's Entities page ("← {work
+title} entities", language moved into the subtitle), the editor's back
+link and cancel return to the entity's view page, and the per-work list's
+cards target the nested view URL. Route-name asymmetry with the alignment
+editor accepted. `EntityControllerTest` pins the nested pages, the
+wrong-work 404, and every flat route's 404; its flat-store tests were
+ported to the work-nested store or dropped where `LibraryTest` already
+covered them. Docs: ADR 0073, CONTEXT.md (**Entities page** — entity
+view/edit addresses), `wiki/domains/entities.md`.
+
+## 2026-10-07 (Alignment editor moves onto the work branch)
+
+The alignment editor's page and all eleven JSON endpoints left the flat
+`/alignments/{id}` namespace for the work branch (ADR
+[0072](../docs/adr/0072-work-nested-alignment-editor-routes.md)): the page
+is now `GET /works/{work}/alignments/{entityMatch}/edit`
+(`works.alignments.edit`), every `AlignmentEditorController` action binds
+`Work` and 404s when the match path names another work, the old flat routes
+are deleted without redirects, and all client link builders (alignment
+cards, entity page, duplicate-match flash link, Filament edit actions) plus
+every `AlignmentEditorApiTest`/`AlignmentEditorAccessTest` URL were
+rewritten — the match payload now carries `work_id`, which feeds the
+client's API base path and the header's new back link to the work's
+Alignments page. New editor action **disapprove** (`rejectRow`): similarity
+→ 0.0 with the chunk sentinel untouched — a number, not a verdict — so a
+rejected row stays in Needs review (pure-similarity rule unchanged) and a
+later Re-align deletes it below the landmark bar; the row rail is
+icon-only now (✓ / ⊘ / ＋ / 🗑), rows approve in place from the
+Needs-review list, and the shared `Pagination` gained a "go to page" jump
+input (unmatched pools upgraded from bare arrows). Editor pagination state
+moved into the URL (`rows_page`, `rows_per_page`, `unmatched_a_page`,
+`unmatched_b_page`, `review_page`): seeded server-side via the new
+`AlignmentEditorPageRequest` with out-of-range clamping, mirrored
+client-side with `history.replaceState`. `AlignmentPagesTest` pins the
+nested page, URL seeding/clamping, and the 404s. Docs: ADR 0072,
+CONTEXT.md (**Rejected pair**, rewritten **Alignment editor**),
+`wiki/domains/sentence-alignment.md`. Follow-ups on the same branch: the
+mutation merge moved to `lib/alignmentRowMerge.js` (response rows for
+other pages are skipped — approving from Needs review no longer appends a
+phantom "next page" row), and the approve-in-place optimistic removal now
+goes through the server snapshot so the merge cannot resurrect the row
+(no three-render flash).
+
 ## 2026-10-06 (Band word lists min-merge onto frequency ranks)
 
 New command `words:import-frequency-lists {--path=} {--dry-run}` (ADR

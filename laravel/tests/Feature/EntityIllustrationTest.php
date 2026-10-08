@@ -73,7 +73,7 @@ it('stores an illustration sentence with its image', function () {
     $user = approvedUser();
     grantAccess($user, $entity);
 
-    $response = $this->actingAs($user)->post("/entities/en/{$entity->id}/sentences", [
+    $response = $this->actingAs($user)->post("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
         'content' => 'The lighthouse',
         'sentence_type_id' => SentenceType::illustrationId(),
         'image' => pngUpload(),
@@ -104,7 +104,7 @@ it('stores an illustration without a caption', function () {
     $entity = createEntity('en');
     $user = approvedUser();
 
-    $this->actingAs($user)->post("/entities/en/{$entity->id}/sentences", [
+    $this->actingAs($user)->post("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
         'content' => '',
         'sentence_type_id' => SentenceType::illustrationId(),
         'image' => pngUpload(),
@@ -117,7 +117,7 @@ it('rejects an illustration without an image file', function () {
     $entity = createEntity('en');
     $user = approvedUser();
 
-    $this->actingAs($user)->postJson("/entities/en/{$entity->id}/sentences", [
+    $this->actingAs($user)->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
         'content' => 'Caption only',
         'sentence_type_id' => SentenceType::illustrationId(),
     ])->assertStatus(422);
@@ -127,7 +127,7 @@ it('rejects a non-image file as an illustration', function () {
     $entity = createEntity('en');
     $user = approvedUser();
 
-    $this->actingAs($user)->post("/entities/en/{$entity->id}/sentences", [
+    $this->actingAs($user)->post("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
         'content' => '',
         'sentence_type_id' => SentenceType::illustrationId(),
         'image' => UploadedFile::fake()->createWithContent('notes.txt', 'just text'),
@@ -139,12 +139,12 @@ it('keeps plain sentence rules for non-illustration types', function () {
     $user = approvedUser();
     $sentenceType = SentenceType::firstOrCreate(['name' => 'sentence'], ['description' => 'A standard sentence']);
 
-    $this->actingAs($user)->postJson("/entities/en/{$entity->id}/sentences", [
+    $this->actingAs($user)->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
         'content' => '   ',
         'sentence_type_id' => $sentenceType->id,
     ])->assertStatus(422);
 
-    $this->actingAs($user)->post("/entities/en/{$entity->id}/sentences", [
+    $this->actingAs($user)->post("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
         'content' => 'A plain sentence.',
         'sentence_type_id' => $sentenceType->id,
     ])->assertOk();
@@ -159,7 +159,7 @@ it('keeps plain sentence rules for non-illustration types', function () {
 it('updates an illustration caption without touching the image', function () {
     $entity = createEntity('en');
     $user = approvedUser();
-    $this->actingAs($user)->post("/entities/en/{$entity->id}/sentences", [
+    $this->actingAs($user)->post("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
         'content' => 'Old caption',
         'sentence_type_id' => SentenceType::illustrationId(),
         'image' => pngUpload(),
@@ -168,7 +168,7 @@ it('updates an illustration caption without touching the image', function () {
     $sentence = EntitySentence::query()->where('entity_id', $entity->id)->sole();
     $path = $sentence->image_path;
 
-    $this->actingAs($user)->patch("/entities/en/{$entity->id}/sentences/{$sentence->id}", [
+    $this->actingAs($user)->patch("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}", [
         'content' => '',
         'sentence_type_id' => SentenceType::illustrationId(),
     ])->assertOk();
@@ -184,7 +184,7 @@ it('updates an illustration caption without touching the image', function () {
 it('pins an illustration to its type', function () {
     $entity = createEntity('en');
     $user = approvedUser();
-    $this->actingAs($user)->post("/entities/en/{$entity->id}/sentences", [
+    $this->actingAs($user)->post("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
         'content' => '',
         'sentence_type_id' => SentenceType::illustrationId(),
         'image' => pngUpload(),
@@ -193,7 +193,7 @@ it('pins an illustration to its type', function () {
     $sentence = EntitySentence::query()->where('entity_id', $entity->id)->sole();
     $plainType = SentenceType::firstOrCreate(['name' => 'sentence'], ['description' => 'x']);
 
-    $this->actingAs($user)->patchJson("/entities/en/{$entity->id}/sentences/{$sentence->id}", [
+    $this->actingAs($user)->patchJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}", [
         'content' => '',
         'sentence_type_id' => $plainType->id,
     ])->assertStatus(422);
@@ -202,7 +202,7 @@ it('pins an illustration to its type', function () {
 it('replaces an illustration image and releases the orphaned file', function () {
     $entity = createEntity('en');
     $user = approvedUser();
-    $this->actingAs($user)->post("/entities/en/{$entity->id}/sentences", [
+    $this->actingAs($user)->post("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
         'content' => '',
         'sentence_type_id' => SentenceType::illustrationId(),
         'image' => pngUpload('first.png'),
@@ -213,7 +213,7 @@ it('replaces an illustration image and releases the orphaned file', function () 
 
     // A visually distinct (2x1) image hashes differently, so the replace
     // writes a new file and orphans the old one.
-    $this->actingAs($user)->patch("/entities/en/{$entity->id}/sentences/{$sentence->id}", [
+    $this->actingAs($user)->patch("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}", [
         'content' => 'New caption',
         'sentence_type_id' => SentenceType::illustrationId(),
         'image' => UploadedFile::fake()->createWithContent('second.png', buildPng(2, 1, "\x40")),
@@ -236,7 +236,7 @@ it('shares one file between identical uploads and deletes it with the last refer
     $user = approvedUser();
 
     foreach ([$entityA, $entityB] as $entity) {
-        $this->actingAs($user)->post("/entities/en/{$entity->id}/sentences", [
+        $this->actingAs($user)->post("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
             'content' => '',
             'sentence_type_id' => SentenceType::illustrationId(),
             'image' => pngUpload(),
@@ -264,7 +264,7 @@ it('serves an illustration through the access-checked route', function () {
     $outsider = approvedUser();
     grantAccess($grantee, $entity);
 
-    $this->actingAs($grantee)->post("/entities/en/{$entity->id}/sentences", [
+    $this->actingAs($grantee)->post("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
         'content' => 'Hidden picture',
         'sentence_type_id' => SentenceType::illustrationId(),
         'image' => pngUpload(),

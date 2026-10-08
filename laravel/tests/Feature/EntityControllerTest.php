@@ -6,7 +6,6 @@ use App\Models\Entity;
 use App\Models\Language;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -48,80 +47,9 @@ test('edit page alignment count excludes matches with an unreadable other side',
     createEntityMatch($en, $secret);
 
     $this->actingAs($user)
-        ->get("/entities/en/{$en->id}/edit")
+        ->get("/works/{$work->id}/entities/{$en->id}/edit")
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('alignmentCount', 1));
-});
-
-test('create form renders', function () {
-    makeLanguage('en');
-
-    $this->actingAs(approvedUser())
-        ->get('/entities/en/create')
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page->component('Entities/Create'));
-});
-
-test('store creates an entity without a file and redirects', function () {
-    makeLanguage('en');
-
-    $response = $this->actingAs(approvedUser())
-        ->post('/entities/en', [
-            'name' => 'New Entity',
-            'description' => 'A note',
-            'new_work_title' => 'New Work',
-        ]);
-
-    $entity = Entity::query()->where('name', 'New Entity')->firstOrFail();
-    expect($entity->exists)->toBeTrue()
-        ->and($entity->work->title)->toBe('New Work');
-
-    $response->assertRedirect("/entities/en/{$entity->id}");
-});
-
-test('store with a file stores the file and dispatches the pipeline', function () {
-    Storage::fake('local');
-    Queue::fake();
-    makeLanguage('en');
-
-    Http::fake(function (Request $request) {
-        if (str_contains($request->url(), '/embed')) {
-            return Http::response(['vector' => [0.1, 0.2, 0.3]], 200);
-        }
-
-        return Http::response(['similarities' => [0.0]], 200);
-    });
-
-    $file = UploadedFile::fake()->create('text.txt', 20, 'text/plain');
-
-    $response = $this->actingAs(approvedUser())
-        ->post('/entities/en', [
-            'name' => 'With File',
-            'new_work_title' => 'With File Work',
-            'file' => $file,
-        ]);
-
-    $entity = Entity::query()->where('name', 'With File')->firstOrFail();
-    expect($entity->file_path)->not->toBeNull();
-    expect($entity->is_restricted)->toBeTrue();
-    Storage::disk('local')->assertExists($entity->file_path);
-    Queue::assertPushed(ProcessEntityFile::class);
-
-    $response->assertRedirect("/entities/en/{$entity->id}");
-});
-
-test('store validates the name and file type', function () {
-    makeLanguage('en');
-
-    $this->actingAs(approvedUser())
-        ->post('/entities/en', ['name' => ''])
-        ->assertSessionHasErrors('name');
-
-    $bad = UploadedFile::fake()->create('image.png', 10, 'image/png');
-
-    $this->actingAs(approvedUser())
-        ->post('/entities/en', ['name' => 'Bad File', 'file' => $bad])
-        ->assertSessionHasErrors('file');
 });
 
 test('show page renders a single entity', function () {
@@ -129,7 +57,7 @@ test('show page renders a single entity', function () {
     $entity = createEntity('en', null, ['name' => 'Detail', 'description' => 'Body']);
 
     $this->actingAs(approvedUser())
-        ->get("/entities/en/{$entity->id}")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('Entities/Show')
@@ -142,7 +70,7 @@ test('show page exposes can_edit for a public entity', function () {
     $entity = createEntity('en', null, ['name' => 'Open', 'is_restricted' => false]);
 
     $this->actingAs(approvedUser())
-        ->get("/entities/en/{$entity->id}")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('can_edit', true));
 });
@@ -152,7 +80,7 @@ test('show page hides can_edit for a restricted entity without a grant', functio
     $entity = createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
 
     $this->actingAs(approvedUser())
-        ->get("/entities/en/{$entity->id}")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}")
         ->assertForbidden();
 });
 
@@ -163,27 +91,77 @@ test('show page exposes can_edit for a restricted entity with a grant', function
     $entity->grantedUsers()->attach($user->id);
 
     $this->actingAs($user)
-        ->get("/entities/en/{$entity->id}")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('can_edit', true));
 });
 
 test('show page 404s for an unknown entity', function () {
     makeLanguage('en');
+    $work = createWork();
 
     $this->actingAs(approvedUser())
-        ->get('/entities/en/999999')
+        ->get("/works/{$work->id}/entities/999999")
         ->assertNotFound();
+});
+
+test('show page 404s when the URL names another work', function () {
+    makeLanguage('en');
+    $entity = createEntity('en', null, ['name' => 'Detail']);
+    $otherWork = createWork(['title' => 'Other Work']);
+
+    $this->actingAs(approvedUser())
+        ->get("/works/{$otherWork->id}/entities/{$entity->id}")
+        ->assertNotFound();
+});
+
+test('the flat language-segmented entity routes are gone', function () {
+    makeLanguage('en');
+    $entity = createEntity('en', null, ['name' => 'Detail']);
+    $workId = $entity->work_id;
+
+    $user = approvedUser();
+    $this->actingAs($user)->get("/entities/en/{$entity->id}")->assertNotFound();
+    $this->actingAs($user)->get("/entities/en/{$entity->id}/edit")->assertNotFound();
+    $this->actingAs($user)->patch("/entities/en/{$entity->id}", ['name' => 'X'])->assertNotFound();
+    $this->actingAs($user)->patch("/entities/en/{$entity->id}/approved", ['is_approved' => true])->assertNotFound();
+    $this->actingAs($user)->get("/entities/en/{$entity->id}/sentences")->assertNotFound();
+    $this->actingAs($user)->post("/entities/en/{$entity->id}/sentences", ['content' => 'One.'])->assertNotFound();
+    $this->actingAs($user)->post("/entities/en/{$entity->id}/sentences/reorder", ['sentence_id' => 1])->assertNotFound();
+    $this->actingAs($user)->patch("/entities/en/{$entity->id}/sentences/1", ['content' => 'One.'])->assertNotFound();
+    $this->actingAs($user)->delete("/entities/en/{$entity->id}/sentences/1")->assertNotFound();
+    $this->actingAs($user)->get('/entities/en/create')->assertNotFound();
+    // The pre-existing browse redirect is method-agnostic, so a stray
+    // mutation to /entities/{lang} follows it to /works/entities instead
+    // of 404ing — unchanged by ADR 0073.
+    $this->actingAs($user)->post('/entities/en', ['name' => 'X'])->assertRedirect('/works/entities');
+});
+
+test('store rejects a non-text file', function () {
+    createLanguages();
+    $work = createWork();
+    $languageId = Language::query()->where('code', 'en')->value('id');
+
+    $bad = UploadedFile::fake()->create('image.png', 10, 'image/png');
+
+    $this->actingAs(approvedUser())
+        ->post("/works/{$work->id}/entities", [
+            'language_id' => $languageId,
+            'name' => 'Bad File',
+            'file' => $bad,
+        ])
+        ->assertSessionHasErrors('file');
 });
 
 test('store clones derivations when the uploaded file is an exact copy', function () {
     Storage::fake('local');
     Queue::fake();
     makeLanguage('en');
+    $work = createWork();
 
     $path = 'entities/en/original.txt';
     Storage::disk('local')->put($path, "One. Two. Three.\nFour.");
-    $existing = createEntity('en', null, [
+    $existing = createEntity('en', $work, [
         'name' => 'Original Text',
         'is_restricted' => true,
         'file_path' => $path,
@@ -201,11 +179,12 @@ test('store clones derivations when the uploaded file is an exact copy', functio
 
     $user = approvedUser();
     $file = UploadedFile::fake()->createWithContent('text.txt', "One. Two. Three.\nFour.");
+    $languageId = Language::query()->where('code', 'en')->value('id');
 
     $response = $this->actingAs($user)
-        ->post('/entities/en', [
+        ->post("/works/{$work->id}/entities", [
+            'language_id' => $languageId,
             'name' => 'Duplicate Upload',
-            'new_work_title' => 'Duplicate Work',
             'file' => $file,
         ]);
 
@@ -225,23 +204,25 @@ test('store clones derivations when the uploaded file is an exact copy', functio
     Http::assertSentCount(0);
     Queue::assertNotPushed(ProcessEntityFile::class);
 
-    $response->assertRedirect("/entities/en/{$clone->id}")
+    $response->assertRedirect("/works/{$work->id}/entities/{$clone->id}")
         ->assertSessionHas('status');
 });
 
 test('store survives an embedding-service outage and queues the pipeline', function () {
     Storage::fake('local');
     Queue::fake();
-    makeLanguage('en');
+    createLanguages();
+    $work = createWork();
+    $languageId = Language::query()->where('code', 'en')->value('id');
 
     Http::fake(fn () => Http::response('bad gateway', 502));
 
     $file = UploadedFile::fake()->createWithContent('text.txt', 'Some unique content.');
 
     $response = $this->actingAs(approvedUser())
-        ->post('/entities/en', [
+        ->post("/works/{$work->id}/entities", [
+            'language_id' => $languageId,
             'name' => 'No Service',
-            'new_work_title' => 'No Service Work',
             'file' => $file,
         ]);
 
@@ -252,7 +233,7 @@ test('store survives an embedding-service outage and queues the pipeline', funct
 
     Queue::assertPushed(ProcessEntityFile::class);
 
-    $response->assertRedirect("/entities/en/{$entity->id}");
+    $response->assertRedirect("/works/{$work->id}/entities/{$entity->id}");
 });
 
 test('user cannot read a restricted entity without a grant', function () {
@@ -260,7 +241,7 @@ test('user cannot read a restricted entity without a grant', function () {
     $entity = createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
 
     $this->actingAs(approvedUser())
-        ->get("/entities/en/{$entity->id}")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}")
         ->assertForbidden();
 });
 
@@ -271,7 +252,7 @@ test('user can read a restricted entity they have a grant for', function () {
     $entity->grantedUsers()->attach($user->id);
 
     $this->actingAs($user)
-        ->get("/entities/en/{$entity->id}")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}")
         ->assertOk();
 });
 
@@ -280,7 +261,7 @@ test('user can read a public entity', function () {
     $entity = createEntity('en', null, ['name' => 'Open', 'is_restricted' => false]);
 
     $this->actingAs(approvedUser())
-        ->get("/entities/en/{$entity->id}")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}")
         ->assertOk();
 });
 
@@ -291,6 +272,6 @@ test('admin can read any restricted entity', function () {
     $admin = User::factory()->create(['is_approved' => true, 'role' => 'admin']);
 
     $this->actingAs($admin)
-        ->get("/entities/en/{$entity->id}")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}")
         ->assertOk();
 });

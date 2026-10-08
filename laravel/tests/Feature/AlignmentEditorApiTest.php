@@ -44,7 +44,7 @@ function editorWorld(array $enOrders = [], array $ruOrders = []): array
         ]);
     }
 
-    return compact('match', 'type', 'en', 'ru', 'enSentences', 'ruSentences');
+    return compact('match', 'type', 'work', 'en', 'ru', 'enSentences', 'ruSentences');
 }
 
 function makeRow(int $matchId, int $order, float $similarity = 0.9): MeaningMatch
@@ -72,21 +72,21 @@ function linkSentence(string $side, int $sentenceId, int $rowId): void
 test('guests cannot call editor endpoints', function () {
     $world = editorWorld();
 
-    $this->postJson("/alignments/{$world['match']->id}/rows", [])
+    $this->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows", [])
         ->assertUnauthorized();
 
-    $this->getJson("/alignments/{$world['match']->id}/rows")
+    $this->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows")
         ->assertUnauthorized();
 
-    $this->getJson("/alignments/{$world['match']->id}/unmatched?side=a")
+    $this->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/unmatched?side=a")
         ->assertUnauthorized();
 
-    $this->getJson("/alignments/{$world['match']->id}/needs-review")
+    $this->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/needs-review")
         ->assertUnauthorized();
 
     $row = makeRow($world['match']->id, 100);
 
-    $this->postJson("/alignments/{$world['match']->id}/rows/{$row->id}/approve")
+    $this->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows/{$row->id}/approve")
         ->assertUnauthorized();
 });
 
@@ -95,7 +95,7 @@ test('approves a row by setting its similarity to 1 and marking it as a hard lan
     $row = makeRow($world['match']->id, 100, 0.42);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/rows/{$row->id}/approve");
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows/{$row->id}/approve");
 
     $response->assertOk();
     $this->assertSame(1.0, (float) $response->json('rows.0.similarity'));
@@ -117,8 +117,88 @@ test('cannot approve a row belonging to another entity match', function () {
     $row = makeRow($world['match']->id, 100);
 
     actingAs(User::factory()->create())
-        ->postJson("/alignments/{$otherMatch->id}/rows/{$row->id}/approve")
+        ->postJson("/works/{$otherWork->id}/alignments/{$otherMatch->id}/rows/{$row->id}/approve")
         ->assertNotFound();
+});
+
+test('editor endpoints 404 when the match path names another work', function () {
+    $world = editorWorld();
+    $otherWork = createWork();
+
+    actingAs(User::factory()->create())
+        ->getJson("/works/{$otherWork->id}/alignments/{$world['match']->id}/rows")
+        ->assertNotFound();
+
+    actingAs(User::factory()->create())
+        ->postJson("/works/{$otherWork->id}/alignments/{$world['match']->id}/rows", [])
+        ->assertNotFound();
+});
+
+test('disapproving a row sets its similarity to 0 and leaves the chunk sentinel untouched', function () {
+    $world = editorWorld();
+    // A machine row (chunk 0) and a formerly human-approved row (chunk -1):
+    // the rejection is a number, not a verdict — Re-align may still overwrite
+    // either one, because it deletes every row below the landmark bar.
+    $machineRow = makeRow($world['match']->id, 100, 0.42);
+    $approvedRow = makeRow($world['match']->id, 200, 1.0);
+    $approvedRow->update(['alignment_chunk' => MeaningMatch::HUMAN_CHUNK]);
+
+    $response = actingAs(User::factory()->create())
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows/{$machineRow->id}/disapprove");
+
+    $response->assertOk();
+    $this->assertSame(0.0, (float) $response->json('rows.0.similarity'));
+
+    actingAs(User::factory()->create())
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows/{$approvedRow->id}/disapprove")
+        ->assertOk();
+
+    $this->assertDatabaseHas('meaning_matches', [
+        'id' => $machineRow->id,
+        'similarity' => 0.0,
+        'alignment_chunk' => 0,
+    ]);
+    $this->assertDatabaseHas('meaning_matches', [
+        'id' => $approvedRow->id,
+        'similarity' => 0.0,
+        'alignment_chunk' => MeaningMatch::HUMAN_CHUNK,
+    ]);
+});
+
+test('cannot disapprove a row belonging to another entity match', function () {
+    $world = editorWorld();
+    $otherWork = createWork();
+    $otherMatch = createEntityMatch(
+        createEntity('en', $otherWork, ['name' => 'Other En']),
+        createEntity('ru', $otherWork, ['name' => 'Other Ru']),
+        ['status' => 'pending'],
+    );
+    $row = makeRow($world['match']->id, 100);
+
+    actingAs(User::factory()->create())
+        ->postJson("/works/{$otherWork->id}/alignments/{$otherMatch->id}/rows/{$row->id}/disapprove")
+        ->assertNotFound();
+});
+
+test('a rejected row stays in the needs-review list (the rule is pure similarity)', function () {
+    $world = editorWorld([100, 200], [100, 200]);
+    $rejected = makeRow($world['match']->id, 100, 0.8);
+    $rejected->update(['alignment_chunk' => MeaningMatch::HUMAN_CHUNK]);
+    $rejected->update(['similarity' => 0.0]);
+    $good = makeRow($world['match']->id, 200, 0.9);
+    linkSentence('a', $world['enSentences'][0]->id, $rejected->id);
+    linkSentence('b', $world['ruSentences'][0]->id, $rejected->id);
+    linkSentence('a', $world['enSentences'][1]->id, $good->id);
+    linkSentence('b', $world['ruSentences'][1]->id, $good->id);
+
+    $response = actingAs(User::factory()->create())
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/needs-review")
+        ->assertOk();
+
+    $ids = collect($response->json('items'))->pluck('id')->all();
+
+    expect($ids)->toContain($rejected->id);
+    expect($ids)->not->toContain($good->id);
 });
 
 test('creates an empty pair between the current and next row', function () {
@@ -127,7 +207,7 @@ test('creates an empty pair between the current and next row', function () {
     $second = makeRow($world['match']->id, 200);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/rows", ['after_row_id' => $first->id]);
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows", ['after_row_id' => $first->id]);
 
     $response->assertOk();
 
@@ -148,7 +228,7 @@ test('creates an empty pair at the end when no after_row_id is given', function 
     $first = makeRow($world['match']->id, 100);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/rows", []);
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows", []);
 
     $response->assertOk();
     $this->assertGreaterThan(100, $response->json('rows.0.order'));
@@ -159,7 +239,7 @@ test('deleting an empty pair removes the row', function () {
     $row = makeRow($world['match']->id, 100);
 
     $response = actingAs(User::factory()->create())
-        ->deleteJson("/alignments/{$world['match']->id}/rows/{$row->id}");
+        ->deleteJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows/{$row->id}");
 
     $response->assertOk();
     $this->assertSame([$row->id], $response->json('deleted_rows'));
@@ -174,7 +254,7 @@ test('deleting a non-empty pair unlinks its sentences to unmatched', function ()
     linkSentence('b', $world['ruSentences'][0]->id, $row->id);
 
     $response = actingAs(User::factory()->create())
-        ->deleteJson("/alignments/{$world['match']->id}/rows/{$row->id}");
+        ->deleteJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows/{$row->id}");
 
     $response->assertOk();
     $this->assertSame([$row->id], $response->json('deleted_rows'));
@@ -185,7 +265,7 @@ test('deleting a non-empty pair unlinks its sentences to unmatched', function ()
     $this->assertDatabaseHas('entity_sentences', ['id' => $world['ruSentences'][0]->id]);
 
     $unmatched = actingAs(User::factory()->create())
-        ->getJson("/alignments/{$world['match']->id}/unmatched?side=a")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/unmatched?side=a")
         ->assertOk()
         ->json();
 
@@ -199,7 +279,7 @@ test('adds a sentence to a row after the last sentence of that row', function ()
     linkSentence('a', $world['enSentences'][1]->id, $row->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences", [
             'side' => 'a',
             'meaning_match_id' => $row->id,
             'content' => 'A brand new sentence.',
@@ -229,7 +309,7 @@ test('a new sentence is placed at the document boundary', function () {
     linkSentence('a', $c->id, $row->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences", [
             'side' => 'a',
             'meaning_match_id' => $row->id,
             'content' => 'A brand new sentence.',
@@ -267,7 +347,7 @@ test('adds a sentence to an empty row after the previous row last sentence', fun
     linkSentence('a', $world['enSentences'][0]->id, $first->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences", [
             'side' => 'a',
             'meaning_match_id' => $second->id,
             'content' => 'Fills the empty row.',
@@ -287,7 +367,7 @@ test('adds a sentence to a row with no prior sentences and gets a non-negative o
     $newRow = makeRow($world['match']->id, 200);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences", [
             'side' => 'a',
             'meaning_match_id' => $newRow->id,
             'content' => 'First EN sentence in an empty row with no prior RU rows.',
@@ -304,7 +384,7 @@ test('adds the very first sentence of a language and gets a non-negative order',
     $row = makeRow($world['match']->id, 100);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences", [
             'side' => 'a',
             'meaning_match_id' => $row->id,
             'content' => 'The very first EN sentence.',
@@ -323,7 +403,7 @@ test('rejects empty sentence content', function () {
     linkSentence('a', $sentence->id, $row->id);
 
     actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences", [
             'side' => 'a',
             'meaning_match_id' => $row->id,
             'content' => '   ',
@@ -331,7 +411,7 @@ test('rejects empty sentence content', function () {
         ->assertUnprocessable();
 
     actingAs(User::factory()->create())
-        ->patchJson("/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
+        ->patchJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
             'side' => 'a',
             'content' => '',
         ])
@@ -345,7 +425,7 @@ test('edits sentence content', function () {
     linkSentence('a', $sentence->id, $row->id);
 
     $response = actingAs(User::factory()->create())
-        ->patchJson("/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
+        ->patchJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
             'side' => 'a',
             'content' => 'Edited content.',
         ]);
@@ -363,7 +443,7 @@ test('a content edit leaves a stale match stale (ADR 0062 no-stale rule)', funct
     linkSentence('a', $sentence->id, $row->id);
 
     actingAs(User::factory()->create())
-        ->patchJson("/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
+        ->patchJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
             'side' => 'a',
             'content' => 'Edited while stale.',
         ])
@@ -379,7 +459,7 @@ test('a content edit leaves a fresh pending match pending for the scheduler', fu
     linkSentence('a', $sentence->id, $row->id);
 
     actingAs(User::factory()->create())
-        ->patchJson("/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
+        ->patchJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
             'side' => 'a',
             'content' => 'Edited while pending.',
         ])
@@ -398,7 +478,7 @@ test('a content edit bumps sentences_updated_at (the text hash follows the conte
     $before = $world['en']->refresh()->sentences_updated_at;
 
     actingAs(User::factory()->create())
-        ->patchJson("/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
+        ->patchJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/{$sentence->id}", [
             'side' => 'a',
             'content' => 'Edited content.',
         ])
@@ -414,7 +494,7 @@ test('unlinks a sentence to unmatched', function () {
     linkSentence('a', $sentence->id, $row->id);
 
     $response = actingAs(User::factory()->create())
-        ->deleteJson("/alignments/{$world['match']->id}/sentences/{$sentence->id}", ['side' => 'a']);
+        ->deleteJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/{$sentence->id}", ['side' => 'a']);
 
     $response->assertOk();
     $this->assertSame([], $response->json('rows.0.a_sentences'));
@@ -431,7 +511,7 @@ test('moves a sentence within a row to reorder it', function () {
     linkSentence('a', $c->id, $row->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $c->id,
             'to_row_id' => $row->id,
@@ -472,7 +552,7 @@ test('reorder within row with consecutive orders uses global bounds', function (
     linkSentence('a', $c->id, $row->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $c->id,
             'to_row_id' => $row->id,
@@ -506,7 +586,7 @@ test('moves a sentence from one row to another', function () {
     linkSentence('a', $b->id, $rowB->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $a->id,
             'to_row_id' => $rowB->id,
@@ -538,7 +618,7 @@ test('moves a sentence from unmatched into a row', function () {
     linkSentence('a', $a->id, $row->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $unmatched->id,
             'to_row_id' => $row->id,
@@ -560,7 +640,7 @@ test('moves a sentence from a row out to unmatched', function () {
     linkSentence('a', $sentence->id, $row->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $sentence->id,
             'to_row_id' => null,
@@ -583,7 +663,7 @@ test('cross-row drop at row start stays within the destination row bounds', func
     linkSentence('a', $d2->id, $rowD->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $d1->id,
             'to_row_id' => $rowU->id,
@@ -615,7 +695,7 @@ test('moving a sentence back to its previous row restores document order', funct
     linkSentence('a', $s2->id, $row2->id);
 
     actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $s2->id,
             'to_row_id' => $row1->id,
@@ -630,7 +710,7 @@ test('moving a sentence back to its previous row restores document order', funct
     expect($midOrders[$s2->id])->toBeLessThan($midOrders[$s1->id]);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $s2->id,
             'to_row_id' => $row2->id,
@@ -665,7 +745,7 @@ test('cross-row spread is bounded by the destination row neighborhood', function
     linkSentence('a', $far->id, $rowB->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $far->id,
             'to_row_id' => $rowA->id,
@@ -702,7 +782,7 @@ test('drop into an empty row with an exhausted gap does not duplicate an order',
     linkSentence('a', $s3->id, $r3->id);
 
     actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $moved->id,
             'to_row_id' => $r4->id,
@@ -726,7 +806,7 @@ test('drop between row sentences does not collide with an interleaved sentence o
     linkSentence('a', $b->id, $row->id);
 
     actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $moved->id,
             'to_row_id' => $row->id,
@@ -751,7 +831,7 @@ test('drop at the head of a row sorts before the row without crossing earlier se
     linkSentence('a', $b->id, $row->id);
 
     actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $b->id,
             'to_row_id' => $row->id,
@@ -787,7 +867,7 @@ test('repeated moves keep sentence orders unique', function () {
 
     foreach ($moves as $move) {
         actingAs(User::factory()->create())
-            ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+            ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
                 'side' => 'a',
                 ...$move,
             ])->assertOk();
@@ -808,7 +888,7 @@ test('adding a sentence into an exhausted order gap rebalances without violating
     linkSentence('a', $b->id, $row->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences", [
             'side' => 'a',
             'content' => 'New sentence.',
             'meaning_match_id' => $row->id,
@@ -830,7 +910,7 @@ test('hard deletes an unmatched sentence', function () {
     $sentence = $world['enSentences'][0];
 
     $response = actingAs(User::factory()->create())
-        ->deleteJson("/alignments/{$world['match']->id}/unmatched/{$sentence->id}", ['side' => 'a']);
+        ->deleteJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/unmatched/{$sentence->id}", ['side' => 'a']);
 
     $response->assertOk();
     $this->assertDatabaseMissing('entity_sentences', ['id' => $sentence->id]);
@@ -845,7 +925,7 @@ test('rejects hard delete of a linked sentence', function () {
     linkSentence('a', $sentence->id, $row->id);
 
     actingAs(User::factory()->create())
-        ->deleteJson("/alignments/{$world['match']->id}/unmatched/{$sentence->id}", ['side' => 'a'])
+        ->deleteJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/unmatched/{$sentence->id}", ['side' => 'a'])
         ->assertUnprocessable();
 });
 
@@ -856,7 +936,7 @@ test('rows endpoint paginates', function () {
     }
 
     $response = actingAs(User::factory()->create())
-        ->getJson("/alignments/{$world['match']->id}/rows?page=2&per_page=10");
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows?page=2&per_page=10");
 
     $response->assertOk();
     expect($response->json('rows'))->toHaveCount(5);
@@ -873,7 +953,7 @@ test('rows pages carry a three-row lookahead into the next page', function () {
     }
 
     $pageOne = actingAs(User::factory()->create())
-        ->getJson("/alignments/{$world['match']->id}/rows?page=1&per_page=10")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows?page=1&per_page=10")
         ->assertOk()
         ->json();
 
@@ -888,7 +968,7 @@ test('rows pages carry a three-row lookahead into the next page', function () {
 
     // Page numbering ignores the overlap: page 2 still starts at row 11.
     $pageTwo = actingAs(User::factory()->create())
-        ->getJson("/alignments/{$world['match']->id}/rows?page=2&per_page=10")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows?page=2&per_page=10")
         ->assertOk()
         ->json();
 
@@ -905,7 +985,7 @@ test('rows lookahead never exceeds the total', function () {
     }
 
     $pageOne = actingAs(User::factory()->create())
-        ->getJson("/alignments/{$world['match']->id}/rows?page=1&per_page=10")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows?page=1&per_page=10")
         ->assertOk()
         ->json();
 
@@ -918,7 +998,7 @@ test('unmatched endpoint paginates and reports last_page', function () {
     $world = editorWorld(range(100, 116));
 
     $pageOne = actingAs(User::factory()->create())
-        ->getJson("/alignments/{$world['match']->id}/unmatched?side=a&page=1")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/unmatched?side=a&page=1")
         ->assertOk()
         ->json();
 
@@ -929,7 +1009,7 @@ test('unmatched endpoint paginates and reports last_page', function () {
     $this->assertSame(15, $pageOne['meta']['per_page']);
 
     $pageTwo = actingAs(User::factory()->create())
-        ->getJson("/alignments/{$world['match']->id}/unmatched?side=a&page=2")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/unmatched?side=a&page=2")
         ->assertOk()
         ->json();
 
@@ -939,14 +1019,14 @@ test('unmatched endpoint paginates and reports last_page', function () {
 test('linked_count reflects pair count after create and delete', function () {
     $world = editorWorld([100], [100]);
     $created = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/rows", [])
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows", [])
         ->assertOk()
         ->json('rows.0');
 
     $rowId = $created['id'];
 
     actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences", [
             'side' => 'a',
             'meaning_match_id' => $rowId,
             'content' => 'EN link',
@@ -954,7 +1034,7 @@ test('linked_count reflects pair count after create and delete', function () {
         ->assertOk();
 
     actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences", [
             'side' => 'b',
             'meaning_match_id' => $rowId,
             'content' => 'RU link',
@@ -964,7 +1044,7 @@ test('linked_count reflects pair count after create and delete', function () {
     $this->assertSame(1, EntityMatch::find($world['match']->id)->linked_count);
 
     actingAs(User::factory()->create())
-        ->deleteJson("/alignments/{$world['match']->id}/rows/{$rowId}")
+        ->deleteJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/rows/{$rowId}")
         ->assertOk();
 
     $this->assertSame(0, EntityMatch::find($world['match']->id)->linked_count);
@@ -993,7 +1073,7 @@ test('needs-review lists low-similarity and one-sided matches', function () {
     linkSentence('a', $en[4]->id, $pipelineOneSided->id);
 
     $response = actingAs(User::factory()->create())
-        ->getJson("/alignments/{$world['match']->id}/needs-review")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/needs-review")
         ->assertOk();
 
     $items = $response->json('items');
@@ -1035,7 +1115,7 @@ test('needs-review ranks rows among all meaning matches', function () {
     linkSentence('b', $ru[1]->id, $fourth->id);
 
     $items = actingAs(User::factory()->create())
-        ->getJson("/alignments/{$world['match']->id}/needs-review")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/needs-review")
         ->assertOk()
         ->json('items');
 
@@ -1059,7 +1139,7 @@ test('needs-review endpoint paginates', function () {
     }
 
     $pageOne = actingAs(User::factory()->create())
-        ->getJson("/alignments/{$world['match']->id}/needs-review?page=1")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/needs-review?page=1")
         ->assertOk()
         ->json();
 
@@ -1070,7 +1150,7 @@ test('needs-review endpoint paginates', function () {
     $this->assertSame(25, $pageOne['meta']['per_page']);
 
     $pageTwo = actingAs(User::factory()->create())
-        ->getJson("/alignments/{$world['match']->id}/needs-review?page=2")
+        ->getJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/needs-review?page=2")
         ->assertOk()
         ->json();
 
@@ -1090,7 +1170,7 @@ test('new sentence in empty row gets correct order when preceding row has high-o
     linkSentence('a', $world['enSentences'][3]->id, $third->id);
 
     $response = actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences", [
             'side' => 'a',
             'meaning_match_id' => $second->id,
             'content' => 'New sentence in the empty row.',
@@ -1119,7 +1199,7 @@ test('moving a sentence bumps sentences_updated_at (document order feeds the tex
     $before = $world['en']->refresh()->sentences_updated_at;
 
     actingAs(User::factory()->create())
-        ->postJson("/alignments/{$world['match']->id}/sentences/move", [
+        ->postJson("/works/{$world['work']->id}/alignments/{$world['match']->id}/sentences/move", [
             'side' => 'a',
             'sentence_id' => $b->id,
             'to_row_id' => $row->id,

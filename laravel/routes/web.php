@@ -10,6 +10,7 @@ use App\Http\Controllers\LibraryController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\ReadingAiController;
+use App\Http\Controllers\RecommendationsController;
 use App\Http\Controllers\UiSettingsController;
 use App\Http\Controllers\WordController;
 use App\Http\Controllers\WordTestController;
@@ -81,6 +82,12 @@ Route::middleware(['auth', 'approved'])->group(function () {
         return Inertia::render('Resources/PronunciationGuide');
     })->name('resources.pronunciation-guide');
 
+    // Recommendations (ADR 0075): the viewer's readable texts re-ranked by
+    // their stored word-knowledge snapshots — a read-only pass over
+    // user_entity_word_knowledge, never a computation.
+    Route::get('/recommendations', [RecommendationsController::class, 'index'])
+        ->name('recommendations.index');
+
     Route::get('/words/{word}', [WordController::class, 'show'])
         ->whereNumber('word')
         ->name('words.show');
@@ -113,6 +120,50 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::post('/works/{work}/entities', [LibraryController::class, 'storeEntity'])
         ->whereNumber('work')
         ->name('works.entities.store');
+    // Entity view/edit and its sentence JSON API are work-nested too
+    // (ADR 0073): the language segment was redundant — the entity carries
+    // its language — and the URL now names the work the text belongs to.
+    // The old flat /entities/{lang}/{entity} routes are gone without
+    // redirects. Route names keep the entities.* prefix: works.entities.*
+    // is already the browse page and the per-work list.
+    Route::get('/works/{work}/entities/{entity}', [EntityController::class, 'show'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.show');
+    Route::get('/works/{work}/entities/{entity}/edit', [EntityController::class, 'edit'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.edit');
+    Route::patch('/works/{work}/entities/{entity}', [EntityController::class, 'update'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.update');
+    Route::patch('/works/{work}/entities/{entity}/approved', [EntityController::class, 'updateApproved'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.approved.update');
+    Route::get('/works/{work}/entities/{entity}/sentences', [EntityController::class, 'sentences'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.sentences');
+    Route::post('/works/{work}/entities/{entity}/sentences', [EntityController::class, 'storeSentence'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.sentences.store');
+    Route::post('/works/{work}/entities/{entity}/sentences/reorder', [EntityController::class, 'reorderSentences'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.sentences.reorder');
+    Route::patch('/works/{work}/entities/{entity}/sentences/{sentence}', [EntityController::class, 'updateSentence'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->whereNumber('sentence')
+        ->name('entities.sentences.update');
+    Route::delete('/works/{work}/entities/{entity}/sentences/{sentence}', [EntityController::class, 'destroySentence'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->whereNumber('sentence')
+        ->name('entities.sentences.destroy');
     Route::get('/works/{work}/alignments', [LibraryController::class, 'workAlignments'])
         ->whereNumber('work')
         ->name('works.alignments.show');
@@ -123,75 +174,47 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('work')
         ->name('works.alignments.store');
 
-    // The language-first browse pages moved to the works Entities branch
+    // The language-first browse pages moved to the works Entities branch;
+    // the flat /entities/{lang}/... entity routes are gone (ADR 0073).
     Route::redirect('/entities', '/works/entities');
     Route::redirect('/entities/{lang}', '/works/entities')->where('lang', '[a-z]{2}');
-    Route::get('/entities/{lang}/create', [EntityController::class, 'create'])
-        ->where('lang', '[a-z]{2}')
-        ->name('entities.create');
-    Route::post('/entities/{lang}', [EntityController::class, 'store'])
-        ->where('lang', '[a-z]{2}')
-        ->name('entities.store');
-    Route::get('/entities/{lang}/{entity}', [EntityController::class, 'show'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.show');
-    Route::get('/entities/{lang}/{entity}/edit', [EntityController::class, 'edit'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.edit');
-    Route::patch('/entities/{lang}/{entity}', [EntityController::class, 'update'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.update');
-    Route::patch('/entities/{lang}/{entity}/approved', [EntityController::class, 'updateApproved'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.approved.update');
-    Route::get('/entities/{lang}/{entity}/sentences', [EntityController::class, 'sentences'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.sentences');
-    Route::post('/entities/{lang}/{entity}/sentences', [EntityController::class, 'storeSentence'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.sentences.store');
-    Route::post('/entities/{lang}/{entity}/sentences/reorder', [EntityController::class, 'reorderSentences'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->name('entities.sentences.reorder');
-    Route::patch('/entities/{lang}/{entity}/sentences/{sentence}', [EntityController::class, 'updateSentence'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->whereNumber('sentence')
-        ->name('entities.sentences.update');
-    Route::delete('/entities/{lang}/{entity}/sentences/{sentence}', [EntityController::class, 'destroySentence'])
-        ->where('lang', '[a-z]{2}')
-        ->whereNumber('entity')
-        ->whereNumber('sentence')
-        ->name('entities.sentences.destroy');
     // Illustration files live on the private local disk; this route is the
     // only way they leave it — gated by the owning entity's read access.
     Route::get('/illustrations/{sentence}', [EntityIllustrationController::class, 'show'])
         ->whereNumber('sentence')
         ->name('illustrations.show');
-    // The global alignments browse pages moved under each work
-    // (/works/{work}/alignments); only the editor stays global.
-    Route::get('/alignments/{entityMatch}', [AlignmentController::class, 'show'])
+    // The alignment editor is work-nested too (ADR 0072): both of the pair's
+    // entities belong to one work, and the JSON editor API shares the prefix.
+    // The old flat /alignments/{id} routes are gone without redirects.
+    Route::get('/works/{work}/alignments/{entityMatch}/edit', [AlignmentController::class, 'show'])
+        ->whereNumber('work')
         ->whereNumber('entityMatch')
-        ->name('alignments.show');
+        ->name('works.alignments.edit');
 
-    Route::get('/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'rows']);
-    Route::get('/alignments/{entityMatch}/unmatched', [AlignmentEditorController::class, 'unmatched']);
-    Route::get('/alignments/{entityMatch}/needs-review', [AlignmentEditorController::class, 'needsReview']);
-    Route::post('/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'storeRow']);
-    Route::delete('/alignments/{entityMatch}/rows/{meaningMatch}', [AlignmentEditorController::class, 'destroyRow']);
-    Route::post('/alignments/{entityMatch}/rows/{meaningMatch}/approve', [AlignmentEditorController::class, 'approveRow']);
-    Route::post('/alignments/{entityMatch}/sentences', [AlignmentEditorController::class, 'storeSentence']);
-    Route::post('/alignments/{entityMatch}/sentences/move', [AlignmentEditorController::class, 'moveSentence']);
-    Route::patch('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'updateSentence'])->whereNumber('sentence');
-    Route::delete('/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'unlinkSentence'])->whereNumber('sentence');
-    Route::delete('/alignments/{entityMatch}/unmatched/{sentence}', [AlignmentEditorController::class, 'destroyUnmatched'])->whereNumber('sentence');
+    Route::get('/works/{work}/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'rows'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::get('/works/{work}/alignments/{entityMatch}/unmatched', [AlignmentEditorController::class, 'unmatched'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::get('/works/{work}/alignments/{entityMatch}/needs-review', [AlignmentEditorController::class, 'needsReview'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::post('/works/{work}/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'storeRow'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::delete('/works/{work}/alignments/{entityMatch}/rows/{meaningMatch}', [AlignmentEditorController::class, 'destroyRow'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::post('/works/{work}/alignments/{entityMatch}/rows/{meaningMatch}/approve', [AlignmentEditorController::class, 'approveRow'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::post('/works/{work}/alignments/{entityMatch}/rows/{meaningMatch}/disapprove', [AlignmentEditorController::class, 'disapproveRow'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::post('/works/{work}/alignments/{entityMatch}/sentences', [AlignmentEditorController::class, 'storeSentence'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::post('/works/{work}/alignments/{entityMatch}/sentences/move', [AlignmentEditorController::class, 'moveSentence'])
+        ->whereNumber('work')->whereNumber('entityMatch');
+    Route::patch('/works/{work}/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'updateSentence'])
+        ->whereNumber('work')->whereNumber('entityMatch')->whereNumber('sentence');
+    Route::delete('/works/{work}/alignments/{entityMatch}/sentences/{sentence}', [AlignmentEditorController::class, 'unlinkSentence'])
+        ->whereNumber('work')->whereNumber('entityMatch')->whereNumber('sentence');
+    Route::delete('/works/{work}/alignments/{entityMatch}/unmatched/{sentence}', [AlignmentEditorController::class, 'destroyUnmatched'])
+        ->whereNumber('work')->whereNumber('entityMatch')->whereNumber('sentence');
     // Practice → Simulator: the standalone page with the alignment picker;
     // the pinned route below stays the deep-link entry from alignment cards.
     Route::get('/simulator', [SimulatorController::class, 'simulator'])

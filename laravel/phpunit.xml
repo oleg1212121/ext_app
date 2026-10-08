@@ -19,9 +19,16 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing" force="true"/>
-        <!-- The full sequential suite exhausts the 128M default in one process
-             (Filament pages dominate peak memory). -->
-        <ini name="memory_limit" value="512M"/>
+        <!-- Two jobs need more than the 128M CLI default in one process: the
+             full sequential suite's peak memory (Filament pages dominate), and
+             Pest TIA's CoverageMerger, which runs in the parent pest process
+             and needs more than 512M on ~1000-test suites. This <ini> is the
+             single effective source of the limit: PHPUnit applies it via
+             ini_set() at config load, in every process that loads the config
+             (the parent and each paratest worker alike), so it outranks
+             `php -d` flags and PHP_INI_SCAN_DIR ini files. Guarded by
+             tests/Unit/TestProcessMemoryLimitTest.php. -->
+        <ini name="memory_limit" value="2G"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>

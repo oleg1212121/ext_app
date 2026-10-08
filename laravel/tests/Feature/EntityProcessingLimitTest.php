@@ -76,27 +76,6 @@ test('a non-admin at the entity limit is refused on the work store', function ()
         ->and(Queue::pushed(ProcessEntityFile::class))->toHaveCount(0);
 });
 
-test('a non-admin at the entity limit is refused on the language-first store', function () {
-    Storage::fake('local');
-    Queue::fake();
-    $user = limitUser();
-    createLanguages();
-
-    processingEntityFor($user);
-    processingEntityFor($user);
-
-    $response = $this->actingAs($user)
-        ->post('/entities/en', [
-            'name' => 'Third Entity',
-            'new_work_title' => 'Third Work',
-            'file' => UploadedFile::fake()->create('third.txt', 5, 'text/plain'),
-        ]);
-
-    $response->assertSessionHasErrors('limit');
-
-    expect(Entity::query()->where('name', 'Third Entity')->exists())->toBeFalse();
-});
-
 test('completed and failed entities hold no slot', function () {
     Storage::fake('local');
     Queue::fake();
@@ -125,13 +104,14 @@ test('a no-file entity is born completed and needs no slot even at the limit', f
     Queue::fake();
     $user = limitUser();
     createLanguages();
+    $work = createWork();
 
     processingEntityFor($user);
     processingEntityFor($user);
 
-    $response = $this->actingAs($user)->post('/entities/en', [
+    $response = $this->actingAs($user)->post("/works/{$work->id}/entities", [
+        'language_id' => $work->original_language_id,
         'name' => 'Metadata Only',
-        'new_work_title' => 'Metadata Work',
     ]);
 
     $response->assertSessionHasNoErrors();

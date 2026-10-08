@@ -3,17 +3,21 @@
 namespace App\Filament\Resources;
 
 use App\Classes\Enrichment\EnricherRegistry;
+use App\Classes\EntityMatchCreationService;
 use App\Classes\TextSignatureService;
+use App\Exceptions\CrossWorkEntityPair;
+use App\Exceptions\ProcessingLimitReached;
+use App\Exceptions\SelfEntityPair;
 use App\Filament\Resources\EntityResource\Pages;
 use App\Filament\Resources\EntityResource\RelationManagers;
-use App\Jobs\AlignEntitySentences;
 use App\Jobs\EnrichEntitySentences;
 use App\Jobs\GenerateEntitySignature;
 use App\Models\Entity;
-use App\Models\EntityMatch;
 use App\Models\Language;
+use App\Models\User;
 use App\Models\Work;
 use Filament\Actions;
+use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
@@ -151,11 +155,11 @@ class EntityResource extends Resource
             ->recordActions([
                 Actions\EditAction::make(),
                 Actions\DeleteAction::make(),
-                Actions\Action::make('manageSentences')
+                Action::make('manageSentences')
                     ->label('Sentences')
                     ->icon('heroicon-o-document-text')
                     ->url(fn (Entity $record): string => static::getUrl('edit', ['record' => $record])),
-                Actions\Action::make('generateSignature')
+                Action::make('generateSignature')
                     ->label('Signature')
                     ->icon('heroicon-o-cpu-chip')
                     ->action(function (Entity $record) {
@@ -170,7 +174,7 @@ class EntityResource extends Resource
                     })
                     ->requiresConfirmation()
                     ->visible(fn (Entity $record) => $record->file_path !== null),
-                Actions\Action::make('findMatch')
+                Action::make('findMatch')
                     ->label('Find Match')
                     ->icon('heroicon-o-language')
                     ->color('info')
@@ -198,27 +202,52 @@ class EntityResource extends Resource
                                 ->searchable(),
                         ];
                     })
+                    // The creation module is the only writer of Entity matches; this action resolves the two entities, calls it once, and renders the outcome as notifications. No knobs are offered, so nulls pass and the module's defaults apply.
                     ->action(function (Entity $record, array $data) {
-                        $aId = min($record->id, (int) $data['other_entity_id']);
-                        $bId = max($record->id, (int) $data['other_entity_id']);
+                        $other = Entity::query()->find((int) $data['other_entity_id']);
 
-                        EntityMatch::query()
-                            ->where('a_entity_id', $aId)
-                            ->where('b_entity_id', $bId)
-                            ->get()
-                            ->each(function (EntityMatch $existing) {
-                                $existing->meaningMatches()->delete();
-                                $existing->delete();
-                            });
+                        if ($other === null) {
+                            // A stale form submission: the entity was
+                            // deleted between render and submit. Nothing is
+                            // created.
+                            Notification::make()
+                                ->title('Entity not found.')
+                                ->danger()
+                                ->send();
 
-                        $entityMatch = EntityMatch::create([
-                            'a_entity_id' => $aId,
-                            'b_entity_id' => $bId,
-                            'status' => 'pending',
-                            'created_by' => auth()->id(),
-                        ]);
+                            return;
+                        }
 
-                        AlignEntitySentences::beginFromScratch($entityMatch->id);
+                        $creator = auth()->user();
+
+                        assert($creator instanceof User); // the panel request is authenticated
+
+                        try {
+                            $result = (new EntityMatchCreationService)->create($creator, $record, $other);
+                        } catch (CrossWorkEntityPair|SelfEntityPair|ProcessingLimitReached $exception) {
+                            Notification::make()
+                                ->title($exception->getMessage())
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        if ($result['status'] === 'duplicate') {
+                            EntityMatchResource::duplicateMatchNotification($result['existing'])->send();
+
+                            return;
+                        }
+
+                        if ($result['status'] === 'created_from_copy') {
+                            Notification::make()
+                                ->title('Alignment copied')
+                                ->body('An identical text pair already had a completed alignment — reused.')
+                                ->success()
+                                ->send();
+
+                            return;
+                        }
 
                         Notification::make()
                             ->title('Alignment started')
@@ -227,7 +256,7 @@ class EntityResource extends Resource
                             ->send();
                     })
                     ->visible(fn (Entity $record) => $record->signature !== null && $record->sentences()->exists()),
-                Actions\Action::make('enrichSentences')
+                Action::make('enrichSentences')
                     ->label('Enrich')
                     ->icon('heroicon-o-sparkles')
                     ->color('gray')

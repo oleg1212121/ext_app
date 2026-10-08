@@ -101,7 +101,60 @@ function PerPageSelect({perPageOptions, perPage, busy, onPerPage}) {
     );
 }
 
-export default function Pagination({meta, onPage, onPerPage, perPageOptions, busy}) {
+// The "go to page" picker: type a page, Enter or the arrow submits, and a
+// hand-edited number lands on the nearest valid page.
+function PageJump({current, last, busy, onPage}) {
+    const {t} = useI18n();
+    const [draft, setDraft] = useState('');
+
+    const submit = (event) => {
+        event.preventDefault();
+
+        const page = Number.parseInt(draft, 10);
+
+        if (Number.isNaN(page)) {
+            setDraft('');
+
+            return;
+        }
+
+        setDraft('');
+
+        const clamped = Math.min(Math.max(page, 1), last);
+
+        if (clamped !== current) {
+            onPage(clamped);
+        }
+    };
+
+    return (
+        <form onSubmit={submit} className="flex items-center gap-1">
+            <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                {t('alignments.jump_to_page')}
+                <input
+                    type="number"
+                    min={1}
+                    max={last}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    disabled={busy}
+                    aria-label={t('alignments.jump_to_page')}
+                    className="h-7 w-14 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] px-1.5 font-mono text-[11px] tabular-nums text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] focus:outline-none focus:ring-1 focus:ring-[var(--wbench-accent)] disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+            </label>
+            <button
+                type="submit"
+                disabled={busy || draft.trim() === ''}
+                aria-label={t('alignments.go_to_page', {page: draft || '?'})}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] font-mono text-[11px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+                →
+            </button>
+        </form>
+    );
+}
+
+export default function Pagination({meta, onPage, onPerPage, perPageOptions, busy, showTotal = true}) {
     const {t} = useI18n();
     const {current_page, last_page, total, per_page} = meta;
 
@@ -154,16 +207,24 @@ export default function Pagination({meta, onPage, onPerPage, perPageOptions, bus
                 </button>
             </div>
 
-            {onPerPage && (
-                <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    {t('alignments.per_page')}
-                    <PerPageSelect perPageOptions={perPageOptions} perPage={per_page} busy={busy} onPerPage={onPerPage} />
-                </label>
-            )}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {last_page > 1 && (
+                    <PageJump current={current_page} last={Math.max(last_page, 1)} busy={busy} onPage={onPage}/>
+                )}
 
-            <span className="font-mono text-[11px] tabular-nums text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                {total} {total === 1 ? t('alignments.row') : t('alignments.rows')}
-            </span>
+                {onPerPage && (
+                    <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                        {t('alignments.per_page')}
+                        <PerPageSelect perPageOptions={perPageOptions} perPage={per_page} busy={busy} onPerPage={onPerPage} />
+                    </label>
+                )}
+
+                {showTotal && (
+                    <span className="font-mono text-[11px] tabular-nums text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                        {total} {total === 1 ? t('alignments.row') : t('alignments.rows')}
+                    </span>
+                )}
+            </div>
         </div>
     );
 }

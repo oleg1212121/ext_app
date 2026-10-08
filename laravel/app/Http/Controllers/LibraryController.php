@@ -2,16 +2,16 @@
 
 namespace App\Http\Controllers;
 
-use App\Classes\AlignmentCopyService;
 use App\Classes\AlignmentEditorApiPresenter;
 use App\Classes\EntityAccessService;
 use App\Classes\EntityCreationService;
-use App\Classes\ProcessingLimits;
+use App\Classes\EntityMatchCreationService;
+use App\Exceptions\CrossWorkEntityPair;
 use App\Exceptions\ProcessingLimitReached;
+use App\Exceptions\SelfEntityPair;
 use App\Http\Requests\StoreEntityMatchRequest;
 use App\Http\Requests\StoreWorkEntityRequest;
 use App\Http\Requests\StoreWorkRequest;
-use App\Jobs\AlignEntitySentences;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\Language;
@@ -35,9 +35,8 @@ class LibraryController extends Controller
     public function __construct(
         private readonly EntityAccessService $access,
         private readonly EntityCreationService $creation,
+        private readonly EntityMatchCreationService $matchCreation,
         private readonly AlignmentEditorApiPresenter $presenter,
-        private readonly AlignmentCopyService $alignmentCopy = new AlignmentCopyService,
-        private readonly ProcessingLimits $limits = new ProcessingLimits,
     ) {}
 
     public function index(Request $request): Response
@@ -342,7 +341,7 @@ class LibraryController extends Controller
             return back()->withErrors(['limit' => $e->getMessage()]);
         }
 
-        return $this->redirectFromCreation($result, $language->code);
+        return $this->redirectFromCreation($result);
     }
 
     public function createAlignment(Request $request, int $work): Response
@@ -375,69 +374,38 @@ class LibraryController extends Controller
         }
 
         // The form only lists this work's entities; a forged pair from
-        // another work is rejected here.
+        // another work is rejected here — a route-context input check the
+        // module cannot make (it never sees the route's work).
         if ($firstEntity->work_id !== $work->id || $secondEntity->work_id !== $work->id) {
             return back()->withErrors([
                 'second_entity_id' => 'Both entities must belong to the selected work.',
             ]);
         }
 
-        // Same-language pairs are valid (e.g. a book of exercises and its
-        // answer key); the a/b sides stay canonical by entity id.
-
-        // Canonical pair order: the lower entity id is always the a side, so
-        // the unique(a_entity_id, b_entity_id) constraint covers both orders.
-        [$aEntityId, $bEntityId] = [
-            min((int) $data['first_entity_id'], (int) $data['second_entity_id']),
-            max((int) $data['first_entity_id'], (int) $data['second_entity_id']),
-        ];
-
-        $existing = EntityMatch::query()
-            ->where('a_entity_id', $aEntityId)
-            ->where('b_entity_id', $bEntityId)
-            ->first();
-
-        if ($existing !== null) {
-            return back()
-                ->withErrors(['second_entity_id' => 'A match for this entity pair already exists.'])
-                ->with('existing_match_id', $existing->id);
-        }
-
         try {
-            // Created under the creator's lock so two parallel submissions
-            // cannot both pass the alignment limit (ADR 0044).
-            $entityMatch = $this->limits->underCreatorLock(
+            // Same-Work validation, canonical sides, duplicate rejection,
+            // the processing limit and the copy-vs-pipeline decision all
+            // live in the creation module; this surface resolves entities,
+            // checks readability, and renders the outcome.
+            $result = $this->matchCreation->create(
                 $request->user(),
-                function () use ($request, $aEntityId, $bEntityId, $data): EntityMatch {
-                    $this->limits->assertAlignmentSlot($request->user());
-
-                    return EntityMatch::create([
-                        'a_entity_id' => $aEntityId,
-                        'b_entity_id' => $bEntityId,
-                        'chunk_size' => (int) $data['chunk_size'],
-                        'max_n' => (int) $data['max_n'],
-                        'status' => 'pending',
-                        'created_by' => $request->user()->id,
-                    ]);
-                },
+                $firstEntity,
+                $secondEntity,
+                (int) $data['chunk_size'],
+                (int) $data['max_n'],
             );
+        } catch (CrossWorkEntityPair|SelfEntityPair $exception) {
+            // Unreachable behind the route-work guard and the form's
+            // different rule above; the module's own pair rules are the
+            // backstop for any future caller.
+            return back()->withErrors([
+                'second_entity_id' => $exception->getMessage(),
+            ]);
         } catch (ProcessingLimitReached $e) {
             return back()->withErrors(['limit' => $e->getMessage()]);
         }
 
-        // An exact-copy pair reuses a completed alignment instead of running
-        // the (potentially half-hour) pipeline.
-        if ($this->alignmentCopy->copyFor($entityMatch)) {
-            return redirect()
-                ->route('works.alignments.show', ['work' => $work->id])
-                ->with('success', 'Entity match created — alignment copied from an identical text pair.');
-        }
-
-        AlignEntitySentences::beginFromScratch($entityMatch->id);
-
-        return redirect()
-            ->route('works.alignments.show', ['work' => $work->id])
-            ->with('success', 'Entity match created — alignment started.');
+        return $this->redirectFromMatchCreation($work, $result);
     }
 
     /**
@@ -471,16 +439,43 @@ class LibraryController extends Controller
     }
 
     /**
+     * Map an EntityMatchCreationService outcome to its redirect: the work's
+     * Alignments page, with a duplicate pair surfaced as the form's
+     * validation error carrying the existing match's id (the create form
+     * links to it — see HandleInertiaRequests for the flash passthrough).
+     *
+     * @param  array{status: string, match: ?EntityMatch, existing: ?EntityMatch}  $result
+     */
+    private function redirectFromMatchCreation(Work $work, array $result): RedirectResponse
+    {
+        if ($result['status'] === 'duplicate') {
+            return back()
+                ->withErrors(['second_entity_id' => 'A match for this entity pair already exists.'])
+                ->with('existing_match_id', $result['existing']->id);
+        }
+
+        $redirect = redirect()->route('works.alignments.show', ['work' => $work->id]);
+
+        if ($result['status'] === 'created_from_copy') {
+            return $redirect->with('success', 'Entity match created — alignment copied from an identical text pair.');
+        }
+
+        return $redirect->with('success', 'Entity match created — alignment started.');
+    }
+
+    /**
      * Map an EntityCreationService outcome to its redirect: the freshly
      * created entity's page, with an extra status when the upload was an
      * exact copy and the entity was cloned with precomputed derivations.
-     * Mirrors EntityController::store.
      *
      * @param  array{status: string, entity: Entity, source: ?Entity}  $result
      */
-    private function redirectFromCreation(array $result, string $lang): RedirectResponse
+    private function redirectFromCreation(array $result): RedirectResponse
     {
-        $redirect = redirect()->route('entities.show', ['lang' => $lang, 'entity' => $result['entity']->id]);
+        $redirect = redirect()->route('entities.show', [
+            'work' => $result['entity']->work_id,
+            'entity' => $result['entity']->id,
+        ]);
 
         if ($result['status'] === 'created_from_copy') {
             return $redirect->with('status', 'Your upload is an exact copy of an existing text — your own entity was created with sentences and word statistics precomputed.');

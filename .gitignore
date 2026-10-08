@@ -100,4 +100,11 @@ homepage-current.png
 actions-runner
 laravel/.env.testing
 errors.txt
-.zcode/plans/*
+# Agent tooling (ZCode, Aider Desk) — local-only, never part of the app repo
+.agents/
+.zcode/
+.aider-desk/
+skills-lock.json
+# Skill-workflow docs (to-spec / to-tickets / issue tracker) — local-only
+.scratch/
+docs/agents/

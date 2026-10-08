@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-05T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-08T16:47:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -25,6 +25,9 @@ sources:
   - id: copy-service
     resource: laravel/app/Classes/AlignmentCopyService.php
     title: Alignment reuse for exact-copy entity pairs
+  - id: match-creation
+    resource: laravel/app/Classes/EntityMatchCreationService.php
+    title: the one Entity-match creation module (ADR 0019/0033/0044)
   - id: signature-service
     resource: laravel/app/Classes/TextSignatureService.php
     title: Text signatures / cross-language candidates (/embed client); one cosineSimilarity implementation (ADR 0064)
@@ -77,17 +80,65 @@ contract (`a_sentences`/`b_sentences`, match spans
 side is the original language (two translations of a third-language original —
 first-class pairs).
 
+# Opening a match — one creation module
+
+**`EntityMatchCreationService::create()` is the one writer of new Entity
+matches.** All four creation surfaces are thin callers that resolve their two
+entities and translate the outcome: the Library Alignments form
+(`LibraryController::storeAlignment` — it keeps its own readable-access
+check, `403` when the user cannot read either entity), the Filament
+`EntityMatchResource` create page (`CreateEntityMatch`), the match list's
+"New Alignment" header action (`ListEntityMatches`), and the entity table's
+"Find Match" action (`EntityResource::findMatch`). The three Filament
+surfaces render outcomes as notifications — on duplicate, one that links to
+the existing match — and their two entity selects enforce `different` (the
+Library form's request rule does the same), so a self-pair never reaches
+the module; a stale submission whose entity vanished between render and
+submit stops with an "Entity not found." danger notification instead of a
+404.
+
+`create(User $creator, Entity $first, Entity $second, ?int $chunkSize, ?int $maxN)`
+returns `{status, match, existing}` with exactly three outcomes: `created`
+(the new match, pending-born with the creator recorded; the pipeline
+dispatch happens only after the creation transaction commits — the
+dispatch's synchronous preamble leaves the row `aligning`),
+`created_from_copy` (the new match completed by cloning a completed
+alignment between exact copies of both sides — ADR 0033), and `duplicate`
+(nothing created and nothing deleted; `existing` carries the match the
+canonical pair already has, whatever its status). A cross-Work pair throws
+`CrossWorkEntityPair`; an entity paired with itself throws `SelfEntityPair`;
+a limit hit throws `ProcessingLimitReached` (ADR 0044).
+
+The module owns every creation rule, so the surfaces cannot diverge again:
+distinct-pair and same-Work validation; canonical sides (lower entity id = a
+side, ADR 0019,
+so `unique(a_entity_id, b_entity_id)` covers both orders); **duplicates are
+rejected everywhere, never deleted** — the Filament actions' former
+destructive delete-on-duplicate (which also wiped the existing match's
+meaning matches, human-curated rows included) is gone; deleting a match
+stays an explicit operator action — the Filament Delete / DeleteBulk
+actions and "Run from scratch", the latter warning about human rows. The
+count-then-create Processing limit runs under the creator's locked user
+row, so Filament creations respect it too (admins exempt per
+`ProcessingLimits`), and a unique-constraint loss (two different users
+racing the same pair to the insert) is converted to the duplicate outcome
+by re-running the lookup. Knob defaults (chunk 75, max N 6 — the
+`entity_matches` column defaults) and the copy-vs-pipeline dispatch
+decision live here as well.
+
 # Order-preservation invariant
 
 **Alignment ownership & per-user limit (ADR 0044).** `entity_matches.created_by`
 records the user who created the match — its **alignment owner**, distinct from
 the two side entities' uploaders (who can differ). It is backfilled from the
 a-side uploader, set at every creation point (the Library form and all
-admin-only Filament actions), and nullable (`nullOnDelete`). A non-admin may
+three Filament actions), and nullable (`nullOnDelete`). A non-admin may
 hold at most `limits.alignments_processing_per_user` (default 1) matches with
 `status IN ('pending','aligning')`; the count-then-create runs under the
-creator's locked user row in `LibraryController::storeAlignment`, rejecting
-with a `limit` validation error (banner on the create form). The limit gates
+creator's locked user row inside the creation module
+(`EntityMatchCreationService`, see the creation module section above),
+rejecting with a `limit` validation error on the Library form and a danger
+notification on the Filament surfaces. The limit gates
 creation only: sentence-mutation staleness, `alignments:resume`, and the
 admin re-align actions skip it (a stale match holds no slot — ADR 0055).
 Accepted exposure: a match frozen by the
@@ -260,9 +311,11 @@ editor-shaped row.
    Match" action) and `verifyEntityPair()`, which rejects pairs whose cosine
    similarity < **0.70** before alignment is attempted. Duplicate detection is
    the job of the local `EntityTextHasher` sha256 hashes, not the embedding.
-2b. **Copy (fast path)** — before any pipeline run, the three match-creation
-   entry points (`AlignmentController::store`, Filament
-   `CreateEntityMatch::afterCreate`, the ListEntityMatches header action) try
+2b. **Copy (fast path)** — before any pipeline run, the one creation module
+   (`EntityMatchCreationService::create()`, which all four creation surfaces
+   call — the Library Alignments form via `LibraryController::storeAlignment`,
+   the Filament create page, the ListEntityMatches "New Alignment" header
+   action, and the EntityResource "Find Match" action) tries
    `AlignmentCopyService::copyFor()`: if a **completed** match exists between
    entities whose `text_hash` and language equal the new pair's (either
    orientation), its meaning matches and junctions are cloned with a
@@ -797,7 +850,7 @@ editor-shaped row.
     [Library & entities](/domains/entities.md)) lists the work's readable
     matches and its "Add alignment" card leads to
     `/works/{work}/alignments/create`
-    (`LibraryController@createAlignment`/`@store`, routes
+    (`LibraryController@createAlignment`/`@storeAlignment`, routes
     `works.alignments.create`/`works.alignments.store`; the former
     global `/alignments` list, `/alignments/create` form, and the navbar
     item are gone). The form is the old create minus the work picker: two
@@ -813,32 +866,58 @@ editor-shaped row.
     work-mode radios) must use the functional form
     `setData((current) => ({...current, ...}))` — the object form silently
     dropped `chunk_size`/`max_n`, which emptied both entity selects the
-    moment an entity was picked. Store validates that **both entities
-    belong to the route work** (same-language pairs such as exercises and
-    answers are valid — ADR 0019), canonicalizes the pair
-    order (lower id = a side, so the `unique(a_entity_id, b_entity_id)`
-    constraint covers both orders), creates the match (`status='pending'`),
-    dispatches `AlignEntitySentences::beginFromScratch($id)`, and redirects
-    to the work's Alignments page with a flash; a duplicate pair is blocked
-    with an error plus an "Open existing match" link (flash
-    `existing_match_id`), and creating a match involving an entity the user
-    cannot read is `403`. Each match card links (stretched link) to the
-    editor `/alignments/{id}` and carries Simulator / Read·{LANG} buttons —
+    moment an entity was picked. Store resolves the two entities, checks
+    readability (creating a match involving an entity the user cannot read
+    is `403`), and hands them to the one creation module
+    (`EntityMatchCreationService` — same-Work validation (same-language
+    pairs such as exercises and answers are valid — ADR 0019), canonical
+    sides, duplicate rejection, the Processing limit, and the
+    copy-vs-pipeline decision all live there, see the creation module
+    section above); it translates the outcome — redirect to the work's
+    Alignments page with a flash, a duplicate pair blocked with an error
+    plus an "Open existing match" link (flash `existing_match_id`), a
+    cross-Work pair the form's same-work error, a limit hit a `limit`
+    error. Each match card links (stretched link) to the
+    work-nested editor `/works/{work}/alignments/{match}/edit` (ADR 0072)
+    and carries Simulator / Read·{LANG} buttons —
     `GET /bilinguals/simulator/{entityMatch}` (pinned simulator) and the
     reader, with the reading side resolved server-side as the
-    non-native-language side. The editor itself is
-    a parallel entry point backed by the surgical `AlignmentEditorController`
-    endpoints — create/delete pair, approve pair (set `similarity = 1.0` +
-    `alignment_chunk = -1`, promoting a row to a hard landmark), add/edit/
+    non-native-language side. The editor itself
+    (route `works.alignments.edit`, `AlignmentController@show`) is a
+    parallel entry point backed by the surgical `AlignmentEditorController`
+    endpoints under the same work-nested prefix (ADR 0072: the page at
+    `GET /works/{work}/alignments/{entityMatch}/edit`, all eleven JSON
+    endpoints beside it; every action binds `Work` and 404s when the match
+    path names another work, and the old flat `/alignments/{id}` routes are
+    deleted without redirects) — create/delete pair, approve pair (set
+    `similarity = 1.0` + `alignment_chunk = -1`, promoting a row to a hard
+    landmark), **disapprove pair** (`POST .../rows/{row}/disapprove` →
+    `AlignmentEditorService::rejectRow`: `similarity = 0.0` only, the chunk
+    sentinel untouched — a rejection is a number, not a verdict, so the
+    row stays in Needs review and a later Re-align's below-0.90 delete pass
+    removes it and re-pairs its sentences), add/edit/
      unlink/hard-delete sentence, and
      `sentences/move` (within-row reorder / cross-row move / to-or-from the
      unmatched pool; every drop into a row renumbers document order) — with
      immediate persistence, sparse orders via
     `SparseOrderService`, and JSON payloads shaped by `AlignmentEditorApiPresenter`
     (rows carry `a_sentences`/`b_sentences` per row; `rows` + per-side
-    `unmatched_a`/`unmatched_b` pools with pagination, `last_page` included;
-    the rows table's `Pagination` component shows Prev/Next + numbered page
-    buttons with ellipsis and a custom per-page dropdown). Every rows page
+    `unmatched_a`/`unmatched_b` pools with pagination, `last_page` included).
+    Each row's header rail is icon-only — approve ✓, disapprove ⊘
+    (ban-circle), create-below ＋, delete 🗑 — with `title`/`aria-label`
+    tooltips instead of the former text buttons. The shared `Pagination`
+    component (rows table, both unmatched pools, and the needs-review
+    section) shows Prev/Next + numbered page buttons with ellipsis, a
+    "go to page" jump input (clamped to `1..last_page`, hidden when there
+    is only one page), and — rows only — a custom per-page dropdown.
+    **The editor's pagination state lives in the URL query** (ADR 0072):
+    `rows_page`, `rows_per_page`, `unmatched_a_page`, `unmatched_b_page`,
+    `review_page` are seeded server-side on page load
+    (`AlignmentEditorPageRequest`, out-of-range values clamped to the last
+    page) and mirrored client-side via `history.replaceState` on every
+    page/per-page change, so copying the URL shares the exact view
+    (defaults are omitted from the URL; section open/closed state stays
+    client-local). Every rows page
     carries a **three-row lookahead tail** (`ROWS_LOOKAHEAD`): each page
     serves `per_page` rows plus the first three rows of the next page, so
     the editor always has rows below the page boundary to place sentences
@@ -855,7 +934,16 @@ editor-shaped row.
     (The previous scheme read an index assigned inside a `setState` updater
     synchronously after the dispatch — React 19 evaluates updaters eagerly
     only on the first dispatch after mount, so every later "Create below"
-    landed at the top of the page until refresh.) **Every endpoint is gated
+    landed at the top of the page until refresh.) The merge itself lives
+    in `lib/alignmentRowMerge.js` (`mergeMutationRows`, pinned by vitest
+    per the lib-only JS test convention): on-page rows are replaced in
+    place, a new row splices in after its anchor, optimistic temp rows
+    (non-numeric ids) are dropped — and payload rows for rows **not on
+    the displayed page are skipped**, because appending them would fake
+    an extra "next page" preview row at the end of the list (approving
+    straight from the needs-review list returns such off-page rows; the
+    server holds their truth, and `loadRows` refetches the page on
+    demand). **Every endpoint is gated
     first by `EntityAccessService::canReadMatch($user, $entityMatch)`** — a
     non-granted user (who cannot read BOTH entities of the match) receives
     `403` on every read and mutation, so a restricted match is neither
@@ -873,10 +961,21 @@ editor-shaped row.
     clicking it jumps the editor's rows table to the exact page
     (`ceil(rank / per_page)`, the server returns page-independent per-row
     `rank`) and briefly highlights the row (client-side scroll, no URL
-    change). Paginated 25/page via
-    `GET /alignments/{entityMatch}/needs-review`
+    change). Each row also carries a hover-revealed **approve icon
+    button** that approves in place — similarity goes to 1.0, the row
+    leaves the list immediately. The optimistic removal is written through
+    `applyData` into the server snapshot (`lastServer`), not a bare
+    `setData`: the mutation merge rebuilds state from that snapshot, so a
+    snapshot still holding the row would resurrect it for the frames
+    before the needs-review refetch lands (which also clamps the page when
+    the last item of a page was approved).
+    Paginated 25/page via
+    `GET /works/{work}/alignments/{entityMatch}/needs-review`
     (`AlignmentEditorController::needsReview`, `NeedsReviewRequest`); the
-    section refetches its current page after every editor mutation. A
+    section refetches its current page after every editor mutation. The
+    header eyebrow ("Alignments") links back to the work's Alignments
+    page; the match payload's `work_id` (new) feeds that link, the
+    client's API base path, and the card/entity/duplicate-match links. A
     round floating button pinned at the top-center of the scroll area
     (sticky in `Show.jsx`, always rendered) scrolls the page down to the
     review sections — the unmatched pools when either has content, else the

@@ -75,7 +75,7 @@ test('reordering sentences through the editor bumps sentences_updated_at', funct
     $user = User::factory()->create(['is_approved' => true]);
 
     $this->actingAs($user)
-        ->post("/entities/en/{$entity->id}/sentences/reorder", [
+        ->post("/works/{$entity->work_id}/entities/{$entity->id}/sentences/reorder", [
             'sentence_id' => $second->id,
             'after_sentence_id' => 0,
         ])

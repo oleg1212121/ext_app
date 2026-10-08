@@ -3,6 +3,7 @@ import {useDndContext} from '@dnd-kit/core';
 import {SortableContext, verticalListSortingStrategy} from '@dnd-kit/sortable';
 import SentenceItem from './SentenceItem.jsx';
 import DropSlot from './DropSlot.jsx';
+import Pagination from './Pagination.jsx';
 import {useI18n} from '../../../i18n';
 
 function UnmatchedPool({side, sideLabel, containerKey, keys, lookup, meta, busy, editing, onStartEdit, onEditChange, onCommitEdit, onCancelEdit, onRemove, onPageChange}) {
@@ -17,9 +18,6 @@ function UnmatchedPool({side, sideLabel, containerKey, keys, lookup, meta, busy,
             <div className="flex items-center justify-between border-b border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-3 py-1.5">
                 <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                     {sideLabel ?? side} · {meta.total}
-                </span>
-                <span className="font-mono text-[10px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                    {meta.current_page} / {Math.max(meta.last_page, 1)}
                 </span>
             </div>
 
@@ -52,25 +50,14 @@ function UnmatchedPool({side, sideLabel, containerKey, keys, lookup, meta, busy,
                 )}
             </div>
 
-            <div className="mt-auto flex items-center justify-between border-t border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-2 py-1">
-                <button
-                    type="button"
-                    onClick={() => onPageChange(side, meta.current_page - 1)}
-                    disabled={meta.current_page <= 1 || busy}
-                    aria-label={t('alignments.prev_unmatched_page')}
-                    className="inline-flex h-6 items-center px-1.5 font-mono text-[11px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
-                >
-                    ←
-                </button>
-                <button
-                    type="button"
-                    onClick={() => onPageChange(side, meta.current_page + 1)}
-                    disabled={meta.current_page >= meta.last_page || busy}
-                    aria-label={t('alignments.next_unmatched_page')}
-                    className="inline-flex h-6 items-center px-1.5 font-mono text-[11px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
-                >
-                    →
-                </button>
+            <div className="mt-auto">
+                <Pagination
+                    meta={meta}
+                    busy={busy}
+                    showTotal={false}
+                    onPage={(page) => onPageChange(side, page)}
+                    onPerPage={null}
+                />
             </div>
         </div>
     );

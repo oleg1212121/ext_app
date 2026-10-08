@@ -2,11 +2,13 @@
 
 namespace App\Filament\Resources\EntityMatchResource\Pages;
 
-use App\Classes\AlignmentCopyService;
+use App\Classes\EntityMatchCreationService;
+use App\Exceptions\CrossWorkEntityPair;
+use App\Exceptions\ProcessingLimitReached;
+use App\Exceptions\SelfEntityPair;
 use App\Filament\Resources\EntityMatchResource;
-use App\Jobs\AlignEntitySentences;
 use App\Models\Entity;
-use App\Models\EntityMatch;
+use App\Models\User;
 use Filament\Actions;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -34,6 +36,7 @@ class ListEntityMatches extends ListRecords
                         ->label('Second Entity (same work)')
                         ->required()
                         ->options(fn (): array => $this->eligibleEntityOptions())
+                        ->different('first_entity_id')
                         ->searchable()
                         ->preload(),
                     TextInput::make('chunk_size')
@@ -49,56 +52,66 @@ class ListEntityMatches extends ListRecords
                         ->minValue(1)
                         ->maxValue(8),
                 ])
+                // The creation module is the only writer of Entity matches; this action resolves the two entities, calls it once, and renders the outcome as notifications.
                 ->action(function (array $data) {
                     [$first, $second] = [
-                        Entity::query()->findOrFail((int) $data['first_entity_id']),
-                        Entity::query()->findOrFail((int) $data['second_entity_id']),
+                        Entity::query()->find((int) $data['first_entity_id']),
+                        Entity::query()->find((int) $data['second_entity_id']),
                     ];
 
-                    if ($first->work_id !== $second->work_id) {
+                    if ($first === null || $second === null) {
+                        // A stale form submission: an entity was deleted
+                        // between render and submit. Nothing is created.
                         Notification::make()
-                            ->title('Entities must be from the same work.')
+                            ->title('Entity not found.')
                             ->danger()
                             ->send();
 
                         return;
                     }
 
-                    $aId = min($first->id, $second->id);
-                    $bId = max($first->id, $second->id);
+                    $creator = auth()->user();
 
-                    EntityMatch::where('a_entity_id', $aId)
-                        ->where('b_entity_id', $bId)
-                        ->get()
-                        ->each(function (EntityMatch $existing) {
-                            $existing->meaningMatches()->delete();
-                            $existing->delete();
-                        });
+                    assert($creator instanceof User); // the panel request is authenticated
 
-                    $entityMatch = EntityMatch::create([
-                        'a_entity_id' => $aId,
-                        'b_entity_id' => $bId,
-                        'chunk_size' => $data['chunk_size'] ?? 75,
-                        'max_n' => $data['max_n'] ?? 6,
-                        'status' => 'pending',
-                        'created_by' => auth()->id(),
-                    ]);
+                    // Empty form fields pass nulls so the module's knob
+                    // defaults apply.
+                    try {
+                        $result = (new EntityMatchCreationService)->create(
+                            $creator,
+                            $first,
+                            $second,
+                            filled($data['chunk_size'] ?? null) ? (int) $data['chunk_size'] : null,
+                            filled($data['max_n'] ?? null) ? (int) $data['max_n'] : null,
+                        );
+                    } catch (CrossWorkEntityPair|SelfEntityPair|ProcessingLimitReached $exception) {
+                        Notification::make()
+                            ->title($exception->getMessage())
+                            ->danger()
+                            ->send();
 
-                    if ((new AlignmentCopyService)->copyFor($entityMatch)) {
+                        return;
+                    }
+
+                    if ($result['status'] === 'duplicate') {
+                        EntityMatchResource::duplicateMatchNotification($result['existing'])->send();
+
+                        return;
+                    }
+
+                    if ($result['status'] === 'created_from_copy') {
                         Notification::make()
                             ->title('Alignment copied')
-                            ->body("An identical text pair already had a completed alignment — reused for pair #{$entityMatch->id}")
+                            ->body("An identical text pair already had a completed alignment — reused for pair #{$result['match']->id}")
                             ->success()
                             ->send();
 
                         return;
                     }
 
-                    AlignEntitySentences::beginFromScratch($entityMatch->id);
-
                     Notification::make()
                         ->title('Alignment started')
-                        ->body("Processing entity pair #{$entityMatch->id}")
+                        ->body("Processing entity pair #{$result['match']->id}")
                         ->success()
                         ->send();
                 }),

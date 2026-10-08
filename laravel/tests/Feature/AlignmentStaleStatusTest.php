@@ -128,7 +128,7 @@ it('finalize leaves a match stale when a sentence edit flips it mid-run', functi
     grantAccess($user, $enEntity);
 
     $this->actingAs($user)
-        ->patchJson("/entities/en/{$enEntity->id}/sentences/{$enSentences[0]->id}", [
+        ->patchJson("/works/{$enEntity->work_id}/entities/{$enEntity->id}/sentences/{$enSentences[0]->id}", [
             'content' => 'English 1 edited mid-run.',
             'sentence_type_id' => SentenceType::where('name', 'sentence')->value('id'),
         ])

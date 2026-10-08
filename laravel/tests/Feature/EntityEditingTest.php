@@ -73,7 +73,7 @@ it('granted user can open the edit page for a restricted entity', function () {
     grantAccess($user, $entity);
 
     $this->actingAs($user)
-        ->get("/entities/en/{$entity->id}/edit")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}/edit")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('Entities/Edit')
@@ -85,7 +85,7 @@ it('non-granted user is forbidden from the edit page for a restricted entity', f
     $entity = createEntity('en', null, ['name' => 'Secret', 'is_restricted' => true]);
 
     $this->actingAs(approvedUser())
-        ->get("/entities/en/{$entity->id}/edit")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}/edit")
         ->assertForbidden();
 });
 
@@ -93,7 +93,7 @@ it('any approved user can open the edit page for a public entity', function () {
     $entity = createEntity('en', null, ['name' => 'Open', 'is_restricted' => false]);
 
     $this->actingAs(approvedUser())
-        ->get("/entities/en/{$entity->id}/edit")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}/edit")
         ->assertOk();
 });
 
@@ -101,19 +101,21 @@ it('admin can open the edit page for any restricted entity', function () {
     $entity = createEntity('en', null, ['name' => 'Admin only', 'is_restricted' => true]);
 
     $this->actingAs(adminUser())
-        ->get("/entities/en/{$entity->id}/edit")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}/edit")
         ->assertOk();
 });
 
 it('guest is redirected from the edit page', function () {
     $entity = createEntity('en', null, ['name' => 'X']);
 
-    $this->get("/entities/en/{$entity->id}/edit")->assertRedirect();
+    $this->get("/works/{$entity->work_id}/entities/{$entity->id}/edit")->assertRedirect();
 });
 
 it('edit page 404s for an unknown entity', function () {
+    $work = createWork();
+
     $this->actingAs(approvedUser())
-        ->get('/entities/en/999999/edit')
+        ->get("/works/{$work->id}/entities/999999/edit")
         ->assertNotFound();
 });
 
@@ -125,8 +127,8 @@ it('granted user can update entity name and description', function () {
     grantAccess($user, $entity);
 
     $this->actingAs($user)
-        ->patch("/entities/en/{$entity->id}", ['name' => 'New Name', 'description' => 'New desc'])
-        ->assertRedirect("/entities/en/{$entity->id}");
+        ->patch("/works/{$entity->work_id}/entities/{$entity->id}", ['name' => 'New Name', 'description' => 'New desc'])
+        ->assertRedirect("/works/{$entity->work_id}/entities/{$entity->id}");
 
     expect($entity->refresh()->name)->toBe('New Name')
         ->and($entity->description)->toBe('New desc');
@@ -136,7 +138,7 @@ it('non-granted user cannot update a restricted entity', function () {
     $entity = createEntity('en', null, ['name' => 'Locked', 'is_restricted' => true]);
 
     $this->actingAs(approvedUser())
-        ->patch("/entities/en/{$entity->id}", ['name' => 'Hacked'])
+        ->patch("/works/{$entity->work_id}/entities/{$entity->id}", ['name' => 'Hacked'])
         ->assertForbidden();
 });
 
@@ -144,7 +146,7 @@ it('update validates the name is required', function () {
     $entity = createEntity('en', null, ['name' => 'Keep', 'is_restricted' => false]);
 
     $this->actingAs(approvedUser())
-        ->patch("/entities/en/{$entity->id}", ['name' => ''])
+        ->patch("/works/{$entity->work_id}/entities/{$entity->id}", ['name' => ''])
         ->assertSessionHasErrors('name');
 });
 
@@ -152,7 +154,7 @@ it('any approved user can update a public entity', function () {
     $entity = createEntity('en', null, ['name' => 'Public', 'is_restricted' => false]);
 
     $this->actingAs(approvedUser())
-        ->patch("/entities/en/{$entity->id}", ['name' => 'Renamed'])
+        ->patch("/works/{$entity->work_id}/entities/{$entity->id}", ['name' => 'Renamed'])
         ->assertRedirect();
 
     expect($entity->refresh()->name)->toBe('Renamed');
@@ -169,7 +171,7 @@ it('granted user can fetch the sentence list as JSON', function () {
     EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Second', 'order' => 1024, 'sentence_type_id' => SentenceType::where('name', 'sentence')->value('id')]);
 
     $this->actingAs($user)
-        ->getJson("/entities/en/{$entity->id}/sentences")
+        ->getJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences")
         ->assertOk()
         ->assertJsonCount(2, 'sentences')
         ->assertJsonPath('sentences.0.content', 'First')
@@ -180,7 +182,7 @@ it('non-granted user cannot fetch sentences for a restricted entity', function (
     $entity = createEntity('en', null, ['name' => 'Hidden', 'is_restricted' => true]);
 
     $this->actingAs(approvedUser())
-        ->getJson("/entities/en/{$entity->id}/sentences")
+        ->getJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences")
         ->assertForbidden();
 });
 
@@ -193,7 +195,7 @@ it('granted user can insert a sentence at the end', function () {
     $typeId = SentenceType::where('name', 'sentence')->value('id');
 
     $response = $this->actingAs($user)
-        ->postJson("/entities/en/{$entity->id}/sentences", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
             'content' => 'New sentence',
             'sentence_type_id' => $typeId,
             'after_sentence_id' => null,
@@ -220,7 +222,7 @@ it('granted user can insert a sentence at the beginning', function () {
     $existing = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Existing', 'order' => 1024, 'sentence_type_id' => $typeId]);
 
     $this->actingAs($user)
-        ->postJson("/entities/en/{$entity->id}/sentences", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
             'content' => 'Before all',
             'sentence_type_id' => $typeId,
             'after_sentence_id' => 0,
@@ -247,7 +249,7 @@ it('insert sentence flips the match status to stale', function () {
     ]);
 
     $this->actingAs($user)
-        ->postJson("/entities/en/{$entity->id}/sentences", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
             'content' => 'Added',
             'sentence_type_id' => $typeId,
             'after_sentence_id' => null,
@@ -261,7 +263,7 @@ it('non-granted user cannot insert a sentence', function () {
     $typeId = SentenceType::where('name', 'sentence')->value('id');
 
     $this->actingAs(approvedUser())
-        ->postJson("/entities/en/{$entity->id}/sentences", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
             'content' => 'Attempt',
             'sentence_type_id' => $typeId,
         ])
@@ -273,7 +275,7 @@ it('insert validates content is required', function () {
     $typeId = SentenceType::where('name', 'sentence')->value('id');
 
     $this->actingAs(approvedUser())
-        ->postJson("/entities/en/{$entity->id}/sentences", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
             'content' => '',
             'sentence_type_id' => $typeId,
         ])
@@ -291,7 +293,7 @@ it('granted user can update sentence content and type', function () {
     $sentence = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Original', 'order' => 0, 'sentence_type_id' => $typeId]);
 
     $this->actingAs($user)
-        ->patchJson("/entities/en/{$entity->id}/sentences/{$sentence->id}", [
+        ->patchJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}", [
             'content' => 'Updated text',
             'sentence_type_id' => $typeId,
         ])
@@ -316,7 +318,7 @@ it('update sentence flips the match status to stale', function () {
     ]);
 
     $this->actingAs($user)
-        ->patchJson("/entities/en/{$entity->id}/sentences/{$sentence->id}", [
+        ->patchJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}", [
             'content' => 'Changed',
             'sentence_type_id' => $typeId,
         ]);
@@ -339,7 +341,7 @@ it('sentence edit leaves a fresh pending match pending for the scheduler (ADR 00
     ]);
 
     $this->actingAs($user)
-        ->patchJson("/entities/en/{$entity->id}/sentences/{$sentence->id}", [
+        ->patchJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}", [
             'content' => 'Changed',
             'sentence_type_id' => $typeId,
         ]);
@@ -353,7 +355,7 @@ it('non-granted user cannot update a sentence', function () {
     $sentence = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'X', 'order' => 0, 'sentence_type_id' => $typeId]);
 
     $this->actingAs(approvedUser())
-        ->patchJson("/entities/en/{$entity->id}/sentences/{$sentence->id}", [
+        ->patchJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}", [
             'content' => 'Hacked',
             'sentence_type_id' => $typeId,
         ])
@@ -371,7 +373,7 @@ it('granted user can delete an unlinked sentence', function () {
     $sentence = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Gone', 'order' => 0, 'sentence_type_id' => $typeId]);
 
     $this->actingAs($user)
-        ->deleteJson("/entities/en/{$entity->id}/sentences/{$sentence->id}")
+        ->deleteJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}")
         ->assertOk();
 
     expect(EntitySentence::find($sentence->id))->toBeNull();
@@ -404,7 +406,7 @@ it('deleting a junctioned sentence cascades to meaning matches and updates linke
     ]);
 
     $this->actingAs($user)
-        ->deleteJson("/entities/en/{$entity->id}/sentences/{$sentence->id}")
+        ->deleteJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}")
         ->assertOk();
 
     expect(EntitySentence::find($sentence->id))->toBeNull()
@@ -419,7 +421,7 @@ it('non-granted user cannot delete a sentence', function () {
     $sentence = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'X', 'order' => 0, 'sentence_type_id' => $typeId]);
 
     $this->actingAs(approvedUser())
-        ->deleteJson("/entities/en/{$entity->id}/sentences/{$sentence->id}")
+        ->deleteJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$sentence->id}")
         ->assertForbidden();
 });
 
@@ -436,7 +438,7 @@ it('granted user can reorder a sentence to the beginning', function () {
     $third = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Third', 'order' => 2048, 'sentence_type_id' => $typeId]);
 
     $this->actingAs($user)
-        ->postJson("/entities/en/{$entity->id}/sentences/reorder", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/reorder", [
             'sentence_id' => $third->id,
             'after_sentence_id' => 0,
         ])
@@ -461,7 +463,7 @@ it('reorder flips the match status to stale', function () {
     ]);
 
     $this->actingAs($user)
-        ->postJson("/entities/en/{$entity->id}/sentences/reorder", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/reorder", [
             'sentence_id' => $second->id,
             'after_sentence_id' => 0,
         ]);
@@ -476,7 +478,7 @@ it('non-granted user cannot reorder sentences', function () {
     $first = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'A', 'order' => 0, 'sentence_type_id' => $typeId]);
 
     $this->actingAs(approvedUser())
-        ->postJson("/entities/en/{$entity->id}/sentences/reorder", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/reorder", [
             'sentence_id' => $first->id,
             'after_sentence_id' => 0,
         ])
@@ -506,7 +508,7 @@ it('inserting a sentence resyncs the totals of every match involving the entity'
     ]);
 
     $this->actingAs($user)
-        ->postJson("/entities/en/{$entity->id}/sentences", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
             'content' => 'Added',
             'sentence_type_id' => $typeId,
             'after_sentence_id' => null,
@@ -540,7 +542,7 @@ it('deleting a sentence resyncs the totals of every match involving the entity',
     ]);
 
     $this->actingAs($user)
-        ->deleteJson("/entities/en/{$entity->id}/sentences/{$first->id}")
+        ->deleteJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$first->id}")
         ->assertOk();
 
     $side = $match->a_entity_id === $entity->id ? 'a' : 'b';
@@ -557,17 +559,17 @@ it('granted user can edit a Russian entity and its sentences', function () {
     $typeId = SentenceType::where('name', 'sentence')->value('id');
 
     $this->actingAs($user)
-        ->get("/entities/ru/{$entity->id}/edit")
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}/edit")
         ->assertOk();
 
     $this->actingAs($user)
-        ->patch("/entities/ru/{$entity->id}", ['name' => 'Обновлено'])
+        ->patch("/works/{$entity->work_id}/entities/{$entity->id}", ['name' => 'Обновлено'])
         ->assertRedirect();
 
     expect($entity->refresh()->name)->toBe('Обновлено');
 
     $response = $this->actingAs($user)
-        ->postJson("/entities/ru/{$entity->id}/sentences", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences", [
             'content' => 'Новое предложение',
             'sentence_type_id' => $typeId,
             'after_sentence_id' => null,
@@ -596,7 +598,7 @@ it('granted user can fetch a paginated sentence list with meta and before_first_
     }
 
     $response = $this->actingAs($user)
-        ->getJson("/entities/en/{$entity->id}/sentences?page=2&per_page=10")
+        ->getJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences?page=2&per_page=10")
         ->assertOk()
         ->assertJsonPath('meta.current_page', 2)
         ->assertJsonPath('meta.last_page', 2)
@@ -607,7 +609,7 @@ it('granted user can fetch a paginated sentence list with meta and before_first_
 
     // page 1 exposes no before_first_id
     $this->actingAs($user)
-        ->getJson("/entities/en/{$entity->id}/sentences?page=1&per_page=10")
+        ->getJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences?page=1&per_page=10")
         ->assertJsonPath('before_first_id', null);
 });
 
@@ -627,7 +629,7 @@ it('paginated fetch clamps an out-of-range page to the last page', function () {
     }
 
     $this->actingAs($user)
-        ->getJson("/entities/en/{$entity->id}/sentences?page=99&per_page=10")
+        ->getJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences?page=99&per_page=10")
         ->assertOk()
         ->assertJsonPath('meta.current_page', 1);
 });
@@ -638,7 +640,7 @@ it('per_page is clamped to a sane maximum', function () {
     grantAccess($user, $entity);
 
     $this->actingAs($user)
-        ->getJson("/entities/en/{$entity->id}/sentences?page=1&per_page=9999")
+        ->getJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences?page=1&per_page=9999")
         ->assertOk()
         ->assertJsonPath('meta.per_page', 100);
 });
@@ -661,7 +663,7 @@ it('insert returns the page containing the newly added sentence', function () {
     }
 
     $this->actingAs($user)
-        ->postJson("/entities/en/{$entity->id}/sentences?page=1&per_page=10", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences?page=1&per_page=10", [
             'content' => 'New at end',
             'sentence_type_id' => $typeId,
             'after_sentence_id' => null,
@@ -685,7 +687,7 @@ it('reordering to the beginning keeps every order non-negative', function () {
     $third = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Third', 'order' => 2048, 'sentence_type_id' => $typeId]);
 
     $this->actingAs($user)
-        ->postJson("/entities/en/{$entity->id}/sentences/reorder?page=1&per_page=25", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/reorder?page=1&per_page=25", [
             'sentence_id' => $third->id,
             'after_sentence_id' => 0,
         ])
@@ -707,7 +709,7 @@ it('inserting at the beginning keeps every order non-negative', function () {
     EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Existing2', 'order' => 1024, 'sentence_type_id' => $typeId]);
 
     $this->actingAs($user)
-        ->postJson("/entities/en/{$entity->id}/sentences?page=1&per_page=25", [
+        ->postJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences?page=1&per_page=25", [
             'content' => 'Before all',
             'sentence_type_id' => $typeId,
             'after_sentence_id' => 0,
@@ -730,7 +732,7 @@ it('deleting on the last page returns a clamped page when it becomes empty', fun
     $only = EntitySentence::create(['entity_id' => $entity->id, 'content' => 'Only', 'order' => 0, 'sentence_type_id' => $typeId]);
 
     $this->actingAs($user)
-        ->deleteJson("/entities/en/{$entity->id}/sentences/{$only->id}?page=1&per_page=10")
+        ->deleteJson("/works/{$entity->work_id}/entities/{$entity->id}/sentences/{$only->id}?page=1&per_page=10")
         ->assertOk()
         ->assertJsonPath('meta.current_page', 1)
         ->assertJsonCount(0, 'sentences');
