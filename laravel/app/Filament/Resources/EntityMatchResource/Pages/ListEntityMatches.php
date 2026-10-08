@@ -9,7 +9,6 @@ use App\Filament\Resources\EntityMatchResource;
 use App\Models\Entity;
 use App\Models\User;
 use Filament\Actions;
-use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -51,19 +50,16 @@ class ListEntityMatches extends ListRecords
                         ->minValue(1)
                         ->maxValue(8),
                 ])
-                // The creation module is the only writer of Entity matches:
-                // same-Work validation, canonical sides, duplicate rejection,
-                // the Processing limit and the copy-vs-pipeline decision all
-                // live there. This action resolves the two entities from the
-                // submitted form, calls the module once, and renders the
-                // outcome as notifications — never deleting anything.
+                // The creation module is the only writer of Entity matches; this action resolves the two entities, calls it once, and renders the outcome as notifications.
                 ->action(function (array $data) {
                     [$first, $second] = [
                         Entity::query()->findOrFail((int) $data['first_entity_id']),
                         Entity::query()->findOrFail((int) $data['second_entity_id']),
                     ];
 
-                    $creator = User::query()->findOrFail((int) auth()->id());
+                    $creator = auth()->user();
+
+                    assert($creator instanceof User); // the panel request is authenticated
 
                     // Empty form fields pass nulls so the module's knob
                     // defaults apply.
@@ -85,21 +81,7 @@ class ListEntityMatches extends ListRecords
                     }
 
                     if ($result['status'] === 'duplicate') {
-                        $existing = $result['existing'];
-
-                        // The module rejected the pair without touching
-                        // anything; point the administrator at the match
-                        // that is already there.
-                        Notification::make()
-                            ->title('Match already exists')
-                            ->body("A sentence alignment for this entity pair already exists ({$existing->status}).")
-                            ->warning()
-                            ->actions([
-                                Action::make('viewMatch')
-                                    ->label('View match')
-                                    ->url(EntityMatchResource::getUrl('view', ['record' => $existing])),
-                            ])
-                            ->send();
+                        EntityMatchResource::duplicateMatchNotification($result['existing'])->send();
 
                         return;
                     }

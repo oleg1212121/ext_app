@@ -372,6 +372,15 @@ class LibraryController extends Controller
             abort(403);
         }
 
+        // The form only lists this work's entities; a forged pair from
+        // another work is rejected here — a route-context input check the
+        // module cannot make (it never sees the route's work).
+        if ($firstEntity->work_id !== $work->id || $secondEntity->work_id !== $work->id) {
+            return back()->withErrors([
+                'second_entity_id' => 'Both entities must belong to the selected work.',
+            ]);
+        }
+
         try {
             // Same-Work validation, canonical sides, duplicate rejection,
             // the processing limit and the copy-vs-pipeline decision all
@@ -385,8 +394,8 @@ class LibraryController extends Controller
                 (int) $data['max_n'],
             );
         } catch (CrossWorkEntityPair) {
-            // The form only lists this work's entities; a forged pair from
-            // another work is rejected with the form's own message.
+            // Unreachable behind the route-work guard above; the module's
+            // own same-Work rule is the backstop for any future caller.
             return back()->withErrors([
                 'second_entity_id' => 'Both entities must belong to the selected work.',
             ]);

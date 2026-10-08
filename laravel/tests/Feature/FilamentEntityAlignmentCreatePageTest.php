@@ -12,6 +12,7 @@ use App\Models\SentenceType;
 use App\Models\User;
 use Filament\Notifications\Livewire\Notifications;
 use Filament\Notifications\Notification;
+use Filament\Support\Exceptions\Halt;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
@@ -385,6 +386,46 @@ test('a cross-work pair is rejected by the module with a danger notification', f
         ->assertNoRedirect();
 
     expect(EntityMatch::query()->count())->toBe(0);
+
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
+test('a stale submission whose entity vanished is reported, not a 404', function () {
+    Bus::fake();
+
+    $admin = User::factory()->admin()->approved()->create();
+    ['ru' => $ruEntity] = fcAlignablePair();
+
+    $page = Livewire::actingAs($admin)
+        ->test(CreateEntityMatch::class)
+        ->instance();
+
+    // A stale form submission: the entity id was on the page when it
+    // rendered, but is gone by the time handleRecordCreation runs. Reached
+    // directly because Filament's own select in-validation already stops
+    // stale ids in the normal form flow — this pins the method's graceful
+    // backstop (the old page's behavior) instead of findOrFail's 404.
+    $method = new ReflectionMethod(CreateEntityMatch::class, 'handleRecordCreation');
+
+    try {
+        $method->invoke($page, [
+            'first_entity_id' => 999999999,
+            'second_entity_id' => $ruEntity->id,
+        ]);
+
+        $this->fail('Expected the create flow to halt.');
+    } catch (Halt) {
+        // The graceful stop: the action aborts without creating anything.
+    }
+
+    $notifications = new Notifications;
+    $notifications->mount();
+    $sent = $notifications->notifications->first(
+        fn (Notification $notification): bool => $notification->getTitle() === 'Entity not found.',
+    );
+
+    expect($sent)->not->toBeNull()
+        ->and(EntityMatch::query()->count())->toBe(0);
 
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });

@@ -8,8 +8,10 @@ use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\MeaningMatch;
 use Filament\Actions;
+use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -81,6 +83,26 @@ class EntityMatchResource extends Resource
             ->all();
     }
 
+    /**
+     * The duplicate outcome's notification, shared by every Filament creation
+     * surface (the create page, the list header action, the entity Find Match
+     * action): the module rejected the pair without touching anything, so the
+     * notification names the existing match's status and links to its view
+     * page. The caller sends it and stops the creation flow.
+     */
+    public static function duplicateMatchNotification(EntityMatch $existing): Notification
+    {
+        return Notification::make()
+            ->title('Match already exists')
+            ->body("A sentence alignment for this entity pair already exists ({$existing->status}).")
+            ->warning()
+            ->actions([
+                Action::make('viewMatch')
+                    ->label('View match')
+                    ->url(self::getUrl('view', ['record' => $existing])),
+            ]);
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -141,11 +163,11 @@ class EntityMatchResource extends Resource
             ])
             ->recordActions([
                 Actions\ViewAction::make(),
-                Actions\Action::make('editAlignment')
+                Action::make('editAlignment')
                     ->label('Edit alignment')
                     ->icon('heroicon-o-pencil-square')
                     ->url(fn (EntityMatch $record): string => route('works.alignments.edit', ['work' => $record->aEntity?->work_id, 'entityMatch' => $record])),
-                Actions\Action::make('realign')
+                Action::make('realign')
                     ->label('Re-align')
                     ->icon('heroicon-o-arrow-path')
                     ->color('warning')
@@ -166,7 +188,7 @@ class EntityMatchResource extends Resource
                     })
                     ->action(fn (EntityMatch $record) => AlignEntitySentences::begin($record->id))
                     ->visible(fn (EntityMatch $record) => in_array($record->status, ['stale', 'completed', 'failed'])),
-                Actions\Action::make('rerunScratch')
+                Action::make('rerunScratch')
                     ->label('Run from scratch')
                     ->icon('heroicon-o-trash')
                     ->color('danger')

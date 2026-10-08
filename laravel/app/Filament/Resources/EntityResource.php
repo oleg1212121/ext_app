@@ -201,17 +201,13 @@ class EntityResource extends Resource
                                 ->searchable(),
                         ];
                     })
-                    // The creation module is the only writer of Entity
-                    // matches: same-Work validation, canonical sides,
-                    // duplicate rejection, the Processing limit and the
-                    // copy-vs-pipeline decision all live there. This action
-                    // resolves the two entities from the submitted form,
-                    // calls the module once, and renders the outcome as
-                    // notifications — never deleting anything. No knobs are
-                    // offered, so nulls pass and the module's defaults apply.
+                    // The creation module is the only writer of Entity matches; this action resolves the two entities, calls it once, and renders the outcome as notifications. No knobs are offered, so nulls pass and the module's defaults apply.
                     ->action(function (Entity $record, array $data) {
                         $other = Entity::query()->findOrFail((int) $data['other_entity_id']);
-                        $creator = User::query()->findOrFail((int) auth()->id());
+
+                        $creator = auth()->user();
+
+                        assert($creator instanceof User); // the panel request is authenticated
 
                         try {
                             $result = (new EntityMatchCreationService)->create($creator, $record, $other);
@@ -225,21 +221,7 @@ class EntityResource extends Resource
                         }
 
                         if ($result['status'] === 'duplicate') {
-                            $existing = $result['existing'];
-
-                            // The module rejected the pair without touching
-                            // anything; point the administrator at the match
-                            // that is already there.
-                            Notification::make()
-                                ->title('Match already exists')
-                                ->body("A sentence alignment for this entity pair already exists ({$existing->status}).")
-                                ->warning()
-                                ->actions([
-                                    Action::make('viewMatch')
-                                        ->label('View match')
-                                        ->url(EntityMatchResource::getUrl('view', ['record' => $existing])),
-                                ])
-                                ->send();
+                            EntityMatchResource::duplicateMatchNotification($result['existing'])->send();
 
                             return;
                         }
