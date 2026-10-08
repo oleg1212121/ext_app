@@ -1,7 +1,7 @@
 <?php
 
 use App\Classes\EntityTextHasher;
-use App\Filament\Resources\EntityMatchResource\Pages\ListEntityMatches;
+use App\Filament\Resources\EntityResource\Pages\ListEntities;
 use App\Jobs\AlignEntitySentences;
 use App\Models\Entity;
 use App\Models\EntityMatch;
@@ -10,7 +10,6 @@ use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
 use App\Models\User;
-use App\Models\Work;
 use Filament\Notifications\Livewire\Notifications;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Bus;
@@ -19,10 +18,17 @@ use Livewire\Livewire;
 
 // Guard: these tests stop at Bus::fake(), but anything that leaks an HTTP call
 // must hit a fake response instead of hanging on the Python service timeout.
+// (The find-match form's candidate computation is local cosine math.)
 beforeEach(fn () => Http::fake());
 
-function createListActionEntity(string $languageCode, Work $work, string $name): Entity
+/**
+ * An alignable entity: signature present and at least one sentence — the
+ * Find Match action's visibility conditions.
+ */
+function fmAlignableEntity(string $languageCode, object $work, string $name): Entity
 {
+    $sentenceType = SentenceType::query()->firstOrCreate(['name' => 'Narration']);
+
     $entity = createEntity($languageCode, $work, [
         'name' => $name,
         'signature' => json_encode([1.0, 0.0]),
@@ -30,7 +36,7 @@ function createListActionEntity(string $languageCode, Work $work, string $name):
 
     EntitySentence::create([
         'entity_id' => $entity->id,
-        'sentence_type_id' => null,
+        'sentence_type_id' => $sentenceType->id,
         'content' => 'Text.',
         'order' => 1,
     ]);
@@ -38,78 +44,21 @@ function createListActionEntity(string $languageCode, Work $work, string $name):
     return $entity;
 }
 
-test('new alignment action persists the chosen pair in canonical side order', function () {
-    Bus::fake();
-
-    $user = User::factory()->create();
-    $work = createWork();
-    $enEntity = createListActionEntity('en', $work, 'En List Original');
-    $ruEntity = createListActionEntity('ru', $work, 'Ru List Translation');
-
-    Livewire::actingAs($user)
-        ->test(ListEntityMatches::class)
-        ->callAction('create', data: [
-            'first_entity_id' => $ruEntity->id,
-            'second_entity_id' => $enEntity->id,
-        ]);
-
-    // The EN entity was created first (lower id), so it is canonicalized to the a side.
-    $this->assertDatabaseHas('entity_matches', [
-        'a_entity_id' => $enEntity->id,
-        'b_entity_id' => $ruEntity->id,
-    ]);
-});
-
-test('new alignment action derives the original side from the work', function () {
-    Bus::fake();
-
-    $user = User::factory()->create();
-    $work = createWork(); // defaults to English as the original language
-    $enEntity = createListActionEntity('en', $work, 'En List Default');
-    $ruEntity = createListActionEntity('ru', $work, 'Ru List Default');
-
-    Livewire::actingAs($user)
-        ->test(ListEntityMatches::class)
-        ->callAction('create', data: [
-            'first_entity_id' => $enEntity->id,
-            'second_entity_id' => $ruEntity->id,
-        ]);
-
-    $match = EntityMatch::query()
-        ->where('a_entity_id', $enEntity->id)
-        ->where('b_entity_id', $ruEntity->id)
-        ->first();
-
-    expect($match)->not->toBeNull()
-        ->and($match->originalSide())->toBe('a');
-});
-
-test('alignment list shows the pair and work columns', function () {
-    $user = User::factory()->create();
-
-    Livewire::actingAs($user)
-        ->test(ListEntityMatches::class)
-        ->assertSuccessful()
-        ->assertSee('A Entity')
-        ->assertSee('B Entity')
-        ->assertSee('Work');
-});
-
 /**
  * A completed alignment with curated rows: one human-made meaning match
  * (alignment_chunk = -1) and one machine row, each junctioned on both sides —
  * exactly the curation a creation attempt must never destroy. Both sides
- * carry a signature and sentences, so the list action's form accepts them.
+ * carry a signature and sentences, so the Find Match action accepts them.
  *
  * @return array{match: EntityMatch, en: Entity, ru: Entity}
  */
-function laCuratedAlignment(): array
+function fmCuratedAlignment(): array
 {
     $sentenceType = SentenceType::query()->firstOrCreate(['name' => 'Narration']);
     $work = createWork();
 
-    $en = createEntity('en', $work, ['name' => 'List Curated EN', 'signature' => json_encode([1.0, 0.0])]);
-    $ru = createEntity('ru', $work, ['name' => 'List Curated RU', 'signature' => json_encode([1.0, 0.0])]);
+    $en = createEntity('en', $work, ['name' => 'FM Curated EN', 'signature' => json_encode([1.0, 0.0])]);
+    $ru = createEntity('ru', $work, ['name' => 'FM Curated RU', 'signature' => json_encode([1.0, 0.0])]);
 
     $enSentences = collect(['First.', 'Second.'])->map(fn (string $content, int $index): EntitySentence => EntitySentence::create([
         'entity_id' => $en->id,
@@ -154,7 +103,7 @@ function laCuratedAlignment(): array
  * An entity with three sentences, a signature, and a current text hash (an
  * Alignment-copy lookup compares hashes).
  */
-function laHashedEntity(string $lang, object $work, string $name): Entity
+function fmHashedEntity(string $lang, object $work, string $name): Entity
 {
     $sentenceType = SentenceType::query()->firstOrCreate(['name' => 'Narration']);
 
@@ -184,7 +133,7 @@ function laHashedEntity(string $lang, object $work, string $name): Entity
 /**
  * An exact copy of $source (same sentences, same text hash) under a new name.
  */
-function laExactCopy(Entity $source, string $name): Entity
+function fmExactCopy(Entity $source, string $name): Entity
 {
     $copy = createEntity($source->language->code, $source->work, [
         'name' => $name,
@@ -213,7 +162,7 @@ function laExactCopy(Entity $source, string $name): Entity
  * A completed alignment between the two entities: one meaning match per
  * sentence pair, junctioned on both sides (the copy source).
  */
-function laCompletedSource(Entity $a, Entity $b): EntityMatch
+function fmCompletedSource(Entity $a, Entity $b): EntityMatch
 {
     $match = createEntityMatch($a, $b, ['status' => 'completed', 'completed_at' => now()]);
 
@@ -251,28 +200,27 @@ function laCompletedSource(Entity $a, Entity $b): EntityMatch
     return $match->refresh();
 }
 
-test('new alignment action creates the match through the creation module', function () {
+test('find match action creates the match through the creation module', function () {
     Bus::fake();
 
     // The panel is admin-only; non-admin limit enforcement is pinned at the
     // module level (EntityMatchCreationTest), not re-tested per surface.
     $admin = User::factory()->admin()->approved()->create();
     $work = createWork();
-    $enEntity = createListActionEntity('en', $work, 'En Module Original');
-    $ruEntity = createListActionEntity('ru', $work, 'Ru Module Translation');
+    $enEntity = fmAlignableEntity('en', $work, 'FM En Original');
+    $ruEntity = fmAlignableEntity('ru', $work, 'FM Ru Translation');
 
     Livewire::actingAs($admin)
-        ->test(ListEntityMatches::class)
-        ->callAction('create', data: [
-            // Reversed form order on purpose: canonical sides are the module's rule.
-            'first_entity_id' => $ruEntity->id,
-            'second_entity_id' => $enEntity->id,
+        ->test(ListEntities::class)
+        ->callTableAction('findMatch', $enEntity, data: [
+            'other_entity_id' => $ruEntity->id,
         ])
         ->assertNotified('Alignment started');
 
     $match = EntityMatch::query()->sole();
 
-    // The EN entity was created first (lower id), so it is canonicalized to the a side.
+    // The EN entity was created first (lower id), so it is canonicalized to
+    // the a side even though it is the action's record.
     expect($match->a_entity_id)->toBe($enEntity->id)
         ->and($match->b_entity_id)->toBe($ruEntity->id)
         ->and($match->created_by)->toBe($admin->id)
@@ -284,18 +232,16 @@ test('new alignment action creates the match through the creation module', funct
     Bus::assertDispatchedTimes(AlignEntitySentences::class, 1);
 });
 
-test('new alignment action on a duplicate notifies with a link and destroys nothing', function () {
+test('find match action on a duplicate notifies with a link and destroys nothing', function () {
     Bus::fake();
 
     $admin = User::factory()->admin()->approved()->create();
-    ['match' => $existing, 'en' => $enEntity, 'ru' => $ruEntity] = laCuratedAlignment();
+    ['match' => $existing, 'en' => $enEntity, 'ru' => $ruEntity] = fmCuratedAlignment();
 
     Livewire::actingAs($admin)
-        ->test(ListEntityMatches::class)
-        ->callAction('create', data: [
-            // Reversed form order on purpose: the duplicate rule is canonical.
-            'first_entity_id' => $ruEntity->id,
-            'second_entity_id' => $enEntity->id,
+        ->test(ListEntities::class)
+        ->callTableAction('findMatch', $enEntity, data: [
+            'other_entity_id' => $ruEntity->id,
         ]);
 
     // The notification references the existing match and carries a link to
@@ -315,7 +261,7 @@ test('new alignment action on a duplicate notifies with a link and destroys noth
 
     // Nothing was created or deleted: the curated alignment survives whole,
     // human-curated rows (alignment_chunk = -1) included. This is the fix for
-    // the header action's old delete-before-create duplicate path.
+    // the row action's old delete-before-create duplicate path.
     expect(EntityMatch::query()->count())->toBe(1)
         ->and($existing->refresh()->status)->toBe('completed')
         ->and(MeaningMatch::query()->where('entity_match_id', $existing->id)->count())->toBe(2)
@@ -328,45 +274,21 @@ test('new alignment action on a duplicate notifies with a link and destroys noth
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
 
-test('new alignment action rejects a cross-work pair with a danger notification', function () {
-    Bus::fake();
-
-    $admin = User::factory()->admin()->approved()->create();
-    $workA = createWork(['title' => 'List Work A']);
-    $workB = createWork(['title' => 'List Work B']);
-    $enEntity = createListActionEntity('en', $workA, 'List A En');
-    $ruEntity = createListActionEntity('ru', $workB, 'List B Ru');
-
-    Livewire::actingAs($admin)
-        ->test(ListEntityMatches::class)
-        ->callAction('create', data: [
-            'first_entity_id' => $enEntity->id,
-            'second_entity_id' => $ruEntity->id,
-        ])
-        // The module's message, not a page-local guard's.
-        ->assertNotified('Both entities must belong to the same work.');
-
-    expect(EntityMatch::query()->count())->toBe(0);
-
-    Bus::assertNotDispatched(AlignEntitySentences::class);
-});
-
-test('new alignment action completes an exact-copy pair by copy without the pipeline', function () {
+test('find match action completes an exact-copy pair by copy without the pipeline', function () {
     Bus::fake();
 
     $admin = User::factory()->admin()->approved()->create();
     $work = createWork();
-    $enSource = laHashedEntity('en', $work, 'List Source EN');
-    $ruSource = laHashedEntity('ru', $work, 'List Source RU');
-    $source = laCompletedSource($enSource, $ruSource);
-    $enCopy = laExactCopy($enSource, 'List Copy EN');
-    $ruCopy = laExactCopy($ruSource, 'List Copy RU');
+    $enSource = fmHashedEntity('en', $work, 'FM Source EN');
+    $ruSource = fmHashedEntity('ru', $work, 'FM Source RU');
+    $source = fmCompletedSource($enSource, $ruSource);
+    $enCopy = fmExactCopy($enSource, 'FM Copy EN');
+    $ruCopy = fmExactCopy($ruSource, 'FM Copy RU');
 
     Livewire::actingAs($admin)
-        ->test(ListEntityMatches::class)
-        ->callAction('create', data: [
-            'first_entity_id' => $enCopy->id,
-            'second_entity_id' => $ruCopy->id,
+        ->test(ListEntities::class)
+        ->callTableAction('findMatch', $enCopy, data: [
+            'other_entity_id' => $ruCopy->id,
         ])
         ->assertNotified('Alignment copied');
 
@@ -377,6 +299,35 @@ test('new alignment action completes an exact-copy pair by copy without the pipe
         ->and($match->created_by)->toBe($admin->id)
         ->and($match->status)->toBe('completed')
         ->and($match->meaningMatches()->count())->toBe($source->meaningMatches()->count());
+
+    // This action used to always run the full pipeline; copy reuse is the
+    // migration's headline gain here.
+    Bus::assertNotDispatched(AlignEntitySentences::class);
+});
+
+test('find match action rejects a cross-work pair submitted outside the candidate filter', function () {
+    Bus::fake();
+
+    $admin = User::factory()->admin()->approved()->create();
+    $workA = createWork(['title' => 'FM Work A']);
+    $workB = createWork(['title' => 'FM Work B']);
+    $enEntity = fmAlignableEntity('en', $workA, 'FM A En');
+    $ruEntity = fmAlignableEntity('ru', $workB, 'FM B Ru');
+
+    // Forged submission: the other entity belongs to another work and would
+    // never appear in the candidate select. Filament's own options validation
+    // stops it at the form layer; behind that, the module throws
+    // CrossWorkEntityPair for any caller that slips a pair past a form
+    // (pinned at the module level in EntityMatchCreationTest). Either way a
+    // cross-Work submission through this action creates nothing.
+    Livewire::actingAs($admin)
+        ->test(ListEntities::class)
+        ->callTableAction('findMatch', $enEntity, data: [
+            'other_entity_id' => $ruEntity->id,
+        ])
+        ->assertHasTableActionErrors(['other_entity_id']);
+
+    expect(EntityMatch::query()->count())->toBe(0);
 
     Bus::assertNotDispatched(AlignEntitySentences::class);
 });
