@@ -2,71 +2,90 @@
 
 namespace App\Filament\Resources\EntityMatchResource\Pages;
 
-use App\Classes\AlignmentCopyService;
+use App\Classes\EntityMatchCreationService;
+use App\Exceptions\CrossWorkEntityPair;
+use App\Exceptions\ProcessingLimitReached;
 use App\Filament\Resources\EntityMatchResource;
-use App\Jobs\AlignEntitySentences;
 use App\Models\Entity;
-use App\Models\EntityMatch;
+use App\Models\User;
+use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
+use Illuminate\Database\Eloquent\Model;
 
 class CreateEntityMatch extends CreateRecord
 {
     protected static string $resource = EntityMatchResource::class;
 
-    protected function mutateFormDataBeforeCreate(array $data): array
+    /**
+     * The creation module is the only writer of Entity matches: same-Work
+     * validation, canonical sides, duplicate rejection, the Processing limit
+     * and the copy-vs-pipeline decision all live there. This page resolves
+     * the two entities from the submitted form, calls the module once, and
+     * renders the outcome as notifications. Returning the module's match
+     * makes it the record Filament carries (redirect, created event) — the
+     * page never inserts a row itself, so there is no double insert.
+     */
+    protected function handleRecordCreation(array $data): Model
     {
-        $first = Entity::query()->find((int) ($data['first_entity_id'] ?? 0));
-        $second = Entity::query()->find((int) ($data['second_entity_id'] ?? 0));
+        $first = Entity::query()->findOrFail((int) ($data['first_entity_id'] ?? 0));
+        $second = Entity::query()->findOrFail((int) ($data['second_entity_id'] ?? 0));
 
-        if ($first === null || $second === null
-            || $first->work_id !== $second->work_id) {
+        $creator = User::query()->findOrFail((int) auth()->id());
+
+        // Empty form fields pass nulls so the module's knob defaults apply.
+        try {
+            $result = (new EntityMatchCreationService)->create(
+                $creator,
+                $first,
+                $second,
+                filled($data['chunk_size'] ?? null) ? (int) $data['chunk_size'] : null,
+                filled($data['max_n'] ?? null) ? (int) $data['max_n'] : null,
+            );
+        } catch (CrossWorkEntityPair|ProcessingLimitReached $exception) {
             Notification::make()
-                ->title('Entities must be from the same work.')
+                ->title($exception->getMessage())
                 ->danger()
                 ->send();
 
             $this->halt();
         }
 
-        unset($data['first_entity_id'], $data['second_entity_id']);
+        if ($result['status'] === 'duplicate') {
+            $existing = $result['existing'];
 
-        return [
-            ...$data,
-            'a_entity_id' => min($first->id, $second->id),
-            'b_entity_id' => max($first->id, $second->id),
-            'status' => 'pending',
-            'created_by' => auth()->id(),
-        ];
-    }
+            // The module rejected the pair without touching anything; point
+            // the administrator at the match that is already there.
+            Notification::make()
+                ->title('Match already exists')
+                ->body("A sentence alignment for this entity pair already exists ({$existing->status}).")
+                ->warning()
+                ->actions([
+                    Action::make('viewMatch')
+                        ->label('View match')
+                        ->url(EntityMatchResource::getUrl('view', ['record' => $existing])),
+                ])
+                ->send();
 
-    protected function afterCreate(): void
-    {
-        EntityMatch::where('id', '!=', $this->record->id)
-            ->where('a_entity_id', $this->record->a_entity_id)
-            ->where('b_entity_id', $this->record->b_entity_id)
-            ->get()
-            ->each(function (EntityMatch $existing) {
-                $existing->meaningMatches()->delete();
-                $existing->delete();
-            });
+            $this->halt();
+        }
 
-        if ((new AlignmentCopyService)->copyFor($this->record)) {
+        if ($result['status'] === 'created_from_copy') {
             Notification::make()
                 ->title('Alignment copied')
                 ->body('An identical text pair already had a completed alignment — reused.')
                 ->success()
                 ->send();
 
-            return;
+            return $result['match'];
         }
-
-        AlignEntitySentences::beginFromScratch($this->record->id);
 
         Notification::make()
             ->title('Alignment started')
             ->body('Processing sentences for this entity pair')
             ->success()
             ->send();
+
+        return $result['match'];
     }
 }
