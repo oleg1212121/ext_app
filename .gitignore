@@ -101,3 +101,6 @@ actions-runner
 laravel/.env.testing
 errors.txt
 .zcode/plans/*
+# Agent skills are local-only tooling, never part of the app repo
+.agents/
+skills-lock.json
