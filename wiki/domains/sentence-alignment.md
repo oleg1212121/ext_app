@@ -5,11 +5,17 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-08T16:47:00Z }
+generated: { by: agent:zcode, at: 2026-10-09T15:30:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
     title: python-match adapter — pair verify, /align call, links/dpPath path builders (ADR 0063)
+  - id: refine-service
+    resource: laravel/app/Classes/AlignmentRefineService.php
+    title: the refine round — one-sided-row regions re-aligned with dp + joined windows under a per-sentence coverage gate, in bounded self-chaining runs
+  - id: refine-command
+    resource: laravel/app/Console/Commands/RefineEntityMatchAlignmentCommand.php
+    title: alignments:refine — second round for one-sided machine rows
   - id: meaning-match-store
     resource: laravel/app/Classes/MeaningMatchStore.php
     title: the pipeline's meaning-match write path — segments, resequence, repairCoverage (ADR 0063, amended 2026-10-05)
@@ -550,8 +556,9 @@ editor-shaped row.
     sentences once and locks **prepass anchors**: non-crossing, mutually-best
     1:1 cells at/above `high_confidence` (`ALIGN_HIGH_CONFIDENCE`, default
     `0.9`) — the same scan/monotonicity rules as the greedy `anchor_threshold`
-    anchors, but a higher bar (shared core `_find_anchors(sim, n, m, threshold)`;
-    `_prepass_anchors` wraps it with `high_confidence`). `_align_with_anchors`
+    anchors, but a higher bar (shared core
+    `_find_anchors(sim, n, m, threshold, k, band)`; `_prepass_anchors` wraps it
+    with `high_confidence` plus the anchor distance cap, below). `_align_with_anchors`
     then splits the chunk into **sub-pools** at the anchors (anchors are part of
     no pool) and aligns each pool **in isolation** with the chosen algorithm —
     greedy runs its gap/anchor/orphan logic on the slice (its internal
@@ -570,6 +577,27 @@ editor-shaped row.
     `high_confidence` remains a live knob: `/align` per-request override or
     `ALIGN_HIGH_CONFIDENCE` in `docker-compose/python/env/.env`, applied on the
     next request.
+    - **Prepass anchor distance cap (Oct 2026)** — a high-confidence cell is
+      only locked when it sits within `ALIGN_MAX_ANCHOR_DISTANCE` (live knob,
+      default `30`; `<= 0` disables) cells of the expected length-ratio
+      diagonal: `abs(j*k - i) <= cap` with `k = n/m` of the whole chunk
+      (`_prepass_anchors` passes the cap to the shared `_find_anchors` as its
+      band). Unbanded prepass anchors previously let a short-heading cognate
+      far downstream lock an anchor and teleport the cursor past a whole
+      translated block: on "How to take smart notes" (work 5, entity_match 20)
+      LaBSE scored `Introduction` ↔ the RU part heading `Введение` 74 sentences
+      downstream at 0.93 — above the anchor bar — while the translator's actual
+      `Предисловие` scored only 0.78, so chunk 0 locked (0, 74), degraded the
+      entire Предисловие to 74 one-sided rows and desynchronized the cursors
+      for ~140 sentences until the editions' density difference re-converged
+      them on its own (editor rows 1–211 were garbage; row 212 snapped back to
+      the true diagonal). A matrix-edge column is exactly where the
+      mutual-best check is weakest — its row slice holds a single cell — so an
+      out-of-place heading wins by default. The cap bounds that damage while
+      anchors stay able to jump moderate edition differences. Regression
+      tests: `prepass_anchor_distance_cap_rejects_a_far_heading_anchor`,
+      `prepass_anchor_cap_disabled_locks_the_far_heading_anchor` (cap disabled
+      reproduces the teleport).
     - **Text normalization (Aug 2026)** — every sentence is normalized once at
       alignment entry: `BilingualAligner._align_pair` runs
       `_normalize_sentences` (casefold + keep only alphanumerics/whitespace,
@@ -612,9 +640,11 @@ editor-shaped row.
       are all banded. When the cursor is out of the band on both axes, the
       walk skips toward the expected diagonal (`return j * k > i`) so it
       re-enters the band instead of drifting.
-    - **Prepass anchors are deliberately unbanded** — the high-confidence
-      prepass can lock a pair anywhere on the full singles matrix; only
-      per-pool match edges are confined to the band.
+    - **Prepass anchors use their own distance cap, not the band** — the
+      high-confidence prepass may lock a pair up to `ALIGN_MAX_ANCHOR_DISTANCE`
+      cells off the expected diagonal anywhere on the full singles matrix
+      (default 30 — far wider than the per-pool band); only per-pool match
+      edges are confined to the band (see the plan 03 cap, above).
     - **DP cost drop** — the DP path no longer precomputes the full chunk's
       `(n + m) * max_window` windows: it embeds only the chunk's singles for
       the prepass matrix, and each pool embeds only its own in-band windows
@@ -823,6 +853,87 @@ editor-shaped row.
       `alignment_chunk = -1`).
     - `finalize()`/`failed()` complete or fail the match only from `aligning`
       (see the completion gate above); stale holds no processing slot.
+3. **Align (refine round, Oct 2026)** — a second pass over a **completed**
+   match that re-aligns only the regions around one-sided machine rows, with
+   per-request overrides to the python service instead of round 1's defaults:
+   `algorithm=dp` + `window_embed=joined` (`SentenceAlignmentService::
+   alignChunkRemote()` grew optional `algorithm`/`windowEmbed` params, passed
+   through to `/align` only when set).
+   - **Why**: the greedy window ladder compares raw cosines with no cost for
+     skipping a sentence, so a *fusion* (one long sentence translated as
+     several short ones) commits its strongest member as a 1:1 and leaves the
+     tail one-sided even when the pooled window would score higher — averaged
+     (`aggregate`) windows dilute toward the shorter members, and joined
+     re-embeds integrate them. The DP charges `skip_penalty` per skipped
+     sentence, so the grouping that covers more of the region wins without
+     beating every 1:1's cosine (measured on the smart-notes triplet, LaBSE:
+     1:1 0.8383 vs joined 1:2 0.8684).
+   - **Scope** (`AlignmentRefineService::refine()`): candidates are one-sided
+     machine rows (the Needs-review shape + `alignment_chunk != -1` +
+     `similarity < 0.90`). Each candidate takes ±2 rows of context; merged
+     disjoint intervals become regions (≤ 8 rows after context-edge trimming,
+     ≤ 200 sentences/side); expansion **stops at single-sided pins** (a
+     one-sided pin has no span python can honor, so a region spanning one
+     would submit its sentence only to have `persistSegment` drop it as
+     reserved). Two-sided pins inside a region go to python as `landmarks`.
+    - **Runs (chunked)**: one `refine()` call is a *bounded run* — regions in
+      document order up to `MAX_REGIONS_PER_RUN = 50` and a wall-clock
+      deadline of `TIME_LIMIT_SECONDS = 240` (the deadline binds only after
+      the first region, so a run can never report `has_more` without moving
+      the cursor) — a whole book can carry hundreds of one-sided regions,
+      more than one job execution fits inside its 600 s timeout. The summary
+      carries `has_more` + `cursor`: the a-side sentence position past the
+      last examined region, stable across applies (unlike the `order`
+      column, which per-region stores keep appending past the max). Regions
+      at/before the cursor are skipped, so the queued
+      `RefineEntitySentences` job self-chains across a book
+      (`EnrichEntitySentences`-style constructor cursor plus `chainDepth`,
+      capped at 200 links) and `alignments:refine` loops runs to completion
+      per match. Regions with no a-side window can only ever be skipped, so
+      they never keep a chain alive. Every run ends with `repairCoverage()`,
+      so each link leaves total coverage: every sentence sits in a meaning
+      match or a single-sided (unmatched) row.
+    - **Gate**: a region replaces its machine rows only on strict improvement
+     of the **per-sentence coverage score** — old rows contribute their
+     similarity once per junction (a one-sided row covers its sentence at
+     0.0), new matches once per sentence they span — so the accepted
+     regrouping must raise the region's mean sentence similarity
+     (`new > old + 0.01`; pins excluded from both sides, pin re-emissions
+     matched by exact span). This is the trade the DP makes: a fused window
+     scoring *below* the head 1:1 still wins when it pulls a zero-covered
+     orphan into the group (0.75×3 > 0.83×2 + 0×1) — the summed-score gate
+     first shipped with this stage compared raw totals, vetoed exactly that
+     trade, and regrouped nothing (84/84 rejected on match 21) before being
+     fixed. An identical regrouping ties and is rejected (no churn), and any
+     non-pin match below 0.45 (the rescue bar) rejects the region outright —
+     under the DP that cannot fire (a forced sub-threshold match costs −2.0
+     against −1.0 for double-skipping); it guards against future algorithm
+     changes. Rejected → nothing written. Per-region decisions are logged
+     with old/new sums and scores.
+   - **Apply**: one `storeAlignmentSegmentFromMatches(..., isLastChunk: true)`
+     per accepted region under a fresh `nextAlignmentChunk()` (match + skip
+     steps cover the whole window; `persistSegment` deletes the machine rows
+     covering incoming sentences and reserves pinned junctions), then
+     `repairCoverage()` (resequence + junction-less backfill + linked_count).
+     The match flips `completed → aligning → completed` around the run (a
+     mid-run stale flip survives, same rule as `finalize()`), and a thrown
+     failure restores `completed` before rethrowing.
+   - **Surfaces**: `alignments:refine {entityMatch?} {--all}` (synchronous,
+     repair-command pattern; loops bounded runs per match) and `POST
+     /works/{work}/alignments/{entityMatch}/refine`
+     (`AlignmentEditorController::refine()`, `canEditMatch` gate) which
+     dispatches the queued `RefineEntitySentences` job — the editor header's
+     "Refine 1-sided rows" button. UI strings
+     `seeders/ui-strings/alignments.php`. **Auto-trigger**: the align job's
+     `finalize()` dispatches `RefineEntitySentences` once per match on its
+     first completion — `refine()` stamps `refined_at` (nullable column on
+     `entity_matches`, the once-guard), so later re-aligns don't re-fire and
+     the button remains the manual surface. Tests:
+     `AlignmentRefineTest` (fusion regrouping, gate rejection, sub-floor
+     rejection, pin landmarks, single-sided pin boundary, status gate,
+     command, endpoint access, budget/deadline chunking with the cursor,
+     job chain + link cap, first-completion auto-trigger, `refined_at`
+     stamping).
 4. **Schedule** — `Schedule::command('alignments:resume')->everyFiveMinutes()
    ->withoutOverlapping()` picks up to 10 `status='pending'` matches per tick
    and runs them through `AlignEntitySentences::begin()` (ADR 0051): a match

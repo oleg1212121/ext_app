@@ -14,6 +14,7 @@ use App\Http\Requests\SentenceSideRequest;
 use App\Http\Requests\StoreMeaningMatchRequest;
 use App\Http\Requests\UnmatchedRequest;
 use App\Http\Requests\UpdateSentenceRequest;
+use App\Jobs\RefineEntitySentences;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
@@ -231,6 +232,23 @@ class AlignmentEditorController extends Controller
         return response()->json(
             $this->presenter->needsReviewPagePayload($entityMatch, $request->page()),
         );
+    }
+
+    /**
+     * Queue the alignment refine round: re-align the regions around one-sided
+     * machine rows with the DP aligner (joined window embeddings), replacing
+     * machine rows only on strict score improvement. Runs on the queue like
+     * the align pipeline — the match's status column tracks the run.
+     */
+    public function refine(Work $work, EntityMatch $entityMatch): JsonResponse
+    {
+        $this->abortUnlessInWork($work, $entityMatch);
+
+        abort_unless($this->access()->canEditMatch(auth()->user(), $entityMatch), 403);
+
+        RefineEntitySentences::dispatch($entityMatch->id);
+
+        return response()->json(['queued' => true]);
     }
 
     /**

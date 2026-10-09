@@ -144,6 +144,7 @@ class BilingualAligner:
         rescue_threshold=None,
         high_confidence=None,
         band_width=None,
+        max_anchor_distance=None,
         window_embed=None,
     ):
         # model accepts a ready SentenceTransformer (to share one loaded model
@@ -228,6 +229,17 @@ class BilingualAligner:
         # Diagonal band half-width (plan 04) around the expected length-ratio
         # diagonal; None -> derived per chunk as max(2, max_window).
         self.band_width = band_width if band_width is not None else config.align_band_width()
+        # Prepass anchor distance cap: a high-confidence 1:1 candidate more
+        # than this many cells off the expected length-ratio diagonal is never
+        # locked as an anchor — a short-heading cognate far downstream would
+        # otherwise teleport the cursor past a whole translated block. <= 0
+        # (or None from config) disables the cap: unbanded prepass.
+        distance = (
+            max_anchor_distance
+            if max_anchor_distance is not None
+            else config.align_max_anchor_distance()
+        )
+        self.max_anchor_distance = int(distance) if distance is not None and int(distance) > 0 else None
         # Window embedding mode (plan 05): "aggregate" (per-sentence vectors,
         # length-weighted + L2-normalized) or "joined" (join-then-embed).
         self.window_embed = (window_embed or config.align_window_embed()).strip().lower()
@@ -571,8 +583,8 @@ class BilingualAligner:
         with strict monotonicity, so the greedy cursor between them never needs
         to backtrack across a locked pair. The greedy mode calls it with
         anchor_threshold and the per-pool band inside each sub-pool; the
-        prepass calls it with high_confidence and no band, so prepass anchors
-        can exist anywhere.
+        prepass calls it with high_confidence and the anchor distance cap as
+        the band (or unbanded, when the cap is disabled).
         """
         anchors = []
         last_i = -1
@@ -611,13 +623,21 @@ class BilingualAligner:
 
         Mutually-best cells at or above self.high_confidence lock committed
         matches and split the chunk into sub-pools aligned in isolation (see
-        _align_with_anchors). Unbanded by design: prepass anchors can exist
-        anywhere on the full singles matrix, only per-pool match edges are
-        restricted to the diagonal band. Cells inside any landmark pin
-        (plan 06) are skipped — a pin owns its rectangle, so the prepass never
-        proposes an anchor inside it.
+        _align_with_anchors). Instead of the per-pool band the prepass carries
+        its own distance cap (self.max_anchor_distance): candidates farther
+        than that many cells off the expected length-ratio diagonal are never
+        locked, so a heading cognate far downstream (Introduction -> the part
+        heading Введение) cannot teleport the cursor past a whole translated
+        block. None keeps the historical unbanded behavior. Cells inside any
+        landmark pin (plan 06) are skipped — a pin owns its rectangle, so the
+        prepass never proposes an anchor inside it.
         """
-        anchors = self._find_anchors(sim, n, m, self.high_confidence)
+        band = self.max_anchor_distance
+        if band is None:
+            anchors = self._find_anchors(sim, n, m, self.high_confidence)
+        else:
+            k = n / m if m else 1.0
+            anchors = self._find_anchors(sim, n, m, self.high_confidence, k, band)
         if not pins:
             return anchors
         return [a for a in anchors if not _cell_in_pin(a, pins)]

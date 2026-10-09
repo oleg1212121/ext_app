@@ -1,5 +1,94 @@
 # Directory Update Log
 
+## 2026-10-09 (Refine round chunked + auto-triggered after the first alignment)
+
+A whole book can carry hundreds of one-sided regions (the live 84-region
+match ran ~4 minutes), more than one `RefineEntitySentences` execution fits
+inside its 600 s timeout — so `AlignmentRefineService::refine()` is now a
+*bounded run*: up to 50 regions and a 240 s wall-clock deadline (binding
+only after the first region, so a run never reports `has_more` without
+moving the cursor). The summary gained `has_more` + `cursor` — the a-side
+sentence position past the last examined region, stable across applies
+(unlike the appended `order` column) — the job self-chains on it
+(`EnrichEntitySentences` pattern, 200-link cap), and `alignments:refine`
+loops runs to completion per match. Every run still ends with
+`repairCoverage()`, so each link leaves total coverage: every sentence in a
+meaning match or a single-sided unmatched row. The align job's `finalize()`
+now dispatches the refine once per match on its first completion, guarded by
+a new nullable `entity_matches.refined_at` stamp that `refine()` writes when
+a run actually starts (later re-aligns don't re-fire; button/command remain
+the manual surfaces). Tests: `AlignmentRefineTest` grew to 22 (budget split
++ cursor no-refeed + sentence-completeness across the chain, zero-budget
+deadline, chain push/stop/cap, auto-trigger once-guard, stamping). Docs:
+`wiki/domains/sentence-alignment.md` refine section, `wiki/database/
+entities-alignment.md` `refined_at`.
+
+## 2026-10-09 (Refine gate fix — per-sentence coverage, not summed scores)
+
+First production run of the refine round (entity_match 21) rejected all 84
+regions and applied none: the acceptance gate compared raw summed match
+scores, so a regrouping had to *beat the incumbent rows' similarities* —
+the same raw-cosine bar that makes the greedy ladder lose fusions in round
+1. The DP's whole point is the opposite trade (a 0.75 fused window covering
+the orphan beats a 0.83 1:1 plus a zero-covered tail: skip penalty makes it
+net-positive), and the gate vetoed it every time. The gate now scores
+per-sentence coverage — each row's/match's similarity counted once per
+sentence it covers, one-sided rows covering at 0.0 — so the accepted
+regrouping must raise the region's mean sentence similarity; identical
+groupings tie out (no churn), and the sub-0.45 veto stays as a safety net
+(the DP structurally cannot emit sub-threshold matches: force −2.0 vs
+double-skip −1.0). Per-region decisions now log old/new sums and scores.
+Tests: new `accepts a fused window that scores below the head 1:1…`
+captures the production veto; existing gate tests re-verified under the
+coverage arithmetic.
+
+## 2026-10-09 (Alignment refine round — dp + joined windows for one-sided rows)
+
+Second alignment pass over a completed match, closing the fusion gap the
+greedy ladder leaves behind: with no skip cost, round 1 commits a fusion's
+strongest member as a 1:1 (measured on the smart-notes triplet, LaBSE:
+EN↔RU1 0.8383) and leaves the tail one-sided, even though the joined 1:2
+window scores higher (0.8684) — aggregate averaging dilutes toward the
+shorter member and the ladder compares raw cosines. `AlignmentRefineService`
+collects the one-sided machine rows (Needs-review shape + below the landmark
+bar), builds bounded regions around them (±2 row context, merged, capped,
+bounded by single-sided pins; two-sided pins go to python as `landmarks`),
+and re-aligns each region via `alignChunkRemote()`'s new per-request
+`algorithm=dp` + `window_embed=joined` overrides. A region replaces its rows
+only on strict score-sum improvement (`new > old + 0.01`, sub-0.45 matches
+reject the region outright — the DP can force garbage to save skip
+penalties); writes go through `MeaningMatchStore` (machine-only replacement,
+pins reserved) plus a final `repairCoverage`. Surfaces:
+`alignments:refine {id?} {--all}` and an editor-endpoint dispatch
+(`POST .../refine` → `RefineEntitySentences` job → "Refine 1-sided rows"
+header button; UI strings seeded). Tests: `AlignmentRefineTest` (12 tests:
+fusion regrouping, gate/floor rejections, pin landmarks, single-sided pin
+boundary, status gate, command, endpoint access). Docs:
+`wiki/domains/sentence-alignment.md` (refine-round stage).
+
+## 2026-10-09 (Prepass anchor distance cap — far-heading anchors no longer teleport the cursor)
+
+Diagnosed entity_match 20 ("How to take smart notes" EN↔RU, work 5): the
+first 211 editor rows were one-sided/garbage while matches snapped correct
+from row 212. Root cause in the python aligner's high-confidence prepass:
+unbanded by design, it locked `Introduction` ↔ the RU part heading `Введение`
+74 cells off the diagonal (LaBSE 0.93 vs 0.78 for the translator's actual
+`Предисловие`) — a matrix-edge column wins the mutual-best check trivially —
+which degraded the whole Предисловие to one-sided rows and desynchronized the
+chunk cursors until the editions' density difference re-converged them.
+Fix: `_prepass_anchors` now passes a distance cap (`ALIGN_MAX_ANCHOR_DISTANCE`,
+live knob, default 30 cells off the expected length-ratio diagonal; `<= 0`
+disables) to the shared `_find_anchors` band check, so a heading cognate can
+no longer anchor arbitrarily far downstream while anchors keep their ability
+to jump moderate edition differences. Regression tests in
+`ai/alignment/test_aligner.py` (cap rejects a far 0.93 heading; disabled cap
+reproduces the teleport). Alignment 20 re-run from scratch with the fix:
+one-sided rows 326 → 152 (the rest are genuine citation/footnote gaps), the
+head now matches `Introduction`↔`Предисловие` and
+`Everybody writes.`↔`Все пишут.`, and the RU-only part headings (`ЧАСТЬ 1`,
+`Введение`) land as one-sided rows.
+Concepts updated: [sentence alignment](/domains/sentence-alignment.md).
+
 ## 2026-10-08 (Creation-module hardening: self-pair guard, uniform stale handling, limit coverage)
 
 Follow-up review of the creation module surfaced three small gaps, now

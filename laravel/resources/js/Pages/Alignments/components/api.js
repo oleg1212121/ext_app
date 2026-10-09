@@ -61,6 +61,10 @@ export const alignmentsApi = {
         return request(`${base(workId, matchId)}/needs-review?page=${page}`);
     },
 
+    refine(workId, matchId) {
+        return request(`${base(workId, matchId)}/refine`, {method: 'POST'});
+    },
+
     createRow(workId, matchId, afterRowId) {
         return request(`${base(workId, matchId)}/rows`, {
             method: 'POST',

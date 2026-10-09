@@ -781,6 +781,123 @@ def high_confidence_knob_controls_the_number_of_prepass_anchors():
     return "OK: lowering high_confidence produces more anchors, raising produces fewer"
 
 
+def prepass_anchor_distance_cap_rejects_a_far_heading_anchor():
+    reset_cache()
+    # The "How to take smart notes" failure (entity_match 20): the short
+    # heading cognate "Introduction" <-> "Vvedenie" sits 4 cells off the
+    # expected diagonal (74 in the real chunk) yet scores 0.93 — mutually best
+    # at the matrix edge — while the true diagonal pairs ("Introduction" <->
+    # "Predisl1", ...) score only ~0.7-0.8. Unbanded, the prepass locks the
+    # far anchor and the whole block before it degrades to one-sided skips.
+    # The cap refuses anchors that far off the expected diagonal, so the true
+    # diagonal resolves instead. "Body4" and "Vvedenie" are edition extras
+    # with no counterpart, as with the RU-only part headings in the real book.
+    en = ["Introduction", "Body1", "Body2", "Body3", "Body4"]
+    ru = ["Predisl1", "Predisl2", "Predisl3", "Predisl4", "Vvedenie"]
+
+    singles = {
+        N("Introduction"): [1, 0, 0, 0, 0, 0],
+        N("Body1"): [0, 1, 0, 0, 0, 0],
+        N("Body2"): [0, 0, 1, 0, 0, 0],
+        N("Body3"): [0, 0, 0, 1, 0, 0],
+        N("Body4"): [0, 0, 0, 0, 1, 0],
+        N("Predisl1"): [0.78, 0.62578, 0, 0, 0, 0],
+        N("Predisl2"): [0, 0.75, 0.661438, 0, 0, 0],
+        N("Predisl3"): [0, 0.661438, 0.75, 0, 0, 0],
+        N("Predisl4"): [0, 0, 0.62578, 0.78, 0, 0],
+        N("Vvedenie"): [0.93, 0.36756, 0, 0, 0, 0],
+    }
+    vectors = dict(singles)
+    vectors.update(pooled_windows(en, ru, singles, 6))
+
+    # Unit level: k = 1 puts the 0.93 cell (0, 4) at distance 4 — outside a
+    # cap of 2, inside a wide one.
+    aligner = BilingualAligner(
+        model=StubModel(dict(vectors)),
+        max_window=2,
+        similarity_threshold=0.55,
+        algorithm="greedy",
+    )
+    norm_en = _normalize_sentences(en)
+    norm_ru = _normalize_sentences(ru)
+    _, en_embs = aligner._generate_sentence_embeddings(norm_en)
+    _, ru_embs = aligner._generate_sentence_embeddings(norm_ru)
+    sim = util.cos_sim(en_embs, ru_embs).cpu().numpy()
+
+    aligner.max_anchor_distance = 2
+    assert aligner._prepass_anchors(sim, 5, 5) == [], "far heading must not anchor"
+    aligner.max_anchor_distance = 10
+    assert aligner._prepass_anchors(sim, 5, 5) == [(0, 4)], "a wide cap admits it"
+
+    expected = [
+        {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 0.78},
+        {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2, "score": 0.75},
+        {"a_start": 2, "a_end": 3, "b_start": 2, "b_end": 3, "score": 0.75},
+        {"a_start": 3, "a_end": 4, "b_start": 3, "b_end": 4, "score": 0.78},
+    ]
+    for algorithm in ("greedy",):
+        # Greedy is the production algorithm; dp is covered at the unit level
+        # above (the cap lives in the shared prepass). dp's pool walk also has
+        # a pre-existing trailing-orphan window merge (any pooled window just
+        # over the bar beats 1:1 + skip_penalty) that would muddy this fixture
+        # without saying anything about the cap.
+        capped = BilingualAligner(
+            model=StubModel(dict(vectors)),
+            max_window=2,
+            similarity_threshold=0.55,
+            algorithm=algorithm,
+            max_anchor_distance=2,
+        ).align_lists(en, ru)
+        assert_same_matches(capped["matches"], expected), f"{algorithm}: {capped['matches']}"
+        assert capped["unmatched_a"] == [4], f"{algorithm}: {capped['unmatched_a']}"
+        assert capped["unmatched_b"] == [4], f"{algorithm}: {capped['unmatched_b']}"
+
+    return "OK: a 0.93 heading cognate 4+ cells off the diagonal no longer anchors"
+
+
+def prepass_anchor_cap_disabled_locks_the_far_heading_anchor():
+    reset_cache()
+    # Documents the pre-cap behavior the previous test guards against: with
+    # the cap disabled (<= 0) the 0.93 far heading cell anchors, the block
+    # before it has no EN sentences left to pair with, and only the bogus
+    # anchor survives — the exact shape seen in entity_match 20 (74 one-sided
+    # rows and a ~140-sentence cursor desynchronization).
+    en = ["Introduction", "Body1", "Body2", "Body3", "Body4"]
+    ru = ["Predisl1", "Predisl2", "Predisl3", "Predisl4", "Vvedenie"]
+
+    singles = {
+        N("Introduction"): [1, 0, 0, 0, 0, 0],
+        N("Body1"): [0, 1, 0, 0, 0, 0],
+        N("Body2"): [0, 0, 1, 0, 0, 0],
+        N("Body3"): [0, 0, 0, 1, 0, 0],
+        N("Body4"): [0, 0, 0, 0, 1, 0],
+        N("Predisl1"): [0.78, 0.62578, 0, 0, 0, 0],
+        N("Predisl2"): [0, 0.75, 0.661438, 0, 0, 0],
+        N("Predisl3"): [0, 0.661438, 0.75, 0, 0, 0],
+        N("Predisl4"): [0, 0, 0.62578, 0.78, 0, 0],
+        N("Vvedenie"): [0.93, 0.36756, 0, 0, 0, 0],
+    }
+    vectors = dict(singles)
+    vectors.update(pooled_windows(en, ru, singles, 6))
+
+    for algorithm in ("greedy", "dp"):
+        uncapped = BilingualAligner(
+            model=StubModel(dict(vectors)),
+            max_window=2,
+            similarity_threshold=0.55,
+            algorithm=algorithm,
+            max_anchor_distance=0,
+        ).align_lists(en, ru)
+        assert_same_matches(
+            uncapped["matches"],
+            [{"a_start": 0, "a_end": 1, "b_start": 4, "b_end": 5, "score": 0.93}],
+        ), f"{algorithm}: {uncapped['matches']}"
+        assert uncapped["unmatched_a"] == [1, 2, 3, 4], f"{algorithm}: {uncapped['unmatched_a']}"
+        assert uncapped["unmatched_b"] == [0, 1, 2, 3], f"{algorithm}: {uncapped['unmatched_b']}"
+
+    return "OK: cap disabled reproduces the far-heading teleport (the guarded bug)"
+
+
 def band_rejects_an_out_of_band_pair():
     reset_cache()
     # 4 EN vs 1 RU: k = 4, so only starts i with |0*4 - i| <= band are in-band.
@@ -1550,6 +1667,8 @@ def main() -> int:
         prepass_anchors_lock_high_confidence_pairs_for_greedy_and_dp,
         prepass_anchors_split_pools_so_no_match_crosses_in_document_order,
         high_confidence_knob_controls_the_number_of_prepass_anchors,
+        prepass_anchor_distance_cap_rejects_a_far_heading_anchor,
+        prepass_anchor_cap_disabled_locks_the_far_heading_anchor,
         band_rejects_an_out_of_band_pair,
         band_allows_an_in_band_pair,
         band_recovery_across_a_divergent_region,

@@ -1074,6 +1074,15 @@ class AlignEntitySentences implements ShouldQueue
                 'error_message' => null,
                 'completed_at' => now(),
             ]);
+
+            // The refine round fires once per match, on its first completion:
+            // refine() stamps refined_at, so this stays silent after any
+            // refine has run — later re-aligns don't re-fire it, and the
+            // editor button remains the manual surface (the job itself is
+            // bounded and self-chains across a whole book's regions).
+            if ($entityMatch->refined_at === null) {
+                RefineEntitySentences::dispatch($entityMatch->id);
+            }
         }
     }
 

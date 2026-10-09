@@ -51,8 +51,10 @@ class SentenceAlignmentService
      * The raw python matches are returned too so the caller can trim to the
      * last confident anchor before persisting (see AlignEntitySentences).
      *
-     * Optional landmarks (hard human-made pins) and a high-confidence prepass
-     * bar are passed straight through to the python service.
+     * Optional landmarks (hard human-made pins), a high-confidence prepass
+     * bar, and per-request algorithm / window-embedding overrides are passed
+     * straight through to the python service (the alignment refine round
+     * re-scores problem regions with algorithm=dp + window_embed=joined).
      *
      * @param  list<array{a_start: int, a_end: int, b_start: int, b_end: int}>  $landmarks
      * @return array{links: array, dpPath: array, matches: array}
@@ -63,6 +65,8 @@ class SentenceAlignmentService
         int $maxN = 3,
         array $landmarks = [],
         ?float $highConfidence = null,
+        ?string $algorithm = null,
+        ?string $windowEmbed = null,
     ): array {
         $aIds = $aSentences->pluck('id')->values()->all();
         $bIds = $bSentences->pluck('id')->values()->all();
@@ -95,6 +99,14 @@ class SentenceAlignmentService
 
         if ($highConfidence !== null) {
             $payload['high_confidence'] = $highConfidence;
+        }
+
+        if ($algorithm !== null) {
+            $payload['algorithm'] = $algorithm;
+        }
+
+        if ($windowEmbed !== null) {
+            $payload['window_embed'] = $windowEmbed;
         }
 
         $matches = $this->python->align($payload);
