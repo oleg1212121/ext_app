@@ -180,7 +180,9 @@ it('leaves every row untouched when the regrouping does not improve the score su
 
     fakePython()->aligning([
         // The same grouping round 1 committed — the fusion head stays 1:1 and
-        // the tail stays one-sided: 0.70 + 0.83 is not an improvement.
+        // the tail stays one-sided. Per-sentence coverage ties exactly (each
+        // sentence keeps its similarity, the orphan stays at 0.0), and the
+        // margin rejects the tie: no churn.
         ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.70],
         ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 2, 'score' => 0.83],
     ]);
@@ -194,6 +196,30 @@ it('leaves every row untouched when the regrouping does not improve the score su
         ->and($summary['one_sided_after'])->toBe(1)
         ->and(refineRows($w)->pluck('id')->all())->toEqual($before)
         ->and($w['match']->refresh()->status)->toBe('completed');
+});
+
+it('accepts a fused window that scores below the head 1:1 because it covers the orphan', function () {
+    // The production veto: under the summed-score gate this regrouping lost
+    // (0.70 + 0.75 < 0.70 + 0.83 + 0.0) and every fusion was rejected. The
+    // per-sentence gate counts the fused window's score once per sentence it
+    // covers, so pulling the zero-covered orphan into a 0.75 group wins.
+    $w = refineWorld();
+
+    fakePython()->aligning([
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.70],
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 3, 'score' => 0.75],
+    ]);
+
+    $summary = AlignmentRefineService::create()->refine($w['match']);
+
+    expect($summary['status'])->toBe('refined')
+        ->and($summary['applied'])->toBe(1)
+        ->and($summary['rejected'])->toBe(0)
+        ->and($summary['one_sided_after'])->toBe(0);
+
+    $fusion = refineRows($w)->first(fn (MeaningMatch $row) => $row->sentenceMeaningMatches->count() === 3);
+    expect($fusion)->not->toBeNull()
+        ->and((float) $fusion->similarity)->toBe(0.75);
 });
 
 it('rejects a regrouping that trades coverage for a sub-floor garbage match', function () {

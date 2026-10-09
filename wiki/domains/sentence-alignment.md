@@ -877,11 +877,22 @@ editor-shaped row.
      would submit its sentence only to have `persistSegment` drop it as
      reserved). Two-sided pins inside a region go to python as `landmarks`.
    - **Gate**: a region replaces its machine rows only on strict improvement
-     of the summed match scores over the same sentences (`new > old + 0.01`;
-     pins excluded from both sides, pin re-emissions matched by exact span),
-     and any non-pin match below 0.45 (the rescue bar) rejects the region
-     outright — the DP can force a sub-floor match to save skip penalties in
-     orphan clusters. Rejected → nothing written.
+     of the **per-sentence coverage score** — old rows contribute their
+     similarity once per junction (a one-sided row covers its sentence at
+     0.0), new matches once per sentence they span — so the accepted
+     regrouping must raise the region's mean sentence similarity
+     (`new > old + 0.01`; pins excluded from both sides, pin re-emissions
+     matched by exact span). This is the trade the DP makes: a fused window
+     scoring *below* the head 1:1 still wins when it pulls a zero-covered
+     orphan into the group (0.75×3 > 0.83×2 + 0×1) — the summed-score gate
+     first shipped with this stage compared raw totals, vetoed exactly that
+     trade, and regrouped nothing (84/84 rejected on match 21) before being
+     fixed. An identical regrouping ties and is rejected (no churn), and any
+     non-pin match below 0.45 (the rescue bar) rejects the region outright —
+     under the DP that cannot fire (a forced sub-threshold match costs −2.0
+     against −1.0 for double-skipping); it guards against future algorithm
+     changes. Rejected → nothing written. Per-region decisions are logged
+     with old/new sums and scores.
    - **Apply**: one `storeAlignmentSegmentFromMatches(..., isLastChunk: true)`
      per accepted region under a fresh `nextAlignmentChunk()` (match + skip
      steps cover the whole window; `persistSegment` deletes the machine rows

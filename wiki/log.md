@@ -1,5 +1,24 @@
 # Directory Update Log
 
+## 2026-10-09 (Refine gate fix — per-sentence coverage, not summed scores)
+
+First production run of the refine round (entity_match 21) rejected all 84
+regions and applied none: the acceptance gate compared raw summed match
+scores, so a regrouping had to *beat the incumbent rows' similarities* —
+the same raw-cosine bar that makes the greedy ladder lose fusions in round
+1. The DP's whole point is the opposite trade (a 0.75 fused window covering
+the orphan beats a 0.83 1:1 plus a zero-covered tail: skip penalty makes it
+net-positive), and the gate vetoed it every time. The gate now scores
+per-sentence coverage — each row's/match's similarity counted once per
+sentence it covers, one-sided rows covering at 0.0 — so the accepted
+regrouping must raise the region's mean sentence similarity; identical
+groupings tie out (no churn), and the sub-0.45 veto stays as a safety net
+(the DP structurally cannot emit sub-threshold matches: force −2.0 vs
+double-skip −1.0). Per-region decisions now log old/new sums and scores.
+Tests: new `accepts a fused window that scores below the head 1:1…`
+captures the production veto; existing gate tests re-verified under the
+coverage arithmetic.
+
 ## 2026-10-09 (Alignment refine round — dp + joined windows for one-sided rows)
 
 Second alignment pass over a completed match, closing the fusion gap the

@@ -7,6 +7,7 @@ use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -29,11 +30,16 @@ use Throwable;
  * rows and auto-landmarks pin their regions (two-sided pins go to python as
  * landmark spans; single-sided pins bound regions, since a one-sided pin has
  * no span the aligner can honor). A region replaces its machine rows only on
- * strict improvement of the summed match scores over the same sentences —
- * the accepted regrouping must score more than the rows it deletes, so a
- * neutral or worse regrouping never lands. Every write goes through
- * MeaningMatchStore, whose persistSegment deletes machine rows below the
- * landmark bar covering incoming sentences and reserves pinned junctions.
+ * strict improvement of the per-sentence coverage score — every match's (or
+ * row's) similarity counts once per sentence it covers, so a one-sided row
+ * contributes its sentence at 0.0 — meaning the accepted regrouping must
+ * raise the region's mean sentence similarity. That is the trade the DP
+ * makes (a weaker fused window that covers the orphan beats a strong 1:1
+ * plus a zero-covered tail); the summed-score gate this replaced vetoed
+ * exactly that trade and regrouped nothing. Neutral or worse regroupings
+ * never land. Every write goes through MeaningMatchStore, whose
+ * persistSegment deletes machine rows below the landmark bar covering
+ * incoming sentences and reserves pinned junctions.
  */
 class AlignmentRefineService
 {
@@ -46,13 +52,20 @@ class AlignmentRefineService
     /** Per-side window ceiling — a hard skip, python caps /align at 500. */
     private const MAX_WINDOW_SENTENCES = 200;
 
-    /** Strict-improvement epsilon on the region's summed match scores. */
+    /**
+     * Strict-improvement epsilon on the region's per-sentence coverage sums:
+     * an identical regrouping ties (rejected — no churn), anything meaningfully
+     * better applies.
+     */
     private const MIN_IMPROVEMENT = 0.01;
 
     /**
      * A new match scoring below this bar is garbage, not a weak-but-genuine
      * pair (the repo's rescue bar): a region whose regrouping contains one is
-     * rejected outright, leaving the clean single-sided rows in place.
+     * rejected outright, leaving the clean single-sided rows in place. Under
+     * the DP this never fires — a forced sub-threshold match costs -2.0
+     * against -1.0 for double-skipping, so the optimum never contains one —
+     * it guards the gate against future algorithm changes.
      */
     private const MATCH_SCORE_FLOOR = 0.45;
 
@@ -334,9 +347,13 @@ class AlignmentRefineService
 
     /**
      * Re-align one region and replace its machine rows when the regrouping
-     * strictly improves the summed match scores over the same sentences.
-     * Returns 'applied', 'rejected' (gate said no — nothing written), or
-     * 'skipped' (degenerate window).
+     * strictly improves the region's per-sentence coverage: old rows
+     * contribute their similarity once per junction (a one-sided row covers
+     * its sentence at 0.0), new matches once per sentence they span — so a
+     * fused window that scores below the head 1:1 still wins when it pulls a
+     * zero-covered orphan into the group, and an identical regrouping ties
+     * and is rejected. Returns 'applied', 'rejected' (gate said no —
+     * nothing written), or 'skipped' (degenerate window).
      *
      * @param  Collection<int, MeaningMatch>  $rows
      * @param  array{start: int, end: int}  $region
@@ -390,7 +407,10 @@ class AlignmentRefineService
 
         // Two-sided pins inside the region go to python as hard landmark
         // spans (window-relative indices); their rows are excluded from both
-        // sides of the gate — they survive the replacement unchanged.
+        // sides of the gate — they survive the replacement unchanged. The
+        // gate's unit is one sentence's similarity: an old row contributes
+        // its similarity once per junction (a one-sided row covers its
+        // sentence at 0.0), a new match once per sentence it spans.
         $landmarks = [];
         $oldSum = 0.0;
 
@@ -407,7 +427,7 @@ class AlignmentRefineService
                 continue;
             }
 
-            $oldSum += (float) $row->similarity;
+            $oldSum += (float) $row->similarity * $row->sentenceMeaningMatches->count();
         }
 
         $aSentences = $this->sentenceSlice($aEntity->id, $aStart, $aEnd - $aStart);
@@ -424,6 +444,7 @@ class AlignmentRefineService
         )['matches'];
 
         $newSum = 0.0;
+        $scores = [];
 
         foreach ($matches as $match) {
             if ($this->isPinSpan($match, $landmarks)) {
@@ -432,19 +453,39 @@ class AlignmentRefineService
 
             $score = (float) ($match['score'] ?? 0.0);
 
-            // One garbage match poisons the region: the DP can force a
-            // sub-floor match to save skip penalties in orphan clusters,
-            // and a <0.45 grouping is noise, not a weak-but-genuine pair.
+            // One garbage match poisons the region: a sub-floor grouping is
+            // noise, not a weak-but-genuine pair. (Under the DP this cannot
+            // fire — a forced sub-threshold match costs -2.0 against -1.0
+            // for double-skipping — it guards the gate against algorithm
+            // changes; see MATCH_SCORE_FLOOR.)
             if ($score < self::MATCH_SCORE_FLOOR) {
                 return 'rejected';
             }
 
-            $newSum += $score;
+            $scores[] = $score;
+            $newSum += $score * (((int) $match['a_end'] - (int) $match['a_start'])
+                + ((int) $match['b_end'] - (int) $match['b_start']));
         }
 
         if ($newSum <= $oldSum + self::MIN_IMPROVEMENT) {
+            Log::info('Alignment refine region rejected', [
+                'entity_match_id' => $entityMatch->id,
+                'region_rows' => [$region['start'], $region['end']],
+                'old_sum' => round($oldSum, 4),
+                'new_sum' => round($newSum, 4),
+                'scores' => $scores,
+            ]);
+
             return 'rejected';
         }
+
+        Log::info('Alignment refine region applied', [
+            'entity_match_id' => $entityMatch->id,
+            'region_rows' => [$region['start'], $region['end']],
+            'old_sum' => round($oldSum, 4),
+            'new_sum' => round($newSum, 4),
+            'scores' => $scores,
+        ]);
 
         $this->store->storeAlignmentSegmentFromMatches(
             entityMatch: $entityMatch,
