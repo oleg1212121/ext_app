@@ -197,6 +197,8 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('work')->whereNumber('entityMatch');
     Route::get('/works/{work}/alignments/{entityMatch}/needs-review', [AlignmentEditorController::class, 'needsReview'])
         ->whereNumber('work')->whereNumber('entityMatch');
+    Route::post('/works/{work}/alignments/{entityMatch}/refine', [AlignmentEditorController::class, 'refine'])
+        ->whereNumber('work')->whereNumber('entityMatch');
     Route::post('/works/{work}/alignments/{entityMatch}/rows', [AlignmentEditorController::class, 'storeRow'])
         ->whereNumber('work')->whereNumber('entityMatch');
     Route::delete('/works/{work}/alignments/{entityMatch}/rows/{meaningMatch}', [AlignmentEditorController::class, 'destroyRow'])

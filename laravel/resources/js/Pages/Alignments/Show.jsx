@@ -150,6 +150,9 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     const [needsReviewBusy, setNeedsReviewBusy] = useState(false);
     const [needsReviewOpen, setNeedsReviewOpen] = useState(false);
     const [highlightedRowId, setHighlightedRowId] = useState(null);
+    // 'idle' | 'busy' | 'queued' — queued sticks until the page reloads; the
+    // job runs on the queue and the rows update server-side.
+    const [refineState, setRefineState] = useState('idle');
 
     const [editing, setEditing] = useState(null);
     const [adding, setAdding] = useState(null);
@@ -744,6 +747,25 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
         target?.scrollIntoView({block: 'start', behavior: 'smooth'});
     }, [unmatchedA, unmatchedB]);
 
+    const onRefine = useCallback(async () => {
+        if (refineState !== 'idle' || match.status !== 'completed') {
+            return;
+        }
+
+        setRefineState('busy');
+        setActionError(null);
+
+        try {
+            await alignmentsApi.refine(initialMatch.work_id, initialMatch.id);
+            setRefineState('queued');
+        } catch (error) {
+            setRefineState('idle');
+            setActionError(error.message);
+        }
+    }, [refineState, match.status, initialMatch.work_id, initialMatch.id]);
+
+    const refineDisabled = refineState !== 'idle' || match.status !== 'completed';
+
     return (
         <DndContext
             sensors={sensors}
@@ -788,10 +810,27 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
                                 {match.work_title ? ` · ${match.work_title}` : ''}
                             </p>
                         </div>
-                        <p className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            {(match.a_language_code || 'a').toUpperCase()} {match.a_total_sentences} · {(match.b_language_code || 'b').toUpperCase()} {match.b_total_sentences}
-                        </p>
+                        <div className="flex flex-col items-end gap-2">
+                            <p className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                {(match.a_language_code || 'a').toUpperCase()} {match.a_total_sentences} · {(match.b_language_code || 'b').toUpperCase()} {match.b_total_sentences}
+                            </p>
+                            <button
+                                type="button"
+                                onClick={onRefine}
+                                disabled={refineDisabled}
+                                title={t('alignments.refine_hint')}
+                                className="inline-flex items-center rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-3 py-1.5 font-mono text-[11px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
+                            >
+                                {refineState === 'busy' ? '…' : t('alignments.refine_rows')}
+                            </button>
+                        </div>
                     </header>
+
+                    {refineState === 'queued' && (
+                        <p className="border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-3 py-2 font-mono text-[11px] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                            {t('alignments.refine_queued')}
+                        </p>
+                    )}
 
                     {actionError && (
                         <p className="border border-[var(--wbench-danger)]/40 dark:border-[var(--wbench-danger-night)]/40 px-3 py-2 font-mono text-[11px] text-[var(--wbench-danger)] dark:text-[var(--wbench-danger-night)]">

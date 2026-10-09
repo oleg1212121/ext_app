@@ -92,4 +92,7 @@ return [
     'alignments.next_page' => ['en' => 'next page', 'ru' => 'следующая страница'],
     'alignments.jump_to_review' => ['en' => 'Jump to unmatched / needs review', 'ru' => 'К нераспределённым / на проверку'],
     'alignments.illustration' => ['en' => 'Illustration', 'ru' => 'Иллюстрация'],
+    'alignments.refine_rows' => ['en' => 'Refine 1-sided rows', 'ru' => 'Доработать односторонние строки'],
+    'alignments.refine_hint' => ['en' => 'Re-align the regions around one-sided rows with the DP aligner (second round)', 'ru' => 'Перевыровнить области вокруг односторонних строк DP-алгоритмом (второй проход)'],
+    'alignments.refine_queued' => ['en' => 'Refinement queued — reload the page when it finishes to see the updated rows.', 'ru' => 'Доработка поставлена в очередь — после её завершения перезагрузите страницу, чтобы увидеть обновлённые строки.'],
 ];

@@ -5,11 +5,17 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-09T09:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-09T12:40:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
     title: python-match adapter — pair verify, /align call, links/dpPath path builders (ADR 0063)
+  - id: refine-service
+    resource: laravel/app/Classes/AlignmentRefineService.php
+    title: the refine round — one-sided-row regions re-aligned with dp + joined windows under a strict score-sum gate
+  - id: refine-command
+    resource: laravel/app/Console/Commands/RefineEntityMatchAlignmentCommand.php
+    title: alignments:refine — second round for one-sided machine rows
   - id: meaning-match-store
     resource: laravel/app/Classes/MeaningMatchStore.php
     title: the pipeline's meaning-match write path — segments, resequence, repairCoverage (ADR 0063, amended 2026-10-05)
@@ -847,6 +853,53 @@ editor-shaped row.
       `alignment_chunk = -1`).
     - `finalize()`/`failed()` complete or fail the match only from `aligning`
       (see the completion gate above); stale holds no processing slot.
+3. **Align (refine round, Oct 2026)** — a second pass over a **completed**
+   match that re-aligns only the regions around one-sided machine rows, with
+   per-request overrides to the python service instead of round 1's defaults:
+   `algorithm=dp` + `window_embed=joined` (`SentenceAlignmentService::
+   alignChunkRemote()` grew optional `algorithm`/`windowEmbed` params, passed
+   through to `/align` only when set).
+   - **Why**: the greedy window ladder compares raw cosines with no cost for
+     skipping a sentence, so a *fusion* (one long sentence translated as
+     several short ones) commits its strongest member as a 1:1 and leaves the
+     tail one-sided even when the pooled window would score higher — averaged
+     (`aggregate`) windows dilute toward the shorter members, and joined
+     re-embeds integrate them. The DP charges `skip_penalty` per skipped
+     sentence, so the grouping that covers more of the region wins without
+     beating every 1:1's cosine (measured on the smart-notes triplet, LaBSE:
+     1:1 0.8383 vs joined 1:2 0.8684).
+   - **Scope** (`AlignmentRefineService::refine()`): candidates are one-sided
+     machine rows (the Needs-review shape + `alignment_chunk != -1` +
+     `similarity < 0.90`). Each candidate takes ±2 rows of context; merged
+     disjoint intervals become regions (≤ 8 rows after context-edge trimming,
+     ≤ 200 sentences/side); expansion **stops at single-sided pins** (a
+     one-sided pin has no span python can honor, so a region spanning one
+     would submit its sentence only to have `persistSegment` drop it as
+     reserved). Two-sided pins inside a region go to python as `landmarks`.
+   - **Gate**: a region replaces its machine rows only on strict improvement
+     of the summed match scores over the same sentences (`new > old + 0.01`;
+     pins excluded from both sides, pin re-emissions matched by exact span),
+     and any non-pin match below 0.45 (the rescue bar) rejects the region
+     outright — the DP can force a sub-floor match to save skip penalties in
+     orphan clusters. Rejected → nothing written.
+   - **Apply**: one `storeAlignmentSegmentFromMatches(..., isLastChunk: true)`
+     per accepted region under a fresh `nextAlignmentChunk()` (match + skip
+     steps cover the whole window; `persistSegment` deletes the machine rows
+     covering incoming sentences and reserves pinned junctions), then
+     `repairCoverage()` (resequence + junction-less backfill + linked_count).
+     The match flips `completed → aligning → completed` around the run (a
+     mid-run stale flip survives, same rule as `finalize()`), and a thrown
+     failure restores `completed` before rethrowing.
+   - **Surfaces**: `alignments:refine {entityMatch?} {--all}` (synchronous,
+     repair-command pattern) and `POST
+     /works/{work}/alignments/{entityMatch}/refine`
+     (`AlignmentEditorController::refine()`, `canEditMatch` gate) which
+     dispatches the queued `RefineEntitySentences` job — the editor header's
+     "Refine 1-sided rows" button. UI strings
+     `seeders/ui-strings/alignments.php`. Tests:
+     `AlignmentRefineTest` (fusion regrouping, gate rejection, sub-floor
+     rejection, pin landmarks, single-sided pin boundary, status gate,
+     command, endpoint access).
 4. **Schedule** — `Schedule::command('alignments:resume')->everyFiveMinutes()
    ->withoutOverlapping()` picks up to 10 `status='pending'` matches per tick
    and runs them through `AlignEntitySentences::begin()` (ADR 0051): a match

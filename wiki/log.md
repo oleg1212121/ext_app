@@ -1,5 +1,29 @@
 # Directory Update Log
 
+## 2026-10-09 (Alignment refine round — dp + joined windows for one-sided rows)
+
+Second alignment pass over a completed match, closing the fusion gap the
+greedy ladder leaves behind: with no skip cost, round 1 commits a fusion's
+strongest member as a 1:1 (measured on the smart-notes triplet, LaBSE:
+EN↔RU1 0.8383) and leaves the tail one-sided, even though the joined 1:2
+window scores higher (0.8684) — aggregate averaging dilutes toward the
+shorter member and the ladder compares raw cosines. `AlignmentRefineService`
+collects the one-sided machine rows (Needs-review shape + below the landmark
+bar), builds bounded regions around them (±2 row context, merged, capped,
+bounded by single-sided pins; two-sided pins go to python as `landmarks`),
+and re-aligns each region via `alignChunkRemote()`'s new per-request
+`algorithm=dp` + `window_embed=joined` overrides. A region replaces its rows
+only on strict score-sum improvement (`new > old + 0.01`, sub-0.45 matches
+reject the region outright — the DP can force garbage to save skip
+penalties); writes go through `MeaningMatchStore` (machine-only replacement,
+pins reserved) plus a final `repairCoverage`. Surfaces:
+`alignments:refine {id?} {--all}` and an editor-endpoint dispatch
+(`POST .../refine` → `RefineEntitySentences` job → "Refine 1-sided rows"
+header button; UI strings seeded). Tests: `AlignmentRefineTest` (12 tests:
+fusion regrouping, gate/floor rejections, pin landmarks, single-sided pin
+boundary, status gate, command, endpoint access). Docs:
+`wiki/domains/sentence-alignment.md` (refine-round stage).
+
 ## 2026-10-09 (Prepass anchor distance cap — far-heading anchors no longer teleport the cursor)
 
 Diagnosed entity_match 20 ("How to take smart notes" EN↔RU, work 5): the
