@@ -5,14 +5,14 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-09T12:40:00Z }
+generated: { by: agent:zcode, at: 2026-10-09T15:30:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
     title: python-match adapter — pair verify, /align call, links/dpPath path builders (ADR 0063)
   - id: refine-service
     resource: laravel/app/Classes/AlignmentRefineService.php
-    title: the refine round — one-sided-row regions re-aligned with dp + joined windows under a strict score-sum gate
+    title: the refine round — one-sided-row regions re-aligned with dp + joined windows under a per-sentence coverage gate, in bounded self-chaining runs
   - id: refine-command
     resource: laravel/app/Console/Commands/RefineEntityMatchAlignmentCommand.php
     title: alignments:refine — second round for one-sided machine rows
@@ -876,7 +876,24 @@ editor-shaped row.
      one-sided pin has no span python can honor, so a region spanning one
      would submit its sentence only to have `persistSegment` drop it as
      reserved). Two-sided pins inside a region go to python as `landmarks`.
-   - **Gate**: a region replaces its machine rows only on strict improvement
+    - **Runs (chunked)**: one `refine()` call is a *bounded run* — regions in
+      document order up to `MAX_REGIONS_PER_RUN = 50` and a wall-clock
+      deadline of `TIME_LIMIT_SECONDS = 240` (the deadline binds only after
+      the first region, so a run can never report `has_more` without moving
+      the cursor) — a whole book can carry hundreds of one-sided regions,
+      more than one job execution fits inside its 600 s timeout. The summary
+      carries `has_more` + `cursor`: the a-side sentence position past the
+      last examined region, stable across applies (unlike the `order`
+      column, which per-region stores keep appending past the max). Regions
+      at/before the cursor are skipped, so the queued
+      `RefineEntitySentences` job self-chains across a book
+      (`EnrichEntitySentences`-style constructor cursor plus `chainDepth`,
+      capped at 200 links) and `alignments:refine` loops runs to completion
+      per match. Regions with no a-side window can only ever be skipped, so
+      they never keep a chain alive. Every run ends with `repairCoverage()`,
+      so each link leaves total coverage: every sentence sits in a meaning
+      match or a single-sided (unmatched) row.
+    - **Gate**: a region replaces its machine rows only on strict improvement
      of the **per-sentence coverage score** — old rows contribute their
      similarity once per junction (a one-sided row covers its sentence at
      0.0), new matches once per sentence they span — so the accepted
@@ -902,15 +919,21 @@ editor-shaped row.
      mid-run stale flip survives, same rule as `finalize()`), and a thrown
      failure restores `completed` before rethrowing.
    - **Surfaces**: `alignments:refine {entityMatch?} {--all}` (synchronous,
-     repair-command pattern) and `POST
+     repair-command pattern; loops bounded runs per match) and `POST
      /works/{work}/alignments/{entityMatch}/refine`
      (`AlignmentEditorController::refine()`, `canEditMatch` gate) which
      dispatches the queued `RefineEntitySentences` job — the editor header's
      "Refine 1-sided rows" button. UI strings
-     `seeders/ui-strings/alignments.php`. Tests:
+     `seeders/ui-strings/alignments.php`. **Auto-trigger**: the align job's
+     `finalize()` dispatches `RefineEntitySentences` once per match on its
+     first completion — `refine()` stamps `refined_at` (nullable column on
+     `entity_matches`, the once-guard), so later re-aligns don't re-fire and
+     the button remains the manual surface. Tests:
      `AlignmentRefineTest` (fusion regrouping, gate rejection, sub-floor
      rejection, pin landmarks, single-sided pin boundary, status gate,
-     command, endpoint access).
+     command, endpoint access, budget/deadline chunking with the cursor,
+     job chain + link cap, first-completion auto-trigger, `refined_at`
+     stamping).
 4. **Schedule** — `Schedule::command('alignments:resume')->everyFiveMinutes()
    ->withoutOverlapping()` picks up to 10 `status='pending'` matches per tick
    and runs them through `AlignEntitySentences::begin()` (ADR 0051): a match

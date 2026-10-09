@@ -1,6 +1,7 @@
 <?php
 
 use App\Classes\AlignmentRefineService;
+use App\Jobs\AlignEntitySentences;
 use App\Jobs\RefineEntitySentences;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
@@ -8,6 +9,7 @@ use App\Models\SentenceMeaningMatch;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Queue;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\artisan;
@@ -394,4 +396,232 @@ it('does not select candidates when only two-sided rows exist', function () {
     expect($summary['status'])->toBe('refined')
         ->and($summary['regions'])->toBe(0)
         ->and($fake->alignPayloads)->toBe([]);
+});
+
+/**
+ * A completed 9-row match carrying TWO independent fusion clusters — rows
+ * 0–4 and 6–8 — separated by clean 1:1 filler far enough that their regions
+ * stay disjoint. The refine round must be able to stop between them, and the
+ * a-side sentence-position cursor is what makes the second cluster reachable
+ * on the next run without re-feeding the first.
+ *
+ * @return array<string, mixed>
+ */
+function refineTwoClusterWorld(): array
+{
+    $work = createWork();
+    $en = createEntity('en', $work, ['name' => 'Cluster EN']);
+    $ru = createEntity('ru', $work, ['name' => 'Cluster RU']);
+
+    $enSentences = [];
+    $ruSentences = [];
+
+    foreach (['English zero.', 'English one.', 'English two.', 'English three.', 'English four.', 'English five.', 'English six.'] as $i => $text) {
+        $enSentences[] = EntitySentence::create(['entity_id' => $en->id, 'content' => $text, 'order' => $i + 1]);
+    }
+
+    foreach (['Русский ноль.', 'Русский один.', 'Русский два.', 'Русский три.', 'Русский четыре.', 'Русский пять.', 'Русский шесть.', 'Русский семь.', 'Русский восемь.'] as $i => $text) {
+        $ruSentences[] = EntitySentence::create(['entity_id' => $ru->id, 'content' => $text, 'order' => $i + 1]);
+    }
+
+    $match = createEntityMatch($en, $ru, ['status' => 'completed', 'max_n' => 6]);
+
+    createRefineRow($match->id, 0, 0.70, 0, aIds: [$enSentences[0]->id], bIds: [$ruSentences[0]->id]);
+    createRefineRow($match->id, 1024, 0.83, 1024, aIds: [$enSentences[1]->id], bIds: [$ruSentences[1]->id]);
+    createRefineRow($match->id, 2048, 0.0, 1024, bIds: [$ruSentences[2]->id]);
+    createRefineRow($match->id, 3072, 0.70, 1024, aIds: [$enSentences[2]->id], bIds: [$ruSentences[3]->id]);
+    createRefineRow($match->id, 4096, 0.70, 1024, aIds: [$enSentences[3]->id], bIds: [$ruSentences[4]->id]);
+    createRefineRow($match->id, 5120, 0.70, 1024, aIds: [$enSentences[4]->id], bIds: [$ruSentences[5]->id]);
+    createRefineRow($match->id, 6144, 0.70, 1024, aIds: [$enSentences[5]->id], bIds: [$ruSentences[6]->id]);
+    createRefineRow($match->id, 7168, 0.83, 1024, aIds: [$enSentences[6]->id], bIds: [$ruSentences[7]->id]);
+    createRefineRow($match->id, 8192, 0.0, 1024, bIds: [$ruSentences[8]->id]);
+
+    return compact('work', 'en', 'ru', 'match', 'enSentences', 'ruSentences');
+}
+
+/**
+ * The DP response for cluster 1's window (rows 0–4 → a EN0–EN3, b RU0–RU4):
+ * the head 1:1s stand, EN1 absorbs its orphan as a 1:2, and the two filler
+ * 1:1s inside the region re-commit unchanged.
+ *
+ * @return list<array{a_start: int, a_end: int, b_start: int, b_end: int, score: float}>
+ */
+function clusterOneRegrouping(): array
+{
+    return [
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.70],
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 3, 'score' => 0.87],
+        ['a_start' => 2, 'a_end' => 3, 'b_start' => 3, 'b_end' => 4, 'score' => 0.70],
+        ['a_start' => 3, 'a_end' => 4, 'b_start' => 4, 'b_end' => 5, 'score' => 0.70],
+    ];
+}
+
+/**
+ * Cluster 2's window (rows 6–8 → a EN5–EN6, b RU6–RU8): EN6 absorbs its
+ * orphan as a 1:2, the leading 1:1 stands.
+ *
+ * @return list<array{a_start: int, a_end: int, b_start: int, b_end: int, score: float}>
+ */
+function clusterTwoRegrouping(): array
+{
+    return [
+        ['a_start' => 0, 'a_end' => 1, 'b_start' => 0, 'b_end' => 1, 'score' => 0.70],
+        ['a_start' => 1, 'a_end' => 2, 'b_start' => 1, 'b_end' => 3, 'score' => 0.87],
+    ];
+}
+
+it('splits a long run at the region budget and continues from the returned cursor', function () {
+    $w = refineTwoClusterWorld();
+    $fake = fakePython();
+
+    $fake->alignHandler = function (array $payload): array {
+        if ($payload['a_sentences'] === ['English zero.', 'English one.', 'English two.', 'English three.']) {
+            expect($payload['b_sentences'])->toBe(['Русский ноль.', 'Русский один.', 'Русский два.', 'Русский три.', 'Русский четыре.']);
+
+            return clusterOneRegrouping();
+        }
+
+        expect($payload['a_sentences'])->toBe(['English five.', 'English six.'])
+            ->and($payload['b_sentences'])->toBe(['Русский шесть.', 'Русский семь.', 'Русский восемь.']);
+
+        return clusterTwoRegrouping();
+    };
+
+    $refiner = AlignmentRefineService::create();
+
+    $first = $refiner->refine($w['match'], maxRegions: 1);
+
+    expect($first['status'])->toBe('refined')
+        ->and($first['regions'])->toBe(2)
+        ->and($first['applied'])->toBe(1)
+        ->and($first['has_more'])->toBeTrue()
+        ->and($first['cursor'])->toBe(4)
+        ->and($fake->alignPayloads)->toHaveCount(1);
+
+    $second = $refiner->refine($w['match'], $first['cursor'], 1);
+
+    expect($second['status'])->toBe('refined')
+        ->and($second['regions'])->toBe(1)
+        ->and($second['applied'])->toBe(1)
+        ->and($second['has_more'])->toBeFalse()
+        ->and($second['cursor'])->toBeNull()
+        // The cursor skipped cluster 1's window — python saw each region once.
+        ->and($fake->alignPayloads)->toHaveCount(2);
+
+    // Nothing lost across the chain: every sentence of both sides is
+    // junctioned exactly once (total coverage + ADR 0048 uniqueness).
+    $junctions = SentenceMeaningMatch::query()->where('entity_match_id', $w['match']->id)->get();
+    expect($junctions)->toHaveCount(16)
+        ->and($junctions->where('side', 'a')->pluck('entity_sentence_id')->unique())->toHaveCount(7)
+        ->and($junctions->where('side', 'b')->pluck('entity_sentence_id')->unique())->toHaveCount(9)
+        ->and(EntitySentence::query()
+            ->whereDoesntHave('meaningJunctions')
+            ->whereIn('entity_id', [$w['en']->id, $w['ru']->id])
+            ->count())->toBe(0);
+});
+
+it('processes one region under a zero time budget but still advances the cursor', function () {
+    $w = refineTwoClusterWorld();
+    $fake = fakePython()->aligning(clusterOneRegrouping());
+
+    $summary = AlignmentRefineService::create()->refine($w['match'], timeLimitSeconds: 0);
+
+    // The deadline binds only after the first region, so a run can never
+    // report has_more without moving the cursor past what it examined.
+    expect($summary['applied'])->toBe(1)
+        ->and($summary['has_more'])->toBeTrue()
+        ->and($summary['cursor'])->toBe(4)
+        ->and($fake->alignPayloads)->toHaveCount(1);
+});
+
+it('chains itself across runs while regions remain', function () {
+    Queue::fake();
+
+    $w = refineTwoClusterWorld();
+    fakePython()->aligning(clusterOneRegrouping());
+
+    (new RefineEntitySentences($w['match']->id, null, 1))->handle();
+
+    Queue::assertPushed(RefineEntitySentences::class, fn (RefineEntitySentences $job) => $job->entityMatchId === $w['match']->id
+        && $job->afterPosition === 4
+        && $job->chainDepth === 1);
+});
+
+it('stops chaining when the last region is consumed', function () {
+    Queue::fake();
+
+    $w = refineWorld();
+    fakePython()->aligning(fusionRegrouping());
+
+    (new RefineEntitySentences($w['match']->id))->handle();
+
+    Queue::assertNotPushed(RefineEntitySentences::class);
+});
+
+it('stops chaining at the link cap instead of looping forever', function () {
+    Queue::fake();
+
+    $w = refineTwoClusterWorld();
+    fakePython()->aligning(clusterOneRegrouping());
+
+    (new RefineEntitySentences($w['match']->id, null, 1, 199))->handle();
+
+    Queue::assertNotPushed(RefineEntitySentences::class);
+});
+
+it('queues the refine round once when the first alignment completes', function () {
+    Queue::fake();
+
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    EntitySentence::create(['entity_id' => $enEntity->id, 'content' => 'English.', 'order' => 1]);
+
+    $match = createEntityMatch($enEntity, $ruEntity, ['status' => 'pending']);
+
+    AlignEntitySentences::beginFromScratch($match->id);
+
+    expect($match->refresh()->status)->toBe('completed')
+        ->and($match->refined_at)->toBeNull();
+
+    Queue::assertPushed(RefineEntitySentences::class, fn (RefineEntitySentences $job) => $job->entityMatchId === $match->id);
+});
+
+it('does not queue the refine round again once the match has been refined', function () {
+    Queue::fake();
+
+    $work = createWork();
+    $enEntity = createEntity('en', $work, ['name' => 'English', 'signature' => json_encode([1.0, 0.0])]);
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian', 'signature' => json_encode([1.0, 0.0])]);
+
+    EntitySentence::create(['entity_id' => $enEntity->id, 'content' => 'English.', 'order' => 1]);
+
+    $match = createEntityMatch($enEntity, $ruEntity, ['status' => 'pending', 'refined_at' => now()]);
+
+    AlignEntitySentences::beginFromScratch($match->id);
+
+    expect($match->refresh()->status)->toBe('completed');
+
+    Queue::assertNotPushed(RefineEntitySentences::class);
+});
+
+it('stamps refined_at when a refine run actually starts', function () {
+    $w = refineWorld();
+    fakePython()->aligning(fusionRegrouping());
+
+    expect($w['match']->refined_at)->toBeNull();
+
+    AlignmentRefineService::create()->refine($w['match']);
+
+    expect($w['match']->refresh()->refined_at)->not->toBeNull();
+});
+
+it('does not stamp refined_at when the run is skipped', function () {
+    $w = refineWorld();
+    $w['match']->update(['status' => 'aligning']);
+
+    AlignmentRefineService::create()->refine($w['match']);
+
+    expect($w['match']->refresh()->refined_at)->toBeNull();
 });

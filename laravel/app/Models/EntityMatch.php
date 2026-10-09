@@ -25,6 +25,7 @@ class EntityMatch extends Model
         'error_message',
         'started_at',
         'completed_at',
+        'refined_at',
     ];
 
     protected function casts(): array
@@ -40,6 +41,7 @@ class EntityMatch extends Model
             'b_last_sentence_offset' => 'integer',
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
+            'refined_at' => 'datetime',
         ];
     }
 

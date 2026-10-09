@@ -1,5 +1,28 @@
 # Directory Update Log
 
+## 2026-10-09 (Refine round chunked + auto-triggered after the first alignment)
+
+A whole book can carry hundreds of one-sided regions (the live 84-region
+match ran ~4 minutes), more than one `RefineEntitySentences` execution fits
+inside its 600 s timeout — so `AlignmentRefineService::refine()` is now a
+*bounded run*: up to 50 regions and a 240 s wall-clock deadline (binding
+only after the first region, so a run never reports `has_more` without
+moving the cursor). The summary gained `has_more` + `cursor` — the a-side
+sentence position past the last examined region, stable across applies
+(unlike the appended `order` column) — the job self-chains on it
+(`EnrichEntitySentences` pattern, 200-link cap), and `alignments:refine`
+loops runs to completion per match. Every run still ends with
+`repairCoverage()`, so each link leaves total coverage: every sentence in a
+meaning match or a single-sided unmatched row. The align job's `finalize()`
+now dispatches the refine once per match on its first completion, guarded by
+a new nullable `entity_matches.refined_at` stamp that `refine()` writes when
+a run actually starts (later re-aligns don't re-fire; button/command remain
+the manual surfaces). Tests: `AlignmentRefineTest` grew to 22 (budget split
++ cursor no-refeed + sentence-completeness across the chain, zero-budget
+deadline, chain push/stop/cap, auto-trigger once-guard, stamping). Docs:
+`wiki/domains/sentence-alignment.md` refine section, `wiki/database/
+entities-alignment.md` `refined_at`.
+
 ## 2026-10-09 (Refine gate fix — per-sentence coverage, not summed scores)
 
 First production run of the refine round (entity_match 21) rejected all 84

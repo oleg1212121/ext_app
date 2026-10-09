@@ -15,6 +15,13 @@ class RefineEntityMatchAlignmentCommand extends Command
 
     protected $description = 'Second alignment round: re-align the regions around one-sided machine rows with the DP aligner and joined window embeddings, replacing machine rows only on strict score improvement';
 
+    /**
+     * Runs are bounded (region budget + wall-clock deadline), so one match's
+     * refine may need several runs — the CLI has no timeout, so it just keeps
+     * feeding the returned cursor back until has_more drops.
+     */
+    private const MAX_RUNS_PER_MATCH = 1000;
+
     public function handle(AlignmentRefineService $refiner): int
     {
         if ($this->option('all')) {
@@ -37,7 +44,7 @@ class RefineEntityMatchAlignmentCommand extends Command
             return self::FAILURE;
         }
 
-        $summary = $refiner->refine($entityMatch);
+        $summary = $this->refineFully($refiner, $entityMatch);
 
         $this->report($summary, "Entity match {$entityMatch->id}");
 
@@ -57,7 +64,7 @@ class RefineEntityMatchAlignmentCommand extends Command
             ->chunkById(100, function ($chunk) use ($refiner, &$totalRegions, &$totalApplied, &$totalRejected, &$refined, &$failures): void {
                 foreach ($chunk as $entityMatch) {
                     try {
-                        $summary = $refiner->refine($entityMatch);
+                        $summary = $this->refineFully($refiner, $entityMatch);
 
                         if ($summary['status'] !== 'refined') {
                             continue;
@@ -87,7 +94,44 @@ class RefineEntityMatchAlignmentCommand extends Command
     }
 
     /**
-     * @param  array{status: string, reason?: string, regions: int, applied: int, rejected: int, skipped_regions: int, one_sided_before: int, one_sided_after: int}  $summary
+     * Drive one match's bounded runs to completion, accumulating the last
+     * full-run counters. Each run still flips the match through aligning and
+     * repairs coverage, so an interrupted loop leaves the match consistent —
+     * a re-run continues from the remaining one-sided rows.
+     *
+     * @return array{status: string, reason?: string, regions: int, applied: int, rejected: int, skipped_regions: int, one_sided_before: int, one_sided_after: int, has_more: bool, cursor: int|null}
+     */
+    private function refineFully(AlignmentRefineService $refiner, EntityMatch $entityMatch): array
+    {
+        $cursor = null;
+        $runs = 0;
+
+        do {
+            $summary = $refiner->refine($entityMatch, $cursor);
+
+            if ($summary['status'] !== 'refined') {
+                return $summary;
+            }
+
+            $runs++;
+            $cursor = $summary['cursor'];
+
+            if ($summary['has_more'] && $runs >= self::MAX_RUNS_PER_MATCH) {
+                $this->warn(sprintf(
+                    'Entity match %d still has one-sided regions after %d runs; re-run the command to continue.',
+                    $entityMatch->id,
+                    $runs,
+                ));
+
+                break;
+            }
+        } while ($summary['has_more']);
+
+        return $summary;
+    }
+
+    /**
+     * @param  array{status: string, reason?: string, regions: int, applied: int, rejected: int, skipped_regions: int, one_sided_before: int, one_sided_after: int, has_more: bool, cursor: int|null}  $summary
      */
     private function report(array $summary, string $label): void
     {

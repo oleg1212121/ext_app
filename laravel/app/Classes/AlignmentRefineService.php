@@ -69,6 +69,17 @@ class AlignmentRefineService
      */
     private const MATCH_SCORE_FLOOR = 0.45;
 
+    /**
+     * Regions processed per run before the caller (the self-chaining job, the
+     * command's loop) continues with the returned cursor — a whole book can
+     * carry hundreds of one-sided regions, more than one job execution may
+     * align inside its timeout.
+     */
+    private const MAX_REGIONS_PER_RUN = 50;
+
+    /** Wall-clock budget per run, seconds — leaves slack under the job's 600s timeout for one in-flight python call plus repairCoverage. */
+    private const TIME_LIMIT_SECONDS = 240;
+
     public function __construct(
         private readonly SentenceAlignmentService $alignments,
         private readonly MeaningMatchStore $store,
@@ -80,17 +91,31 @@ class AlignmentRefineService
     }
 
     /**
-     * Refine one completed entity match. The match flips completed →
-     * aligning → completed so a concurrent re-align or a second dispatch
-     * (the status gate) cannot interleave; a mid-run stale flip survives the
-     * same rule as the align job's finalize(). A thrown failure restores
-     * completed before rethrowing — regions already applied stay applied
-     * (each region is its own transaction) and a re-run continues from the
-     * remaining one-sided rows.
+     * Refine one completed entity match — one bounded run of it. The match
+     * flips completed → aligning → completed so a concurrent re-align or a
+     * second dispatch (the status gate) cannot interleave; a mid-run stale
+     * flip survives the same rule as the align job's finalize(). A thrown
+     * failure restores completed before rethrowing — regions already applied
+     * stay applied (each region is its own transaction) and a re-run continues
+     * from the remaining one-sided rows.
      *
-     * @return array{status: string, reason?: string, regions: int, applied: int, rejected: int, skipped_regions: int, one_sided_before: int, one_sided_after: int}
+     * The run processes regions in document order up to the region budget and
+     * the wall-clock deadline, skipping everything at or before
+     * $afterPosition — the a-side sentence position cursor returned as
+     * `cursor`. Region windows never shift (sentence positions are stable
+     * across applies, unlike the `order` column), so the cursor is a strict
+     * monotone high-water mark: has_more=true always carries a cursor that
+     * lands beyond the last examined region, and a re-fed window (retry,
+     * double dispatch) re-examines already-refined regions only to tie out at
+     * the gate — no churn. The first run also stamps refined_at, the
+     * once-guard the align job's finalize() uses to fire the auto-refine.
+     *
+     * @param  int|null  $afterPosition  Skip regions whose a-side window ends at or before this sentence position (a previous run's cursor).
+     * @param  int|null  $maxRegions  Region budget for this run (default MAX_REGIONS_PER_RUN).
+     * @param  int|null  $timeLimitSeconds  Wall-clock budget for this run (default TIME_LIMIT_SECONDS).
+     * @return array{status: string, reason?: string, regions: int, applied: int, rejected: int, skipped_regions: int, one_sided_before: int, one_sided_after: int, has_more: bool, cursor: int|null}
      */
-    public function refine(EntityMatch $entityMatch): array
+    public function refine(EntityMatch $entityMatch, ?int $afterPosition = null, ?int $maxRegions = null, ?int $timeLimitSeconds = null): array
     {
         if ($entityMatch->status !== 'completed') {
             return $this->summary('skipped', "match status is {$entityMatch->status}, not completed");
@@ -105,10 +130,17 @@ class AlignmentRefineService
 
         $oneSidedBefore = $this->oneSidedCount($entityMatch);
 
-        $entityMatch->update(['status' => 'aligning', 'error_message' => null]);
+        $entityMatch->update(['status' => 'aligning', 'error_message' => null, 'refined_at' => now()]);
 
         try {
-            $summary = $this->run($entityMatch, $aEntity, $bEntity);
+            $summary = $this->run(
+                $entityMatch,
+                $aEntity,
+                $bEntity,
+                $afterPosition,
+                max(1, $maxRegions ?? self::MAX_REGIONS_PER_RUN),
+                $timeLimitSeconds ?? self::TIME_LIMIT_SECONDS,
+            );
         } catch (Throwable $exception) {
             $entityMatch->refresh();
 
@@ -133,9 +165,9 @@ class AlignmentRefineService
     }
 
     /**
-     * @return array{status: string, reason?: string, regions: int, applied: int, rejected: int, skipped_regions: int, one_sided_before: int, one_sided_after: int}
+     * @return array{status: string, reason?: string, regions: int, applied: int, rejected: int, skipped_regions: int, one_sided_before: int, one_sided_after: int, has_more: bool, cursor: int|null}
      */
-    private function summary(string $status, ?string $reason = null, int $regions = 0, int $applied = 0, int $rejected = 0, int $skippedRegions = 0, int $oneSidedBefore = 0, int $oneSidedAfter = 0): array
+    private function summary(string $status, ?string $reason = null, int $regions = 0, int $applied = 0, int $rejected = 0, int $skippedRegions = 0, int $oneSidedBefore = 0, int $oneSidedAfter = 0, bool $hasMore = false, ?int $cursor = null): array
     {
         return [
             'status' => $status,
@@ -146,13 +178,26 @@ class AlignmentRefineService
             'skipped_regions' => $skippedRegions,
             'one_sided_before' => $oneSidedBefore,
             'one_sided_after' => $oneSidedAfter,
+            'has_more' => $hasMore,
+            'cursor' => $cursor,
         ];
     }
 
     /**
      * @return array{status: string, reason?: string, regions: int, applied: int, rejected: int, skipped_regions: int, one_sided_before: int, one_sided_after: int}
      */
-    private function run(EntityMatch $entityMatch, Entity $aEntity, Entity $bEntity): array
+    /**
+     * One bounded run: regions in document order, past the position cursor,
+     * until the region budget or the wall-clock deadline is hit. Every
+     * examined region advances the cursor past its window (any outcome — a
+     * rejected gate or an oversized window can never succeed, so re-examining
+     * one would only stall a chain), and has_more is true whenever pending
+     * regions were left unprocessed — at least one region always runs, so a
+     * link can never report progress it didn't make.
+     *
+     * @return array{status: string, reason?: string, regions: int, applied: int, rejected: int, skipped_regions: int, one_sided_before: int, one_sided_after: int, has_more: bool, cursor: int|null}
+     */
+    private function run(EntityMatch $entityMatch, Entity $aEntity, Entity $bEntity, ?int $afterPosition, int $maxRegions, int $timeLimitSeconds): array
     {
         $rows = MeaningMatch::query()
             ->where('entity_match_id', $entityMatch->id)
@@ -171,29 +216,104 @@ class AlignmentRefineService
         $bIndex = $this->sentenceIndex($bEntity->id);
 
         $regions = $this->regions($rows, $candidateIndexes);
+        $aSpans = $this->regionASpans($rows, $regions, $aIndex);
 
+        $startedAt = microtime(true);
         $applied = 0;
         $rejected = 0;
         $skipped = 0;
+        $processed = 0;
+        $pending = 0;
+        $cursor = $afterPosition;
 
-        foreach ($regions as $region) {
-            $summary = $this->refineRegion($entityMatch, $aEntity, $bEntity, $rows, $region, $aIndex, $bIndex);
+        foreach ($regions as $index => $region) {
+            $aSpan = $aSpans[$index];
 
-            match ($summary) {
+            // A region with no a-side window (all its rows junctioned on b
+            // only) can only ever be skipped, and one ending at or before the
+            // cursor was already consumed by an earlier run — both are
+            // counted, not re-fed.
+            if ($aSpan === null || ($cursor !== null && $aSpan <= $cursor)) {
+                $skipped++;
+
+                continue;
+            }
+
+            $pending++;
+
+            // The deadline binds only after the first region: a link always
+            // examines at least one pending region, so it can never report
+            // has_more without advancing the cursor.
+            if ($processed >= $maxRegions
+                || ($processed > 0 && (microtime(true) - $startedAt) >= $timeLimitSeconds)) {
+                continue;
+            }
+
+            $outcome = $this->refineRegion($entityMatch, $aEntity, $bEntity, $rows, $region, $aIndex, $bIndex);
+
+            match ($outcome) {
                 'applied' => $applied++,
                 'rejected' => $rejected++,
                 default => $skipped++,
             };
+
+            $processed++;
+            $cursor = $aSpan;
         }
 
         // Resequence + junction-less backfill + linked_count sync: the
         // per-region stores append orders past the previous max, so the
         // order column must be normalized back to document position (the
         // store call itself already covers each window's sentences — this is
-        // belt, braces, and the ADR 0043 resequence point).
+        // belt, braces, and the ADR 0043 resequence point). Runs at the end
+        // of EVERY run, so each link of a chain leaves the match with total
+        // coverage: every sentence sits in a meaning match or a single-sided
+        // (unmatched) row.
         $this->store->repairCoverage($entityMatch);
 
-        return $this->summary('refined', null, count($regions), $applied, $rejected, $skipped);
+        $hasMore = $processed < $pending;
+
+        return $this->summary('refined', null, count($regions), $applied, $rejected, $skipped, 0, 0, $hasMore, $hasMore ? $cursor : null);
+    }
+
+    /**
+     * Each region's a-side window end (exclusive, in document sentence
+     * positions) — the chain cursor's unit, stable across applies because it
+     * derives from sentence ids, not the `order` column that per-region
+     * stores keep appending past the max. Null when the region's rows hold
+     * no a junctions at all: refineRegion() can only skip such a region, so
+     * it must never hold the cursor back or keep a chain alive.
+     *
+     * @param  Collection<int, MeaningMatch>  $rows
+     * @param  list<array{start: int, end: int}>  $regions
+     * @param  array<int, int>  $aIndex
+     * @return list<int|null>
+     */
+    private function regionASpans(Collection $rows, array $regions, array $aIndex): array
+    {
+        $spans = [];
+
+        foreach ($regions as $region) {
+            $max = null;
+
+            foreach (range($region['start'], $region['end']) as $rowIndex) {
+                foreach ($rows[$rowIndex]->sentenceMeaningMatches as $junction) {
+                    if ($junction->side !== 'a') {
+                        continue;
+                    }
+
+                    $position = $aIndex[$junction->entity_sentence_id] ?? null;
+
+                    if ($position !== null && ($max === null || $position + 1 > $max)) {
+                        $max = $position + 1;
+                    }
+                }
+            }
+
+            $spans[] = $max;
+        }
+
+        return $spans;
     }
 
     /**
