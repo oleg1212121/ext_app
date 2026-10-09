@@ -1,5 +1,28 @@
 # Directory Update Log
 
+## 2026-10-09 (Prepass anchor distance cap — far-heading anchors no longer teleport the cursor)
+
+Diagnosed entity_match 20 ("How to take smart notes" EN↔RU, work 5): the
+first 211 editor rows were one-sided/garbage while matches snapped correct
+from row 212. Root cause in the python aligner's high-confidence prepass:
+unbanded by design, it locked `Introduction` ↔ the RU part heading `Введение`
+74 cells off the diagonal (LaBSE 0.93 vs 0.78 for the translator's actual
+`Предисловие`) — a matrix-edge column wins the mutual-best check trivially —
+which degraded the whole Предисловие to one-sided rows and desynchronized the
+chunk cursors until the editions' density difference re-converged them.
+Fix: `_prepass_anchors` now passes a distance cap (`ALIGN_MAX_ANCHOR_DISTANCE`,
+live knob, default 30 cells off the expected length-ratio diagonal; `<= 0`
+disables) to the shared `_find_anchors` band check, so a heading cognate can
+no longer anchor arbitrarily far downstream while anchors keep their ability
+to jump moderate edition differences. Regression tests in
+`ai/alignment/test_aligner.py` (cap rejects a far 0.93 heading; disabled cap
+reproduces the teleport). Alignment 20 re-run from scratch with the fix:
+one-sided rows 326 → 152 (the rest are genuine citation/footnote gaps), the
+head now matches `Introduction`↔`Предисловие` and
+`Everybody writes.`↔`Все пишут.`, and the RU-only part headings (`ЧАСТЬ 1`,
+`Введение`) land as one-sided rows.
+Concepts updated: [sentence alignment](/domains/sentence-alignment.md).
+
 ## 2026-10-08 (Creation-module hardening: self-pair guard, uniform stale handling, limit coverage)
 
 Follow-up review of the creation module surfaced three small gaps, now

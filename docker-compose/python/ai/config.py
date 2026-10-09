@@ -132,6 +132,17 @@ def align_high_confidence() -> float:
     return _live_float("ALIGN_HIGH_CONFIDENCE", 0.9)
 
 
+def align_max_anchor_distance() -> int | None:
+    """Prepass anchor distance cap: a high-confidence mutually-best 1:1 more
+    than this many cells off the expected length-ratio diagonal is never
+    locked as a prepass anchor, so a short-heading cognate far downstream
+    (e.g. "Introduction" -> the part heading "Введение") cannot teleport the
+    cursor past a whole translated block. <= 0 disables the cap (unbanded
+    prepass)."""
+    v = _live_int("ALIGN_MAX_ANCHOR_DISTANCE", 30)
+    return v if v > 0 else None
+
+
 def align_band_width() -> int | None:
     """Diagonal band half-width around the expected length-ratio diagonal
     (match edges restricted to the band). None -> derived per chunk as

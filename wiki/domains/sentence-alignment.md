@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-08T16:47:00Z }
+generated: { by: agent:zcode, at: 2026-10-09T09:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -550,8 +550,9 @@ editor-shaped row.
     sentences once and locks **prepass anchors**: non-crossing, mutually-best
     1:1 cells at/above `high_confidence` (`ALIGN_HIGH_CONFIDENCE`, default
     `0.9`) — the same scan/monotonicity rules as the greedy `anchor_threshold`
-    anchors, but a higher bar (shared core `_find_anchors(sim, n, m, threshold)`;
-    `_prepass_anchors` wraps it with `high_confidence`). `_align_with_anchors`
+    anchors, but a higher bar (shared core
+    `_find_anchors(sim, n, m, threshold, k, band)`; `_prepass_anchors` wraps it
+    with `high_confidence` plus the anchor distance cap, below). `_align_with_anchors`
     then splits the chunk into **sub-pools** at the anchors (anchors are part of
     no pool) and aligns each pool **in isolation** with the chosen algorithm —
     greedy runs its gap/anchor/orphan logic on the slice (its internal
@@ -570,6 +571,27 @@ editor-shaped row.
     `high_confidence` remains a live knob: `/align` per-request override or
     `ALIGN_HIGH_CONFIDENCE` in `docker-compose/python/env/.env`, applied on the
     next request.
+    - **Prepass anchor distance cap (Oct 2026)** — a high-confidence cell is
+      only locked when it sits within `ALIGN_MAX_ANCHOR_DISTANCE` (live knob,
+      default `30`; `<= 0` disables) cells of the expected length-ratio
+      diagonal: `abs(j*k - i) <= cap` with `k = n/m` of the whole chunk
+      (`_prepass_anchors` passes the cap to the shared `_find_anchors` as its
+      band). Unbanded prepass anchors previously let a short-heading cognate
+      far downstream lock an anchor and teleport the cursor past a whole
+      translated block: on "How to take smart notes" (work 5, entity_match 20)
+      LaBSE scored `Introduction` ↔ the RU part heading `Введение` 74 sentences
+      downstream at 0.93 — above the anchor bar — while the translator's actual
+      `Предисловие` scored only 0.78, so chunk 0 locked (0, 74), degraded the
+      entire Предисловие to 74 one-sided rows and desynchronized the cursors
+      for ~140 sentences until the editions' density difference re-converged
+      them on its own (editor rows 1–211 were garbage; row 212 snapped back to
+      the true diagonal). A matrix-edge column is exactly where the
+      mutual-best check is weakest — its row slice holds a single cell — so an
+      out-of-place heading wins by default. The cap bounds that damage while
+      anchors stay able to jump moderate edition differences. Regression
+      tests: `prepass_anchor_distance_cap_rejects_a_far_heading_anchor`,
+      `prepass_anchor_cap_disabled_locks_the_far_heading_anchor` (cap disabled
+      reproduces the teleport).
     - **Text normalization (Aug 2026)** — every sentence is normalized once at
       alignment entry: `BilingualAligner._align_pair` runs
       `_normalize_sentences` (casefold + keep only alphanumerics/whitespace,
@@ -612,9 +634,11 @@ editor-shaped row.
       are all banded. When the cursor is out of the band on both axes, the
       walk skips toward the expected diagonal (`return j * k > i`) so it
       re-enters the band instead of drifting.
-    - **Prepass anchors are deliberately unbanded** — the high-confidence
-      prepass can lock a pair anywhere on the full singles matrix; only
-      per-pool match edges are confined to the band.
+    - **Prepass anchors use their own distance cap, not the band** — the
+      high-confidence prepass may lock a pair up to `ALIGN_MAX_ANCHOR_DISTANCE`
+      cells off the expected diagonal anywhere on the full singles matrix
+      (default 30 — far wider than the per-pool band); only per-pool match
+      edges are confined to the band (see the plan 03 cap, above).
     - **DP cost drop** — the DP path no longer precomputes the full chunk's
       `(n + m) * max_window` windows: it embeds only the chunk's singles for
       the prepass matrix, and each pool embeds only its own in-band windows
