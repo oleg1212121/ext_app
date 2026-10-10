@@ -1,5 +1,6 @@
 import {router} from '@inertiajs/react';
 import {useEffect, useState} from 'react';
+import {pendingLanguageLabel} from '../../lib/languageLabel';
 import {useI18n} from '../../i18n';
 
 const LANGUAGE_GLYPH = {
@@ -62,7 +63,9 @@ export default function ReaderIndexApp({lang = 'en', languages = [], entities = 
         router.visit(`/reader/${id}`);
     };
 
-    const pendingLabel = pendingLang ? t(pendingLang === 'en' ? 'reader.english' : 'reader.russian') : '';
+    // en/ru keep their translated ui-string names; every other language is
+    // named from the page's languages list, never guessed from the code.
+    const pendingLabel = pendingLang ? pendingLanguageLabel(pendingLang, languages, t) : '';
 
     return (
         <div className="flex-1 min-h-0 flex flex-col bg-[var(--wbench-paper)] dark:bg-[var(--wbench-paper-night)] text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] font-[var(--wbench-sans)]">
@@ -76,7 +79,7 @@ export default function ReaderIndexApp({lang = 'en', languages = [], entities = 
                         aria-label={t('reader.library_language')}
                         className="ml-auto inline-flex items-end gap-0.5"
                     >
-                        {languages.map((code) => {
+                        {languages.map(({code}) => {
                             const isActive = code === lang;
                             return (
                                 <button

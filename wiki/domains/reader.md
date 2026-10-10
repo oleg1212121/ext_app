@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-05T23:10:48+03:00 }
+generated: { by: agent:zcode, at: 2026-10-10T18:00:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -78,7 +78,12 @@ Inertia pages under `resources/js/Pages/Reader/` — `ReaderApp` +
 `ReaderRow` (reading view), plus the restored index `Pages/ReaderIndex.jsx`
 → `Reader/ReaderIndexApp.jsx` (language tabs + text list, ADR 0038). The
 back arrow is browser-history back; the index is a separate page, not an
-in-app listing inside the reader.
+in-app listing inside the reader. The index's `languages` prop ships objects
+(`{code, name, native_name}`, enabled languages by `sort_order`) so the
+pending-alignment label can name any language: `lib/languageLabel.js` keeps
+en/ru on their translated ui-string names (`reader.english`/`reader.russian`)
+and resolves every other language from the list (native name → name → raw
+code), so a third language is never mislabeled as English or Russian.
 
 # Reading rows
 

@@ -165,6 +165,10 @@ test('the practice reader index lists readable texts for the language', function
         ->assertInertia(fn ($page) => $page
             ->component('ReaderIndex')
             ->where('lang', 'en')
+            // Objects with display names — the pending-alignment label
+            // resolves any language's name from this list.
+            ->where('languages.0.code', 'en')
+            ->where('languages.0.native_name', 'English')
             ->has('entities', 1)
             ->where('entities.0.name', 'Test EN Entity'));
 });

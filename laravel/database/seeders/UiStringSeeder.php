@@ -12,13 +12,20 @@ class UiStringSeeder extends Seeder
 {
     /**
      * Seed every UI string partial in ui-strings/*.php. Each partial returns
-     * 'dotted.key' => ['en' => ..., 'ru' => ...]. updateOrCreate keeps admin
-     * edits authoritative on re-run order (seeder only refreshes text, admin
-     * may still edit afterwards).
+     * 'dotted.key' => ['en' => ..., 'ru' => ..., ...]. The language loop comes
+     * from the interface-enabled registry, so adding an interface language is
+     * a row insert: keys without a value for a language are skipped and the
+     * English fallback chain covers them at render time (ADR 0023).
+     * updateOrCreate keeps admin edits authoritative on re-run order (seeder
+     * only refreshes text, admin may still edit afterwards).
      */
     public function run(): void
     {
-        $languages = Language::query()->whereIn('code', ['en', 'ru'])->get()->keyBy('code');
+        $languages = Language::query()
+            ->where('is_interface_enabled', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->keyBy('code');
 
         $partials = glob(__DIR__.'/ui-strings/*.php');
         sort($partials);
@@ -29,9 +36,8 @@ class UiStringSeeder extends Seeder
             foreach ($strings as $key => $values) {
                 $stringKey = UiStringKey::updateOrCreate(['key' => $key]);
 
-                foreach (['en', 'ru'] as $code) {
-                    $language = $languages->get($code);
-                    if ($language === null || ! isset($values[$code])) {
+                foreach ($languages as $code => $language) {
+                    if (! isset($values[$code])) {
                         continue;
                     }
 

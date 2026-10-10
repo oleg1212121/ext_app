@@ -41,7 +41,7 @@ return [
     'reader.loading' => ['en' => 'Loading', 'ru' => 'Загрузка'],
     'reader.english' => ['en' => 'English', 'ru' => 'Английский'],
     'reader.russian' => ['en' => 'Russian', 'ru' => 'Русский'],
-    'reader.no_texts' => ['en' => 'No texts in this language', 'ru' => 'На этом языке текстов нет'],
+    'reader.no_texts' => ['en' => 'No texts in this language', 'ru' => 'На этом языке текстов нет', 'be' => 'На гэтай мове тэкстаў няма'],
     'reader.no_texts_hint' => ['en' => 'Switch the language above, or ask an editor to add texts.', 'ru' => 'Переключите язык выше или попросите редактора добавить тексты.'],
     'reader.texts' => ['en' => 'Texts', 'ru' => 'Тексты'],
     'reader.index_hint_open' => ['en' => 'Open a text to read it', 'ru' => 'Откройте текст, чтобы читать'],

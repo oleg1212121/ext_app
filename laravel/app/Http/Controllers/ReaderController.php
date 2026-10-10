@@ -49,7 +49,18 @@ class ReaderController extends Controller
 
         return Inertia::render('ReaderIndex', [
             'lang' => $lang,
-            'languages' => Language::query()->enabled()->orderBy('sort_order')->pluck('code')->all(),
+            // Objects with display names (not bare codes): the index page's
+            // pending-alignment label names any language from this list.
+            'languages' => Language::query()
+                ->enabled()
+                ->orderBy('sort_order')
+                ->get(['code', 'name', 'native_name'])
+                ->map(fn (Language $language): array => [
+                    'code' => $language->code,
+                    'name' => $language->name,
+                    'native_name' => $language->native_name,
+                ])
+                ->all(),
             'entities' => $this->entitiesForLanguage($language),
         ]);
     }

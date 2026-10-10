@@ -1,5 +1,28 @@
 # Directory Update Log
 
+## 2026-10-10 (Belarusian 05: interface-language plumbing)
+
+Belarusian is now an interface language end to end. `LanguageSeeder` flips the
+`be` row to `is_interface_enabled => true` (validation, Filament selects and
+`PreferencesForm` were already registry-driven, so the flag alone makes be
+selectable at `PATCH /profile/settings`). `UiStringSeeder`'s language loop is
+registry-driven — it iterates interface-enabled languages by `sort_order`
+instead of a hardcoded en/ru pair; keys without a value for a language are
+skipped (the ADR 0023 English chain covers them at render time) and
+updateOrCreate idempotency/admin-authority are unchanged. Seed data:
+`WordClassSeeder` gains a `be` block (17 slugs mirroring en/ru: назоўнік,
+дзеяслоў, прыметнік, прыслоўе, займеннік, прыназоўнік, злучнік, вызначальнік,
+лічэўнік, выклічнік, артыкль, часціца, Уласнае імя, фраза, суфікс, прэфікс,
+невядома) and `TranscriptionTypeSeeder` a be IPA row (МФА). The reader index
+pending-alignment label no longer binary-branches en/ru: `ReaderController`
+ships `languages` as `{code, name, native_name}` objects and the new pure
+`lib/languageLabel.js` names en/ru via their ui-string keys and every other
+language from the list (native name → name → raw code). Tests: seeder tests
+for be rows (ui strings incl. the skip-disabled + missing-key cases, word
+classes, transcription types), LanguageTest be-flag flip, ProfileTest
+accepts-be, ReaderPageTest pins the prop shape, vitest `languageLabel.test.js`
+(5). `composer run test:tia` 1070 passed.
+
 ## 2026-10-10 (Belarusian 03: be_stress stress enricher end-to-end)
 
 Belarusian entities enrich like Russian ones. Python: the Cyrillic stress

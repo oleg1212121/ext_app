@@ -41,7 +41,7 @@ it('seeds en, ru, and belarusian', function () {
         ->and($be->name)->toBe('Belarusian')
         ->and($be->native_name)->toBe('Беларуская')
         ->and($be->is_enabled)->toBeTrue()
-        ->and($be->is_interface_enabled)->toBeFalse()
+        ->and($be->is_interface_enabled)->toBeTrue()
         ->and($be->sort_order)->toBe(2);
 });
 

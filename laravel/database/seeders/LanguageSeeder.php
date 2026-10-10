@@ -30,14 +30,13 @@ class LanguageSeeder extends Seeder
                 'is_interface_enabled' => true,
             ],
             [
-                // Belarusian: a content language from day one; the interface
-                // flag stays off until its UI strings ship.
+                // Belarusian: a full member language — content and interface.
                 'code' => 'be',
                 'name' => 'Belarusian',
                 'native_name' => 'Беларуская',
                 'is_enabled' => true,
                 'sort_order' => 2,
-                'is_interface_enabled' => false,
+                'is_interface_enabled' => true,
             ],
         ];
 

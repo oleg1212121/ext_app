@@ -41,6 +41,15 @@ it('falls back to english when the locale value is missing', function () {
     expect(__('test.only_english'))->toBe('Only English');
 });
 
+it('falls back to english for the belarusian interface while be texts are missing', function () {
+    // ADR 0023 chain: with be interface-enabled but its texts not yet seeded,
+    // keys render English — never a raw key.
+    seedUiStringFixtures();
+
+    App::setLocale('be');
+    expect(__('test.greeting'))->toBe('Hello');
+});
+
 it('renders unknown keys as the key itself', function () {
     App::setLocale('ru');
 
