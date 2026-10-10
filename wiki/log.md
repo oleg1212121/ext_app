@@ -1,5 +1,30 @@
 # Directory Update Log
 
+## 2026-10-10 (Belarusian 07: release verification and knowledge-base closure)
+
+Verification pass over the whole feature — no feature changes. Full plain
+suite 1072 passed (5,585 assertions); TIA affected run exit 0 (1,072 passed,
+1,072 replayed). Python in `ext_python`: `test_enrich_endpoint.py` 9/9,
+`test_split_endpoint.py` 3/3, `test_registry.py` 13/13, `test_enrichment.py`
+all pass, `test_engine_resolution.py` 6/6, `test_preprocessing.py` 4/4;
+legacy `test_splitter.py` still fails only on its gitignored fixture texts
+(`FileNotFoundError: fixtures/book_thief_en.txt`, `docker-compose/python/.gitignore`
+`*.txt`). Pint clean on all 44 branch-changed PHP files. Seeder idempotency
+re-proven on the testing connection (`ext_app_test`): `migrate:fresh --seed`
+then a second `db:seed --class=DatabaseSeeder` exits 0 with identical counts
+on all 41 tables (languages 3, ui_string_keys 508, ui_strings 1524).
+`wiki:validate` conformant; `wiki:sync` produced timestamp-only churn on the
+three machine-owned reference files (no route/model/command additions) and was
+reverted. Consistency sweep: no language-literal guards left in
+WordTranslations, LinkTranslations, or enrichment (the registry drives both
+sides); remaining `en` literals are the designated interface fallback locale
+(`Support/UiStrings.php`), the WiktionaryParser default target arg, the
+Russian enricher's own registry row, and the intentional Cyrillic strip list
+(`Support/StressMarks.php`: ru, be, uk). Leftover `wiki:validate` staleness
+warnings on two feature concepts (reader.md, sentence-alignment.md) resolved
+by review: content matched the final sources, `generated.at` refreshed to the
+verification time.
+
 ## 2026-10-10 (Belarusian 06: all UI strings translated to Belarusian)
 
 Every key in all 17 `database/seeders/ui-strings/*.php` partials (508 keys,
