@@ -78,23 +78,32 @@ function something()
 */
 
 /**
- * Idempotently ensure the seeded languages exist. Returns code => model.
+ * Idempotently ensure the requested languages exist. Returns code => model.
  *
+ * Defaults to the seeded en/ru pair; tests for a third language opt in
+ * explicitly via $codes (e.g. ['en', 'ru', 'be']) so count-sensitive tests
+ * keep their exact language set.
+ *
+ * @param  array<int, string>  $codes
  * @return array<string, Language>
  */
-function createLanguages(): array
+function createLanguages(array $codes = ['en', 'ru']): array
 {
-    $en = Language::query()->updateOrCreate(
-        ['code' => 'en'],
-        ['name' => 'English', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 0],
-    );
+    $attributes = [
+        'en' => ['name' => 'English', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 0],
+        'ru' => ['name' => 'Russian', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 1],
+        'be' => ['name' => 'Belarusian', 'native_name' => 'Беларуская', 'is_enabled' => true, 'is_interface_enabled' => false, 'sort_order' => 2],
+    ];
 
-    $ru = Language::query()->updateOrCreate(
-        ['code' => 'ru'],
-        ['name' => 'Russian', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 1],
-    );
+    $languages = [];
+    foreach ($codes as $code) {
+        $languages[$code] = Language::query()->updateOrCreate(
+            ['code' => $code],
+            $attributes[$code],
+        );
+    }
 
-    return ['en' => $en, 'ru' => $ru];
+    return $languages;
 }
 
 function createWork(array $attributes = []): Work

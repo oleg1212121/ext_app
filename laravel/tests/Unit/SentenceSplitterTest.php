@@ -254,6 +254,47 @@ it('stores russian sentences on the russian entity', function () {
     });
 });
 
+it('stores belarusian sentences on the belarusian entity and sends the be language code', function () {
+    config(['services.python.sentence_split_chunk_bytes' => 16]);
+    config(['services.python.sentence_split_chunks_per_run' => 2]);
+
+    fakePythonSplitter();
+
+    $text = 'Першае сказанае тут. Другое ідзе далей. Трэцяе заканчваецца. Чацвёртае таксама. Пятае завяршае.';
+    $filePath = 'entities/'.uniqid('be_', true).'.txt';
+    Storage::disk('local')->put($filePath, $text);
+
+    createLanguages(['en', 'ru', 'be']);
+    $entity = createEntity('be', null, ['name' => 'Belarusian', 'file_path' => $filePath]);
+    $splitter = makeSplitter();
+
+    $run = 0;
+
+    do {
+        $stats = $splitter->process($entity->id, $filePath);
+        $run++;
+
+        expect($run)->toBeLessThan(20, 'splitter never converged');
+    } while (! $stats['eof']);
+
+    expect($run)->toBeGreaterThan(1, 'the budget must have split the file across runs')
+        ->and($entity->fresh()->split_offset)->toBe(strlen($text))
+        ->and($entity->fresh()->split_remainder)->toBe('')
+        ->and($entity->sentences()->orderBy('order')->pluck('content')->all())->toEqual([
+            'Першае сказанае тут.',
+            'Другое ідзе далей.',
+            'Трэцяе заканчваецца.',
+            'Чацвёртае таксама.',
+            'Пятае завяршае.',
+        ])
+        ->and($entity->sentences()->count())->toBe(5);
+
+    // Every streamed chunk — including the resumed runs — carries the be code.
+    Http::assertSent(fn (Request $request): bool => ($request->data()['language'] ?? null) === 'be');
+    expect(collect(Http::recorded())
+        ->every(fn (array $pair): bool => ($pair[0]->data()['language'] ?? null) === 'be'))->toBeTrue();
+});
+
 it('inserts large streamed files in order while keeping the split job payload small', function () {
     config([
         'services.python.sentence_split_chunk_bytes' => 64,

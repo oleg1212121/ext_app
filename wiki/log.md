@@ -1,5 +1,26 @@
 # Directory Update Log
 
+## 2026-10-10 (Belarusian splitting: per-language engine resolution + be language row)
+
+The python splitter no longer runs one global engine for every language:
+`config.splitter_engine_for(language)` resolves per language — an explicit
+`SPLITTER_ENGINE_OVERRIDES` entry (`be=razdel,pl=pysbd`; malformed entries
+and unknown engine names silently ignored), then the global
+`SPLITTER_ENGINE`, except the global engine cannot serve the language (pysbd
+has no `be` entry — today that 400'd the whole split request) and the
+rule-based engine (razdel) is substituted automatically, so unknown codes
+fall back instead of erroring. `/split`'s per-language instance cache
+invalidates on the resolved engine (a razdel-backed cached be splitter is
+reused, not rebuilt), and Belarusian shares the exact Russian noise-cleanup
+preprocessing list. Laravel: `LanguageSeeder` seeds `be` (enabled,
+interface-off for now, sort 2) and the test `createLanguages()` helper takes
+an explicit code list (default en/ru unchanged). Tests:
+`ai/splitting/test_engine_resolution.py` (6 checks, host venv),
+`ai/splitting/test_preprocessing.py` (4), `ai/api/test_split_endpoint.py`
+(3, container), `LanguageTest` seeder tests assert the be row,
+`SentenceSplitterTest` streams+resumes a be entity asserting the `be`
+language on the wire. Docs: `wiki/domains/sentence-alignment.md` Split step.
+
 ## 2026-10-09 (Refine round chunked + auto-triggered after the first alignment)
 
 A whole book can carry hundreds of one-sided regions (the live 84-region

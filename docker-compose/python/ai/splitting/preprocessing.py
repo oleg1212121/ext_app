@@ -50,8 +50,17 @@ _DEFAULT_PREPROCESSING: list[tuple[re.Pattern[str], str]] = [
     (DOUBLE_DASH, "—"),
 ]
 
+# Russian noise cleanup (stray markers + defaults). Belarusian shares the
+# exact same list — same script, same stray-marker noise — by reusing this
+# one list object; no postprocessing of its own.
+_RU_PREPROCESSING: list[tuple[re.Pattern[str], str]] = [
+    (RUSSIAN_NOISE, ""),
+    *_DEFAULT_PREPROCESSING,
+]
+
 _PREPROCESSING_RULES: dict[str, list[tuple[re.Pattern[str], str]]] = {
-    "ru": [(RUSSIAN_NOISE, ""), *_DEFAULT_PREPROCESSING],
+    "ru": _RU_PREPROCESSING,
+    "be": _RU_PREPROCESSING,
     "de": [
         (GERMAN_QUOTES, '"'),
         (GERMAN_DATE_PRE, rf"\1\2{_GERMAN_FOO}\3\4"),

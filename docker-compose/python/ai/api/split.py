@@ -17,7 +17,11 @@ def split(req: SplitRequest, request: Request):
         request.app.state.splitters = splitters
 
     cached = splitters.get(req.language)
-    engine = config.splitter_engine()
+    # Compare against the engine RESOLVED for this language (override -> global
+    # -> rule-based fallback), not the raw global one: with the global engine
+    # pysbd a Belarusian request resolves to razdel, and a razdel-backed cached
+    # instance must be reused rather than rebuilt into a ValueError.
+    engine = config.splitter_engine_for(req.language)
 
     if cached is None or cached.backend != engine:
         try:

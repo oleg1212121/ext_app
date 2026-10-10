@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-09T15:30:00Z }
+generated: { by: agent:zcode, at: 2026-10-10T12:00:00Z }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -58,6 +58,9 @@ sources:
   - id: py-splitter
     resource: docker-compose/python/ai/splitting/typed_splitter.py
     title: Typed sentence splitting (python)
+  - id: py-engine-config
+    resource: docker-compose/python/ai/config.py
+    title: Per-language splitter engine resolution (override -> global -> rule-based fallback)
 ---
 
 # Purpose
@@ -284,7 +287,22 @@ editor-shaped row.
    its code to python as the `language` field; `ProcessEntityFile`
    orchestrates file ingestion, also `(entityId, filePath)`.) Splitting
    itself (pysbd + title heuristics ported from the old
-   PHP splitter) lives in python `ai/splitting/`. The python splitter hands
+   PHP splitter) lives in python `ai/splitting/`. **Engines resolve per
+   language** (`config.splitter_engine_for`, pure core in
+   `config.resolve_splitter_engine`): an explicit
+   `SPLITTER_ENGINE_OVERRIDES` entry (`be=razdel,pl=pysbd`; malformed entries
+   and unknown engine names are ignored) wins; otherwise the global
+   `SPLITTER_ENGINE`; except when the global engine cannot serve the language
+   — pysbd without a pysbd language entry (no `be` there) — the rule-based
+   engine (razdel) is substituted automatically, so an unregistered/unknown
+   code falls back instead of erroring (Laravel validates codes against the
+   languages registry; a deliberate `be=pysbd` pin is still honored and
+   surfaces its construction error as HTTP 400). The `/split` per-language
+   instance cache invalidates on the **resolved** engine, so a razdel-backed
+   cached Belarusian splitter is reused rather than rebuilt into a ValueError
+   under a pysbd global. Belarusian shares the exact Russian noise-cleanup
+   preprocessing rule list (same script, same stray markers; no
+   postprocessing of its own). The python splitter hands
    pysbd buffered prose with **newlines selectively flattened**:
    `TypedSentenceSplitter::flush_buffer` joins buffered lines with `\n`, then
    `selective_flatten` collapses every newline that does not follow
@@ -307,7 +325,13 @@ editor-shaped row.
    block merged into a single 464-char "sentence". Regression
    test: `docker-compose/python/ai/splitting/test_splitter.py` (runs the
    splitter over the exact production entity fixtures for both languages plus
-   a curly-quote dialogue block; fails under either extreme behavior).
+   a curly-quote dialogue block; fails under either extreme behavior; the
+   fixture .txt files are gitignored production texts — machines without them
+   can still run the fixture-free curly-quote check inline). Engine
+   resolution unit tests: `ai/splitting/test_engine_resolution.py` +
+   `ai/splitting/test_preprocessing.py` (host venv) and
+   `ai/api/test_split_endpoint.py` (container; cache invalidate/reuse on the
+   resolved engine).
 2. **Sign** — `TextSignatureService` builds an embedding-based signature per
    entity via `/embed` (**BGE-M3, 1024-dim**; the request carries the entity's
    language code). Since ADR 0033 the signature is a **background derivation**
