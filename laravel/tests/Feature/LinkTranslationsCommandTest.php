@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\Language;
 use App\Models\Word;
+use App\Models\WordClass;
 use App\Models\WordTranslation;
 
 beforeEach(function () {
@@ -23,6 +25,28 @@ it('strips stress marks when matching RU words', function () {
     createWord('en', 'house', 'noun', ['translations' => ["до\xCC\x81м"]]);
     // RU word is stored without stress mark
     createWord('ru', 'дом', 'noun');
+
+    $this->artisan('wiktionary:link-translations')
+        ->assertExitCode(0);
+
+    expect(WordTranslation::count())->toBe(1);
+});
+
+it('strips stress marks when matching BE words', function () {
+    createLanguages(['en', 'ru', 'be']);
+    createWordClasses();
+    $beLanguageId = Language::query()->where('code', 'be')->value('id');
+    $beNounId = WordClass::query()->create(['language_id' => $beLanguageId, 'slug' => 'noun', 'title' => 'Назоўнік'])->id;
+
+    // EN word has translation with stress mark (combining acute accent U+0301)
+    createWord('en', 'house', 'noun', ['translations' => ["до\xCC\x81м"]]);
+    // BE word is stored without stress mark
+    Word::query()->create([
+        'word' => 'дом',
+        'l_word' => 'дом',
+        'language_id' => $beLanguageId,
+        'word_class_id' => $beNounId,
+    ]);
 
     $this->artisan('wiktionary:link-translations')
         ->assertExitCode(0);

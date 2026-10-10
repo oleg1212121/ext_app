@@ -5,7 +5,7 @@ description: One words table (+ satellites) keyed by language, per-language word
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2026-12-27
-generated: { by: agent:zcode, at: 2026-10-06T12:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-10T19:55:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -16,6 +16,9 @@ sources:
    - id: importer
      resource: laravel/app/Classes/WiktionaryParser.php
      title: Wiktionary (Kaikki) import writer
+   - id: stress-marks
+     resource: laravel/app/Support/StressMarks.php
+     title: Shared Cyrillic stress-mark normalizer (ru/be/uk list + stripping)
 ---
 
 # Tables
@@ -57,7 +60,9 @@ sources:
   storing staged translations as JSON; `wiktionary:link-translations` then
   resolves them into `word_translations` rows for **every language pair**
   (one canonical row per pair; stress-mark stripping applied when the
-  target is Russian). The admin **Translations** tab continues the linking
+  target is one of the Cyrillic stress-mark languages ru/be/uk — the
+  shared `App\Support\StressMarks` list). The admin **Translations** tab
+  continues the linking
   by hand: attach an existing word, or **Create word & link** for words
   missing from the target language.
 * The import auto-creates missing per-language lookups: an unseen dump
@@ -80,7 +85,8 @@ sources:
   `yandex_translate`/`google_translate`, both optional) — then creates the
   target-language `words` rows (class from the candidate pos slug, else the
   source word's class slug mapped into the target language, else the target's
-  first class; ru stress marks stripped; sentence-punctuation candidates
+  first class; stress marks stripped for the Cyrillic-list targets
+  ru/be/uk (`App\Support\StressMarks`); sentence-punctuation candidates
   dropped) and the `word_translations` links. `failed` lookups retry up to
   `MAX_ATTEMPTS` (6) behind a 24h cooldown; `empty` never re-checks. The
   `EntityWordAdoption` pass (the 5-minute word-list refresh, or

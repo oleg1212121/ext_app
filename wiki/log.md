@@ -1,5 +1,22 @@
 # Directory Update Log
 
+## 2026-10-10 (Belarusian prep 04: shared Cyrillic stress-mark normalizer)
+
+One helper owns the "does this target language carry combining stress
+marks" question and the stripping: `App\Support\StressMarks` —
+`stripsFor()` answers true for the explicit Cyrillic list ru/be/uk
+(false otherwise, unknown codes included) and `strip()` removes the
+combining marks (`\p{M}`). The two normalizers that each hardcoded the
+`=== 'ru'` check now call it: `WordTranslationProvider::normalizeCandidate`
+(word-popup auto-fetch candidates, trim-only after the strip) and
+`LinkTranslationsCommand::normalizeTargetWord` (dictionary-link lookups,
+lowercase + trim after the strip) — so Belarusian translation candidates
+and links normalize like Russian. Each call site's post-strip behavior is
+unchanged. Tests at the existing seams: `WordTranslationProvidersTest`
+(be/uk candidates stripped, en/de untouched, Http-faked) and
+`LinkTranslationsCommandTest` (be-target link matches an unstressed
+headword); `wiki/database/dictionary.md` updated to the shared list.
+
 ## 2026-10-10 (Belarusian prep 02: python enricher module registry)
 
 `/enrich` dispatch is table-driven: the endpoint loops the request's keys

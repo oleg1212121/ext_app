@@ -2,6 +2,7 @@
 
 namespace App\Classes\WordTranslations;
 
+use App\Support\StressMarks;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -62,15 +63,15 @@ abstract class WordTranslationProvider
     }
 
     /**
-     * Normalize a raw candidate: trim, and for Cyrillic targets strip the
-     * combining stress marks dictionary APIs return (the same convention as
-     * LinkTranslationsCommand::normalizeTargetWord). Null drops the
-     * candidate.
+     * Normalize a raw candidate: trim, and for the Cyrillic target
+     * languages strip the combining stress marks dictionary APIs return
+     * (the same convention as LinkTranslationsCommand::normalizeTargetWord).
+     * Null drops the candidate.
      */
     protected function normalizeCandidate(string $text, string $toCode): ?string
     {
-        if ($toCode === 'ru') {
-            $text = (string) preg_replace('/\p{M}/u', '', $text);
+        if (StressMarks::stripsFor($toCode)) {
+            $text = StressMarks::strip($text);
         }
 
         $text = trim($text);
