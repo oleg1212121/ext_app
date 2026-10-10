@@ -128,8 +128,11 @@ def resolve_splitter_engine(
     a pysbd language entry — the rule-based engine (razdel) is substituted,
     so unregistered/unknown codes fall back instead of erroring (Laravel
     validates codes against the languages registry). razdel serves any code.
+    The language code is normalized (trimmed, lowercased) once up front and
+    used for both the override lookup and the pysbd-support check.
     """
-    override = overrides.get((language or "").strip().lower())
+    language = (language or "").strip().lower()
+    override = overrides.get(language)
     if override:
         return override
     if global_engine == "pysbd" and language not in _pysbd_supported_languages():

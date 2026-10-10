@@ -97,6 +97,12 @@ function createLanguages(array $codes = ['en', 'ru']): array
 
     $languages = [];
     foreach ($codes as $code) {
+        if (! array_key_exists($code, $attributes)) {
+            throw new InvalidArgumentException(
+                "Unsupported language code [{$code}] for createLanguages(). Supported codes: en, ru, be.",
+            );
+        }
+
         $languages[$code] = Language::query()->updateOrCreate(
             ['code' => $code],
             $attributes[$code],

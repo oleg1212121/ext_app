@@ -77,12 +77,22 @@ _prepare_ru_stress = _prepare_stress("ru")
 _prepare_be_stress = _prepare_stress("bel")
 
 
-def _apply_ru_stress(text, tokens, accentor):
-    return ru_stress.mark_sentence(text, tokens, accentor)
+def _apply_stress(module):
+    """The Silero accentor apply step for one language's module (ru/be share it).
+
+    Pure per-sentence work — the language module's ``mark_sentence`` over the
+    prepared accentor; no failure path of its own (the model-load failure the
+    endpoint maps to HTTP 503 happens in ``prepare``).
+    """
+
+    def apply(text, tokens, accentor):
+        return module.mark_sentence(text, tokens, accentor)
+
+    return apply
 
 
-def _apply_be_stress(text, tokens, accentor):
-    return be_stress.mark_sentence(text, tokens, accentor)
+_apply_ru_stress = _apply_stress(ru_stress)
+_apply_be_stress = _apply_stress(be_stress)
 
 
 def _prepare_en_stress(app_state, sentences, lexicon):
