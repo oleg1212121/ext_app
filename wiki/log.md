@@ -1,5 +1,25 @@
 # Directory Update Log
 
+## 2026-10-10 (Belarusian prep 02: python enricher module registry)
+
+`/enrich` dispatch is table-driven: the endpoint loops the request's keys
+through a new `ai/enrichment/registry.py` (`EnricherModule`: `key` +
+`version` = the module's `ALGORITHM_VERSION` + once-per-request `prepare`
+(model load / batched spaCy computation; failures raise
+`EnricherUnavailable` → 503, phrasal's batched hit lists paired to sentences
+in order) + per-sentence `apply`) — the python mirror of Laravel's
+`EnricherRegistry`, no per-key branches left in `ai/api/enrich.py`.
+`EnrichRequest.enrichers` dropped its hardcoded `Literal` for a pydantic
+field validator against `registry.keys()` (unknown keys → 422), so a future
+analysis is one module plus one registry entry. ru/en behavior byte-identical
+(wire shapes, versions, 503 detail strings and phrasal pairing preserved;
+`versions`/`output` JSON key order now follows the request's `enrichers`
+order — semantically identical, Laravel consumes per key). Tests:
+`ai/enrichment/test_registry.py` (10 checks, container; 9 on a bare venv —
+schema checks skip without pydantic), `ai/api/test_enrich_endpoint.py`
+(7 checks — the wire-contract pin; API stack required). Laravel untouched;
+`composer run test:tia` 1053 passed unchanged.
+
 ## 2026-10-10 (Belarusian splitting: per-language engine resolution + be language row)
 
 The python splitter no longer runs one global engine for every language:

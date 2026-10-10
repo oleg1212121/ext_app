@@ -5,7 +5,7 @@ description: Local-only per-sentence enrichment — Russian/English stress marks
 tags: [enrichment, stress-marks, multi-word-verbs, enrichers, annotations, python-service, spacy, reader, simulator, silero]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-05T21:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-10T19:45:00+03:00 }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -31,6 +31,9 @@ sources:
    - id: endpoint
      resource: docker-compose/python/ai/api/enrich.py
      title: Python /enrich router
+   - id: pyregistry
+     resource: docker-compose/python/ai/enrichment/registry.py
+     title: Python enricher module registry
    - id: ru
      resource: docker-compose/python/ai/enrichment/ru_stress.py
      title: ru_stress
@@ -114,19 +117,27 @@ contributes is not sent.
 
 ## Engines (Python service `POST /enrich`)
 
-`{language, enrichers: ["ru_stress"|"en_stress"|"en_phrasal"], phrasal_lexicon:
-[headwords], sentences: [{id, text, tokens: [{surface, start, end, cls, lemma,
-...contributed hints}]}]}` → `{results: [{id, output: {[key]: value}]}], versions:
-{[key]: int}}` — the request's `enrichers` (pydantic `Literal`, validity =
-dispatchability) selects the modules and each result's output is keyed by
-enricher key; the response reports each dispatched module's
-`ALGORITHM_VERSION` (ADR 0067 parity: Laravel compares it with the
-enricher's declared `pythonVersion()`, warns on mismatch, and stamps what
-actually ran). One HTTP round trip per batch; a partial run (only the
-stale enrichers) skips the others. Laravel owns the dictionary and sends
-everything the service needs as per-token hints; Python owns model
-inference and writes nothing anywhere — the same split as `/split` and
-`/align`.
+`{language, enrichers: [key...], phrasal_lexicon: [headwords], sentences:
+[{id, text, tokens: [{surface, start, end, cls, lemma, ...contributed
+hints}]}]}` → `{results: [{id, output: {[key]: value}]}], versions:
+{[key]: int}}` — the endpoint loops the requested keys through the python
+enricher registry (`ai/enrichment/registry.py`, the python mirror of
+`EnricherRegistry`): each entry pairs a `key` with its module's
+`ALGORITHM_VERSION`, a once-per-request `prepare` (model load / batched
+computation over the whole request; a missing model/tooling raises
+`EnricherUnavailable` → 503 — never silent empty enrichment that would get
+stamped as done) and a per-sentence `apply`, so no per-key branches remain
+in the endpoint. Request validation accepts exactly `registry.keys()` (a
+pydantic field validator on `enrichers` → 422 for unknown keys), and each
+result's output is keyed by enricher key; the response reports each
+dispatched module's `ALGORITHM_VERSION` (ADR 0067 parity: Laravel compares
+it with the enricher's declared `pythonVersion()`, warns on mismatch, and
+stamps what actually ran). Adding an analysis is one enrichment module plus
+one registry entry — no endpoint or schema edit. One HTTP round trip per
+batch; a partial run (only the stale enrichers) skips the others. Laravel
+owns the dictionary and sends everything the service needs as per-token
+hints; Python owns model inference and writes nothing anywhere — the same
+split as `/split` and `/align`.
 
 - **ru stress** (`ai/enrichment/ru_stress.py`): Silero Stress
   (`pip silero-stress`, weights bundled, lazy-loaded via `ModelCache`)
@@ -184,7 +195,11 @@ inference and writes nothing anywhere — the same split as `/split` and
 
 Plain-python tests: `docker exec ext_python python
 /app/ai/enrichment/test_enrichment.py` (Silero-dependent ru tests skip with a
-notice when the package is absent).
+notice when the package is absent), `/app/ai/enrichment/test_registry.py`
+(registry lookup, per-adapter prepare/apply contract, the 503 path, schema
+validation — schema checks need pydantic) and `/app/ai/api/
+test_enrich_endpoint.py` (the /enrich wire contract: ru/en outputs, batched
+phrasal pairing, 503 details — needs the API stack).
 
 ## Orchestration (Laravel)
 

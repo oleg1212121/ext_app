@@ -1,56 +1,41 @@
 from fastapi import APIRouter, HTTPException, Request
 
 from ai.api.schemas import EnrichRequest, EnrichResponse, EnrichResult
-from ai.enrichment import en_stress, phrasal, ru_stress
-from ai.models_cache import ModelCache
+from ai.enrichment import registry
 
 router = APIRouter()
 
 
 @router.post("/enrich", response_model=EnrichResponse)
 def enrich(req: EnrichRequest, request: Request):
-    accentor = None
-    versions: dict[str, int] = {}
-    if "ru_stress" in req.enrichers:
-        versions["ru_stress"] = ru_stress.ALGORITHM_VERSION
-        try:
-            accentor = ModelCache(request.app.state).stress_model()
-        except Exception as exc:
-            raise HTTPException(status_code=503, detail=f"Stress model not loaded: {exc}") from exc
-
+    # Once per request, in the order Laravel listed the keys: each requested
+    # module reports its algorithm version and runs its prepare step (model
+    # load / batched computation over the whole request, ADR 0059). A prepare
+    # failure is a missing model/tooling — 503, never silent empty enrichment
+    # that would get stamped as done.
+    sentences = [
+        {"text": s.text, "tokens": [t.model_dump() for t in s.tokens]}
+        for s in req.sentences
+    ]
     lexicon = set(req.phrasal_lexicon)
 
-    # spaCy matching runs batched over the whole request (ADR 0059); a
-    # missing model/model package fails loudly (503) instead of writing
-    # empty enrichment that would get stamped as done.
-    phrasal_hits: list | None = None
-    if "en_phrasal" in req.enrichers:
-        versions["en_phrasal"] = phrasal.ALGORITHM_VERSION
+    versions: dict[str, int] = {}
+    prepared: dict[str, object] = {}
+    for key in dict.fromkeys(req.enrichers):
+        module = registry.get(key)
+        versions[key] = module.version
         try:
-            phrasal_hits = phrasal.find_multiword_verbs(
-                [
-                    {"text": s.text, "tokens": [t.model_dump() for t in s.tokens]}
-                    for s in req.sentences
-                ],
-                lexicon,
-            )
-        except RuntimeError as exc:
+            prepared[key] = module.prepare(request.app.state, sentences, lexicon)
+        except registry.EnricherUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    if "en_stress" in req.enrichers:
-        versions["en_stress"] = en_stress.ALGORITHM_VERSION
-
+    # Per-sentence phase: each requested module's apply produces its output
+    # under its key; the batched phrasal hit lists pair to sentences in order.
     results: list[EnrichResult] = []
-    for sentence in req.sentences:
-        tokens = [t.model_dump() for t in sentence.tokens]
-
-        output: dict[str, object] = {}
-        if "ru_stress" in req.enrichers:
-            output["ru_stress"] = ru_stress.mark_sentence(sentence.text, tokens, accentor)
-        if "en_stress" in req.enrichers:
-            output["en_stress"] = en_stress.mark_sentence(sentence.text, tokens)
-        if phrasal_hits is not None:
-            output["en_phrasal"] = phrasal_hits.pop(0)
-
+    for sentence, payload in zip(req.sentences, sentences):
+        output = {
+            key: registry.get(key).apply(sentence.text, payload["tokens"], prepared[key])
+            for key in dict.fromkeys(req.enrichers)
+        }
         results.append(EnrichResult(id=sentence.id, output=output))
     return EnrichResponse(results=results, versions=versions)

@@ -1,8 +1,7 @@
-from typing import Literal
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ai import config
+from ai.enrichment import registry
 
 
 class EmbedRequest(BaseModel):
@@ -117,10 +116,23 @@ class EnrichRequest(BaseModel):
     # Informational (logging); dispatch keys off enrichers — Laravel's
     # registry owns the language -> enricher mapping (ADR 0057).
     language: str = Field(min_length=1, max_length=12)
-    # Which analyses to run for this batch; validity = dispatchability.
-    enrichers: list[Literal["ru_stress", "en_stress", "en_phrasal"]] = Field(
-        ..., min_length=1
-    )
+    # Which analyses to run for this batch; validity = dispatchability. The
+    # accepted keys come from the python enrichment registry
+    # (ai/enrichment/registry.py) — the same table /enrich dispatches
+    # through — instead of a hardcoded Literal, so registering an analysis
+    # puts it on the wire. Unknown keys raise here -> FastAPI answers 422.
+    enrichers: list[str] = Field(..., min_length=1)
+
+    @field_validator("enrichers")
+    @classmethod
+    def _registered_enrichers(cls, value: list[str]) -> list[str]:
+        unknown = sorted({key for key in value if key not in registry.keys()})
+        if unknown:
+            raise ValueError(
+                f"unknown enricher(s): {', '.join(unknown)}; "
+                f"registered: {', '.join(registry.keys())}"
+            )
+        return value
     # Multi-word verb headwords from the dictionary (English phrasal verbs).
     phrasal_lexicon: list[str] = Field(default_factory=list, max_length=50000)
     sentences: list[EnrichSentence] = Field(..., min_length=1, max_length=config.ENRICH_MAX_SENTENCES)
