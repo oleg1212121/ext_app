@@ -1,5 +1,27 @@
 # Directory Update Log
 
+## 2026-10-10 (Belarusian 06: all UI strings translated to Belarusian)
+
+Every key in all 17 `database/seeders/ui-strings/*.php` partials (508 keys,
+~509 source entries — `alignments.next_page` is declared twice) now carries a
+`be` value alongside en/ru, so the seeded interface renders fully in Belarusian
+with no English fallbacks left in the seeded set. Translations are standard
+Narkamaŭka Belarusian (аканне/яканне, ў/у alternation, дзеканне/цеканне) built
+from the ru semantics with the en tone/length as a guide; placeholders
+(`:name`, `:status`, …), counts, and the ru quote style are preserved verbatim
+(verified by a throwaway structural checker: key sets, en/ru byte-identity to
+the pre-change snapshot, per-key placeholder multisets, quote styles).
+Terminology is uniform: alignment = выраўноўванне, match = супастаўленне,
+entity = тэкст (library/entities, mirroring ru) / сутнасць (alignments,
+mirroring ru), work = твор, sentence = сказ (entities/library) / фраза
+(alignments), stress marks = націскі, AI = ШІ, settings = настройкі. The one
+ticket-05 be fixture (`reader.no_texts`) is kept. `UiStringSeederTest` swaps
+its "reader.russian has no be row" case for a sampled key-per-group be
+assertion (17 groups) and now exercises the valueless-language skip with a
+synthetic interface-enabled `uk` row instead. Docs: `wiki/domains/localization.md`
+updated. Tests: `UiStringSeederTest` 5 passed (22 assertions); full suite 1072
+passed (5583 assertions).
+
 ## 2026-10-10 (Belarusian 05: interface-language plumbing)
 
 Belarusian is now an interface language end to end. `LanguageSeeder` flips the

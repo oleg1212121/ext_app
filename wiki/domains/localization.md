@@ -4,7 +4,7 @@ title: Localization
 description: Interface language resolution and DB-backed UI strings with Filament CRUD.
 tags: [i18n, localization, languages, filament]
 status: stable
-generated: { by: agent, at: 2026-10-10T18:00:00Z }
+generated: { by: agent, at: 2026-10-10T21:30:00Z }
 verified: {}
 ---
 
@@ -49,14 +49,16 @@ How the web UI's display language works and how interface text is managed.
   derived from the key, and a relationship Repeater listing one text field per
   interface-enabled language side by side.
 - Initial content: `Database\Seeders\UiStringSeeder` upserts every
-  `database/seeders/ui-strings/*.php` partial (group per surface: nav, auth,
-  profile, library, entities, alignments, reader, bilinguals, welcome,
-  dashboard, pending). The seeder's language loop is registry-driven — it
-  iterates `is_interface_enabled` languages by `sort_order`, and partial keys
-  without a value for a language are simply skipped (the English fallback
-  chain, below, covers them at render time), so shipping a new interface
-  language's texts is filling in per-language values in the partials, never a
-  seeder edit. Seeder runs are idempotent; admin edits win afterwards.
+  `database/seeders/ui-strings/*.php` partial (17 group files per surface:
+  ai, alignments, auth, bilinguals, crossword, dashboard, entities, library,
+  nav, pending, profile, reader, recommendations, sounds, welcome, words,
+  wordtest). The seeder's language loop is registry-driven — it iterates
+  `is_interface_enabled` languages by `sort_order`, and partial keys without a
+  value for a language are simply skipped (the English fallback chain, below,
+  covers them at render time), so shipping a new interface language's texts is
+  filling in per-language values in the partials, never a seeder edit. Every
+  partial key carries `en`/`ru`/`be` — the seeded interface renders fully in
+  Belarusian. Seeder runs are idempotent; admin edits win afterwards.
 
 ## Framework messages
 

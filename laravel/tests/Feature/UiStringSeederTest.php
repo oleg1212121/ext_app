@@ -21,9 +21,9 @@ it('seeds every interface-enabled language that has a value for the key', functi
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();
 
-    // reader.no_texts is the one partial key carrying a be value: en/ru come
-    // out byte-identical to before, and be appears now that the registry
-    // marks it interface-enabled.
+    // reader.no_texts already carried a be value since ticket 05: en/ru come
+    // out byte-identical, and be is picked up through the interface-enabled
+    // registry loop.
     expect(seededUiStringTexts('reader.no_texts'))->toBe([
         'en' => 'No texts in this language',
         'ru' => 'На этом языке текстов нет',
@@ -31,23 +31,57 @@ it('seeds every interface-enabled language that has a value for the key', functi
     ]);
 });
 
-it('creates no rows for keys a language has no value for', function () {
+it('seeds be texts for sampled keys across every group', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();
 
-    // reader.russian carries no be value yet (ticket 06 ships the rest):
-    // the English fallback chain covers it at render time (ADR 0023),
-    // so seeding must not create an empty be row.
-    $be = Language::query()->where('code', 'be')->firstOrFail();
+    // Ticket 06: every seeded key ships a Belarusian text — spot-check one
+    // key per group file.
+    $samples = [
+        'ai.models_icon' => 'ШІ-мадэлі',
+        'alignments.title' => 'Выраўноўванні',
+        'auth.log_in' => 'Увайсці',
+        'bilinguals.stress_marks' => 'Націскі',
+        'crossword.build' => 'Сабраць',
+        'dashboard.dashboard' => 'Панэль кіравання',
+        'entities.save' => 'Захаваць',
+        'library.work' => 'Твор',
+        'nav.library' => 'Бібліятэка',
+        'pending.log_out' => 'Выйсці',
+        'profile.interface_language' => 'Мова інтэрфейсу',
+        'reader.stress_marks' => 'Націскі',
+        'recommendations.apply' => 'Ужыць',
+        'sounds.group_vowels' => 'Галосныя',
+        'welcome.about' => 'Пра праект',
+        'word.tab_dictionary' => 'Слоўнік',
+        'wordtest.submit' => 'Адправіць',
+    ];
 
-    expect(seededUiStringTexts('reader.russian'))->toBe([
-        'en' => 'Russian',
-        'ru' => 'Русский',
-    ])
-        ->and(UiString::query()
-            ->whereHas('key', fn ($query) => $query->where('key', 'reader.russian'))
-            ->where('language_id', $be->id)
-            ->exists())->toBeFalse();
+    foreach ($samples as $key => $text) {
+        expect(seededUiStringTexts($key)['be'] ?? null)->toBe($text);
+    }
+});
+
+it('creates no rows for keys a language has no value for', function () {
+    app(LanguageSeeder::class)->run();
+
+    // A registry row is all it takes to add an interface language: until its
+    // texts are seeded, the English fallback chain covers it at render time
+    // (ADR 0023), so seeding must not create empty rows for it.
+    Language::create([
+        'code' => 'uk',
+        'name' => 'Ukrainian',
+        'native_name' => 'Українська',
+        'is_enabled' => true,
+        'sort_order' => 3,
+        'is_interface_enabled' => true,
+    ]);
+
+    app(UiStringSeeder::class)->run();
+
+    $uk = Language::query()->where('code', 'uk')->firstOrFail();
+
+    expect(UiString::query()->where('language_id', $uk->id)->exists())->toBeFalse();
 });
 
 it('skips languages that are not interface-enabled', function () {
