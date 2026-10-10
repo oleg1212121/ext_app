@@ -9,8 +9,9 @@ behavior-identical for ru and en:
    versions; outputs are keyed per enricher in request order.
 2. Batched phrasal computation: find_multiword_verbs is called ONCE over the
    whole request and its per-sentence hit lists pair to sentences in order.
-3. A missing ru model fails loudly: HTTP 503, detail "Stress model not
-   loaded: ..." — never silent empty enrichment.
+3. A missing ru/be model fails loudly: HTTP 503, detail "Stress model not
+   loaded: ..." — never silent empty enrichment; the be key rides the
+   package's Belarusian accentor (stress_model('bel')).
 4. A missing spaCy model/package fails loudly: HTTP 503 carrying the
    RuntimeError message; any other exception is NOT mapped to 503.
 5. A partial run requests only some enrichers: untouched modules are never
@@ -90,13 +91,22 @@ def fake_accentor(text: str) -> str:
     return text.replace("привет", "прив+ет")
 
 
+def fake_bel_accentor(text: str) -> str:
+    """Stand-in Silero bel: marks прывітанне with '+' before the stressed vowel."""
+    return text.replace("прывітанне", "прыв+ітанне")
+
+
 class BrokenModelState:
-    """app.state whose stress_model attribute blows up on access, the way a
+    """app.state whose stress-model attribute blows up on access, the way a
     failed lazy load propagates out of ModelCache.stress_model()."""
 
-    @property
-    def stress_model(self):
-        raise RuntimeError("weights missing")
+    def __init__(self, attr: str = "stress_model"):
+        object.__setattr__(self, "broken_attr", attr)
+
+    def __getattr__(self, name):
+        if name == self.broken_attr:
+            raise RuntimeError("weights missing")
+        raise AttributeError(name)
 
 
 @contextmanager
@@ -170,6 +180,32 @@ def check_ru_happy_path():
     assert result.output["ru_stress"] == f"приве{ACUTE}т мир", result.output
 
 
+def check_be_happy_path():
+    # The be_stress key rides the package's Belarusian accentor, cached under
+    # its own app.state key (stress_model_bel) next to the Russian one.
+    request = EnrichRequest(
+        language="be",
+        enrichers=["be_stress"],
+        sentences=[
+            {
+                "id": 5,
+                "text": "прывітанне свет",
+                "tokens": [{"surface": "прывітанне", "start": 0, "end": 10}],
+            }
+        ],
+    )
+    resp = enrich.enrich(
+        request,
+        fake_request(SimpleNamespace(**{"stress_model_bel": fake_bel_accentor})),
+    )
+    assert dict(resp.versions) == {"be_stress": 1}, resp.versions
+    assert len(resp.results) == 1
+    result = resp.results[0]
+    assert result.id == 5
+    assert list(result.output.keys()) == ["be_stress"]
+    assert result.output["be_stress"] == f"прыві{ACUTE}танне свет", result.output
+
+
 def check_en_full_run_batches_phrasal_once():
     fake, calls = recorded_phrasal()
     with patched(phrasal, "find_multiword_verbs", fake):
@@ -201,6 +237,23 @@ def check_ru_missing_model_is_503():
         assert exc.detail == "Stress model not loaded: weights missing", exc.detail
     else:
         raise AssertionError("missing ru model must raise HTTPException(503)")
+
+
+def check_be_missing_model_is_503():
+    try:
+        enrich.enrich(
+            EnrichRequest(
+                language="be",
+                enrichers=["be_stress"],
+                sentences=[{"id": 5, "text": "прывітанне свет", "tokens": []}],
+            ),
+            fake_request(BrokenModelState("stress_model_bel")),
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 503, exc.status_code
+        assert exc.detail == "Stress model not loaded: weights missing", exc.detail
+    else:
+        raise AssertionError("missing be model must raise HTTPException(503)")
 
 
 def check_phrasal_runtime_error_is_503():
@@ -262,8 +315,10 @@ def check_unknown_enricher_key_rejected():
 def main() -> int:
     checks = [
         check_ru_happy_path,
+        check_be_happy_path,
         check_en_full_run_batches_phrasal_once,
         check_ru_missing_model_is_503,
+        check_be_missing_model_is_503,
         check_phrasal_runtime_error_is_503,
         check_phrasal_unexpected_error_is_not_503,
         check_partial_run_touches_only_requested_modules,

@@ -78,9 +78,10 @@ it('maps enrichers to languages declaratively', function () {
     $registry = new EnricherRegistry;
 
     expect(collect($registry->forLanguage('ru'))->map->key()->all())->toBe(['ru_stress'])
+        ->and(collect($registry->forLanguage('be'))->map->key()->all())->toBe(['be_stress'])
         ->and(collect($registry->forLanguage('en'))->map->key()->all())->toBe(['en_stress', 'en_phrasal'])
         ->and($registry->forLanguage('fr'))->toBe([])
-        ->and(collect($registry->languages())->sort()->values()->all())->toBe(['en', 'ru']);
+        ->and(collect($registry->languages())->sort()->values()->all())->toBe(['be', 'en', 'ru']);
 });
 
 it('runs the whole entity through the job and stamps every enricher', function () {

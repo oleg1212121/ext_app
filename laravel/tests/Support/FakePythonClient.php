@@ -124,6 +124,7 @@ class FakePythonClient extends PythonClient
                 'id' => $sentence['id'],
                 'output' => array_filter([
                     'ru_stress' => in_array('ru_stress', $enrichers, true) ? $sentence['text'].'́' : null,
+                    'be_stress' => in_array('be_stress', $enrichers, true) ? $sentence['text'].'́' : null,
                     'en_stress' => in_array('en_stress', $enrichers, true) ? $sentence['text'] : null,
                     'en_phrasal' => in_array('en_phrasal', $enrichers, true) ? [] : null,
                 ], fn ($output): bool => $output !== null),

@@ -1,5 +1,33 @@
 # Directory Update Log
 
+## 2026-10-10 (Belarusian 03: be_stress stress enricher end-to-end)
+
+Belarusian entities enrich like Russian ones. Python: the Cyrillic stress
+machinery moved verbatim into a shared `ai/enrichment/cyrillic_stress.py`
+(vowel-set parameter) that `ru_stress` closes over Russian letters — its
+public surface (`mark_sentence`, `_dict_fallback`, `WORD_RE`,
+`COMBINING_ACUTE`, `RU_VOWELS`, `strip_marks`, version 1) and behavior are
+unchanged — and the new `be_stress` closes over the Belarusian set (і instead
+of и; non-syllabic ў excluded; ё stressed by definition), version 1. The
+registry grew a `be_stress` entry whose prepare loads the package's own
+Belarusian-trained accentor (`ModelCache.stress_model('bel')`,
+`accentor-bel.pt`, cached under `stress_model_bel`): the ticket's quality gate
+found the Russian accentor marks Belarusian per Russian phonology (РаніцА́й,
+прЫ́йшла, горА́д — garbage), while the bel accentor places most content-word
+marks correctly (РАніцай, ракОй, прыйшлА, ГОрад, вадзЕ) with only clitic
+noise — sample + verdict in the ticket. Laravel: `RussianStressEnricher`'s
+body moved into an abstract `CyrillicStressEnricher` (behavior identical);
+`BelarusianStressEnricher` is its `be_stress`/`[be]` face, added to the
+manifest — Enrich action, sweep and stamps pick be up registry-driven, the
+shared stress annotation vertical carries the display. `FakePythonClient`
+serves `be_stress` in its keyed echo. Tests: python
+`test_registry.py` 13/13, `test_enrich_endpoint.py` 9/9 (be happy path +
+be 503), `test_enrichment.py` (be vowel-set fallback checks + real-bel-model
+sentence checks); Laravel `BelarusianEnrichmentTest` (5 tests: be chunk +
+versions, v/pv stamps + staleness, form/ё-headword hints, empty-dictionary
+harmlessness, reader vertical), manifest test updated; `composer run test:tia`
+1061 passed.
+
 ## 2026-10-10 (Belarusian prep 04: shared Cyrillic stress-mark normalizer)
 
 One helper owns the "does this target language carry combining stress

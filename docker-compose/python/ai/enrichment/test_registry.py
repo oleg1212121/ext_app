@@ -1,7 +1,7 @@
 """Unit tests for the enricher module registry (plain python, no pytest).
 
 Covers the contract that lets a future analysis plug in as one module plus
-one registry entry (ticket 02 of the belarusian-language feature):
+one registry entry (tickets 02/03 of the belarusian-language feature):
 
 1. Lookup: the registry serves exactly the registered keys; each adapter
    exposes the uniform shape (key, version, prepare, apply) and its version
@@ -9,9 +9,11 @@ one registry entry (ticket 02 of the belarusian-language feature):
 2. prepare/apply contract per adapter — prepare runs the once-per-request
    step (model load / batched computation) and hands its result to apply,
    which produces the per-sentence output:
-   - ru_stress loads the Silero accentor through ModelCache; a load failure
-     raises EnricherUnavailable (the endpoint maps it to HTTP 503 — never
-     silent empty enrichment), and apply marks with the loaded accentor.
+   - ru_stress loads the Russian Silero accentor through ModelCache;
+     be_stress loads the package's Belarusian one (stress_model('bel')).
+     A load failure raises EnricherUnavailable (the endpoint maps it to
+     HTTP 503 — never silent empty enrichment), and apply marks with the
+     loaded accentor.
    - en_stress needs no model (prepare is a no-op) and marks from token IPA.
    - en_phrasal runs the batched finder ONCE per request and apply pairs the
      per-sentence hit lists in order; only RuntimeError (missing spaCy
@@ -39,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 os.environ["CACHE_MODELS"] = "1"
 
 try:
-    from ai.enrichment import en_stress, phrasal, ru_stress
+    from ai.enrichment import be_stress, en_stress, phrasal, ru_stress
     from ai.enrichment import registry
 except ImportError as exc:
     registry = None
@@ -62,13 +64,22 @@ def fake_accentor(text: str) -> str:
     return text.replace("привет", "прив+ет")
 
 
+def fake_bel_accentor(text: str) -> str:
+    """Stand-in Silero bel: marks прывітанне with '+' before the stressed vowel."""
+    return text.replace("прывітанне", "прыв+ітанне")
+
+
 class BrokenModelState:
-    """app.state whose stress_model attribute blows up on access, the way a
+    """app.state whose stress-model attribute blows up on access, the way a
     failed lazy load propagates out of ModelCache.stress_model()."""
 
-    @property
-    def stress_model(self):
-        raise RuntimeError("weights missing")
+    def __init__(self, attr: str = "stress_model"):
+        object.__setattr__(self, "broken_attr", attr)
+
+    def __getattr__(self, name):
+        if name == self.broken_attr:
+            raise RuntimeError("weights missing")
+        raise AttributeError(name)
 
 
 @contextmanager
@@ -98,9 +109,10 @@ def recorded_phrasal(hits):
 
 
 def check_registry_lookup_and_shape():
-    assert sorted(registry.keys()) == ["en_phrasal", "en_stress", "ru_stress"]
+    assert sorted(registry.keys()) == ["be_stress", "en_phrasal", "en_stress", "ru_stress"]
     for key, module, version in (
         ("ru_stress", ru_stress, ru_stress.ALGORITHM_VERSION),
+        ("be_stress", be_stress, be_stress.ALGORITHM_VERSION),
         ("en_stress", en_stress, en_stress.ALGORITHM_VERSION),
         ("en_phrasal", phrasal, phrasal.ALGORITHM_VERSION),
     ):
@@ -150,6 +162,37 @@ def check_ru_apply_marks_with_prepared_accentor():
         prepared,
     )
     assert marked == f"приве{ACUTE}т мир", ascii(marked)
+
+
+def check_be_prepare_loads_bel_accentor_via_model_cache():
+    adapter = registry.get("be_stress")
+    state = SimpleNamespace(**{"stress_model_bel": fake_bel_accentor})
+    prepared = adapter.prepare(state, [], set())
+    assert prepared is fake_bel_accentor, "prepare must return the loaded accentor"
+
+
+def check_be_prepare_failure_raises_enricher_unavailable():
+    adapter = registry.get("be_stress")
+    try:
+        adapter.prepare(BrokenModelState("stress_model_bel"), [], set())
+    except registry.EnricherUnavailable as exc:
+        # Same detail style the endpoint has always surfaced (HTTP 503).
+        assert str(exc) == "Stress model not loaded: weights missing", str(exc)
+        assert isinstance(exc.__cause__, RuntimeError), exc.__cause__
+    else:
+        raise AssertionError("a failed accentor load must raise EnricherUnavailable")
+
+
+def check_be_apply_marks_with_prepared_accentor():
+    adapter = registry.get("be_stress")
+    state = SimpleNamespace(**{"stress_model_bel": fake_bel_accentor})
+    prepared = adapter.prepare(state, [], set())
+    marked = adapter.apply(
+        "прывітанне свет",
+        [{"surface": "прывітанне", "start": 0, "end": 10}],
+        prepared,
+    )
+    assert marked == f"прыві{ACUTE}танне свет", ascii(marked)
 
 
 def check_en_stress_prepare_and_apply():
@@ -255,6 +298,9 @@ def main() -> int:
         check_ru_prepare_loads_accentor_via_model_cache,
         check_ru_prepare_failure_raises_enricher_unavailable,
         check_ru_apply_marks_with_prepared_accentor,
+        check_be_prepare_loads_bel_accentor_via_model_cache,
+        check_be_prepare_failure_raises_enricher_unavailable,
+        check_be_apply_marks_with_prepared_accentor,
         check_en_stress_prepare_and_apply,
         check_phrasal_prepare_batches_once_and_apply_pairs_in_order,
         check_phrasal_runtime_error_raises_enricher_unavailable,

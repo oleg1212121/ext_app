@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Sentence enrichment (stress marks, multi-word verbs)
-description: Local-only per-sentence enrichment — Russian/English stress marks and English multi-word-verb hits — computed by the Python service (Silero Stress, spaCy dependency parsing, caller-supplied dictionary data incl. CMUdict), orchestrated as declaratively language-scoped, version-stamped enrichers with per-enricher staleness and python version parity, stored beside sentence content, and rendered behind per-user annotation preferences on the reading surfaces (ADR 0052, ADR 0053, ADR 0057, ADR 0059, ADR 0067).
-tags: [enrichment, stress-marks, multi-word-verbs, enrichers, annotations, python-service, spacy, reader, simulator, silero]
+description: Local-only per-sentence enrichment — Russian/Belarusian/English stress marks and English multi-word-verb hits — computed by the Python service (Silero Stress per-language accentors, spaCy dependency parsing, caller-supplied dictionary data incl. CMUdict), orchestrated as declaratively language-scoped, version-stamped enrichers with per-enricher staleness and python version parity, stored beside sentence content, and rendered behind per-user annotation preferences on the reading surfaces (ADR 0052, ADR 0053, ADR 0057, ADR 0059, ADR 0067).
+tags: [enrichment, stress-marks, multi-word-verbs, enrichers, annotations, python-service, spacy, reader, simulator, silero, belarusian]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-10T19:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-10T21:30:00+03:00 }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -37,6 +37,15 @@ sources:
    - id: ru
      resource: docker-compose/python/ai/enrichment/ru_stress.py
      title: ru_stress
+   - id: be
+     resource: docker-compose/python/ai/enrichment/be_stress.py
+     title: be_stress
+   - id: cyrillic
+     resource: docker-compose/python/ai/enrichment/cyrillic_stress.py
+     title: cyrillic_stress (shared Cyrillic machinery)
+   - id: benricher
+     resource: laravel/app/Classes/Enrichment/BelarusianStressEnricher.php
+     title: BelarusianStressEnricher
    - id: en
      resource: docker-compose/python/ai/enrichment/en_stress.py
      title: en_stress
@@ -68,13 +77,13 @@ sources:
 
 # Sentence enrichment (stress marks, multi-word verbs)
 
-Every sentence of a ru/en entity gets two enrichment payloads, computed
+Every sentence of a ru/be/en entity gets two enrichment payloads, computed
 **entirely locally** (ADR 0052: no LLM, no paid calls — Silero Stress,
 spaCy and dictionary data only):
 
 | Payload | Column | Content |
 |---|---|---|
-| Stressed variant | `entity_sentences.stressed_content` | Sentence with U+0301 combining acutes on stressed vowels (Russian also е→ё); acute omitted on ё |
+| Stressed variant | `entity_sentences.stressed_content` | Sentence with U+0301 combining acutes on stressed vowels (Russian and Belarusian also е→ё); acute omitted on ё |
 | Multi-word verbs | `entity_sentences.phrasal_verbs` (jsonb) | English hits `{verb, particles[], start, end, phrase}` — char spans into `content`, `phrase` the matched headword (or the normalized lemma phrase for parser-only particle hits) |
 
 `content` is **never mutated**: enrichment that wrote into content would bump
@@ -92,10 +101,13 @@ version it expects the service to report; ADR 0067), `languages()`
 `tokenHints()` (per-token dictionary hints), `requestExtras()`
 (request-level payload), `toStorage()`. `EnricherRegistry::forLanguage(code)`
 answers "what should be included in the enrichment process" for a language:
-`ru` → `ru_stress` (RussianStressEnricher), `en` → `en_stress`
+`ru` → `ru_stress` (RussianStressEnricher), `be` → `be_stress`
+(BelarusianStressEnricher), `en` → `en_stress`
 (EnglishStressEnricher) + `en_phrasal` (EnglishPhrasalVerbEnricher); any
 other language → nothing (never dispatched, never stale). Adding an analysis
-is one class + one registry entry.
+is one class + one registry entry. The two Cyrillic stress enrichers share an
+abstract `CyrillicStressEnricher` body (identical hint lookup, storage and
+the has-`\p{M}`-or-ё stress-marks question); only key and language differ.
 
 The **Annotation** is the display-side unit (ADR 0067): payloadKey
 (`stressed`/`phrasal` — the Reading-row key), column
@@ -148,6 +160,20 @@ split as `/split` and `/align`.
   the dictionary candidates (the enricher's `stressed` hints: forms-table
   stressed forms, then the headword), applied only when all candidates agree
   on the stress position (ambiguous homograph ⇒ unmarked).
+- **be stress** (`ai/enrichment/be_stress.py`): the same algorithm as ru,
+  closed over the Belarusian vowel letters (і instead of и; non-syllabic ў
+  is not a vowel; ё/Ё stressed by definition) and running the package's own
+  **Belarusian-trained accentor** — `ModelCache.stress_model('bel')`
+  (`accentor-bel.pt`, cached under `stress_model_bel` next to the Russian
+  one). The quality gate (ticket 03) rejected the Russian accentor for
+  Belarusian — it imposes Russian stress positions on Belarusian orthography
+  (РаніцА́й, прЫ́йшла, горА́д) — while the bel accentor places the majority
+  of content-word marks correctly (РАніцай, ракОй, прыйшлА, ГОрад, вадзЕ)
+  with only monosyllabic-clitic noise; unknown words stay unmarked. The
+  whole algorithm lives in the shared `ai/enrichment/cyrillic_stress.py`
+  (tokenization mirroring WordTokenizer, mark stripping, `+`→U+0301
+  conversion, dictionary fallback, span-preserving rebuild), parameterized
+  by the vowel set.
 - **en stress** (`ai/enrichment/en_stress.py`): the ˈ in a hint variant gives
   the stressed-syllable index (vowel nuclei before it). Placement walks two
   paths (ADR 0053): **pyphen** orthographic syllables aligned by count with

@@ -18,15 +18,16 @@ Each entry is an :class:`EnricherModule` with a uniform two-phase shape:
   empty enrichment that would get stamped as done (ADR 0052/0059).
 - ``apply(text, tokens, prepared)`` produces one sentence's output.
   ``tokens`` are the sentence's dumped token dicts, ``prepared`` whatever
-  ``prepare`` returned (ru_stress: the Silero accentor; en_phrasal: an
-  iterator over the batched per-sentence hit lists, paired in order;
-  en_stress: nothing — pure string work, no model).
+  ``prepare`` returned (ru_stress/be_stress: the Silero accentor — the
+  package's per-language model; en_phrasal: an iterator over the batched
+  per-sentence hit lists, paired in order; en_stress: nothing — pure string
+  work, no model).
 """
 
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ai.enrichment import en_stress, phrasal, ru_stress
+from ai.enrichment import be_stress, en_stress, phrasal, ru_stress
 from ai.models_cache import ModelCache
 
 
@@ -54,15 +55,34 @@ class EnricherModule:
     apply: Callable[[str, list[dict], Any], Any]
 
 
-def _prepare_ru_stress(app_state, sentences, lexicon):
-    try:
-        return ModelCache(app_state).stress_model()
-    except Exception as exc:
-        raise EnricherUnavailable(f"Stress model not loaded: {exc}") from exc
+def _prepare_stress(lang: str):
+    """The Silero accentor prepare step for one language (ru/be share it).
+
+    Each Cyrillic stress adapter loads its language's accentor through the
+    ModelCache; a load failure raises :class:`EnricherUnavailable` — the
+    endpoint maps it to HTTP 503 so a missing model fails loudly instead of
+    writing empty enrichment that would get stamped as done (ADR 0052/0059).
+    """
+
+    def prepare(app_state, sentences, lexicon):
+        try:
+            return ModelCache(app_state).stress_model(lang)
+        except Exception as exc:
+            raise EnricherUnavailable(f"Stress model not loaded: {exc}") from exc
+
+    return prepare
+
+
+_prepare_ru_stress = _prepare_stress("ru")
+_prepare_be_stress = _prepare_stress("bel")
 
 
 def _apply_ru_stress(text, tokens, accentor):
     return ru_stress.mark_sentence(text, tokens, accentor)
+
+
+def _apply_be_stress(text, tokens, accentor):
+    return be_stress.mark_sentence(text, tokens, accentor)
 
 
 def _prepare_en_stress(app_state, sentences, lexicon):
@@ -93,6 +113,12 @@ _MODULES: dict[str, EnricherModule] = {
             version=ru_stress.ALGORITHM_VERSION,
             prepare=_prepare_ru_stress,
             apply=_apply_ru_stress,
+        ),
+        EnricherModule(
+            key="be_stress",
+            version=be_stress.ALGORITHM_VERSION,
+            prepare=_prepare_be_stress,
+            apply=_apply_be_stress,
         ),
         EnricherModule(
             key="en_stress",

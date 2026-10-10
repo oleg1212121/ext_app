@@ -314,6 +314,53 @@ try:
 except ImportError:
     print("silero-stress unavailable — ru_stress tests skipped")
 
+# --- be_stress: Belarusian vowel set (Silero-independent) --------------------
+from ai.enrichment import be_stress  # noqa: E402
+from ai.enrichment.be_stress import _dict_fallback as be_fallback  # noqa: E402
+
+check("versions: be_stress module declares v1", be_stress.ALGORITHM_VERSION, 1)
+
+# і counts as a vowel (ru's set has и, be's has і): the acute lands on і.
+check(
+    "be: dict fallback counts і as a vowel",
+    be_fallback("кніга", ["кні́га"]),
+    "кні́га",
+)
+# ў is non-syllabic and never a vowel: the ё-style candidate's stress index
+# counts а…ё without it, so the ё stays put instead of drifting one slot.
+check(
+    "be: dict fallback skips non-syllabic ў (ё-style candidate)",
+    be_fallback("паўднёвы", ["паўднёвы"]),
+    "паўднёвы",
+)
+check(
+    "be: dict fallback skips ambiguous candidates",
+    be_fallback("замак", ["за́мак", "замаќ"]),
+    "замак",
+)
+
+# --- be_stress (the package's Belarusian accentor; skipped when unavailable) --
+try:
+    from silero_stress import load_accentor as _load_accentor_be
+
+    bel_accentor = _load_accentor_be(lang="bel")
+except ImportError:
+    print("silero-stress unavailable — be_stress model tests skipped")
+else:
+
+    def tok_be(text):
+        """Tokenize like WordTokenizer and build span dicts."""
+        out = []
+        for m in be_stress.WORD_RE.finditer(text.replace("+", "")):
+            out.append({"surface": m.group(0), "start": m.start(), "end": m.end(), "stressed": None})
+        return out
+
+    be_sentence = "Яна прыйшла ў горад раніцай."
+    marked = be_stress.mark_sentence(be_sentence, tok_be(be_sentence), bel_accentor)
+    check("be: Яна gets acute on final а", f"Ян{'а'}{ACUTE}" in marked, True)
+    check("be: горад gets acute on о", f"г{'о'}{ACUTE}рад" in marked, True)
+    check("be: non-syllabic ў stays unmarked", " ў " in marked, True)
+
 # --- algorithm versions (ADR 0067) ------------------------------------------
 # Each module reports its version on every /enrich response; Laravel stamps
 # the reported value and re-stales when it disagrees with the enricher's

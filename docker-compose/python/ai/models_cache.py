@@ -82,19 +82,23 @@ class ModelCache:
             self._set("align_model_path", current_path)
         return m
 
-    def stress_model(self):
-        """Silero Stress accentor for Russian stress marking (/enrich).
+    def stress_model(self, lang: str = "ru"):
+        """Silero Stress accentor for Cyrillic stress marking (/enrich).
 
-        Imported lazily so the English enrichment path keeps working even if
-        the silero-stress package is absent.
+        The package bundles per-language accentors — the big Russian one
+        (``accentor.pt``, the default) and the small ``bel``/``ukr`` ones —
+        cached under a per-language key. Imported lazily so the English
+        enrichment path keeps working even if the silero-stress package is
+        absent.
         """
-        m = self._get("stress_model")
+        key = "stress_model" if lang == "ru" else f"stress_model_{lang}"
+        m = self._get(key)
         if m is None:
             from silero_stress import load_accentor
 
-            logger.info("Lazy-loading Silero stress accentor")
-            m = load_accentor()
-            self._set("stress_model", m)
+            logger.info("Lazy-loading Silero stress accentor (lang=%s)", lang)
+            m = load_accentor(lang=lang)
+            self._set(key, m)
         return m
 
     def reload_aligner(self) -> SentenceTransformer:
