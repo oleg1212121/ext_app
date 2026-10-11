@@ -1,4 +1,4 @@
-"""Endpoint tests for POST /enrich (plain python, no pytest).
+"""Endpoint tests for POST /enrich.
 
 These pin the wire contract of the enrich endpoint — the seam Laravel's
 SentenceEnrichmentService consumes — so the dispatch-registry refactor
@@ -22,40 +22,24 @@ behavior-identical for ru and en:
 The handler is called directly with a stubbed starlette Request (only
 ``request.app.state`` is read), so no server is needed.
 
-Needs fastapi + pydantic: run inside the container
+Run (inside the container):
 
-    docker exec ext_python python /app/ai/api/test_enrich_endpoint.py
-
-(on a bare venv without the API stack every check reports SKIP).
+    docker exec ext_python python -m pytest /app/ai/api/test_enrich_endpoint.py -q
 """
 
-import os
-import sys
-from contextlib import contextmanager
-from pathlib import Path
 from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import pytest
 
-# Model caching must be on so the fake accentor rides app.state like the
-# real one (CACHE_MODELS=0 would send the fakes down the load path).
-os.environ["CACHE_MODELS"] = "1"
+pytest.importorskip("fastapi")
 
-try:
-    from fastapi import HTTPException
-    from pydantic import ValidationError
-    from starlette.requests import Request as StarletteRequest
+from fastapi import HTTPException
+from pydantic import ValidationError
+from starlette.requests import Request as StarletteRequest
 
-    from ai.api import enrich
-    from ai.api.schemas import EnrichPhrasalHit, EnrichRequest
-
-    HAS_API_STACK = True
-    MISSING = ""
-except ImportError as exc:
-    HAS_API_STACK = False
-    MISSING = f"{type(exc).__name__}: {exc}"
-
-from ai.enrichment import phrasal  # noqa: E402  (light: lazy spaCy import)
+from ai.api import enrich
+from ai.api.schemas import EnrichPhrasalHit, EnrichRequest
+from ai.enrichment import phrasal
 
 RU_TEXT = "привет мир"
 EN_SENTENCES = [
@@ -109,20 +93,6 @@ class BrokenModelState:
         raise AttributeError(name)
 
 
-@contextmanager
-def patched(obj, attr, value):
-    sentinel = object()
-    original = getattr(obj, attr, sentinel)
-    setattr(obj, attr, value)
-    try:
-        yield
-    finally:
-        if original is sentinel:
-            delattr(obj, attr)
-        else:
-            setattr(obj, attr, original)
-
-
 def fake_request(app_state) -> "StarletteRequest":
     """A starlette Request stub: the handler only reads request.app.state."""
     return StarletteRequest(
@@ -158,7 +128,7 @@ def recorded_phrasal(hits=None):
 
     Returns fresh copies per call: the endpoint consumes (mutates) the
     returned per-sentence lists via pop(0), so handing out the shared
-    fixture would leak state between checks.
+    fixture would leak state between tests.
     """
     calls = []
     hits = PHRASAL_HITS if hits is None else hits
@@ -170,7 +140,7 @@ def recorded_phrasal(hits=None):
     return fake, calls
 
 
-def check_ru_happy_path():
+def test_ru_happy_path():
     resp = enrich.enrich(ru_request(), fake_request(SimpleNamespace(stress_model=fake_accentor)))
     assert dict(resp.versions) == {"ru_stress": 1}, resp.versions
     assert len(resp.results) == 1
@@ -180,7 +150,7 @@ def check_ru_happy_path():
     assert result.output["ru_stress"] == f"приве{ACUTE}т мир", result.output
 
 
-def check_be_happy_path():
+def test_be_happy_path():
     # The be_stress key rides the package's Belarusian accentor, cached under
     # its own app.state key (stress_model_bel) next to the Russian one.
     request = EnrichRequest(
@@ -206,10 +176,10 @@ def check_be_happy_path():
     assert result.output["be_stress"] == f"прыві{ACUTE}танне свет", result.output
 
 
-def check_en_full_run_batches_phrasal_once():
+def test_en_full_run_batches_phrasal_once(monkeypatch):
     fake, calls = recorded_phrasal()
-    with patched(phrasal, "find_multiword_verbs", fake):
-        resp = enrich.enrich(en_request(), fake_request(SimpleNamespace()))
+    monkeypatch.setattr(phrasal, "find_multiword_verbs", fake)
+    resp = enrich.enrich(en_request(), fake_request(SimpleNamespace()))
     assert dict(resp.versions) == {"en_stress": 1, "en_phrasal": 3}, resp.versions
     # One batched call over the whole request (ADR 0059), lexicon as a set.
     assert len(calls) == 1, calls
@@ -229,18 +199,15 @@ def check_en_full_run_batches_phrasal_once():
     assert second.output["en_phrasal"] == []
 
 
-def check_ru_missing_model_is_503():
-    try:
+def test_ru_missing_model_is_503():
+    with pytest.raises(HTTPException) as exc_info:
         enrich.enrich(ru_request(), fake_request(BrokenModelState()))
-    except HTTPException as exc:
-        assert exc.status_code == 503, exc.status_code
-        assert exc.detail == "Stress model not loaded: weights missing", exc.detail
-    else:
-        raise AssertionError("missing ru model must raise HTTPException(503)")
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "Stress model not loaded: weights missing"
 
 
-def check_be_missing_model_is_503():
-    try:
+def test_be_missing_model_is_503():
+    with pytest.raises(HTTPException) as exc_info:
         enrich.enrich(
             EnrichRequest(
                 language="be",
@@ -249,41 +216,32 @@ def check_be_missing_model_is_503():
             ),
             fake_request(BrokenModelState("stress_model_bel")),
         )
-    except HTTPException as exc:
-        assert exc.status_code == 503, exc.status_code
-        assert exc.detail == "Stress model not loaded: weights missing", exc.detail
-    else:
-        raise AssertionError("missing be model must raise HTTPException(503)")
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "Stress model not loaded: weights missing"
 
 
-def check_phrasal_runtime_error_is_503():
+def test_phrasal_runtime_error_is_503(monkeypatch):
     def broken(sentences, lexicon):
         raise RuntimeError("spaCy model en_core_web_md is not installed")
 
-    with patched(phrasal, "find_multiword_verbs", broken):
-        try:
-            enrich.enrich(en_request(["en_phrasal"]), fake_request(SimpleNamespace()))
-        except HTTPException as exc:
-            assert exc.status_code == 503, exc.status_code
-            assert exc.detail == "spaCy model en_core_web_md is not installed", exc.detail
-        else:
-            raise AssertionError("phrasal RuntimeError must raise HTTPException(503)")
+    monkeypatch.setattr(phrasal, "find_multiword_verbs", broken)
+    with pytest.raises(HTTPException) as exc_info:
+        enrich.enrich(en_request(["en_phrasal"]), fake_request(SimpleNamespace()))
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "spaCy model en_core_web_md is not installed"
 
 
-def check_phrasal_unexpected_error_is_not_503():
+def test_phrasal_unexpected_error_is_not_503(monkeypatch):
     def buggy(sentences, lexicon):
         raise ValueError("matcher bug")
 
-    with patched(phrasal, "find_multiword_verbs", buggy):
-        try:
-            enrich.enrich(en_request(["en_phrasal"]), fake_request(SimpleNamespace()))
-        except HTTPException:
-            raise AssertionError("a non-RuntimeError must not be mapped to 503")
-        except ValueError:
-            pass  # propagates (FastAPI would surface it as a 500), as before
+    monkeypatch.setattr(phrasal, "find_multiword_verbs", buggy)
+    # Propagates (FastAPI would surface it as a 500), as before.
+    with pytest.raises(ValueError, match="matcher bug"):
+        enrich.enrich(en_request(["en_phrasal"]), fake_request(SimpleNamespace()))
 
 
-def check_partial_run_touches_only_requested_modules():
+def test_partial_run_touches_only_requested_modules(monkeypatch):
     # en_stress alone: no model state at all — nothing besides en_stress may
     # be touched, and no extra output/versions keys appear.
     resp = enrich.enrich(en_request(["en_stress"]), fake_request(SimpleNamespace()))
@@ -292,8 +250,8 @@ def check_partial_run_touches_only_requested_modules():
 
     # en_phrasal alone: no en_stress output key, hits still paired.
     fake, calls = recorded_phrasal()
-    with patched(phrasal, "find_multiword_verbs", fake):
-        resp = enrich.enrich(en_request(["en_phrasal"]), fake_request(SimpleNamespace()))
+    monkeypatch.setattr(phrasal, "find_multiword_verbs", fake)
+    resp = enrich.enrich(en_request(["en_phrasal"]), fake_request(SimpleNamespace()))
     assert dict(resp.versions) == {"en_phrasal": 3}, resp.versions
     assert list(resp.results[0].output.keys()) == ["en_phrasal"]
     assert resp.results[0].output["en_phrasal"] == [
@@ -301,46 +259,9 @@ def check_partial_run_touches_only_requested_modules():
     ]
 
 
-def check_unknown_enricher_key_rejected():
-    try:
+def test_unknown_enricher_key_rejected():
+    with pytest.raises(ValidationError) as exc_info:
         ru_request(("zz_fake",))
-    except ValidationError as exc:
-        errors = exc.errors()
-        assert errors, errors
-        assert any(e.get("loc", ())[0:1] == ("enrichers",) for e in errors), errors
-    else:
-        raise AssertionError("unknown enricher key must fail validation (422)")
-
-
-def main() -> int:
-    checks = [
-        check_ru_happy_path,
-        check_be_happy_path,
-        check_en_full_run_batches_phrasal_once,
-        check_ru_missing_model_is_503,
-        check_be_missing_model_is_503,
-        check_phrasal_runtime_error_is_503,
-        check_phrasal_unexpected_error_is_not_503,
-        check_partial_run_touches_only_requested_modules,
-        check_unknown_enricher_key_rejected,
-    ]
-    if not HAS_API_STACK:
-        for check in checks:
-            print(f"SKIP {check.__name__} (API stack unavailable: {MISSING})")
-        print(f"0/{len(checks)} checks run — rerun inside ext_python")
-        return 0
-
-    failures = 0
-    for check in checks:
-        try:
-            check()
-            print(f"PASS {check.__name__}")
-        except AssertionError as exc:
-            failures += 1
-            print(f"FAIL {check.__name__}: {exc}")
-    print(f"{len(checks) - failures}/{len(checks)} checks passed")
-    return 1 if failures else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    errors = exc_info.value.errors()
+    assert errors
+    assert any(e.get("loc", ())[0:1] == ("enrichers",) for e in errors), errors

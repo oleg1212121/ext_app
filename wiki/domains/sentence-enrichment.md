@@ -5,7 +5,7 @@ description: Local-only per-sentence enrichment — Russian/Belarusian/English s
 tags: [enrichment, stress-marks, multi-word-verbs, enrichers, annotations, python-service, spacy, reader, simulator, silero, belarusian]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-10T21:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-11T12:40:00+03:00 }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -219,13 +219,15 @@ split as `/split` and `/align`.
   is a documented limitation ("sat in the car" hits when "sit in" is
   lexiconed).
 
-Plain-python tests: `docker exec ext_python python
-/app/ai/enrichment/test_enrichment.py` (Silero-dependent ru tests skip with a
-notice when the package is absent), `/app/ai/enrichment/test_registry.py`
-(registry lookup, per-adapter prepare/apply contract, the 503 path, schema
-validation — schema checks need pydantic) and `/app/ai/api/
-test_enrich_endpoint.py` (the /enrich wire contract: ru/en outputs, batched
-phrasal pairing, 503 details — needs the API stack).
+Pytest suite (canonical run `docker exec ext_python python -m pytest /app/ai
+-q`, manual only — no CI job; see wiki/playbooks/running-tests.md):
+`ai/enrichment/test_enrichment.py` (en_stress IPA marking, spaCy phrasal
+verbs, Silero-dependent ru/be stress marking — those skip when the package is
+absent — dictionary fallbacks, algorithm versions),
+`ai/enrichment/test_registry.py` (registry lookup, per-adapter prepare/apply
+contract, the 503 path, schema validation),
+`ai/api/test_enrich_endpoint.py` (the /enrich wire contract: ru/en outputs,
+batched phrasal pairing, 503 details).
 
 ## Orchestration (Laravel)
 

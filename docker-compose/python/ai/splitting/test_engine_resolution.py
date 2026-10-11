@@ -1,4 +1,4 @@
-"""Unit tests for per-language splitter engine resolution (plain python, no pytest).
+"""Unit tests for per-language splitter engine resolution.
 
 Covers the resolution contract that lets a new language split out of the box:
 
@@ -13,19 +13,16 @@ Covers the resolution contract that lets a new language split out of the box:
 4. Override parsing is whitespace-tolerant and silently ignores malformed
    entries and unknown engine names — a typo must never take a language down.
 
-Run from anywhere (adds the package root to sys.path):
+Run (inside the container):
 
-    docker-compose/python/ai/venv/bin/python ai/splitting/test_engine_resolution.py
-    docker exec ext_python python /app/ai/splitting/test_engine_resolution.py
+    docker exec ext_python python -m pytest /app/ai/splitting/test_engine_resolution.py -q
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import pytest
 
 from ai.config import parse_engine_overrides, resolve_splitter_engine
 from ai.splitting.sentence_splitter import SUPPORTED_LANGUAGES
+from ai.splitting.typed_splitter import TypedSentenceSplitter
 
 # Preconditions from the environment this contract is about: pysbd ships an
 # entry for en/ru/pl but NOT for be. If a future pysbd adds Belarusian the
@@ -36,27 +33,27 @@ assert "pl" in SUPPORTED_LANGUAGES, "pysbd must know 'pl' for these tests"
 assert "be" not in SUPPORTED_LANGUAGES, "these tests assume pysbd lacks 'be'"
 
 
-def check_global_engine_still_serves_its_languages() -> None:
+def test_global_engine_still_serves_its_languages():
     assert resolve_splitter_engine("en", "pysbd", {}) == "pysbd"
     assert resolve_splitter_engine("ru", "pysbd", {}) == "pysbd"
     assert resolve_splitter_engine("en", "razdel", {}) == "razdel"
     assert resolve_splitter_engine("ru", "razdel", {}) == "razdel"
 
 
-def check_unservable_language_falls_back_to_razdel() -> None:
+def test_unservable_language_falls_back_to_razdel():
     # pysbd has no Belarusian entry — today this fails the split request
     # outright; the resolver substitutes the rule-based engine.
     assert resolve_splitter_engine("be", "pysbd", {}) == "razdel"
 
 
-def check_unknown_code_falls_back_instead_of_erroring() -> None:
+def test_unknown_code_falls_back_instead_of_erroring():
     # Laravel validates codes against the languages registry; python side
     # degrades gracefully either way.
     assert resolve_splitter_engine("zz", "pysbd", {}) == "razdel"
     assert resolve_splitter_engine("zz", "razdel", {}) == "razdel"
 
 
-def check_explicit_override_wins() -> None:
+def test_explicit_override_wins():
     # A language the global engine CAN serve can still be pinned elsewhere.
     assert resolve_splitter_engine("pl", "razdel", {"pl": "pysbd"}) == "pysbd"
     # Redundant override is a no-op.
@@ -68,7 +65,7 @@ def check_explicit_override_wins() -> None:
     assert resolve_splitter_engine("be", "pysbd", {"be": "pysbd"}) == "pysbd"
 
 
-def check_override_parsing() -> None:
+def test_override_parsing():
     assert parse_engine_overrides(None) == {}
     assert parse_engine_overrides("") == {}
     assert parse_engine_overrides("   ") == {}
@@ -88,14 +85,12 @@ def check_override_parsing() -> None:
     assert parse_engine_overrides("ru=weird,be=razdel") == {"be": "razdel"}
 
 
-def check_typed_splitter_resolves_per_language() -> None:
+def test_typed_splitter_resolves_per_language(env_file):
     """TypedSentenceSplitter picks the engine per language, not globally."""
-    import os
-
-    from ai.splitting.typed_splitter import TypedSentenceSplitter
-
-    os.environ["SPLITTER_ENGINE"] = "pysbd"
-    os.environ.pop("SPLITTER_ENGINE_OVERRIDES", None)
+    # config's live accessors read the env FILE first, so steer the resolution
+    # through the writable stand-in (os.environ alone cannot override it in
+    # the container).
+    env_file("SPLITTER_ENGINE=pysbd\n")
     # pysbd-served language keeps the global engine; Belarusian falls back to
     # the rule-based engine instead of failing to construct.
     assert TypedSentenceSplitter("ru").backend == "pysbd"
@@ -104,34 +99,5 @@ def check_typed_splitter_resolves_per_language() -> None:
     # scripts use it to exercise both engines) — and a deliberate pin onto an
     # engine that cannot serve the language raises at construction, which the
     # /split endpoint maps to HTTP 400.
-    try:
+    with pytest.raises(ValueError):
         TypedSentenceSplitter("be", backend="pysbd")
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("be + explicit pysbd pin must raise ValueError")
-
-
-def main() -> int:
-    checks = [
-        check_global_engine_still_serves_its_languages,
-        check_unservable_language_falls_back_to_razdel,
-        check_unknown_code_falls_back_instead_of_erroring,
-        check_explicit_override_wins,
-        check_override_parsing,
-        check_typed_splitter_resolves_per_language,
-    ]
-    failures = 0
-    for check in checks:
-        try:
-            check()
-            print(f"PASS {check.__name__}")
-        except AssertionError as exc:
-            failures += 1
-            print(f"FAIL {check.__name__}: {exc}")
-    print(f"{len(checks) - failures}/{len(checks)} checks passed")
-    return 1 if failures else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -1,23 +1,18 @@
-"""Unit tests for language preprocessing/postprocessing rules (plain python, no pytest).
+"""Unit tests for language preprocessing/postprocessing rules.
 
 Guards the rule tables behind ``preprocess``/``postprocess`` — in particular
 that Belarusian shares the exact Russian noise-cleanup rule list (same script,
 same stray-marker noise) while en/ru/de/fr behavior is unchanged.
 
-Run from anywhere (adds the package root to sys.path):
+Run (inside the container):
 
-    docker-compose/python/ai/venv/bin/python ai/splitting/test_preprocessing.py
+    docker exec ext_python python -m pytest /app/ai/splitting/test_preprocessing.py -q
 """
-
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ai.splitting.preprocessing import postprocess, preprocess
 
 
-def check_belarusian_shares_russian_noise_cleanup() -> None:
+def test_belarusian_shares_russian_noise_cleanup():
     # Belarusian: slashes, angle brackets and bullets are stripped exactly as
     # for Russian, plus the default whitespace/comma/dash cleanup.
     assert preprocess("Прыве/т • свет<>.", "be") == "Прывет свет."
@@ -26,40 +21,17 @@ def check_belarusian_shares_russian_noise_cleanup() -> None:
     assert preprocess("Прыве/т • свет<>.", "ru") == "Прывет свет."
 
 
-def check_english_keeps_default_rules_only() -> None:
+def test_english_keeps_default_rules_only():
     # en has no noise cleanup: the noise markers survive.
     assert preprocess("Hello/ world • test.", "en") == "Hello/ world • test."
 
 
-def check_german_rules_unchanged() -> None:
+def test_german_rules_unchanged():
     # German quotes normalise and dates are protected with the placeholder.
     assert preprocess("Er kam am 5. Januar an.", "de") == "Er kam am 5%@% Januar an."
 
 
-def check_french_postprocessing_unchanged() -> None:
+def test_french_postprocessing_unchanged():
     # A sentence starting with the » closer is reattached to the previous one.
     assert postprocess(["First", "» second"], "fr") == ["First »", " second"]
     assert postprocess(["First »", "second"], "fr") == ["First »", "second"]
-
-
-def main() -> int:
-    checks = [
-        check_belarusian_shares_russian_noise_cleanup,
-        check_english_keeps_default_rules_only,
-        check_german_rules_unchanged,
-        check_french_postprocessing_unchanged,
-    ]
-    failures = 0
-    for check in checks:
-        try:
-            check()
-            print(f"PASS {check.__name__}")
-        except AssertionError as exc:
-            failures += 1
-            print(f"FAIL {check.__name__}: {exc}")
-    print(f"{len(checks) - failures}/{len(checks)} checks passed")
-    return 1 if failures else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

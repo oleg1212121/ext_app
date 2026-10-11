@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, and the vitest suite for pure JS logic.
 tags: [testing, pest, vitest]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-05T21:35:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-11T19:02:52+03:00 }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -30,6 +30,12 @@ sources:
   - id: packagejson
     resource: laravel/package.json
     title: NPM scripts (vitest run)
+  - id: pytestini
+    resource: docker-compose/python/ai/pytest.ini
+    title: Python service pytest config (markers, pythonpath)
+  - id: pyconftest
+    resource: docker-compose/python/ai/conftest.py
+    title: Python suite shared fixtures (StubModel, cache resets, api_client)
 ---
 
 # Facts
@@ -160,7 +166,42 @@ docker exec ext_app_laravel sh -c 'cd /var/www && PHP_INI_SCAN_DIR=/usr/local/et
 
 # Frontend: pure-logic JS tests (vitest, Node only — no DB, no build)
 docker exec ext_app_laravel npm run test
+
+# Python service (pytest, inside the ext_python container; ~5s, no weights)
+docker exec ext_python python -m pytest /app/ai -q
 ```
+
+# Python service (pytest)
+
+The python microservice has its own pytest suite (`ai/pytest.ini`,
+`ai/conftest.py`; pytest is in `docker-compose/python/requirements.txt`):
+
+* Run the whole suite with the command above, or one file with
+  `docker exec ext_python python -m pytest /app/ai/alignment/test_aligner.py -q`.
+  `-k name` filters. **Manual only for now** — no CI job.
+* **No model weights needed**: the aligner/embedding tests drive the pipeline
+  through a deterministic `StubModel` (`ai/conftest.py`) with hand-picked
+  vectors, and the API tests plant stubs on `app.state` the way `ModelCache`
+  caches real models. The suite runs in ~5s.
+* An autouse fixture clears the aligner's module-level `_EMBEDDING_CACHE`
+  around every test (its keys include `id(model)`, so a freed stub's recycled
+  id would leak vectors between tests) and pins `CACHE_MODELS=1` (that key is
+  read from `os.environ`, not the env file). The spaCy singleton
+  (`phrasal._NLP`) is deliberately NOT reset — reloading `en_core_web_md`
+  per test would dominate the runtime.
+* config's live accessors read the bind-mounted env **file** first
+  (`os.environ` only as fallback), so tests that steer `SPLITTER_ENGINE` etc.
+  use the `env_file` fixture, which points `config.ENV_FILE` at a tmp file.
+* Optional dependencies skip cleanly (`silero`/`spacy` markers,
+  `pytest.importorskip("fastapi")` in the api tests): a partial host-venv run
+  (`docker-compose/python/ai/venv/bin/python -m pytest docker-compose/python/ai`)
+  works but lacks fastapi/pydantic/razdel/spacy — run the suite in the
+  container for full coverage.
+* The splitter regression fixtures are committed synthetic texts
+  (`ai/splitting/fixtures/*.txt`, exempted from the `*.txt` gitignore rule).
+* Laravel-side tests never call this service: they bind `fakePython()`
+  (`tests/Pest.php`) or `Http::fake()` the wire — see "Fake every HTTP
+  boundary" below.
 
 # Gotchas
 

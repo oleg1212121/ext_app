@@ -1,5 +1,28 @@
 # Directory Update Log
 
+## 2026-10-11 (Python service: hand-rolled test scripts ported to pytest)
+
+The 8 plain-python test scripts under `docker-compose/python/ai/` are now a
+pytest suite (146 tests, ~5s in `ext_python`, no model weights): pytest added
+to `requirements.txt` (image rebuilt), `ai/pytest.ini` + `ai/conftest.py`
+(shared `StubModel`, autouse `_EMBEDDING_CACHE` reset + `CACHE_MODELS=1` pin,
+`env_file` fixture for config's file-first live accessors, `api_client`
+fixture with app.state snapshot/restore). All suites ported
+(`check_*`/`main()` runners → `test_*` functions; `monkeypatch` replaces raw
+`os.environ` mutation; `test_enrichment.py` restructured from import-time
+checks into classes with silero/spacy skip markers). The previously broken
+`test_splitter.py` (gitignored production fixtures) now runs on committed
+synthetic fixtures (`ai/splitting/fixtures/*.txt`, gitignore exception)
+reproducing both regressions — verified they fail under flatten-all /
+newline-as-boundary. New coverage: `/align` + `/embed` wire contracts, `/health`
+probe, aligner `process()` file flow (chunked commit + global index offsets).
+Deleted dead `ai/similarity/` (only stale `__pycache__` remained). Manual runs
+only for now (no CI job). Suite run twice consecutively green (state-leak
+check). Wiki: running-tests playbook gained the Python section;
+sentence-alignment/sentence-enrichment/docker-services/overview refreshed
+(stale dev venv name `ai_env` → actual `ai/venv`; prod native path genuinely
+uses `ai_env/`, unchanged); AGENTS.md Python test command + venv fix.
+
 ## 2026-10-10 (Belarusian 07: release verification and knowledge-base closure)
 
 Verification pass over the whole feature — no feature changes. Full plain

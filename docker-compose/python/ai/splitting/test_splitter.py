@@ -1,43 +1,31 @@
-"""Regression test for the sentence splitter (plain python, no pytest).
+"""Regression tests for the sentence splitter.
 
-Guards two behaviors that both hinge on how newlines are fed to the segmenter.
+Guards two behaviors that both hinge on how newlines are fed to the segmenter,
+using small committed fixtures (the original book texts were gitignored):
 
 1. Quote-region bug (Book Thief EN import, Aug 2026): when line breaks were
    flattened to spaces before segmentation, pysbd's quote heuristic swallowed
-   long dialogue spans into one "sentence". The production entity text split
-   into 547 sentences, one of them 1761 chars long. With line structure
-   preserved it splits into 1036 clean sentences.
+   long dialogue spans into one "sentence". With line structure preserved
+   (selective_flatten keeps breaks after sentence punctuation / quote closers)
+   each dialogue line splits into its own sentence.
 
 2. Hard-wrap fragmentation (Book Thief RU "Книжный вор 2", Aug 2026): the
    source is hard-wrapped prose (each paragraph wrapped at ~70 cols with a
    single newline). pysbd treats every newline as a sentence boundary, so
-   "Когда Лизель оглядывалась … оказывались" and "едва ли не самыми яркими
-   воспоминаниями." came out as two "sentences" (9926 total). Selectively
-   flattening mid-sentence newlines (keeping only those that follow sentence
-   punctuation) collapses them into ~7148 real sentences.
+   mid-sentence lines come out as fragments. Selectively flattening
+   mid-sentence newlines collapses them into real sentences.
 
-3. Curly-quote dialogue block (Book Thief EN, Aug 2026): a blank-line
-   separated dialogue span whose lines close with curly quotes (\u201d) merged
-   into one 464-char "sentence" because selective_flatten flattened the line
-   breaks (the closing \u201d was not in the keep-set), and the two collapsed
-   spaces per blank line broke pysbd's quote-end re-split. Preserving those
-   newlines splits the block into its individual dialogue lines.
+The ``razdel`` backend is not affected by these bugs, but the tests still
+validate that it produces clean splits.
 
-Both pysbd triggers only reproduce with the full document as a single buffer
-(pysbd's quote-region state is global), so each fixture is the exact entity
-file the import used.  The ``razdel`` backend is not affected by these bugs,
-but the test still validates that it produces clean splits.
+Run (inside the container):
 
-Run from anywhere (adds the package root to sys.path):
-
-    docker exec ext_python python /app/ai/splitting/test_splitter.py
+    docker exec ext_python python -m pytest /app/ai/splitting/test_splitter.py -q
 """
 
-import os
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import pytest
 
 from ai.splitting.typed_splitter import TypedSentenceSplitter
 
@@ -45,7 +33,15 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 EN_FIXTURE = FIXTURES / "book_thief_en.txt"
 RU_FIXTURE = FIXTURES / "knizhny_ru.txt"
 
-FRAGMENT = "едва ли не самыми яркими воспоминаниями."
+# RU hard-wrap fragments: each must be flattened into the previous sentence,
+# never start a sentence of its own.
+RU_WRAP_FRAGMENTS = (
+    "едва ли не самыми яркими воспоминаниями,",
+    "которые оставались с ней на долгие годы.",
+    "слушала, как скрипит старый дом.",
+    "нёс на спине чемодан, а в чемодане было",
+    "терпение человека, который их писал.",
+)
 
 # A dialogue block whose lines end with *curly* closing quotes and are
 # separated by blank lines (the exact passage the user reported merged into
@@ -59,12 +55,19 @@ CURLY_QUOTE_DIALOGUE = (
     "Liesel nor Max dreamed their bad visions again."
 )
 
+ENGINES = ["razdel", "pysbd"]
+
+
+@pytest.fixture(params=ENGINES)
+def backend(request):
+    return request.param
+
 
 def _make_splitter(language: str, backend: str) -> TypedSentenceSplitter:
     """Create a TypedSentenceSplitter with an explicit backend.
 
-    Bypasses the config knob so the test can exercise both engines
-    regardless of the SPLITTER_ENGINE env var.
+    Bypasses the config knob so the tests exercise both engines regardless
+    of the SPLITTER_ENGINE env var.
     """
     from ai.splitting.sentence_splitter import SentenceSplitter
     from ai.splitting.sentence_typer import SentenceTyper
@@ -76,50 +79,72 @@ def _make_splitter(language: str, backend: str) -> TypedSentenceSplitter:
     return splitter
 
 
-def check_en(splitter: TypedSentenceSplitter) -> list[str]:
+def test_en_fixture_dialogue_lines_split_cleanly(backend):
     text = EN_FIXTURE.read_text(encoding="utf-8")
+    splitter = _make_splitter("en", backend)
     sentences, remainder = splitter.split(text, finalize=True)
-    failures = []
 
-    if remainder:
-        failures.append(f"expected empty remainder, got {remainder[:60]!r}")
+    assert remainder == ""
 
-    # Buggy behavior: 547 sentences, a 1761-char merged dialogue sentence,
-    # 15 sentences over 500 chars. Correct behavior: ~1036 / 0 / max ~222.
-    if len(sentences) < 900:
-        failures.append(f"expected >= 900 sentences, got {len(sentences)}")
-
+    # Correct behavior: every dialogue line is its own sentence (~34).
+    # Flattened-newline regression: the quote heuristic merges dialogue spans
+    # (29 sentences, one 134-char merged dialogue sentence).
+    assert len(sentences) >= 30, (
+        f"dialogue lines must split individually, got {len(sentences)}"
+    )
     max_len = max(len(s["content"]) for s in sentences)
-    if max_len > 500:
-        failures.append(f"a sentence is {max_len} chars (quote region swallowed)")
+    assert max_len <= 120, f"a sentence is {max_len} chars (quote region swallowed)"
 
     contents = [s["content"] for s in sentences]
-    merged = [c for c in contents if c.startswith('" ') and "Perhaps it was Rudy" in c]
-    if merged:
-        failures.append(f"merged dialogue sentence: {merged[0][:60]!r}...")
+    for expected in (
+        '"I had a brother," the girl whispered.',
+        '"You will not forget the words," he said.',
+        "She climbed the tallest one and waited.",
+    ):
+        assert expected in contents, f"missing sentence: {expected!r}"
 
-    return failures
+    # Exactly one title: the document heading line.
+    titles = [s for s in sentences if s["type"] == "title"]
+    assert len(titles) == 1 and titles[0]["content"] == "The Book Thief Test"
 
 
-def check_curly_quote_dialogue(splitter: TypedSentenceSplitter) -> list[str]:
+def test_ru_fixture_hard_wraps_are_collapsed(backend):
+    text = RU_FIXTURE.read_text(encoding="utf-8")
+    splitter = _make_splitter("ru", backend)
+    sentences, remainder = splitter.split(text, finalize=True)
+
+    assert remainder == ""
+
+    # Correct behavior: mid-sentence newlines collapse (~25 sentences).
+    # Newline-as-boundary regression: 42 fragments.
+    assert len(sentences) <= 35, (
+        f"hard wraps must not split sentences, got {len(sentences)}"
+    )
+    max_len = max(len(s["content"]) for s in sentences)
+    assert max_len <= 200, f"a sentence is {max_len} chars"
+
+    for fragment in RU_WRAP_FRAGMENTS:
+        starters = [s["content"] for s in sentences if s["content"].startswith(fragment)]
+        assert not starters, f"mid-sentence hard wrap split off: {starters[0]!r}"
+
+    # The 8 "Глава N" stand-alone lines are detected as titles.
+    titles = [s["content"] for s in sentences if s["type"] == "title"]
+    assert len(titles) == 8, titles
+
+
+def test_curly_quote_dialogue_block_stays_split(backend):
+    splitter = _make_splitter("en", backend)
     sentences, remainder = splitter.split(CURLY_QUOTE_DIALOGUE, finalize=True)
-    failures = []
 
-    if remainder:
-        failures.append(f"expected empty remainder, got {remainder[:60]!r}")
+    assert remainder == ""
 
     contents = [s["content"] for s in sentences]
 
     # pysbd's selective_flatten merges dialogue lines at quote boundaries → 3
     # sentences.  razdel splits at every period inside quotes → 5 sentences.
-    # Both are valid; just check that no single sentence swallowed the whole block.
-    if len(sentences) < 3 or len(sentences) > 5:
-        failures.append(
-            f"expected 3-5 sentences, got {len(sentences)}: "
-            f"{[c[:50] for c in contents]}"
-        )
+    # Both are valid; just check that no single sentence swallowed the block.
+    assert 3 <= len(sentences) <= 5, [c[:50] for c in contents]
 
-    # Every expected substring must appear in some sentence.
     expected_parts = [
         "Tell me. What do you see when you dream like that?",
         "I see myself turning around, and waving goodbye.",
@@ -127,63 +152,30 @@ def check_curly_quote_dialogue(splitter: TypedSentenceSplitter) -> list[str]:
     ]
     combined = " ".join(contents)
     for expected in expected_parts:
-        if expected not in combined:
-            failures.append(f"missing expected text: {expected!r}")
-
-    return failures
+        assert expected in combined, f"missing expected text: {expected!r}"
 
 
-def check_ru(splitter: TypedSentenceSplitter) -> list[str]:
-    text = RU_FIXTURE.read_text(encoding="utf-8")
-    sentences, remainder = splitter.split(text, finalize=True)
-    failures = []
-
-    if remainder:
-        failures.append(f"expected empty remainder, got {remainder[:60]!r}")
-
-    # Buggy behavior: 9926 sentences, mid-sentence hard-wrap fragments.
-    # Correct behavior: ~7148, none starting with the wrap fragment.
-    if len(sentences) > 7500:
-        failures.append(
-            f"expected <= 7500 sentences, got {len(sentences)} (hard wraps split)"
-        )
-
-    max_len = max(len(s["content"]) for s in sentences)
-    if max_len > 500:
-        failures.append(f"a sentence is {max_len} chars")
-
-    contents = [s["content"] for s in sentences]
-    fragments = [c for c in contents if c.startswith(FRAGMENT)]
-    if fragments:
-        failures.append(f"mid-sentence hard wrap split off: {fragments[0][:60]!r}")
-
-    titles = sum(1 for s in sentences if s["type"] == "title")
-    if titles < 150:
-        failures.append(f"expected >= 150 titles, got {titles}")
-
-    return failures
+def test_selective_flatten_keeps_breaks_after_sentence_punctuation():
+    keep = ".!?…\"')»\u201d\u2019"
+    for char in keep:
+        assert (
+            TypedSentenceSplitter.selective_flatten(f"done{char}\nnext")
+            == f"done{char}\nnext"
+        ), char
+    # Trailing whitespace before the break stays; the walk-back only decides
+    # whether the break itself survives.
+    assert (
+        TypedSentenceSplitter.selective_flatten("done.  \nnext") == "done.  \nnext"
+    )
 
 
-def main() -> int:
-    failures: list[str] = []
-    engines = ["razdel", "pysbd"]
-
-    for engine in engines:
-        print(f"\n=== Testing {engine} backend ===")
-        failures += [f"[{engine}] {f}" for f in check_en(_make_splitter("en", engine))]
-        failures += [f"[{engine}] {f}" for f in check_ru(_make_splitter("ru", engine))]
-        failures += [f"[{engine}] {f}" for f in check_curly_quote_dialogue(_make_splitter("en", engine))]
-
-    for failure in failures:
-        print("FAIL:", failure)
-
-    if failures:
-        print(f"\n{len(failures)} failure(s)")
-        return 1
-
-    print("\nOK: EN and RU fixtures split cleanly (razdel + pysbd)")
-    return 0
+def test_selective_flatten_collapses_mid_sentence_breaks():
+    assert TypedSentenceSplitter.selective_flatten("word,\nnext") == "word, next"
+    assert TypedSentenceSplitter.selective_flatten("hard\nwrap") == "hard wrap"
+    assert TypedSentenceSplitter.selective_flatten("wrap \n now") == "wrap   now"
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+def test_normalize_unifies_newlines_and_caps_blank_runs():
+    assert TypedSentenceSplitter.normalize("A  B\r\nC\t D") == "A B\nC D"
+    assert TypedSentenceSplitter.normalize("\n\n\n\nX\n\n\n") == "X"
+    assert TypedSentenceSplitter.normalize(" P ") == "P"

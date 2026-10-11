@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-10T18:17:00Z }
+generated: { by: agent:zcode, at: 2026-10-11T12:40:00+03:00 }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -323,14 +323,15 @@ editor-shaped row.
    line's `\n\n`) flattened to one/two spaces — two spaces break pysbd's
    `(?<=[!?.-]["'“”])\s{1}(?=[A-Z])` quote-end re-split and the whole dialogue
    block merged into a single 464-char "sentence". Regression
-   test: `docker-compose/python/ai/splitting/test_splitter.py` (runs the
-   splitter over the exact production entity fixtures for both languages plus
-   a curly-quote dialogue block; fails under either extreme behavior; the
-   fixture .txt files are gitignored production texts — machines without them
-   can still run the fixture-free curly-quote check inline). Engine
+   test: `docker-compose/python/ai/splitting/test_splitter.py` (committed
+   synthetic fixtures in `ai/splitting/fixtures/` reproduce both bugs — a
+   straight-quote dialogue block and hard-wrapped RU prose — plus the
+   curly-quote dialogue check and unit tests of `selective_flatten`/
+   `normalize`; runs under pytest for both engines and fails under either
+   extreme behavior). Engine
    resolution unit tests: `ai/splitting/test_engine_resolution.py` +
-   `ai/splitting/test_preprocessing.py` (host venv) and
-   `ai/api/test_split_endpoint.py` (container; cache invalidate/reuse on the
+   `ai/splitting/test_preprocessing.py` and
+   `ai/api/test_split_endpoint.py` (cache invalidate/reuse on the
    resolved engine).
 2. **Sign** — `TextSignatureService` builds an embedding-based signature per
    entity via `/embed` (**BGE-M3, 1024-dim**; the request carries the entity's
@@ -485,7 +486,10 @@ editor-shaped row.
       joined window texts (the original behavior). Either way, chunk-seam
       re-alignment and entities that share source text no longer re-encode the
       same texts. Regression tests:
-      `docker-compose/python/ai/alignment/test_aligner.py` (stub model).
+      `docker-compose/python/ai/alignment/test_aligner.py` (35 stub-model
+      tests) + `test_aligner_process.py` (the file-based chunked `process()`
+      flow). Whole python suite: `docker exec ext_python python -m pytest
+      /app/ai -q` — stub models only, no weights, no CI job (manual).
 3. **Align (algorithm, Aug 2026)** — the DP is now one of two aligners in
     `bilingual_aligner.py`, chosen by a live knob `ALIGN_ALGORITHM`
     (`greedy` default | `dp`):

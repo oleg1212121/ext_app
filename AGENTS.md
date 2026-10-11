@@ -128,6 +128,14 @@ docker exec ext_app_laravel sh -c 'cd /var/www && PHP_INI_SCAN_DIR=/usr/local/et
 
 Test database: `ext_app_test` (configured in phpunit.xml, not the default).
 
+**Python service tests (pytest)** — after changing anything under
+`docker-compose/python/ai/`, run its own suite inside `ext_python`
+(~5s, stub models only, no weights; manual, no CI job):
+
+```bash
+docker exec ext_python python -m pytest /app/ai -q
+```
+
 ### Database
 
 > **⚠️ DESTRUCTIVE COMMAND WARNING**
@@ -182,11 +190,11 @@ Tailwind 4 uses CSS-based config via `@theme`/`@source`/`@plugin` directives in 
 
 ### Python Environment
 
-Pre-configured venv at `docker-compose/python/ai/ai_env/` with torch, sentence-transformers, transformers, numpy, scipy, pysbd pre-installed. Do NOT reinstall these packages.
+Pre-configured venv at `docker-compose/python/ai/venv/` with torch, sentence-transformers, transformers, numpy, scipy, pysbd pre-installed. Do NOT reinstall these packages. (The prod machine's native-deploy venv is `ai_env/` — see `deploy-native.sh`.)
 
 ```bash
-docker-compose/python/ai/ai_env/bin/python <script>
-docker-compose/python/ai/ai_env/bin/pip install <package>  # only when needed
+docker-compose/python/ai/venv/bin/python <script>
+docker-compose/python/ai/venv/bin/pip install <package>  # only when needed
 ```
 
 ## Conventions

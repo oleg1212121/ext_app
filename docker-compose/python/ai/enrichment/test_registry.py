@@ -1,4 +1,4 @@
-"""Unit tests for the enricher module registry (plain python, no pytest).
+"""Unit tests for the enricher module registry.
 
 Covers the contract that lets a future analysis plug in as one module plus
 one registry entry (tickets 02/03 of the belarusian-language feature):
@@ -19,33 +19,20 @@ one registry entry (tickets 02/03 of the belarusian-language feature):
      per-sentence hit lists in order; only RuntimeError (missing spaCy
      model/package) becomes EnricherUnavailable.
 3. Request validation accepts exactly the registry keys and rejects unknown
-   ones (pydantic ValidationError -> FastAPI 422). Needs pydantic — inside
-   the container; skipped with a notice on a bare venv.
+   ones (pydantic ValidationError -> FastAPI 422).
 
-Run from anywhere (adds the package root to sys.path):
+Run (inside the container):
 
-    docker-compose/python/ai/venv/bin/python ai/enrichment/test_registry.py
-    docker exec ext_python python /app/ai/enrichment/test_registry.py
+    docker exec ext_python python -m pytest /app/ai/enrichment/test_registry.py -q
 """
 
-import os
-import sys
 from contextlib import contextmanager
-from pathlib import Path
 from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import pytest
 
-# Model caching must be on so fake accentors can ride a fake app.state the
-# way the real loaded model rides the FastAPI app state (see ModelCache).
-os.environ["CACHE_MODELS"] = "1"
-
-try:
-    from ai.enrichment import be_stress, en_stress, phrasal, ru_stress
-    from ai.enrichment import registry
-except ImportError as exc:
-    registry = None
-    REGISTRY_MISSING = f"{type(exc).__name__}: {exc}"
+from ai.enrichment import be_stress, en_stress, phrasal, ru_stress
+from ai.enrichment import registry
 
 try:
     from pydantic import ValidationError
@@ -108,7 +95,7 @@ def recorded_phrasal(hits):
     return fake, calls
 
 
-def check_registry_lookup_and_shape():
+def test_registry_lookup_and_shape():
     assert sorted(registry.keys()) == ["be_stress", "en_phrasal", "en_stress", "ru_stress"]
     for key, module, version in (
         ("ru_stress", ru_stress, ru_stress.ALGORITHM_VERSION),
@@ -125,35 +112,28 @@ def check_registry_lookup_and_shape():
         assert callable(adapter.apply), key
 
 
-def check_unknown_key_raises():
+def test_unknown_key_raises():
     for bad in ("zz_fake", "ru_Stress", ""):
-        try:
+        with pytest.raises(KeyError):
             registry.get(bad)
-        except KeyError:
-            pass
-        else:
-            raise AssertionError(f"unknown key {bad!r} must raise KeyError")
 
 
-def check_ru_prepare_loads_accentor_via_model_cache():
+def test_ru_prepare_loads_accentor_via_model_cache():
     adapter = registry.get("ru_stress")
     prepared = adapter.prepare(SimpleNamespace(stress_model=fake_accentor), [], set())
     assert prepared is fake_accentor, "prepare must return the loaded accentor"
 
 
-def check_ru_prepare_failure_raises_enricher_unavailable():
+def test_ru_prepare_failure_raises_enricher_unavailable():
     adapter = registry.get("ru_stress")
-    try:
+    with pytest.raises(registry.EnricherUnavailable) as exc_info:
         adapter.prepare(BrokenModelState(), [], set())
-    except registry.EnricherUnavailable as exc:
-        # Same detail style the endpoint has always surfaced (HTTP 503).
-        assert str(exc) == "Stress model not loaded: weights missing", str(exc)
-        assert isinstance(exc.__cause__, RuntimeError), exc.__cause__
-    else:
-        raise AssertionError("a failed accentor load must raise EnricherUnavailable")
+    # Same detail style the endpoint has always surfaced (HTTP 503).
+    assert str(exc_info.value) == "Stress model not loaded: weights missing"
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
-def check_ru_apply_marks_with_prepared_accentor():
+def test_ru_apply_marks_with_prepared_accentor():
     adapter = registry.get("ru_stress")
     prepared = adapter.prepare(SimpleNamespace(stress_model=fake_accentor), [], set())
     marked = adapter.apply(
@@ -164,26 +144,22 @@ def check_ru_apply_marks_with_prepared_accentor():
     assert marked == f"приве{ACUTE}т мир", ascii(marked)
 
 
-def check_be_prepare_loads_bel_accentor_via_model_cache():
+def test_be_prepare_loads_bel_accentor_via_model_cache():
     adapter = registry.get("be_stress")
     state = SimpleNamespace(**{"stress_model_bel": fake_bel_accentor})
     prepared = adapter.prepare(state, [], set())
     assert prepared is fake_bel_accentor, "prepare must return the loaded accentor"
 
 
-def check_be_prepare_failure_raises_enricher_unavailable():
+def test_be_prepare_failure_raises_enricher_unavailable():
     adapter = registry.get("be_stress")
-    try:
+    with pytest.raises(registry.EnricherUnavailable) as exc_info:
         adapter.prepare(BrokenModelState("stress_model_bel"), [], set())
-    except registry.EnricherUnavailable as exc:
-        # Same detail style the endpoint has always surfaced (HTTP 503).
-        assert str(exc) == "Stress model not loaded: weights missing", str(exc)
-        assert isinstance(exc.__cause__, RuntimeError), exc.__cause__
-    else:
-        raise AssertionError("a failed accentor load must raise EnricherUnavailable")
+    assert str(exc_info.value) == "Stress model not loaded: weights missing"
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
-def check_be_apply_marks_with_prepared_accentor():
+def test_be_apply_marks_with_prepared_accentor():
     adapter = registry.get("be_stress")
     state = SimpleNamespace(**{"stress_model_bel": fake_bel_accentor})
     prepared = adapter.prepare(state, [], set())
@@ -195,7 +171,7 @@ def check_be_apply_marks_with_prepared_accentor():
     assert marked == f"прыві{ACUTE}танне свет", ascii(marked)
 
 
-def check_en_stress_prepare_and_apply():
+def test_en_stress_prepare_and_apply():
     adapter = registry.get("en_stress")
     assert adapter.prepare(SimpleNamespace(), [], set()) is None
     marked = adapter.apply(
@@ -206,7 +182,7 @@ def check_en_stress_prepare_and_apply():
     assert marked == f"the ca{ACUTE}t", ascii(marked)
 
 
-def check_phrasal_prepare_batches_once_and_apply_pairs_in_order():
+def test_phrasal_prepare_batches_once_and_apply_pairs_in_order():
     hits = [[{"verb": "give", "start": 4}], [{"verb": "look", "start": 5}]]
     fake, calls = recorded_phrasal(hits)
     adapter = registry.get("en_phrasal")
@@ -226,37 +202,32 @@ def check_phrasal_prepare_batches_once_and_apply_pairs_in_order():
     assert adapter.apply("They looked it up.", sentences[1]["tokens"], prepared) == hits[1]
 
 
-def check_phrasal_runtime_error_raises_enricher_unavailable():
+def test_phrasal_runtime_error_raises_enricher_unavailable():
     adapter = registry.get("en_phrasal")
 
     def broken(sentences, lexicon):
         raise RuntimeError("spaCy model en_core_web_md is not installed")
 
     with patched(phrasal, "find_multiword_verbs", broken):
-        try:
+        with pytest.raises(registry.EnricherUnavailable) as exc_info:
             adapter.prepare(SimpleNamespace(), [], set())
-        except registry.EnricherUnavailable as exc:
-            assert str(exc) == "spaCy model en_core_web_md is not installed", str(exc)
-        else:
-            raise AssertionError("a missing spaCy model must raise EnricherUnavailable")
+    assert str(exc_info.value) == "spaCy model en_core_web_md is not installed"
 
 
-def check_phrasal_other_errors_propagate():
+def test_phrasal_other_errors_propagate():
     adapter = registry.get("en_phrasal")
 
     def buggy(sentences, lexicon):
         raise ValueError("matcher bug")
 
     with patched(phrasal, "find_multiword_verbs", buggy):
-        try:
+        # Propagates; the endpoint leaves it to FastAPI (500).
+        with pytest.raises(ValueError):
             adapter.prepare(SimpleNamespace(), [], set())
-        except registry.EnricherUnavailable:
-            raise AssertionError("only RuntimeError is a 503-worthy failure")
-        except ValueError:
-            pass  # propagates; the endpoint leaves it to FastAPI (500)
 
 
-def check_schema_accepts_exactly_registry_keys():
+@pytest.mark.skipif(not HAS_PYDANTIC, reason="pydantic unavailable — rerun inside ext_python")
+def test_schema_accepts_exactly_registry_keys():
     def request(enrichers):
         return EnrichRequest(
             language="en",
@@ -270,68 +241,11 @@ def check_schema_accepts_exactly_registry_keys():
     request(["en_phrasal", "ru_stress"])
 
     for bad in ("zz_fake", "ru_stress "):
-        try:
+        with pytest.raises(ValidationError) as exc_info:
             request([bad])
-        except ValidationError as exc:
-            assert any(
-                e.get("loc", ())[0:1] == ("enrichers",) for e in exc.errors()
-            ), exc.errors()
-        else:
-            raise AssertionError(f"unknown enricher {bad!r} must fail validation (422)")
+        assert any(
+            e.get("loc", ())[0:1] == ("enrichers",) for e in exc_info.value.errors()
+        ), exc_info.value.errors()
 
-    try:
-        request([])
-    except ValidationError:
-        pass
-    else:
-        raise AssertionError("an empty enrichers list must fail validation")
-
-
-def main() -> int:
-    if registry is None:
-        print(f"FAIL registry import: {REGISTRY_MISSING}")
-        return 1
-
-    checks = [
-        check_registry_lookup_and_shape,
-        check_unknown_key_raises,
-        check_ru_prepare_loads_accentor_via_model_cache,
-        check_ru_prepare_failure_raises_enricher_unavailable,
-        check_ru_apply_marks_with_prepared_accentor,
-        check_be_prepare_loads_bel_accentor_via_model_cache,
-        check_be_prepare_failure_raises_enricher_unavailable,
-        check_be_apply_marks_with_prepared_accentor,
-        check_en_stress_prepare_and_apply,
-        check_phrasal_prepare_batches_once_and_apply_pairs_in_order,
-        check_phrasal_runtime_error_raises_enricher_unavailable,
-        check_phrasal_other_errors_propagate,
-    ]
-    failures = 0
-    for check in checks:
-        try:
-            check()
-            print(f"PASS {check.__name__}")
-        except AssertionError as exc:
-            failures += 1
-            print(f"FAIL {check.__name__}: {exc}")
-
-    if HAS_PYDANTIC:
-        try:
-            check_schema_accepts_exactly_registry_keys()
-            print("PASS check_schema_accepts_exactly_registry_keys")
-        except AssertionError as exc:
-            failures += 1
-            print(f"FAIL check_schema_accepts_exactly_registry_keys: {exc}")
-        checks.append(check_schema_accepts_exactly_registry_keys)
-    else:
-        print(
-            "SKIP check_schema_accepts_exactly_registry_keys "
-            "(pydantic unavailable — rerun inside ext_python)"
-        )
-
-    print(f"{len(checks) - failures}/{len(checks)} checks passed")
-    return 1 if failures else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    with pytest.raises(ValidationError):
+        request([])  # an empty enrichers list must fail validation

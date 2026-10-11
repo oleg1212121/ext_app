@@ -4,7 +4,7 @@ title: Docker & Services
 description: Containers, ports, mounts, and the rule that all PHP/Composer/NPM commands run inside the app container.
 tags: [docker, infrastructure, devops]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-04T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-11T12:40:00+03:00 }
 sources:
   - id: compose
     resource: docker-compose.yml
@@ -79,9 +79,12 @@ docker exec ext_app_laravel vendor/bin/pint --dirty  # format changed files (req
 # Python
 
 A prebuilt venv for ML experiments lives at
-`docker-compose/python/ai/ai_env/` (torch, sentence-transformers, transformers,
+`docker-compose/python/ai/venv/` (torch, sentence-transformers, transformers,
 numpy, scipy, pysbd). Do **not** reinstall those packages; use
-`docker-compose/python/ai/ai_env/bin/python <script>`.
+`docker-compose/python/ai/venv/bin/python <script>`. The service has a pytest
+suite (`ai/pytest.ini`; pytest ships in `requirements.txt`) — run it with
+`docker exec ext_python python -m pytest /app/ai -q` (manual only, no CI job;
+details in wiki/playbooks/running-tests.md).
 
 # Production (standalone machine, bind-mount model)
 
