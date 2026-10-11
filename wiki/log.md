@@ -4958,3 +4958,35 @@ directions, resource list/create, edit-form persistence, pair/knob
 non-leak, inline create + attach, filter narrowing, badge render, edit
 action targets the page. Docs: ADR 0076,
 `wiki/database/entities-alignment.md`.
+
+## 2026-10-11 (tag pools: feature closure — verification pass across all four pools)
+
+Verification pass closing the tag-pools feature (ADR 0076) — no feature code
+changes. All four pools verified as one feature on branch `tag-pools`: words
+(`tags` + `tagged_words`, the renamed dormant scaffold), works (`work_tags` +
+`tagged_works`), entities (`entity_tags` + `tagged_entities`), and alignments
+(`alignment_tags` + `tagged_alignments`) — each with its Filament tag
+resource and its attached model's tags multi-select with inline create,
+badge column, and multi-select filter. Full plain parallel suite green:
+1,120 passed (5,736 assertions, 8 processes). Operational note: the suite
+now exceeds composer's default 300-second process timeout — the first
+`composer run test` attempt was killed at 300s mid-run, and the immediate
+re-run failed 457 tests with missing-relation errors (`relation
+"ui_string_keys" does not exist`) because the killed run left half-migrated
+`ext_app_test_test_*` worker databases behind; that failed pass still
+dropped them at its end, and the next clean run was fully green. Until the
+duration is addressed, run the suite as `composer run test --timeout=0`.
+`wiki:validate` conformant (exit 0; the 85 staleness warnings are
+pre-existing, same count as the pool tickets reported). `wiki:sync`
+produced timestamp-only churn on the three machine-owned reference files
+(no model/route/command changes) — content verified identical, churn
+reverted. Pint clean (`--test`) on all 40 PHP files the feature's four
+commits touched, listed explicitly rather than via `--dirty`. Dev database
+brought current with plain additive `php artisan migrate` (pending
+`2026_10_11_000002/000003/000004` applied without error; the ticket-01
+pivot rename was already in place); the post-migrate tinker check reads
+`pgsql tagged_words=0 word_tags=gone pools=all-present` — the renamed words
+pivot carries zero rows (no orphans; the scaffold was dormant) and all six
+new tables exist. Learner-facing tag UI, tag-name translations, seed
+vocabularies, and work→entity tag inheritance remain out of scope per
+ADR 0076.
