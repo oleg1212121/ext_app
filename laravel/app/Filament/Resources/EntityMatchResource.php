@@ -16,6 +16,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
 class EntityMatchResource extends Resource
@@ -52,19 +53,37 @@ class EntityMatchResource extends Resource
                             ->required()
                             ->different('first_entity_id')
                             ->searchable(),
-                    ]),
+                    ])
+                    ->visibleOn('create'),
                 TextInput::make('chunk_size')
                     ->label('Chunk Size')
                     ->numeric()
                     ->default(75)
                     ->minValue(25)
-                    ->maxValue(100),
+                    ->maxValue(100)
+                    ->visibleOn('create'),
                 TextInput::make('max_n')
                     ->label('Max Sentence Span')
                     ->numeric()
                     ->default(6)
                     ->minValue(1)
-                    ->maxValue(8),
+                    ->maxValue(8)
+                    ->visibleOn('create'),
+                Select::make('tags')
+                    ->label('Tags')
+                    ->relationship('tags', 'name')
+                    ->multiple()
+                    ->searchable()
+                    ->preload()
+                    ->createOptionForm([
+                        TextInput::make('name')
+                            ->required()
+                            ->maxLength(256),
+                        TextInput::make('slug')
+                            ->required()
+                            ->maxLength(100)
+                            ->unique(),
+                    ]),
             ]);
     }
 
@@ -153,6 +172,9 @@ class EntityMatchResource extends Resource
                         'failed' => 'danger',
                         default => 'gray',
                     }),
+                TextColumn::make('tags.name')
+                    ->label('Tags')
+                    ->badge(),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
@@ -160,10 +182,15 @@ class EntityMatchResource extends Resource
             ->defaultPaginationPageOption(25)
             ->paginationPageOptions([10, 25, 50, 100])
             ->filters([
-                //
+                SelectFilter::make('tags')
+                    ->relationship('tags', 'name')
+                    ->multiple()
+                    ->preload(),
             ])
             ->recordActions([
                 Actions\ViewAction::make(),
+                Actions\EditAction::make()
+                    ->url(fn (EntityMatch $record): string => static::getUrl('edit', ['record' => $record])),
                 Action::make('editAlignment')
                     ->label('Edit alignment')
                     ->icon('heroicon-o-pencil-square')
@@ -232,6 +259,7 @@ class EntityMatchResource extends Resource
             'index' => Pages\ListEntityMatches::route('/'),
             'create' => Pages\CreateEntityMatch::route('/create'),
             'view' => Pages\ViewEntityMatch::route('/{record}'),
+            'edit' => Pages\EditEntityMatch::route('/{record}/edit'),
         ];
     }
 

@@ -1,11 +1,11 @@
 ---
 type: Database Schema
 title: Works, Entities & Alignment Tables
-description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20; strict junction uniqueness 2026_09_28; illustration columns 2026_09_28; work + entity tag pools 2026_10_11).
+description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20; strict junction uniqueness 2026_09_28; illustration columns 2026_09_28; work + entity + alignment tag pools 2026_10_11; first Sentence Alignments edit page 2026_10_11).
 tags: [database, schema, alignment, entities, works, hash, illustrations, tags]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-11T16:40:00+00:00 }
+generated: { by: agent:zcode, at: 2026-10-11T18:20:00+00:00 }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
@@ -31,6 +31,9 @@ sources:
    - id: entity-tags-migration
      resource: laravel/database/migrations/2026_10_11_000003_create_entity_tags_tables.php
      title: entity_tags definition table + tagged_entities pivot (ADR 0076)
+   - id: alignment-tags-migration
+     resource: laravel/database/migrations/2026_10_11_000004_create_alignment_tags_tables.php
+     title: alignment_tags definition table + tagged_alignments pivot (ADR 0076)
    - id: align-service
      resource: laravel/app/Classes/MeaningMatchStore.php
      title: Writer of meaning matches (the pipeline's write path, ADR 0063)
@@ -45,6 +48,8 @@ sources:
 | `tagged_works` | (pivot) | Works ↔ work tags membership: `work_id` → works and `work_tag_id` → work_tags, both `cascadeOnDelete`, unique `(work_id, work_tag_id)` (`uk_tagged_works_pair`), timestamps |
 | `entity_tags` | `EntityTag` | The **entities tag pool** (ADR [0076](../../docs/adr/0076-per-type-tag-pools.md)): language-neutral `slug`+`name` labels curated in the admin (`EntityTagResource`, nav group Entities, `entities_count` usage column, edit/delete + bulk delete). Attached to entities via `Entity::tags()` (`withTimestamps`) — through the Entities form's searchable tag multi-select with inline create; shown as a badge column and the Entities list's tag filter (last of the language/work/restriction/approval filters) |
 | `tagged_entities` | (pivot) | Entities ↔ entity tags membership: `entity_id` → entities and `entity_tag_id` → entity_tags, both `cascadeOnDelete`, unique `(entity_id, entity_tag_id)` (`uk_tagged_entities_pair`), timestamps |
+| `alignment_tags` | `AlignmentTag` | The **alignments tag pool** (ADR [0076](../../docs/adr/0076-per-type-tag-pools.md)): language-neutral `slug`+`name` flat labels on Entity matches, orthogonal to the `status` lifecycle (`AlignmentTagResource`, nav group Entities, `alignments_count` usage column, edit/delete + bulk delete). Attached to matches via `EntityMatch::tags()` (`withTimestamps`) — through the Sentence Alignments edit page's searchable tag multi-select with inline create; shown as a badge column and the Sentence Alignments list's tag filter (the table's first) |
+| `tagged_alignments` | (pivot) | Entity matches ↔ alignment tags membership: `entity_match_id` → entity_matches and `alignment_tag_id` → alignment_tags, both `cascadeOnDelete`, unique `(entity_match_id, alignment_tag_id)` (`uk_tagged_alignments_pair`), timestamps |
 | `entities` | `Entity` | A text (book/story/file) in one language — the original or a translation of its work. Carries `work_id`, `language_id`, `created_by` (nullable uploader), an optional translator/edition `label`, a BGE-M3 embedding `signature`, `is_restricted` gating read access, `is_approved` (edit lock), `file_hash` (raw upload bytes) and `text_hash`/`text_hashed_at`/`sentences_updated_at` (exact-copy detection, ADR 0033) |
 | `sentence_types` | `SentenceType` | Classification for sentences; seeded with `sentence`, `title`, `quote`, `subtitle`, `footnote`, `caption`, `illustration` |
 | `entity_sentences` | `EntitySentence` | Split sentences with **sparse order** values; unique `(entity_id, order)`. Image-bearing rows (illustrations, ADR 0050) additionally carry `image_path`/`image_hash`/`image_width`/`image_height`/`image_mime` — `image_path` non-null is the illustration marker, `content` is the optional caption. Enrichment columns (ADR 0052): `stressed_content` (stress-marked display variant, kept beside `content` which is never mutated), `phrasal_verbs` jsonb (hits with char spans into `content`) |
@@ -161,6 +166,15 @@ sources:
   filters.
   `WorkResource` manages works — its form attaches work tags (inline
   create), its list carries the works tag filter.
+  `EntityMatchResource` (Sentence Alignments, nav group Entities) has its
+  first edit page (`EditEntityMatch`, `/sentence-alignments/{record}/edit`,
+  opened by the table's Edit record action): its editable field set is
+  exactly the alignment-tags multi-select (inline create) — the entity-pair
+  picks and the chunk knobs stay create-only (`visibleOn('create')`), and
+  the React alignment editor (ADR 0062) remains the one row-editing
+  surface. Its list carries the `tags.name` badge column and the
+  alignments tag multi-select filter (the table's first); tag pool
+  vocabulary is curated in `AlignmentTagResource` (Alignment Tags).
 * **Deletion cleanup**: deleting a sentence cascades to its junctions; a
   meaning match left with no junctions is deleted and the parent
   `EntityMatch.linked_count` is updated (`EntitySentence::booted()`).

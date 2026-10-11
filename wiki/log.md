@@ -4922,3 +4922,39 @@ no-duplicate, unique pair constraint, pivot timestamps, inverse relation,
 cascade deletes both directions, resource list/create, form persistence,
 inline create + attach, filter narrowing. Docs: ADR 0076,
 `wiki/database/entities-alignment.md`.
+
+## 2026-10-11 (tag pools: alignment-tags pool — Alignment Tags resource + first Sentence Alignments edit page)
+
+The alignments pool went live, fourth and last of the four per-type pools
+(ADR 0076), plus the first-ever edit surface for `EntityMatchResource`.
+Migration `2026_10_11_000004` created both tables in one additive migration:
+`alignment_tags` (definition table mirroring `tags`/`work_tags`/`entity_tags`
+— `slug` 100 unique, `name` 256, timestamps) and the `tagged_alignments`
+pivot (`entity_match_id` → entity_matches and `alignment_tag_id` →
+alignment_tags, both cascade, unique `(entity_match_id, alignment_tag_id)` =
+`uk_tagged_alignments_pair`, timestamps). `AlignmentTag` model (fillable
+slug+name, inverse `alignments()` with `withTimestamps`) +
+`AlignmentTagFactory`; `EntityMatch::tags()` resolves through
+`tagged_alignments`. New `AlignmentTagResource` ("Alignment Tags", Entities
+navigation group): required name (256) + globally unique slug (100),
+`alignments_count` usage column, edit/delete + bulk delete. The Sentence
+Alignments list gained a `tags.name` badge column and a multi-select tags
+relationship filter (OR semantics) — its first filter; tags are flat labels
+orthogonal to the pipeline status lifecycle, which is untouched.
+`EntityMatchResource::form()` restructured per operation: the Entities
+section (entity-pair picks) and the chunk_size/max_n knobs are now
+`visibleOn('create')` (create-only and otherwise unchanged); a tags
+multi-select with inline create (`createOptionForm`, relationship default
+createOptionUsing) joins the form — the edit page's editable field set is
+exactly that multi-select, and hidden fields are excluded from dehydration
+and validation, so a match's pair and knobs can never leak through an edit
+save. The new `EditEntityMatch` page (`/{record}/edit`) opens from a table
+Edit record action given an explicit `->url(...)` so it navigates to the
+page instead of opening Filament's default edit modal; the React alignment
+editor stays the one row-editing surface (ADR 0062). Tests:
+`AlignmentTagsTest` mirrors the pool set — sync no-duplicate, unique pair
+constraint, pivot timestamps, inverse relation, cascade deletes both
+directions, resource list/create, edit-form persistence, pair/knob
+non-leak, inline create + attach, filter narrowing, badge render, edit
+action targets the page. Docs: ADR 0076,
+`wiki/database/entities-alignment.md`.
