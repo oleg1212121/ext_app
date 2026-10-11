@@ -371,6 +371,24 @@ pipeline, kept next to the dump and overwritten on each extraction.
 _Avoid_: split file, per-language dump (that's the kaikki.org pre-split
 download).
 
+# Tag Pools Context
+
+The domain of the admin-curated label pools attached to the four content
+types — words, works, entities, and entity matches — managed in the Filament
+panel. Modeled so learner-facing use stays open later, but v1 ships admin UI
+only. See ADR 0076.
+
+## Language
+
+**Tag**:
+An admin-curated label from one of the four **Tag pools**. Every tag is a
+single language-neutral slug + name; it applies only to the exact row it is
+attached to — no inheritance from a work to its entities or matches. Each
+pool is one definition table plus a `tagged_<model>` pivot (words: `tags` +
+`tagged_words`; works: `work_tags` + `tagged_works`; entities: `entity_tags`
++ `tagged_entities`; entity matches: `alignment_tags` + `tagged_alignments`).
+_Avoid_: label, category, word tag alone (names only the words pool).
+
 # Access Control Context
 
 The domain of who may do what in the application — driven by a user's **Role**

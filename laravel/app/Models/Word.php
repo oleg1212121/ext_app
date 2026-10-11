@@ -76,7 +76,7 @@ class Word extends Model
 
     public function tags(): BelongsToMany
     {
-        return $this->belongsToMany(Tag::class, 'word_tags');
+        return $this->belongsToMany(Tag::class, 'tagged_words')->withTimestamps();
     }
 
     /**

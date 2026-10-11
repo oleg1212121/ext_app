@@ -4851,3 +4851,26 @@ without ranked words (ru today) get an in-page empty state. UI strings in
 `WordTestScoringTest` (pure scorer) + `WordTestPageTest` (page, sampling
 invariants, exact score/marked set, raise-only, 422s). Docs: ADR 0071,
 CONTEXT.md Word Test context, `wiki/domains/word-test.md`.
+
+## 2026-10-11 (tag pools: word-tags tracer bullet — pivot rename + Word Tags admin surface)
+
+The dormant words-tag scaffold became a live admin feature (ADR 0076,
+first of four per-type pools — words/works/entities/alignments, no shared
+table, no polymorphism, no inheritance, language-neutral slug+name, ship
+empty). The pivot renamed `word_tags` → `tagged_words` with its unique pair
+index → `uk_tagged_words_pair` (migration `2026_10_11_000001`; safe — zero
+callers verified before the rename) so it can no longer collide one letter
+away from the future `work_tags` definition table; all pools use
+`tagged_<model>` pivots. `Tag` grew fillable slug+name and the inverse
+`words()` relation; `Word::tags()` resolves through `tagged_words` with
+`withTimestamps()` (the pivot's timestamp columns were never filled
+before). New `TagResource` ("Word Tags", Words group): required name (256) +
+globally unique slug (100), `words_count` usage column, edit/delete + bulk
+delete. The Words form gained a searchable tags multi-select with inline
+create (`createOptionForm`, relationship default createOptionUsing); the
+Words list gained a `tags.name` badge column and a multi-select tags
+relationship filter (OR semantics). Tests: `WordTagsTest` — sync
+no-duplicate, unique pair constraint, pivot timestamps, inverse relation,
+cascade deletes both directions, resource list/create, form persistence,
+inline create + attach, filter narrowing. Docs: ADR 0076, CONTEXT.md Tag
+Pools context, `wiki/database/dictionary.md`.

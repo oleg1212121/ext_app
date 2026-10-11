@@ -5,11 +5,14 @@ description: One words table (+ satellites) keyed by language, per-language word
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2026-12-27
-generated: { by: agent:zcode, at: 2026-10-10T19:55:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-11T12:23:00+00:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
      title: Unified dictionary creation (squashed baseline)
+   - id: tag-pivot-rename
+     resource: laravel/database/migrations/2026_10_11_000001_rename_word_tags_to_tagged_words.php
+     title: Words-tag pivot rename to tagged_words
    - id: fetch-migration
      resource: laravel/database/migrations/2026_09_29_000001_create_word_translation_fetches_table.php
      title: Auto-fetch ledger creation
@@ -31,7 +34,7 @@ sources:
 | `forms` / `definitions` / `etymologies` / `examples` | Per-word satellites (unique `(form, word_id)` / `(example, word_id)`); `forms` carries `l_word` (indexed, `idx_forms_l_word`) and is the runtime link target for inflected tokens — the linker's forms pass in [Crossword](/domains/crossword.md) — and the source of the Word popup's base-word groups ([Interactive words](/domains/interactive-words.md), ADR 0045) |
 | `transcriptions` | Written phonetic notations per word + `transcription_type_id` (ipa, enpr, …; unique triple) |
 | `pronunciations` | Audio files with pronunciation examples per word (`path` on the public disk, unique `(path, word_id)`); uploaded via the admin |
-| `tags` / `word_tags` | Word tags (e.g. most-used) and the pivot |
+| `tags` / `tagged_words` | The **words tag pool** (ADR [0076](../../docs/adr/0076-per-type-tag-pools.md)): language-neutral `slug`+`name` labels curated in the admin (`TagResource`, nav group Words, `words_count` usage column, edit/delete + bulk delete) and attached to words via `Word::tags()` (`withTimestamps`) through the pivot — renamed from the dormant `word_tags` (migration `2026_10_11_000001`, index `uk_tagged_words_pair`). Attached through the Words form's searchable tag multi-select with inline create; shown as a badge column and a multi-select table filter on the Words list. The works/entities/alignments pools copy this shape (`work_tags`/`tagged_works`, `entity_tags`/`tagged_entities`, `alignment_tags`/`tagged_alignments`) |
 | `word_translations` | **One row per word pair** (symmetric, ADR 0020): `word_a_id`, `word_b_id` with canonical order `a < b` (entity-match convention), unique `(word_a_id, word_b_id)`, index on `word_b_id`. A link is usable from either word; links connect words of **different languages** only (enforced in the admin attach action). Supersedes the directed pivot of ADR 0018 |
 | `word_translation_fetches` | Auto-fetch ledger, one row per `(word_id, target_language_id)` (unique): `provider` (yandex/google), `status` (`pending`/`succeeded`/`empty`/`failed`), `attempts`, `last_attempted_at` (migration `2026_09_29_000001`). `status = 'empty'` is the **exclusions list** — every provider answered "no translation", so the pair is never looked up again |
 
@@ -93,6 +96,14 @@ sources:
   `words:adopt-from-entities`) feeds the same pipeline with entity tokens —
   see [Interactive words](/domains/interactive-words.md) and
   [Crossword](/domains/crossword.md).
+* **Tag pools** (2026-10-11, ADR
+  [0076](../../docs/adr/0076-per-type-tag-pools.md)): admin-curated labels,
+  four separate pools (one definition table + `tagged_<model>` pivot each),
+  no shared vocabulary, no polymorphism, no inheritance (a tag applies only
+  to the exact row it is attached to), single language-neutral slug+name per
+  tag, shipped empty — vocabulary authored in the Filament panel. The words
+  pool is live (`TagResource`, Words form multi-select, badge column, table
+  filter); works/entities/alignments follow.
 * The legacy 2025 vocabulary domain (`words` in the old shape, `books`,
   `book_word`, `saved_phrases`) was deleted with the 2026-09 rework.
 * `words.frequency` is populated by `words:import-frequency {source}`

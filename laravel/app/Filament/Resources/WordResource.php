@@ -60,6 +60,21 @@ class WordResource extends Resource
                     ->searchable()
                     ->preload()
                     ->required(),
+                Select::make('tags')
+                    ->label('Tags')
+                    ->relationship('tags', 'name')
+                    ->multiple()
+                    ->searchable()
+                    ->preload()
+                    ->createOptionForm([
+                        TextInput::make('name')
+                            ->required()
+                            ->maxLength(256),
+                        TextInput::make('slug')
+                            ->required()
+                            ->maxLength(100)
+                            ->unique(),
+                    ]),
             ]);
     }
 
@@ -83,6 +98,9 @@ class WordResource extends Resource
                 TextColumn::make('wordClass.slug')
                     ->label('Class')
                     ->sortable(),
+                TextColumn::make('tags.name')
+                    ->label('Tags')
+                    ->badge(),
                 TextColumn::make('updated_at')
                     ->dateTime(),
             ])
@@ -91,6 +109,10 @@ class WordResource extends Resource
                     ->relationship('language', 'name'),
                 SelectFilter::make('wordClass')
                     ->relationship('wordClass', 'title'),
+                SelectFilter::make('tags')
+                    ->relationship('tags', 'name')
+                    ->multiple()
+                    ->preload(),
             ])
             ->recordActions([
                 Actions\EditAction::make(),
