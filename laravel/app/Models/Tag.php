@@ -14,6 +14,6 @@ class Tag extends Model
 
     public function words(): BelongsToMany
     {
-        return $this->belongsToMany(Word::class, 'tagged_words');
+        return $this->belongsToMany(Word::class, 'tagged_words')->withTimestamps();
     }
 }

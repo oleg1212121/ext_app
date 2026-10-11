@@ -5,18 +5,10 @@ use App\Filament\Resources\TagResource\Pages\ListTags;
 use App\Filament\Resources\WordResource\Pages\EditWord;
 use App\Filament\Resources\WordResource\Pages\ListWords;
 use App\Models\Tag;
-use App\Models\User;
 use Filament\Actions\Testing\TestAction;
-use Filament\Facades\Filament;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
-
-function actingAsWordTagsAdmin(): void
-{
-    test()->actingAs(User::factory()->admin()->create());
-    Filament::setCurrentPanel(Filament::getPanel('admin'));
-}
 
 it('syncs tags through the word relation without duplicating pivot rows', function () {
     $word = createWord('en', 'test');
@@ -41,6 +33,19 @@ it('timestamps pivot rows written through the word relation', function () {
     $tag = Tag::factory()->create();
 
     $word->tags()->attach($tag->id);
+
+    $pivot = DB::table('tagged_words')->first();
+    expect($pivot->word_id)->toBe($word->id)
+        ->and($pivot->tag_id)->toBe($tag->id)
+        ->and($pivot->created_at)->not->toBeNull()
+        ->and($pivot->updated_at)->not->toBeNull();
+});
+
+it('timestamps pivot rows written through the inverse tag relation', function () {
+    $word = createWord('en', 'test');
+    $tag = Tag::factory()->create();
+
+    $tag->words()->attach($word->id);
 
     $pivot = DB::table('tagged_words')->first();
     expect($pivot->word_id)->toBe($word->id)
@@ -79,7 +84,7 @@ it('removes pivot rows when the tag is deleted', function () {
 });
 
 it('lists word tags for an authenticated admin', function () {
-    actingAsWordTagsAdmin();
+    actingAsAdmin();
 
     $tag = Tag::factory()->create(['name' => 'Science', 'slug' => 'science']);
 
@@ -88,7 +93,7 @@ it('lists word tags for an authenticated admin', function () {
 });
 
 it('creates a word tag from the create page', function () {
-    actingAsWordTagsAdmin();
+    actingAsAdmin();
 
     Livewire::test(CreateTag::class)
         ->fillForm(['name' => 'Science', 'slug' => 'science'])
@@ -100,7 +105,7 @@ it('creates a word tag from the create page', function () {
 });
 
 it('persists tags from the Words edit form', function () {
-    actingAsWordTagsAdmin();
+    actingAsAdmin();
 
     $word = createWord('en', 'test');
     $tag = Tag::factory()->create();
@@ -114,7 +119,7 @@ it('persists tags from the Words edit form', function () {
 });
 
 it('creates a tag inline from the Words edit form and attaches it', function () {
-    actingAsWordTagsAdmin();
+    actingAsAdmin();
 
     $word = createWord('en', 'test');
 
@@ -136,7 +141,7 @@ it('creates a tag inline from the Words edit form and attaches it', function () 
 });
 
 it('narrows the Words table to words carrying the selected tag', function () {
-    actingAsWordTagsAdmin();
+    actingAsAdmin();
 
     $tagged = createWord('en', 'tagged');
     $untagged = createWord('en', 'plain');

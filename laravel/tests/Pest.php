@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Word;
 use App\Models\WordClass;
 use App\Models\Work;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakePythonClient;
@@ -294,4 +295,21 @@ function fakePython(): FakePythonClient
     app()->instance(PythonClient::class, $fake);
 
     return $fake;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Filament admin fixtures
+|--------------------------------------------------------------------------
+|
+| Defined here — not inside a single test file — because Pest's parallel
+| workers each load a subset of files, and the four tag-pool suites
+| (WordTagsTest, WorkTagsTest, EntityTagsTest, AlignmentTagsTest) all act
+| as an admin on the Filament admin panel without loading one shared file.
+*/
+
+function actingAsAdmin(): void
+{
+    test()->actingAs(User::factory()->admin()->create());
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
 }

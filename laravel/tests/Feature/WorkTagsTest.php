@@ -4,19 +4,11 @@ use App\Filament\Resources\WorkResource\Pages\EditWork;
 use App\Filament\Resources\WorkResource\Pages\ListWorks;
 use App\Filament\Resources\WorkTagResource\Pages\CreateWorkTag;
 use App\Filament\Resources\WorkTagResource\Pages\ListWorkTags;
-use App\Models\User;
 use App\Models\WorkTag;
 use Filament\Actions\Testing\TestAction;
-use Filament\Facades\Filament;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
-
-function actingAsWorkTagAdmin(): void
-{
-    test()->actingAs(User::factory()->admin()->create());
-    Filament::setCurrentPanel(Filament::getPanel('admin'));
-}
 
 it('syncs work tags through the work relation without duplicating pivot rows', function () {
     $work = createWork();
@@ -79,7 +71,7 @@ it('removes pivot rows when the work tag is deleted', function () {
 });
 
 it('lists work tags for an authenticated admin', function () {
-    actingAsWorkTagAdmin();
+    actingAsAdmin();
 
     $workTag = WorkTag::factory()->create(['name' => 'Science', 'slug' => 'science']);
 
@@ -88,7 +80,7 @@ it('lists work tags for an authenticated admin', function () {
 });
 
 it('creates a work tag from the create page', function () {
-    actingAsWorkTagAdmin();
+    actingAsAdmin();
 
     Livewire::test(CreateWorkTag::class)
         ->fillForm(['name' => 'Science', 'slug' => 'science'])
@@ -100,7 +92,7 @@ it('creates a work tag from the create page', function () {
 });
 
 it('persists work tags from the Works edit form', function () {
-    actingAsWorkTagAdmin();
+    actingAsAdmin();
 
     $work = createWork();
     $workTag = WorkTag::factory()->create();
@@ -114,7 +106,7 @@ it('persists work tags from the Works edit form', function () {
 });
 
 it('creates a work tag inline from the Works edit form and attaches it', function () {
-    actingAsWorkTagAdmin();
+    actingAsAdmin();
 
     $work = createWork();
 
@@ -136,7 +128,7 @@ it('creates a work tag inline from the Works edit form and attaches it', functio
 });
 
 it('narrows the Works table to works carrying the selected tag', function () {
-    actingAsWorkTagAdmin();
+    actingAsAdmin();
 
     $tagged = createWork(['title' => 'Tagged Work']);
     $untagged = createWork(['title' => 'Plain Work']);

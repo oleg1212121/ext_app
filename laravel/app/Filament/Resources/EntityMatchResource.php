@@ -189,6 +189,7 @@ class EntityMatchResource extends Resource
             ])
             ->recordActions([
                 Actions\ViewAction::make(),
+                // The explicit url is load-bearing: a table EditAction defaults to a modal, this forces page navigation to the edit page.
                 Actions\EditAction::make()
                     ->url(fn (EntityMatch $record): string => static::getUrl('edit', ['record' => $record])),
                 Action::make('editAlignment')

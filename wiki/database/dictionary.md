@@ -5,7 +5,7 @@ description: One words table (+ satellites) keyed by language, per-language word
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2026-12-27
-generated: { by: agent:zcode, at: 2026-10-11T12:23:00+00:00 }
+generated: { by: agent:zcode, at: 2026-10-11T13:28:32+00:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -101,9 +101,11 @@ sources:
   four separate pools (one definition table + `tagged_<model>` pivot each),
   no shared vocabulary, no polymorphism, no inheritance (a tag applies only
   to the exact row it is attached to), single language-neutral slug+name per
-  tag, shipped empty — vocabulary authored in the Filament panel. The words
-  pool is live (`TagResource`, Words form multi-select, badge column, table
-  filter); works/entities/alignments follow.
+  tag, shipped empty — vocabulary authored in the Filament panel. All four
+  pools are live — words (`TagResource`), works (`WorkTagResource`),
+  entities (`EntityTagResource`), and alignments (`AlignmentTagResource`) —
+  each with its Filament tag resource and its attached model's tags
+  multi-select with inline create, badge column, and multi-select filter.
 * The legacy 2025 vocabulary domain (`words` in the old shape, `books`,
   `book_word`, `saved_phrases`) was deleted with the 2026-09 rework.
 * `words.frequency` is populated by `words:import-frequency {source}`

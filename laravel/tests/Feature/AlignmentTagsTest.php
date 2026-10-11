@@ -8,18 +8,10 @@ use App\Filament\Resources\EntityMatchResource\Pages\EditEntityMatch;
 use App\Filament\Resources\EntityMatchResource\Pages\ListEntityMatches;
 use App\Models\AlignmentTag;
 use App\Models\EntityMatch;
-use App\Models\User;
 use Filament\Actions\Testing\TestAction;
-use Filament\Facades\Filament;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
-
-function actingAsAlignmentTagAdmin(): void
-{
-    test()->actingAs(User::factory()->admin()->create());
-    Filament::setCurrentPanel(Filament::getPanel('admin'));
-}
 
 function createMatchFixture(): EntityMatch
 {
@@ -92,7 +84,7 @@ it('removes pivot rows when the alignment tag is deleted', function () {
 });
 
 it('lists alignment tags for an authenticated admin', function () {
-    actingAsAlignmentTagAdmin();
+    actingAsAdmin();
 
     $alignmentTag = AlignmentTag::factory()->create(['name' => 'Needs review', 'slug' => 'needs-review']);
 
@@ -101,7 +93,7 @@ it('lists alignment tags for an authenticated admin', function () {
 });
 
 it('creates an alignment tag from the create page', function () {
-    actingAsAlignmentTagAdmin();
+    actingAsAdmin();
 
     Livewire::test(CreateAlignmentTag::class)
         ->fillForm(['name' => 'Needs review', 'slug' => 'needs-review'])
@@ -113,7 +105,7 @@ it('creates an alignment tag from the create page', function () {
 });
 
 it('persists alignment tags from the Sentence Alignments edit form', function () {
-    actingAsAlignmentTagAdmin();
+    actingAsAdmin();
 
     $match = createMatchFixture();
     $alignmentTag = AlignmentTag::factory()->create();
@@ -127,7 +119,7 @@ it('persists alignment tags from the Sentence Alignments edit form', function ()
 });
 
 it('leaves the entity pair untouched when the Sentence Alignments edit form saves', function () {
-    actingAsAlignmentTagAdmin();
+    actingAsAdmin();
 
     $match = createMatchFixture();
     $match->refresh(); // hydrate the DB defaults (chunk_size 75 / max_n 6)
@@ -158,7 +150,7 @@ it('leaves the entity pair untouched when the Sentence Alignments edit form save
 });
 
 it('creates an alignment tag inline from the Sentence Alignments edit form and attaches it', function () {
-    actingAsAlignmentTagAdmin();
+    actingAsAdmin();
 
     $match = createMatchFixture();
 
@@ -180,7 +172,7 @@ it('creates an alignment tag inline from the Sentence Alignments edit form and a
 });
 
 it('narrows the Sentence Alignments table to matches carrying the selected tag', function () {
-    actingAsAlignmentTagAdmin();
+    actingAsAdmin();
 
     $tagged = createMatchFixture();
     $untagged = createMatchFixture();
@@ -194,7 +186,7 @@ it('narrows the Sentence Alignments table to matches carrying the selected tag',
 });
 
 it('renders the tag badges on the Sentence Alignments table', function () {
-    actingAsAlignmentTagAdmin();
+    actingAsAdmin();
 
     $match = createMatchFixture();
     $alignmentTag = AlignmentTag::factory()->create(['name' => 'Hand-verified']);
@@ -206,7 +198,7 @@ it('renders the tag badges on the Sentence Alignments table', function () {
 });
 
 it('offers an edit action on the Sentence Alignments table that opens the edit page', function () {
-    actingAsAlignmentTagAdmin();
+    actingAsAdmin();
 
     $match = createMatchFixture();
 

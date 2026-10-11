@@ -5,18 +5,10 @@ use App\Filament\Resources\EntityResource\Pages\ListEntities;
 use App\Filament\Resources\EntityTagResource\Pages\CreateEntityTag;
 use App\Filament\Resources\EntityTagResource\Pages\ListEntityTags;
 use App\Models\EntityTag;
-use App\Models\User;
 use Filament\Actions\Testing\TestAction;
-use Filament\Facades\Filament;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
-
-function actingAsEntityTagAdmin(): void
-{
-    test()->actingAs(User::factory()->admin()->create());
-    Filament::setCurrentPanel(Filament::getPanel('admin'));
-}
 
 it('syncs entity tags through the entity relation without duplicating pivot rows', function () {
     $entity = createEntity('en');
@@ -79,7 +71,7 @@ it('removes pivot rows when the entity tag is deleted', function () {
 });
 
 it('lists entity tags for an authenticated admin', function () {
-    actingAsEntityTagAdmin();
+    actingAsAdmin();
 
     $entityTag = EntityTag::factory()->create(['name' => 'Dialogue-heavy', 'slug' => 'dialogue-heavy']);
 
@@ -88,7 +80,7 @@ it('lists entity tags for an authenticated admin', function () {
 });
 
 it('creates an entity tag from the create page', function () {
-    actingAsEntityTagAdmin();
+    actingAsAdmin();
 
     Livewire::test(CreateEntityTag::class)
         ->fillForm(['name' => 'Dialogue-heavy', 'slug' => 'dialogue-heavy'])
@@ -100,7 +92,7 @@ it('creates an entity tag from the create page', function () {
 });
 
 it('persists entity tags from the Entities edit form', function () {
-    actingAsEntityTagAdmin();
+    actingAsAdmin();
 
     $entity = createEntity('en');
     $entityTag = EntityTag::factory()->create();
@@ -114,7 +106,7 @@ it('persists entity tags from the Entities edit form', function () {
 });
 
 it('creates an entity tag inline from the Entities edit form and attaches it', function () {
-    actingAsEntityTagAdmin();
+    actingAsAdmin();
 
     $entity = createEntity('en');
 
@@ -136,7 +128,7 @@ it('creates an entity tag inline from the Entities edit form and attaches it', f
 });
 
 it('narrows the Entities table to entities carrying the selected tag', function () {
-    actingAsEntityTagAdmin();
+    actingAsAdmin();
 
     $tagged = createEntity('en', attributes: ['name' => 'Tagged Entity']);
     $untagged = createEntity('en', attributes: ['name' => 'Plain Entity']);
