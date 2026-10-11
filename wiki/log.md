@@ -4896,3 +4896,29 @@ relationship filter (OR semantics) — the Work table's first filter. Tests:
 constraint, pivot timestamps, inverse relation, cascade deletes both
 directions, resource list/create, form persistence, inline create + attach,
 filter narrowing. Docs: ADR 0076, `wiki/database/entities-alignment.md`.
+
+## 2026-10-11 (tag pools: entity-tags pool — Entity Tags resource + Entities tags UI)
+
+The entities pool went live, third of the four per-type pools (ADR 0076),
+copying the work pool's shapes verbatim. Migration `2026_10_11_000003`
+created both tables in one additive migration: `entity_tags` (definition
+table mirroring `tags`/`work_tags` — `slug` 100 unique, `name` 256,
+timestamps) and the `tagged_entities` pivot (`entity_id` → entities and
+`entity_tag_id` → entity_tags, both cascade, unique
+`(entity_id, entity_tag_id)` = `uk_tagged_entities_pair`, timestamps).
+`EntityTag` model (fillable slug+name, inverse `entities()` with
+`withTimestamps`) + `EntityTagFactory`; `Entity::tags()` resolves through
+`tagged_entities`. New `EntityTagResource` ("Entity Tags", Entities
+navigation group like `EntityResource`): required name (256) + globally
+unique slug (100), `entities_count` usage column, edit/delete + bulk
+delete. The Entities form gained a searchable tags multi-select with inline
+create (`createOptionForm`, relationship default createOptionUsing) placed
+with the metadata fields; the Entities list gained a `tags.name` badge
+column and a multi-select tags relationship filter (OR semantics) joining
+the existing language/work/restriction/approval filters. Tags stay
+orthogonal to the entity lifecycle — the deletion guard and status logic
+are untouched. Tests: `EntityTagsTest` mirrors `WorkTagsTest` — sync
+no-duplicate, unique pair constraint, pivot timestamps, inverse relation,
+cascade deletes both directions, resource list/create, form persistence,
+inline create + attach, filter narrowing. Docs: ADR 0076,
+`wiki/database/entities-alignment.md`.
