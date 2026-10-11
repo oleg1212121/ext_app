@@ -4874,3 +4874,25 @@ no-duplicate, unique pair constraint, pivot timestamps, inverse relation,
 cascade deletes both directions, resource list/create, form persistence,
 inline create + attach, filter narrowing. Docs: ADR 0076, CONTEXT.md Tag
 Pools context, `wiki/database/dictionary.md`.
+
+## 2026-10-11 (tag pools: work-tags pool — Work Tags resource + Works tags UI)
+
+The works pool went live, second of the four per-type pools (ADR 0076),
+copying the words tracer bullet's shapes verbatim. Migration
+`2026_10_11_000002` created both tables in one additive migration:
+`work_tags` (definition table mirroring `tags` — `slug` 100 unique, `name`
+256, timestamps) and the `tagged_works` pivot (`work_id` → works and
+`work_tag_id` → work_tags, both cascade, unique `(work_id, work_tag_id)` =
+`uk_tagged_works_pair`, timestamps). `WorkTag` model (fillable slug+name,
+inverse `works()` with `withTimestamps`) + `WorkTagFactory`;
+`Work::tags()` resolves through `tagged_works`. New `WorkTagResource`
+("Work Tags", Entities navigation group like `WorkResource`): required name
+(256) + globally unique slug (100), `works_count` usage column, edit/delete
++ bulk delete. The Works form gained a searchable tags multi-select with
+inline create (`createOptionForm`, relationship default createOptionUsing);
+the Works list gained a `tags.name` badge column and a multi-select tags
+relationship filter (OR semantics) — the Work table's first filter. Tests:
+`WorkTagsTest` mirrors `WordTagsTest` — sync no-duplicate, unique pair
+constraint, pivot timestamps, inverse relation, cascade deletes both
+directions, resource list/create, form persistence, inline create + attach,
+filter narrowing. Docs: ADR 0076, `wiki/database/entities-alignment.md`.
