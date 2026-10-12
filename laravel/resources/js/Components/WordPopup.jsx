@@ -158,15 +158,17 @@ function TranscriptionLine({transcriptions}) {
 }
 
 /**
- * The Word popup's second tab: a manual "Explain" that asks the AI what the
- * word means in its sentence context (POST /ai/word-explain). The model is
- * the user's stored explanation preference — the server resolves it; the
- * popup only carries `modelKey` to discriminate the client cache. Keyless
- * users (enabled false) and users without a chosen explanation model
- * (modelKey null) see guidance instead of a request button. The request
- * fires only from the button; a hit in the page-lifetime explain cache
- * renders instantly instead. `explainKey` also guards against stale
- * responses landing after the popup has moved to another word.
+ * The Word popup's second tab: asks the AI what the word means in its
+ * sentence context (POST /ai/word-explain) the moment the tab activates —
+ * activation mounts this pane, so a []-deps effect fires the request once
+ * per activation and never on re-renders. Keyless users (enabled false) and
+ * users without a chosen explanation model (modelKey null) see guidance
+ * instead of a request; a hit in the page-lifetime explain cache renders
+ * the answer instantly and skips the fire. The model is the user's stored
+ * explanation preference — the server resolves it; the popup only carries
+ * `modelKey` to discriminate the client cache. `explainKey` also guards
+ * against stale responses landing after the popup has moved to another
+ * word.
  *
  * `preview` (the profile's Popups tab) skips the network entirely: it opens
  * on a canned answer and keeps the Ask-again button inert.
@@ -189,6 +191,29 @@ function ExplainPane({explain, explainKey, preview = false}) {
             ? {status: 'done', answer: explainCache.get(explainKey)}
             : null);
     }, [explainKey, preview]);
+
+    const firedRef = useRef(false);
+
+    // Tab activation == this pane mounting (PopupContent mounts ExplainPane
+    // only while the Explanation tab is active), so this []-deps effect runs
+    // exactly once per activation and never on re-renders. The guards make
+    // the fire a no-op when there is nothing to ask — preview, no key or
+    // model, no sentence to ask about — or when the initial state already
+    // holds a cached answer (page-lifetime explainCache: re-activating the
+    // tab renders the memoized answer instantly instead of re-spending
+    // tokens).
+    useEffect(() => {
+        if (firedRef.current
+            || preview
+            || explain.enabled === false
+            || explain.modelKey == null
+            || explain.sentenceId == null
+            || explanation !== null) {
+            return;
+        }
+        firedRef.current = true;
+        request();
+    }, []);
 
     const request = () => {
         if (preview) {
@@ -246,9 +271,9 @@ function ExplainPane({explain, explainKey, preview = false}) {
     };
 
     return (
-        <div className="px-3.5 pb-1">
+        <div className="word-popup-explain px-3.5 pb-1">
             {explain.enabled === false ? (
-                <div className="py-3">
+                <div className="word-popup-explain-guidance py-3">
                     <p className="text-[0.857em] opacity-70">{t('word.explain_no_key')}</p>
                     <Link
                         href="/profile?tab=ai"
@@ -258,7 +283,7 @@ function ExplainPane({explain, explainKey, preview = false}) {
                     </Link>
                 </div>
             ) : explain.modelKey == null ? (
-                <div className="py-3">
+                <div className="word-popup-explain-guidance py-3">
                     <p className="text-[0.857em] opacity-70">{t('word.explain_choose_model')}</p>
                     <Link
                         href="/profile?tab=ai"
@@ -267,29 +292,23 @@ function ExplainPane({explain, explainKey, preview = false}) {
                         {t('word.explain_go_to_settings')}
                     </Link>
                 </div>
-            ) : explanation === null && (
-                <div className="py-3">
-                    <button type="button" onClick={request} className={explainButtonClass}>
-                        {t('word.explain')}
-                    </button>
-                </div>
-            )}
+            ) : null}
 
             {explanation?.status === 'loading' && (
-                <p className="py-3 text-[0.857em] opacity-60">{t('word.explain_loading')}</p>
+                <p className="word-popup-explain-loading py-3 text-[0.857em] opacity-60">{t('word.explain_loading')}</p>
             )}
 
             {explanation?.status === 'error' && (
-                <div className="py-3">
+                <div className="word-popup-explain-error py-3">
                     <p className="text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{explanation.message}</p>
-                    <button type="button" onClick={request} className={`${explainButtonClass} mt-2`}>
-                        {t('word.explain')}
+                    <button type="button" onClick={request} className={`word-popup-explain-retry ${explainButtonClass} mt-2`}>
+                        {t('word.explain_retry')}
                     </button>
                 </div>
             )}
 
             {explanation?.status === 'done' && (
-                <div className="py-2">
+                <div className="word-popup-explain-answer py-2">
                     {explanation.answer
                         ? (
                             <div
@@ -298,12 +317,12 @@ function ExplainPane({explain, explainKey, preview = false}) {
                             />
                         )
                         : (
-                            <p className="text-[0.857em] opacity-60">{t('word.explain_failed', {status: 200})}</p>
+                            <p className="word-popup-explain-empty text-[0.857em] opacity-60">{t('word.explain_failed', {status: 200})}</p>
                         )}
                     <button
                         type="button"
                         onClick={askAgain}
-                        className="mt-2 text-[0.786em] underline underline-offset-2 opacity-70 hover:opacity-100"
+                        className="word-popup-explain-again mt-2 text-[0.786em] underline underline-offset-2 opacity-70 hover:opacity-100"
                     >
                         {t('word.explain_again')}
                     </button>
@@ -338,7 +357,7 @@ function ExplainPane({explain, explainKey, preview = false}) {
  *
  * `onProgressAction` (null in the preview) drives the footer buttons; the
  * buttons render disabled without it. `preview` additionally swaps the
- * Explanation tab's request flow for a canned answer.
+ * Explanation tab's auto-request for a canned answer (no network).
  */
 export function PopupContent({
     surface,
@@ -568,15 +587,16 @@ export function PopupContent({
  *
  * With an `explain` payload ({rowKind, rowId, side, sentenceIndex, modelKey,
  * enabled, modelLabel, followsAnswer, answerLabel}) the popup grows a tab
- * strip: the dictionary content stays on the first tab, and a second tab
- * offers the manual AI context explanation. Without it the popup renders
- * exactly as before. `modelKey` (the user's explanation model id) only
- * discriminates the client cache and decides between the request button and
- * choose-a-model guidance — the server resolves the actual model per user
- * preference. The label fields (`modelLabel`, `followsAnswer`, and the
- * simulator-only `answerLabel`) exist for the tab strip's robot icon, which
- * opens the Models used popup; `enabled` false (no API key) keeps the strip
- * and shows add-key guidance instead of the request button.
+ * strip: the dictionary content stays on the first tab, and opening the
+ * second tab immediately requests the AI context explanation. Without it
+ * the popup renders exactly as before. `modelKey` (the user's explanation
+ * model id) only discriminates the client cache and decides between the
+ * auto-request and choose-a-model guidance — the server resolves the
+ * actual model per user preference. The label fields (`modelLabel`,
+ * `followsAnswer`, and the simulator-only `answerLabel`) exist for the tab
+ * strip's robot icon, which opens the Models used popup; `enabled` false
+ * (no API key) keeps the strip and shows add-key guidance instead of a
+ * request.
  *
  * `sections` (the user's Popup preferences, ADR 0046) hides individual
  * blocks; it defaults to the popupVisibility prop shared to every page, and

@@ -5,7 +5,7 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-10-12T17:55:10+03:00 }
+generated: { by: agent:zcode, at: 2026-10-12T19:40:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -148,7 +148,11 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    `-no-definitions`, `-definitions` (with `-definitions-list` on its `ol`),
    `-examples` (with `-examples-list` on its `ul`), `-etymologies`,
    `-summary` on every collapse summary, `-footer`, `-progress-known`,
-   `-progress-reset` — so tests and user styles can target the card
+   `-progress-reset`, `-explain` (the Explanation pane) with
+   `-explain-guidance`, `-explain-loading`, `-explain-error` (its retry
+   button `-explain-retry`), `-explain-answer` (empty-answer note
+   `-explain-empty`, "Ask again" `-explain-again`) — so tests and user
+   styles can target the card
    structurally.
    **Every block below the headword is individually hideable per user**
    (ADR 0046): the `popupVisibility` Inertia prop shared to every page
@@ -239,13 +243,18 @@ AI questions (answer) model and the explanation model (with a muted
 explanation model. While the modal is open it owns Escape and
 outside-click closing — the word popup underneath stays put.
 
-* **The request is manual.** The tab shows an "Explain this word" button;
-  pressing it POSTs `/ai/word-explain` (sync JSON, no streaming). Until
-  then nothing is spent; no auto-fetch on popup open. Keyless users
-  (`enabled` false — the strip still renders for them) see add-an-API-key
-  guidance with a link to `/profile?tab=ai`; when the user has no
-  resolved explanation model, the tab shows choose-a-model guidance
-  instead of the button.
+* **The request fires on tab activation.** Opening the Explanation tab
+  POSTs `/ai/word-explain` immediately (sync JSON, no streaming) — the tab
+  button is gone (removed in popup-card-redesign ticket 04); activation
+  mounts the pane and a mount-only effect fires once per activation, never
+  on re-renders. A hit in the client memo renders the answer instantly and
+  skips the request; loading, error + a "Try again" retry, and the manual
+  "Ask again" remain. Keyless users (`enabled` false — the strip still
+  renders for them) see add-an-API-key guidance with a link to
+  `/profile?tab=ai` and no request; when the user has no resolved
+  explanation model, the tab shows choose-a-model guidance instead. The
+  profile preview keeps its canned `word.explain_preview` answer with zero
+  network.
 * **Sentence identity travels as an id.** Every Reading row sentence object
   carries its entity sentence `id` (ADR 0060), `WordText` remembers which
   sentence a Ctrl+click landed in, and the payload is simply

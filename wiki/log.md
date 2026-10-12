@@ -1,5 +1,39 @@
 # Directory Update Log
 
+## 2026-10-12 (Explanation tab auto-request — popup-card-redesign ticket 04)
+
+Clicking the word popup's Explanation tab now fires the AI context explain
+request immediately; the "Explain this word" button is gone
+(`Components/WordPopup.jsx`, `ExplainPane`). Tab activation mounts the pane
+(`PopupContent` renders it only while the tab is active), so a []-deps
+effect with a `firedRef` guard fires once per activation and never on
+re-renders; the guards (preview, `enabled === false`, `modelKey == null`,
+`sentenceId == null`, non-null initial `explanation`) make the fire a no-op
+when there is nothing to ask and are what respect the page-lifetime
+`explainCache` — re-activating the tab with a memoized answer renders it
+instantly with zero requests. `request()` itself, the cache Map/key format,
+the backend (`POST /ai/word-explain`, 20/min throttle), and the preview's
+canned `word.explain_preview` answer (zero network) are untouched. Loading,
+the error branch + retry, and "Ask again" stay; the retry button is
+re-labeled to a new `word.explain_retry` ("Try again"/"Попробовать
+снова"/"Паспрабаваць зноў") so the now-unused `word.explain` could be
+dropped from `database/seeders/ui-strings/words.php` (re-seeded via
+`UiStringSeeder`, whose `UiStrings::flush()` refreshed every locale map;
+the stale `ui_string_keys`/`ui_strings` rows for `word.explain` were then
+deleted by hand since the seeder never prunes). Explain-pane elements got
+their stable classes per ticket 03's inventory: `word-popup-explain`,
+`-explain-guidance` (both guidance branches), `-explain-loading`,
+`-explain-error`, `-explain-retry`, `-explain-answer`, `-explain-empty`,
+`-explain-again`. Checks: `php artisan test
+--filter=AiWordExplainEndpointTest` 12 passed (57 assertions, backend
+unchanged); `php artisan test --filter=WordEndpointTest` 18 passed (90
+assertions); `php artisan test --filter=UiStringSeederTest` 5 passed (22
+assertions, seeder change); `npm run test` (vitest) 47 passed — lib-only,
+`WordPopup.jsx` has no JS tests; `vendor/bin/pint --dirty` pass;
+`npm run build` compiles; `wiki:validate` conformant.
+`wiki/domains/interactive-words.md` refreshed (auto-request bullet,
+explain classes in the inventory), `generated.at` bumped.
+
 ## 2026-10-12 (Word popup card content rework — popup-card-redesign ticket 03)
 
 The shared `PopupContent` (`Components/WordPopup.jsx`) is reworked in place,
