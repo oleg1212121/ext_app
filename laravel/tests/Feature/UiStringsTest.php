@@ -41,6 +41,15 @@ it('falls back to english when the locale value is missing', function () {
     expect(__('test.only_english'))->toBe('Only English');
 });
 
+it('falls back to english for the belarusian interface while be texts are missing', function () {
+    // ADR 0023 chain: with be interface-enabled but its texts not yet seeded,
+    // keys render English — never a raw key.
+    seedUiStringFixtures();
+
+    App::setLocale('be');
+    expect(__('test.greeting'))->toBe('Hello');
+});
+
 it('renders unknown keys as the key itself', function () {
     App::setLocale('ru');
 
@@ -67,6 +76,22 @@ it('builds a merged map with english underneath the locale', function () {
     $map = UiStrings::mapFor('ru');
 
     expect($map['test.greeting'])->toBe('Привет');
+});
+
+it('keeps english underneath the locale regardless of physical row order', function () {
+    seedUiStringFixtures();
+
+    expect(UiStrings::mapFor('ru')['test.greeting'])->toBe('Привет');
+
+    // A later English update (a re-seed changing the en text, as deploy does)
+    // rewrites the en row at the heap's end — the build must still layer the
+    // locale value on top, not whatever order Postgres happens to scan in.
+    $string = UiString::whereHas('key', fn ($query) => $query->where('key', 'test.greeting'))
+        ->whereHas('language', fn ($query) => $query->where('code', 'en'))
+        ->first();
+    $string->update(['text' => 'Hello, updated']);
+
+    expect(UiStrings::mapFor('ru')['test.greeting'])->toBe('Привет');
 });
 
 it('translates strings per group through blade-style __()', function () {

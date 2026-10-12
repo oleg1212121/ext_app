@@ -19,6 +19,9 @@ class TranscriptionTypeSeeder extends Seeder
         'ru' => [
             ['slug' => 'ipa', 'title' => 'МФА', 'description' => 'Транскрипция по Международному фонетическому алфавиту'],
         ],
+        'be' => [
+            ['slug' => 'ipa', 'title' => 'МФА', 'description' => 'Транскрыпцыя паводле Міжнароднага фанетычнага алфавіту'],
+        ],
     ];
 
     public function run(): void

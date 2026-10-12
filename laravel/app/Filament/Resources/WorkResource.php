@@ -16,6 +16,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
 class WorkResource extends Resource
@@ -42,6 +43,21 @@ class WorkResource extends Resource
                     ->required(),
                 Textarea::make('description')
                     ->maxLength(2048),
+                Select::make('tags')
+                    ->label('Tags')
+                    ->relationship('tags', 'name')
+                    ->multiple()
+                    ->searchable()
+                    ->preload()
+                    ->createOptionForm([
+                        TextInput::make('name')
+                            ->required()
+                            ->maxLength(256),
+                        TextInput::make('slug')
+                            ->required()
+                            ->maxLength(100)
+                            ->unique(),
+                    ]),
             ]);
     }
 
@@ -58,8 +74,17 @@ class WorkResource extends Resource
                 TextColumn::make('entities_count')
                     ->counts('entities')
                     ->label('Entities'),
+                TextColumn::make('tags.name')
+                    ->label('Tags')
+                    ->badge(),
                 TextColumn::make('created_at')
                     ->dateTime(),
+            ])
+            ->filters([
+                SelectFilter::make('tags')
+                    ->relationship('tags', 'name')
+                    ->multiple()
+                    ->preload(),
             ])
             ->recordActions([
                 EditAction::make(),

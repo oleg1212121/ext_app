@@ -131,6 +131,11 @@ class Entity extends Model
             ->withTimestamps();
     }
 
+    public function tags(): BelongsToMany
+    {
+        return $this->belongsToMany(EntityTag::class, 'tagged_entities')->withTimestamps();
+    }
+
     /**
      * Display state of the entity's signature: generated, pending (file
      * uploaded but not yet processed), or none.

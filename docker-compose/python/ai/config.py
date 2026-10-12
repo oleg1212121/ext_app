@@ -71,9 +71,78 @@ SPLIT_MAX_TEXT_LENGTH = _env_int("SPLIT_MAX_TEXT_LENGTH", 5242880)
 
 
 def splitter_engine() -> str:
-    """Sentence splitter backend: 'razdel' (default) or 'pysbd'."""
+    """Global sentence splitter backend: 'razdel' (default) or 'pysbd'."""
     value = (_live_env("SPLITTER_ENGINE", "razdel") or "razdel").strip().lower()
     return value if value in ("razdel", "pysbd") else "razdel"
+
+
+def parse_engine_overrides(raw: str | None) -> dict[str, str]:
+    """Parse ``SPLITTER_ENGINE_OVERRIDES`` — per-language engine pins.
+
+    Format: comma-separated ``<language>=<engine>`` entries, e.g.
+    ``be=razdel,pl=pysbd``. Whitespace-tolerant; keys and values are
+    lowercased. Defensive by design: malformed entries (no ``=``, empty
+    key/value) and unknown engine names are *ignored*, never raised — a typo
+    in an override must not take a language's splitting down; the entry just
+    falls through to the global resolution.
+    """
+    if not raw:
+        return {}
+    out: dict[str, str] = {}
+    for entry in raw.split(","):
+        key, sep, value = entry.strip().partition("=")
+        if not sep:
+            continue
+        key = key.strip().lower()
+        value = value.strip().lower()
+        if not key or value not in ("razdel", "pysbd"):
+            continue
+        out[key] = value
+    return out
+
+
+def _pysbd_supported_languages() -> set[str]:
+    """Language codes pysbd's engine has an entry for.
+
+    Imported lazily (keeps config free of import cycles) and defensively: if
+    pysbd is broken/unimportable the set is empty, so every language falls
+    back to the rule-based engine instead of the worker crashing.
+    """
+    try:
+        from pysbd.languages import LANGUAGE_CODES
+
+        return set(LANGUAGE_CODES.keys())
+    except Exception:
+        return set()
+
+
+def resolve_splitter_engine(
+    language: str, global_engine: str, overrides: dict[str, str]
+) -> str:
+    """Which engine splits *language* (pure; see ``splitter_engine_for``).
+
+    Resolution order: an explicit override wins unconditionally (including a
+    deliberate pin onto an engine that cannot serve the language — the
+    construction error is the honest outcome); otherwise the global engine;
+    except when the global engine cannot serve the language — pysbd without
+    a pysbd language entry — the rule-based engine (razdel) is substituted,
+    so unregistered/unknown codes fall back instead of erroring (Laravel
+    validates codes against the languages registry). razdel serves any code.
+    The language code is normalized (trimmed, lowercased) once up front and
+    used for both the override lookup and the pysbd-support check.
+    """
+    language = (language or "").strip().lower()
+    override = overrides.get(language)
+    if override:
+        return override
+    if global_engine == "pysbd" and language not in _pysbd_supported_languages():
+        return "razdel"
+    return global_engine
+
+
+def splitter_engine_for(language: str) -> str:
+    """Per-language splitter engine, resolved from the live env on each call."""
+    return resolve_splitter_engine(language, splitter_engine(), parse_engine_overrides(_live_env("SPLITTER_ENGINE_OVERRIDES")))
 ALIGN_MAX_SENTENCES = _env_int("ALIGN_MAX_SENTENCES", 500)
 ALIGN_MAX_WINDOW = _env_int("ALIGN_MAX_WINDOW", 8)
 ENRICH_MAX_SENTENCES = _env_int("ENRICH_MAX_SENTENCES", 75)

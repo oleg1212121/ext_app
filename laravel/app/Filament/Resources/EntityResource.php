@@ -75,6 +75,21 @@ class EntityResource extends Resource
                     ->maxLength(256),
                 Textarea::make('description')
                     ->maxLength(2048),
+                Select::make('tags')
+                    ->label('Tags')
+                    ->relationship('tags', 'name')
+                    ->multiple()
+                    ->searchable()
+                    ->preload()
+                    ->createOptionForm([
+                        TextInput::make('name')
+                            ->required()
+                            ->maxLength(256),
+                        TextInput::make('slug')
+                            ->required()
+                            ->maxLength(100)
+                            ->unique(),
+                    ]),
                 Toggle::make('is_restricted')
                     ->label('Restricted (only admin and granted users can read)')
                     ->default(true),
@@ -123,6 +138,9 @@ class EntityResource extends Resource
                     ->label('Approved'),
                 TextColumn::make('uploader.name')
                     ->label('Uploader'),
+                TextColumn::make('tags.name')
+                    ->label('Tags')
+                    ->badge(),
                 TextColumn::make('text_hash')
                     ->label('Text hash')
                     ->limit(12)
@@ -151,6 +169,10 @@ class EntityResource extends Resource
                     ->trueLabel('Approved only')
                     ->falseLabel('Not approved only')
                     ->native(false),
+                SelectFilter::make('tags')
+                    ->relationship('tags', 'name')
+                    ->multiple()
+                    ->preload(),
             ])
             ->recordActions([
                 Actions\EditAction::make(),

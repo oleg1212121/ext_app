@@ -4,7 +4,7 @@ title: Application Overview
 description: What ext_app is, its main components, and how a request flows through the system.
 tags: [architecture, overview]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-26T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-11T12:40:00+03:00 }
 sources:
   - id: composer
     resource: laravel/composer.json
@@ -30,7 +30,7 @@ The repo root is a **Docker workspace**; the Laravel application lives in
 |------|---------|
 | `laravel/` | The Laravel 13 application (mounted to `/var/www` in the app container) |
 | `wiki/` | This OKF knowledge bundle (mounted to `/var/wiki`) |
-| `docker-compose/python/` | FastAPI python microservice (`ai/` package: splitting, embeddings, alignment) + prebuilt `ai_env` venv |
+| `docker-compose/python/` | FastAPI python microservice (`ai/` package: splitting, embeddings, alignment) + prebuilt `ai/venv` (dev machine; prod native path uses `ai_env/`) |
 | `docker-compose/postgres/` | PostgreSQL data directory |
 | `nginx/` | Nginx config |
 | `public/texts/simulator/` | (inside `laravel/public`) reading texts by language/level |

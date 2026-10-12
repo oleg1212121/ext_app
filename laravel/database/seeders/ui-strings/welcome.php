@@ -2,5 +2,5 @@
 
 // UI strings: welcome.
 return [
-    'welcome.about' => ['en' => 'About', 'ru' => 'О проекте'],
+    'welcome.about' => ['en' => 'About', 'ru' => 'О проекте', 'be' => 'Пра праект'],
 ];

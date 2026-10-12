@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps into the unified language-key
 tags: [dictionary, import, wiktionary, kaikki]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-09-16T12:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-10T19:55:00+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -110,8 +110,10 @@ Two source shapes exist:
 
    The command links **every language pair** among languages that have
    imported words, writing one canonical `word_translations` row per pair
-   (`word_a_id < word_b_id`, ADR 0020). Matching strips Russian stress
-   marks (e.g. `приве́т` → `привет`) when pairing into Russian. Re-runs are
+   (`word_a_id < word_b_id`, ADR 0020). Matching strips the Cyrillic
+   stress marks (e.g. `приве́т` → `привет`) when pairing into the
+   stress-mark languages ru/be/uk (the shared `App\Support\StressMarks`).
+   Re-runs are
    idempotent and never duplicate links created by hand in the admin.
 5. Verify in the Filament admin (`/admin`, group "Words"): the `Word`
    resource with relation managers for definitions, forms, translations,

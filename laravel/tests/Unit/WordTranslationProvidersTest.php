@@ -84,6 +84,28 @@ it('parses yandex dictionary entries, strips stress marks, dedupes and caps cand
     });
 });
 
+it('strips combining stress marks for every Cyrillic-list target, be and uk like ru', function () {
+    $provider = configureYandexTestProvider();
+
+    Http::fake(['yandex.test/*' => Http::response([
+        'def' => [['pos' => 'noun', 'text' => 'cat', 'tr' => [['text' => "кот\xCC\x81"]]]],
+    ])]);
+
+    expect($provider->fetch('cat', 'en', 'be'))->toBe([['text' => 'кот', 'pos' => 'noun']])
+        ->and($provider->fetch('cat', 'en', 'uk'))->toBe([['text' => 'кот', 'pos' => 'noun']]);
+});
+
+it('leaves candidates for targets outside the Cyrillic list untouched', function () {
+    $provider = configureYandexTestProvider();
+
+    Http::fake(['yandex.test/*' => Http::response([
+        'def' => [['pos' => 'noun', 'text' => 'cat', 'tr' => [['text' => "chat\xCC\x81"]]]],
+    ])]);
+
+    expect($provider->fetch('cat', 'en', 'en'))->toBe([['text' => "chat\xCC\x81", 'pos' => 'noun']])
+        ->and($provider->fetch('cat', 'en', 'de'))->toBe([['text' => "chat\xCC\x81", 'pos' => 'noun']]);
+});
+
 it('returns the single google translation as a pos-less candidate', function () {
     $provider = configureGoogleTestProvider();
 

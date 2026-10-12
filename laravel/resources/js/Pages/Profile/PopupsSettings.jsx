@@ -29,9 +29,13 @@ const POPUP_GROUPS = [
     {titleKey: 'profile.popup_group_tabs', keys: ['explanation', 'frequency']},
 ]
 
-// A fixture-style word family exercising every block the popup can render:
-// a form of "melt" with a base-word section, its own adjective section,
-// satellites everywhere, a rank and a marked familiarity.
+// A fixture-style word family exercising every state the popup can render:
+// a form of "melt" whose base-word section ("MELT — verb") carries two
+// transcriptions ("+1 more…" toggle), 10 translations (8 shown + "+2 more…")
+// and counted definitions/examples/etymology collapses — plus the popup's
+// own adjective section ("MELTED — adjective") with zero translations, which
+// shows the no-translations placeholder. A rank and a marked familiarity top
+// it off.
 const SAMPLE_DATA = {
     id: 1,
     word: 'melted',
@@ -45,7 +49,10 @@ const SAMPLE_DATA = {
             id: 1,
             word: 'melt',
             word_class: 'Verb',
-            transcriptions: [{value: 'melt', type: 'IPA'}],
+            transcriptions: [
+                {value: 'melt', type: 'IPA'},
+                {value: 'MELT', type: 'English Pronunciation'},
+            ],
             definitions: [
                 'To change from a solid to a liquid state under heat.',
                 'To dissolve, blend, or merge — the crowd melted away.',
@@ -54,9 +61,23 @@ const SAMPLE_DATA = {
                 {id: 1, word: 'таять', language_code: 'ru'},
                 {id: 2, word: 'плавить', language_code: 'ru'},
                 {id: 3, word: 'растворяться', language_code: 'ru'},
+                {id: 4, word: 'плавиться', language_code: 'ru'},
+                {id: 5, word: 'топить', language_code: 'ru'},
+                {id: 6, word: 'растапливать', language_code: 'ru'},
+                {id: 7, word: 'расплавлять', language_code: 'ru'},
+                {id: 8, word: 'сливаться', language_code: 'ru'},
+                {id: 9, word: 'смягчаться', language_code: 'ru'},
+                {id: 10, word: 'растворить', language_code: 'ru'},
             ],
-            examples: ['The snow melted in the sun.', 'Her heart melted at the sight.'],
-            etymologies: ['From Old English meltan, "to dissolve into liquid".'],
+            examples: [
+                'The snow melted in the sun.',
+                'Her heart melted at the sight.',
+                'The chocolate melted into the warm batter.',
+            ],
+            etymologies: [
+                'From Old English meltan, "to dissolve into liquid".',
+                'Cognate with Old Norse melt ("to digest").',
+            ],
         },
         {
             id: 2,
@@ -64,7 +85,7 @@ const SAMPLE_DATA = {
             word_class: 'Adjective',
             transcriptions: [],
             definitions: ['Changed into liquid form; no longer solid.'],
-            translations: [{id: 4, word: 'растопленный', language_code: 'ru'}],
+            translations: [],
             examples: [],
             etymologies: [],
         },
@@ -97,47 +118,57 @@ export default function PopupsSettings({popupVisibility = null}) {
                 description={t('profile.popups_description')}
             />
 
-            <div className="mt-8 space-y-6">
-                {POPUP_GROUPS.map((group) => (
-                    <div key={group.titleKey}>
-                        <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
-                            {t(group.titleKey)}
-                        </h3>
-                        <div className="mt-1">
-                            {group.keys.map((key) => (
-                                <CheckboxRow
-                                    key={key}
-                                    id={`popup-section-${key}`}
-                                    checked={sections[key]}
-                                    onChange={() => toggle(key)}
-                                    label={t(`profile.popup_section_${key}`)}
-                                />
-                            ))}
+            {/* Two columns at lg+: checkbox groups ~1/3 left, live preview
+                ~2/3 right; below lg it stacks checkboxes-above-preview, the
+                pre-2026-10 order. The preview card keeps its realistic 560px
+                inline width inside the wider column. */}
+            <div className="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-10">
+                <div className="space-y-6">
+                    {POPUP_GROUPS.map((group) => (
+                        <div key={group.titleKey}>
+                            <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
+                                {t(group.titleKey)}
+                            </h3>
+                            <div className="mt-1">
+                                {group.keys.map((key) => (
+                                    <CheckboxRow
+                                        key={key}
+                                        id={`popup-section-${key}`}
+                                        checked={sections[key]}
+                                        onChange={() => toggle(key)}
+                                        label={t(`profile.popup_section_${key}`)}
+                                    />
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
 
-            <div className="mt-10">
-                <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
-                    {t('profile.popups_preview_title')}
-                </h3>
-                <div
-                    className={`${popupContainerClass} mt-3`}
-                    style={{width: 'min(560px, 100%)', fontSize: `${DEFAULT_POPUP_FONT_SIZE}px`}}
-                    aria-label={t('profile.popups_preview_title')}
-                >
-                    <PopupContent
-                        surface="melted"
-                        familiarity={SAMPLE_FAMILIARITY}
-                        data={SAMPLE_DATA}
-                        explainProps={{...SAMPLE_EXPLAIN, wordId: SAMPLE_DATA.id, surface: 'melted'}}
-                        explainKey="preview"
-                        sections={sections}
-                        modelsOpen={modelsOpen}
-                        onModelsOpenChange={setModelsOpen}
-                        preview
-                    />
+                <div className="mt-10 lg:mt-0">
+                    <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
+                        {t('profile.popups_preview_title')}
+                    </h3>
+                    {/* Same structural class as the real portal wrapper
+                        (WordPopup.jsx) so user styles/tests treat the preview
+                        like the live popup — minus the portal's absolute/z-50
+                        positioning, which stays portal-only. */}
+                    <div
+                        className={`word-popup ${popupContainerClass} mt-3`}
+                        style={{width: 'min(560px, 100%)', fontSize: `${DEFAULT_POPUP_FONT_SIZE}px`}}
+                        aria-label={t('profile.popups_preview_title')}
+                    >
+                        <PopupContent
+                            surface="melted"
+                            familiarity={SAMPLE_FAMILIARITY}
+                            data={SAMPLE_DATA}
+                            explainProps={{...SAMPLE_EXPLAIN, wordId: SAMPLE_DATA.id, surface: 'melted'}}
+                            explainKey="preview"
+                            sections={sections}
+                            modelsOpen={modelsOpen}
+                            onModelsOpenChange={setModelsOpen}
+                            preview
+                        />
+                    </div>
                 </div>
             </div>
         </section>

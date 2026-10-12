@@ -4,7 +4,7 @@ title: Localization
 description: Interface language resolution and DB-backed UI strings with Filament CRUD.
 tags: [i18n, localization, languages, filament]
 status: stable
-generated: { by: agent, at: 2026-09-12T12:00:00Z }
+generated: { by: agent, at: 2026-10-12T17:55:10+03:00 }
 verified: {}
 ---
 
@@ -16,8 +16,8 @@ How the web UI's display language works and how interface text is managed.
 
 - The UI locale comes from a resolution chain: the user's
   **Interface language** setting → the **Native language** → `en`. Only
-  interface-enabled languages (`languages.is_interface_enabled`, seeded true for
-  `en`/`ru`) qualify; guests always get `en`.
+  interface-enabled languages (`languages.is_interface_enabled`, seeded true
+  for `en`/`ru`/`be`) qualify; guests always get `en`.
 - `App\Models\User::resolvedInterfaceLocale()` implements the chain;
   `App\Http\Middleware\SetInterfaceLocale` (appended to the `web` group, before
   `HandleInertiaRequests`) applies it per request and skips `/admin*` — the
@@ -36,8 +36,12 @@ How the web UI's display language works and how interface text is managed.
 - `App\Support\UiStrings::mapFor(locale)` builds a flat key → text map per
   locale (English merged underneath; missing values fall back to English
   silently), cached via `Cache::rememberForever("ui_strings.map.{locale}")`.
-  Model observers on `UiString`/`UiStringKey` flush these caches, so admin
-  edits apply on the next request.
+  The layering is enforced by an explicit ORDER BY (locale rows last) — the
+  map must not depend on the order Postgres scans the join in (an English
+  row rewritten by a later re-seed lands at the heap's end and would
+  otherwise overwrite its locale value). Model observers on
+  `UiString`/`UiStringKey` flush these caches, so admin edits apply on the
+  next request.
 - `App\Translation\UiStringLoader` (a `FileLoader` subclass, swapped in via
   `$app->extend('translation.loader', ...)`) overlays the map onto each string
   group, so Blade/Filament `__('group.key')` works alongside framework lines.
@@ -49,9 +53,16 @@ How the web UI's display language works and how interface text is managed.
   derived from the key, and a relationship Repeater listing one text field per
   interface-enabled language side by side.
 - Initial content: `Database\Seeders\UiStringSeeder` upserts every
-  `database/seeders/ui-strings/*.php` partial (group per surface: nav, auth,
-  profile, library, entities, alignments, reader, bilinguals, welcome,
-  dashboard, pending). Seeder runs are idempotent; admin edits win afterwards.
+  `database/seeders/ui-strings/*.php` partial (17 group files per surface:
+  ai, alignments, auth, bilinguals, crossword, dashboard, entities, library,
+  nav, pending, profile, reader, recommendations, sounds, welcome, words,
+  wordtest). The seeder's language loop is registry-driven — it iterates
+  `is_interface_enabled` languages by `sort_order`, and partial keys without a
+  value for a language are simply skipped (the English fallback chain, below,
+  covers them at render time), so shipping a new interface language's texts is
+  filling in per-language values in the partials, never a seeder edit. Every
+  partial key carries `en`/`ru`/`be` — the seeded interface renders fully in
+  Belarusian. Seeder runs are idempotent; admin edits win afterwards.
 
 ## Framework messages
 

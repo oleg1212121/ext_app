@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Word;
 use App\Models\WordClass;
 use App\Models\Work;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakePythonClient;
@@ -78,23 +79,38 @@ function something()
 */
 
 /**
- * Idempotently ensure the seeded languages exist. Returns code => model.
+ * Idempotently ensure the requested languages exist. Returns code => model.
  *
+ * Defaults to the seeded en/ru pair; tests for a third language opt in
+ * explicitly via $codes (e.g. ['en', 'ru', 'be']) so count-sensitive tests
+ * keep their exact language set.
+ *
+ * @param  array<int, string>  $codes
  * @return array<string, Language>
  */
-function createLanguages(): array
+function createLanguages(array $codes = ['en', 'ru']): array
 {
-    $en = Language::query()->updateOrCreate(
-        ['code' => 'en'],
-        ['name' => 'English', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 0],
-    );
+    $attributes = [
+        'en' => ['name' => 'English', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 0],
+        'ru' => ['name' => 'Russian', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 1],
+        'be' => ['name' => 'Belarusian', 'native_name' => 'Беларуская', 'is_enabled' => true, 'is_interface_enabled' => false, 'sort_order' => 2],
+    ];
 
-    $ru = Language::query()->updateOrCreate(
-        ['code' => 'ru'],
-        ['name' => 'Russian', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 1],
-    );
+    $languages = [];
+    foreach ($codes as $code) {
+        if (! array_key_exists($code, $attributes)) {
+            throw new InvalidArgumentException(
+                "Unsupported language code [{$code}] for createLanguages(). Supported codes: en, ru, be.",
+            );
+        }
 
-    return ['en' => $en, 'ru' => $ru];
+        $languages[$code] = Language::query()->updateOrCreate(
+            ['code' => $code],
+            $attributes[$code],
+        );
+    }
+
+    return $languages;
 }
 
 function createWork(array $attributes = []): Work
@@ -279,4 +295,21 @@ function fakePython(): FakePythonClient
     app()->instance(PythonClient::class, $fake);
 
     return $fake;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Filament admin fixtures
+|--------------------------------------------------------------------------
+|
+| Defined here — not inside a single test file — because Pest's parallel
+| workers each load a subset of files, and the four tag-pool suites
+| (WordTagsTest, WorkTagsTest, EntityTagsTest, AlignmentTagsTest) all act
+| as an admin on the Filament admin panel without loading one shared file.
+*/
+
+function actingAsAdmin(): void
+{
+    test()->actingAs(User::factory()->admin()->create());
+    Filament::setCurrentPanel(Filament::getPanel('admin'));
 }

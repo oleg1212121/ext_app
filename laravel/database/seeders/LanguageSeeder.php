@@ -29,6 +29,15 @@ class LanguageSeeder extends Seeder
                 'sort_order' => 1,
                 'is_interface_enabled' => true,
             ],
+            [
+                // Belarusian: a full member language — content and interface.
+                'code' => 'be',
+                'name' => 'Belarusian',
+                'native_name' => 'Беларуская',
+                'is_enabled' => true,
+                'sort_order' => 2,
+                'is_interface_enabled' => true,
+            ],
         ];
 
         Language::upsert($languages, ['code'], ['name', 'native_name', 'is_enabled', 'sort_order', 'is_interface_enabled']);

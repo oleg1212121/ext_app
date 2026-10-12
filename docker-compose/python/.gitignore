@@ -4,3 +4,5 @@ venv
 labse_local
 *.txt
 !requirements.txt
+# Committed regression fixtures for ai/splitting/test_splitter.py
+!ai/splitting/fixtures/*.txt

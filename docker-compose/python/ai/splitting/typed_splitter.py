@@ -22,10 +22,14 @@ from ai.splitting.sentence_typer import SentenceTyper
 
 
 class TypedSentenceSplitter:
-    def __init__(self, language: str = "en") -> None:
-        backend = config.splitter_engine()
-        self.backend = backend
-        self.splitter = SentenceSplitter(language=language, backend=backend)
+    def __init__(self, language: str = "en", backend: str | None = None) -> None:
+        # Engine resolves per language: explicit pins via SPLITTER_ENGINE_OVERRIDES,
+        # then the global engine, with the rule-based engine substituted whenever
+        # the global one cannot serve the language (pysbd has no Belarusian
+        # entry, etc.). An explicit *argument* bypasses resolution (regression
+        # scripts use it to exercise both engines).
+        self.backend = backend if backend is not None else config.splitter_engine_for(language)
+        self.splitter = SentenceSplitter(language=language, backend=self.backend)
         self.typer = SentenceTyper()
 
     @staticmethod

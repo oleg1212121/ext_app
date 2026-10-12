@@ -1,5 +1,380 @@
 # Directory Update Log
 
+## 2026-10-12 (code-review fixes — popup-card-redesign)
+
+One review-fix commit on `popup-card-redesign` addressing the feature's
+code-review findings, no behavior regressions intended:
+
+- **Glossary vocabulary restored** on the popup card: ticket 03's
+  `variantLabel` / `word-popup-variant(-label)` rename is reverted to
+  `sectionLabel` / `word-popup-section(-label)` — CONTEXT.md's Form-of entry
+  puts "variant" on its avoid list and the Word popup entry already speaks
+  of "one section per Word class".
+- **Extraction**: `TranslationLine`/`TranscriptionLine` collapsed into one
+  `CollapsibleLine` (preview count, separator, class label, bracket
+  decorator, empty placeholder); the two identical Explanation-guidance
+  branches into `ExplainGuidance({messageKey})`.
+- **Shared ask predicate**: the pane's auto-request guard and its guidance
+  render now derive from one `canAskExplanation(explain)` in
+  `lib/wordExplain.js`, pinned by `lib/wordExplain.test.js` (ADR 0066
+  lib-only vitest scope — the guard logic is pure and lives in `lib/`).
+- **Four-state gap closed**: an auto-ask pane renders its loading line from
+  the first paint (no blank frame between mount and the fire).
+- **Explain memo dedupes every state**: the page-lifetime `explainCache`
+  now stores `loading`/`error` entries too (previously successes only), so
+  re-activating the Explanation tab mid-request no longer double-POSTs and
+  an error no longer auto-refires without a click; cache writes notify
+  subscribers so a pane remounted mid-request adopts the outcome. "Ask
+  again" and the error-state **Retry** (label per design-system voice;
+  `word.explain_retry` reworded from "Try again" en/ru/be) both refetch.
+- **Profile width variant**: the parallel `wide = false` booleans on
+  `TabPanel`/`Card` became one `width = 'panel' | 'wide'` convention backed
+  by `profileWidthClass()` in `ui.jsx`.
+- **UI strings**: `word.more_translations`/`word.more_transcriptions`
+  merged into one `word.more` (copy was identical in en/ru/be).
+
+Checks: `npm run test` (vitest) green incl. the new `wordExplain` pins;
+`vite build` green; `php artisan test tests/Feature/UiStringSeederTest.php`
+and `tests/Feature/UiStringsTest.php` green; `php artisan wiki:validate`
+conformant; `vendor/bin/pint --dirty` clean. Wiki: `interactive-words.md`
+(class inventory `-section`/`-section-label`, Retry copy, memo semantics)
+and `profile.md` (`width` variant) updated, `generated.at` bumped.
+
+## 2026-10-12 (popup-card-redesign feature closure — ticket 05)
+
+The popup-card-redesign feature is complete on branch `popup-card-redesign`
+(one log entry per ticket below; this entry closes the feature). Shipped in
+four commits: `1cb6ec0` (01) swapped the `/profile` frame cap
+`max-w-3xl` → near-full-width `max-w-[1800px]` with per-tab panel capping
+(`TabPanel wide`), `2144523` (02) made the Popups tab the only tab-wide card
+and laid it out as a `lg` two-column grid (checkbox groups ~⅓ left, live
+preview ~⅔ right, stacking checkboxes-above-preview below `lg`; the preview
+wrapper gained the real `word-popup` structural class), `d9c6f94` (03)
+reworked the shared `PopupContent` card in place — clicked-word-only title,
+"WORD — pos" variant labels, translations as the primary line with a calm
+no-translations placeholder, main transcription with a "+N more" toggle,
+three counted definitions/examples/etymology collapses, inside-positioned
+`<ol>` markers, and a stable `word-popup-*` class on every card element —
+and `8fa2758` (04) made the Explanation tab auto-request on activation while
+respecting the page-lifetime explain cache (manual button gone, retry
+re-labeled `word.explain_retry`). Because the reader, the simulator, and the
+profile preview all render the same exported `PopupContent`, the card
+changes landed everywhere at once. Payload, routes, models, artisan
+commands, and the 11 `ui_settings.popup` visibility keys are unchanged
+(verified against the branch diff) — machine-owned `wiki/reference/` needed
+no `wiki:sync`. Closure sweep re-verified `wiki/domains/profile.md` and
+`wiki/domains/interactive-words.md` line-by-line against the shipped JSX
+(only drift: profile.md still said the preview sits "below the checkboxes" —
+fixed; the card-content claims and the full `word-popup-*` class inventory
+checked out as written), `generated.at` bumped on both; CONTEXT.md's
+"Context explanation" glossary entry no longer calls the request "manual"
+(vocabulary already names the card "Word popup", so no new glossary term was
+added). Checks (closure): `vendor/bin/pint --dirty` clean (dirty set is
+markdown-only — no PHP to format); `php artisan wiki:validate` conformant.
+Full suite, `npm run build`, and the spec status line run as the
+orchestrator's post-closure gate.
+
+## 2026-10-12 (Explanation tab auto-request — popup-card-redesign ticket 04)
+
+Clicking the word popup's Explanation tab now fires the AI context explain
+request immediately; the "Explain this word" button is gone
+(`Components/WordPopup.jsx`, `ExplainPane`). Tab activation mounts the pane
+(`PopupContent` renders it only while the tab is active), so a []-deps
+effect with a `firedRef` guard fires once per activation and never on
+re-renders; the guards (preview, `enabled === false`, `modelKey == null`,
+`sentenceId == null`, non-null initial `explanation`) make the fire a no-op
+when there is nothing to ask and are what respect the page-lifetime
+`explainCache` — re-activating the tab with a memoized answer renders it
+instantly with zero requests. `request()` itself, the cache Map/key format,
+the backend (`POST /ai/word-explain`, 20/min throttle), and the preview's
+canned `word.explain_preview` answer (zero network) are untouched. Loading,
+the error branch + retry, and "Ask again" stay; the retry button is
+re-labeled to a new `word.explain_retry` ("Try again"/"Попробовать
+снова"/"Паспрабаваць зноў") so the now-unused `word.explain` could be
+dropped from `database/seeders/ui-strings/words.php` (re-seeded via
+`UiStringSeeder`, whose `UiStrings::flush()` refreshed every locale map;
+the stale `ui_string_keys`/`ui_strings` rows for `word.explain` were then
+deleted by hand since the seeder never prunes). Explain-pane elements got
+their stable classes per ticket 03's inventory: `word-popup-explain`,
+`-explain-guidance` (both guidance branches), `-explain-loading`,
+`-explain-error`, `-explain-retry`, `-explain-answer`, `-explain-empty`,
+`-explain-again`. Checks: `php artisan test
+--filter=AiWordExplainEndpointTest` 12 passed (57 assertions, backend
+unchanged); `php artisan test --filter=WordEndpointTest` 18 passed (90
+assertions); `php artisan test --filter=UiStringSeederTest` 5 passed (22
+assertions, seeder change); `npm run test` (vitest) 47 passed — lib-only,
+`WordPopup.jsx` has no JS tests; `vendor/bin/pint --dirty` pass;
+`npm run build` compiles; `wiki:validate` conformant.
+`wiki/domains/interactive-words.md` refreshed (auto-request bullet,
+explain classes in the inventory), `generated.at` bumped.
+
+## 2026-10-12 (Word popup card content rework — popup-card-redesign ticket 03)
+
+The shared `PopupContent` (`Components/WordPopup.jsx`) is reworked in place,
+so the reader, the simulator, and the profile preview pick the card up
+verbatim. The title shows the clicked word only (the POS span moved out);
+each variant section labels itself "WORD — pos" ("MELT — verb" for base
+groups, "MELTED — adjective" for popup-headword sections — headword
+uppercase, POS lowercase, em dash; `sectionLabel` became `variantLabel` and
+the h3 dropped its `uppercase` utility). Per-variant order is now
+translations → transcriptions → collapses: translations are the primary
+line (8-preview cap + "+N more…" kept; an empty variant shows the new calm
+`word.no_translations` note — the background auto-fetch lands on the next
+open), transcriptions show the main value with a `+N more` toggle
+(`TranscriptionLine`, remaining count), and definitions/examples/etymology
+are three independent counted `<details>` collapses ("Definitions (N)" /
+"Examples (N)" / "Etymology (N)", closed by default, per-variant state;
+`word.examples`/`word.etymology` gained `:count`, new keys
+`word.definitions`, `word.no_translations`, `word.more_transcriptions` —
+seeded en/ru/be and re-seeded via `UiStringSeeder` with cache forgets). The
+definitions `<ol>` uses inside-positioned markers (`ml-4` dropped,
+`list-inside` added) so ≥2-digit numbers can't spill past the card. Every
+card element now carries a stable `word-popup-*` class (full inventory in
+`wiki/domains/interactive-words.md`; the six `word-popup-explain-*` names
+are reserved for ticket 04). `SAMPLE_DATA` in `PopupsSettings.jsx` now
+exercises a multi-transcription variant, 10 translations on one variant, a
+zero-translations variant, and multi-item examples/etymology. Two side
+effects of the seeding mandate, both outside the ticket's file list: the
+dev DB's `languages` registry predated the `be` row (en/ru/fr only), so
+`LanguageSeeder` (idempotent upsert) was run before `UiStringSeeder` could
+seed be texts; and re-seeding exposed a latent `UiStrings::build()` bug —
+the English-under-the-locale layering relied on Postgres scan order (no
+ORDER BY), so the rewritten en rows of a re-seed floated above their locale
+values and the dev `ru` map went all-English. Fixed with an explicit
+locale-last ORDER BY, TDD'd red→green with a new
+`UiStringsTest` case (en row updated after the locale row exists).
+Checks: `php artisan test --filter=UiStringsTest` 8 passed (12
+assertions), red first (1 failed) against the unfixed build; `php artisan
+test --filter=WordEndpointTest` passed (payload untouched);
+`npm run test` (vitest) green; `vendor/bin/pint --dirty` pass;
+`wiki:validate` conformant. `wiki/domains/interactive-words.md` (card
+content + class inventory) and `wiki/domains/localization.md` (mapFor
+ordering) refreshed, `generated.at` bumped on both.
+
+## 2026-10-12 (Profile: two-column Popups tab — popup-card-redesign ticket 02)
+
+The Popups tab is now the only tab-wide card in the profile. `ui.jsx`'s
+`Card` gained a `wide` prop (default false): the pre-existing inner
+`max-w-xl` cap becomes opt-out, so the six regular cards are pixel-identical
+while the Popups card spans the full frame. `Edit.jsx` passes `wide` to the
+popups `TabPanel` (lifting ticket 01's `max-w-3xl` panel cap) and to its
+`Card`. `PopupsSettings.jsx` wraps checkbox groups + live preview in a
+responsive grid: `lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]` with
+`lg:gap-10` puts the groups on the left ~⅓ and the preview on the right ~⅔;
+below `lg` the container is a plain block, so it stacks
+checkboxes-above-preview exactly as before (`mt-8`/`space-y-6`/`mt-10`
+spacing preserved). The preview wrapper gains the `word-popup` structural
+class — same as the real portal wrapper (`WordPopup.jsx`), minus its
+`absolute z-50` positioning — while keeping the inline
+`width: min(560px, 100%)`, the popup font size, and the aria-label.
+Checkbox ids (`popup-section-<key>`), `CheckboxRow`, and the debounced
+`useUiSettingsAutosave('popup', …)` hook are untouched. No user-facing
+strings changed. Checks: `php artisan test --filter=ProfileTest` 12 passed
+(80 assertions) and `php artisan test --filter=UiSettingsTest` 14 passed
+(101 assertions), before and after; `npm run build` green with
+`lg\:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]{grid-template-columns:minmax(0,1fr) minmax(0,2fr)}`
+present in the built CSS; `vendor/bin/pint --dirty` pass (dirty set is
+JSX-only, nothing for Pint to reformat). `wiki/domains/profile.md`
+refreshed (Popups-tab layout + `word-popup` preview class, generated.at
+bumped).
+
+## 2026-10-12 (Profile: wide page frame — popup-card-redesign ticket 01)
+
+The `/profile` page frame is no longer a narrow column: `Edit.jsx` swapped
+the frame cap `max-w-3xl` (768px) for a near-full-width `max-w-[1800px]`
+(soft cap, `px-4 sm:px-6 lg:px-10` side padding and centering kept), so on
+large screens the page header and tab strip span the window. All five tabs
+keep today's content look: a new `TabPanel wide` prop (default capped) puts
+`max-w-3xl` on each tab panel so card borders stay modest, and the
+pre-existing `max-w-xl` inner cap in `Card` keeps form content at 576px.
+Popups tab still capped in this ticket — its two-column widening is ticket
+02, which flips exactly one call site to `wide`. Layout only: no behavior,
+props, routes, or other files touched. Checks: `php artisan test
+--filter=ProfileTest` 12 passed (80 assertions) before and after;
+`npm run build` green with `max-w-[1800px]{max-width:1800px}` in the built
+CSS; `vendor/bin/pint --dirty` pass (dirty set is JSX-only, nothing for
+Pint to reformat). `wiki/domains/profile.md` refreshed (generated.at
+bumped).
+
+## 2026-10-11 (Python service: hand-rolled test scripts ported to pytest)
+
+The 8 plain-python test scripts under `docker-compose/python/ai/` are now a
+pytest suite (146 tests, ~5s in `ext_python`, no model weights): pytest added
+to `requirements.txt` (image rebuilt), `ai/pytest.ini` + `ai/conftest.py`
+(shared `StubModel`, autouse `_EMBEDDING_CACHE` reset + `CACHE_MODELS=1` pin,
+`env_file` fixture for config's file-first live accessors, `api_client`
+fixture with app.state snapshot/restore). All suites ported
+(`check_*`/`main()` runners → `test_*` functions; `monkeypatch` replaces raw
+`os.environ` mutation; `test_enrichment.py` restructured from import-time
+checks into classes with silero/spacy skip markers). The previously broken
+`test_splitter.py` (gitignored production fixtures) now runs on committed
+synthetic fixtures (`ai/splitting/fixtures/*.txt`, gitignore exception)
+reproducing both regressions — verified they fail under flatten-all /
+newline-as-boundary. New coverage: `/align` + `/embed` wire contracts, `/health`
+probe, aligner `process()` file flow (chunked commit + global index offsets).
+Deleted dead `ai/similarity/` (only stale `__pycache__` remained). Manual runs
+only for now (no CI job). Suite run twice consecutively green (state-leak
+check). Wiki: running-tests playbook gained the Python section;
+sentence-alignment/sentence-enrichment/docker-services/overview refreshed
+(stale dev venv name `ai_env` → actual `ai/venv`; prod native path genuinely
+uses `ai_env/`, unchanged); AGENTS.md Python test command + venv fix.
+
+## 2026-10-10 (Belarusian 07: release verification and knowledge-base closure)
+
+Verification pass over the whole feature — no feature changes. Full plain
+suite 1072 passed (5,585 assertions); TIA affected run exit 0 (1,072 passed,
+1,072 replayed). Python in `ext_python`: `test_enrich_endpoint.py` 9/9,
+`test_split_endpoint.py` 3/3, `test_registry.py` 13/13, `test_enrichment.py`
+all pass, `test_engine_resolution.py` 6/6, `test_preprocessing.py` 4/4;
+legacy `test_splitter.py` still fails only on its gitignored fixture texts
+(`FileNotFoundError: fixtures/book_thief_en.txt`, `docker-compose/python/.gitignore`
+`*.txt`). Pint clean on all 44 branch-changed PHP files. Seeder idempotency
+re-proven on the testing connection (`ext_app_test`): `migrate:fresh --seed`
+then a second `db:seed --class=DatabaseSeeder` exits 0 with identical counts
+on all 41 tables (languages 3, ui_string_keys 508, ui_strings 1524).
+`wiki:validate` conformant; `wiki:sync` produced timestamp-only churn on the
+three machine-owned reference files (no route/model/command additions) and was
+reverted. Consistency sweep: no language-literal guards left in
+WordTranslations, LinkTranslations, or enrichment (the registry drives both
+sides); remaining `en` literals are the designated interface fallback locale
+(`Support/UiStrings.php`), the WiktionaryParser default target arg, the
+Russian enricher's own registry row, and the intentional Cyrillic strip list
+(`Support/StressMarks.php`: ru, be, uk). Leftover `wiki:validate` staleness
+warnings on two feature concepts (reader.md, sentence-alignment.md) resolved
+by review: content matched the final sources, `generated.at` refreshed to the
+verification time.
+
+## 2026-10-10 (Belarusian 06: all UI strings translated to Belarusian)
+
+Every key in all 17 `database/seeders/ui-strings/*.php` partials (508 keys,
+~509 source entries — `alignments.next_page` is declared twice) now carries a
+`be` value alongside en/ru, so the seeded interface renders fully in Belarusian
+with no English fallbacks left in the seeded set. Translations are standard
+Narkamaŭka Belarusian (аканне/яканне, ў/у alternation, дзеканне/цеканне) built
+from the ru semantics with the en tone/length as a guide; placeholders
+(`:name`, `:status`, …), counts, and the ru quote style are preserved verbatim
+(verified by a throwaway structural checker: key sets, en/ru byte-identity to
+the pre-change snapshot, per-key placeholder multisets, quote styles).
+Terminology is uniform: alignment = выраўноўванне, match = супастаўленне,
+entity = тэкст (library/entities, mirroring ru) / сутнасць (alignments,
+mirroring ru), work = твор, sentence = сказ (entities/library) / фраза
+(alignments), stress marks = націскі, AI = ШІ, settings = настройкі. The one
+ticket-05 be fixture (`reader.no_texts`) is kept. `UiStringSeederTest` swaps
+its "reader.russian has no be row" case for a sampled key-per-group be
+assertion (17 groups) and now exercises the valueless-language skip with a
+synthetic interface-enabled `uk` row instead. Docs: `wiki/domains/localization.md`
+updated. Tests: `UiStringSeederTest` 5 passed (22 assertions); full suite 1072
+passed (5583 assertions).
+
+## 2026-10-10 (Belarusian 05: interface-language plumbing)
+
+Belarusian is now an interface language end to end. `LanguageSeeder` flips the
+`be` row to `is_interface_enabled => true` (validation, Filament selects and
+`PreferencesForm` were already registry-driven, so the flag alone makes be
+selectable at `PATCH /profile/settings`). `UiStringSeeder`'s language loop is
+registry-driven — it iterates interface-enabled languages by `sort_order`
+instead of a hardcoded en/ru pair; keys without a value for a language are
+skipped (the ADR 0023 English chain covers them at render time) and
+updateOrCreate idempotency/admin-authority are unchanged. Seed data:
+`WordClassSeeder` gains a `be` block (17 slugs mirroring en/ru: назоўнік,
+дзеяслоў, прыметнік, прыслоўе, займеннік, прыназоўнік, злучнік, вызначальнік,
+лічэўнік, выклічнік, артыкль, часціца, Уласнае імя, фраза, суфікс, прэфікс,
+невядома) and `TranscriptionTypeSeeder` a be IPA row (МФА). The reader index
+pending-alignment label no longer binary-branches en/ru: `ReaderController`
+ships `languages` as `{code, name, native_name}` objects and the new pure
+`lib/languageLabel.js` names en/ru via their ui-string keys and every other
+language from the list (native name → name → raw code). Tests: seeder tests
+for be rows (ui strings incl. the skip-disabled + missing-key cases, word
+classes, transcription types), LanguageTest be-flag flip, ProfileTest
+accepts-be, ReaderPageTest pins the prop shape, vitest `languageLabel.test.js`
+(5). `composer run test:tia` 1070 passed.
+
+## 2026-10-10 (Belarusian 03: be_stress stress enricher end-to-end)
+
+Belarusian entities enrich like Russian ones. Python: the Cyrillic stress
+machinery moved verbatim into a shared `ai/enrichment/cyrillic_stress.py`
+(vowel-set parameter) that `ru_stress` closes over Russian letters — its
+public surface (`mark_sentence`, `_dict_fallback`, `WORD_RE`,
+`COMBINING_ACUTE`, `RU_VOWELS`, `strip_marks`, version 1) and behavior are
+unchanged — and the new `be_stress` closes over the Belarusian set (і instead
+of и; non-syllabic ў excluded; ё stressed by definition), version 1. The
+registry grew a `be_stress` entry whose prepare loads the package's own
+Belarusian-trained accentor (`ModelCache.stress_model('bel')`,
+`accentor-bel.pt`, cached under `stress_model_bel`): the ticket's quality gate
+found the Russian accentor marks Belarusian per Russian phonology (РаніцА́й,
+прЫ́йшла, горА́д — garbage), while the bel accentor places most content-word
+marks correctly (РАніцай, ракОй, прыйшлА, ГОрад, вадзЕ) with only clitic
+noise — sample + verdict in the ticket. Laravel: `RussianStressEnricher`'s
+body moved into an abstract `CyrillicStressEnricher` (behavior identical);
+`BelarusianStressEnricher` is its `be_stress`/`[be]` face, added to the
+manifest — Enrich action, sweep and stamps pick be up registry-driven, the
+shared stress annotation vertical carries the display. `FakePythonClient`
+serves `be_stress` in its keyed echo. Tests: python
+`test_registry.py` 13/13, `test_enrich_endpoint.py` 9/9 (be happy path +
+be 503), `test_enrichment.py` (be vowel-set fallback checks + real-bel-model
+sentence checks); Laravel `BelarusianEnrichmentTest` (5 tests: be chunk +
+versions, v/pv stamps + staleness, form/ё-headword hints, empty-dictionary
+harmlessness, reader vertical), manifest test updated; `composer run test:tia`
+1061 passed.
+
+## 2026-10-10 (Belarusian prep 04: shared Cyrillic stress-mark normalizer)
+
+One helper owns the "does this target language carry combining stress
+marks" question and the stripping: `App\Support\StressMarks` —
+`stripsFor()` answers true for the explicit Cyrillic list ru/be/uk
+(false otherwise, unknown codes included) and `strip()` removes the
+combining marks (`\p{M}`). The two normalizers that each hardcoded the
+`=== 'ru'` check now call it: `WordTranslationProvider::normalizeCandidate`
+(word-popup auto-fetch candidates, trim-only after the strip) and
+`LinkTranslationsCommand::normalizeTargetWord` (dictionary-link lookups,
+lowercase + trim after the strip) — so Belarusian translation candidates
+and links normalize like Russian. Each call site's post-strip behavior is
+unchanged. Tests at the existing seams: `WordTranslationProvidersTest`
+(be/uk candidates stripped, en/de untouched, Http-faked) and
+`LinkTranslationsCommandTest` (be-target link matches an unstressed
+headword); `wiki/database/dictionary.md` updated to the shared list.
+
+## 2026-10-10 (Belarusian prep 02: python enricher module registry)
+
+`/enrich` dispatch is table-driven: the endpoint loops the request's keys
+through a new `ai/enrichment/registry.py` (`EnricherModule`: `key` +
+`version` = the module's `ALGORITHM_VERSION` + once-per-request `prepare`
+(model load / batched spaCy computation; failures raise
+`EnricherUnavailable` → 503, phrasal's batched hit lists paired to sentences
+in order) + per-sentence `apply`) — the python mirror of Laravel's
+`EnricherRegistry`, no per-key branches left in `ai/api/enrich.py`.
+`EnrichRequest.enrichers` dropped its hardcoded `Literal` for a pydantic
+field validator against `registry.keys()` (unknown keys → 422), so a future
+analysis is one module plus one registry entry. ru/en behavior byte-identical
+(wire shapes, versions, 503 detail strings and phrasal pairing preserved;
+`versions`/`output` JSON key order now follows the request's `enrichers`
+order — semantically identical, Laravel consumes per key). Tests:
+`ai/enrichment/test_registry.py` (10 checks, container; 9 on a bare venv —
+schema checks skip without pydantic), `ai/api/test_enrich_endpoint.py`
+(7 checks — the wire-contract pin; API stack required). Laravel untouched;
+`composer run test:tia` 1053 passed unchanged.
+
+## 2026-10-10 (Belarusian splitting: per-language engine resolution + be language row)
+
+The python splitter no longer runs one global engine for every language:
+`config.splitter_engine_for(language)` resolves per language — an explicit
+`SPLITTER_ENGINE_OVERRIDES` entry (`be=razdel,pl=pysbd`; malformed entries
+and unknown engine names silently ignored), then the global
+`SPLITTER_ENGINE`, except the global engine cannot serve the language (pysbd
+has no `be` entry — today that 400'd the whole split request) and the
+rule-based engine (razdel) is substituted automatically, so unknown codes
+fall back instead of erroring. `/split`'s per-language instance cache
+invalidates on the resolved engine (a razdel-backed cached be splitter is
+reused, not rebuilt), and Belarusian shares the exact Russian noise-cleanup
+preprocessing list. Laravel: `LanguageSeeder` seeds `be` (enabled,
+interface-off for now, sort 2) and the test `createLanguages()` helper takes
+an explicit code list (default en/ru unchanged). Tests:
+`ai/splitting/test_engine_resolution.py` (6 checks, host venv),
+`ai/splitting/test_preprocessing.py` (4), `ai/api/test_split_endpoint.py`
+(3, container), `LanguageTest` seeder tests assert the be row,
+`SentenceSplitterTest` streams+resumes a be entity asserting the `be`
+language on the wire. Docs: `wiki/domains/sentence-alignment.md` Split step.
+
 ## 2026-10-09 (Refine round chunked + auto-triggered after the first alignment)
 
 A whole book can carry hundreds of one-sided regions (the live 84-region
@@ -4695,3 +5070,142 @@ without ranked words (ru today) get an in-page empty state. UI strings in
 `WordTestScoringTest` (pure scorer) + `WordTestPageTest` (page, sampling
 invariants, exact score/marked set, raise-only, 422s). Docs: ADR 0071,
 CONTEXT.md Word Test context, `wiki/domains/word-test.md`.
+
+## 2026-10-11 (tag pools: word-tags tracer bullet — pivot rename + Word Tags admin surface)
+
+The dormant words-tag scaffold became a live admin feature (ADR 0076,
+first of four per-type pools — words/works/entities/alignments, no shared
+table, no polymorphism, no inheritance, language-neutral slug+name, ship
+empty). The pivot renamed `word_tags` → `tagged_words` with its unique pair
+index → `uk_tagged_words_pair` (migration `2026_10_11_000001`; safe — zero
+callers verified before the rename) so it can no longer collide one letter
+away from the future `work_tags` definition table; all pools use
+`tagged_<model>` pivots. `Tag` grew fillable slug+name and the inverse
+`words()` relation; `Word::tags()` resolves through `tagged_words` with
+`withTimestamps()` (the pivot's timestamp columns were never filled
+before). New `TagResource` ("Word Tags", Words group): required name (256) +
+globally unique slug (100), `words_count` usage column, edit/delete + bulk
+delete. The Words form gained a searchable tags multi-select with inline
+create (`createOptionForm`, relationship default createOptionUsing); the
+Words list gained a `tags.name` badge column and a multi-select tags
+relationship filter (OR semantics). Tests: `WordTagsTest` — sync
+no-duplicate, unique pair constraint, pivot timestamps, inverse relation,
+cascade deletes both directions, resource list/create, form persistence,
+inline create + attach, filter narrowing. Docs: ADR 0076, CONTEXT.md Tag
+Pools context, `wiki/database/dictionary.md`.
+
+## 2026-10-11 (tag pools: work-tags pool — Work Tags resource + Works tags UI)
+
+The works pool went live, second of the four per-type pools (ADR 0076),
+copying the words tracer bullet's shapes verbatim. Migration
+`2026_10_11_000002` created both tables in one additive migration:
+`work_tags` (definition table mirroring `tags` — `slug` 100 unique, `name`
+256, timestamps) and the `tagged_works` pivot (`work_id` → works and
+`work_tag_id` → work_tags, both cascade, unique `(work_id, work_tag_id)` =
+`uk_tagged_works_pair`, timestamps). `WorkTag` model (fillable slug+name,
+inverse `works()` with `withTimestamps`) + `WorkTagFactory`;
+`Work::tags()` resolves through `tagged_works`. New `WorkTagResource`
+("Work Tags", Entities navigation group like `WorkResource`): required name
+(256) + globally unique slug (100), `works_count` usage column, edit/delete
++ bulk delete. The Works form gained a searchable tags multi-select with
+inline create (`createOptionForm`, relationship default createOptionUsing);
+the Works list gained a `tags.name` badge column and a multi-select tags
+relationship filter (OR semantics) — the Work table's first filter. Tests:
+`WorkTagsTest` mirrors `WordTagsTest` — sync no-duplicate, unique pair
+constraint, pivot timestamps, inverse relation, cascade deletes both
+directions, resource list/create, form persistence, inline create + attach,
+filter narrowing. Docs: ADR 0076, `wiki/database/entities-alignment.md`.
+
+## 2026-10-11 (tag pools: entity-tags pool — Entity Tags resource + Entities tags UI)
+
+The entities pool went live, third of the four per-type pools (ADR 0076),
+copying the work pool's shapes verbatim. Migration `2026_10_11_000003`
+created both tables in one additive migration: `entity_tags` (definition
+table mirroring `tags`/`work_tags` — `slug` 100 unique, `name` 256,
+timestamps) and the `tagged_entities` pivot (`entity_id` → entities and
+`entity_tag_id` → entity_tags, both cascade, unique
+`(entity_id, entity_tag_id)` = `uk_tagged_entities_pair`, timestamps).
+`EntityTag` model (fillable slug+name, inverse `entities()` with
+`withTimestamps`) + `EntityTagFactory`; `Entity::tags()` resolves through
+`tagged_entities`. New `EntityTagResource` ("Entity Tags", Entities
+navigation group like `EntityResource`): required name (256) + globally
+unique slug (100), `entities_count` usage column, edit/delete + bulk
+delete. The Entities form gained a searchable tags multi-select with inline
+create (`createOptionForm`, relationship default createOptionUsing) placed
+with the metadata fields; the Entities list gained a `tags.name` badge
+column and a multi-select tags relationship filter (OR semantics) joining
+the existing language/work/restriction/approval filters. Tags stay
+orthogonal to the entity lifecycle — the deletion guard and status logic
+are untouched. Tests: `EntityTagsTest` mirrors `WorkTagsTest` — sync
+no-duplicate, unique pair constraint, pivot timestamps, inverse relation,
+cascade deletes both directions, resource list/create, form persistence,
+inline create + attach, filter narrowing. Docs: ADR 0076,
+`wiki/database/entities-alignment.md`.
+
+## 2026-10-11 (tag pools: alignment-tags pool — Alignment Tags resource + first Sentence Alignments edit page)
+
+The alignments pool went live, fourth and last of the four per-type pools
+(ADR 0076), plus the first-ever edit surface for `EntityMatchResource`.
+Migration `2026_10_11_000004` created both tables in one additive migration:
+`alignment_tags` (definition table mirroring `tags`/`work_tags`/`entity_tags`
+— `slug` 100 unique, `name` 256, timestamps) and the `tagged_alignments`
+pivot (`entity_match_id` → entity_matches and `alignment_tag_id` →
+alignment_tags, both cascade, unique `(entity_match_id, alignment_tag_id)` =
+`uk_tagged_alignments_pair`, timestamps). `AlignmentTag` model (fillable
+slug+name, inverse `alignments()` with `withTimestamps`) +
+`AlignmentTagFactory`; `EntityMatch::tags()` resolves through
+`tagged_alignments`. New `AlignmentTagResource` ("Alignment Tags", Entities
+navigation group): required name (256) + globally unique slug (100),
+`alignments_count` usage column, edit/delete + bulk delete. The Sentence
+Alignments list gained a `tags.name` badge column and a multi-select tags
+relationship filter (OR semantics) — its first filter; tags are flat labels
+orthogonal to the pipeline status lifecycle, which is untouched.
+`EntityMatchResource::form()` restructured per operation: the Entities
+section (entity-pair picks) and the chunk_size/max_n knobs are now
+`visibleOn('create')` (create-only and otherwise unchanged); a tags
+multi-select with inline create (`createOptionForm`, relationship default
+createOptionUsing) joins the form — the edit page's editable field set is
+exactly that multi-select, and hidden fields are excluded from dehydration
+and validation, so a match's pair and knobs can never leak through an edit
+save. The new `EditEntityMatch` page (`/{record}/edit`) opens from a table
+Edit record action given an explicit `->url(...)` so it navigates to the
+page instead of opening Filament's default edit modal; the React alignment
+editor stays the one row-editing surface (ADR 0062). Tests:
+`AlignmentTagsTest` mirrors the pool set — sync no-duplicate, unique pair
+constraint, pivot timestamps, inverse relation, cascade deletes both
+directions, resource list/create, edit-form persistence, pair/knob
+non-leak, inline create + attach, filter narrowing, badge render, edit
+action targets the page. Docs: ADR 0076,
+`wiki/database/entities-alignment.md`.
+
+## 2026-10-11 (tag pools: feature closure — verification pass across all four pools)
+
+Verification pass closing the tag-pools feature (ADR 0076) — no feature code
+changes. All four pools verified as one feature on branch `tag-pools`: words
+(`tags` + `tagged_words`, the renamed dormant scaffold), works (`work_tags` +
+`tagged_works`), entities (`entity_tags` + `tagged_entities`), and alignments
+(`alignment_tags` + `tagged_alignments`) — each with its Filament tag
+resource and its attached model's tags multi-select with inline create,
+badge column, and multi-select filter. Full plain parallel suite green:
+1,120 passed (5,736 assertions, 8 processes). Operational note: the suite
+now exceeds composer's default 300-second process timeout — the first
+`composer run test` attempt was killed at 300s mid-run, and the immediate
+re-run failed 457 tests with missing-relation errors (`relation
+"ui_string_keys" does not exist`) because the killed run left half-migrated
+`ext_app_test_test_*` worker databases behind; that failed pass still
+dropped them at its end, and the next clean run was fully green. Until the
+duration is addressed, run the suite as `composer run test --timeout=0`.
+`wiki:validate` conformant (exit 0; the 85 staleness warnings are
+pre-existing, same count as the pool tickets reported). `wiki:sync`
+produced timestamp-only churn on the three machine-owned reference files
+(no model/route/command changes) — content verified identical, churn
+reverted. Pint clean (`--test`) on all 40 PHP files the feature's four
+commits touched, listed explicitly rather than via `--dirty`. Dev database
+brought current with plain additive `php artisan migrate` (pending
+`2026_10_11_000002/000003/000004` applied without error; the ticket-01
+pivot rename was already in place); the post-migrate tinker check reads
+`pgsql tagged_words=0 word_tags=gone pools=all-present` — the renamed words
+pivot carries zero rows (no orphans; the scaffold was dormant) and all six
+new tables exist. Learner-facing tag UI, tag-name translations, seed
+vocabularies, and work→entity tag inheritance remain out of scope per
+ADR 0076.

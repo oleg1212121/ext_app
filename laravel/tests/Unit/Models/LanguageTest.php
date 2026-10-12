@@ -29,17 +29,25 @@ it('filters enabled languages via the scope', function () {
         ->and($enabled->first()->code)->toBe('fr');
 });
 
-it('seeds en and ru enabled by default', function () {
+it('seeds en, ru, and belarusian', function () {
     app(LanguageSeeder::class)->run();
 
-    expect(Language::query()->count())->toBe(2);
+    expect(Language::query()->count())->toBe(3);
     expect(Language::query()->where('code', 'en')->exists())->toBeTrue();
     expect(Language::query()->where('code', 'ru')->exists())->toBeTrue();
+
+    $be = Language::query()->where('code', 'be')->first();
+    expect($be)->not->toBeNull()
+        ->and($be->name)->toBe('Belarusian')
+        ->and($be->native_name)->toBe('Беларуская')
+        ->and($be->is_enabled)->toBeTrue()
+        ->and($be->is_interface_enabled)->toBeTrue()
+        ->and($be->sort_order)->toBe(2);
 });
 
 it('seeder is idempotent', function () {
     app(LanguageSeeder::class)->run();
     app(LanguageSeeder::class)->run();
 
-    expect(Language::query()->count())->toBe(2);
+    expect(Language::query()->count())->toBe(3);
 });

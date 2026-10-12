@@ -24,6 +24,7 @@ class EnricherRegistry
     {
         $this->enrichers = $enrichers ?? [
             new RussianStressEnricher,
+            new BelarusianStressEnricher,
             new EnglishStressEnricher,
             new EnglishPhrasalVerbEnricher,
         ];

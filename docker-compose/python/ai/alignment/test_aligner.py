@@ -10,36 +10,23 @@ banding (plan 04), aggregate window embedding (plan 05), and hard landmark
 pins (plan 06) — hard human-made commits emitted verbatim with score 1.0 that
 split sub-pools and are never crossed or overlapped by machine output.
 
-Uses a stub model with hand-picked vectors so no weights are needed. Run from
-anywhere (adds the package root to sys.path):
+Uses a stub model with hand-picked vectors so no weights are needed (the
+StubModel and the N()/normalized() helpers live in ai/conftest.py). Run
+(inside the container):
 
-    docker exec ext_python python /app/ai/alignment/test_aligner.py
+    docker exec ext_python python -m pytest /app/ai/alignment/test_aligner.py -q
 """
-
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as np
 import torch
 from sentence_transformers import util
 
-from ai.alignment import bilingual_aligner
 from ai.alignment.bilingual_aligner import (
     BilingualAligner,
     _normalize_sentences,
     _normalize_text,
 )
-
-
-def N(text: str) -> str:
-    """Normalize a stub vector key exactly as the aligner does for window texts."""
-    return _normalize_text(text)
-
-
-def normalized(vector):
-    return list(np.asarray(vector, dtype=float) / np.linalg.norm(vector))
+from ai.conftest import N, StubModel, normalized
 
 
 def pooled_windows(en, ru, singles, dim):
@@ -66,32 +53,7 @@ def pooled_windows(en, ru, singles, dim):
     return vectors
 
 
-class StubModel:
-    """Deterministic stand-in for SentenceTransformer.
-
-    Maps each joined-window text to a fixed (already normalized) vector, and
-    counts encode() calls + texts so embedding behavior can be asserted.
-    """
-
-    def __init__(self, vectors: dict[str, list[float]]):
-        self.vectors = {
-            text: torch.tensor(normalized(vector), dtype=torch.float32)
-            for text, vector in vectors.items()
-        }
-        self.encode_calls = 0
-        self.encode_total = 0
-
-    def encode(self, texts, **kwargs):
-        self.encode_calls += 1
-        self.encode_total += len(texts)
-        return torch.stack([self.vectors[text] for text in texts])
-
-
-def reset_cache():
-    bilingual_aligner._EMBEDDING_CACHE._entries.clear()
-
-
-def skips_an_unmatchable_sentence_instead_of_force_matching():
+def test_skips_an_unmatchable_sentence_instead_of_force_matching():
     # EN = [Cat, Extra], RU = [Cat translation, D]. "Extra" has no counterpart.
     # Old DP: 1:1 Cat + 1:1 Extra (garbage, score 0). New DP: 1:1 Cat + skip.
     model = StubModel({
@@ -116,14 +78,12 @@ def skips_an_unmatchable_sentence_instead_of_force_matching():
 
     assert result["matches"] == [
         {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0}
-    ], f"unexpected matches: {result['matches']}"
+    ]
     assert result["unmatched_a"] == [1], result["unmatched_a"]
     assert result["unmatched_b"] == [1], result["unmatched_b"]
 
-    return "OK: unmatchable sentence is skipped, not force-matched"
 
-
-def still_force_matches_when_skipping_is_disabled():
+def test_still_force_matches_when_skipping_is_disabled():
     # Same input as above but with an extreme skip penalty: the skip branch is
     # effectively off, so the DP falls back to the old garbage match.
     model = StubModel({
@@ -146,15 +106,13 @@ def still_force_matches_when_skipping_is_disabled():
 
     result = aligner.align_lists(["Cat", "Extra"], ["Cat translation", "D"])
 
-    assert len(result["matches"]) == 2, f"expected a force-matched pair, got {result['matches']}"
+    assert len(result["matches"]) == 2
     assert result["matches"][1]["score"] < 0.55, "second match should be sub-threshold garbage"
     assert result["unmatched_a"] == [], result["unmatched_a"]
     assert result["unmatched_b"] == [], result["unmatched_b"]
 
-    return "OK: with skips disabled the old garbage match returns (branch is the fix)"
 
-
-def span_cap_rejects_oversized_edges():
+def test_span_cap_rejects_oversized_edges():
     # EN = [One], RU = [Part1, Part2]. "One" matches the pooled pair (1:2) but
     # neither part individually. With max_total_span=2 the 1:2 edge is illegal
     # so everything is skipped; with max_total_span=3 the 1:2 match wins.
@@ -174,7 +132,7 @@ def span_cap_rejects_oversized_edges():
         algorithm="dp",
     ).align_lists(["One"], ["Part1", "Part2"])
 
-    assert capped["matches"] == [], f"1:2 should be rejected by the cap, got {capped['matches']}"
+    assert capped["matches"] == []
     assert capped["unmatched_a"] == [0], capped["unmatched_a"]
     assert capped["unmatched_b"] == [0, 1], capped["unmatched_b"]
 
@@ -189,14 +147,12 @@ def span_cap_rejects_oversized_edges():
 
     assert_same_matches(uncapped["matches"], [
         {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 2, "score": 0.7492687106132507},
-    ]), f"1:2 should match under the higher cap, got {uncapped['matches']}"
+    ])
     assert uncapped["unmatched_a"] == [], uncapped["unmatched_a"]
     assert uncapped["unmatched_b"] == [], uncapped["unmatched_b"]
 
-    return "OK: span cap rejects 1:2 at max_total_span=2, allows it at 3"
 
-
-def embedding_cache_reuses_vectors_across_calls():
+def test_embedding_cache_reuses_vectors_across_calls():
     model = StubModel({
         N("One"): [1, 0, 0],
         N("Two"): [0, 1, 0],
@@ -217,19 +173,16 @@ def embedding_cache_reuses_vectors_across_calls():
         f"second align should hit the cache, encode_calls {first_calls} -> {model.encode_calls}"
     )
 
-    return f"OK: second align reused cached embeddings (0 new encode calls after {first_calls})"
-
 
 def assert_same_matches(actual, expected):
-    assert len(actual) == len(expected), f"{actual} != {expected}"
+    assert len(actual) == len(expected)
     for got, want in zip(actual, expected):
         for key in ("a_start", "a_end", "b_start", "b_end"):
-            assert got[key] == want[key], f"{key}: {got} != {want}"
-        assert abs(got["score"] - want["score"]) < 1e-4, f"score: {got} != {want}"
+            assert got[key] == want[key]
+        assert abs(got["score"] - want["score"]) < 1e-4
 
 
-def greedy_matches_dp_on_clean_list_with_far_fewer_encodes():
-    reset_cache()
+def test_greedy_matches_dp_on_clean_list_with_far_fewer_encodes():
     # Identity-ish sentence matrix: every diagonal pair is a confident 1:1.
     # Pooled window vectors are still present so the DP would have something
     # to embed if a pool needed them — here no pool does.
@@ -295,11 +248,8 @@ def greedy_matches_dp_on_clean_list_with_far_fewer_encodes():
         f"dp should embed only the 6 singles too, encoded {dp_model.encode_total}"
     )
 
-    return f"OK: greedy == dp on a clean list, encoding {greedy_model.encode_total} texts vs {dp_model.encode_total}"
 
-
-def greedy_resolves_a_1_to_2_match_via_lazy_window_expansion():
-    reset_cache()
+def test_greedy_resolves_a_1_to_2_match_via_lazy_window_expansion():
     # "Gamma" only matches the pooled "Delta1 Delta2" (1:2), not either part.
     # The span cap must allow en_step + ru_step = 3 for it to be legal.
     model = StubModel({
@@ -321,18 +271,15 @@ def greedy_resolves_a_1_to_2_match_via_lazy_window_expansion():
 
     assert_same_matches(result["matches"], [
         {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 2, "score": 0.7492687106132507},
-    ]), f"1:2 should match under the span cap, got {result['matches']}"
+    ])
     assert result["unmatched_a"] == [], result["unmatched_a"]
     assert result["unmatched_b"] == [], result["unmatched_b"]
     # Only the 3 singles are embedded: the pooled window is aggregated from the
     # cached per-sentence vectors, never encoded as a joined text.
-    assert model.encode_total == 3, f"expected 3 encoded singles, got {model.encode_total}"
-
-    return f"OK: greedy 1:2 matched via lazy expansion ({model.encode_total} texts encoded)"
+    assert model.encode_total == 3
 
 
-def greedy_skips_an_unmatchable_sentence():
-    reset_cache()
+def test_greedy_skips_an_unmatchable_sentence():
     # "Extra" has no counterpart; greedy must skip it instead of force-matching.
     model = StubModel({
         N("Epsilon Cat"): [1, 0, 0, 0],
@@ -353,17 +300,14 @@ def greedy_skips_an_unmatchable_sentence():
 
     assert result["matches"] == [
         {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0}
-    ], f"unexpected greedy matches: {result['matches']}"
+    ]
     assert result["unmatched_a"] == [1], result["unmatched_a"]
     assert result["unmatched_b"] == [1], result["unmatched_b"]
     # No expansions were needed: exactly the 4 singles.
-    assert model.encode_total == 4, f"expected 4 encoded texts, got {model.encode_total}"
-
-    return "OK: greedy skips an unmatchable sentence, not force-matching it"
+    assert model.encode_total == 4
 
 
-def greedy_anchors_then_resolves_a_gap_after_a_locked_pair():
-    reset_cache()
+def test_greedy_anchors_then_resolves_a_gap_after_a_locked_pair():
     # "Zeta Start" <-> "Eta Start" is a confident anchor; the gap that follows
     # ("Zeta One" vs "Eta P1" + "Eta P2") resolves as a 1:2 expansion.
     model = StubModel({
@@ -391,15 +335,12 @@ def greedy_anchors_then_resolves_a_gap_after_a_locked_pair():
     assert_same_matches(result["matches"], [
         {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0},
         {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 3, "score": 0.7492687106132507},
-    ]), f"unexpected greedy matches: {result['matches']}"
+    ])
     assert result["unmatched_a"] == [], result["unmatched_a"]
     assert result["unmatched_b"] == [], result["unmatched_b"]
 
-    return "OK: greedy locked the anchor then resolved the gap with a 1:2 window"
 
-
-def greedy_merges_an_orphan_into_a_beating_pooled_window():
-    reset_cache()
+def test_greedy_merges_an_orphan_into_a_beating_pooled_window():
     # Anchor-first greedy locks the 1:1 (Alpha One <-> Beta One at ~0.701 —
     # mutually-best in the window and above ALIGN_ANCHOR_THRESHOLD) and
     # pre-commits, so the cursor jumps past the trailing gap and Alpha Two is
@@ -433,7 +374,7 @@ def greedy_merges_an_orphan_into_a_beating_pooled_window():
     assert result["unmatched_b"] == [], result["unmatched_b"]
     # 3 singles (greedy); the pooled 2:1 window is aggregated from the cached
     # singles, so no joined window text is ever encoded.
-    assert model.encode_total == 3, f"expected 3 encoded texts, got {model.encode_total}"
+    assert model.encode_total == 3
 
     # The margin guard: when the pooled window does NOT beat the 1:1 by
     # merge_margin, the orphan stays unmatched and the anchor is untouched.
@@ -460,11 +401,8 @@ def greedy_merges_an_orphan_into_a_beating_pooled_window():
     assert guarded["unmatched_a"] == [1], guarded["unmatched_a"]
     assert guarded["unmatched_b"] == [], guarded["unmatched_b"]
 
-    return "OK: single-sided orphan merged into the match when the pooled window clears the margin"
 
-
-def greedy_ladder_widens_past_primary_for_a_4_window_match():
-    reset_cache()
+def test_greedy_ladder_widens_past_primary_for_a_4_window_match():
     # No combo up to primary_window=3 clears the 0.65 bar (best is the 1:3 at
     # ~0.612); only the 1:4 pooled window reaches ~0.707, so the ladder must
     # widen one step per side past primary to resolve it.
@@ -500,13 +438,10 @@ def greedy_ladder_widens_past_primary_for_a_4_window_match():
     assert result["unmatched_b"] == [], result["unmatched_b"]
     # Only the 5 singles are embedded: the 1:2/1:3/1:4 windows are aggregated
     # from the cached per-sentence vectors, never encoded as joined texts.
-    assert model.encode_total == 5, f"expected 5 encoded texts, got {model.encode_total}"
-
-    return f"OK: ladder widened past primary to a 1:4 match ({model.encode_total} texts encoded)"
+    assert model.encode_total == 5
 
 
-def normalized_windows_resolve_the_whistler_pair():
-    reset_cache()
+def test_normalized_windows_resolve_the_whistler_pair():
     # The whistler / «СВИСТУН» regression: LaBSE scores the raw pair ~0.32
     # (below ALIGN_DEFAULT_THRESHOLD 0.55) but the casefolded/alnum-only form
     # ~0.685. Embedding normalized windows is the fix — the two sentences must
@@ -528,15 +463,12 @@ def normalized_windows_resolve_the_whistler_pair():
 
     assert result["matches"] == [
         {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0}
-    ], f"normalized windows should match 1:1, got {result['matches']}"
+    ]
     assert result["unmatched_a"] == [], result["unmatched_a"]
     assert result["unmatched_b"] == [], result["unmatched_b"]
 
-    return "OK: normalized windows resolve the whistler pair as a confident 1:1"
 
-
-def normalize_sentences_strips_punctuation_case_and_collapses_whitespace():
-    reset_cache()
+def test_normalize_sentences_strips_punctuation_case_and_collapses_whitespace():
     # Up-front normalization contract: each sentence is casefolded, reduced to
     # alnum + whitespace, and whitespace collapsed — while list length and
     # index positions are preserved.
@@ -572,11 +504,8 @@ def normalize_sentences_strips_punctuation_case_and_collapses_whitespace():
     assert result["unmatched_a"] == [], result["unmatched_a"]
     assert result["unmatched_b"] == [], result["unmatched_b"]
 
-    return "OK: _normalize_sentences strips/casefolds/collapses; whistler pair scores >= 0.68 normalized"
 
-
-def align_lists_raw_and_pre_normalized_input_are_identical():
-    reset_cache()
+def test_align_lists_raw_and_pre_normalized_input_are_identical():
     # Normalization is idempotent, so submitting raw text and its normalized
     # form must produce identical alignment results (same scores, same
     # unmatched) — callers may pre-normalize (or not) without changing output.
@@ -613,13 +542,10 @@ def align_lists_raw_and_pre_normalized_input_are_identical():
     )
     # Raw and pre-normalized inputs hash to the same cache keys: the second
     # align adds zero encodes (only the 4 singles were ever embedded).
-    assert model.encode_total == 4, f"expected 4 encoded texts, got {model.encode_total}"
-
-    return "OK: raw vs pre-normalized input aligns identically (0 extra encodes)"
+    assert model.encode_total == 4
 
 
-def prepass_anchors_lock_high_confidence_pairs_for_greedy_and_dp():
-    reset_cache()
+def test_prepass_anchors_lock_high_confidence_pairs_for_greedy_and_dp():
     # A1/A2/B1 are confident 1:1s at 1.0 (>= ALIGN_HIGH_CONFIDENCE, so the
     # prepass locks them as anchors); M is a 1:1 at ~0.85 (below the bar, so it
     # is resolved inside its pool). Both algorithms must emit the identical
@@ -671,11 +597,8 @@ def prepass_anchors_lock_high_confidence_pairs_for_greedy_and_dp():
     assert greedy["unmatched_a"] == [] and greedy["unmatched_b"] == []
     assert dp["unmatched_a"] == [] and dp["unmatched_b"] == []
 
-    return "OK: >= high_confidence pairs locked as identical anchors by greedy and dp"
 
-
-def prepass_anchors_split_pools_so_no_match_crosses_in_document_order():
-    reset_cache()
+def test_prepass_anchors_split_pools_so_no_match_crosses_in_document_order():
     # "Two" <-> "Two'" is a 1:1 at 1.0 -> prepass anchor at (1, 1). The pool
     # before it ("One" <-> "A", 0.8) and the pool after it ("Three" <-> "C",
     # 0.85) must stay confined to their slices: no match may consume sentences
@@ -724,7 +647,7 @@ def prepass_anchors_split_pools_so_no_match_crosses_in_document_order():
             and m["b_end"] - m["b_start"] == 1
             and abs(m["score"] - 1.0) < 1e-4
         ]
-        assert anchor_matches == anchors, f"{algorithm}: {anchor_matches}"
+        assert anchor_matches == anchors
 
         # No non-anchor match contains the anchor cell (a crossing match would).
         for m in result["matches"]:
@@ -732,13 +655,10 @@ def prepass_anchors_split_pools_so_no_match_crosses_in_document_order():
                 m["a_start"] <= 1 < m["a_end"] and m["b_start"] <= 1 < m["b_end"]
             )
             is_anchor = m["a_start"] == 1 and m["b_start"] == 1
-            assert contains_anchor == is_anchor, f"{algorithm}: {m} crosses an anchor"
-
-    return "OK: pools stay between anchors, anchor order == document order (greedy and dp)"
+            assert contains_anchor == is_anchor
 
 
-def high_confidence_knob_controls_the_number_of_prepass_anchors():
-    reset_cache()
+def test_high_confidence_knob_controls_the_number_of_prepass_anchors():
     # A1/A2 are 1:1 at 1.0; B1/B2 at ~0.85. Lowering high_confidence must lock
     # more of them as prepass anchors; raising it locks fewer.
     en = ["A1", "A2", "B1", "B2"]
@@ -774,15 +694,12 @@ def high_confidence_knob_controls_the_number_of_prepass_anchors():
     aligner.high_confidence = 0.8
     four = aligner._prepass_anchors(sim, len(en), len(ru))
 
-    assert none == [], f"above 1.0 nothing should anchor, got {none}"
-    assert two == [(0, 0), (1, 1)], f"0.9 locks the 1.0 pairs, got {two}"
-    assert four == [(0, 0), (1, 1), (2, 2), (3, 3)], f"0.8 locks the 0.85 pairs too, got {four}"
-
-    return "OK: lowering high_confidence produces more anchors, raising produces fewer"
+    assert none == []
+    assert two == [(0, 0), (1, 1)]
+    assert four == [(0, 0), (1, 1), (2, 2), (3, 3)]
 
 
-def prepass_anchor_distance_cap_rejects_a_far_heading_anchor():
-    reset_cache()
+def test_prepass_anchor_distance_cap_rejects_a_far_heading_anchor():
     # The "How to take smart notes" failure (entity_match 20): the short
     # heading cognate "Introduction" <-> "Vvedenie" sits 4 cells off the
     # expected diagonal (74 in the real chunk) yet scores 0.93 — mutually best
@@ -848,15 +765,12 @@ def prepass_anchor_distance_cap_rejects_a_far_heading_anchor():
             algorithm=algorithm,
             max_anchor_distance=2,
         ).align_lists(en, ru)
-        assert_same_matches(capped["matches"], expected), f"{algorithm}: {capped['matches']}"
-        assert capped["unmatched_a"] == [4], f"{algorithm}: {capped['unmatched_a']}"
-        assert capped["unmatched_b"] == [4], f"{algorithm}: {capped['unmatched_b']}"
-
-    return "OK: a 0.93 heading cognate 4+ cells off the diagonal no longer anchors"
+        assert_same_matches(capped["matches"], expected)
+        assert capped["unmatched_a"] == [4]
+        assert capped["unmatched_b"] == [4]
 
 
-def prepass_anchor_cap_disabled_locks_the_far_heading_anchor():
-    reset_cache()
+def test_prepass_anchor_cap_disabled_locks_the_far_heading_anchor():
     # Documents the pre-cap behavior the previous test guards against: with
     # the cap disabled (<= 0) the 0.93 far heading cell anchors, the block
     # before it has no EN sentences left to pair with, and only the bogus
@@ -891,15 +805,12 @@ def prepass_anchor_cap_disabled_locks_the_far_heading_anchor():
         assert_same_matches(
             uncapped["matches"],
             [{"a_start": 0, "a_end": 1, "b_start": 4, "b_end": 5, "score": 0.93}],
-        ), f"{algorithm}: {uncapped['matches']}"
-        assert uncapped["unmatched_a"] == [1, 2, 3, 4], f"{algorithm}: {uncapped['unmatched_a']}"
-        assert uncapped["unmatched_b"] == [0, 1, 2, 3], f"{algorithm}: {uncapped['unmatched_b']}"
-
-    return "OK: cap disabled reproduces the far-heading teleport (the guarded bug)"
+        )
+        assert uncapped["unmatched_a"] == [1, 2, 3, 4]
+        assert uncapped["unmatched_b"] == [0, 1, 2, 3]
 
 
-def band_rejects_an_out_of_band_pair():
-    reset_cache()
+def test_band_rejects_an_out_of_band_pair():
     # 4 EN vs 1 RU: k = 4, so only starts i with |0*4 - i| <= band are in-band.
     # E4 <-> R1 scores 0.6 (> threshold) but sits at (3, 0), three cells off
     # the expected diagonal: with band_width=1 the pair is rejected, with a
@@ -927,7 +838,7 @@ def band_rejects_an_out_of_band_pair():
             band_width=1,
         ).align_lists(en, ru)
 
-        assert tight["matches"] == [], f"{algorithm}: {tight['matches']}"
+        assert tight["matches"] == []
         assert tight["unmatched_a"] == [0, 1, 2, 3], tight["unmatched_a"]
         assert tight["unmatched_b"] == [0], tight["unmatched_b"]
 
@@ -943,15 +854,12 @@ def band_rejects_an_out_of_band_pair():
         assert_same_matches(
             wide["matches"],
             [{"a_start": 3, "a_end": 4, "b_start": 0, "b_end": 1, "score": 0.6}],
-        ), f"{algorithm}: {wide['matches']}"
+        )
         assert wide["unmatched_a"] == [0, 1, 2], wide["unmatched_a"]
         assert wide["unmatched_b"] == [], wide["unmatched_b"]
 
-    return "OK: out-of-band pair rejected by a tight band, accepted by a wide one"
 
-
-def band_allows_an_in_band_pair():
-    reset_cache()
+def test_band_allows_an_in_band_pair():
     # 2 EN vs 1 RU: k = 2, so starts i with |0*2 - i| <= band are in-band.
     # E2 <-> R1 scores 1.0 at (1, 0), exactly on the band edge (band_width=1);
     # E1 is orthogonal to everything and stays unmatched. The 1:2 pooled
@@ -980,15 +888,12 @@ def band_allows_an_in_band_pair():
         assert_same_matches(
             result["matches"],
             [{"a_start": 1, "a_end": 2, "b_start": 0, "b_end": 1, "score": 1.0}],
-        ), f"{algorithm}: {result['matches']}"
+        )
         assert result["unmatched_a"] == [0], result["unmatched_a"]
         assert result["unmatched_b"] == [], result["unmatched_b"]
 
-    return "OK: in-band pair accepted at the band edge"
 
-
-def band_recovery_across_a_divergent_region():
-    reset_cache()
+def test_band_recovery_across_a_divergent_region():
     # Two confident 1:1s at the chunk corners (E1<->R1, E4<->R4) with a fully
     # orthogonal middle. The walk must not be lured into a wrong pooled-window
     # match (threshold 0.8 keeps pooled windows of orthogonal sentences — cos
@@ -1032,11 +937,8 @@ def band_recovery_across_a_divergent_region():
     assert results["greedy"]["unmatched_a"] == [1, 2], results["greedy"]["unmatched_a"]
     assert results["greedy"]["unmatched_b"] == [1, 2], results["greedy"]["unmatched_b"]
 
-    return "OK: banded walk recovers to the far diagonal pair across a divergent middle"
 
-
-def band_width_knob_controls_match_density():
-    reset_cache()
+def test_band_width_knob_controls_match_density():
     # 6x6 with two genuine pairs: E1<->R1 at (0, 0) = 1.0 and E4<->R2 at
     # (3, 1) = 0.9. high_confidence=0.99 locks only the (0,0) pair as a prepass
     # anchor, leaving E4<->R2 to the pool — where it sits at pool offset
@@ -1076,7 +978,7 @@ def band_width_knob_controls_match_density():
             high_confidence=0.99,
             band_width=1,
         ).align_lists(en, ru)
-        assert_same_matches(tight["matches"], [both[0]]), f"{algorithm}: {tight['matches']}"
+        assert_same_matches(tight["matches"], [both[0]])
 
         for band, expect in ((2, both), (10, both)):
             wide = BilingualAligner(
@@ -1088,15 +990,10 @@ def band_width_knob_controls_match_density():
                 high_confidence=0.99,
                 band_width=band,
             ).align_lists(en, ru)
-            assert_same_matches(wide["matches"], expect), (
-                f"{algorithm} band={band}: {wide['matches']}"
-            )
-
-    return "OK: band_width knob controls match density (1 vs 2 matches), dp == greedy"
+            assert_same_matches(wide["matches"], expect)
 
 
-def banding_reduces_joined_window_embeddings_but_aggregate_only_embeds_singles():
-    reset_cache()
+def test_banding_reduces_joined_window_embeddings_but_aggregate_only_embeds_singles():
     # 6 EN vs 1 RU, every sentence orthogonal (R1 in its own dim), threshold
     # 0.99 so nothing ever matches. Two window_embed modes behave differently:
     #  - `joined`: window texts are join-then-embedded, so banding still
@@ -1162,11 +1059,8 @@ def banding_reduces_joined_window_embeddings_but_aggregate_only_embeds_singles()
         if window_embed == "joined":
             assert wide_model.encode_total - tight_model.encode_total == 5
 
-    return "OK: aggregate embeds only the 7 singles (band-independent); joined keeps banding (11 vs 16)"
 
-
-def aggregate_ranks_the_correct_fusion_window_highest():
-    reset_cache()
+def test_aggregate_ranks_the_correct_fusion_window_highest():
     # A 1:2 fusion: "Theta" translates the pooled pair only (both 1:1s score
     # 0.5, below threshold; the pooled 1:2 clears 0.55 at ~0.707). `aggregate`
     # combines the per-sentence vectors into the window vector, so the window
@@ -1190,15 +1084,12 @@ def aggregate_ranks_the_correct_fusion_window_highest():
 
     assert_same_matches(result["matches"], [
         {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 2, "score": 0.70710678},
-    ]), f"aggregate should rank the fused 1:2 highest, got {result['matches']}"
+    ])
     assert result["unmatched_a"] == [], result["unmatched_a"]
     assert result["unmatched_b"] == [], result["unmatched_b"]
 
-    return "OK: aggregate ranks the correct multi-sentence window highest (1:2 fusion)"
 
-
-def aggregate_weights_follow_sentence_lengths():
-    reset_cache()
+def test_aggregate_weights_follow_sentence_lengths():
     # Length-weighting contract of `_aggregate_window`: weights are the window
     # sentences' character counts, so a long sentence dominates the average.
     # [1,0,0] (1 char) + [0,1,0] (4 chars) -> weights [1,4]: the weighted mean
@@ -1235,14 +1126,11 @@ def aggregate_weights_follow_sentence_lengths():
     match = result["matches"][0]
     assert (match["a_start"], match["a_end"]) == (0, 2), match
     assert (match["b_start"], match["b_end"]) == (0, 1), match
-    assert abs(match["score"] - 0.934902) < 1e-4, f"score {match['score']}"
+    assert abs(match["score"] - 0.934902) < 1e-4
     assert match["score"] > 0.9, "long sentence should dominate the pooled average"
 
-    return "OK: aggregate weights follow sentence lengths (a long sentence dominates the average)"
 
-
-def aggregate_caches_per_sentence_vectors():
-    reset_cache()
+def test_aggregate_caches_per_sentence_vectors():
     # In `aggregate` mode only the single sentences are ever embedded; every
     # multi-sentence window is combined from the cached per-sentence vectors,
     # so the prepass and the window scoring share one set of embeddings. The
@@ -1266,19 +1154,16 @@ def aggregate_caches_per_sentence_vectors():
 
     assert_same_matches(result["matches"], [
         {"a_start": 0, "a_end": 2, "b_start": 0, "b_end": 1, "score": 0.70710678},
-    ]), f"expected the pooled 2:1, got {result['matches']}"
+    ])
     assert result["unmatched_a"] == [], result["unmatched_a"]
     assert result["unmatched_b"] == [], result["unmatched_b"]
     # 3 singles in 2 encode calls (en batch + ru single); the 2:1 window was
     # aggregated from cache, not re-encoded.
-    assert model.encode_total == 3, f"expected 3 encoded singles, got {model.encode_total}"
-    assert model.encode_calls == 2, f"expected 2 encode calls, got {model.encode_calls}"
-
-    return "OK: aggregate embeds each single once; windows aggregate from the cache"
+    assert model.encode_total == 3
+    assert model.encode_calls == 2
 
 
-def joined_mode_embeds_joined_window_texts():
-    reset_cache()
+def test_joined_mode_embeds_joined_window_texts():
     # `joined` keeps today's join-then-embed: the pooled window is encoded from
     # its joined text (cache key = joined text), so it is a 4th encoded text
     # rather than a combination of the cached singles.
@@ -1301,17 +1186,14 @@ def joined_mode_embeds_joined_window_texts():
 
     assert_same_matches(result["matches"], [
         {"a_start": 0, "a_end": 2, "b_start": 0, "b_end": 1, "score": 1.0},
-    ]), f"expected the pooled 2:1, got {result['matches']}"
+    ])
     assert result["unmatched_a"] == [], result["unmatched_a"]
     assert result["unmatched_b"] == [], result["unmatched_b"]
     # 3 singles + the joined 2:1 window text.
-    assert model.encode_total == 4, f"expected 4 encoded texts, got {model.encode_total}"
-
-    return "OK: joined mode embeds the joined window text (4 texts, no single sharing)"
+    assert model.encode_total == 4
 
 
-def pins_are_emitted_verbatim_with_score_one():
-    reset_cache()
+def test_pins_are_emitted_verbatim_with_score_one():
     # "Two" <-> "Two'" is pinned (its 1:1 cell also clears high_confidence, so
     # without the pin the prepass would lock it as an anchor). Both algorithms
     # must emit the pin verbatim with score 1.0 and keep the pools before/after
@@ -1348,9 +1230,7 @@ def pins_are_emitted_verbatim_with_score_one():
             algorithm=algorithm,
         ).align_lists(en, ru, landmarks=[pin])
 
-        assert_same_matches(result["matches"], expected), (
-            f"{algorithm}: {result['matches']}"
-        )
+        assert_same_matches(result["matches"], expected)
         assert result["unmatched_a"] == [], result["unmatched_a"]
         assert result["unmatched_b"] == [], result["unmatched_b"]
 
@@ -1359,14 +1239,11 @@ def pins_are_emitted_verbatim_with_score_one():
             for m in result["matches"]
             if (m["a_start"], m["a_end"], m["b_start"], m["b_end"]) == (1, 2, 1, 2)
         ]
-        assert len(pin_matches) == 1, f"{algorithm}: {pin_matches}"
-        assert pin_matches[0]["score"] == 1.0, f"{algorithm}: {pin_matches[0]}"
-
-    return "OK: pinned pair emitted verbatim with score 1.0 (greedy and dp)"
+        assert len(pin_matches) == 1
+        assert pin_matches[0]["score"] == 1.0
 
 
-def no_machine_match_overlaps_a_pin():
-    reset_cache()
+def test_no_machine_match_overlaps_a_pin():
     # "Two" strongly matches both P1 and P2 (0.95 each, >= high_confidence) —
     # without the pin the prepass would lock the cell (1, 1) and the machine
     # would match inside the pin's rectangle. With the 1:2 pin en[1:2] x
@@ -1404,18 +1281,18 @@ def no_machine_match_overlaps_a_pin():
         without = aligner._prepass_anchors(sim, len(en), len(ru))
         assert any(
             _in_pin(i, j) for i, j in without
-        ), f"{algorithm}: prepass should anchor inside the pin rectangle: {without}"
+        )
         with_pin = aligner._prepass_anchors(sim, len(en), len(ru), [pin])
         assert all(
             not _in_pin(i, j) for i, j in with_pin
-        ), f"{algorithm}: prepass anchors inside a pin: {with_pin}"
+        )
 
         result = aligner.align_lists(en, ru, landmarks=[pin])
         assert_same_matches(result["matches"], [
             {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 0.8},
             {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 3, "score": 1.0},
             {"a_start": 2, "a_end": 3, "b_start": 3, "b_end": 4, "score": 0.85},
-        ]), f"{algorithm}: {result['matches']}"
+        ])
         assert result["unmatched_a"] == [], result["unmatched_a"]
         assert result["unmatched_b"] == [], result["unmatched_b"]
 
@@ -1427,13 +1304,10 @@ def no_machine_match_overlaps_a_pin():
                 and pin["b_start"] < m["b_end"]
             )
             is_pin = (m["a_start"], m["a_end"], m["b_start"], m["b_end"]) == (1, 2, 1, 3)
-            assert overlap == is_pin, f"{algorithm}: {m} overlaps the pin"
-
-    return "OK: no machine match overlaps a pin; prepass skips pinned cells"
+            assert overlap == is_pin
 
 
-def pinned_indices_are_excluded_from_unmatched():
-    reset_cache()
+def test_pinned_indices_are_excluded_from_unmatched():
     # "One" has no counterpart (cos 0.3, below threshold) so it lands in
     # unmatched; "Two" <-> "Two'" is pinned. The pinned indices (1, 1) must be
     # excluded from both unmatched lists.
@@ -1457,15 +1331,12 @@ def pinned_indices_are_excluded_from_unmatched():
 
         assert_same_matches(result["matches"], [
             {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2, "score": 1.0},
-        ]), f"{algorithm}: {result['matches']}"
-        assert result["unmatched_a"] == [0], f"{algorithm}: {result['unmatched_a']}"
-        assert result["unmatched_b"] == [0], f"{algorithm}: {result['unmatched_b']}"
-
-    return "OK: pinned indices excluded from unmatched_a / unmatched_b"
+        ])
+        assert result["unmatched_a"] == [0]
+        assert result["unmatched_b"] == [0]
 
 
-def invalid_pins_raise_value_error():
-    reset_cache()
+def test_invalid_pins_raise_value_error():
     # The API layer translates the aligner's ValueError into a 422; here we
     # assert the ValueError itself for every invalid pin shape.
     en = ["One", "Two"]
@@ -1514,11 +1385,8 @@ def invalid_pins_raise_value_error():
     assert len(result["matches"]) == 2, result["matches"]
     assert result["unmatched_a"] == [] and result["unmatched_b"] == []
 
-    return "OK: crossing / out-of-range / zero-length pins rejected; valid pins accepted"
 
-
-def greedy_rescues_a_mutual_best_subthreshold_pair():
-    reset_cache()
+def test_greedy_rescues_a_mutual_best_subthreshold_pair():
     # "Dog" <-> "Dog ru" is a mutual-best 1:1 scoring 0.5 — under the 0.55 match
     # bar but above the 0.45 rescue bar. Without the rescue the skip rule
     # double-skips the pair (unmatched_a + unmatched_b — the repeating
@@ -1544,15 +1412,12 @@ def greedy_rescues_a_mutual_best_subthreshold_pair():
     assert_same_matches(result["matches"], [
         {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0},
         {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2, "score": 0.5},
-    ]), f"unexpected matches: {result['matches']}"
+    ])
     assert result["unmatched_a"] == [], result["unmatched_a"]
     assert result["unmatched_b"] == [], result["unmatched_b"]
 
-    return "OK: mutual-best sub-threshold pair rescued as a real 0.5-score match"
 
-
-def rescue_disabled_keeps_the_mutual_pair_unmatched():
-    reset_cache()
+def test_rescue_disabled_keeps_the_mutual_pair_unmatched():
     # Same input as above with rescue_threshold=0: the pair falls back to the
     # double-skip (one unmatched sentence per side) — the pre-rescue behavior.
     model = StubModel({
@@ -1575,15 +1440,12 @@ def rescue_disabled_keeps_the_mutual_pair_unmatched():
 
     assert_same_matches(result["matches"], [
         {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 1.0},
-    ]), f"unexpected matches: {result['matches']}"
+    ])
     assert result["unmatched_a"] == [1], result["unmatched_a"]
     assert result["unmatched_b"] == [1], result["unmatched_b"]
 
-    return "OK: rescue disabled keeps the double-skip (one unmatched per side)"
 
-
-def greedy_does_not_rescue_a_non_mutual_weak_pair():
-    reset_cache()
+def test_greedy_does_not_rescue_a_non_mutual_weak_pair():
     # "Y"'s best partner is "Pup" (0.7), not "Dog" (0.5), so the weak cursor
     # pair is not mutual-best: no rescue, and the skip rule correctly consumes
     # Dog. Only a genuine pairing (Pup<->Y, 0.7) matches; X stays unmatched.
@@ -1608,15 +1470,12 @@ def greedy_does_not_rescue_a_non_mutual_weak_pair():
 
     assert_same_matches(result["matches"], [
         {"a_start": 1, "a_end": 2, "b_start": 0, "b_end": 1, "score": 0.7},
-    ]), f"unexpected matches: {result['matches']}"
+    ])
     assert result["unmatched_a"] == [0], result["unmatched_a"]
     assert result["unmatched_b"] == [1], result["unmatched_b"]
 
-    return "OK: non-mutual weak pair stays skipped (no rescue)"
 
-
-def two_sided_orphan_gap_is_rescued_at_the_rescue_bar():
-    reset_cache()
+def test_two_sided_orphan_gap_is_rescued_at_the_rescue_bar():
     # The gap before the Pup<->X anchor (0.8) holds Dog x Y with a 0.52 1:1 —
     # under the match bar and not mutual-best (Y prefers Pup 0.53 > Dog 0.52),
     # so the walk skips Dog and leaves a two-sided orphan gap. The orphan-gap
@@ -1642,68 +1501,7 @@ def two_sided_orphan_gap_is_rescued_at_the_rescue_bar():
     assert_same_matches(result["matches"], [
         {"a_start": 0, "a_end": 1, "b_start": 0, "b_end": 1, "score": 0.52},
         {"a_start": 1, "a_end": 2, "b_start": 1, "b_end": 2, "score": 0.8},
-    ]), f"unexpected matches: {result['matches']}"
+    ])
     assert result["unmatched_a"] == [], result["unmatched_a"]
     assert result["unmatched_b"] == [], result["unmatched_b"]
 
-    return "OK: two-sided orphan gap re-walked at the rescue bar becomes a match"
-
-
-def main() -> int:
-    checks = [
-        skips_an_unmatchable_sentence_instead_of_force_matching,
-        still_force_matches_when_skipping_is_disabled,
-        span_cap_rejects_oversized_edges,
-        embedding_cache_reuses_vectors_across_calls,
-        greedy_matches_dp_on_clean_list_with_far_fewer_encodes,
-        greedy_resolves_a_1_to_2_match_via_lazy_window_expansion,
-        greedy_skips_an_unmatchable_sentence,
-        greedy_anchors_then_resolves_a_gap_after_a_locked_pair,
-        greedy_merges_an_orphan_into_a_beating_pooled_window,
-        greedy_ladder_widens_past_primary_for_a_4_window_match,
-        normalized_windows_resolve_the_whistler_pair,
-        normalize_sentences_strips_punctuation_case_and_collapses_whitespace,
-        align_lists_raw_and_pre_normalized_input_are_identical,
-        prepass_anchors_lock_high_confidence_pairs_for_greedy_and_dp,
-        prepass_anchors_split_pools_so_no_match_crosses_in_document_order,
-        high_confidence_knob_controls_the_number_of_prepass_anchors,
-        prepass_anchor_distance_cap_rejects_a_far_heading_anchor,
-        prepass_anchor_cap_disabled_locks_the_far_heading_anchor,
-        band_rejects_an_out_of_band_pair,
-        band_allows_an_in_band_pair,
-        band_recovery_across_a_divergent_region,
-        band_width_knob_controls_match_density,
-        banding_reduces_joined_window_embeddings_but_aggregate_only_embeds_singles,
-        aggregate_ranks_the_correct_fusion_window_highest,
-        aggregate_weights_follow_sentence_lengths,
-        aggregate_caches_per_sentence_vectors,
-        joined_mode_embeds_joined_window_texts,
-        pins_are_emitted_verbatim_with_score_one,
-        no_machine_match_overlaps_a_pin,
-        pinned_indices_are_excluded_from_unmatched,
-        invalid_pins_raise_value_error,
-        greedy_rescues_a_mutual_best_subthreshold_pair,
-        rescue_disabled_keeps_the_mutual_pair_unmatched,
-        greedy_does_not_rescue_a_non_mutual_weak_pair,
-        two_sided_orphan_gap_is_rescued_at_the_rescue_bar,
-    ]
-
-    failures = []
-
-    for check in checks:
-        try:
-            print(check())
-        except AssertionError as exc:
-            failures.append(f"{check.__name__}: {exc}")
-            print(f"FAIL: {check.__name__}: {exc}")
-
-    if failures:
-        print(f"\n{len(failures)} failure(s)")
-        return 1
-
-    print(f"\nOK: {len(checks)} checks passed")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

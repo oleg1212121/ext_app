@@ -1,181 +1,119 @@
-"""Tests for the enrichment package (plain python, no pytest).
+"""Tests for the enrichment package.
 
-Deterministic parts (en_stress, phrasal) always run; the Silero
-dependent ru_stress tests are skipped with a notice when the package or model
-data is unavailable.
+Deterministic parts (en_stress, dictionary fallbacks, versions) always run;
+the Silero-dependent ru/be stress-marking tests skip when the package or
+model data is unavailable, and the spaCy phrasal-verb tests skip without
+en_core_web_md.
 
-Run from anywhere (adds the package root to sys.path):
+Run (inside the container):
 
-    docker exec ext_python python /app/ai/enrichment/test_enrichment.py
+    docker exec ext_python python -m pytest /app/ai/enrichment/test_enrichment.py -q
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from ai.enrichment import en_stress, phrasal  # noqa: E402
-from ai.enrichment.ru_stress import COMBINING_ACUTE as ACUTE  # noqa: E402
-
-A = "\\u0301"  # combining acute, escaped to keep expectations unambiguous
-
-failures = []
-
-
-def check(name, actual, expected):
-    if actual != expected:
-        failures.append(f"{name}\n  expected: {ascii(expected)}\n  actual:   {ascii(actual)}")
-
-
-# --- en_stress.mark_word ----------------------------------------------------
-check(
-    "en: primary stress on first syllable",
-    en_stress.mark_word("beautiful", ["/ˈbjuː.tɪ.fl/"]),
-    "be" + ACUTE + "autiful",
-)
-check(
-    "en: stress on second syllable",
-    en_stress.mark_word("pronounces", ["/prəˈnʌn.sɪz/"]),
-    "pron" + "o" + ACUTE + "unces",
-)
-check(
-    "en: dictionary",
-    en_stress.mark_word("dictionary", ["/ˈdɪk.ʃə.nə.ɹi/"]),
-    "d" + "i" + ACUTE + "ctionary",
-)
-check(
-    "en: information (stress past prefix)",
-    en_stress.mark_word("information", ["/ˌɪn.fəˈmeɪ.ʃən/"]),
-    "inform" + "a" + ACUTE + "tion",
-)
-check(
-    "en: pronunciation (proportional alignment)",
-    en_stress.mark_word("pronunciation", ["/prəˌnʌn.siˈeɪ.ʃən/"]),
-    "pronunci" + "a" + ACUTE + "tion",
-)
-check(
-    "en: unstressed function word stays plain",
-    en_stress.mark_word("the", ["/ðə/"]),
-    "the",
-)
-check(
-    "en: no transcription stays plain",
-    en_stress.mark_word("smizards", None),
-    "smizards",
-)
-check(
-    "en: second variant used when first lacks ˈ",
-    en_stress.mark_word("contract", ["/kɒn.trækt/", "/kənˈtrækt/"]),
-    "contr" + "a" + ACUTE + "ct",
-)
-check(
-    "en: idempotent on already-marked word",
-    en_stress.mark_word("be" + ACUTE + "autiful", ["/ˈbjuː.tɪ.fl/"]),
-    "be" + ACUTE + "autiful",
-)
-
-# --- en_stress: ADR 0053 (pyphen alignment, silent-e, monosyllables, parts) --
-# advánce/becáuse: the old proportional map saturated onto the silent final e.
-check(
-    "en: final-silent-e excluded (advance)",
-    en_stress.mark_word("advance", ["/ədˈvɑːns/"]),
-    "adv" + "a" + ACUTE + "nce",
-)
-check(
-    "en: final-silent-e excluded (because)",
-    en_stress.mark_word("because", ["/bɪˈkɒz/"]),
-    "bec" + "a" + ACUTE + "use",
-)
-check(
-    "en: believe (pyphen syllable alignment)",
-    en_stress.mark_word("believe", ["/bɪˈliːv/"]),
-    "bel" + "i" + ACUTE + "eve",
-)
-check(
-    "en: final-stress word keeps the final syllable (referee)",
-    en_stress.mark_word("referee", ["/ˌɹɛf.əˈɹiː/"]),
-    "refer" + "e" + ACUTE + "e",
-)
-# CMUdict-style variants: monosyllables carry ˈ, inflected forms are present.
-check(
-    "en: monosyllable marked (turned)",
-    en_stress.mark_word("turned", ["/tˈɜːnd/"]),
-    "t" + "u" + ACUTE + "rned",
-)
-check(
-    "en: monosyllable marked (cat)",
-    en_stress.mark_word("cat", ["/kˈæt/"]),
-    "c" + "a" + ACUTE + "t",
-)
-check(
-    "en: inflected form with own variant (smiled)",
-    en_stress.mark_word("smiled", ["/smˈaɪld/"]),
-    "sm" + "i" + ACUTE + "led",
-)
-check(
-    "en: uppercase surface marks the uppercase vowel",
-    en_stress.mark_word("GAMBLERS", ["/ɡˈæmblɚz/"]),
-    "G" + "A" + ACUTE + "MBLERS",
-)
-check(
-    "en: hyphenated compound marked per part",
-    en_stress.mark_word("seven-sided", None, [
-        {"surface": "seven", "ipa": ["/ˈsɛvən/"]},
-        {"surface": "sided", "ipa": ["/sˈaɪdɪd/"]},
-    ]),
-    "s" + "e" + ACUTE + "ven-s" + "i" + ACUTE + "ded",
-)
-check(
-    "en: hyphenated compound with unresolvable part stays plain there",
-    en_stress.mark_word("seven-sided", None, [
-        {"surface": "seven", "ipa": ["/ˈsɛvən/"]},
-        {"surface": "sided", "ipa": None},
-    ]),
-    "s" + "e" + ACUTE + "ven-sided",
-)
-check(
-    "en: parts ignored when whole-token variant resolves",
-    en_stress.mark_word("well-known", ["/ˌwɛlˈnəʊn/"], [
-        {"surface": "well", "ipa": ["/wɛl/"]},
-        {"surface": "known", "ipa": ["/nəʊn/"]},
-    ]),
-    "well-kn" + "o" + ACUTE + "wn",
-)
-
-# --- en_stress.mark_sentence (span rebuild) ---------------------------------
 import regex as _regex
+import pytest
+
+from ai.api.schemas import EnrichResponse
+from ai.enrichment import be_stress, en_stress, phrasal
+from ai.enrichment.ru_stress import COMBINING_ACUTE as ACUTE
 
 _WORD_RE = _regex.compile(r"[\p{L}\p{M}]+(?:['’\-][\p{L}\p{M}]+)*")
 
-text = "She pronounces it beautifully."
-IPA = {
-    "she": ["/ʃi/"],
-    "pronounces": ["/prəˈnʌn.sɪz/"],
-    "it": ["/ɪt/"],
-    "beautifully": ["/ˈbjuː.tɪ.fli/"],
-}
-tokens = [
-    {"surface": m.group(0), "start": m.start(), "end": m.end(), "ipa": IPA[m.group(0).lower()]}
-    for m in _WORD_RE.finditer(text)
-]
-check(
-    "en: sentence rebuild preserves punctuation and spans",
-    en_stress.mark_sentence(text, tokens),
-    "She pron" + "o" + ACUTE + "unces it b" + "e" + ACUTE + "autifully.",
-)
-check(
-    "en: digraph ay marks the a (away)",
-    en_stress.mark_word("away", ["/əˈweɪ/"]),
-    "aw" + "a" + ACUTE + "y",
-)
 
-# --- phrasal: spaCy multi-word verbs (ADR 0059; skipped without the model) ---
-try:
-    _ = phrasal._nlp()
-    _HAS_SPACY = True
-except RuntimeError:
-    _HAS_SPACY = False
-    print("spaCy / en_core_web_md unavailable — phrasal tests skipped")
+def _spacy_ready() -> bool:
+    try:
+        phrasal._nlp()
+        return True
+    except RuntimeError:
+        return False
+
+
+HAS_SPACY = _spacy_ready()
+
+
+# --- en_stress.mark_word ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("word", "ipa", "parts", "expected"),
+    [
+        ("beautiful", ["/ˈbjuː.tɪ.fl/"], None, "be" + ACUTE + "autiful"),
+        ("pronounces", ["/prəˈnʌn.sɪz/"], None, "pron" + "o" + ACUTE + "unces"),
+        ("dictionary", ["/ˈdɪk.ʃə.nə.ɹi/"], None, "d" + "i" + ACUTE + "ctionary"),
+        ("information", ["/ˌɪn.fəˈmeɪ.ʃən/"], None, "inform" + "a" + ACUTE + "tion"),
+        ("pronunciation", ["/prəˌnʌn.siˈeɪ.ʃən/"], None, "pronunci" + "a" + ACUTE + "tion"),
+        ("the", ["/ðə/"], None, "the"),
+        ("smizards", None, None, "smizards"),
+        ("contract", ["/kɒn.trækt/", "/kənˈtrækt/"], None, "contr" + "a" + ACUTE + "ct"),
+        ("be" + ACUTE + "autiful", ["/ˈbjuː.tɪ.fl/"], None, "be" + ACUTE + "autiful"),
+        # --- ADR 0053 (pyphen alignment, silent-e, monosyllables, parts) ---
+        # advánce/becáuse: the old proportional map saturated onto the silent e.
+        ("advance", ["/ədˈvɑːns/"], None, "adv" + "a" + ACUTE + "nce"),
+        ("because", ["/bɪˈkɒz/"], None, "bec" + "a" + ACUTE + "use"),
+        ("believe", ["/bɪˈliːv/"], None, "bel" + "i" + ACUTE + "eve"),
+        ("referee", ["/ˌɹɛf.əˈɹiː/"], None, "refer" + "e" + ACUTE + "e"),
+        # CMUdict-style variants: monosyllables carry ˈ, inflected forms exist.
+        ("turned", ["/tˈɜːnd/"], None, "t" + "u" + ACUTE + "rned"),
+        ("cat", ["/kˈæt/"], None, "c" + "a" + ACUTE + "t"),
+        ("smiled", ["/smˈaɪld/"], None, "sm" + "i" + ACUTE + "led"),
+        ("GAMBLERS", ["/ɡˈæmblɚz/"], None, "G" + "A" + ACUTE + "MBLERS"),
+        (
+            "seven-sided",
+            None,
+            [
+                {"surface": "seven", "ipa": ["/ˈsɛvən/"]},
+                {"surface": "sided", "ipa": ["/sˈaɪdɪd/"]},
+            ],
+            "s" + "e" + ACUTE + "ven-s" + "i" + ACUTE + "ded",
+        ),
+        (
+            "seven-sided",
+            None,
+            [
+                {"surface": "seven", "ipa": ["/ˈsɛvən/"]},
+                {"surface": "sided", "ipa": None},
+            ],
+            "s" + "e" + ACUTE + "ven-sided",
+        ),
+        (
+            "well-known",
+            ["/ˌwɛlˈnəʊn/"],
+            [
+                {"surface": "well", "ipa": ["/wɛl/"]},
+                {"surface": "known", "ipa": ["/nəʊn/"]},
+            ],
+            "well-kn" + "o" + ACUTE + "wn",
+        ),
+        ("away", ["/əˈweɪ/"], None, "aw" + "a" + ACUTE + "y"),
+    ],
+)
+def test_en_mark_word(word, ipa, parts, expected):
+    assert en_stress.mark_word(word, ipa, parts) == expected
+
+
+def test_en_mark_sentence_rebuild_preserves_punctuation_and_spans():
+    text = "She pronounces it beautifully."
+    IPA = {
+        "she": ["/ʃi/"],
+        "pronounces": ["/prəˈnʌn.sɪz/"],
+        "it": ["/ɪt/"],
+        "beautifully": ["/ˈbjuː.tɪ.fli/"],
+    }
+    tokens = [
+        {
+            "surface": m.group(0),
+            "start": m.start(),
+            "end": m.end(),
+            "ipa": IPA[m.group(0).lower()],
+        }
+        for m in _WORD_RE.finditer(text)
+    ]
+    assert en_stress.mark_sentence(text, tokens) == (
+        "She pron" + "o" + ACUTE + "unces it b" + "e" + ACUTE + "autifully."
+    )
+
+
+# --- phrasal: spaCy multi-word verbs (ADR 0059; skipped without the model) ----
 
 
 def _en_tokens(text, verb_lemmas=None):
@@ -198,139 +136,229 @@ def _find(text, lexicon=(), verb_lemmas=None):
     )[0]
 
 
-if _HAS_SPACY:
-    # Particle verbs hit on parser evidence alone — no lexicon needed.
-    check(
-        "mw: particle verb hits without a lexicon entry",
-        _find("She gave up smoking."),
-        [{"verb": "gave", "particles": ["up"], "start": 4, "end": 11, "phrase": "give up"}],
-    )
-    check(
-        "mw: separated particle spans the whole chunk",
-        _find("He looked it up on the network."),
-        [{"verb": "looked", "particles": ["up"], "start": 3, "end": 15, "phrase": "look up"}],
-    )
-    # Prepositional verbs are dictionary-gated.
-    check(
-        "mw: prepositional verb with lexicon entry",
-        _find("She depends on her network.", ["depend on"]),
-        [{"verb": "depends", "particles": ["on"], "start": 4, "end": 14, "phrase": "depend on"}],
-    )
-    check(
-        "mw: prepositional verb without lexicon entry stays a miss",
-        _find("She sat in the car.", ["sit under"]),
-        [],
-    )
-    check(
-        "mw: phrasal-prepositional combo spans through the preposition",
-        _find("She came up with a brilliant plan.", ["come up with"]),
-        [{"verb": "came", "particles": ["up", "with"], "start": 4, "end": 16, "phrase": "come up with"}],
-    )
-    # The reported false positives ( AUX excluded; no prt/prep children).
-    check("mw: modal+aux verb is no hit", _find("She could have given more.", ["give up", "give"]), [])
-    check("mw: negated plain verb is no hit", _find("He did not say a word.", ["say"]), [])
-    check("mw: punctuation-adjacent clause is no hit", _find("It was done, it was over.", ["do it"]), [])
-    check("mw: passive participle without particle is no hit", _find("The work was done by noon.", ["do"]), [])
+@pytest.mark.spacy
+@pytest.mark.skipif(not HAS_SPACY, reason="spaCy / en_core_web_md unavailable")
+class TestPhrasal:
+    def test_particle_verb_hits_without_a_lexicon_entry(self):
+        assert _find("She gave up smoking.") == [
+            {"verb": "gave", "particles": ["up"], "start": 4, "end": 11, "phrase": "give up"}
+        ]
+
+    def test_separated_particle_spans_the_whole_chunk(self):
+        assert _find("He looked it up on the network.") == [
+            {"verb": "looked", "particles": ["up"], "start": 3, "end": 15, "phrase": "look up"}
+        ]
+
+    def test_prepositional_verb_with_lexicon_entry(self):
+        assert _find("She depends on her network.", ["depend on"]) == [
+            {"verb": "depends", "particles": ["on"], "start": 4, "end": 14, "phrase": "depend on"}
+        ]
+
+    def test_prepositional_verb_without_lexicon_entry_stays_a_miss(self):
+        assert _find("She sat in the car.", ["sit under"]) == []
+
+    def test_phrasal_prepositional_combo_spans_through_the_preposition(self):
+        assert _find("She came up with a brilliant plan.", ["come up with"]) == [
+            {
+                "verb": "came",
+                "particles": ["up", "with"],
+                "start": 4,
+                "end": 16,
+                "phrase": "come up with",
+            }
+        ]
+
+    # The reported false positives (AUX excluded; no prt/prep children).
+    def test_modal_aux_verb_is_no_hit(self):
+        assert _find("She could have given more.", ["give up", "give"]) == []
+
+    def test_negated_plain_verb_is_no_hit(self):
+        assert _find("He did not say a word.", ["say"]) == []
+
+    def test_punctuation_adjacent_clause_is_no_hit(self):
+        assert _find("It was done, it was over.", ["do it"]) == []
+
+    def test_passive_participle_without_particle_is_no_hit(self):
+        assert _find("The work was done by noon.", ["do"]) == []
+
     # Directional adverbs: a goal/path preposition right after the particle
     # reads as direction, not a multi-word verb (ADR 0059 v3).
-    check("mw: directional over-toward is no hit", _find("The ringmaster swung over toward Max."), [])
-    check("mw: directional down-to is no hit", _find("She followed Max down to the basement."), [])
-    check(
-        "mw: locative preposition after particle still hits",
-        _find("He looked it up on the network."),
-        [{"verb": "looked", "particles": ["up"], "start": 3, "end": 15, "phrase": "look up"}],
-    )
-    check(
-        "mw: infinitival to after particle still hits",
-        _find("She looked it up to check the facts."),
-        [{"verb": "looked", "particles": ["up"], "start": 4, "end": 16, "phrase": "look up"}],
-    )
-    # One hit per verb; two verbs give two hits.
-    check(
-        "mw: two verbs, two hits",
-        _find("She gave up and looked it up."),
-        [
+    def test_directional_over_toward_is_no_hit(self):
+        assert _find("The ringmaster swung over toward Max.") == []
+
+    def test_directional_down_to_is_no_hit(self):
+        assert _find("She followed Max down to the basement.") == []
+
+    def test_locative_preposition_after_particle_still_hits(self):
+        assert _find("He looked it up on the network.") == [
+            {"verb": "looked", "particles": ["up"], "start": 3, "end": 15, "phrase": "look up"}
+        ]
+
+    def test_infinitival_to_after_particle_still_hits(self):
+        assert _find("She looked it up to check the facts.") == [
+            {"verb": "looked", "particles": ["up"], "start": 4, "end": 16, "phrase": "look up"}
+        ]
+
+    def test_two_verbs_two_hits(self):
+        assert _find("She gave up and looked it up.") == [
             {"verb": "gave", "particles": ["up"], "start": 4, "end": 11, "phrase": "give up"},
             {"verb": "looked", "particles": ["up"], "start": 16, "end": 28, "phrase": "look up"},
-        ],
-    )
-    # verb_lemmas (ADR 0058) ride along as extra lemma candidates.
-    check(
-        "mw: verb_lemmas hints still flow through",
-        _find("She gave up smoking.", ["give up"], {"gave": ["give"]}),
-        [{"verb": "gave", "particles": ["up"], "start": 4, "end": 11, "phrase": "give up"}],
-    )
-    # Empty lexicon + empty hints still work end to end.
-    check("mw: plain sentence with empty lexicon", _find("The dog sleeps."), [])
+        ]
 
-# --- ru_stress (Silero; skipped when unavailable) -----------------------------
-try:
+    def test_verb_lemmas_hints_still_flow_through(self):
+        # verb_lemmas (ADR 0058) ride along as extra lemma candidates.
+        assert _find("She gave up smoking.", ["give up"], {"gave": ["give"]}) == [
+            {"verb": "gave", "particles": ["up"], "start": 4, "end": 11, "phrase": "give up"}
+        ]
+
+    def test_plain_sentence_with_empty_lexicon(self):
+        assert _find("The dog sleeps.") == []
+
+
+# --- ru_stress (Silero; skipped when unavailable) ------------------------------
+
+
+def _ru_tokens(ru_stress_module, text):
+    """Tokenize like WordTokenizer and build span dicts."""
+    out = []
+    for m in ru_stress_module.WORD_RE.finditer(text.replace("+", "")):
+        out.append({"surface": m.group(0), "start": m.start(), "end": m.end(), "stressed": None})
+    return out
+
+
+@pytest.fixture(scope="module")
+def ru_accentor():
+    pytest.importorskip("silero_stress")
     from silero_stress import load_accentor
 
-    from ai.enrichment import ru_stress
+    return load_accentor()
 
-    accentor = load_accentor()
 
-    def tok(text):
-        """Tokenize like WordTokenizer and build span dicts."""
-        out = []
-        for m in ru_stress.WORD_RE.finditer(text.replace("+", "")):
-            out.append({"surface": m.group(0), "start": m.start(), "end": m.end(), "stressed": None})
-        return out
+@pytest.mark.silero
+class TestRuStressModel:
+    def test_proiznosit_gets_acute(self, ru_accentor):
+        from ai.enrichment import ru_stress
 
-    sentence = "Она произносит это красиво, но часто теряет мелодию."
-    marked = ru_stress.mark_sentence(sentence, tok(sentence), accentor)
-    check("ru: произносит gets acute", "произно" + ACUTE + "сит" in marked, True)
-    check("ru: красиво gets acute", "краси" + ACUTE + "во" in marked, True)
-    check("ru: punctuation preserved", marked.count(",") == sentence.count(","), True)
+        sentence = "Она произносит это красиво, но часто теряет мелодию."
+        marked = ru_stress.mark_sentence(sentence, _ru_tokens(ru_stress, sentence), ru_accentor)
+        assert "произно" + ACUTE + "сит" in marked
 
-    yo_sentence = "Еще не все замки готовы."
-    marked = ru_stress.mark_sentence(yo_sentence, tok(yo_sentence), accentor)
-    check("ru: е→ё conversion (ещё)", "Ещё" in marked, True)
+    def test_krasivo_gets_acute(self, ru_accentor):
+        from ai.enrichment import ru_stress
 
-    premarked = "при́вычно звучит."
-    marked = ru_stress.mark_sentence(premarked, tok(premarked), accentor)
-    # привы́чно (1) + звучи́т (1): the pre-existing mark was replaced, not added to.
-    check("ru: no double marks on pre-marked input", (marked.count(ACUTE) == 2 and "привы́чно" in marked), True)
+        sentence = "Она произносит это красиво, но часто теряет мелодию."
+        marked = ru_stress.mark_sentence(sentence, _ru_tokens(ru_stress, sentence), ru_accentor)
+        assert "краси" + ACUTE + "во" in marked
 
-    # Dictionary fallback unit checks (Silero-independent).
+    def test_punctuation_preserved(self, ru_accentor):
+        from ai.enrichment import ru_stress
+
+        sentence = "Она произносит это красиво, но часто теряет мелодию."
+        marked = ru_stress.mark_sentence(sentence, _ru_tokens(ru_stress, sentence), ru_accentor)
+        assert marked.count(",") == sentence.count(",")
+
+    def test_yo_conversion(self, ru_accentor):
+        from ai.enrichment import ru_stress
+
+        sentence = "Еще не все замки готовы."
+        marked = ru_stress.mark_sentence(sentence, _ru_tokens(ru_stress, sentence), ru_accentor)
+        assert "Ещё" in marked
+
+    def test_no_double_marks_on_pre_marked_input(self, ru_accentor):
+        from ai.enrichment import ru_stress
+
+        sentence = "при́вычно звучит."
+        marked = ru_stress.mark_sentence(sentence, _ru_tokens(ru_stress, sentence), ru_accentor)
+        # привы́чно (1) + звучи́т (1): the pre-existing mark was replaced, not added to.
+        assert marked.count(ACUTE) == 2 and "привы́чно" in marked
+
+
+# --- dictionary fallbacks (Silero-independent) ---------------------------------
+
+
+def test_ru_dict_fallback_applies_unique_stress_position():
     from ai.enrichment.ru_stress import _dict_fallback
 
-    check(
-        "ru: dict fallback applies unique stress position",
-        _dict_fallback("свободного", ["свобо́дного"]),
-        "свобо́дного",
-    )
-    check(
-        "ru: dict fallback skips ambiguous candidates",
-        _dict_fallback("замки", ["за́мки", "замки́"]),
-        "замки",
-    )
-    check(
-        "ru: dict fallback yo candidate converts е→ё",
-        _dict_fallback("еще", ["ещё"]),
-        "ещё",
-    )
-except ImportError:
-    print("silero-stress unavailable — ru_stress tests skipped")
+    assert _dict_fallback("свободного", ["свобо́дного"]) == "свобо́дного"
 
-# --- algorithm versions (ADR 0067) ------------------------------------------
+
+def test_ru_dict_fallback_skips_ambiguous_candidates():
+    from ai.enrichment.ru_stress import _dict_fallback
+
+    assert _dict_fallback("замки", ["за́мки", "замки́"]) == "замки"
+
+
+def test_ru_dict_fallback_yo_candidate_converts_e_to_yo():
+    from ai.enrichment.ru_stress import _dict_fallback
+
+    assert _dict_fallback("еще", ["ещё"]) == "ещё"
+
+
+def test_be_dict_fallback_counts_i_as_a_vowel():
+    # і counts as a vowel (ru's set has и, be's has і): the acute lands on і.
+    from ai.enrichment.be_stress import _dict_fallback
+
+    assert _dict_fallback("кніга", ["кні́га"]) == "кні́га"
+
+
+def test_be_dict_fallback_skips_non_syllabic_u_short():
+    # ў is non-syllabic and never a vowel: the ё-style candidate's stress index
+    # counts а…ё without it, so the ё stays put instead of drifting one slot.
+    from ai.enrichment.be_stress import _dict_fallback
+
+    assert _dict_fallback("паўднёвы", ["паўднёвы"]) == "паўднёвы"
+
+
+def test_be_dict_fallback_skips_ambiguous_candidates():
+    from ai.enrichment.be_stress import _dict_fallback
+
+    assert _dict_fallback("замак", ["за́мак", "замаќ"]) == "замак"
+
+
+# --- be_stress model (the package's Belarusian accentor; skipped w/o silero) ---
+
+
+@pytest.fixture(scope="module")
+def bel_accentor():
+    pytest.importorskip("silero_stress")
+    from silero_stress import load_accentor
+
+    return load_accentor(lang="bel")
+
+
+@pytest.mark.silero
+class TestBeStressModel:
+    def test_yana_gets_acute_on_final_a(self, bel_accentor):
+        sentence = "Яна прыйшла ў горад раніцай."
+        marked = be_stress.mark_sentence(sentence, _ru_tokens(be_stress, sentence), bel_accentor)
+        assert "Яна" + ACUTE in marked
+
+    def test_horad_gets_acute_on_o(self, bel_accentor):
+        sentence = "Яна прыйшла ў горад раніцай."
+        marked = be_stress.mark_sentence(sentence, _ru_tokens(be_stress, sentence), bel_accentor)
+        assert "г" + "о" + ACUTE + "рад" in marked
+
+    def test_non_syllabic_u_short_stays_unmarked(self, bel_accentor):
+        sentence = "Яна прыйшла ў горад раніцай."
+        marked = be_stress.mark_sentence(sentence, _ru_tokens(be_stress, sentence), bel_accentor)
+        assert " ў " in marked
+
+
+# --- algorithm versions (ADR 0067) ---------------------------------------------
 # Each module reports its version on every /enrich response; Laravel stamps
 # the reported value and re-stales when it disagrees with the enricher's
 # declared pythonVersion().
-from ai.api.schemas import EnrichResponse
-from ai.enrichment import ru_stress
 
-check("versions: ru_stress module declares v1", ru_stress.ALGORITHM_VERSION, 1)
-check("versions: en_stress module declares v1", en_stress.ALGORITHM_VERSION, 1)
-check("versions: phrasal module declares v3", phrasal.ALGORITHM_VERSION, 3)
 
-response = EnrichResponse(results=[], versions={"en_phrasal": phrasal.ALGORITHM_VERSION})
-check("versions: ride the /enrich response schema", response.versions, {"en_phrasal": 3})
+def test_module_versions():
+    from ai.enrichment import ru_stress
 
-if failures:
-    print(f"FAIL ({len(failures)}):")
-    for f in failures:
-        print(" -", f)
-    sys.exit(1)
-print("all enrichment tests passed")
+    assert ru_stress.ALGORITHM_VERSION == 1
+    assert en_stress.ALGORITHM_VERSION == 1
+    assert phrasal.ALGORITHM_VERSION == 3
+    assert be_stress.ALGORITHM_VERSION == 1
+
+
+def test_versions_ride_the_enrich_response_schema():
+    response = EnrichResponse(results=[], versions={"en_phrasal": phrasal.ALGORITHM_VERSION})
+    assert response.versions == {"en_phrasal": 3}

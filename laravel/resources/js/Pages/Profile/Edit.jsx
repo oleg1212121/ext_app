@@ -9,7 +9,7 @@ import UpdatePassword from './UpdatePassword.jsx'
 import ApiKeys from './ApiKeys.jsx'
 import AiModels from './AiModels.jsx'
 import DeleteAccount from './DeleteAccount.jsx'
-import {Card} from './ui.jsx'
+import {Card, profileWidthClass} from './ui.jsx'
 
 const TABS = [
     {id: 'account', labelKey: 'profile.tab_account'},
@@ -45,9 +45,12 @@ function Underline({isActive}) {
 
 // Unmount-style tab panel (matches the Crossword right panel): only the
 // active tab's forms stay mounted, exactly like a page reload today.
-function TabPanel({active, children}) {
+// Regular tabs keep their cards capped at the panel level so the wide page
+// frame does not stretch them; the Popups tab opts into 'wide' (ticket 02),
+// the shared profile width variant from ui.jsx.
+function TabPanel({active, width = 'panel', children}) {
     if (!active) return null
-    return <div className="mt-8 space-y-8">{children}</div>
+    return <div className={`mt-8 space-y-8 ${profileWidthClass(width, 'max-w-3xl')}`}>{children}</div>
 }
 
 // Deep links like /profile?tab=ai open the right tab; switching tabs
@@ -83,7 +86,7 @@ export default function Edit({
             <Head title={t('profile.profile_title')}/>
 
             <div className="py-10 sm:py-14 overflow-y-auto flex-1">
-                <div className="px-4 sm:px-6 lg:px-10 max-w-3xl mx-auto">
+                <div className="px-4 sm:px-6 lg:px-10 max-w-[1800px] mx-auto">
                     <div className="flex flex-col gap-1 mb-6">
                         <span className="font-serif italic text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] text-xs tracking-[0.22em] uppercase">
                             {t('profile.account_eyebrow')}
@@ -129,8 +132,8 @@ export default function Edit({
                         </Card>
                     </TabPanel>
 
-                    <TabPanel active={activeTab === 'popups'}>
-                        <Card>
+                    <TabPanel active={activeTab === 'popups'} width="wide">
+                        <Card width="wide">
                             <PopupsSettings popupVisibility={popupVisibility}/>
                         </Card>
                     </TabPanel>

@@ -6,6 +6,7 @@ use App\Models\Language;
 use App\Models\Word;
 use App\Models\WordClass;
 use App\Models\WordTranslation;
+use App\Support\StressMarks;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -158,13 +159,14 @@ class LinkTranslationsCommand extends Command
     }
 
     /**
-     * Normalize a translation for target-language lookup: Cyrillic targets
-     * carry combining stress marks that must be stripped before matching.
+     * Normalize a translation for target-language lookup: the Cyrillic
+     * target languages carry combining stress marks that must be stripped
+     * before matching.
      */
     private function normalizeTargetWord(string $word, string $targetCode): string
     {
-        if ($targetCode === 'ru') {
-            $word = (string) preg_replace('/\p{M}/u', '', $word);
+        if (StressMarks::stripsFor($targetCode)) {
+            $word = StressMarks::strip($word);
         }
 
         return mb_strtolower(trim($word));

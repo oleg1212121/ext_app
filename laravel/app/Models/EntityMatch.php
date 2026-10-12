@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\Side;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EntityMatch extends Model
@@ -68,6 +69,11 @@ class EntityMatch extends Model
     public function meaningMatches(): HasMany
     {
         return $this->hasMany(MeaningMatch::class);
+    }
+
+    public function tags(): BelongsToMany
+    {
+        return $this->belongsToMany(AlignmentTag::class, 'tagged_alignments')->withTimestamps();
     }
 
     /**

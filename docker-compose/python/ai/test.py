@@ -1,7 +1,7 @@
 from ai.signatures.text_signature import TextSignature
 path = "/app/models/minilm"
 path = "/app/models/bge_m3"
-path = "/app/models/labse"
+# path = "/app/models/labse"
 
 print(path)
 ts = TextSignature(path)          # load once (~2GB, takes ~30-60s)
@@ -10,7 +10,7 @@ sent_en_1 = "But while even the best breathing technique would probably not make
 # sent_en_3 = f"{sent_en_1} {sent_en_2}"
 sent_ru_1 = "И хотя даже самая лучшая техника дыхания вряд ли повлияет на то, как мы пишем, любое улучшение организации повседневного письма будет иметь решающее значение в тот момент, когда мы действительно окажемся один на один с пустой страницей или экраном."
 sent_ru_2 = "Хотя, скорее всего, не окажемся, поскольку у тех, кто делает полезные заметки, такой проблемы больше не возникнет."
-sent_ru_3 = f"{sent_ru_1} И утомляет {sent_ru_2}"
+sent_ru_3 = f"{sent_ru_1} {sent_ru_2}"
 a1 = ts.generate(sent_en_1, "en")
 # a2 = ts.generate(sent_en_2, "en")
 # a3 = ts.generate(sent_en_3, "en")

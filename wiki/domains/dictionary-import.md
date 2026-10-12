@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps into the unified language-keyed dic
 tags: [dictionary, import, wiktionary, kaikki, multi-word-verbs]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-02T17:30:00Z }
+generated: { by: agent:zcode, at: 2026-10-10T19:55:00+03:00 }
 sources:
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
@@ -81,7 +81,8 @@ mirrored per-language tables, and a single `word_translations` pivot —
   through the stored translations into `word_translations` rows, covering
   **every language pair** among languages that have imported words (one
   canonical row per pair, `word_a_id < word_b_id`; stress-mark stripping
-  applied when pairing into Russian). Re-runs are idempotent next to
+  applied when pairing into the Cyrillic stress-mark languages ru/be/uk —
+  the shared `App\Support\StressMarks`). Re-runs are idempotent next to
   manually created links. `wiktionary:import-raw` runs it automatically at
   the end (unless `--no-link`).
 

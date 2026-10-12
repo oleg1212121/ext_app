@@ -99,7 +99,8 @@ docker exec ext_app_laravel vendor/bin/pint --dirty
 ### Testing
 ```bash
 # Run all tests in parallel (clears config + route caches first;
-# ~2min for the full suite)
+# ~5.5min for the full suite on the dev machine; composer.json sets
+# process-timeout: 900 so Composer doesn't kill the run at its 300s default)
 docker exec ext_app_laravel composer run test
 
 # Run specific test file
@@ -127,6 +128,14 @@ docker exec ext_app_laravel sh -c 'cd /var/www && PHP_INI_SCAN_DIR=/usr/local/et
 **Default to `composer run test:tia` after changes** — it re-runs only tests touched by your files; save the full `composer run test` for pre-merge/CI verification.
 
 Test database: `ext_app_test` (configured in phpunit.xml, not the default).
+
+**Python service tests (pytest)** — after changing anything under
+`docker-compose/python/ai/`, run its own suite inside `ext_python`
+(~5s, stub models only, no weights; manual, no CI job):
+
+```bash
+docker exec ext_python python -m pytest /app/ai -q
+```
 
 ### Database
 
@@ -182,11 +191,11 @@ Tailwind 4 uses CSS-based config via `@theme`/`@source`/`@plugin` directives in 
 
 ### Python Environment
 
-Pre-configured venv at `docker-compose/python/ai/ai_env/` with torch, sentence-transformers, transformers, numpy, scipy, pysbd pre-installed. Do NOT reinstall these packages.
+Pre-configured venv at `docker-compose/python/ai/venv/` with torch, sentence-transformers, transformers, numpy, scipy, pysbd pre-installed. Do NOT reinstall these packages. (The prod machine's native-deploy venv is `ai_env/` — see `deploy-native.sh`.)
 
 ```bash
-docker-compose/python/ai/ai_env/bin/python <script>
-docker-compose/python/ai/ai_env/bin/pip install <package>  # only when needed
+docker-compose/python/ai/venv/bin/python <script>
+docker-compose/python/ai/venv/bin/pip install <package>  # only when needed
 ```
 
 ## Conventions

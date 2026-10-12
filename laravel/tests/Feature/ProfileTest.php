@@ -2,6 +2,7 @@
 
 use App\Models\Language;
 use App\Models\User;
+use Database\Seeders\LanguageSeeder;
 
 test('profile page is displayed', function () {
     $user = User::factory()->create();
@@ -145,6 +146,21 @@ test('user settings can set and clear the interface language', function () {
         ->assertSessionHasNoErrors();
 
     expect($user->settings->refresh()->interface_language_id)->toBeNull();
+});
+
+test('user settings accepts belarusian as the interface language', function () {
+    // The seeded registry makes be an interface language; the validation rule
+    // reads the registry, so the same PATCH must succeed for the be row.
+    app(LanguageSeeder::class)->run();
+    $be = Language::query()->where('code', 'be')->first();
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->patch('/profile/settings', ['interface_language_id' => $be->id])
+        ->assertSessionHasNoErrors();
+
+    expect($user->settings->refresh()->interface_language_id)->toBe($be->id);
 });
 
 test('user settings rejects a language that is not interface-enabled', function () {

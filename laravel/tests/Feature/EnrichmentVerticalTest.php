@@ -108,7 +108,7 @@ it('feeds one annotation from two enrichers without duplication', function () {
     $annotations = collect((new EnricherRegistry)->annotations());
     $stress = $annotations->first(fn (Annotation $a) => $a->payloadKey === 'stressed');
 
-    // Two stress enrichers, one annotation (ADR 0067).
+    // The stress enrichers (ru/be/en) feed one annotation (ADR 0067).
     expect($annotations->count())->toBe(2)
         ->and($stress->column)->toBe('stressed_content')
         ->and($stress->settingKey)->toBe('stress_marks');
