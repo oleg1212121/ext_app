@@ -810,8 +810,9 @@ _Avoid_: popup settings, popup config, section flags.
 **Context explanation**:
 The AI explanation of an Interactive word as it is used in its sentence —
 built from the sentence before, the clicked sentence, and the sentence after
-(by document order in the same entity), requested manually from the Word
-popup's second tab and replied in the user's **Native language**. Distinct
+(by document order in the same entity), requested automatically on opening
+the Word popup's second tab and replied in the user's **Native language**.
+Distinct
 from a **Gloss** (the simulator's assessment answer) and from dictionary
 definitions (static imported content, no sentence context).
 _Avoid_: word gloss (collides with Gloss), AI answer, definition.

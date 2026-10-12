@@ -1,5 +1,39 @@
 # Directory Update Log
 
+## 2026-10-12 (popup-card-redesign feature closure — ticket 05)
+
+The popup-card-redesign feature is complete on branch `popup-card-redesign`
+(one log entry per ticket below; this entry closes the feature). Shipped in
+four commits: `1cb6ec0` (01) swapped the `/profile` frame cap
+`max-w-3xl` → near-full-width `max-w-[1800px]` with per-tab panel capping
+(`TabPanel wide`), `2144523` (02) made the Popups tab the only tab-wide card
+and laid it out as a `lg` two-column grid (checkbox groups ~⅓ left, live
+preview ~⅔ right, stacking checkboxes-above-preview below `lg`; the preview
+wrapper gained the real `word-popup` structural class), `d9c6f94` (03)
+reworked the shared `PopupContent` card in place — clicked-word-only title,
+"WORD — pos" variant labels, translations as the primary line with a calm
+no-translations placeholder, main transcription with a "+N more" toggle,
+three counted definitions/examples/etymology collapses, inside-positioned
+`<ol>` markers, and a stable `word-popup-*` class on every card element —
+and `8fa2758` (04) made the Explanation tab auto-request on activation while
+respecting the page-lifetime explain cache (manual button gone, retry
+re-labeled `word.explain_retry`). Because the reader, the simulator, and the
+profile preview all render the same exported `PopupContent`, the card
+changes landed everywhere at once. Payload, routes, models, artisan
+commands, and the 11 `ui_settings.popup` visibility keys are unchanged
+(verified against the branch diff) — machine-owned `wiki/reference/` needed
+no `wiki:sync`. Closure sweep re-verified `wiki/domains/profile.md` and
+`wiki/domains/interactive-words.md` line-by-line against the shipped JSX
+(only drift: profile.md still said the preview sits "below the checkboxes" —
+fixed; the card-content claims and the full `word-popup-*` class inventory
+checked out as written), `generated.at` bumped on both; CONTEXT.md's
+"Context explanation" glossary entry no longer calls the request "manual"
+(vocabulary already names the card "Word popup", so no new glossary term was
+added). Checks (closure): `vendor/bin/pint --dirty` clean (dirty set is
+markdown-only — no PHP to format); `php artisan wiki:validate` conformant.
+Full suite, `npm run build`, and the spec status line run as the
+orchestrator's post-closure gate.
+
 ## 2026-10-12 (Explanation tab auto-request — popup-card-redesign ticket 04)
 
 Clicking the word popup's Explanation tab now fires the AI context explain

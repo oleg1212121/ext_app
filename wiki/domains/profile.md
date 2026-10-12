@@ -4,7 +4,7 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, provider API key management, account deletion.
 tags: [profile, settings, popups, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-12T17:37:53+03:00 }
+generated: { by: agent:zcode, at: 2026-10-12T18:15:26+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -88,11 +88,13 @@ spans the full profile frame instead of the regular `max-w-3xl` panel /
 `max-w-xl` card caps — at 576px a ⅓/⅔ split would crush the preview to
 ~345px.
 
-Below the checkboxes a **live preview** renders the popup's real body — the
-exported `PopupContent` from `Components/WordPopup.jsx` with a fixture-style
+Right of the checkbox groups at `lg`+ (stacked below them on smaller
+screens), a **live preview** renders the popup's real body — the exported
+`PopupContent` from `Components/WordPopup.jsx` with a fixture-style
 "melted → melt" sample family — bound to the current checkbox state, so the
 preview cannot drift from the real popup; in preview mode progress buttons
-are inert and the Explanation tab shows a canned answer (no tokens spent).
+are inert and the Explanation tab shows a canned answer (the activation
+auto-request is suppressed — no tokens spent).
 The preview wrapper keeps a realistic inline `width: min(560px, 100%)` at
 the default popup font size and carries the same `word-popup` structural
 class as the real portal wrapper (`WordPopup.jsx`) — minus the portal's
