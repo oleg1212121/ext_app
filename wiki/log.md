@@ -1,5 +1,45 @@
 # Directory Update Log
 
+## 2026-10-12 (code-review fixes — popup-card-redesign)
+
+One review-fix commit on `popup-card-redesign` addressing the feature's
+code-review findings, no behavior regressions intended:
+
+- **Glossary vocabulary restored** on the popup card: ticket 03's
+  `variantLabel` / `word-popup-variant(-label)` rename is reverted to
+  `sectionLabel` / `word-popup-section(-label)` — CONTEXT.md's Form-of entry
+  puts "variant" on its avoid list and the Word popup entry already speaks
+  of "one section per Word class".
+- **Extraction**: `TranslationLine`/`TranscriptionLine` collapsed into one
+  `CollapsibleLine` (preview count, separator, class label, bracket
+  decorator, empty placeholder); the two identical Explanation-guidance
+  branches into `ExplainGuidance({messageKey})`.
+- **Shared ask predicate**: the pane's auto-request guard and its guidance
+  render now derive from one `canAskExplanation(explain)` in
+  `lib/wordExplain.js`, pinned by `lib/wordExplain.test.js` (ADR 0066
+  lib-only vitest scope — the guard logic is pure and lives in `lib/`).
+- **Four-state gap closed**: an auto-ask pane renders its loading line from
+  the first paint (no blank frame between mount and the fire).
+- **Explain memo dedupes every state**: the page-lifetime `explainCache`
+  now stores `loading`/`error` entries too (previously successes only), so
+  re-activating the Explanation tab mid-request no longer double-POSTs and
+  an error no longer auto-refires without a click; cache writes notify
+  subscribers so a pane remounted mid-request adopts the outcome. "Ask
+  again" and the error-state **Retry** (label per design-system voice;
+  `word.explain_retry` reworded from "Try again" en/ru/be) both refetch.
+- **Profile width variant**: the parallel `wide = false` booleans on
+  `TabPanel`/`Card` became one `width = 'panel' | 'wide'` convention backed
+  by `profileWidthClass()` in `ui.jsx`.
+- **UI strings**: `word.more_translations`/`word.more_transcriptions`
+  merged into one `word.more` (copy was identical in en/ru/be).
+
+Checks: `npm run test` (vitest) green incl. the new `wordExplain` pins;
+`vite build` green; `php artisan test tests/Feature/UiStringSeederTest.php`
+and `tests/Feature/UiStringsTest.php` green; `php artisan wiki:validate`
+conformant; `vendor/bin/pint --dirty` clean. Wiki: `interactive-words.md`
+(class inventory `-section`/`-section-label`, Retry copy, memo semantics)
+and `profile.md` (`width` variant) updated, `generated.at` bumped.
+
 ## 2026-10-12 (popup-card-redesign feature closure — ticket 05)
 
 The popup-card-redesign feature is complete on branch `popup-card-redesign`

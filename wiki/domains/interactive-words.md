@@ -5,7 +5,7 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-10-12T18:15:26+03:00 }
+generated: { by: agent:zcode, at: 2026-10-12T16:03:37+00:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -128,13 +128,13 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    headword, "MELTED — adjective" for the popup-headword sections.
    The popover renders one section per entry, top to bottom:
    **translations are the primary line** (native language first, capped at 8
-   with a "+N more…" expander; a variant with none shows the calm
+   with a "+N more…" expander; a section with none shows the calm
    "no translations yet — automatic translation may still be in progress"
    note, since the background fetch only lands on the next open), then the
    **main transcription** in brackets with a "+N more" toggle revealing the
    rest, then **three counted collapses** — "Definitions (N)", "Examples
    (N)", "Etymology (N)" — independent `<details>`, closed by default, state
-   per variant (empty definitions say "No definitions yet."; variants
+   per section (empty definitions say "No definitions yet."; sections
    without examples/etymology hide those collapses). The definitions
    `<ol>` places its markers *inside* the list items
    (`list-style-position: inside`) so wide ("100.") numbers can never spill
@@ -142,8 +142,8 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    **Every element inside the card carries a stable `word-popup-*` class**
    (the portal/preview wrapper keeps `word-popup`): `word-popup-loading`,
    `-error`, `-header`, `-title`, `-familiarity`, `-frequency`, `-form-of`,
-   `-tabs`, `-tab`, `-models-button`, `-dictionary`, `-variant`,
-   `-variant-label`, `-translations`, `-translations-more`,
+   `-tabs`, `-tab`, `-models-button`, `-dictionary`, `-section`,
+   `-section-label`, `-translations`, `-translations-more`,
    `-translations-placeholder`, `-transcriptions`, `-transcriptions-more`,
    `-no-definitions`, `-definitions` (with `-definitions-list` on its `ol`),
    `-examples` (with `-examples-list` on its `ul`), `-etymologies`,
@@ -151,9 +151,10 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    `-progress-reset`, `-explain` (the Explanation pane) with
    `-explain-guidance`, `-explain-loading`, `-explain-error` (its retry
    button `-explain-retry`), `-explain-answer` (empty-answer note
-   `-explain-empty`, "Ask again" `-explain-again`) — so tests and user
-   styles can target the card
-   structurally.
+   `-explain-empty`, "Ask again" `-explain-again`) — CSS hooks keeping the
+   card's structure addressable from outside styles without coupling them
+   to utility-class churn (no test pins them; the profile preview reuses
+   the component itself).
    **Every block below the headword is individually hideable per user**
    (ADR 0046): the `popupVisibility` Inertia prop shared to every page
    (`App\Support\PopupVisibility::for()` — the saved `ui_settings.popup`
@@ -247,9 +248,12 @@ outside-click closing — the word popup underneath stays put.
   POSTs `/ai/word-explain` immediately (sync JSON, no streaming) — the tab
   button is gone (removed in popup-card-redesign ticket 04); activation
   mounts the pane and a mount-only effect fires once per activation, never
-  on re-renders. A hit in the client memo renders the answer instantly and
-  skips the request; loading, error + a "Try again" retry, and the manual
-  "Ask again" remain. Keyless users (`enabled` false — the strip still
+  on re-renders. A hit in the client memo renders the memoized state
+  instantly and skips the request — of any kind: a pending entry keeps the
+  loading line (no duplicate POST on re-activation mid-flight), an errored
+  one keeps the failure and its "Retry" button (no auto-refire without a
+  click) — and the manual "Ask again" refetches. Keyless users (`enabled`
+  false — the strip still
   renders for them) see add-an-API-key guidance with a link to
   `/profile?tab=ai` and no request; when the user has no resolved
   explanation model, the tab shows choose-a-model guidance instead. The
@@ -277,11 +281,17 @@ outside-click closing — the word popup underneath stays put.
   entity. Errors reuse the
   envelope `{data: {data: {error}, code}}`; the endpoint is throttled
   20/min like the other AI routes.
-* **Client memo.** Answers are cached per popup instance in a page-lifetime
-  `Map` keyed by `sentenceId|surface|modelKey` — no
+* **Client memo.** Pane states are cached per popup instance in a
+  page-lifetime `Map` keyed by `sentenceId|surface|modelKey` — no
   server-side cache, so re-opening the same word in the same sentence is
   free within the page, switching the explanation model misses the cache,
-  and "Ask again" drops the memo and refetches.
+  and "Ask again" refetches (overwriting the memo). Every state is
+  memoized, not just answers: `loading` and `{status: 'error', message}`
+  entries suppress the auto-fire the same way a `done` answer does, so
+  re-activating the tab mid-request never double-POSTs and an error never
+  silently refires — the pane owns its Retry. Cache writes notify
+  subscribers, so a pane remounted while its request is still in flight
+  adopts the outcome.
 * Tests: `tests/Feature/AiWordExplainEndpointTest.php` (context assembly,
   multi-sentence rows, entity-sentence rows, access, validation,
   provider-error mapping, throttle; `AIModelResolver` mocked at the

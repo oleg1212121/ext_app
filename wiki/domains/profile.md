@@ -4,7 +4,7 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, provider API key management, account deletion.
 tags: [profile, settings, popups, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-12T18:15:26+03:00 }
+generated: { by: agent:zcode, at: 2026-10-12T16:03:37+00:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -50,12 +50,13 @@ active tab's forms stay mounted (Crossword-style unmount panels).
 The page frame spans **nearly the full window on large screens** — soft cap
 `max-w-[1800px]` (swapped for the old `max-w-3xl` column), side padding
 `px-4 sm:px-6 lg:px-10` kept. Every tab's cards stay capped at the **panel
-level** (`max-w-3xl` on the `TabPanel` wrapper, via its `wide` prop that
-defaults to capped), so the widened frame does not stretch the regular
-forms, whose content remains capped inside each card (`max-w-xl` on the
-`Card` inner wrapper). **The Popups tab is the only exception**: its panel
-and card both pass `wide`, lifting both caps so the tab's two-column layout
-spans the full frame.
+level** (`max-w-3xl` on the `TabPanel` wrapper, via its `width` prop —
+`'panel'` by default, `'wide'` lifts the cap), so the widened frame does not
+stretch the regular forms, whose content remains capped inside each card
+(`max-w-xl` on the `Card` inner wrapper). **The Popups tab is the only
+exception**: its panel and card both pass `width="wide"`, lifting both caps
+so the tab's two-column layout spans the full frame. The two layers share
+one width variant, `profileWidthClass(width, cappedClass)` in `ui.jsx`.
 
 | Tab | Sections | Endpoint |
 |-----|----------|----------|
@@ -83,7 +84,7 @@ matches the classic popup exactly. Saving is automatic per flick through
 is a two-column grid (`lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]`,
 `lg:gap-10`): the checkbox groups take the left ~⅓, the live preview the
 right ~⅔; below `lg` it stacks checkboxes-above-preview (the original
-order). This is the one tab whose panel *and* card pass `wide`, so the grid
+order). This is the one tab whose panel *and* card pass `width="wide"`, so the grid
 spans the full profile frame instead of the regular `max-w-3xl` panel /
 `max-w-xl` card caps — at 576px a ⅓/⅔ split would crush the preview to
 ~345px.

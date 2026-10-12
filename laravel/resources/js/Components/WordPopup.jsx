@@ -5,18 +5,32 @@ import ModelsUsedPopup, {RobotHelpIcon} from './ModelsUsedPopup.jsx';
 import {useI18n} from '../i18n';
 import {getCsrfToken} from '../lib/http';
 import {renderMarkdown} from '../lib/markdown';
+import {canAskExplanation} from '../lib/wordExplain';
 import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
 
 const POPUP_MARGIN = 8;
 const VIEWPORT_MARGIN = 12;
 const MIN_POPUP_HEIGHT = 160;
 const TRANSLATIONS_PREVIEW = 8;
+const TRANSCRIPTIONS_PREVIEW = 1;
 
-// Page-lifetime memo of context explanations, keyed by
+// Page-lifetime memo of Explanation-pane states, keyed by
 // rowKind|rowId|side|sentenceIndex|surface|modelKey. Client-side only — the
 // server keeps no cache, so re-opening the same word in the same sentence
-// never re-spends tokens.
+// never re-spends tokens. Every state is memoized, not just answers: a
+// pending entry suppresses the auto-fire (and duplicate POSTs) while a
+// request is in flight, an errored one keeps the failure — with its Retry
+// button — on re-activation instead of silently refiring. Writes notify
+// subscribers, so a pane remounted mid-request adopts the outcome.
 const explainCache = new Map();
+const explainCacheSubscribers = new Set();
+
+const cachedExplanation = (key) => explainCache.get(key) ?? null;
+
+const storeExplanation = (key, explanation) => {
+    explainCache.set(key, explanation);
+    explainCacheSubscribers.forEach((onWrite) => onWrite(key, explanation));
+};
 
 const explainButtonClass = 'rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]';
 
@@ -86,16 +100,16 @@ function popupStyle(rect, fontSize) {
     };
 }
 
-// An entry belongs to the popup's own headword when its word matches it;
-// everything else is a base-word section of the word family (ADR 0045).
+// A payload entry belongs to the popup's own headword when its word matches
+// it; everything else is a base-word section of the word family (ADR 0045).
 function entryMatchesHeadword(entry, headword) {
     return !entry.word || entry.word.toLowerCase() === String(headword ?? '').toLowerCase();
 }
 
-// Variant heading: "MELTED — verb" for the popup's own headword entries,
-// "MELT — verb" for base-word family sections (ADR 0045) — headword
-// uppercase, POS lowercase, em dash.
-function variantLabel(entry, headword) {
+// Section heading, one per popup section: "MELTED — verb" for the popup's
+// own headword sections, "MELT — verb" for base-word sections (ADR 0045) —
+// headword uppercase, POS lowercase, em dash.
+function sectionLabel(entry, headword) {
     const word = entryMatchesHeadword(entry, headword) ? headword : entry.word;
 
     return [String(word ?? '').toUpperCase(), entry.word_class?.toLowerCase()]
@@ -103,57 +117,67 @@ function variantLabel(entry, headword) {
         .join(' — ');
 }
 
-function TranslationLine({translations}) {
+/**
+ * One previewed popup line: the first `previewCount` items joined with
+ * `separator`, then a "+N more…" expander for the rest (each line owns its
+ * expanded state). `label` names the stable `word-popup-{label}` and
+ * `word-popup-{label}-more` classes, `renderItem` maps an item to its text,
+ * `decorate` wraps the joined text (transcriptions wear brackets), and
+ * `empty` replaces the whole line when there is nothing to show.
+ */
+function CollapsibleLine({
+    items,
+    previewCount,
+    separator,
+    label,
+    renderItem,
+    decorate = null,
+    empty = null,
+    className,
+}) {
     const {t} = useI18n();
     const [expanded, setExpanded] = useState(false);
 
-    if (translations.length === 0) {
-        // Empty is normal here: the background auto-fetch (Yandex → Google)
-        // queues silently and only lands on the next open, so the card says
-        // so calmly instead of showing an error.
-        return (
-            <p className="word-popup-translations-placeholder mt-2 text-[0.857em] opacity-60">
-                {t('word.no_translations')}
-            </p>
-        );
+    if (empty !== null && items.length === 0) {
+        return empty;
     }
 
-    const visible = expanded ? translations : translations.slice(0, TRANSLATIONS_PREVIEW);
+    const visible = expanded ? items : items.slice(0, previewCount);
 
     return (
-        <p className="word-popup-translations mt-2 text-[0.929em] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
-            {visible.map((translation) => translation.word).join(', ')}
-            {translations.length > TRANSLATIONS_PREVIEW && !expanded && (
+        <p className={`word-popup-${label} ${className}`}>
+            {decorate ? decorate(visible.map(renderItem).join(separator)) : visible.map(renderItem).join(separator)}
+            {items.length > previewCount && !expanded && (
                 <button
                     type="button"
                     onClick={() => setExpanded(true)}
-                    className="word-popup-translations-more ml-1 underline underline-offset-2 opacity-70 hover:opacity-100"
+                    className={`word-popup-${label}-more ml-1 underline underline-offset-2 opacity-70 hover:opacity-100`}
                 >
-                    {t('word.more_translations', {count: translations.length - TRANSLATIONS_PREVIEW})}
+                    {t('word.more', {count: items.length - previewCount})}
                 </button>
             )}
         </p>
     );
 }
 
-function TranscriptionLine({transcriptions}) {
+/**
+ * The Explanation pane's "can't ask yet" states: what the reader must do
+ * first — add an API key (`word.explain_no_key`) or choose an explanation
+ * model (`word.explain_choose_model`) — and the way there.
+ */
+function ExplainGuidance({messageKey}) {
     const {t} = useI18n();
-    const [expanded, setExpanded] = useState(false);
-    const visible = expanded ? transcriptions : transcriptions.slice(0, 1);
 
     return (
-        <p className="word-popup-transcriptions mt-1 opacity-80">
-            [{visible.map((item) => item.value).join(' · ')}]
-            {transcriptions.length > 1 && !expanded && (
-                <button
-                    type="button"
-                    onClick={() => setExpanded(true)}
-                    className="word-popup-transcriptions-more ml-1 underline underline-offset-2 opacity-70 hover:opacity-100"
-                >
-                    {t('word.more_transcriptions', {count: transcriptions.length - 1})}
-                </button>
-            )}
-        </p>
+        <div className="word-popup-explain-guidance py-3">
+            <p className="text-[0.857em] opacity-70">{t(messageKey)}</p>
+            <Link
+                href="/profile?tab=ai"
+                className="mt-2 inline-block text-[0.857em] text-[var(--color-verdigris)] underline underline-offset-2 hover:opacity-80 dark:text-[var(--color-verdigris-night)]"
+            >
+                {t('word.explain_go_to_settings')}
+            </Link>
+        </div>
     );
 }
 
@@ -164,11 +188,13 @@ function TranscriptionLine({transcriptions}) {
  * per activation and never on re-renders. Keyless users (enabled false) and
  * users without a chosen explanation model (modelKey null) see guidance
  * instead of a request; a hit in the page-lifetime explain cache renders
- * the answer instantly and skips the fire. The model is the user's stored
- * explanation preference — the server resolves it; the popup only carries
- * `modelKey` to discriminate the client cache. `explainKey` also guards
- * against stale responses landing after the popup has moved to another
- * word.
+ * the memoized state instantly and skips the fire — a pending or errored
+ * entry suppresses it exactly like an answer does, so re-activating the tab
+ * never re-spends tokens or double-POSTs without a click. The model is the
+ * user's stored explanation preference — the server resolves it; the popup
+ * only carries `modelKey` to discriminate the client cache. `explainKey`
+ * also guards against stale responses landing after the popup has moved to
+ * another word.
  *
  * `preview` (the profile's Popups tab) skips the network entirely: it opens
  * on a canned answer and keeps the Ask-again button inert.
@@ -177,9 +203,7 @@ function ExplainPane({explain, explainKey, preview = false}) {
     const {t} = useI18n();
     const [explanation, setExplanation] = useState(() => preview
         ? {status: 'done', answer: t('word.explain_preview')}
-        : (explainCache.has(explainKey)
-            ? {status: 'done', answer: explainCache.get(explainKey)}
-            : null));
+        : cachedExplanation(explainKey));
     const keyRef = useRef(explainKey);
     keyRef.current = explainKey;
 
@@ -187,10 +211,24 @@ function ExplainPane({explain, explainKey, preview = false}) {
         if (preview) {
             return;
         }
-        setExplanation(explainCache.has(explainKey)
-            ? {status: 'done', answer: explainCache.get(explainKey)}
-            : null);
+        setExplanation(cachedExplanation(explainKey));
     }, [explainKey, preview]);
+
+    // Cache writes notify subscribers: a pane remounted — or re-keyed —
+    // while a request is in flight adopts its outcome even though the fetch
+    // was started by an earlier mount of this pane.
+    useEffect(() => {
+        if (preview) {
+            return;
+        }
+        const onCacheWrite = (key, value) => {
+            if (keyRef.current === key) {
+                setExplanation(value);
+            }
+        };
+        explainCacheSubscribers.add(onCacheWrite);
+        return () => explainCacheSubscribers.delete(onCacheWrite);
+    }, [preview]);
 
     const firedRef = useRef(false);
 
@@ -198,17 +236,14 @@ function ExplainPane({explain, explainKey, preview = false}) {
     // only while the Explanation tab is active), so this []-deps effect runs
     // exactly once per activation and never on re-renders. The guards make
     // the fire a no-op when there is nothing to ask — preview, no key or
-    // model, no sentence to ask about — or when the initial state already
-    // holds a cached answer (page-lifetime explainCache: re-activating the
-    // tab renders the memoized answer instantly instead of re-spending
-    // tokens).
+    // model, no sentence to ask about — or when the cache already holds this
+    // key's state, of any kind: an answer, a request still in flight, or an
+    // error the Retry button owns (page-lifetime explainCache).
+    const canAsk = canAskExplanation(explain);
+    const autoAsks = !preview && canAsk && explain.sentenceId != null;
+
     useEffect(() => {
-        if (firedRef.current
-            || preview
-            || explain.enabled === false
-            || explain.modelKey == null
-            || explain.sentenceId == null
-            || explanation !== null) {
+        if (firedRef.current || !autoAsks || explanation !== null) {
             return;
         }
         firedRef.current = true;
@@ -219,7 +254,7 @@ function ExplainPane({explain, explainKey, preview = false}) {
         if (preview) {
             return;
         }
-        setExplanation({status: 'loading'});
+        storeExplanation(keyRef.current, {status: 'loading'});
         fetch('/ai/word-explain', {
             method: 'POST',
             headers: {
@@ -249,14 +284,13 @@ function ExplainPane({explain, explainKey, preview = false}) {
                 if (keyRef.current !== explainKey) {
                     return;
                 }
-                explainCache.set(keyRef.current, answer);
-                setExplanation({status: 'done', answer});
+                storeExplanation(keyRef.current, {status: 'done', answer});
             })
             .catch((e) => {
                 if (keyRef.current !== explainKey) {
                     return;
                 }
-                setExplanation({
+                storeExplanation(keyRef.current, {
                     status: 'error',
                     message: e instanceof Error && e.message
                         ? e.message
@@ -265,36 +299,18 @@ function ExplainPane({explain, explainKey, preview = false}) {
             });
     };
 
-    const askAgain = () => {
-        explainCache.delete(keyRef.current);
-        request();
-    };
-
     return (
         <div className="word-popup-explain px-3.5 pb-1">
-            {explain.enabled === false ? (
-                <div className="word-popup-explain-guidance py-3">
-                    <p className="text-[0.857em] opacity-70">{t('word.explain_no_key')}</p>
-                    <Link
-                        href="/profile?tab=ai"
-                        className="mt-2 inline-block text-[0.857em] text-[var(--color-verdigris)] underline underline-offset-2 hover:opacity-80 dark:text-[var(--color-verdigris-night)]"
-                    >
-                        {t('word.explain_go_to_settings')}
-                    </Link>
-                </div>
-            ) : explain.modelKey == null ? (
-                <div className="word-popup-explain-guidance py-3">
-                    <p className="text-[0.857em] opacity-70">{t('word.explain_choose_model')}</p>
-                    <Link
-                        href="/profile?tab=ai"
-                        className="mt-2 inline-block text-[0.857em] text-[var(--color-verdigris)] underline underline-offset-2 hover:opacity-80 dark:text-[var(--color-verdigris-night)]"
-                    >
-                        {t('word.explain_go_to_settings')}
-                    </Link>
-                </div>
-            ) : null}
+            {!canAsk && (
+                <ExplainGuidance
+                    messageKey={explain.enabled === false ? 'word.explain_no_key' : 'word.explain_choose_model'}
+                />
+            )}
 
-            {explanation?.status === 'loading' && (
+            {/* The auto-request pane shows its loading line from the first
+                paint — before the mount effect has actually fired — so the
+                pane never draws blank while its request is on its way. */}
+            {(explanation?.status === 'loading' || (explanation === null && autoAsks)) && (
                 <p className="word-popup-explain-loading py-3 text-[0.857em] opacity-60">{t('word.explain_loading')}</p>
             )}
 
@@ -321,7 +337,7 @@ function ExplainPane({explain, explainKey, preview = false}) {
                         )}
                     <button
                         type="button"
-                        onClick={askAgain}
+                        onClick={request}
                         className="word-popup-explain-again mt-2 text-[0.786em] underline underline-offset-2 opacity-70 hover:opacity-100"
                     >
                         {t('word.explain_again')}
@@ -340,14 +356,15 @@ function ExplainPane({explain, explainKey, preview = false}) {
  * portal popup and the profile's Popups-tab preview, so the preview can
  * never drift from the real thing.
  *
- * The title shows the clicked word only — each variant section carries the
- * POS in its "WORD — pos" heading. Per variant, top to bottom: translations
- * as the primary line (a calm no-translations placeholder when a variant has
- * none — the background auto-fetch may still be pending), transcriptions
- * (main value, "+N more" expander for the rest), then three counted
- * collapses — definitions, examples, etymology. Every element inside the
- * card carries a stable `word-popup-*` class so tests and user styles can
- * target the card structurally.
+ * The title shows the clicked word only — each section carries the POS in
+ * its "WORD — pos" heading. Per section, top to bottom: translations as the
+ * primary line (a calm no-translations placeholder when a section has none —
+ * the background auto-fetch may still be pending), transcriptions (main
+ * value, "+N more" expander for the rest), then three counted collapses —
+ * definitions, examples, etymology. Every block inside the card carries a
+ * stable `word-popup-*` class — the card's structure stays addressable from
+ * outside CSS (page styles today; the profile preview reuses this component
+ * and inherits the classes) without coupling to utility-class churn.
  *
  * `sections` (the user's Popup preferences, ADR 0046) hides blocks: a key
  * set to false drops that block, anything else renders. `explanation` false
@@ -463,22 +480,46 @@ export function PopupContent({
                     {entries?.map((entry, index) => (
                         <section
                             key={entry.id}
-                            className={`word-popup-variant${index > 0
+                            className={`word-popup-section${index > 0
                                 ? ' mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
                                 : ''}`}
                         >
-                            {variantLabel(entry, data.word) && (
-                                <h3 className="word-popup-variant-label text-[0.786em] tracking-wider opacity-60">
-                                    {variantLabel(entry, data.word)}
+                            {sectionLabel(entry, data.word) && (
+                                <h3 className="word-popup-section-label text-[0.786em] tracking-wider opacity-60">
+                                    {sectionLabel(entry, data.word)}
                                 </h3>
                             )}
 
                             {sections.translations !== false && (
-                                <TranslationLine translations={entry.translations ?? []} />
+                                // Empty is normal here: the background
+                                // auto-fetch (Yandex → Google) queues silently
+                                // and only lands on the next open, so the card
+                                // says so calmly instead of showing an error.
+                                <CollapsibleLine
+                                    items={entry.translations ?? []}
+                                    previewCount={TRANSLATIONS_PREVIEW}
+                                    separator=", "
+                                    label="translations"
+                                    renderItem={(translation) => translation.word}
+                                    className="mt-2 text-[0.929em] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
+                                    empty={(
+                                        <p className="word-popup-translations-placeholder mt-2 text-[0.857em] opacity-60">
+                                            {t('word.no_translations')}
+                                        </p>
+                                    )}
+                                />
                             )}
 
                             {sections.transcriptions !== false && entry.transcriptions?.length > 0 && (
-                                <TranscriptionLine transcriptions={entry.transcriptions}/>
+                                <CollapsibleLine
+                                    items={entry.transcriptions}
+                                    previewCount={TRANSCRIPTIONS_PREVIEW}
+                                    separator=" · "
+                                    label="transcriptions"
+                                    renderItem={(item) => item.value}
+                                    decorate={(text) => `[${text}]`}
+                                    className="mt-1 opacity-80"
+                                />
                             )}
 
                             {sections.definitions !== false && (entry.definitions?.length > 0 ? (

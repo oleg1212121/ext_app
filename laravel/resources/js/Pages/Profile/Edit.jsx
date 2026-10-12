@@ -9,7 +9,7 @@ import UpdatePassword from './UpdatePassword.jsx'
 import ApiKeys from './ApiKeys.jsx'
 import AiModels from './AiModels.jsx'
 import DeleteAccount from './DeleteAccount.jsx'
-import {Card} from './ui.jsx'
+import {Card, profileWidthClass} from './ui.jsx'
 
 const TABS = [
     {id: 'account', labelKey: 'profile.tab_account'},
@@ -46,10 +46,11 @@ function Underline({isActive}) {
 // Unmount-style tab panel (matches the Crossword right panel): only the
 // active tab's forms stay mounted, exactly like a page reload today.
 // Regular tabs keep their cards capped at the panel level so the wide page
-// frame does not stretch them; the Popups tab opts out via `wide` (ticket 02).
-function TabPanel({active, wide = false, children}) {
+// frame does not stretch them; the Popups tab opts into 'wide' (ticket 02),
+// the shared profile width variant from ui.jsx.
+function TabPanel({active, width = 'panel', children}) {
     if (!active) return null
-    return <div className={`mt-8 space-y-8 ${wide ? '' : 'max-w-3xl'}`}>{children}</div>
+    return <div className={`mt-8 space-y-8 ${profileWidthClass(width, 'max-w-3xl')}`}>{children}</div>
 }
 
 // Deep links like /profile?tab=ai open the right tab; switching tabs
@@ -131,8 +132,8 @@ export default function Edit({
                         </Card>
                     </TabPanel>
 
-                    <TabPanel active={activeTab === 'popups'} wide>
-                        <Card wide>
+                    <TabPanel active={activeTab === 'popups'} width="wide">
+                        <Card width="wide">
                             <PopupsSettings popupVisibility={popupVisibility}/>
                         </Card>
                     </TabPanel>
