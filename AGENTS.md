@@ -99,7 +99,8 @@ docker exec ext_app_laravel vendor/bin/pint --dirty
 ### Testing
 ```bash
 # Run all tests in parallel (clears config + route caches first;
-# ~2min for the full suite)
+# ~5.5min for the full suite on the dev machine; composer.json sets
+# process-timeout: 900 so Composer doesn't kill the run at its 300s default)
 docker exec ext_app_laravel composer run test
 
 # Run specific test file
