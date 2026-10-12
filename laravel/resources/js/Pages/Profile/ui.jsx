@@ -233,11 +233,13 @@ export function TrashIcon() {
     )
 }
 
-// The bordered panel every profile section sits in.
-export function Card({children}) {
+// The bordered panel every profile section sits in. Regular sections keep
+// their inner content cap; the Popups tab opts out via `wide` so its
+// two-column layout can span the full profile frame.
+export function Card({children, wide = false}) {
     return (
         <div className="border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] rounded-sm p-4 sm:p-8">
-            <div className="max-w-xl">
+            <div className={wide ? '' : 'max-w-xl'}>
                 {children}
             </div>
         </div>

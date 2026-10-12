@@ -131,8 +131,8 @@ export default function Edit({
                         </Card>
                     </TabPanel>
 
-                    <TabPanel active={activeTab === 'popups'}>
-                        <Card>
+                    <TabPanel active={activeTab === 'popups'} wide>
+                        <Card wide>
                             <PopupsSettings popupVisibility={popupVisibility}/>
                         </Card>
                     </TabPanel>

@@ -1,5 +1,32 @@
 # Directory Update Log
 
+## 2026-10-12 (Profile: two-column Popups tab — popup-card-redesign ticket 02)
+
+The Popups tab is now the only tab-wide card in the profile. `ui.jsx`'s
+`Card` gained a `wide` prop (default false): the pre-existing inner
+`max-w-xl` cap becomes opt-out, so the six regular cards are pixel-identical
+while the Popups card spans the full frame. `Edit.jsx` passes `wide` to the
+popups `TabPanel` (lifting ticket 01's `max-w-3xl` panel cap) and to its
+`Card`. `PopupsSettings.jsx` wraps checkbox groups + live preview in a
+responsive grid: `lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]` with
+`lg:gap-10` puts the groups on the left ~⅓ and the preview on the right ~⅔;
+below `lg` the container is a plain block, so it stacks
+checkboxes-above-preview exactly as before (`mt-8`/`space-y-6`/`mt-10`
+spacing preserved). The preview wrapper gains the `word-popup` structural
+class — same as the real portal wrapper (`WordPopup.jsx`), minus its
+`absolute z-50` positioning — while keeping the inline
+`width: min(560px, 100%)`, the popup font size, and the aria-label.
+Checkbox ids (`popup-section-<key>`), `CheckboxRow`, and the debounced
+`useUiSettingsAutosave('popup', …)` hook are untouched. No user-facing
+strings changed. Checks: `php artisan test --filter=ProfileTest` 12 passed
+(80 assertions) and `php artisan test --filter=UiSettingsTest` 14 passed
+(101 assertions), before and after; `npm run build` green with
+`lg\:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]{grid-template-columns:minmax(0,1fr) minmax(0,2fr)}`
+present in the built CSS; `vendor/bin/pint --dirty` pass (dirty set is
+JSX-only, nothing for Pint to reformat). `wiki/domains/profile.md`
+refreshed (Popups-tab layout + `word-popup` preview class, generated.at
+bumped).
+
 ## 2026-10-12 (Profile: wide page frame — popup-card-redesign ticket 01)
 
 The `/profile` page frame is no longer a narrow column: `Edit.jsx` swapped

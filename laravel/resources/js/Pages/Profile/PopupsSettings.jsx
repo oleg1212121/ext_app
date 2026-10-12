@@ -97,47 +97,57 @@ export default function PopupsSettings({popupVisibility = null}) {
                 description={t('profile.popups_description')}
             />
 
-            <div className="mt-8 space-y-6">
-                {POPUP_GROUPS.map((group) => (
-                    <div key={group.titleKey}>
-                        <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
-                            {t(group.titleKey)}
-                        </h3>
-                        <div className="mt-1">
-                            {group.keys.map((key) => (
-                                <CheckboxRow
-                                    key={key}
-                                    id={`popup-section-${key}`}
-                                    checked={sections[key]}
-                                    onChange={() => toggle(key)}
-                                    label={t(`profile.popup_section_${key}`)}
-                                />
-                            ))}
+            {/* Two columns at lg+: checkbox groups ~1/3 left, live preview
+                ~2/3 right; below lg it stacks checkboxes-above-preview, the
+                pre-2026-10 order. The preview card keeps its realistic 560px
+                inline width inside the wider column. */}
+            <div className="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-10">
+                <div className="space-y-6">
+                    {POPUP_GROUPS.map((group) => (
+                        <div key={group.titleKey}>
+                            <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
+                                {t(group.titleKey)}
+                            </h3>
+                            <div className="mt-1">
+                                {group.keys.map((key) => (
+                                    <CheckboxRow
+                                        key={key}
+                                        id={`popup-section-${key}`}
+                                        checked={sections[key]}
+                                        onChange={() => toggle(key)}
+                                        label={t(`profile.popup_section_${key}`)}
+                                    />
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
 
-            <div className="mt-10">
-                <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
-                    {t('profile.popups_preview_title')}
-                </h3>
-                <div
-                    className={`${popupContainerClass} mt-3`}
-                    style={{width: 'min(560px, 100%)', fontSize: `${DEFAULT_POPUP_FONT_SIZE}px`}}
-                    aria-label={t('profile.popups_preview_title')}
-                >
-                    <PopupContent
-                        surface="melted"
-                        familiarity={SAMPLE_FAMILIARITY}
-                        data={SAMPLE_DATA}
-                        explainProps={{...SAMPLE_EXPLAIN, wordId: SAMPLE_DATA.id, surface: 'melted'}}
-                        explainKey="preview"
-                        sections={sections}
-                        modelsOpen={modelsOpen}
-                        onModelsOpenChange={setModelsOpen}
-                        preview
-                    />
+                <div className="mt-10 lg:mt-0">
+                    <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
+                        {t('profile.popups_preview_title')}
+                    </h3>
+                    {/* Same structural class as the real portal wrapper
+                        (WordPopup.jsx) so user styles/tests treat the preview
+                        like the live popup — minus the portal's absolute/z-50
+                        positioning, which stays portal-only. */}
+                    <div
+                        className={`word-popup ${popupContainerClass} mt-3`}
+                        style={{width: 'min(560px, 100%)', fontSize: `${DEFAULT_POPUP_FONT_SIZE}px`}}
+                        aria-label={t('profile.popups_preview_title')}
+                    >
+                        <PopupContent
+                            surface="melted"
+                            familiarity={SAMPLE_FAMILIARITY}
+                            data={SAMPLE_DATA}
+                            explainProps={{...SAMPLE_EXPLAIN, wordId: SAMPLE_DATA.id, surface: 'melted'}}
+                            explainKey="preview"
+                            sections={sections}
+                            modelsOpen={modelsOpen}
+                            onModelsOpenChange={setModelsOpen}
+                            preview
+                        />
+                    </div>
                 </div>
             </div>
         </section>
