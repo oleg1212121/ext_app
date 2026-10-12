@@ -1,5 +1,23 @@
 # Directory Update Log
 
+## 2026-10-12 (Profile: wide page frame — popup-card-redesign ticket 01)
+
+The `/profile` page frame is no longer a narrow column: `Edit.jsx` swapped
+the frame cap `max-w-3xl` (768px) for a near-full-width `max-w-[1800px]`
+(soft cap, `px-4 sm:px-6 lg:px-10` side padding and centering kept), so on
+large screens the page header and tab strip span the window. All five tabs
+keep today's content look: a new `TabPanel wide` prop (default capped) puts
+`max-w-3xl` on each tab panel so card borders stay modest, and the
+pre-existing `max-w-xl` inner cap in `Card` keeps form content at 576px.
+Popups tab still capped in this ticket — its two-column widening is ticket
+02, which flips exactly one call site to `wide`. Layout only: no behavior,
+props, routes, or other files touched. Checks: `php artisan test
+--filter=ProfileTest` 12 passed (80 assertions) before and after;
+`npm run build` green with `max-w-[1800px]{max-width:1800px}` in the built
+CSS; `vendor/bin/pint --dirty` pass (dirty set is JSX-only, nothing for
+Pint to reformat). `wiki/domains/profile.md` refreshed (generated.at
+bumped).
+
 ## 2026-10-11 (Python service: hand-rolled test scripts ported to pytest)
 
 The 8 plain-python test scripts under `docker-compose/python/ai/` are now a

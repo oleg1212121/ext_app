@@ -4,7 +4,7 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, provider API key management, account deletion.
 tags: [profile, settings, popups, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-27T20:00:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-12T17:32:18+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -46,6 +46,14 @@ The single account surface, reachable from the NavBar user dropdown at
 section rendered as a bordered card; the active tab is reflected in the URL
 as `?tab=` (deep-linkable, `history.replaceState` on switch), and only the
 active tab's forms stay mounted (Crossword-style unmount panels).
+
+The page frame spans **nearly the full window on large screens** — soft cap
+`max-w-[1800px]` (swapped for the old `max-w-3xl` column), side padding
+`px-4 sm:px-6 lg:px-10` kept. Every tab's cards stay capped at the **panel
+level** (`max-w-3xl` on the `TabPanel` wrapper, via its `wide` prop that
+defaults to capped), so the widened frame does not stretch the regular
+forms, whose content remains capped inside each card (`max-w-xl` on the
+`Card` inner wrapper).
 
 | Tab | Sections | Endpoint |
 |-----|----------|----------|
