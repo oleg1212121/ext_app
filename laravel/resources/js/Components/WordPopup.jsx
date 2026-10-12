@@ -26,6 +26,7 @@ const explainButtonClass = 'rounded-sm border border-[var(--color-verdigris)] px
 export const popupContainerClass = 'flex flex-col overflow-hidden rounded-md border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[#FDFBF5] dark:bg-[#1C1915] shadow-lg shadow-black/20 font-sans text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]';
 
 const tabButtonClass = (active) => [
+    'word-popup-tab',
     '-mb-px border-b-2 py-1.5 text-[0.786em] uppercase tracking-wider transition-colors',
     active
         ? 'border-[var(--color-verdigris)] opacity-100 dark:border-[var(--color-verdigris-night)]'
@@ -91,13 +92,15 @@ function entryMatchesHeadword(entry, headword) {
     return !entry.word || entry.word.toLowerCase() === String(headword ?? '').toLowerCase();
 }
 
-// Section heading: base-word sections of the word family (ADR 0045) are
-// labeled with their own headword — "melt — Verb" — to set them apart from
-// the popup's own headword sections, which keep the plain class label.
-function sectionLabel(entry, headword) {
-    const word = entryMatchesHeadword(entry, headword) ? null : entry.word;
+// Variant heading: "MELTED — verb" for the popup's own headword entries,
+// "MELT — verb" for base-word family sections (ADR 0045) — headword
+// uppercase, POS lowercase, em dash.
+function variantLabel(entry, headword) {
+    const word = entryMatchesHeadword(entry, headword) ? headword : entry.word;
 
-    return [word, entry.word_class].filter(Boolean).join(' — ');
+    return [String(word ?? '').toUpperCase(), entry.word_class?.toLowerCase()]
+        .filter(Boolean)
+        .join(' — ');
 }
 
 function TranslationLine({translations}) {
@@ -105,21 +108,49 @@ function TranslationLine({translations}) {
     const [expanded, setExpanded] = useState(false);
 
     if (translations.length === 0) {
-        return null;
+        // Empty is normal here: the background auto-fetch (Yandex → Google)
+        // queues silently and only lands on the next open, so the card says
+        // so calmly instead of showing an error.
+        return (
+            <p className="word-popup-translations-placeholder mt-2 text-[0.857em] opacity-60">
+                {t('word.no_translations')}
+            </p>
+        );
     }
 
     const visible = expanded ? translations : translations.slice(0, TRANSLATIONS_PREVIEW);
 
     return (
-        <p className="mt-2 text-[0.929em] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
+        <p className="word-popup-translations mt-2 text-[0.929em] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
             {visible.map((translation) => translation.word).join(', ')}
             {translations.length > TRANSLATIONS_PREVIEW && !expanded && (
                 <button
                     type="button"
                     onClick={() => setExpanded(true)}
-                    className="ml-1 underline underline-offset-2 opacity-70 hover:opacity-100"
+                    className="word-popup-translations-more ml-1 underline underline-offset-2 opacity-70 hover:opacity-100"
                 >
                     {t('word.more_translations', {count: translations.length - TRANSLATIONS_PREVIEW})}
+                </button>
+            )}
+        </p>
+    );
+}
+
+function TranscriptionLine({transcriptions}) {
+    const {t} = useI18n();
+    const [expanded, setExpanded] = useState(false);
+    const visible = expanded ? transcriptions : transcriptions.slice(0, 1);
+
+    return (
+        <p className="word-popup-transcriptions mt-1 opacity-80">
+            [{visible.map((item) => item.value).join(' · ')}]
+            {transcriptions.length > 1 && !expanded && (
+                <button
+                    type="button"
+                    onClick={() => setExpanded(true)}
+                    className="word-popup-transcriptions-more ml-1 underline underline-offset-2 opacity-70 hover:opacity-100"
+                >
+                    {t('word.more_transcriptions', {count: transcriptions.length - 1})}
                 </button>
             )}
         </p>
@@ -290,6 +321,15 @@ function ExplainPane({explain, explainKey, preview = false}) {
  * portal popup and the profile's Popups-tab preview, so the preview can
  * never drift from the real thing.
  *
+ * The title shows the clicked word only — each variant section carries the
+ * POS in its "WORD — pos" heading. Per variant, top to bottom: translations
+ * as the primary line (a calm no-translations placeholder when a variant has
+ * none — the background auto-fetch may still be pending), transcriptions
+ * (main value, "+N more" expander for the rest), then three counted
+ * collapses — definitions, examples, etymology. Every element inside the
+ * card carries a stable `word-popup-*` class so tests and user styles can
+ * target the card structurally.
+ *
  * `sections` (the user's Popup preferences, ADR 0046) hides blocks: a key
  * set to false drops that block, anything else renders. `explanation` false
  * removes the whole tab strip — the popup renders as it does for words
@@ -330,30 +370,27 @@ export function PopupContent({
 
     return (
         <>
-            <div className="shrink-0 px-3.5 pb-1 pt-3">
+            <div className="word-popup-header shrink-0 px-3.5 pb-1 pt-3">
                 <div className="flex items-baseline gap-2 flex-wrap">
                     {/* Reading font: RU headwords carry U+0301, which gaps when
                         base and mark come from different fonts (see --font-reading). */}
-                    <span className="font-reading text-[1.286em] leading-tight">{data.word}</span>
-                    {data.word_class && (
-                        <span className="text-[0.786em] uppercase tracking-wider opacity-60">{data.word_class}</span>
-                    )}
+                    <span className="word-popup-title font-reading text-[1.286em] leading-tight">{data.word}</span>
                 </div>
 
                 {sections.familiarity !== false && (
-                    <p className="mt-0.5 text-[0.786em] tabular-nums opacity-60">
+                    <p className="word-popup-familiarity mt-0.5 text-[0.786em] tabular-nums opacity-60">
                         {t('word.familiarity', {value: familiarity ?? 0, max: FAMILIARITY_MAX})}
                     </p>
                 )}
 
                 {sections.frequency !== false && data.frequency != null && (
-                    <p className="mt-0.5 text-[0.786em] tabular-nums opacity-60">
+                    <p className="word-popup-frequency mt-0.5 text-[0.786em] tabular-nums opacity-60">
                         {t('word.frequency', {rank: Number(data.frequency).toLocaleString()})}
                     </p>
                 )}
 
                 {sections.form_of !== false && (data.form_of?.length > 0 || data.is_form) && (
-                    <p className="mt-1 text-[0.857em] italic opacity-70">
+                    <p className="word-popup-form-of mt-1 text-[0.857em] italic opacity-70">
                         «{surface}» — {t('word.form_of')}{' '}
                         {(data.form_of?.length > 0 ? data.form_of : [data.word]).map((headword, index) => (
                             <React.Fragment key={`${headword}-${index}`}>
@@ -368,7 +405,7 @@ export function PopupContent({
             {showTabs && (
                 <div
                     role="tablist"
-                    className="flex shrink-0 gap-3 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]"
+                    className="word-popup-tabs flex shrink-0 gap-3 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]"
                 >
                     <button
                         type="button"
@@ -395,7 +432,7 @@ export function PopupContent({
                         title={t('ai.models_icon')}
                         aria-label={t('ai.models_icon')}
                         aria-haspopup="dialog"
-                        className="-mb-px ml-1 inline-flex items-center rounded-sm border-b-2 border-transparent py-1.5 opacity-60 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
+                        className="word-popup-models-button -mb-px ml-1 inline-flex items-center rounded-sm border-b-2 border-transparent py-1.5 opacity-60 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
                     >
                         <RobotHelpIcon className="h-[1.1em] w-[1.1em]"/>
                     </button>
@@ -403,42 +440,52 @@ export function PopupContent({
             )}
 
             {showDictionary && (
-                <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-1">
+                <div className="word-popup-dictionary min-h-0 flex-1 overflow-y-auto px-3.5 pb-1">
                     {entries?.map((entry, index) => (
                         <section
                             key={entry.id}
-                            className={index > 0
-                                ? 'mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
-                                : undefined}
+                            className={`word-popup-variant${index > 0
+                                ? ' mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
+                                : ''}`}
                         >
-                            {sectionLabel(entry, data.word) && (
-                                <h3 className="text-[0.786em] uppercase tracking-wider opacity-60">{sectionLabel(entry, data.word)}</h3>
+                            {variantLabel(entry, data.word) && (
+                                <h3 className="word-popup-variant-label text-[0.786em] tracking-wider opacity-60">
+                                    {variantLabel(entry, data.word)}
+                                </h3>
                             )}
-
-                            {sections.transcriptions !== false && entry.transcriptions?.length > 0 && (
-                                <p className="mt-1 opacity-80">
-                                    [{entry.transcriptions.map((item) => item.value).join(' · ')}]
-                                </p>
-                            )}
-
-                            {sections.definitions !== false && (entry.definitions?.length > 0 ? (
-                                <ol className="ml-4 mt-1.5 list-decimal space-y-1 text-[0.929em] leading-snug">
-                                    {entry.definitions.map((definition, definitionIndex) => (
-                                        <li key={definitionIndex}>{definition}</li>
-                                    ))}
-                                </ol>
-                            ) : (
-                                <p className="mt-1.5 text-[0.857em] opacity-60">{t('word.no_definitions')}</p>
-                            ))}
 
                             {sections.translations !== false && (
                                 <TranslationLine translations={entry.translations ?? []} />
                             )}
 
+                            {sections.transcriptions !== false && entry.transcriptions?.length > 0 && (
+                                <TranscriptionLine transcriptions={entry.transcriptions}/>
+                            )}
+
+                            {sections.definitions !== false && (entry.definitions?.length > 0 ? (
+                                <details className="word-popup-definitions mt-2 text-[0.857em]">
+                                    <summary className="word-popup-summary cursor-pointer opacity-70">
+                                        {t('word.definitions', {count: entry.definitions.length})}
+                                    </summary>
+                                    {/* list-inside keeps the markers in the card's
+                                        inline box — `ml-4` + outside markers push
+                                        wide ("100.") numbers past the card edge. */}
+                                    <ol className="word-popup-definitions-list mt-1.5 list-decimal list-inside space-y-1 text-[0.929em] leading-snug">
+                                        {entry.definitions.map((definition, definitionIndex) => (
+                                            <li key={definitionIndex}>{definition}</li>
+                                        ))}
+                                    </ol>
+                                </details>
+                            ) : (
+                                <p className="word-popup-no-definitions mt-1.5 text-[0.857em] opacity-60">{t('word.no_definitions')}</p>
+                            ))}
+
                             {sections.examples !== false && entry.examples?.length > 0 && (
-                                <details className="mt-2 text-[0.857em]">
-                                    <summary className="cursor-pointer opacity-70">{t('word.examples')}</summary>
-                                    <ul className="ml-4 mt-1 list-disc space-y-0.5 italic opacity-80">
+                                <details className="word-popup-examples mt-2 text-[0.857em]">
+                                    <summary className="word-popup-summary cursor-pointer opacity-70">
+                                        {t('word.examples', {count: entry.examples.length})}
+                                    </summary>
+                                    <ul className="word-popup-examples-list ml-4 mt-1 list-disc space-y-0.5 italic opacity-80">
                                         {entry.examples.map((example, exampleIndex) => (
                                             <li key={exampleIndex}>{example}</li>
                                         ))}
@@ -447,14 +494,16 @@ export function PopupContent({
                             )}
 
                             {sections.etymologies !== false && entry.etymologies?.length > 0 && (
-                                <div className="mt-2">
-                                    <p className="text-[0.786em] uppercase tracking-wider opacity-60">{t('word.etymology')}</p>
+                                <details className="word-popup-etymologies mt-2 text-[0.857em]">
+                                    <summary className="word-popup-summary cursor-pointer opacity-70">
+                                        {t('word.etymology', {count: entry.etymologies.length})}
+                                    </summary>
                                     {entry.etymologies.map((etymology, etymologyIndex) => (
                                         <p key={etymologyIndex} className="mt-1 text-[0.857em] italic leading-snug opacity-75">
                                             {etymology}
                                         </p>
                                     ))}
-                                </div>
+                                </details>
                             )}
                         </section>
                     ))}
@@ -468,14 +517,14 @@ export function PopupContent({
             )}
 
             {sections.progress_actions !== false && (
-                <div className="mt-2 shrink-0 border-t border-[var(--color-hairline)] px-3.5 py-2.5 dark:border-[var(--color-hairline-night)]">
+                <div className="word-popup-footer mt-2 shrink-0 border-t border-[var(--color-hairline)] px-3.5 py-2.5 dark:border-[var(--color-hairline-night)]">
                     <div className="flex gap-2">
                         {familiarity !== FAMILIARITY_MAX && (
                             <button
                                 type="button"
                                 disabled={progressBusy || onProgressAction == null}
                                 onClick={() => onProgressAction?.('known')}
-                                className="rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]"
+                                className="word-popup-progress-known rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]"
                             >
                                 {t('word.i_know_this')}
                             </button>
@@ -485,7 +534,7 @@ export function PopupContent({
                                 type="button"
                                 disabled={progressBusy || onProgressAction == null}
                                 onClick={() => onProgressAction?.('reset')}
-                                className="rounded-sm border border-[var(--color-hairline)] px-2.5 py-1 text-[0.857em] opacity-80 hover:opacity-100 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-hairline-night)]"
+                                className="word-popup-progress-reset rounded-sm border border-[var(--color-hairline)] px-2.5 py-1 text-[0.857em] opacity-80 hover:opacity-100 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-hairline-night)]"
                             >
                                 {t('word.remove_mark')}
                             </button>
@@ -657,8 +706,8 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         >
             {(loading || error) && (
                 <div className="p-3.5">
-                    {loading && <p className="text-[0.857em] opacity-60">{t('word.loading')}</p>}
-                    {error && <p className="text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{error}</p>}
+                    {loading && <p className="word-popup-loading text-[0.857em] opacity-60">{t('word.loading')}</p>}
+                    {error && <p className="word-popup-error text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{error}</p>}
                 </div>
             )}
 

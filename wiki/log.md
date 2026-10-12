@@ -1,5 +1,48 @@
 # Directory Update Log
 
+## 2026-10-12 (Word popup card content rework — popup-card-redesign ticket 03)
+
+The shared `PopupContent` (`Components/WordPopup.jsx`) is reworked in place,
+so the reader, the simulator, and the profile preview pick the card up
+verbatim. The title shows the clicked word only (the POS span moved out);
+each variant section labels itself "WORD — pos" ("MELT — verb" for base
+groups, "MELTED — adjective" for popup-headword sections — headword
+uppercase, POS lowercase, em dash; `sectionLabel` became `variantLabel` and
+the h3 dropped its `uppercase` utility). Per-variant order is now
+translations → transcriptions → collapses: translations are the primary
+line (8-preview cap + "+N more…" kept; an empty variant shows the new calm
+`word.no_translations` note — the background auto-fetch lands on the next
+open), transcriptions show the main value with a `+N more` toggle
+(`TranscriptionLine`, remaining count), and definitions/examples/etymology
+are three independent counted `<details>` collapses ("Definitions (N)" /
+"Examples (N)" / "Etymology (N)", closed by default, per-variant state;
+`word.examples`/`word.etymology` gained `:count`, new keys
+`word.definitions`, `word.no_translations`, `word.more_transcriptions` —
+seeded en/ru/be and re-seeded via `UiStringSeeder` with cache forgets). The
+definitions `<ol>` uses inside-positioned markers (`ml-4` dropped,
+`list-inside` added) so ≥2-digit numbers can't spill past the card. Every
+card element now carries a stable `word-popup-*` class (full inventory in
+`wiki/domains/interactive-words.md`; the six `word-popup-explain-*` names
+are reserved for ticket 04). `SAMPLE_DATA` in `PopupsSettings.jsx` now
+exercises a multi-transcription variant, 10 translations on one variant, a
+zero-translations variant, and multi-item examples/etymology. Two side
+effects of the seeding mandate, both outside the ticket's file list: the
+dev DB's `languages` registry predated the `be` row (en/ru/fr only), so
+`LanguageSeeder` (idempotent upsert) was run before `UiStringSeeder` could
+seed be texts; and re-seeding exposed a latent `UiStrings::build()` bug —
+the English-under-the-locale layering relied on Postgres scan order (no
+ORDER BY), so the rewritten en rows of a re-seed floated above their locale
+values and the dev `ru` map went all-English. Fixed with an explicit
+locale-last ORDER BY, TDD'd red→green with a new
+`UiStringsTest` case (en row updated after the locale row exists).
+Checks: `php artisan test --filter=UiStringsTest` 8 passed (12
+assertions), red first (1 failed) against the unfixed build; `php artisan
+test --filter=WordEndpointTest` passed (payload untouched);
+`npm run test` (vitest) green; `vendor/bin/pint --dirty` pass;
+`wiki:validate` conformant. `wiki/domains/interactive-words.md` (card
+content + class inventory) and `wiki/domains/localization.md` (mapFor
+ordering) refreshed, `generated.at` bumped on both.
+
 ## 2026-10-12 (Profile: two-column Popups tab — popup-card-redesign ticket 02)
 
 The Popups tab is now the only tab-wide card in the profile. `ui.jsx`'s

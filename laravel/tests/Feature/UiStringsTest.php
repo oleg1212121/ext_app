@@ -78,6 +78,22 @@ it('builds a merged map with english underneath the locale', function () {
     expect($map['test.greeting'])->toBe('Привет');
 });
 
+it('keeps english underneath the locale regardless of physical row order', function () {
+    seedUiStringFixtures();
+
+    expect(UiStrings::mapFor('ru')['test.greeting'])->toBe('Привет');
+
+    // A later English update (a re-seed changing the en text, as deploy does)
+    // rewrites the en row at the heap's end — the build must still layer the
+    // locale value on top, not whatever order Postgres happens to scan in.
+    $string = UiString::whereHas('key', fn ($query) => $query->where('key', 'test.greeting'))
+        ->whereHas('language', fn ($query) => $query->where('code', 'en'))
+        ->first();
+    $string->update(['text' => 'Hello, updated']);
+
+    expect(UiStrings::mapFor('ru')['test.greeting'])->toBe('Привет');
+});
+
 it('translates strings per group through blade-style __()', function () {
     seedUiStringFixtures();
     $en = Language::where('code', 'en')->first();

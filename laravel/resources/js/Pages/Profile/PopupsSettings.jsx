@@ -29,9 +29,13 @@ const POPUP_GROUPS = [
     {titleKey: 'profile.popup_group_tabs', keys: ['explanation', 'frequency']},
 ]
 
-// A fixture-style word family exercising every block the popup can render:
-// a form of "melt" with a base-word section, its own adjective section,
-// satellites everywhere, a rank and a marked familiarity.
+// A fixture-style word family exercising every state the popup can render:
+// a form of "melt" whose base-word section ("MELT — verb") carries two
+// transcriptions ("+1 more…" toggle), 10 translations (8 shown + "+2 more…")
+// and counted definitions/examples/etymology collapses — plus the popup's
+// own adjective section ("MELTED — adjective") with zero translations, which
+// shows the no-translations placeholder. A rank and a marked familiarity top
+// it off.
 const SAMPLE_DATA = {
     id: 1,
     word: 'melted',
@@ -45,7 +49,10 @@ const SAMPLE_DATA = {
             id: 1,
             word: 'melt',
             word_class: 'Verb',
-            transcriptions: [{value: 'melt', type: 'IPA'}],
+            transcriptions: [
+                {value: 'melt', type: 'IPA'},
+                {value: 'MELT', type: 'English Pronunciation'},
+            ],
             definitions: [
                 'To change from a solid to a liquid state under heat.',
                 'To dissolve, blend, or merge — the crowd melted away.',
@@ -54,9 +61,23 @@ const SAMPLE_DATA = {
                 {id: 1, word: 'таять', language_code: 'ru'},
                 {id: 2, word: 'плавить', language_code: 'ru'},
                 {id: 3, word: 'растворяться', language_code: 'ru'},
+                {id: 4, word: 'плавиться', language_code: 'ru'},
+                {id: 5, word: 'топить', language_code: 'ru'},
+                {id: 6, word: 'растапливать', language_code: 'ru'},
+                {id: 7, word: 'расплавлять', language_code: 'ru'},
+                {id: 8, word: 'сливаться', language_code: 'ru'},
+                {id: 9, word: 'смягчаться', language_code: 'ru'},
+                {id: 10, word: 'растворить', language_code: 'ru'},
             ],
-            examples: ['The snow melted in the sun.', 'Her heart melted at the sight.'],
-            etymologies: ['From Old English meltan, "to dissolve into liquid".'],
+            examples: [
+                'The snow melted in the sun.',
+                'Her heart melted at the sight.',
+                'The chocolate melted into the warm batter.',
+            ],
+            etymologies: [
+                'From Old English meltan, "to dissolve into liquid".',
+                'Cognate with Old Norse melt ("to digest").',
+            ],
         },
         {
             id: 2,
@@ -64,7 +85,7 @@ const SAMPLE_DATA = {
             word_class: 'Adjective',
             transcriptions: [],
             definitions: ['Changed into liquid form; no longer solid.'],
-            translations: [{id: 4, word: 'растопленный', language_code: 'ru'}],
+            translations: [],
             examples: [],
             etymologies: [],
         },

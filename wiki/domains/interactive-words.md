@@ -5,7 +5,7 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-10-05T23:10:48+03:00 }
+generated: { by: agent:zcode, at: 2026-10-12T17:55:10+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -122,9 +122,34 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    surface differs from the word's `l_word` (an inflected form resolved by
    the linker's forms pass) — and `frequency`, the bound headword's integer
    rank (null when unranked; the sentinel 1,100,000 included), shown as a
-   "Frequency: #N" line. Base sections label themselves with their own
-   headword ("melt — Verb"). The popover renders one section per entry,
-   translations capped at 8 with a "+N more…" expander.
+   "Frequency: #N" line. The popup title shows the clicked word only — each
+   section carries the POS itself in its **"WORD — pos" label** (headword
+   uppercase, POS lowercase, em dash): "MELT — verb" for a base group's own
+   headword, "MELTED — adjective" for the popup-headword sections.
+   The popover renders one section per entry, top to bottom:
+   **translations are the primary line** (native language first, capped at 8
+   with a "+N more…" expander; a variant with none shows the calm
+   "no translations yet — automatic translation may still be in progress"
+   note, since the background fetch only lands on the next open), then the
+   **main transcription** in brackets with a "+N more" toggle revealing the
+   rest, then **three counted collapses** — "Definitions (N)", "Examples
+   (N)", "Etymology (N)" — independent `<details>`, closed by default, state
+   per variant (empty definitions say "No definitions yet."; variants
+   without examples/etymology hide those collapses). The definitions
+   `<ol>` places its markers *inside* the list items
+   (`list-style-position: inside`) so wide ("100.") numbers can never spill
+   past the card edge.
+   **Every element inside the card carries a stable `word-popup-*` class**
+   (the portal/preview wrapper keeps `word-popup`): `word-popup-loading`,
+   `-error`, `-header`, `-title`, `-familiarity`, `-frequency`, `-form-of`,
+   `-tabs`, `-tab`, `-models-button`, `-dictionary`, `-variant`,
+   `-variant-label`, `-translations`, `-translations-more`,
+   `-translations-placeholder`, `-transcriptions`, `-transcriptions-more`,
+   `-no-definitions`, `-definitions` (with `-definitions-list` on its `ol`),
+   `-examples` (with `-examples-list` on its `ul`), `-etymologies`,
+   `-summary` on every collapse summary, `-footer`, `-progress-known`,
+   `-progress-reset` — so tests and user styles can target the card
+   structurally.
    **Every block below the headword is individually hideable per user**
    (ADR 0046): the `popupVisibility` Inertia prop shared to every page
    (`App\Support\PopupVisibility::for()` — the saved `ui_settings.popup`

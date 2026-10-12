@@ -4,7 +4,7 @@ title: Localization
 description: Interface language resolution and DB-backed UI strings with Filament CRUD.
 tags: [i18n, localization, languages, filament]
 status: stable
-generated: { by: agent, at: 2026-10-10T21:30:00Z }
+generated: { by: agent, at: 2026-10-12T17:55:10+03:00 }
 verified: {}
 ---
 
@@ -36,8 +36,12 @@ How the web UI's display language works and how interface text is managed.
 - `App\Support\UiStrings::mapFor(locale)` builds a flat key → text map per
   locale (English merged underneath; missing values fall back to English
   silently), cached via `Cache::rememberForever("ui_strings.map.{locale}")`.
-  Model observers on `UiString`/`UiStringKey` flush these caches, so admin
-  edits apply on the next request.
+  The layering is enforced by an explicit ORDER BY (locale rows last) — the
+  map must not depend on the order Postgres scans the join in (an English
+  row rewritten by a later re-seed lands at the heap's end and would
+  otherwise overwrite its locale value). Model observers on
+  `UiString`/`UiStringKey` flush these caches, so admin edits apply on the
+  next request.
 - `App\Translation\UiStringLoader` (a `FileLoader` subclass, swapped in via
   `$app->extend('translation.loader', ...)`) overlays the map onto each string
   group, so Blade/Filament `__('group.key')` works alongside framework lines.
