@@ -4,6 +4,7 @@ use App\Models\Definition;
 use App\Models\Etymology;
 use App\Models\Form;
 use App\Models\Language;
+use App\Models\Tag;
 use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\User;
@@ -292,6 +293,31 @@ it('finds base words through a surface carrying combining marks', function () {
         ->getJson(route('words.show', ['word' => $kota->id, 'surface' => 'ко́та']))
         ->assertOk()
         ->assertJsonPath('data.form_of', ['кот']);
+});
+
+it('exposes the word tags for the Anki card', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $word = createWord('en', 'melt', 'verb');
+    $a2 = Tag::factory()->create(['name' => 'A2', 'slug' => 'a2']);
+    $top = Tag::factory()->create(['name' => 'top-3000', 'slug' => 'top-3000']);
+    $word->tags()->sync([$a2->id, $top->id]);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $word->id]))
+        ->assertOk()
+        ->assertJsonPath('data.tags', ['A2', 'top-3000']);
+});
+
+it('returns an empty tag list for untagged words', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $word = createWord('en', 'melt', 'verb');
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $word->id]))
+        ->assertOk()
+        ->assertJsonPath('data.tags', []);
 });
 
 it('sorts translations native language first', function () {

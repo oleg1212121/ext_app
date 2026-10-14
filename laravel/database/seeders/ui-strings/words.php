@@ -25,4 +25,12 @@ return [
     'word.explain_preview' => ['en' => 'This is where the **context explanation** appears — an AI answer about what this word means in its sentence. Try the real thing in the reader or the simulator.', 'ru' => 'Здесь появляется **контекстный разбор** — ответ ИИ о том, что это слово значит в своём предложении. Попробуйте настоящий разбор в читалке или симуляторе.', 'be' => 'Тут з\'яўляецца **кантэкстны разбор** — адказ ШІ пра тое, што гэта слова значыць у сваім сказе. Паспрабуйце сапраўдны разбор у чыталцы або сімулятары.'],
     'word.definitions' => ['en' => 'Definitions (:count)', 'ru' => 'Определения (:count)', 'be' => 'Вызначэнні (:count)'],
     'word.no_translations' => ['en' => 'No translations yet — automatic translation may still be in progress.', 'ru' => 'Переводов пока нет — автоматический перевод ещё может выполняться.', 'be' => 'Перакладаў пакуль няма — аўтаматычны пераклад яшчэ можа выконвацца.'],
+    'word.anki_send' => ['en' => 'Save to Anki', 'ru' => 'Сохранить в Anki', 'be' => 'Захаваць у Anki'],
+    'word.anki_sending' => ['en' => 'Saving…', 'ru' => 'Сохраняем…', 'be' => 'Захоўваем…'],
+    'word.anki_added' => ['en' => 'Added to Anki.', 'ru' => 'Добавлено в Anki.', 'be' => 'Дададзена ў Anki.'],
+    'word.anki_already' => ['en' => 'Already in Anki.', 'ru' => 'Уже в Anki.', 'be' => 'Ужо ў Anki.'],
+    'word.anki_unreachable' => ['en' => 'Can\'t reach Anki — make sure desktop Anki with AnkiConnect is running.', 'ru' => 'Нет связи с Anki — убедитесь, что запущен настольный Anki с AnkiConnect.', 'be' => 'Няма сувязі з Anki — пераканайцеся, што запушчаны настольны Anki з AnkiConnect.'],
+    'word.anki_mismatch' => ['en' => 'The "ExtApp Vocabulary" note type in Anki doesn\'t match the app\'s — re-sync it from Profile → Anki.', 'ru' => 'Тип заметок «ExtApp Vocabulary» в Anki не совпадает с приложением — синхронизируйте его: профиль → Anki.', 'be' => 'Тып нататак «ExtApp Vocabulary» у Anki не супадае з праграмай — сінхранізуйце яго: профіль → Anki.'],
+    'word.anki_failed' => ['en' => 'Anki error: :message', 'ru' => 'Ошибка Anki: :message', 'be' => 'Памылка Anki: :message'],
+    'word.anki_go_to_settings' => ['en' => 'Go to Profile → Anki', 'ru' => 'Перейти в профиль → Anki', 'be' => 'Перайсці ў профіль → Anki'],
 ];

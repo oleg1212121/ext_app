@@ -7,6 +7,9 @@ import {getCsrfToken} from '../lib/http';
 import {renderMarkdown} from '../lib/markdown';
 import {canAskExplanation} from '../lib/wordExplain';
 import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
+import {AnkiConnectError} from '../lib/ankiConnect';
+import {buildNoteFields} from '../lib/ankiTemplate';
+import {AnkiNoteTypeMismatchError, sendAnkiNote} from '../lib/ankiSync';
 
 const POPUP_MARGIN = 8;
 const VIEWPORT_MARGIN = 12;
@@ -375,6 +378,13 @@ function ExplainPane({explain, explainKey, preview = false}) {
  * `onProgressAction` (null in the preview) drives the footer buttons; the
  * buttons render disabled without it. `preview` additionally swaps the
  * Explanation tab's auto-request for a canned answer (no network).
+ *
+ * The footer also carries the "Save to Anki" button (`onAnkiSend` /
+ * `ankiSend`, both null in the preview — the button renders disabled
+ * there): it sits OUTSIDE the `progress_actions` gate, so it shows on
+ * every surface no matter which popup blocks are hidden. `ankiSend`
+ * holds the send's outcome ({status: 'sending'|'added'|'duplicate'|
+ * 'error', error?}) for the inline status line under the buttons.
  */
 export function PopupContent({
     surface,
@@ -387,6 +397,8 @@ export function PopupContent({
     onModelsOpenChange = null,
     onProgressAction = null,
     progressBusy = false,
+    onAnkiSend = null,
+    ankiSend = null,
     preview = false,
 }) {
     const {t} = useI18n();
@@ -576,32 +588,70 @@ export function PopupContent({
                 </div>
             )}
 
-            {sections.progress_actions !== false && (
-                <div className="word-popup-footer mt-2 shrink-0 border-t border-[var(--color-hairline)] px-3.5 py-2.5 dark:border-[var(--color-hairline-night)]">
-                    <div className="flex gap-2">
-                        {familiarity !== FAMILIARITY_MAX && (
-                            <button
-                                type="button"
-                                disabled={progressBusy || onProgressAction == null}
-                                onClick={() => onProgressAction?.('known')}
-                                className="word-popup-progress-known rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]"
-                            >
-                                {t('word.i_know_this')}
-                            </button>
-                        )}
-                        {familiarity != null && (
-                            <button
-                                type="button"
-                                disabled={progressBusy || onProgressAction == null}
-                                onClick={() => onProgressAction?.('reset')}
-                                className="word-popup-progress-reset rounded-sm border border-[var(--color-hairline)] px-2.5 py-1 text-[0.857em] opacity-80 hover:opacity-100 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-hairline-night)]"
-                            >
-                                {t('word.remove_mark')}
-                            </button>
-                        )}
-                    </div>
+            {/* The footer always renders: the "Save to Anki" send is
+                independent of the popup-visibility toggles (spec) — the
+                `progress_actions` gate only hides the progress buttons
+                inside the row. */}
+            <div className="word-popup-footer mt-2 shrink-0 border-t border-[var(--color-hairline)] px-3.5 py-2.5 dark:border-[var(--color-hairline-night)]">
+                <div className="flex gap-2">
+                    {sections.progress_actions !== false && familiarity !== FAMILIARITY_MAX && (
+                        <button
+                            type="button"
+                            disabled={progressBusy || onProgressAction == null}
+                            onClick={() => onProgressAction?.('known')}
+                            className="word-popup-progress-known rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]"
+                        >
+                            {t('word.i_know_this')}
+                        </button>
+                    )}
+                    {sections.progress_actions !== false && familiarity != null && (
+                        <button
+                            type="button"
+                            disabled={progressBusy || onProgressAction == null}
+                            onClick={() => onProgressAction?.('reset')}
+                            className="word-popup-progress-reset rounded-sm border border-[var(--color-hairline)] px-2.5 py-1 text-[0.857em] opacity-80 hover:opacity-100 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-hairline-night)]"
+                        >
+                            {t('word.remove_mark')}
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        disabled={onAnkiSend == null || ankiSend?.status === 'sending'}
+                        onClick={onAnkiSend}
+                        className="word-popup-anki-send ml-auto rounded-sm border border-[var(--color-hairline)] px-2.5 py-1 text-[0.857em] opacity-80 hover:opacity-100 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-hairline-night)]"
+                    >
+                        {ankiSend?.status === 'sending' ? t('word.anki_sending') : t('word.anki_send')}
+                    </button>
                 </div>
-            )}
+
+                {ankiSend?.status === 'added' && (
+                    <p className="word-popup-anki-added mt-2 text-[0.857em] text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
+                        {t('word.anki_added')}
+                    </p>
+                )}
+                {ankiSend?.status === 'duplicate' && (
+                    <p className="word-popup-anki-duplicate mt-2 text-[0.857em] opacity-70">
+                        {t('word.anki_already')}
+                    </p>
+                )}
+                {ankiSend?.status === 'error' && (
+                    <div className="word-popup-anki-error mt-2 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
+                        <p>
+                            {ankiSend.error instanceof AnkiNoteTypeMismatchError
+                                ? t('word.anki_mismatch')
+                                : (ankiSend.error instanceof AnkiConnectError && ankiSend.error.kind === 'anki'
+                                    ? t('word.anki_failed', {message: ankiSend.error.message})
+                                    : t('word.anki_unreachable'))}
+                        </p>
+                        <Link
+                            href="/profile?tab=anki"
+                            className="mt-1 inline-block underline underline-offset-2 hover:opacity-80"
+                        >
+                            {t('word.anki_go_to_settings')}
+                        </Link>
+                    </div>
+                )}
+            </div>
 
             {showTabs && (
                 <ModelsUsedPopup
@@ -640,19 +690,24 @@ export function PopupContent({
  * request.
  *
  * `sections` (the user's Popup preferences, ADR 0046) hides individual
- * blocks; it defaults to the popupVisibility prop shared to every page, and
- * an absent map means everything renders. The body itself lives in the
- * exported PopupContent, which the profile's Popups tab reuses for its live
- * preview.
+ * blocks; it defaults to the popupVisibility prop shared to every page,
+ * and an absent map means everything renders. The "Save to Anki" footer
+ * button ignores those toggles (always visible); it sends through
+ * lib/ankiSync.js with the ankiSettings shared prop. The body itself
+ * lives in the exported PopupContent, which the profile's Popups tab
+ * reuses for its live preview.
  */
 export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain, sections}) {
     const {t} = useI18n();
     const {props} = usePage();
     const effectiveSections = sections ?? props.popupVisibility ?? {};
+    const ankiSettings = props.ankiSettings ?? null;
+    const nativeLanguage = props.auth?.user?.native_language ?? null;
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
+    const [ankiSend, setAnkiSend] = useState(null);
     const [modelsOpen, setModelsOpen] = useState(false);
     // Read by the document-level close handlers below: while the nested
     // Models used popup is open, that modal owns Escape and outside-click
@@ -674,6 +729,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         setLoading(true);
         setError(null);
         setData(null);
+        setAnkiSend(null);
 
         fetch(`/words/${wordId}?surface=${encodeURIComponent(surface)}`, {
             headers: {Accept: 'application/json'},
@@ -753,6 +809,28 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             .catch(() => setBusy(false));
     };
 
+    // The per-word "Save to Anki" send: the note is built from the payload
+    // the popup already loaded — the same builder the Anki tab's sample card
+    // uses, with the Translations field narrowed to the user's native
+    // language (the shared auth prop carries its code) and the word's tags
+    // from the payload — then handed to lib/ankiSync.js's duplicate-checked
+    // add. The ensure (deck / note type / template) is memoized module state
+    // shared with the tab, so the first send of a session auto-creates them
+    // and later sends skip straight to the duplicate check. Failures land in
+    // `ankiSend` for the footer's inline hint — never a silent no-op.
+    const sendToAnki = () => {
+        if (!ankiSettings || !data || ankiSend?.status === 'sending') {
+            return;
+        }
+        setAnkiSend({status: 'sending'});
+        const tags = data.tags ?? [];
+        const noteFields = buildNoteFields(data, {familiarity, tags, nativeLanguage});
+        sendAnkiNote(ankiSettings, noteFields, {tags, word: data.word}).then(
+            (result) => setAnkiSend({status: result.added ? 'added' : 'duplicate'}),
+            (error) => setAnkiSend({status: 'error', error}),
+        );
+    };
+
     const explainProps = explain && explainKey
         ? {...explain, wordId, surface}
         : null;
@@ -784,6 +862,8 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                     onModelsOpenChange={setModelsOpen}
                     onProgressAction={changeProgress}
                     progressBusy={busy}
+                    onAnkiSend={sendToAnki}
+                    ankiSend={ankiSend}
                 />
             )}
         </div>,

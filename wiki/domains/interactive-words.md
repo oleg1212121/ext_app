@@ -1,12 +1,12 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, ledger-deduped with a permanent exclusions list).
-tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an optional second tab with the AI Context explanation of the word in its sentence, a per-word "Save to Anki" send from the popup footer, render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, ledger-deduped with a permanent exclusions list).
+tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
-stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+stale_after: 2027-04-15
+generated: { by: agent:zcode, at: 2026-10-14T22:50:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T22:50:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -73,8 +73,10 @@ Makes words in a text interactive on both reading surfaces: tokens that link
 to a dictionary **Word** open the **Word popup** on **Ctrl+click** — one
 section per part of speech recorded under the headword (language + `l_word`),
 each with its definitions, transcriptions, translations (native language
-first), examples and etymology, plus word progress actions pinned in a footer
-that never scrolls away. A plain click does nothing (ADR 0030), and a plain
+first), examples and etymology, plus a footer that never scrolls away
+carrying the word progress actions and the always-visible **Save to Anki**
+send (independent of the popup-visibility toggles). A plain click does
+nothing (ADR 0030), and a plain
 double-click natively selects the word so browser extensions (translators,
 dictionaries) can act on it. Their text is
 tinted by the reader's **Word familiarity** (0–19 → rose, 20–59 →
@@ -149,7 +151,9 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    `-no-definitions`, `-definitions` (with `-definitions-list` on its `ol`),
    `-examples` (with `-examples-list` on its `ul`), `-etymologies`,
    `-summary` on every collapse summary, `-footer`, `-progress-known`,
-   `-progress-reset`, `-explain` (the Explanation pane) with
+   `-progress-reset`, `-anki-send` (the Save-to-Anki button) with its
+   `-anki-added` / `-anki-duplicate` / `-anki-error` status lines,
+   `-explain` (the Explanation pane) with
    `-explain-guidance`, `-explain-loading`, `-explain-error` (its retry
    button `-explain-retry`), `-explain-answer` (empty-answer note
    `-explain-empty`, "Ask again" `-explain-again`) — CSS hooks keeping the
@@ -298,6 +302,43 @@ outside-click closing — the word popup underneath stays put.
   provider-error mapping, throttle; `AIModelResolver` mocked at the
   container — provider calls are raw cURL and invisible to `Http::fake`).
 
+# Save to Anki (per-word send)
+
+The popup footer's **Save to Anki** button sends the clicked word to the
+user's desktop Anki deck in one click — everywhere the popup renders
+(reader, simulator), and **independent of the popup-visibility toggles**
+(ADR 0046): the footer always renders, and the `progress_actions` opt-out
+hides only the progress buttons inside the row. Everything browser-side —
+the settings come from the shared `ankiSettings` Inertia prop, the send is
+orchestrated by `resources/js/lib/ankiSync.js` and the note is built by
+`resources/js/lib/ankiTemplate.js`'s `buildNoteFields()` from the payload
+the popup already loaded (identical values to the Anki tab's sample card;
+see [Profile](/domains/profile.md) for the Anki tab side):
+
+* **Note values.** All twelve fields always ride along (hide-class
+  semantics). Translations narrow to the user's **native language** (the
+  code shared as `auth.user.native_language` — the same filter the Anki
+  tab's preview uses), falling back to all translations when none match;
+  `Tags` carries the linked word's tag names (`data.tags`, additive in the
+  `GET /words/{word}` payload); `Familiarity` is the popup's current score.
+* **Auto-ensure.** The first send of a page session runs the memoized
+  ensure (deck create-if-missing, the app-owned note type + generated
+  template) — module state shared with the Anki tab, so a tab sync and a
+  popup send in one session don't redo each other's work.
+* **Duplicates.** Find-before-add scoped to deck + Word + Language: a
+  duplicate shows the inline "Already in Anki." notice and nothing is
+  created; no existing note is ever modified.
+* **Failure is never silent.** An unreachable AnkiConnect (fetch rejection,
+  HTTP/non-JSON answers) shows the short "Can't reach Anki" hint with a
+  link to Profile → Anki; an Anki-side error string is shown verbatim
+  (`Anki error: …`); `AnkiNoteTypeMismatchError` aborts with the
+  re-sync warning pointing at the same tab. The status line lives under
+  the footer buttons (`word-popup-anki-*` classes), and the button shows
+  "Saving…" disabled while the send is in flight.
+* The profile's Popups-tab preview renders the button disabled (no send
+  handler in preview mode), matching how the progress buttons render
+  without their handler.
+
 # Familiarity events (ADR 0028)
 
 * `POST /word-events` (`RecordWordEventsRequest`) takes up to 200 events
@@ -344,7 +385,7 @@ outside-click closing — the word popup underneath stays put.
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `GET /words/{word}` | `WordController::show` | Word popup payload: the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked) |
+| `GET /words/{word}` | `WordController::show` | Word popup payload: the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked), `tags` (the linked word's tag names — for the Anki card) |
 | `POST /ai/word-explain` | `ReadingAiController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |
 | `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |
 | `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to untouched) |

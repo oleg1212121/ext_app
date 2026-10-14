@@ -69,7 +69,7 @@ export const SAMPLE_DATA = {
 export const SAMPLE_FAMILIARITY = 40
 export const SAMPLE_EXPLAIN = {rowKind: 'preview', rowId: 1, modelKey: 'preview', enabled: true, modelLabel: 'Sample model', followsAnswer: false}
 
-// Anki-preview only (the popup has no tags block): the word payload gains its
-// real `tags: [names]` with the send-to-Anki popup ticket; until then the
-// card preview shows the Tags field through this stand-in.
+// Anki preview only: the fixture carries no `tags` (the real popup passes
+// the payload's `tags: [names]`), so the tab's card preview and sample card
+// show the Tags field through this stand-in.
 export const SAMPLE_TAGS = ['A2', 'top-3000']

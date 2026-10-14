@@ -1,5 +1,54 @@
 # Directory Update Log
 
+## 2026-10-14 (anki-connection 04 — per-word "Save to Anki" in the word popup)
+
+Fourth ticket of the Anki-export feature: the word popup's footer gains a
+**Save to Anki** button — one click sends the clicked word to the user's
+Anki deck from reader or simulator, duplicates skipped, failures never
+silent. Still browser-only.
+
+- `laravel/app/Http/Controllers/WordController.php` — `GET /words/{word}`
+  payload gains `tags: [names]` (the linked word's tag names via
+  `Word::tags()`, additive between `frequency` and `entries`); feature
+  tests extended (`WordEndpointTest` +2: tagged payload order, empty list
+  for untagged words).
+- `laravel/resources/js/Components/WordPopup.jsx` — the footer now always
+  renders: the Save-to-Anki button sits OUTSIDE the `progress_actions`
+  gate (right-aligned `word-popup-anki-send`, disabled "Saving…" while in
+  flight), the gate only hides the progress buttons. `WordPopup` builds
+  the note from the loaded payload with `buildNoteFields()` (familiarity
+  from the popup prop, tags from `data.tags`, Translations narrowed by the
+  native language CODE from the shared `auth.user.native_language` prop)
+  and sends through `sendAnkiNote()` (ensure memoized module state shared
+  with the Anki tab). Status line under the buttons: added / "Already in
+  Anki." / unreachable hint + Profile → Anki link / Anki error verbatim /
+  `AnkiNoteTypeMismatchError` re-sync warning; state resets per payload.
+  The Popups-tab preview renders the button disabled (no handler),
+  mirroring the progress buttons.
+- `laravel/resources/js/Pages/Profile/AnkiSettings.jsx` + `Edit.jsx` —
+  the tab now receives `nativeLanguage` (the code) instead of
+  `nativeLanguageId`: the numeric id could never equal a `language_code`,
+  so the preview and sample card silently carried ALL translations instead
+  of the native-language filter. Popup and tab now behave identically.
+- `laravel/resources/js/Pages/Profile/sampleWordData.js` — SAMPLE_TAGS
+  comment updated (fixture-only stand-in; the real popup passes payload
+  tags).
+- `laravel/database/seeders/ui-strings/words.php` — 8 new en/ru/be
+  `word.anki_*` strings (button, saving, added, already-in-Anki,
+  unreachable hint, mismatch, error, go-to-settings); reseeded via
+  `UiStringSeeder`, be spot-checked.
+- Verification: container Node smoke of the popup's exact data path
+  (stubbed fetch): first-send wire (ensure + findNotes
+  `deck:"…" Word:"melted" Language:"en"` + 12-field addNote with native
+  filtered Translations, Tags, allowDuplicate false), memoized second send
+  (find+add only; all-translations fallback; empty tags → empty field),
+  duplicate skip (no addNote). `npm run build` clean (pre-existing chunk
+  warning). `test:tia` → 1161 passed (6047 assertions). Pint PASS.
+- Wiki: `interactive-words.md` — new "Save to Anki (per-word send)"
+  section, footer/class/payload updates, anki tag, stamps bumped;
+  `profile.md` — cross-reference paragraph + the native-language-code
+  correction recorded; stamps bumped.
+
 ## 2026-10-14 (anki-connection 03 — template push + sample card into Anki)
 
 Third ticket of the Anki-export feature: the Anki tab can now write into

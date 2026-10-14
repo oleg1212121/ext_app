@@ -29,7 +29,8 @@ class WordController extends Controller
      * plus the headword groups of every base word the forms table maps the
      * surface token to, ordered most common headword first. Relay entries
      * ("past participle of the verb melt") are hidden when a base group
-     * carries the real content.
+     * carries the real content. `tags` (the linked word's tag names) ride
+     * along for the popup's "Save to Anki" card (additive).
      */
     public function show(Request $request, Word $word): JsonResponse
     {
@@ -59,6 +60,7 @@ class WordController extends Controller
                 'is_form' => $isForm,
                 'form_of' => $family->formOf(),
                 'frequency' => $this->frequencyRank($bound),
+                'tags' => $bound->tags->pluck('name')->all(),
                 'entries' => $entries,
             ],
         ]);

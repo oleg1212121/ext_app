@@ -90,7 +90,11 @@ const initialState = (saved) => ({
     fields: initialFields(saved),
 })
 
-export default function AnkiSettings({ankiSettings = null, nativeLanguageId = null}) {
+// `nativeLanguage` is the user's native language CODE (the shared auth prop,
+// not the settings id) — buildNoteFields compares it against the payload
+// translations' language_code to narrow the Translations field, falling back
+// to all when none match.
+export default function AnkiSettings({ankiSettings = null, nativeLanguage = null}) {
     const {t} = useI18n()
     const [settings, setSettings] = useState(() => initialState(ankiSettings))
     const [test, setTest] = useState({status: 'idle'})
@@ -159,7 +163,7 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguageId = nu
         const noteFields = buildNoteFields(SAMPLE_DATA, {
             familiarity: SAMPLE_FAMILIARITY,
             tags: SAMPLE_TAGS,
-            nativeLanguage: nativeLanguageId,
+            nativeLanguage,
         })
         const result = await sendAnkiNote(settings, noteFields, {tags: SAMPLE_TAGS, word: SAMPLE_DATA.word})
         return result.added ? 'sent' : 'duplicate'
@@ -186,7 +190,7 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguageId = nu
     const noteFields = buildNoteFields(SAMPLE_DATA, {
         familiarity: SAMPLE_FAMILIARITY,
         tags: SAMPLE_TAGS,
-        nativeLanguage: nativeLanguageId,
+        nativeLanguage,
     })
     const previewDoc = (side) => [
         '<!doctype html><html><head><meta charset="utf-8">',

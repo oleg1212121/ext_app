@@ -64,6 +64,7 @@ const initialTab = () => {
 
 export default function Edit({
     user,
+    auth = null,
     apiKeyProviders = [],
     nativeLanguageId = null,
     interfaceLanguageId = null,
@@ -143,7 +144,12 @@ export default function Edit({
 
                     <TabPanel active={activeTab === 'anki'} width="wide">
                         <Card width="wide">
-                            <AnkiSettings ankiSettings={ankiSettings} nativeLanguageId={nativeLanguageId}/>
+                            {/* The tab's note builder needs the native language CODE
+                                (shared auth prop), not the settings' numeric id. */}
+                            <AnkiSettings
+                                ankiSettings={ankiSettings}
+                                nativeLanguage={auth?.user?.native_language ?? null}
+                            />
                         </Card>
                     </TabPanel>
 

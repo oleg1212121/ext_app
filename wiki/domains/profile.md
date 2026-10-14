@@ -4,8 +4,8 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T23:40:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T23:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T22:55:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T22:55:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -203,6 +203,17 @@ field). Inline status lines report sync / sent / duplicate outcomes; any
 `AnkiConnectError` renders the same connection-hint panel as the test
 probe, whose **Request permission** step grants the origin approval and
 then replays the blocked action in one click.
+
+The word popup's per-word **Save to Anki** send (see
+[Interactive Words](/domains/interactive-words.md)) reuses this exact
+path — the same `sendAnkiNote` and the same memoized ensure (module state
+shared with the tab, so a tab sync and a popup send in one page session
+don't redo each other's work) — with the note built from the popup's live
+payload instead of the fixture. The tab's preview/sample card narrow
+Translations with the native language **code** from the shared
+`auth.user.native_language` prop (an early version passed the numeric
+`native_language_id`, which never matched a `language_code` and silently
+kept all translations).
 
 # AI Models tab
 
