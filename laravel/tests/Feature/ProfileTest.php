@@ -36,7 +36,7 @@ test('profile page shares the popups tab and all-visible defaults', function () 
             ->where('popupVisibility.explanation', true));
 });
 
-test('profile page shares anki connection settings resolved over defaults', function () {
+test('profile page shares anki settings with every card field on by default', function () {
     $user = User::factory()->create();
 
     $this
@@ -46,13 +46,29 @@ test('profile page shares anki connection settings resolved over defaults', func
         ->assertInertia(fn ($page) => $page
             ->where('ankiSettings.url', 'http://127.0.0.1')
             ->where('ankiSettings.port', 8765)
-            ->where('ankiSettings.deck', 'ExtApp'));
+            ->where('ankiSettings.deck', 'ExtApp')
+            ->where('ankiSettings.fields.word', true)
+            ->where('ankiSettings.fields.transcription', true)
+            ->where('ankiSettings.fields.part_of_speech', true)
+            ->where('ankiSettings.fields.frequency', true)
+            ->where('ankiSettings.fields.definitions', true)
+            ->where('ankiSettings.fields.translations', true)
+            ->where('ankiSettings.fields.examples', true)
+            ->where('ankiSettings.fields.etymology', true)
+            ->where('ankiSettings.fields.word_family', true)
+            ->where('ankiSettings.fields.tags', true)
+            ->where('ankiSettings.fields.familiarity', true)
+            ->where('ankiSettings.fields.language', true));
 });
 
-test('anki settings prop reflects the saved connection', function () {
+test('anki settings prop reflects the saved connection and field opt-outs', function () {
     $user = User::factory()->create();
     $user->settings()->updateOrCreate([], [
-        'ui_settings' => ['anki' => ['url' => 'http://localhost', 'port' => 8766]],
+        'ui_settings' => ['anki' => [
+            'url' => 'http://localhost',
+            'port' => 8766,
+            'fields' => ['etymology' => false],
+        ]],
     ]);
 
     $this
@@ -63,7 +79,9 @@ test('anki settings prop reflects the saved connection', function () {
             ->where('ankiSettings.url', 'http://localhost')
             ->where('ankiSettings.port', 8766)
             // Keys never touched keep their defaults.
-            ->where('ankiSettings.deck', 'ExtApp'));
+            ->where('ankiSettings.deck', 'ExtApp')
+            ->where('ankiSettings.fields.etymology', false)
+            ->where('ankiSettings.fields.word', true));
 });
 
 test('popup visibility prop reflects the saved opt-outs', function () {

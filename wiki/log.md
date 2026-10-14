@@ -1,5 +1,59 @@
 # Directory Update Log
 
+## 2026-10-14 (anki-connection 02 — Anki card fields + generated template + live preview)
+
+Second ticket of the Anki-export feature: the Anki tab gains its
+card-content side — twelve field toggles, a deterministic card-template
+generator and a live Front/Back preview. Everything works offline; no Anki
+calls.
+
+- `laravel/app/Support/AnkiSettings.php` — new canonical `FIELDS` const
+  (the twelve card-field keys in the note type's fixed order) and `for()`
+  now also resolves the `fields` map (absent key = on, the Popups-tab
+  convention) beside url/port/deck.
+- `laravel/app/Http/Requests/UpdateUiSettingsRequest.php` — `anki.fields`
+  array rule + one `boolean` rule per field, generated in a loop from
+  `AnkiSettings::FIELDS` (unknown field keys still stripped by
+  `validated()`).
+- `laravel/resources/js/lib/ankiTemplate.js` (new) — the one JS mirror of
+  `AnkiSettings::FIELDS`: the field-key → Anki-field-name mapping (Word,
+  Transcription, PartOfSpeech, … fixed order), the "ExtApp Vocabulary" note
+  type name, `generateCardTemplate()` (deterministic Front/Back HTML + CSS;
+  toggled-off fields get `ef-hidden` baked into the HTML — hide-class
+  semantics, values always carry every field; CSS defines `.card` +
+  `.ef-hidden{display:none}`), `buildNoteFields()` (full 12-field note from
+  a word payload; translations narrow to the native language with an
+  all-translations fallback) and `renderCardHtml()` ({{Field}} substitution).
+- `laravel/resources/js/Pages/Profile/sampleWordData.js` (new) — the sample
+  word fixture (SAMPLE_DATA + SAMPLE_FAMILIARITY + SAMPLE_EXPLAIN, plus
+  SAMPLE_TAGS for the Anki preview) extracted from PopupsSettings.jsx so
+  the Popups and Anki previews share one source.
+- `laravel/resources/js/Pages/Profile/PopupsSettings.jsx` — imports the
+  extracted fixture; no behavior change.
+- `laravel/resources/js/Pages/Profile/AnkiSettings.jsx` — one combined
+  settings state (url/port/deck + fields: the endpoint replaces the whole
+  `anki` section, so every autosave PATCH must carry all of it), twelve
+  toggles in three groups, and a template preview: sandboxed iframe
+  rendering the generated CSS + HTML with the sample values substituted, as
+  Front/Back tabs, with Copy HTML (selected face) / Copy CSS buttons.
+- `laravel/resources/js/Pages/Profile/Edit.jsx` — passes
+  `nativeLanguageId` to AnkiSettings for the preview's translation filter.
+- `laravel/database/seeders/ui-strings/profile.php` — 23 new en/ru/be
+  strings (`profile.anki_card_*`, `profile.anki_field_*` ×12 + 3 groups,
+  `profile.anki_template_*`, copy buttons); `profile.anki_title`/
+  `anki_description` broadened to cover connection + card content. Reseeded
+  via `UiStringSeeder` (idempotent upsert), ru/be spot-checked.
+- Tests: `UiSettingsTest` +3 (field save, junk rejection + unknown-key
+  strip, section isolation), `ProfileTest` reworked anki-prop cases now
+  assert all-twelve-on defaults and saved field opt-outs. `test:tia` →
+  1159 passed (6043 assertions); touched files re-run → 35 passed. Build +
+  pint clean; `wiki:validate` 0 warnings. `wiki:sync` not needed (no
+  route/model/command changes).
+- `wiki/domains/profile.md` — Anki tab section rewritten (connection +
+  card content + template preview), tab-table row, wide-layout sentence now
+  covers both wide tabs, new sources (`anki-template`, `sample-word-data`),
+  stamps bumped.
+
 ## 2026-10-14 (anki-connection 01 — Anki profile tab + connection settings)
 
 First ticket of the Anki-export feature (branch `anki-connection`): a sixth

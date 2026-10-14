@@ -5,12 +5,13 @@ namespace App\Support;
 use App\Models\User;
 
 /**
- * The profile's Anki tab connection settings (AnkiConnect URL, port, target
- * deck), resolved over defaults — the server-side twin of the browser-side
- * AnkiConnect client config. Stored sparsely in the `anki` section of the
- * per-user `ui_settings` blob, fully separate from popup/simulator/reader;
- * absent keys fall back to the defaults here. Laravel only ever stores these
- * values — the browser calls AnkiConnect directly.
+ * The profile's Anki tab settings: the connection (AnkiConnect URL, port,
+ * target deck) and the card field toggles, resolved over defaults — the
+ * server-side twin of the browser-side AnkiConnect client config. Stored
+ * sparsely in the `anki` section of the per-user `ui_settings` blob, fully
+ * separate from popup/simulator/reader; absent keys fall back to the defaults
+ * here. Laravel only ever stores these values — the browser calls AnkiConnect
+ * directly.
  */
 class AnkiSettings
 {
@@ -21,16 +22,46 @@ class AnkiSettings
     public const DEFAULT_DECK = 'ExtApp';
 
     /**
-     * The user's saved connection resolved over the defaults.
+     * Every card field toggle, in the note type's fixed field order — the
+     * canonical server-side list the JS template module mirrors
+     * (resources/js/lib/ankiTemplate.js). Absent keys mean on, the Popups
+     * tab's convention.
+     */
+    public const FIELDS = [
+        'word',
+        'transcription',
+        'part_of_speech',
+        'frequency',
+        'definitions',
+        'translations',
+        'examples',
+        'etymology',
+        'word_family',
+        'tags',
+        'familiarity',
+        'language',
+    ];
+
+    /**
+     * The user's saved settings resolved over the defaults: the connection
+     * plus the field toggles (all on unless the user opted out).
+     *
+     * @return array{url: string, port: int, deck: string, fields: array<string, bool>}
      */
     public static function for(?User $user): array
     {
         $saved = $user?->settings?->ui_settings['anki'] ?? [];
 
+        $fields = [];
+        foreach (self::FIELDS as $field) {
+            $fields[$field] = $saved['fields'][$field] ?? true;
+        }
+
         return [
             'url' => $saved['url'] ?? self::DEFAULT_URL,
             'port' => $saved['port'] ?? self::DEFAULT_PORT,
             'deck' => $saved['deck'] ?? self::DEFAULT_DECK,
+            'fields' => $fields,
         ];
     }
 }

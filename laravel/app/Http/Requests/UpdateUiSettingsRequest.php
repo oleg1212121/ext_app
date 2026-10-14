@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Classes\Enrichment\EnricherRegistry;
+use App\Support\AnkiSettings;
 use App\Support\SavedUiSettings;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -57,7 +58,14 @@ class UpdateUiSettingsRequest extends FormRequest
             'anki.url' => ['nullable', 'string', 'max:255'],
             'anki.port' => ['nullable', 'integer', 'min:1', 'max:65535'],
             'anki.deck' => ['nullable', 'string', 'max:100'],
+            // Card content: the twelve field toggles (absent key = on), one
+            // rule each from AnkiSettings::FIELDS — the canonical list.
+            'anki.fields' => ['nullable', 'array'],
         ];
+
+        foreach (AnkiSettings::FIELDS as $field) {
+            $rules["anki.fields.{$field}"] = ['boolean'];
+        }
 
         // The annotation display preferences are registry-owned (ADR 0067):
         // every annotation accepts its key on both surfaces.

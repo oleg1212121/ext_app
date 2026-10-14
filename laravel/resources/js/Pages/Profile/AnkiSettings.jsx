@@ -10,25 +10,50 @@ import {
     ankiConnectVersion,
     requestPermission,
 } from '../../lib/ankiConnect'
-import {InputLabel, SecondaryButton, SectionHeader, TextInput} from './ui.jsx'
+import {ANKI_FIELDS, buildNoteFields, generateCardTemplate, renderCardHtml} from '../../lib/ankiTemplate'
+import {SAMPLE_DATA, SAMPLE_FAMILIARITY, SAMPLE_TAGS} from './sampleWordData'
+import {CheckboxRow, InputLabel, SecondaryButton, SectionHeader, TextInput} from './ui.jsx'
 
 // The profile's Anki tab: connection settings (AnkiConnect URL + port, target
-// deck) autosaved into ui_settings.anki, plus a "Test connection" probe that
-// runs in the browser — AnkiConnect lives on the user's desktop, so the
-// server can never reach it (spec: no PHP-side Anki calls, ever). Card
-// fields/template and the sample card arrive with the later Anki tickets and
-// share this wide layout.
+// deck) autosaved into ui_settings.anki with a browser-side "Test connection"
+// probe — AnkiConnect lives on the user's desktop, so the server can never
+// reach it — plus the card-content side: twelve field toggles and a live
+// Front/Back preview of the real generated template (lib/ankiTemplate.js).
+// Everything on this tab works offline except the probe; no Anki call is ever
+// made from PHP (spec).
 
+// Display grouping only — each checkbox is independent.
+const FIELD_GROUPS = [
+    {titleKey: 'profile.anki_field_group_word', keys: ['word', 'transcription', 'part_of_speech', 'frequency', 'language']},
+    {titleKey: 'profile.anki_field_group_dictionary', keys: ['definitions', 'translations', 'examples', 'etymology', 'word_family']},
+    {titleKey: 'profile.anki_field_group_tracking', keys: ['tags', 'familiarity']},
+]
+
+const initialFields = (saved) => {
+    const resolved = {}
+    for (const {key} of ANKI_FIELDS) {
+        // Absent key = on, the Popups tab's convention.
+        resolved[key] = saved?.fields?.[key] ?? true
+    }
+    return resolved
+}
+
+// One state object so every autosave PATCH carries the WHOLE anki section —
+// the endpoint replaces the section wholesale, so a fields-only save would
+// wipe the connection settings (and vice versa).
 const initialState = (saved) => ({
     url: saved?.url ?? ANKI_DEFAULT_URL,
     port: saved?.port ?? ANKI_DEFAULT_PORT,
     deck: saved?.deck ?? ANKI_DEFAULT_DECK,
+    fields: initialFields(saved),
 })
 
-export default function AnkiSettings({ankiSettings = null}) {
+export default function AnkiSettings({ankiSettings = null, nativeLanguageId = null}) {
     const {t} = useI18n()
     const [settings, setSettings] = useState(() => initialState(ankiSettings))
     const [test, setTest] = useState({status: 'idle'})
+    const [face, setFace] = useState('front')
+    const [copied, setCopied] = useState(false)
 
     useUiSettingsAutosave('anki', settings)
 
@@ -40,6 +65,10 @@ export default function AnkiSettings({ankiSettings = null}) {
         // nullable rule); a reload resolves it back to the default.
         setSettings((current) => ({...current, port: Number.isNaN(parsed) ? null : parsed}))
     }
+    const toggleField = (key) => setSettings((current) => ({
+        ...current,
+        fields: {...current.fields, [key]: !current.fields[key]},
+    }))
 
     const probe = async (call) => {
         setTest({status: 'testing'})
@@ -62,6 +91,31 @@ export default function AnkiSettings({ankiSettings = null}) {
         }
         return result.version
     })
+
+    // The generated template + the note built from the shared sample fixture:
+    // the preview renders what Anki renders at review time, and the copy
+    // buttons hand out the exact artifacts the template sync pushes.
+    const template = generateCardTemplate(settings.fields)
+    const noteFields = buildNoteFields(SAMPLE_DATA, {
+        familiarity: SAMPLE_FAMILIARITY,
+        tags: SAMPLE_TAGS,
+        nativeLanguage: nativeLanguageId,
+    })
+    const previewDoc = (side) => [
+        '<!doctype html><html><head><meta charset="utf-8">',
+        `<style>${template.css}</style></head>`,
+        `<body class="card">${renderCardHtml(template[side], noteFields)}</body></html>`,
+    ].join('')
+
+    const copy = async (text) => {
+        try {
+            await navigator.clipboard.writeText(text)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        } catch (error) {
+            console.warn('clipboard write failed', error)
+        }
+    }
 
     return (
         <section>
@@ -156,6 +210,91 @@ export default function AnkiSettings({ankiSettings = null}) {
                         </ol>
                     </div>
                 )}
+            </div>
+
+            {/* Card content: two columns at lg+ mirroring the Popups tab —
+                field toggles ~1/3 left, live template preview ~2/3 right. */}
+            <div className="mt-12 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-10">
+                <div>
+                    <h2 className="font-serif text-lg sm:text-xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+                        {t('profile.anki_card_title')}
+                    </h2>
+                    <p className="mt-2 max-w-md font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
+                        {t('profile.anki_card_description')}
+                    </p>
+
+                    <div className="mt-6 space-y-6">
+                        {FIELD_GROUPS.map((group) => (
+                            <div key={group.titleKey}>
+                                <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
+                                    {t(group.titleKey)}
+                                </h3>
+                                <div className="mt-1">
+                                    {group.keys.map((key) => (
+                                        <CheckboxRow
+                                            key={key}
+                                            id={`anki-field-${key}`}
+                                            checked={settings.fields[key]}
+                                            onChange={() => toggleField(key)}
+                                            label={t(`profile.anki_field_${key}`)}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="mt-10 lg:mt-0">
+                    <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
+                        {t('profile.anki_template_preview_title')}
+                    </h3>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+                        <div role="tablist" aria-label={t('profile.anki_template_preview_title')} className="flex gap-4">
+                            {['front', 'back'].map((side) => (
+                                <button
+                                    key={side}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={face === side}
+                                    onClick={() => setFace(side)}
+                                    className={[
+                                        'px-1 py-0.5 font-serif text-sm rounded-sm transition-colors',
+                                        face === side
+                                            ? 'text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)] underline underline-offset-4'
+                                            : 'text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60 hover:text-[var(--color-ink)] dark:hover:text-[var(--color-vellum-night)]',
+                                    ].join(' ')}
+                                >
+                                    {t(side === 'front' ? 'profile.anki_template_front' : 'profile.anki_template_back')}
+                                </button>
+                            ))}
+                        </div>
+
+                        <SecondaryButton onClick={() => copy(template[face])} type="button">
+                            {t('profile.anki_copy_html')}
+                        </SecondaryButton>
+                        <SecondaryButton onClick={() => copy(template.css)} type="button">
+                            {t('profile.anki_copy_css')}
+                        </SecondaryButton>
+                        {copied && (
+                            <span className="font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
+                                {t('profile.anki_copied')}
+                            </span>
+                        )}
+                    </div>
+
+                    {/* The exact generated artifact: generated CSS + HTML with
+                        the sample values substituted for {{Field}}, in a
+                        sandboxed frame so the template's styling can't leak
+                        into (or inherit from) the app. */}
+                    <iframe
+                        title={t('profile.anki_template_preview_title')}
+                        sandbox=""
+                        className="mt-3 h-96 w-full rounded-sm border border-[var(--color-hairline)] bg-white dark:border-[var(--color-hairline-night)]"
+                        srcDoc={previewDoc(face)}
+                    />
+                </div>
             </div>
         </section>
     )

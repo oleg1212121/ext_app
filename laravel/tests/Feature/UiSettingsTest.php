@@ -206,6 +206,69 @@ test('anki junk values are rejected and unknown keys never persist', function ()
     expect($anki)->toBe(['url' => 'http://127.0.0.1']);
 });
 
+test('authenticated user can save anki card field toggles', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', [
+            'anki' => [
+                'url' => 'http://localhost',
+                'port' => 8765,
+                'deck' => 'ExtApp',
+                'fields' => [
+                    'word' => true,
+                    'transcription' => true,
+                    'definitions' => false,
+                    'etymology' => false,
+                ],
+            ],
+        ])
+        ->assertOk()
+        ->assertJson(['saved' => true]);
+
+    $anki = $user->settings()->first()->ui_settings['anki'];
+    expect($anki['url'])->toBe('http://localhost')
+        ->and($anki['fields']['definitions'])->toBeFalse()
+        ->and($anki['fields']['etymology'])->toBeFalse()
+        ->and($anki['fields']['word'])->toBeTrue();
+});
+
+test('anki field junk is rejected and unknown field keys never persist', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['fields' => ['definitions' => 'banana']]])
+        ->assertInvalid('anki.fields.definitions');
+
+    // Unknown field keys pass validation but validated() strips them, exactly
+    // like the section's connection keys — the toggle map never grows junk.
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['fields' => ['audio' => true, 'word' => false]]])
+        ->assertOk();
+
+    $anki = $user->settings()->first()->ui_settings['anki'];
+    expect($anki['fields'])->toBe(['word' => false]);
+});
+
+test('anki fields save keeps the other sections intact', function () {
+    $user = User::factory()->create();
+    withSavedUiSettings($user, [
+        'simulator' => ['font_size' => 30],
+        'reader' => ['highlight' => true],
+        'popup' => ['definitions' => false],
+    ]);
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['fields' => ['tags' => false]]])
+        ->assertOk();
+
+    $ui = $user->settings()->first()->ui_settings;
+    expect($ui['simulator']['font_size'])->toBe(30)
+        ->and($ui['reader']['highlight'])->toBeTrue()
+        ->and($ui['popup']['definitions'])->toBeFalse()
+        ->and($ui['anki']['fields']['tags'])->toBeFalse();
+});
+
 test('an unapproved user can save anki settings', function () {
     // Same auth-only rule as the Popups tab: the Anki tab lives on the
     // profile, whose autosave endpoint is reachable before approval.

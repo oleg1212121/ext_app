@@ -143,7 +143,7 @@ export default function Edit({
 
                     <TabPanel active={activeTab === 'anki'} width="wide">
                         <Card width="wide">
-                            <AnkiSettings ankiSettings={ankiSettings}/>
+                            <AnkiSettings ankiSettings={ankiSettings} nativeLanguageId={nativeLanguageId}/>
                         </Card>
                     </TabPanel>
 

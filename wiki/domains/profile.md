@@ -4,8 +4,8 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T21:45:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T21:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T22:10:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T22:10:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -24,7 +24,13 @@ sources:
     title: AnkiSettings tab section (connection settings + test connection)
   - id: anki-settings
     resource: laravel/app/Support/AnkiSettings.php
-    title: AnkiSettings (saved connection resolved over defaults)
+    title: AnkiSettings (saved connection + field toggles resolved over defaults)
+  - id: anki-template
+    resource: laravel/resources/js/lib/ankiTemplate.js
+    title: ankiTemplate.js (field-key → Anki-field-name map, deterministic Front/Back/CSS generator)
+  - id: sample-word-data
+    resource: laravel/resources/js/Pages/Profile/sampleWordData.js
+    title: sampleWordData.js (sample fixture shared by the Popups and Anki previews)
   - id: ai-models
     resource: laravel/resources/js/Pages/Profile/AiModels.jsx
     title: AiModels tab section
@@ -70,7 +76,7 @@ one width variant, `profileWidthClass(width, cappedClass)` in `ui.jsx`.
 | Account | Profile Information (name/email) · Update Password | `PATCH /profile` (`profile.update`), `PUT /password` (`password.update`, auth routes) |
 | Preferences | Native + interface language | `PATCH /profile/settings` (`profile.settings.update`) |
 | Popups | Word popup block visibility (checkbox groups) + live preview | autosaved `PATCH /ui-settings` (`ui-settings.update`, auth-only — section `popup`) |
-| Anki | Anki connection: AnkiConnect URL · port · deck name · Test connection | autosaved `PATCH /ui-settings` (auth-only — section `anki`); AnkiConnect itself is called from the browser only |
+| Anki | Anki connection: AnkiConnect URL · port · deck name · Test connection; card content: 12 field toggles + generated-template preview (Copy HTML/CSS) | autosaved `PATCH /ui-settings` (auth-only — section `anki`); AnkiConnect itself is called from the browser only |
 | AI Models | Answer + explanation model selects · AI Provider API Keys | `PATCH /profile/ai-models` (`profile.ai-models.update`), `POST /profile/api-keys` + `DELETE /profile/api-keys/{providerKey}` |
 | Danger zone | Delete Account (password modal) | `DELETE /profile` (`profile.destroy`) |
 
@@ -92,14 +98,14 @@ one key of `ui_settings.popup`; an absent key means visible, so a fresh user
 matches the classic popup exactly. Saving is automatic per flick through
 `useUiSettingsAutosave('popup', …)` — debounced 800 ms, no submit button.
 
-**Layout — the only tab-wide card in the profile.** At `lg` and up the tab
+**Layout — the wide tab shape, shared with Anki.** At `lg` and up the tab
 is a two-column grid (`lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]`,
 `lg:gap-10`): the checkbox groups take the left ~⅓, the live preview the
 right ~⅔; below `lg` it stacks checkboxes-above-preview (the original
-order). This is the one tab whose panel *and* card pass `width="wide"`, so the grid
-spans the full profile frame instead of the regular `max-w-3xl` panel /
-`max-w-xl` card caps — at 576px a ⅓/⅔ split would crush the preview to
-~345px.
+order). The Popups and Anki tabs are the two whose panels *and* cards pass
+`width="wide"`, so their grids span the full profile frame instead of the
+regular `max-w-3xl` panel / `max-w-xl` card caps — at 576px a ⅓/⅔ split
+would crush the preview to ~345px.
 
 Right of the checkbox groups at `lg`+ (stacked below them on smaller
 screens), a **live preview** renders the popup's real body — the exported
@@ -118,17 +124,20 @@ page as the `popupVisibility` Inertia prop.
 
 # Anki tab
 
-Per-user **Anki connection settings** (the Anki-export feature, spec
-`.scratch/anki-connection/spec.md`): the AnkiConnect endpoint (URL, default
-`http://127.0.0.1`) and port (default `8765`) plus the target deck name
-(default `ExtApp`). The three inputs autosave through
-`useUiSettingsAutosave('anki', …)` into `ui_settings.anki` — a section fully
-separate from `popup`/`simulator`/`reader`; the server resolves the saved
-values over the defaults in `App\Support\AnkiSettings::for()` and shares
-them to every page as the `ankiSettings` Inertia prop.
+Per-user **Anki settings** (the Anki-export feature, spec
+`.scratch/anki-connection/spec.md`): connection settings and card content,
+autosaved together through `useUiSettingsAutosave('anki', …)` into
+`ui_settings.anki` — one state object, because the endpoint replaces the
+section wholesale (a fields-only save would wipe the connection and vice
+versa). The section is fully separate from `popup`/`simulator`/`reader`; the
+server resolves saved values over the defaults in
+`App\Support\AnkiSettings::for()` (URL default `http://127.0.0.1`, port
+`8765`, deck `ExtApp`, all twelve fields on) and shares them to every page as
+the `ankiSettings` Inertia prop.
 
-A **Test connection** button calls AnkiConnect's `version` action **directly
-from the browser** — the browser-side client module
+**Connection** — AnkiConnect endpoint (URL + port) and target deck name,
+plus a **Test connection** button that calls AnkiConnect's `version` action
+**directly from the browser** — the browser-side client module
 `resources/js/lib/ankiConnect.js` (invoke / version / requestPermission) is
 the only AnkiConnect caller in the codebase; Laravel never calls Anki, since
 dev runs in Docker/WSL2 and prod is remote, so only the user's own browser
@@ -140,6 +149,33 @@ app's origin (shown live from `window.location.origin`) to
 `webCorsOriginList` in Anki's AnkiConnect config and restart Anki. The
 module normalizes both failure shapes — fetch rejection (CORS/refused) and
 AnkiConnect's error string inside HTTP 200 — into `AnkiConnectError`.
+
+**Card content** — twelve field toggles (Word, Transcription, Part of
+speech, Frequency, Definitions, Translations, Examples, Etymology, Word
+family, Tags, Familiarity, Language) in three display groups (Word details /
+Dictionary details / Tags & progress); absent key = on, the Popups tab's
+convention. `AnkiSettings::FIELDS` is the canonical server-side list, whose
+one JS mirror `resources/js/lib/ankiTemplate.js` also owns the field-key →
+Anki-field-name mapping (Word, Transcription, PartOfSpeech, … — the note
+type's fixed order) and the "ExtApp Vocabulary" note-type name.
+`generateCardTemplate(fields)` deterministically emits the Front/Back HTML +
+CSS: every field wrapped `<div class="ef-field ef-<key>">{{Field}}</div>`,
+a toggled-off field additionally carrying the `ef-hidden` class (values
+always carry every field — hide-class semantics, so re-syncing the template
+restyles existing cards instead of dropping data); Front shows Word +
+Transcription, the Back all twelve; the CSS defines the `.card` base plus
+`.ef-hidden { display: none }`. `buildNoteFields()` builds the full
+12-field note from a word payload (what the send-to-Anki tickets put on the
+wire; Translations narrow to the user's native language when it matches,
+falling back to all).
+
+**Template preview** — the tab renders the exact generated artifacts in a
+sandboxed iframe (`srcDoc` = generated CSS + HTML with the sample values
+substituted for the `{{Field}}` placeholders, i.e. what Anki renders at
+review time) as Front/Back tabs, with read-only Copy HTML (the selected
+face) and Copy CSS buttons. The note comes from the shared sample fixture
+`Pages/Profile/sampleWordData.js` — the same "melted → melt" fixture the
+Popups tab's preview renders, so both previews have one source.
 
 # AI Models tab
 
