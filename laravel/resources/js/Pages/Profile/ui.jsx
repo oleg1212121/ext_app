@@ -236,15 +236,15 @@ export function TrashIcon() {
 // The profile's layout-width variant, shared by the two tab layers that cap
 // content (`TabPanel` in Edit.jsx and `Card` here): 'panel' (default) keeps
 // a layer at its reading width, 'wide' lifts the cap so a tab's layout can
-// span the full profile frame — the Popups tab is the only 'wide' tab
-// (ticket 02). Each layer passes its own capped class.
+// span the full profile frame — the Popups and Anki tabs are the 'wide'
+// tabs. Each layer passes its own capped class.
 export function profileWidthClass(width = 'panel', cappedClass) {
     return width === 'wide' ? '' : cappedClass
 }
 
 // The bordered panel every profile section sits in. Regular sections keep
-// their inner content cap; the Popups tab passes 'wide' so its two-column
-// layout can span the full profile frame.
+// their inner content cap; the Popups and Anki tabs pass 'wide' so their
+// layouts can span the full profile frame.
 export function Card({children, width = 'panel'}) {
     return (
         <div className="border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] rounded-sm p-4 sm:p-8">

@@ -50,6 +50,13 @@ class UpdateUiSettingsRequest extends FormRequest
             'popup.examples' => ['boolean'],
             'popup.etymologies' => ['boolean'],
             'popup.explanation' => ['boolean'],
+            // Anki connection (the profile's Anki tab): AnkiConnect endpoint
+            // + target deck. The browser calls AnkiConnect directly; Laravel
+            // only stores these (unknown keys are stripped by validated()).
+            'anki' => ['nullable', 'array'],
+            'anki.url' => ['nullable', 'string', 'max:255'],
+            'anki.port' => ['nullable', 'integer', 'min:1', 'max:65535'],
+            'anki.deck' => ['nullable', 'string', 'max:100'],
         ];
 
         // The annotation display preferences are registry-owned (ADR 0067):

@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Profile
-description: The /profile account surface — tabbed Account / Preferences / Popups / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, provider API key management, account deletion.
-tags: [profile, settings, popups, ai, inertia, react]
+description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings, provider API key management, account deletion.
+tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T21:45:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T21:45:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -19,6 +19,12 @@ sources:
   - id: popup-visibility
     resource: laravel/app/Support/PopupVisibility.php
     title: PopupVisibility (saved opt-outs over all-visible defaults)
+  - id: anki-tab
+    resource: laravel/resources/js/Pages/Profile/AnkiSettings.jsx
+    title: AnkiSettings tab section (connection settings + test connection)
+  - id: anki-settings
+    resource: laravel/app/Support/AnkiSettings.php
+    title: AnkiSettings (saved connection resolved over defaults)
   - id: ai-models
     resource: laravel/resources/js/Pages/Profile/AiModels.jsx
     title: AiModels tab section
@@ -43,7 +49,7 @@ sources:
 
 The single account surface, reachable from the NavBar user dropdown at
 `/profile` for every authenticated user (approved or not). The page is a
-**tab bar of five sections** over the legacy vellum/vermilion palette, each
+**tab bar of six sections** over the legacy vellum/vermilion palette, each
 section rendered as a bordered card; the active tab is reflected in the URL
 as `?tab=` (deep-linkable, `history.replaceState` on switch), and only the
 active tab's forms stay mounted (Crossword-style unmount panels).
@@ -54,9 +60,9 @@ The page frame spans **nearly the full window on large screens** — soft cap
 level** (`max-w-3xl` on the `TabPanel` wrapper, via its `width` prop —
 `'panel'` by default, `'wide'` lifts the cap), so the widened frame does not
 stretch the regular forms, whose content remains capped inside each card
-(`max-w-xl` on the `Card` inner wrapper). **The Popups tab is the only
-exception**: its panel and card both pass `width="wide"`, lifting both caps
-so the tab's two-column layout spans the full frame. The two layers share
+(`max-w-xl` on the `Card` inner wrapper). **The Popups and Anki tabs are the
+exceptions**: their panels and cards pass `width="wide"`, lifting both caps
+so the tabs' layouts span the full profile frame. The two layers share
 one width variant, `profileWidthClass(width, cappedClass)` in `ui.jsx`.
 
 | Tab | Sections | Endpoint |
@@ -64,6 +70,7 @@ one width variant, `profileWidthClass(width, cappedClass)` in `ui.jsx`.
 | Account | Profile Information (name/email) · Update Password | `PATCH /profile` (`profile.update`), `PUT /password` (`password.update`, auth routes) |
 | Preferences | Native + interface language | `PATCH /profile/settings` (`profile.settings.update`) |
 | Popups | Word popup block visibility (checkbox groups) + live preview | autosaved `PATCH /ui-settings` (`ui-settings.update`, auth-only — section `popup`) |
+| Anki | Anki connection: AnkiConnect URL · port · deck name · Test connection | autosaved `PATCH /ui-settings` (auth-only — section `anki`); AnkiConnect itself is called from the browser only |
 | AI Models | Answer + explanation model selects · AI Provider API Keys | `PATCH /profile/ai-models` (`profile.ai-models.update`), `POST /profile/api-keys` + `DELETE /profile/api-keys/{providerKey}` |
 | Danger zone | Delete Account (password modal) | `DELETE /profile` (`profile.destroy`) |
 
@@ -109,6 +116,31 @@ tests can target both identically. The server resolves saved state over
 defaults in `App\Support\PopupVisibility::for()` and shares it to every
 page as the `popupVisibility` Inertia prop.
 
+# Anki tab
+
+Per-user **Anki connection settings** (the Anki-export feature, spec
+`.scratch/anki-connection/spec.md`): the AnkiConnect endpoint (URL, default
+`http://127.0.0.1`) and port (default `8765`) plus the target deck name
+(default `ExtApp`). The three inputs autosave through
+`useUiSettingsAutosave('anki', …)` into `ui_settings.anki` — a section fully
+separate from `popup`/`simulator`/`reader`; the server resolves the saved
+values over the defaults in `App\Support\AnkiSettings::for()` and shares
+them to every page as the `ankiSettings` Inertia prop.
+
+A **Test connection** button calls AnkiConnect's `version` action **directly
+from the browser** — the browser-side client module
+`resources/js/lib/ankiConnect.js` (invoke / version / requestPermission) is
+the only AnkiConnect caller in the codebase; Laravel never calls Anki, since
+dev runs in Docker/WSL2 and prod is remote, so only the user's own browser
+can reach their desktop Anki. Success reports the AnkiConnect version;
+failure renders actionable fix instructions — check Anki is running with the
+AnkiConnect add-on, click **Request permission** (the `requestPermission`
+action makes Anki show its approval popup for this origin), or add the
+app's origin (shown live from `window.location.origin`) to
+`webCorsOriginList` in Anki's AnkiConnect config and restart Anki. The
+module normalizes both failure shapes — fetch rejection (CORS/refused) and
+AnkiConnect's error string inside HTTP 200 — into `AnkiConnectError`.
+
 # AI Models tab
 
 * Both selects list the models **available to this user** — provider
@@ -136,9 +168,10 @@ All preferences live on the one-row-per-user `user_settings`
 `explanation_model_id` (typed FKs to `ai_models`, `nullOnDelete` — the model
 sync hard-deletes catalog rows, ADR 0035), and the `ui_settings` JSONB blob
 for per-surface UI state (simulator/reader sections via `PATCH /ui-settings`
-from the reading surfaces, and the popup visibility section via the same
-endpoint from this page — `UpdateUiSettingsRequest` carries the boolean
-rules for all three sections; unknown keys are stripped by `validated()`).
+from the reading surfaces, the popup visibility and Anki connection
+sections via the same endpoint from this page — `UpdateUiSettingsRequest`
+carries the rules for all four sections; unknown keys are stripped by
+`validated()`).
 The model preferences were backfilled from the legacy
 `ui_settings.simulator.model` string, which no longer exists.
 

@@ -1,5 +1,41 @@
 # Directory Update Log
 
+## 2026-10-14 (anki-connection 01 — Anki profile tab + connection settings)
+
+First ticket of the Anki-export feature (branch `anki-connection`): a sixth
+**Anki** tab on the profile page holding the AnkiConnect connection settings.
+
+- `laravel/app/Support/AnkiSettings.php` (new) — canonical connection
+  resolver: `url`/`port`/`deck` resolved over defaults
+  (`http://127.0.0.1` / `8765` / `ExtApp`) from the `anki` section of
+  `ui_settings`, mirroring `PopupVisibility::for()`.
+- `laravel/app/Http/Requests/UpdateUiSettingsRequest.php` — `anki.*` rules
+  (url string ≤255, port integer 1–65535, deck string ≤100, all nullable);
+  unknown keys keep being stripped by `validated()`.
+- `laravel/app/Http/Controllers/UiSettingsController.php` — `anki` joined
+  the section replace loop.
+- `laravel/app/Http/Middleware/HandleInertiaRequests.php` — new shared
+  `ankiSettings` prop next to `popupVisibility`.
+- `laravel/resources/js/lib/ankiConnect.js` (new) — the browser-side
+  AnkiConnect client (invoke / version / requestPermission only), the sole
+  AnkiConnect caller by design: Laravel never calls Anki. Normalizes
+  fetch rejection (CORS/refused) and AnkiConnect's error-inside-HTTP-200
+  into `AnkiConnectError` (`network` vs `anki`).
+- `laravel/resources/js/Pages/Profile/AnkiSettings.jsx` (new) — the tab
+  body: URL/port/deck inputs autosaved via `useUiSettingsAutosave('anki')`,
+  a Test connection button reporting the AnkiConnect version, and a failure
+  panel with the exact CORS fix (Request permission action +
+  `webCorsOriginList` + Anki restart, origin shown live).
+- `laravel/resources/js/Pages/Profile/Edit.jsx` — sixth tab `{id: 'anki'}`
+  after Popups, `width="wide"` panel + card like Popups; `ui.jsx` width
+  comments updated (Popups + Anki are the wide tabs).
+- `laravel/database/seeders/ui-strings/profile.php` — `profile.tab_anki` +
+  14 `profile.anki_*` strings (en/ru/be); reseeded via `UiStringSeeder`.
+- Tests: 6 new Pest tests — 4 in `UiSettingsTest` (anki save / section
+  isolation / junk+unknown-key stripping / unapproved user) + 2 in
+  `ProfileTest` (`ankiSettings` prop defaults + saved reflection).
+  `profile.md` updated for the sixth tab.
+
 ## 2026-10-14 (goldendict-import review fixes — stats accuracy, extraction edges, converter error)
 
 Review-fix commit on the `goldendict-import` branch: five two-axis review

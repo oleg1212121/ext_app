@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\AnkiSettings;
 use App\Support\PopupVisibility;
 use App\Support\UiStrings;
 use Illuminate\Http\Request;
@@ -68,6 +69,7 @@ class HandleInertiaRequests extends Middleware
             'locale' => fn () => app()->getLocale(),
             'uiStrings' => fn () => UiStrings::mapFor(app()->getLocale()),
             'popupVisibility' => fn () => PopupVisibility::for($request->user()),
+            'ankiSettings' => fn () => AnkiSettings::for($request->user()),
         ];
     }
 }

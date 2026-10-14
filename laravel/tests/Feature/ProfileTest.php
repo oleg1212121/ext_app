@@ -36,6 +36,36 @@ test('profile page shares the popups tab and all-visible defaults', function () 
             ->where('popupVisibility.explanation', true));
 });
 
+test('profile page shares anki connection settings resolved over defaults', function () {
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('ankiSettings.url', 'http://127.0.0.1')
+            ->where('ankiSettings.port', 8765)
+            ->where('ankiSettings.deck', 'ExtApp'));
+});
+
+test('anki settings prop reflects the saved connection', function () {
+    $user = User::factory()->create();
+    $user->settings()->updateOrCreate([], [
+        'ui_settings' => ['anki' => ['url' => 'http://localhost', 'port' => 8766]],
+    ]);
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('ankiSettings.url', 'http://localhost')
+            ->where('ankiSettings.port', 8766)
+            // Keys never touched keep their defaults.
+            ->where('ankiSettings.deck', 'ExtApp'));
+});
+
 test('popup visibility prop reflects the saved opt-outs', function () {
     $user = User::factory()->create();
     $user->settings()->updateOrCreate([], [

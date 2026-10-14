@@ -134,6 +134,91 @@ test('popup junk values are rejected and unknown keys never persist', function (
     expect($popup)->toBe(['definitions' => false]);
 });
 
+test('authenticated user can save anki connection settings', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', [
+            'anki' => [
+                'url' => 'http://localhost',
+                'port' => 8766,
+                'deck' => 'My deck',
+            ],
+        ])
+        ->assertOk()
+        ->assertJson(['saved' => true]);
+
+    $anki = $user->settings()->first()->ui_settings['anki'];
+    expect($anki['url'])->toBe('http://localhost')
+        ->and($anki['port'])->toBe(8766)
+        ->and($anki['deck'])->toBe('My deck');
+});
+
+test('saving the anki section keeps the other sections intact', function () {
+    $user = User::factory()->create();
+    withSavedUiSettings($user, [
+        'simulator' => ['font_size' => 30],
+        'reader' => ['highlight' => true],
+        'popup' => ['definitions' => false],
+    ]);
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['port' => 8765]])
+        ->assertOk();
+
+    $ui = $user->settings()->first()->ui_settings;
+    expect($ui['simulator']['font_size'])->toBe(30)
+        ->and($ui['reader']['highlight'])->toBeTrue()
+        ->and($ui['popup']['definitions'])->toBeFalse()
+        ->and($ui['anki']['port'])->toBe(8765);
+});
+
+test('anki junk values are rejected and unknown keys never persist', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['port' => 0]])
+        ->assertInvalid('anki.port');
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['port' => 70000]])
+        ->assertInvalid('anki.port');
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['port' => 'banana']])
+        ->assertInvalid('anki.port');
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['url' => str_repeat('a', 256)]])
+        ->assertInvalid('anki.url');
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['deck' => str_repeat('a', 101)]])
+        ->assertInvalid('anki.deck');
+
+    // Unknown keys pass validation but validated() strips them, exactly like
+    // the other sections — the connection config never grows junk fields.
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['apiKey' => 'secret', 'url' => 'http://127.0.0.1']])
+        ->assertOk();
+
+    $anki = $user->settings()->first()->ui_settings['anki'];
+    expect($anki)->toBe(['url' => 'http://127.0.0.1']);
+});
+
+test('an unapproved user can save anki settings', function () {
+    // Same auth-only rule as the Popups tab: the Anki tab lives on the
+    // profile, whose autosave endpoint is reachable before approval.
+    $user = User::factory()->unapproved()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['deck' => 'ExtApp']])
+        ->assertOk()
+        ->assertJson(['saved' => true]);
+
+    expect($user->settings()->first()->ui_settings['anki']['deck'])->toBe('ExtApp');
+});
+
 test('an unapproved user can update ui settings', function () {
     // The Popups tab lives on the auth-only profile; its autosave endpoint
     // moved out of the approved-only group with it.
