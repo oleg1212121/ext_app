@@ -1,5 +1,61 @@
 # Directory Update Log
 
+## 2026-10-14 (goldendict-import feature closure — playbook runbook, wiki sweep, deploy note)
+
+Closure of the goldendict-import feature (branch `goldendict-import`,
+commits `a5a2363`..`55a6f42`): no feature code changes — documentation and
+verification only.
+
+- `wiki/playbooks/import-dictionary-data.md` — the GoldenDict section is
+  now the complete runbook a new agent can follow start-to-finish:
+  download the dictionary under the repo (so the host-side converter and
+  the container-side import see the same files; the freemdict legal note
+  moved up front where the download happens) → convert on the host
+  through the bind-mounted venv → `--dry-run --max-entries=500` preview
+  (writes nothing) → smoke-run with real writes against the testing DB
+  (`DB_CONNECTION=testing migrate:fresh --seed`, then the same capped
+  command) → the real import detached with redirected output (heartbeats
+  every 100k entries: counts, RSS, elapsed) → verify in the Filament
+  admin. New "Prod deploy (python image rebuild)" subsection: the
+  converter's `pyglossary==5.4.2` is pinned in
+  `docker-compose/python/requirements.txt`, which the prod python image
+  bakes — after this feature lands on master, the prod machine's next
+  deploy needs `build python` + `up -d` + `./deploy.sh --stamp` before
+  `./deploy.sh` will run (the stamp guard refuses by design; dev is
+  unaffected — the bind-mounted venv was pip-installed directly).
+- `wiki/domains/dictionary-import.md` — swept every ticket-01..05 claim
+  against the code (command signature and validations, profile
+  fallback/no-match sampling semantics, heartbeat interval and fields,
+  column caps): all accurate. The "What it is" intro now names both
+  source shapes (kaikki dumps and converted GoldenDict dictionaries), and
+  the `goldendict:import` component bullet records stage 1's host-venv
+  pyglossary dependency — the fact behind the deploy note. `generated.at`
+  bumped on both files.
+- Honest feature state: tickets 01–04 resolved; ticket 05 is
+  **ready-for-human** — the profile mechanism is complete and tested, but
+  the first REAL-dictionary profile is still to be authored (no freemdict
+  file exists on this machine; `config/goldendict.php` ships only the
+  documented `example-classes` shape profile, and the playbook how-to
+  makes authoring it mechanical). Everything else is end-to-end:
+  MDX/DSL/StarDict → JSONL → `goldendict:import`
+  monolingual/bilingual/profiled, every flag live, no schema migrations
+  (raw article HTML stays in the on-disk JSONL, re-importable anytime).
+
+Checks: full parallel `composer run test` → **1,134 passed, 10 failed**
+(5,877 assertions) — the 10 are exactly the pre-existing live Google
+Translate 403 failures tickets 02/03/05 clean-tree-reproduced
+(`WordEndpointTest` ×3, `RefreshEntityWordsJobTest` ×3,
+`AdoptEntityWordsTest` ×2, `EntityEnrichmentTest` ×1,
+`WordTranslationFetchTest` ×1 — external API calls without `Http::fake`;
+re-verified by running the five suites standalone: the same 10 failures,
+52 passed, accounting for the full run's entire failure count). Python
+suite `docker exec ext_python python -m pytest /app/ai -q` → 157 passed,
+1 pre-existing starlette warning. `wiki:sync` produced timestamp-only
+churn on the three machine-owned reference files (the
+`goldendict:import` signature was recorded in ticket 02 and is unchanged
+since) — reverted per convention; `wiki:validate` conformant. Pint PASS
+(311 files; no PHP touched).
+
 ## 2026-10-14 (goldendict-import ticket 05 — extraction profiles)
 
 Fifth commit of the goldendict-import feature (branch `goldendict-import`):

@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-14T16:29:38+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T16:54:12+03:00 }
 sources:
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
@@ -45,8 +45,11 @@ sources:
 # What it is
 
 The import pipeline that fills the [unified dictionary](
-/database/dictionary.md) tables from machine-readable Wiktionary data
-(kaikki.org JSONL dumps). Since ADR
+/database/dictionary.md) tables from two source shapes: machine-readable
+Wiktionary data (kaikki.org JSONL dumps, parsed directly) and
+GoldenDict-format dictionaries (MDict `.mdx`, ABBYY Lingvo `.dsl`,
+StarDict — converted to an intermediate JSONL by the python service's
+`ai/goldendict_convert.py` first). Since ADR
 [0018](../../docs/adr/0018-works-and-unified-language-keyed-tables.md) there
 is one language-keyed `words` table (+ satellites) per language instead of
 mirrored per-language tables, and a single `word_translations` pivot —
@@ -100,8 +103,12 @@ mirrored per-language tables, and a single `word_translations` pivot —
 * `php artisan goldendict:import {file} --lang= [--target-lang=]` — the
   GoldenDict entry point: imports a **converted** JSONL (one
   `{"word", "alts", "html"}` record per line, produced by the python
-  service's `ai/goldendict_convert.py` — stage 1 of the pipeline, see
-  [Importing Dictionary Data](/playbooks/import-dictionary-data.md)).
+  service's `ai/goldendict_convert.py` — stage 1 of the pipeline, run on
+  the **host** through the bind-mounted venv (pyglossary 5.4.2, pinned in
+  `docker-compose/python/requirements.txt` — hence the routine python
+  image rebuild on the prod machine after this feature deploys; see
+  [Importing Dictionary Data](/playbooks/import-dictionary-data.md) for
+  the full runbook including the deploy note).
   Stage 2 is `App\Classes\GoldenDictParser`, a **generic heuristic
   extractor**: article HTML is parsed with native `DOMDocument`/`DOMXPath`
   into plain-text block segments (`definitions`, truncated to the 500-char

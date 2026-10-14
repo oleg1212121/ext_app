@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-14T16:29:38+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T16:52:46+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -142,7 +142,13 @@ Two source shapes exist:
 For GoldenDict-format dictionaries (freemdict etc.). The converter accepts
 MDict `.mdx`, ABBYY Lingvo `.dsl` (UTF-8 or UTF-16LE) and StarDict sets
 (an `.ifo` path or a directory containing exactly one set) — see the usage
-note in `docker-compose/python/ai/goldendict_convert.py`. Two stages:
+note in `docker-compose/python/ai/goldendict_convert.py`. Two stages: a
+host-side pyglossary conversion, then the container-side import. Put the
+dictionary file under the repo (e.g. `laravel/goldendict/`) so the
+host-side converter and the container-side import see the same files — the
+JSONL lands next to the source. Legal note: freemdict dictionaries are
+frequently commercial rips (Lingvo etc.) — fine for personal learning use;
+do not redistribute the extracted data.
 
 1. **Convert** on the host through the bind-mounted python venv (stage 1,
    writes the JSONL next to the source; encrypted/regcode MDX is rejected
@@ -150,34 +156,54 @@ note in `docker-compose/python/ai/goldendict_convert.py`. Two stages:
 
    ```bash
    docker-compose/python/ai/venv/bin/python \
-       docker-compose/python/ai/goldendict_convert.py DICT.mdx
-   # -> DICT.mdx.jsonl with {"word", "alts", "html"} records
+       docker-compose/python/ai/goldendict_convert.py laravel/goldendict/DICT.mdx
+   # -> laravel/goldendict/DICT.mdx.jsonl with {"word", "alts", "html"} records
    ```
 
-2. **Smoke-run the import dry** against the testing DB, then import
-   (stage 2; `--lang` accepts any registry code, missing lookups
-   auto-create like the Wiktionary import):
+2. **Preview dry** — parse a capped slice and report what would be
+   written (stat rows only; nothing is written, not even auto-created
+   lookups):
+
+   ```bash
+   docker exec ext_app_laravel sh -c 'cd /var/www && php artisan goldendict:import goldendict/DICT.mdx.jsonl --lang=xx --max-entries=500 --dry-run'
+   ```
+
+3. **Smoke-run against the testing DB** — the same capped run with real
+   writes, so the full write path (lookup auto-creation, upserts, links)
+   is exercised on throwaway `ext_app_test` data first:
 
    ```bash
    docker exec ext_app_laravel sh -c 'cd /var/www && DB_CONNECTION=testing php artisan migrate:fresh --seed'
-   docker exec ext_app_laravel sh -c 'cd /var/www && DB_CONNECTION=testing php artisan goldendict:import DICT.mdx.jsonl --lang=xx --max-entries=500 --dry-run'
-   docker exec ext_app_laravel php artisan goldendict:import DICT.mdx.jsonl --lang=xx
+   docker exec ext_app_laravel sh -c 'cd /var/www && DB_CONNECTION=testing php artisan goldendict:import goldendict/DICT.mdx.jsonl --lang=xx --max-entries=500'
    ```
 
-   Extraction is a generic heuristic (plain-text block segments →
-   definitions, `[bracketed]`/`/slashed/` IPA → transcriptions under the
-   auto-created `ipa` type, POS abbreviations → word-class slugs, `alts` →
-   forms, multi-word headwords → `phrase`). For a **bilingual**
-   dictionary add `--target-lang=yy`: translation candidates (the
-   comma/semicolon-delimited article segments that survive the noise
-   filters) become target-language words — the source class slug mapped
-   into the target language, multi-word candidates → `phrase` — plus
-   canonical `word_translations` links and `words.translations` JSON
-   staging, all written directly (no separate link pass; `--no-link`
-   skips these phases). For dictionaries whose articles have structure
-   the heuristics mangle, add `--profile=<slug>` (below). Re-runs upsert
-   and text-dedupe — raw article HTML never enters the database, so a
-   better extractor just re-imports the JSONL.
+4. **Run the real import detached**, redirecting output — dictionary-sized
+   JSONLs are long-running, and heartbeats every 100k entries (counts,
+   RSS, elapsed) land in `storage/logs/laravel.log` so progress stays
+   observable:
+
+   ```bash
+   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan goldendict:import goldendict/DICT.mdx.jsonl --lang=xx >> storage/logs/goldendict-import.log 2>&1'
+   ```
+
+   `--lang` accepts any registry code, missing lookups auto-create like
+   the Wiktionary import. Extraction is a generic heuristic (plain-text
+   block segments → definitions, `[bracketed]`/`/slashed/` IPA →
+   transcriptions under the auto-created `ipa` type, POS abbreviations →
+   word-class slugs, `alts` → forms, multi-word headwords → `phrase`).
+   For a **bilingual** dictionary add `--target-lang=yy`: translation
+   candidates (the comma/semicolon-delimited article segments that
+   survive the noise filters) become target-language words — the source
+   class slug mapped into the target language, multi-word candidates →
+   `phrase` — plus canonical `word_translations` links and
+   `words.translations` JSON staging, all written directly (no separate
+   link pass; `--no-link` skips these phases). For dictionaries whose
+   articles have structure the heuristics mangle, add `--profile=<slug>`
+   (below). Re-runs upsert and text-dedupe — raw article HTML never
+   enters the database, so a better extractor just re-imports the JSONL.
+
+5. Verify in the Filament admin (`/admin`, group "Words") like the
+   Wiktionary flow above.
 
 ### Extraction profiles (--profile=<slug>)
 
@@ -221,9 +247,27 @@ curly-brace homonym markers surface as a bold `<b>…</b>` prefix, and
 StarDict sets with `sametypesequence=m` yield **plain-text** bodies in
 `html` — selectors must not assume strict HTML.
 
-3. Verify in the Filament admin like the Wiktionary flow above. freemdict
-   dictionaries are frequently commercial rips — fine for personal
-   learning use, do not redistribute the extracted data.
+### Prod deploy (python image rebuild)
+
+The converter's `pyglossary` dependency is pinned in
+`docker-compose/python/requirements.txt`, and the prod python image bakes
+that file — dev is unaffected (the bind-mounted venv was pip-installed
+directly). After this feature lands on master, the prod machine's next
+deploy therefore needs the routine python image rebuild **before**
+`./deploy.sh` will run: `requirements.txt` is one of the five stamped
+container-definition files, so the stamp guard refuses (by design) until
+the image is rebuilt and re-stamped:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build python
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile cloudflare up -d
+./deploy.sh --stamp
+./deploy.sh   # or re-run the Deploy workflow
+```
+
+(The generic flow is
+[Production Deployment](/playbooks/production-deployment.md) → "When
+images DO change".)
 
 # Notes
 
