@@ -1,4 +1,4 @@
-import React, {useState} from 'react'
+import React, {useRef, useState} from 'react'
 import {useI18n} from '../../i18n'
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave'
 import {
@@ -10,7 +10,8 @@ import {
     ankiConnectVersion,
     requestPermission,
 } from '../../lib/ankiConnect'
-import {ANKI_FIELDS, buildNoteFields, generateCardTemplate, renderCardHtml} from '../../lib/ankiTemplate'
+import {ANKI_CARD_NAME, ANKI_FIELDS, buildNoteFields, generateCardTemplate, renderCardHtml} from '../../lib/ankiTemplate'
+import {AnkiNoteTypeMismatchError, ensureAnkiTarget, sendAnkiNote} from '../../lib/ankiSync'
 import {SAMPLE_DATA, SAMPLE_FAMILIARITY, SAMPLE_TAGS} from './sampleWordData'
 import {CheckboxRow, InputLabel, SecondaryButton, SectionHeader, TextInput} from './ui.jsx'
 
@@ -18,9 +19,10 @@ import {CheckboxRow, InputLabel, SecondaryButton, SectionHeader, TextInput} from
 // deck) autosaved into ui_settings.anki with a browser-side "Test connection"
 // probe — AnkiConnect lives on the user's desktop, so the server can never
 // reach it — plus the card-content side: twelve field toggles and a live
-// Front/Back preview of the real generated template (lib/ankiTemplate.js).
-// Everything on this tab works offline except the probe; no Anki call is ever
-// made from PHP (spec).
+// Front/Back preview of the real generated template (lib/ankiTemplate.js),
+// and the write path into Anki: template sync and a duplicate-checked sample
+// card (lib/ankiSync.js). Everything except the Anki actions works offline;
+// no Anki call is ever made from PHP (spec).
 
 // Display grouping only — each checkbox is independent.
 const FIELD_GROUPS = [
@@ -38,6 +40,46 @@ const initialFields = (saved) => {
     return resolved
 }
 
+// The connection-hint failure panel, shared by both write surfaces (Test
+// connection and template sync / sample card): the ordered fix list with the
+// optional inline "Request permission" button — `onPermission` is each
+// surface's own grant-and-retry handler.
+function ConnectionHint({settings, testId, onPermission = null}) {
+    const {t} = useI18n()
+
+    return (
+        <div
+            data-testid={testId}
+            className="rounded-sm border border-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] p-4"
+        >
+            <p className="text-sm text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+                {t('profile.anki_test_failed', {endpoint: ankiConnectEndpoint(settings)})}
+            </p>
+            <p className="mt-2 text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
+                {t('profile.anki_fix_intro')}
+            </p>
+            <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+                <li>{t('profile.anki_fix_running')}</li>
+                <li>
+                    {t('profile.anki_fix_permission')}{' '}
+                    {onPermission && (
+                        <button
+                            type="button"
+                            onClick={onPermission}
+                            className="font-medium text-[var(--color-vermilion)] underline underline-offset-2 dark:text-[var(--color-vermilion-night)]"
+                        >
+                            {t('profile.anki_request_permission')}
+                        </button>
+                    )}
+                </li>
+                <li>
+                    {t('profile.anki_fix_cors', {origin: window.location.origin})}
+                </li>
+            </ol>
+        </div>
+    )
+}
+
 // One state object so every autosave PATCH carries the WHOLE anki section —
 // the endpoint replaces the section wholesale, so a fields-only save would
 // wipe the connection settings (and vice versa).
@@ -52,8 +94,10 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguageId = nu
     const {t} = useI18n()
     const [settings, setSettings] = useState(() => initialState(ankiSettings))
     const [test, setTest] = useState({status: 'idle'})
+    const [sync, setSync] = useState({status: 'idle'})
     const [face, setFace] = useState('front')
     const [copied, setCopied] = useState(false)
+    const lastAction = useRef(null)
 
     useUiSettingsAutosave('anki', settings)
 
@@ -91,6 +135,49 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguageId = nu
         }
         return result.version
     })
+
+    // The tab's write path into Anki. `settings` doubles as the sync config
+    // (url/port/deck/fields) that lib/ankiSync.js acts on. The sync button
+    // always forces a fresh ensure pass — that is what re-applies the
+    // toggled-off hide classes to all existing cards; the sample card goes
+    // through the memoized ensure + duplicate-checked add.
+    const runAction = (action) => {
+        lastAction.current = action
+        setSync({status: 'running'})
+        action().then(
+            (status) => setSync({status}),
+            (error) => setSync({status: 'failed', error}),
+        )
+    }
+
+    const runSync = () => runAction(async () => {
+        await ensureAnkiTarget(settings, {force: true})
+        return 'synced'
+    })
+
+    const runSample = () => runAction(async () => {
+        const noteFields = buildNoteFields(SAMPLE_DATA, {
+            familiarity: SAMPLE_FAMILIARITY,
+            tags: SAMPLE_TAGS,
+            nativeLanguage: nativeLanguageId,
+        })
+        const result = await sendAnkiNote(settings, noteFields, {tags: SAMPLE_TAGS, word: SAMPLE_DATA.word})
+        return result.added ? 'sent' : 'duplicate'
+    })
+
+    // The sync failure panel's permission step: request the origin approval,
+    // then replay the blocked action, so granting CORS permission carries the
+    // user from failure to done in one click.
+    const retryWithPermission = () => {
+        const blocked = lastAction.current
+        runAction(async () => {
+            const result = await requestPermission(settings)
+            if (result?.permission !== 'granted') {
+                throw new AnkiConnectError('anki', String(result?.permission ?? 'permission denied'))
+            }
+            return blocked()
+        })
+    }
 
     // The generated template + the note built from the shared sample fixture:
     // the preview renders what Anki renders at review time, and the copy
@@ -182,33 +269,7 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguageId = nu
                 </div>
 
                 {test.status === 'failed' && (
-                    <div
-                        data-testid="anki-test-failed"
-                        className="rounded-sm border border-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] p-4"
-                    >
-                        <p className="text-sm text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
-                            {t('profile.anki_test_failed', {endpoint: ankiConnectEndpoint(settings)})}
-                        </p>
-                        <p className="mt-2 text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
-                            {t('profile.anki_fix_intro')}
-                        </p>
-                        <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
-                            <li>{t('profile.anki_fix_running')}</li>
-                            <li>
-                                {t('profile.anki_fix_permission')}{' '}
-                                <button
-                                    type="button"
-                                    onClick={runPermission}
-                                    className="font-medium text-[var(--color-vermilion)] underline underline-offset-2 dark:text-[var(--color-vermilion-night)]"
-                                >
-                                    {t('profile.anki_request_permission')}
-                                </button>
-                            </li>
-                            <li>
-                                {t('profile.anki_fix_cors', {origin: window.location.origin})}
-                            </li>
-                        </ol>
-                    </div>
+                    <ConnectionHint settings={settings} testId="anki-test-failed" onPermission={runPermission}/>
                 )}
             </div>
 
@@ -295,6 +356,82 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguageId = nu
                         srcDoc={previewDoc(face)}
                     />
                 </div>
+            </div>
+
+            {/* Template sync + sample card: the tab's write path into Anki.
+                Both actions run entirely from the browser (spec) and reuse the
+                generated artifacts shown above; failures render the same
+                connection hint as the test probe. */}
+            <div className="mt-12 max-w-xl">
+                <h2 className="font-serif text-lg sm:text-xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+                    {t('profile.anki_sync_title')}
+                </h2>
+                <p className="mt-2 font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
+                    {t('profile.anki_sync_description')}
+                </p>
+
+                <div className="mt-6 flex flex-wrap items-center gap-4">
+                    <SecondaryButton onClick={runSync} type="button" disabled={sync.status === 'running'}>
+                        {sync.status === 'running' ? t('profile.anki_sync_running') : t('profile.anki_sync_template')}
+                    </SecondaryButton>
+                    <SecondaryButton onClick={runSample} type="button" disabled={sync.status === 'running'}>
+                        {t('profile.anki_sync_sample')}
+                    </SecondaryButton>
+                </div>
+
+                {sync.status === 'synced' && (
+                    <p
+                        data-testid="anki-sync-ok"
+                        className="mt-4 font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
+                    >
+                        {t('profile.anki_sync_ok', {deck: settings.deck})}
+                    </p>
+                )}
+                {sync.status === 'sent' && (
+                    <p
+                        data-testid="anki-sample-ok"
+                        className="mt-4 font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
+                    >
+                        {t('profile.anki_sample_ok', {deck: settings.deck})}
+                    </p>
+                )}
+                {sync.status === 'duplicate' && (
+                    <p
+                        data-testid="anki-sample-duplicate"
+                        className="mt-4 font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70"
+                    >
+                        {t('profile.anki_sample_duplicate')}
+                    </p>
+                )}
+
+                {sync.status === 'failed' && (
+                    sync.error instanceof AnkiNoteTypeMismatchError ? (
+                        <div
+                            data-testid="anki-sync-mismatch"
+                            className="mt-4 rounded-sm border border-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] p-4"
+                        >
+                            <p className="text-sm text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+                                {sync.error.kind === 'card'
+                                    ? t('profile.anki_mismatch_card', {
+                                        card: ANKI_CARD_NAME,
+                                        found: sync.error.found.join(', '),
+                                    })
+                                    : t('profile.anki_mismatch_fields', {
+                                        expected: sync.error.expected.join(', '),
+                                        found: sync.error.found.join(', '),
+                                    })}
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="mt-4">
+                            <ConnectionHint
+                                settings={settings}
+                                testId="anki-sync-failed"
+                                onPermission={retryWithPermission}
+                            />
+                        </div>
+                    )
+                )}
             </div>
         </section>
     )

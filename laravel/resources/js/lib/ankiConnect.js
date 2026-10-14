@@ -1,14 +1,22 @@
 // Browser-side AnkiConnect client (the profile's Anki tab). Only the browser
 // ever talks to AnkiConnect — dev runs in Docker/WSL2 and prod is remote, so
-// a PHP-side call could never reach a user's desktop Anki. Scope for now:
-// invoke / version / requestPermission; the card-push actions arrive with
-// the later Anki tickets and must live here too.
+// a PHP-side call could never reach a user's desktop Anki. Thin action
+// wrappers over invoke only: the orchestration (ensure deck/model/template,
+// duplicate checks) lives in lib/ankiSync.js.
 //
 // Wire format: POST {action, version: 6, params?} to {url}:{port}; the
 // answer is {result, error}. AnkiConnect reports failures INSIDE HTTP 200
 // (a non-null `error` string), while CORS blocks and Anki being down reject
 // the fetch itself — both are normalized into AnkiConnectError so the tab
 // can render one failure panel with exact fix instructions.
+//
+// Parameter shapes verified against the AnkiConnect plugin source
+// (git.sr.ht/~foosoft/anki-connect, plugin/__init__.py, 2026-10):
+// createModel takes {modelName, inOrderFields, cardTemplates: [{Name?, Front,
+// Back}], css, isCloze}; updateModelTemplates and updateModelStyling take a
+// model OBJECT — {name, templates: {[cardName]: {Front?, Back?}}} and
+// {name, css} — where unknown card names are silently skipped (ankiSync.js
+// guards against that).
 
 export const ANKI_DEFAULT_URL = 'http://127.0.0.1'
 export const ANKI_DEFAULT_PORT = 8765
@@ -65,4 +73,50 @@ export function ankiConnectVersion(config) {
 
 export function requestPermission(config) {
     return invoke('requestPermission', null, config)
+}
+
+export function deckNames(config) {
+    return invoke('deckNames', null, config)
+}
+
+export function createDeck(config, deck) {
+    return invoke('createDeck', {deck}, config)
+}
+
+export function modelNames(config) {
+    return invoke('modelNames', null, config)
+}
+
+export function modelFieldNames(config, modelName) {
+    return invoke('modelFieldNames', {modelName}, config)
+}
+
+export function modelTemplates(config, modelName) {
+    return invoke('modelTemplates', {modelName}, config)
+}
+
+export function createModel(config, {modelName, inOrderFields, cardTemplates, css}) {
+    return invoke('createModel', {modelName, inOrderFields, cardTemplates, css}, config)
+}
+
+export function updateModelTemplates(config, modelName, cardName, {front, back}) {
+    return invoke('updateModelTemplates', {
+        model: {name: modelName, templates: {[cardName]: {Front: front, Back: back}}},
+    }, config)
+}
+
+export function updateModelStyling(config, modelName, css) {
+    return invoke('updateModelStyling', {model: {name: modelName, css}}, config)
+}
+
+export function findNotes(config, query) {
+    return invoke('findNotes', {query}, config)
+}
+
+export function notesInfo(config, notes) {
+    return invoke('notesInfo', {notes}, config)
+}
+
+export function addNote(config, note) {
+    return invoke('addNote', {note}, config)
 }

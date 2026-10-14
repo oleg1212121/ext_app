@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Profile
-description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings, provider API key management, account deletion.
+description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T22:10:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T22:10:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T23:40:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T23:40:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -28,6 +28,9 @@ sources:
   - id: anki-template
     resource: laravel/resources/js/lib/ankiTemplate.js
     title: ankiTemplate.js (field-key → Anki-field-name map, deterministic Front/Back/CSS generator)
+  - id: anki-sync
+    resource: laravel/resources/js/lib/ankiSync.js
+    title: ankiSync.js (ensure deck/note-type/template, memoized per session; duplicate-checked note send)
   - id: sample-word-data
     resource: laravel/resources/js/Pages/Profile/sampleWordData.js
     title: sampleWordData.js (sample fixture shared by the Popups and Anki previews)
@@ -76,7 +79,7 @@ one width variant, `profileWidthClass(width, cappedClass)` in `ui.jsx`.
 | Account | Profile Information (name/email) · Update Password | `PATCH /profile` (`profile.update`), `PUT /password` (`password.update`, auth routes) |
 | Preferences | Native + interface language | `PATCH /profile/settings` (`profile.settings.update`) |
 | Popups | Word popup block visibility (checkbox groups) + live preview | autosaved `PATCH /ui-settings` (`ui-settings.update`, auth-only — section `popup`) |
-| Anki | Anki connection: AnkiConnect URL · port · deck name · Test connection; card content: 12 field toggles + generated-template preview (Copy HTML/CSS) | autosaved `PATCH /ui-settings` (auth-only — section `anki`); AnkiConnect itself is called from the browser only |
+| Anki | Anki connection: AnkiConnect URL · port · deck name · Test connection; card content: 12 field toggles + generated-template preview (Copy HTML/CSS); Send to Anki: template sync + sample card | autosaved `PATCH /ui-settings` (auth-only — section `anki`); AnkiConnect itself is called from the browser only |
 | AI Models | Answer + explanation model selects · AI Provider API Keys | `PATCH /profile/ai-models` (`profile.ai-models.update`), `POST /profile/api-keys` + `DELETE /profile/api-keys/{providerKey}` |
 | Danger zone | Delete Account (password modal) | `DELETE /profile` (`profile.destroy`) |
 
@@ -138,7 +141,8 @@ the `ankiSettings` Inertia prop.
 **Connection** — AnkiConnect endpoint (URL + port) and target deck name,
 plus a **Test connection** button that calls AnkiConnect's `version` action
 **directly from the browser** — the browser-side client module
-`resources/js/lib/ankiConnect.js` (invoke / version / requestPermission) is
+`resources/js/lib/ankiConnect.js` (thin wrappers over `invoke` for
+version / requestPermission and the deck/model/template/note actions) is
 the only AnkiConnect caller in the codebase; Laravel never calls Anki, since
 dev runs in Docker/WSL2 and prod is remote, so only the user's own browser
 can reach their desktop Anki. Success reports the AnkiConnect version;
@@ -165,9 +169,9 @@ always carry every field — hide-class semantics, so re-syncing the template
 restyles existing cards instead of dropping data); Front shows Word +
 Transcription, the Back all twelve; the CSS defines the `.card` base plus
 `.ef-hidden { display: none }`. `buildNoteFields()` builds the full
-12-field note from a word payload (what the send-to-Anki tickets put on the
-wire; Translations narrow to the user's native language when it matches,
-falling back to all).
+12-field note from a word payload (what the sample card — and, from the
+next ticket, the word popup — puts on the wire; Translations narrow to the
+user's native language when it matches, falling back to all).
 
 **Template preview** — the tab renders the exact generated artifacts in a
 sandboxed iframe (`srcDoc` = generated CSS + HTML with the sample values
@@ -176,6 +180,29 @@ review time) as Front/Back tabs, with read-only Copy HTML (the selected
 face) and Copy CSS buttons. The note comes from the shared sample fixture
 `Pages/Profile/sampleWordData.js` — the same "melted → melt" fixture the
 Popups tab's preview renders, so both previews have one source.
+
+**Send to Anki** — the tab's write path, orchestrated by
+`resources/js/lib/ankiSync.js` on top of `ankiConnect.js`. **Create /
+update template in Anki** runs a fresh ensure pass: deck create-if-missing,
+the "ExtApp Vocabulary" note type create-if-missing (all 12 fields in fixed
+order + the "Recognition" card generated from the current toggles) or —
+when it already exists — field-set verification followed by a
+templates + CSS push, which is what re-applies toggled-off `ef-hidden`
+classes to all existing cards. A same-name note type whose field set (or
+whose card naming, which AnkiConnect would silently skip) doesn't match the
+app-owned twelve raises `AnkiNoteTypeMismatchError`, surfaced as a warning
+naming expected vs found — it is never rewritten. **Send sample card** adds
+a note built from the shared fixture with a find-before-add duplicate check
+scoped to deck + Word + Language (`sendAnkiNote`): a duplicate shows
+"Already in Anki" and nothing is re-added (`allowDuplicate` stays false as
+a race net), and no existing note is ever modified. The ensure is memoized
+once per page session per endpoint+deck, so subsequent sends skip straight
+to the duplicate check; changing the endpoint or deck misses the memo
+naturally (field toggles don't invalidate it — values always carry every
+field). Inline status lines report sync / sent / duplicate outcomes; any
+`AnkiConnectError` renders the same connection-hint panel as the test
+probe, whose **Request permission** step grants the origin approval and
+then replays the blocked action in one click.
 
 # AI Models tab
 

@@ -1,5 +1,65 @@
 # Directory Update Log
 
+## 2026-10-14 (anki-connection 03 — template push + sample card into Anki)
+
+Third ticket of the Anki-export feature: the Anki tab can now write into
+Anki — one click lands the deck, the "ExtApp Vocabulary" note type and the
+generated Front/Back/CSS in the user's desktop Anki, and a sample card
+proves the pipeline end to end. Still browser-only; Laravel never calls
+Anki.
+
+- `laravel/resources/js/lib/ankiConnect.js` — the thin client grew the
+  deck/model/template/note action wrappers (deckNames, createDeck,
+  modelNames, modelFieldNames, modelTemplates, createModel,
+  updateModelTemplates, updateModelStyling, findNotes, notesInfo, addNote).
+  Parameter shapes verified against the AnkiConnect plugin source
+  (git.sr.ht/~foosoft/anki-connect, plugin/__init__.py): the two update
+  actions take a model OBJECT — `{name, templates: {card: {Front?, Back?}}}`
+  and `{name, css}` — and `updateModelTemplates` silently skips card names
+  the model doesn't have (guarded in ankiSync.js).
+- `laravel/resources/js/lib/ankiSync.js` (new) — the push orchestration:
+  `ensureAnkiTarget()` (deck create-if-missing; note type create-if-missing
+  with all 12 fields + the "Recognition" card, otherwise field-set
+  verification then templates + CSS push), memoized once per page session
+  per endpoint+deck (the explicit sync button passes `force: true`, which is
+  what re-applies toggled-off `ef-hidden` classes); `AnkiNoteTypeMismatchError`
+  (kinds `fields`/`card`) instead of ever rewriting a foreign same-name note
+  type; `sendAnkiNote()` with a find-before-add duplicate check scoped to
+  deck + Word + Language (raw word passed by the caller for the search,
+  HTML-escaped field values on the wire, `allowDuplicate: false` race net,
+  `{added, noteId}` result).
+- `laravel/resources/js/Pages/Profile/AnkiSettings.jsx` — new "Send to Anki"
+  section: Create / update template in Anki (fresh forced ensure) + Send
+  sample card (fixture-built note through the memoized ensure), inline
+  sync/sent/duplicate status lines, `AnkiNoteTypeMismatchError` warning
+  panels naming expected vs found fields/cards, and the shared
+  connection-hint failure panel (extracted `ConnectionHint` component, also
+  rendered by the Test connection probe) whose Request permission step now
+  grants + replays the blocked action in one click. `SecondaryButton`
+  (ui.jsx) gained an additive `disabled` prop for the running state.
+- `laravel/database/seeders/ui-strings/profile.php` — 9 new en/ru/be
+  strings (`profile.anki_sync_*`, `profile.anki_sample_*`,
+  `profile.anki_mismatch_*`). Reseeded via `UiStringSeeder` (idempotent),
+  be spot-checked via tinker.
+- JS verification (no JS test infra): container Node smoke run of
+  ankiSync/ankiConnect against a stubbed fetch — ensure wire shapes, session
+  memoization, forced re-push baking `ef-hidden` from toggles, both mismatch
+  kinds, the duplicate query + addNote shape (12 fields, tags,
+  allowDuplicate false) and duplicate-skip. The smoke run caught a missing
+  `deckNames` import that the Vite build had not flagged. `npm run build`
+  clean (3.0s, pre-existing chunk-size warning only).
+- Tests: no PHP behavior changed (strings only); `composer run test:tia`
+  green; pint clean; `wiki:validate` 0 warnings. `wiki:sync` not needed (no
+  route/model/command changes).
+- `wiki/domains/profile.md` — Anki tab section gained the "Send to Anki"
+  paragraph (ensure semantics, mismatch warnings, duplicate check, memoized
+  ensure, permission retry), ankiConnect.js scope line updated, tab-table
+  row + frontmatter description mention template sync, new `anki-sync`
+  source, stamps bumped.
+- Live-Anki round-trip (template appearing in Anki's editor, sample card in
+  the deck, re-sync restyling existing cards) still needs a desktop Anki —
+  pending the user's manual QA, same caveat as tickets 01/02.
+
 ## 2026-10-14 (anki-connection 02 — Anki card fields + generated template + live preview)
 
 Second ticket of the Anki-export feature: the Anki tab gains its

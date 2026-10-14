@@ -151,16 +151,18 @@ export function DangerButton({children, onClick, type = 'button', className = ''
     )
 }
 
-export function SecondaryButton({children, onClick, type = 'button'}) {
+export function SecondaryButton({children, onClick, type = 'button', disabled = false}) {
     return (
         <button
             type={type}
             onClick={onClick}
+            disabled={disabled}
             className={[
                 'inline-flex items-center px-4 py-2 rounded-sm text-sm font-medium transition-colors',
                 'bg-[var(--color-vellum-deep)] dark:bg-[var(--color-hairline-night)]',
                 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]',
                 'hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:focus-visible:ring-[var(--color-vermilion-night)]',
+                'disabled:opacity-50 disabled:hover:opacity-50',
             ].join(' ')}
         >
             {children}
