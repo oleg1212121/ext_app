@@ -1,0 +1,3 @@
+{"word": "hello", "alts": ["hi"], "html": "<div><b>hello</b> — a greeting; see <a href=\"bword://world\">world</a></div>"}
+{"word": "world", "alts": [], "html": "<div>the earth and its people</div>"}
+{"word": "привет", "alts": [], "html": "<div>русская форма приветствия</div>"}

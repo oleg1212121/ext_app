@@ -1,5 +1,43 @@
 # Directory Update Log
 
+## 2026-10-14 (goldendict-import ticket 01 — MDX→JSONL converter)
+
+First commit of the goldendict-import feature (branch `goldendict-import`):
+the format-normalizing front door of the new dictionary-import pipeline, pure
+python-service addition (no Laravel code yet — `goldendict:import` is ticket
+02, and ticket 06 does the feature's wiki sweep including
+`playbooks/import-dictionary-data.md`):
+
+- `docker-compose/python/ai/goldendict_convert.py` — CLI that streams a
+  GoldenDict/MDict `.mdx` into a JSONL of
+  `{"word": str, "alts": [str], "html": str}` records written next to the
+  source (`<input>.jsonl`, overridable as the 2nd argument). Runs on the host
+  via the bind-mounted venv (`ai/venv/bin/python ai/goldendict_convert.py`),
+  so dev usage needs no container rebuild; entries stream through pyglossary
+  direct-read mode (one entry in memory at a time). Alternate headwords come
+  from MDX `@@@LINK=` redirects (folded into `alts` by the reader);
+  `entry://` links land rewritten as `bword://`. Regcode-encrypted MDX
+  (header `Encrypted` flag) is rejected up front with a one-line error —
+  pyglossary would brute-force the key blocks or silently skip encrypted
+  records, and neither is an importable result. Output is written via a
+  `.part` file and atomically renamed, so a failed run leaves no partial
+  JSONL for the importer to pick up.
+- `pyglossary==5.4.2` pinned in `docker-compose/python/requirements.txt`
+  (stdlib-only core; no pre-installed package touched) — installed into the
+  dev venv and the running `ext_python` container; the image rebuild + stamp
+  at the next deploy bakes it (deploy note is ticket 06).
+- Tests: `ai/test_goldendict_convert.py` (CLI subprocess seam) — pyglossary
+  5.x has **no MDX writer** (read-only plugin), so the committed fixture
+  `ai/fixtures/goldendict/sample.mdx` is produced by a minimal MDX 2.0 writer
+  (zlib + struct) kept in the test module, with a hand-written expected
+  `sample.expected.jsonl`; a sync assertion keeps the committed binary and
+  the writer's `ENTRIES` from drifting apart. Suite:
+  `docker exec ext_python python -m pytest /app/ai -q` → 150 passed.
+
+No existing python-service concept covers converter scripts (alignment and
+enrichment concepts are scope-specific), so per the ticket this is a log
+entry only.
+
 ## 2026-10-12 (code-review fixes — popup-card-redesign)
 
 One review-fix commit on `popup-card-redesign` addressing the feature's
