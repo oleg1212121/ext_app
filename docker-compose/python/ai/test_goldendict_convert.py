@@ -1,30 +1,40 @@
-"""Tests for goldendict_convert.py — the GoldenDict/MDict front door of the
+"""Tests for goldendict_convert.py — the GoldenDict front door of the
 goldendict import pipeline (spec: .scratch/goldendict-import/spec.md).
 
 Seam under test is the converter CLI (subprocess), exactly the way the
 Laravel importer will never care about and the operator will use:
 
-    python goldendict_convert.py INPUT.mdx [OUTPUT.jsonl]
+    python goldendict_convert.py INPUT [OUTPUT.jsonl]
 
-Contract (ticket 01):
-- exit 0, JSONL written next to the source at ``INPUT.mdx.jsonl`` by default
+Contract (ticket 01, MDX; ticket 04, DSL + StarDict):
+- exit 0, JSONL written next to the source at ``INPUT.jsonl`` by default
 - every line is ``{"word": str, "alts": [str], "html": str}`` — alts from the
-  format's alternate headwords (MDX ``@@@LINK=`` redirects)
+  format's alternate headwords (MDX ``@@@LINK=`` redirects, DSL parenthesized
+  title variants, StarDict ``.syn`` synonyms)
 - regcode-encrypted MDX → non-zero exit, one clear error line, no traceback,
   no output file
+- ``.dsl`` in UTF-16LE (BOM) or UTF-8 converts identically, with the DSL card
+  markup normalized to HTML by pyglossary's reader (``[m1]`` → indented ``<p>``,
+  ``[trn]`` unwrapped, ``[c]``/``[p]`` → green font/label, ``<<x>>`` →
+  ``bword://`` link)
+- StarDict: input may be an ``.ifo`` path or the set's directory; ``.dict.dz``
+  is decompressed transparently; ``.syn`` synonyms land in ``alts``; a
+  directory with zero or several ``.ifo`` files is a one-line error
 
 pyglossary (5.x) has no MDX writer, so the fixture binary is produced by the
 minimal MDX 2.0 writer below (zlib + struct only, mirroring what pyglossary's
-own reader ``pyglossary/plugin_lib/readmdict.py`` parses). The committed
-``fixtures/goldendict/sample.mdx`` must stay byte-identical to what that
-writer produces from ENTRIES — asserted below, so editing ENTRIES forces
-regenerating the committed pair:
+own reader ``pyglossary/plugin_lib/readmdict.py`` parses). The StarDict set is
+hand-built by the minimal writer further down (struct + gzip, per the
+StarDictFileFormat spec pyglossary's reader consumes). The committed fixtures
+must stay byte-identical to what those writers produce — asserted below, so
+editing the entry constants forces regenerating the committed files:
 
     docker-compose/python/ai/venv/bin/python ai/test_goldendict_convert.py
 """
 
 from __future__ import annotations
 
+import gzip
 import json
 import struct
 import subprocess
@@ -235,6 +245,242 @@ def test_unsupported_input_is_a_clean_error(tmp_path: Path) -> None:
     assert "Traceback" not in result.stderr
 
 
+# --- ABBYY Lingvo DSL (ticket 04) -----------------------------------------------
+#
+# DSL is plain text, so the fixture is the source itself, written in the two
+# encodings real dictionaries ship in: UTF-16LE with a BOM (the Lingvo
+# default) and UTF-8. pyglossary's reader sniffs the encoding and normalizes
+# the card markup to HTML.
+
+DSL_SOURCE = (
+    '#NAME "ext_app goldendict DSL fixture"\n'
+    '#INDEX_LANGUAGE "English"\n'
+    '#CONTENTS_LANGUAGE "Russian"\n'
+    "\n"
+    "cat\n"
+    "tom\n"
+    "\t[m1][b]cat[/b] [i]noun[/i]\n"
+    "\t[m1][trn]кот, кошка[/trn]\n"
+    "\t[m1][c]see also[/c] <<dog>>\n"
+    "dog\n"
+    "\t[m1][b]dog[/b] [p]noun[/p]\n"
+    "\t[m1][trn]пёс, собака[/trn]\n"
+)
+
+# Hand-written expectation. The two consecutive title lines "cat"/"tom" are
+# DSL's way of declaring alternate headwords, so "tom" lands in alts;
+# [m1] becomes an indented <p>, [trn] is unwrapped, [c] and [p] become green
+# font/label spans, <<dog>> becomes a bword:// cross-link.
+EXPECTED_DSL_RECORDS = [
+    {
+        "word": "cat",
+        "alts": ["tom"],
+        "html": (
+            '<p style="padding-left:1em;margin:0"><b>cat</b> <i>noun</i>'
+            '<p style="padding-left:1em;margin:0">кот, кошка'
+            '<p style="padding-left:1em;margin:0"><font color="green">'
+            "see also</font> <a href=\"bword://dog\">dog</a>"
+        ),
+    },
+    {
+        "word": "dog",
+        "alts": [],
+        "html": (
+            '<p style="padding-left:1em;margin:0"><b>dog</b> '
+            '<i class="p"><font color="green">noun</font></i>'
+            '<p style="padding-left:1em;margin:0">пёс, собака'
+        ),
+    },
+]
+
+
+def test_dsl_utf8_round_trip(tmp_path: Path) -> None:
+    """A UTF-8 .dsl converts to the same records as any other format."""
+    dsl = tmp_path / "sample.dsl"
+    dsl.write_text(DSL_SOURCE, encoding="utf-8")
+
+    result = run_converter(str(dsl))
+
+    assert result.returncode == 0, result.stderr
+    assert read_records(tmp_path / "sample.dsl.jsonl") == EXPECTED_DSL_RECORDS
+
+
+def test_dsl_utf16le_round_trip(tmp_path: Path) -> None:
+    """A UTF-16LE-with-BOM .dsl (the Lingvo default encoding) converts to
+    exactly the same records as the UTF-8 copy — the encoding is sniffed."""
+    dsl = tmp_path / "sample-le.dsl"
+    dsl.write_bytes(b"\xff\xfe" + DSL_SOURCE.encode("utf-16-le"))
+
+    out = tmp_path / "out.jsonl"
+    result = run_converter(str(dsl), str(out))
+
+    assert result.returncode == 0, result.stderr
+    assert read_records(out) == EXPECTED_DSL_RECORDS
+
+
+# --- StarDict (ticket 04) --------------------------------------------------------
+#
+# Hand-built minimal set per the StarDictFileFormat spec
+# (github.com/huzheng001/stardict-3/blob/master/dict/doc/StarDictFileFormat):
+#   .ifo  utf-8 key=value metadata, magic first line
+#   .idx  records of  word\0  big-endian u32 offset  big-endian u32 size
+#   .dict the concatenated definition data (sametypesequence=h → utf-8 html)
+#   .dict.dz  gzip-compressed .dict — dictzip adds a chunk table in the gzip
+#         FEXTRA field for random access, but it stays a plain gzip stream,
+#         which is all pyglossary's reader (gzip.open) needs
+#   .syn  records of  synonym\0  big-endian u32 index into .idx order
+
+STARDICT_ENTRIES = [
+    ("cat", "<div><b>cat</b> — small domestic feline</div>"),
+    ("dog", "<div><b>dog</b> — loyal canine</div>"),
+    ("пёс", "<div>русская запись для dog</div>"),
+]
+STARDICT_SYNONYMS = [
+    ("feline", 0),  # alt headword of "cat" (first .idx record)
+    ("hound", 1),  # alt headword of "dog"
+]
+
+EXPECTED_STARDICT_RECORDS = [
+    {
+        "word": "cat",
+        "alts": ["feline"],
+        "html": "<div><b>cat</b> — small domestic feline</div>",
+    },
+    {
+        "word": "dog",
+        "alts": ["hound"],
+        "html": "<div><b>dog</b> — loyal canine</div>",
+    },
+    {"word": "пёс", "alts": [], "html": "<div>русская запись для dog</div>"},
+]
+
+
+def write_stardict_set(
+    set_dir: Path,
+    entries: list[tuple[str, str]] | None = None,
+    synonyms: list[tuple[str, int]] | None = None,
+    *,
+    dict_dz: bool = True,
+    name: str = "sample",
+) -> Path:
+    """Write a minimal StarDict set named ``<name>.*`` into ``set_dir`` and
+    return the ``.ifo`` path."""
+    entries = STARDICT_ENTRIES if entries is None else entries
+    synonyms = STARDICT_SYNONYMS if synonyms is None else synonyms
+    set_dir.mkdir(parents=True, exist_ok=True)
+
+    dict_blob = b"".join(html.encode("utf-8") for _, html in entries)
+    idx = bytearray()
+    offset = 0
+    for word, html in entries:
+        data = html.encode("utf-8")
+        idx += word.encode("utf-8") + b"\x00"
+        idx += struct.pack(">II", offset, len(data))
+        offset += len(data)
+    syn = bytearray()
+    for alt, entry_index in synonyms:
+        syn += alt.encode("utf-8") + b"\x00" + struct.pack(">I", entry_index)
+    ifo = (
+        "StarDict's dict ifo file\n"
+        "version=2.4.2\n"
+        "bookname=ext_app goldendict StarDict fixture\n"
+        f"wordcount={len(entries)}\n"
+        f"idxfilesize={len(idx)}\n"
+        "sametypesequence=h\n"
+    ).encode("utf-8")
+
+    (set_dir / f"{name}.ifo").write_bytes(ifo)
+    (set_dir / f"{name}.idx").write_bytes(bytes(idx))
+    if dict_dz:
+        # mtime=0 keeps the gzip stream deterministic for the sync assertion.
+        (set_dir / f"{name}.dict.dz").write_bytes(gzip.compress(dict_blob, mtime=0))
+    else:
+        (set_dir / f"{name}.dict").write_bytes(dict_blob)
+    if syn:
+        (set_dir / f"{name}.syn").write_bytes(bytes(syn))
+    return set_dir / f"{name}.ifo"
+
+
+def test_stardict_ifo_path_with_dictdz_and_syn(tmp_path: Path) -> None:
+    """A StarDict set referenced by its .ifo converts with the .dict.dz
+    definitions decompressed and the .syn synonyms surfaced as alts."""
+    ifo = write_stardict_set(tmp_path / "eng-rus")
+
+    result = run_converter(str(ifo))
+
+    assert result.returncode == 0, result.stderr
+    assert read_records(tmp_path / "eng-rus" / "sample.ifo.jsonl") == (
+        EXPECTED_STARDICT_RECORDS
+    )
+
+
+def test_stardict_directory_input(tmp_path: Path) -> None:
+    """The set's directory converts too (uncompressed .dict variant), with
+    the JSONL defaulting to <dir>.jsonl next to the directory."""
+    set_dir = tmp_path / "eng-rus"
+    write_stardict_set(set_dir, dict_dz=False)
+
+    result = run_converter(str(set_dir))
+
+    assert result.returncode == 0, result.stderr
+    assert read_records(tmp_path / "eng-rus.jsonl") == EXPECTED_STARDICT_RECORDS
+
+
+def test_stardict_directory_without_ifo_is_a_clean_error(tmp_path: Path) -> None:
+    """A directory holding no StarDict set is rejected with the one-line
+    error shape."""
+    result = run_converter(str(tmp_path))
+
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr
+    lines = [line for line in result.stderr.splitlines() if line]
+    assert len(lines) == 1
+    assert ".ifo" in lines[0]
+
+
+def test_stardict_directory_with_several_ifo_is_a_clean_error(tmp_path: Path) -> None:
+    """A directory holding several StarDict sets is ambiguous and rejected
+    with the one-line error naming the sets."""
+    write_stardict_set(tmp_path, name="eng-rus")
+    write_stardict_set(tmp_path, name="rus-eng")
+
+    result = run_converter(str(tmp_path))
+
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr
+    lines = [line for line in result.stderr.splitlines() if line]
+    assert len(lines) == 1
+    assert "eng-rus.ifo" in lines[0]
+    assert "rus-eng.ifo" in lines[0]
+
+
+# --- committed fixture sync (tickets 01 + 04) ------------------------------------
+
+
+def test_committed_dsl_and_stardict_fixtures_stay_in_sync(tmp_path: Path) -> None:
+    """The committed DSL fixtures match DSL_SOURCE in both encodings, the
+    committed StarDict set matches the writer, and both convert to their
+    committed hand-written expected JSONL."""
+    assert (FIXTURES / "dsl-utf8.dsl").read_bytes() == DSL_SOURCE.encode("utf-8")
+    assert (FIXTURES / "dsl-utf16le.dsl").read_bytes() == (
+        b"\xff\xfe" + DSL_SOURCE.encode("utf-16-le")
+    )
+    write_stardict_set(tmp_path / "ref")
+    star_dir = FIXTURES / "stardict"
+    for part in ("sample.ifo", "sample.idx", "sample.dict.dz", "sample.syn"):
+        assert (star_dir / part).read_bytes() == (tmp_path / "ref" / part).read_bytes()
+
+    dsl_out = tmp_path / "dsl.jsonl"
+    assert run_converter(str(FIXTURES / "dsl-utf16le.dsl"), str(dsl_out)).returncode == 0
+    assert read_records(dsl_out) == read_records(FIXTURES / "dsl.expected.jsonl")
+    assert read_records(FIXTURES / "dsl.expected.jsonl") == EXPECTED_DSL_RECORDS
+
+    sd_out = tmp_path / "sd.jsonl"
+    assert run_converter(str(star_dir), str(sd_out)).returncode == 0
+    assert read_records(sd_out) == read_records(FIXTURES / "stardict.expected.jsonl")
+    assert read_records(FIXTURES / "stardict.expected.jsonl") == EXPECTED_STARDICT_RECORDS
+
+
 if __name__ == "__main__":
     FIXTURES.mkdir(parents=True, exist_ok=True)
     (FIXTURES / "sample.mdx").write_bytes(write_mdx_bytes(ENTRIES))
@@ -242,4 +488,25 @@ if __name__ == "__main__":
         "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in EXPECTED_RECORDS),
         encoding="utf-8",
     )
-    print(f"regenerated {FIXTURES}/sample.mdx and sample.expected.jsonl")
+    (FIXTURES / "dsl-utf8.dsl").write_bytes(DSL_SOURCE.encode("utf-8"))
+    (FIXTURES / "dsl-utf16le.dsl").write_bytes(
+        b"\xff\xfe" + DSL_SOURCE.encode("utf-16-le")
+    )
+    (FIXTURES / "dsl.expected.jsonl").write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in EXPECTED_DSL_RECORDS),
+        encoding="utf-8",
+    )
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        write_stardict_set(Path(tmp))
+        for part in ("sample.ifo", "sample.idx", "sample.dict.dz", "sample.syn"):
+            (FIXTURES / "stardict").mkdir(exist_ok=True)
+            (FIXTURES / "stardict" / part).write_bytes((Path(tmp) / part).read_bytes())
+    (FIXTURES / "stardict.expected.jsonl").write_text(
+        "".join(
+            json.dumps(r, ensure_ascii=False) + "\n" for r in EXPECTED_STARDICT_RECORDS
+        ),
+        encoding="utf-8",
+    )
+    print(f"regenerated fixtures under {FIXTURES}")

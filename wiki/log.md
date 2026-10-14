@@ -1,5 +1,42 @@
 # Directory Update Log
 
+## 2026-10-14 (goldendict-import ticket 04 — DSL + StarDict conversion)
+
+Fourth commit of the goldendict-import feature (branch `goldendict-import`):
+the ticket-01 converter now covers the other two GoldenDict formats — ABBYY
+Lingvo `.dsl` and StarDict — producing the same
+`{"word": str, "alts": [str], "html": str}` JSONL, so `goldendict:import`
+(tickets 02/03) stays format-blind:
+
+- `docker-compose/python/ai/goldendict_convert.py` — DSL and StarDict file
+  input worked through pyglossary 5.4.2 unchanged (DSL reader sniffs
+  UTF-16LE/BE/UTF-8 and normalizes card markup to HTML — `[m1]` → indented
+  `<p>`, `[trn]` unwrapped, `[c]`/`[p]` → green font/label, `<<x>>` →
+  `bword://` links; StarDict reader handles `.dict.dz` via gzip and folds
+  `.syn` synonyms into alternate headwords). The one converter change:
+  StarDict **directory** input — pyglossary picks formats by file extension
+  and StarDict is identified by `.ifo`, so a bare set directory has no
+  extension; `resolve_input()` sniffs the directory and requires exactly one
+  `.ifo` (zero/several → one-line error naming what was found), otherwise
+  passes the `.ifo` path through. Usage notes for all three formats live in
+  the module docstring (playbook link-up is ticket 06).
+- Tests: `ai/test_goldendict_convert.py` grows 7 cases — DSL round trips in
+  UTF-8 and UTF-16LE-with-BOM (identical records from both encodings),
+  StarDict via `.ifo` path (`.dict.dz` + `.syn` → `alts`) and via directory
+  (plain `.dict`), the two ambiguous-directory errors, and a committed-
+  fixture sync block. New committed fixtures:
+  `ai/fixtures/goldendict/{dsl-utf8.dsl, dsl-utf16le.dsl, dsl.expected.jsonl}`
+  (DSL is text — hand-written) and
+  `ai/fixtures/goldendict/stardict/{sample.ifo, .idx, .dict.dz, .syn}` +
+  `stardict.expected.jsonl` (hand-built by a minimal StarDict writer in the
+  test module, spec-shaped `word\0 + BE u32 offset + BE u32 size` idx
+  records; the `.dict.dz` is a plain deterministic gzip stream — dictzip is
+  gzip-compatible and pyglossary reads it with `gzip.open`). Suite:
+  `docker exec ext_python python -m pytest /app/ai -q` → 157 passed.
+
+Python-service addition only (no Laravel code) — same as ticket 01, this is
+a log entry only.
+
 ## 2026-10-14 (goldendict-import ticket 03 — bilingual import)
 
 Third commit of the goldendict-import feature (branch `goldendict-import`):
