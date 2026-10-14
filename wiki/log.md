@@ -1,5 +1,57 @@
 # Directory Update Log
 
+## 2026-10-14 (goldendict-import ticket 03 — bilingual import)
+
+Third commit of the goldendict-import feature (branch `goldendict-import`):
+bilingual mode for `goldendict:import` — the `--target-lang=` flag is now
+live:
+
+- `laravel/app/Classes/GoldenDictParser.php` — constructor takes an
+  optional target language; `parseEntry` extracts translation candidates
+  from each article (block segments minus bracketed/slash transcription
+  runs, standalone grammar tokens — POS abbreviations plus f/m/c/pl/sg
+  gender tags — and the leading headword, then split on commas/semicolons
+  into pieces surviving the `FetchWordTranslations::usableCandidates`
+  mirror: no `[.,;:]`, `mb_strlen ≤ 256`; bare-IPA and numeric-only
+  pieces dropped). Flush gains three bilingual phases: target words via
+  batched `Word::upsert` on `(word, language_id, word_class_id)` with
+  update `['l_word']` (the bulk equivalent of the per-word
+  `firstOrCreate` triple; source class slug mapped into the target
+  language with unseen-lookup auto-creation, multi-word candidates →
+  `phrase` per ADR 0059, `l_word` through `WordLookupKey` so Cyrillic
+  stress marks stay in the display form only); canonical
+  `word_translations` links (`word_a_id < word_b_id`, ADR 0020) via one
+  batched upsert per flush counting only genuinely-new pairs (the
+  `LinkTranslationsCommand` conventions — no per-row `link()`); and
+  `words.translations` JSON staging in the flat-deduped Wiktionary shape —
+  candidates travel with the word upsert's INSERT side (the `['l_word']`
+  update list keeps existing rows' JSON intact) plus a merge pass that
+  unions re-imported candidates, never clobbers. Non-dry bilingual runs
+  clear unmatched entity tokens for both languages. New stats:
+  translation candidates / target words / links (in the table and the
+  heartbeat line).
+- `laravel/app/Console/Commands/ImportGoldenDictCommand.php` —
+  `--target-lang` validated against the registry and required to differ
+  from `--lang`; `--no-link` skips the bilingual phases entirely (the
+  parser gets no target language); only `--profile` remains an inert
+  stub. Stats table extended.
+- Tests: `laravel/tests/Feature/ImportGoldenDictCommandTest.php` +9
+  bilingual tests (end-to-end brand-new target language, popup payload
+  via `words.show`, canonical link order with a pre-existing lower-id
+  target word, junk-candidate rejection, idempotent re-run + staged-JSON
+  merge, `--no-link`, `--target-lang` validation, Cyrillic stress-mark
+  display/l_word split, bilingual dry-run) with fixtures
+  `tests/Fixtures/goldendict-bilingual-en-de.jsonl` and
+  `goldendict-bilingual-en-ru.jsonl`; `tests/Pest.php` `createLanguages`
+  gained an opt-in `de` entry. `composer run test:tia` green except the
+  same 10 pre-existing live Google Translate 403 failures ticket 02
+  documented (clean-tree reproduced there).
+
+Wiki: `wiki/domains/dictionary-import.md` (bilingual component bullet,
+linking-difference note in the comparison section) and
+`wiki/playbooks/import-dictionary-data.md` (bilingual usage in the
+GoldenDict steps) updated; `wiki:validate` conformant.
+
 ## 2026-10-14 (goldendict-import ticket 02 — monolingual import)
 
 Second commit of the goldendict-import feature (branch `goldendict-import`):

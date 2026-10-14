@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-14T15:12:09+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T18:40:00+03:00 }
 sources:
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
@@ -94,10 +94,10 @@ mirrored per-language tables, and a single `word_translations` pivot —
   the shared `App\Support\StressMarks`). Re-runs are idempotent next to
   manually created links. `wiktionary:import-raw` runs it automatically at
   the end (unless `--no-link`).
-* `php artisan goldendict:import {file} --lang=` — the GoldenDict entry
-  point: imports a **converted** JSONL (one `{"word", "alts", "html"}`
-  record per line, produced by the python service's
-  `ai/goldendict_convert.py` — stage 1 of the pipeline, see
+* `php artisan goldendict:import {file} --lang= [--target-lang=]` — the
+  GoldenDict entry point: imports a **converted** JSONL (one
+  `{"word", "alts", "html"}` record per line, produced by the python
+  service's `ai/goldendict_convert.py` — stage 1 of the pipeline, see
   [Importing Dictionary Data](/playbooks/import-dictionary-data.md)).
   Stage 2 is `App\Classes\GoldenDictParser`, a **generic heuristic
   extractor**: article HTML is parsed with native `DOMDocument`/`DOMXPath`
@@ -110,11 +110,27 @@ mirrored per-language tables, and a single `word_translations` pivot —
   (ADR 0059). Raw HTML never enters the database — the JSONL stays on disk
   and a better extractor can re-import it anytime. Flags: `--dry-run`
   (parse and report, write nothing — not even auto-created lookups),
-  `--max-entries` (smoke runs), `--batch-size`. `--target-lang`,
-  `--profile` and `--no-link` are accepted but **inert stubs** until the
-  bilingual-import and extraction-profile tickets land. New words get the
+  `--max-entries` (smoke runs), `--batch-size`, `--profile` (inert stub
+  until the extraction-profile tickets). New words get the
   `FREQUENCY_UNRANKED` sentinel; re-imports refresh `l_word` only, so
   curated frequency ranks and staged translations survive.
+* `goldendict:import --target-lang=xx` — **bilingual mode**: the bulk
+  mirror of the `FetchWordTranslations` semantics. Translation candidates
+  come out of each article (comma/semicolon-delimited segments after
+  stripping transcription runs, grammar tokens — POS abbreviations,
+  gender/number tags — and the leading headword; each piece must survive
+  the `usableCandidates` rule: no `[.,;:]`, ≤256 chars), the missing
+  target-language words are created (source class slug mapped into the
+  target language with the same unseen-lookup auto-creation; multi-word
+  candidates → `phrase`, ADR 0059; `l_word` through `WordLookupKey` so
+  Cyrillic stress marks live in the display form only), the raw strings
+  are staged into `words.translations` JSON (flat deduped list, the
+  Wiktionary shape — merged on re-import, never clobbered), and canonical
+  `word_translations` links (`word_a_id < word_b_id`, ADR 0020) are
+  written directly via batched upserts — no separate
+  `wiktionary:link-translations` pass needed for this path. `--no-link`
+  skips all three phases (pure monolingual behavior); the target language
+  must be a registry code other than `--lang`.
 
 # GoldenDict vs Wiktionary imports
 
@@ -126,7 +142,11 @@ mark strip via `App\Support\StressMarks` — the display `word` keeps the
 marks). The Wiktionary side reads kaikki JSONL with structured fields
 (`pos`, `senses`, `sounds`, `translations`); the GoldenDict side extracts
 everything heuristically from article HTML, and per-dictionary extraction
-profiles tuning that extraction are a later addition.
+profiles tuning that extraction are a later addition. Translation linking
+differs: the Wiktionary path **stores** translations during import and a
+separate `wiktionary:link-translations` pass links them against
+already-existing words; the GoldenDict bilingual path creates its own
+target words and writes the links directly (`--no-link` to opt out).
 
 # Performance notes
 

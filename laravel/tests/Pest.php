@@ -94,13 +94,14 @@ function createLanguages(array $codes = ['en', 'ru']): array
         'en' => ['name' => 'English', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 0],
         'ru' => ['name' => 'Russian', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 1],
         'be' => ['name' => 'Belarusian', 'native_name' => 'Беларуская', 'is_enabled' => true, 'is_interface_enabled' => false, 'sort_order' => 2],
+        'de' => ['name' => 'German', 'native_name' => 'Deutsch', 'is_enabled' => true, 'is_interface_enabled' => false, 'sort_order' => 3],
     ];
 
     $languages = [];
     foreach ($codes as $code) {
         if (! array_key_exists($code, $attributes)) {
             throw new InvalidArgumentException(
-                "Unsupported language code [{$code}] for createLanguages(). Supported codes: en, ru, be.",
+                "Unsupported language code [{$code}] for createLanguages(). Supported codes: en, ru, be, de.",
             );
         }
 

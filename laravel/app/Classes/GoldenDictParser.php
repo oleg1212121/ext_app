@@ -9,6 +9,7 @@ use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\Word;
 use App\Models\WordClass;
+use App\Models\WordTranslation;
 use App\Support\WordLookupKey;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -21,6 +22,16 @@ use Symfony\Component\Console\Output\OutputInterface;
  * into the unified dictionary tables: headwords into words, plain-text
  * article segments into definitions, IPA in brackets/slashes into
  * transcriptions, alternate headwords into forms.
+ *
+ * Bilingual mode (a target language) additionally reads translation
+ * candidates out of each article (comma/semicolon-delimited segments with
+ * transcription and grammar noise filtered — the bulk mirror of the
+ * FetchWordTranslations usable-candidates rule), creates the missing
+ * target-language words (source class slug mapped into the target language,
+ * multi-word candidates under the phrase class, ADR 0059), stages the raw
+ * strings into words.translations JSON like the Wiktionary import, and
+ * writes canonical word_translations links (ADR 0020) directly — no
+ * separate link pass needed for this path.
  *
  * The extraction is a generic heuristic (block-level text segments, pos-ish
  * abbreviations, IPA-delimited runs); per-dictionary extraction profiles
@@ -60,9 +71,17 @@ class GoldenDictParser
     ];
 
     /** One char from this set marks a delimited run as IPA, not prose. */
-    private const IPA_MARKERS = 'əɪʊʃθðŋʒæɑɒʌɛɔɐøʏɽʂʈʋɥɦʝɫɭʎɱɲɸβɣχʁʔˈˌː';
+    private const IPA_MARKERS = 'əɪʊʃθðŋʒæɑɒʌɛɔʏɽʂʈʋɥɦʝɫɭʎɱɲɸβɣχʁʔˈˌː';
+
+    /** Gender/number tags that trail dictionary translations ("Katze f"). */
+    private const GENDER_TAGS = ['f', 'm', 'c', 'pl', 'sg'];
+
+    /** Characters trimmed off the ends of a translation candidate. */
+    private const CANDIDATE_TRIM = " \t\n\r\0\x0B\"'«»„“”";
 
     private int $languageId;
+
+    private ?int $targetLanguageId = null;
 
     private int $batchSize;
 
@@ -70,6 +89,15 @@ class GoldenDictParser
 
     /** @var array<string, int> */
     private array $wordClassMap = [];
+
+    /** @var array<string, int> */
+    private array $targetWordClassMap = [];
+
+    /** @var array<string, true> target-word triples already tallied (dry run) */
+    private array $dryTargetWordKeys = [];
+
+    /** @var array<string, true> (source triple, candidate) pairs already tallied (dry run) */
+    private array $dryLinkKeys = [];
 
     /** @var array<string, int> */
     private array $transcriptionTypeMap = [];
@@ -83,9 +111,12 @@ class GoldenDictParser
         'forms_imported' => 0,
         'lookups_created' => 0,
         'batches_flushed' => 0,
+        'translation_candidates' => 0,
+        'target_words_created' => 0,
+        'translations_linked' => 0,
     ];
 
-    public function __construct(string $lang, int $batchSize = 500, bool $dryRun = false)
+    public function __construct(string $lang, int $batchSize = 500, bool $dryRun = false, ?string $targetLang = null)
     {
         $language = Language::query()->where('code', $lang)->first();
         if ($language === null) {
@@ -93,12 +124,25 @@ class GoldenDictParser
         }
 
         $this->languageId = $language->id;
+
+        if ($targetLang !== null) {
+            $target = Language::query()->where('code', $targetLang)->first();
+            if ($target === null) {
+                throw new \InvalidArgumentException("Unsupported target language: {$targetLang}");
+            }
+            if ($target->id === $this->languageId) {
+                throw new \InvalidArgumentException("The target language must differ from the source language ({$targetLang}).");
+            }
+
+            $this->targetLanguageId = $target->id;
+        }
+
         $this->batchSize = max(1, $batchSize);
         $this->dryRun = $dryRun;
     }
 
     /**
-     * @return array{entries_read: int, entries_skipped: int, words_imported: int, definitions_imported: int, transcriptions_imported: int, forms_imported: int, lookups_created: int, batches_flushed: int}
+     * @return array{entries_read: int, entries_skipped: int, words_imported: int, definitions_imported: int, transcriptions_imported: int, forms_imported: int, lookups_created: int, batches_flushed: int, translation_candidates: int, target_words_created: int, translations_linked: int}
      */
     public function import(string $path, ?OutputInterface $output = null, ?int $maxEntries = null): array
     {
@@ -189,8 +233,12 @@ class GoldenDictParser
 
         if (! $this->dryRun) {
             // The dictionary just grew: previously unmatchable entity tokens
-            // of this language get another linking chance.
+            // of this language get another linking chance. In bilingual mode
+            // the target language's dictionary grew too.
             EntityWordLinker::clearUnmatchedForLanguage($this->languageId);
+            if ($this->targetLanguageId !== null) {
+                EntityWordLinker::clearUnmatchedForLanguage($this->targetLanguageId);
+            }
         }
 
         $this->heartbeat($startedAt, null, final: true);
@@ -199,7 +247,7 @@ class GoldenDictParser
     }
 
     /**
-     * @return array{word: string, l_word: string, pos: string, definitions: list<string>, transcriptions: list<string>, forms: list<string>}
+     * @return array{word: string, l_word: string, pos: string, definitions: list<string>, transcriptions: list<string>, forms: list<string>, translations: list<string>}
      */
     public function parseEntry(object $entry): array
     {
@@ -230,7 +278,103 @@ class GoldenDictParser
             ))),
             'transcriptions' => $article['ipa'],
             'forms' => array_values(array_unique($forms)),
+            'translations' => $this->targetLanguageId !== null
+                ? $this->extractTranslationCandidates($word, $article['segments'])
+                : [],
         ];
+    }
+
+    /**
+     * Translation candidates out of a bilingual article: each block-level
+     * segment minus its transcription runs, grammar tokens and leading
+     * headword, split on commas/semicolons into pieces that survive the
+     * usable-candidates rule (the FetchWordTranslations mirror: no sentence
+     * punctuation, at most 256 chars). A generic heuristic — per-dictionary
+     * extraction profiles tune it later.
+     *
+     * @param  list<string>  $segments
+     * @return list<string>
+     */
+    private function extractTranslationCandidates(string $headword, array $segments): array
+    {
+        $candidates = [];
+        foreach ($segments as $segment) {
+            $text = $this->stripDelimitedRuns($segment);
+            $text = $this->stripGrammarTokens($text);
+            $text = $this->stripLeadingHeadword($text, $headword);
+
+            foreach (preg_split('/[;,]/u', $text) ?: [] as $piece) {
+                $piece = trim($piece, self::CANDIDATE_TRIM);
+                if ($piece === '') {
+                    continue;
+                }
+
+                if (mb_strlen($piece) > 256 || preg_match('/[.,;:]/', $piece) === 1) {
+                    continue;
+                }
+
+                // Bare transcription or grammar runs, pure numbers or punctuation.
+                if ($this->looksLikeIpa($piece) || $this->grammarTokenIsNoise($piece)) {
+                    continue;
+                }
+
+                if (preg_match('/^[\p{N}\p{P}\s]+$/u', $piece) === 1) {
+                    continue;
+                }
+
+                $candidates[] = $piece;
+            }
+        }
+
+        return array_values(array_unique($candidates));
+    }
+
+    /**
+     * Bracketed/slash-delimited runs carry transcriptions and grammar tags
+     * ([kæt], [pl], /həˈləʊ/), never translations.
+     */
+    private function stripDelimitedRuns(string $text): string
+    {
+        $text = (string) preg_replace('~\[([^\[\]\n]{1,100})\]~u', ' ', $text);
+        $text = (string) preg_replace('~(?<![\p{L}\p{N}/])/([^/\n]{1,100}?)/(?![\p{L}\p{N}/])~u', ' ', $text);
+
+        return trim((string) preg_replace('/\s+/u', ' ', $text));
+    }
+
+    /**
+     * Standalone POS abbreviations and gender/number tags are grammar noise:
+     * "cat n. Katze, Kater m" must yield "Katze" and "Kater".
+     */
+    private function stripGrammarTokens(string $text): string
+    {
+        $tokens = preg_split('/\s+/u', trim($text)) ?: [];
+
+        return implode(' ', array_filter(
+            $tokens,
+            fn (string $token): bool => ! $this->grammarTokenIsNoise($token),
+        ));
+    }
+
+    private function grammarTokenIsNoise(string $token): bool
+    {
+        if ($this->posSlugFor($token) !== null) {
+            return true;
+        }
+
+        return in_array(trim($token, '.,;:()[]{}'), self::GENDER_TAGS, true);
+    }
+
+    /**
+     * Dictionary articles open with their own headword; it is not a
+     * translation of itself.
+     */
+    private function stripLeadingHeadword(string $text, string $headword): string
+    {
+        return trim((string) preg_replace(
+            '/^\s*'.preg_quote($headword, '/').'\s+/ui',
+            '',
+            $text,
+        ));
     }
 
     /**
@@ -415,6 +559,24 @@ class GoldenDictParser
             $this->stats['transcriptions_imported'] += count($record['transcriptions']);
         }
         $this->stats['forms_imported'] += count($record['forms']);
+
+        foreach ($record['translations'] as $candidate) {
+            $this->stats['translation_candidates']++;
+            $slug = $this->candidateClassSlug($candidate, $record['pos']);
+            $this->ensureTargetWordClass($slug);
+
+            $wordKey = mb_strtolower($candidate).'|'.$slug;
+            if (! isset($this->dryTargetWordKeys[$wordKey])) {
+                $this->dryTargetWordKeys[$wordKey] = true;
+                $this->stats['target_words_created']++;
+            }
+
+            $linkKey = mb_strtolower($record['word']).'|'.$record['pos'].'=>'.$wordKey;
+            if (! isset($this->dryLinkKeys[$linkKey])) {
+                $this->dryLinkKeys[$linkKey] = true;
+                $this->stats['translations_linked']++;
+            }
+        }
     }
 
     private function loadLookupMaps(): void
@@ -473,6 +635,43 @@ class GoldenDictParser
         return $this->transcriptionTypeMap[$slug];
     }
 
+    /**
+     * The target language's word class for a slug, auto-created after the
+     * import's unseen-lookup convention (the bulk counterpart of
+     * FetchWordTranslations' classContext + phraseClassId: a brand-new
+     * target language must not lose every candidate to a missing class).
+     */
+    private function ensureTargetWordClass(string $slug): int
+    {
+        if (! isset($this->targetWordClassMap[$slug])) {
+            if ($this->dryRun) {
+                $this->targetWordClassMap[$slug] = 0;
+                $this->stats['lookups_created']++;
+
+                return 0;
+            }
+
+            $class = WordClass::query()->firstOrCreate(
+                ['language_id' => $this->targetLanguageId, 'slug' => $slug],
+                ['title' => $slug],
+            );
+            $this->targetWordClassMap[$slug] = $class->id;
+            $this->stats['lookups_created']++;
+        }
+
+        return $this->targetWordClassMap[$slug];
+    }
+
+    /**
+     * Class slug a translation candidate maps to: multi-word candidates are
+     * phrases regardless of the source word's class (ADR 0059); the rest
+     * carry the source word's class into the target language.
+     */
+    private function candidateClassSlug(string $candidate, string $sourcePos): string
+    {
+        return str_contains($candidate, ' ') ? 'phrase' : $sourcePos;
+    }
+
     public function flushBatch(array $batch): void
     {
         DB::transaction(function () use ($batch) {
@@ -484,6 +683,13 @@ class GoldenDictParser
                     'language_id' => $this->languageId,
                     'word_class_id' => $this->ensureWordClass($record['pos']),
                     'frequency' => Word::FREQUENCY_UNRANKED,
+                    // Staged raw translation strings travel with the INSERT
+                    // only: the update list below keeps an existing row's
+                    // curated/merged JSON intact, and the staging merge pass
+                    // unions re-imported candidates in.
+                    'translations' => $record['translations'] !== []
+                        ? json_encode($record['translations'])
+                        : null,
                 ];
             }
 
@@ -505,7 +711,145 @@ class GoldenDictParser
             $this->flushDefinitions($batch, $wordIds);
             $this->flushTranscriptions($batch, $wordIds);
             $this->flushForms($batch, $wordIds);
+
+            if ($this->targetLanguageId !== null) {
+                $this->flushTranslationStaging($batch, $wordIds);
+                $targetIds = $this->flushTargetWords($batch);
+                $this->flushTranslationLinks($batch, $wordIds, $targetIds);
+            }
         });
+    }
+
+    /**
+     * Union the staged raw translation strings into words.translations JSON
+     * (the flat, deduplicated Wiktionary shape). Rows the upsert just
+     * inserted already carry their candidates; pre-existing rows keep their
+     * JSON through the upsert, so it is merged here — never clobbered.
+     */
+    private function flushTranslationStaging(array $batch, object $wordIds): void
+    {
+        $byWordId = [];
+        foreach ($batch as $record) {
+            if ($record['translations'] === []) {
+                continue;
+            }
+            $wordId = $this->lookupWordId($record, $wordIds);
+            if ($wordId !== null) {
+                $byWordId[$wordId] = array_values(array_unique(array_merge(
+                    $byWordId[$wordId] ?? [],
+                    $record['translations'],
+                )));
+            }
+        }
+
+        if ($byWordId === []) {
+            return;
+        }
+
+        foreach (Word::query()->whereKey(array_keys($byWordId))->get(['id', 'translations']) as $word) {
+            $existing = $word->translations ?? [];
+            $merged = array_values(array_unique(array_merge($existing, $byWordId[$word->id])));
+            if ($merged !== $existing) {
+                $word->forceFill(['translations' => $merged])->save();
+            }
+        }
+    }
+
+    /**
+     * Create the missing target-language words — the bulk mirror of the
+     * FetchWordTranslations firstOrCreate-on-triple semantics — and return
+     * their ids keyed by "lower(word)|classId" for the link phase.
+     *
+     * @return object keyed id map (Eloquent collection)
+     */
+    private function flushTargetWords(array $batch): object
+    {
+        $rows = [];
+        foreach ($batch as $record) {
+            foreach ($record['translations'] as $candidate) {
+                $rows[] = [
+                    'word' => $candidate,
+                    'l_word' => WordLookupKey::normalize($candidate),
+                    'language_id' => $this->targetLanguageId,
+                    'word_class_id' => $this->ensureTargetWordClass(
+                        $this->candidateClassSlug($candidate, $record['pos']),
+                    ),
+                    'frequency' => Word::FREQUENCY_UNRANKED,
+                ];
+            }
+        }
+
+        if ($rows === []) {
+            return collect();
+        }
+
+        $this->uniqueByCompound($rows, ['word', 'language_id', 'word_class_id']);
+        Word::upsert($rows, ['word', 'language_id', 'word_class_id'], ['l_word']);
+        $this->stats['target_words_created'] += count($rows);
+
+        return Word::query()
+            ->where('language_id', $this->targetLanguageId)
+            ->whereIn('word', collect($rows)->pluck('word')->unique()->toArray())
+            ->get(['id', 'word', 'word_class_id'])
+            ->keyBy(fn ($w) => mb_strtolower($w->word).'|'.$w->word_class_id);
+    }
+
+    /**
+     * Canonical word_translations links (word_a_id < word_b_id, ADR 0020)
+     * via one batched upsert per flush — no per-row link() calls in the hot
+     * loop (the LinkTranslationsCommand convention).
+     */
+    private function flushTranslationLinks(array $batch, object $wordIds, object $targetIds): void
+    {
+        $rows = [];
+        $seen = [];
+        foreach ($batch as $record) {
+            if ($record['translations'] === []) {
+                continue;
+            }
+            $sourceId = $this->lookupWordId($record, $wordIds);
+            if ($sourceId === null) {
+                continue;
+            }
+
+            foreach ($record['translations'] as $candidate) {
+                $slug = $this->candidateClassSlug($candidate, $record['pos']);
+                $targetId = $targetIds[mb_strtolower($candidate).'|'.$this->targetWordClassMap[$slug]]->id ?? null;
+                if ($targetId === null) {
+                    continue;
+                }
+
+                [$wordAId, $wordBId] = WordTranslation::canonicalize((int) $sourceId, (int) $targetId);
+                $key = $wordAId.'|'.$wordBId;
+                if (! isset($seen[$key])) {
+                    $seen[$key] = true;
+                    $rows[] = ['word_a_id' => $wordAId, 'word_b_id' => $wordBId];
+                }
+            }
+        }
+
+        if ($rows === []) {
+            return;
+        }
+
+        // Count only genuinely new pairs, so an idempotent re-run reports
+        // zero links staged.
+        $existingPairs = [];
+        foreach (WordTranslation::query()
+            ->whereIn('word_a_id', array_values(array_unique(array_column($rows, 'word_a_id'))))
+            ->get(['word_a_id', 'word_b_id']) as $link) {
+            $existingPairs[$link->word_a_id.'|'.$link->word_b_id] = true;
+        }
+
+        $newRows = array_values(array_filter(
+            $rows,
+            fn (array $row): bool => ! isset($existingPairs[$row['word_a_id'].'|'.$row['word_b_id']]),
+        ));
+
+        if ($newRows !== []) {
+            WordTranslation::upsert($newRows, ['word_a_id', 'word_b_id']);
+            $this->stats['translations_linked'] += count($newRows);
+        }
     }
 
     private function flushDefinitions(array $batch, object $wordIds): void
@@ -649,11 +993,13 @@ class GoldenDictParser
     private function heartbeat(float $startedAt, ?ProgressBar $progressBar, bool $final = false): void
     {
         $message = sprintf(
-            '%s entries=%d skipped=%d words=%d rss=%sMB elapsed=%ss',
+            '%s entries=%d skipped=%d words=%d targets=%d links=%d rss=%sMB elapsed=%ss',
             $final ? 'GoldenDict import done:' : 'GoldenDict import heartbeat:',
             $this->stats['entries_read'],
             $this->stats['entries_skipped'],
             $this->stats['words_imported'],
+            $this->stats['target_words_created'],
+            $this->stats['translations_linked'],
             round(memory_get_usage(true) / 1024 / 1024, 1),
             round(microtime(true) - $startedAt, 1),
         );

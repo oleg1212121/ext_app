@@ -10,12 +10,12 @@ class ImportGoldenDictCommand extends Command
 {
     protected $signature = 'goldendict:import {file}
                             {--lang= : Source language code from the languages registry}
-                            {--target-lang= : Target language code for bilingual import (not implemented yet)}
+                            {--target-lang= : Target language code for bilingual import (creates target words, word_translations links and words.translations staging)}
                             {--profile= : Extraction profile slug (not implemented yet)}
                             {--batch-size=500 : Number of records per DB flush}
                             {--max-entries= : Stop after this many parsed entries (smoke runs)}
                             {--dry-run : Parse and report what would be written, writing nothing}
-                            {--no-link : Skip translation linking (not implemented yet)}';
+                            {--no-link : Skip the bilingual phases entirely (no target words, links or staging)}';
 
     protected $description = 'Import a converted GoldenDict JSONL ({"word","alts","html"} per line, from ai/goldendict_convert.py) into the dictionary tables';
 
@@ -23,6 +23,8 @@ class ImportGoldenDictCommand extends Command
     {
         $file = (string) $this->argument('file');
         $lang = trim((string) $this->option('lang'));
+        $targetLang = trim((string) $this->option('target-lang'));
+        $noLink = (bool) $this->option('no-link');
         $batchSize = max(1, (int) $this->option('batch-size'));
         $maxEntries = $this->option('max-entries');
         $dryRun = (bool) $this->option('dry-run');
@@ -52,28 +54,39 @@ class ImportGoldenDictCommand extends Command
             return self::FAILURE;
         }
 
-        $inert = [];
-        if ((string) $this->option('target-lang') !== '') {
-            $inert[] = '--target-lang';
+        if ($targetLang !== '') {
+            if (! in_array($targetLang, $registryCodes, true)) {
+                $this->error("Unknown target language: {$targetLang}. Available: ".implode(', ', $registryCodes));
+
+                return self::FAILURE;
+            }
+            if ($targetLang === $lang) {
+                $this->error('The --target-lang option must differ from --lang.');
+
+                return self::FAILURE;
+            }
         }
+
         if ((string) $this->option('profile') !== '') {
-            $inert[] = '--profile';
-        }
-        if ((bool) $this->option('no-link')) {
-            $inert[] = '--no-link';
-        }
-        if ($inert !== []) {
-            $this->warn(implode(', ', $inert).' not implemented yet (later tickets of this feature); ignoring.');
+            $this->warn('--profile not implemented yet (later tickets of this feature); ignoring.');
         }
 
         $this->info("Importing GoldenDict data from: {$file}");
-        $this->info("Language: {$lang}, Batch size: {$batchSize}");
+        $this->info('Language: '.$lang.($targetLang !== '' ? " → Target: {$targetLang}" : '').", Batch size: {$batchSize}");
+        if ($targetLang !== '' && $noLink) {
+            $this->warn('--no-link: skipping the bilingual phases (no target words, links or staging).');
+        }
         if ($dryRun) {
             $this->warn('DRY RUN — nothing will be written.');
         }
 
         try {
-            $parser = new GoldenDictParser($lang, $batchSize, $dryRun);
+            $parser = new GoldenDictParser(
+                $lang,
+                $batchSize,
+                $dryRun,
+                $targetLang !== '' && ! $noLink ? $targetLang : null,
+            );
             $stats = $parser->import(
                 $file,
                 $this->output,
@@ -98,6 +111,9 @@ class ImportGoldenDictCommand extends Command
             ['Definitions imported', $stats['definitions_imported']],
             ['Transcriptions imported', $stats['transcriptions_imported']],
             ['Forms imported', $stats['forms_imported']],
+            ['Translation candidates', $stats['translation_candidates']],
+            ['Target words created', $stats['target_words_created']],
+            ['Translation links', $stats['translations_linked']],
             ['Lookups created', $stats['lookups_created']],
             ['Batches flushed', $stats['batches_flushed']],
         ]);

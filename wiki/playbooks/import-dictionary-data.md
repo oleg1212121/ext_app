@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-14T15:12:09+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T18:40:00+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -159,9 +159,15 @@ DSL/StarDict conversion is a later ticket). Two stages:
    Extraction is a generic heuristic (plain-text block segments →
    definitions, `[bracketed]`/`/slashed/` IPA → transcriptions under the
    auto-created `ipa` type, POS abbreviations → word-class slugs, `alts` →
-   forms, multi-word headwords → `phrase`). `--target-lang`, `--profile`
-   and `--no-link` are accepted but inert until the bilingual and profile
-   tickets land. Re-runs upsert and text-dedupe — raw article HTML never
+   forms, multi-word headwords → `phrase`). For a **bilingual**
+   dictionary add `--target-lang=yy`: translation candidates (the
+   comma/semicolon-delimited article segments that survive the noise
+   filters) become target-language words — the source class slug mapped
+   into the target language, multi-word candidates → `phrase` — plus
+   canonical `word_translations` links and `words.translations` JSON
+   staging, all written directly (no separate link pass; `--no-link`
+   skips these phases). `--profile` stays inert until the profile
+   tickets. Re-runs upsert and text-dedupe — raw article HTML never
    enters the database, so a better extractor just re-imports the JSONL.
 
 3. Verify in the Filament admin like the Wiktionary flow above. freemdict
