@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps into the unified language-keyed dictionary tables and linking translations across every language pair; multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059).
-tags: [dictionary, import, wiktionary, kaikki, multi-word-verbs]
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059).
+tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-10T19:55:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T15:12:09+03:00 }
 sources:
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
@@ -22,6 +22,15 @@ sources:
   - id: link-cmd
     resource: laravel/app/Console/Commands/LinkTranslationsCommand.php
     title: wiktionary:link-translations
+  - id: goldendict-cmd
+    resource: laravel/app/Console/Commands/ImportGoldenDictCommand.php
+    title: goldendict:import
+  - id: goldendict
+    resource: laravel/app/Classes/GoldenDictParser.php
+    title: GoldenDict JSONL parser
+  - id: lookup-key
+    resource: laravel/app/Support/WordLookupKey.php
+    title: shared l_word normalization
   - id: reclass-cmd
     resource: laravel/app/Console/Commands/ReclassMultiwordWordsCommand.php
     title: words:reclass-multiword
@@ -85,13 +94,50 @@ mirrored per-language tables, and a single `word_translations` pivot —
   the shared `App\Support\StressMarks`). Re-runs are idempotent next to
   manually created links. `wiktionary:import-raw` runs it automatically at
   the end (unless `--no-link`).
+* `php artisan goldendict:import {file} --lang=` — the GoldenDict entry
+  point: imports a **converted** JSONL (one `{"word", "alts", "html"}`
+  record per line, produced by the python service's
+  `ai/goldendict_convert.py` — stage 1 of the pipeline, see
+  [Importing Dictionary Data](/playbooks/import-dictionary-data.md)).
+  Stage 2 is `App\Classes\GoldenDictParser`, a **generic heuristic
+  extractor**: article HTML is parsed with native `DOMDocument`/`DOMXPath`
+  into plain-text block segments (`definitions`, truncated to the 500-char
+  cap), IPA runs in `[brackets]`/`/slashes/` (`transcriptions` under the
+  auto-created per-language `ipa` type), POS abbreviations from
+  pos-classed/`<i>`/`<abbr>` elements map to word-class slugs, and
+  alternate headwords (`alts`, MDX `@@@LINK=` redirects) land as `forms`.
+  Multi-word headwords go to the `phrase` class regardless of the POS hint
+  (ADR 0059). Raw HTML never enters the database — the JSONL stays on disk
+  and a better extractor can re-import it anytime. Flags: `--dry-run`
+  (parse and report, write nothing — not even auto-created lookups),
+  `--max-entries` (smoke runs), `--batch-size`. `--target-lang`,
+  `--profile` and `--no-link` are accepted but **inert stubs** until the
+  bilingual-import and extraction-profile tickets land. New words get the
+  `FREQUENCY_UNRANKED` sentinel; re-imports refresh `l_word` only, so
+  curated frequency ranks and staged translations survive.
+
+# GoldenDict vs Wiktionary imports
+
+Both importers write the same unified tables with the same conventions
+(batched `Word::upsert` on `(word, language_id, word_class_id)`, lookup
+auto-creation, text-dedupe definitions, heartbeats) and share the `l_word`
+normalization through `App\Support\WordLookupKey` (lowercase + combining-
+mark strip via `App\Support\StressMarks` — the display `word` keeps the
+marks). The Wiktionary side reads kaikki JSONL with structured fields
+(`pos`, `senses`, `sounds`, `translations`); the GoldenDict side extracts
+everything heuristically from article HTML, and per-dictionary extraction
+profiles tuning that extraction are a later addition.
 
 # Performance notes
 
 * `definitions`/`etymologies` carry non-unique indexes on `word_id`
   (`idx_definitions_word_id`, `idx_etymologies_word_id`): the parser's
   `insertNewOnly()` runs `whereIn('word_id', …)` per batch and would
-  full-scan once these tables hold millions of rows.
+  full-scan once these tables hold millions of rows. Note: the text-dedupe
+  itself silently never fired before 2026-10-14 — the existing-rows map was
+  filled inside `each(fn …)` and arrow functions capture by value, so
+  re-imports duplicated definitions; both parsers now fill it in a plain
+  `foreach` and re-imports are truly idempotent.
 * The parser batch-flushes (default 500, `--batch-size`) inside a
   transaction and force-flushes when RSS exceeds 100MB; `import-raw` raises
   the CLI `memory_limit` to 1G because single decoded lines (e.g. the entry

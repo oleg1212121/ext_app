@@ -1,5 +1,54 @@
 # Directory Update Log
 
+## 2026-10-14 (goldendict-import ticket 02 — monolingual import)
+
+Second commit of the goldendict-import feature (branch `goldendict-import`):
+stage 2 of the pipeline, the artisan side that ingests ticket 01's JSONL
+into the unified dictionary tables:
+
+- `laravel/app/Console/Commands/ImportGoldenDictCommand.php` +
+  `laravel/app/Classes/GoldenDictParser.php` —
+  `goldendict:import {file} --lang= [--batch-size=500] [--max-entries=]
+  [--dry-run]` imports a converted `{"word","alts","html"}` JSONL:
+  headwords → `words` (batched upsert on
+  `(word, language_id, word_class_id)`, `FREQUENCY_UNRANKED` sentinel for
+  new rows), plain-text article segments → `definitions` (500-char cap),
+  IPA in brackets/slashes → `transcriptions` (auto-created per-language
+  `ipa` type), `alts` → `forms`. Article HTML is parsed with native
+  `DOMDocument`/`DOMXPath` (text nodes grouped by nearest block ancestor,
+  POS abbreviations from pos-classed/`<i>`/`<abbr>` elements); multi-word
+  headwords → `phrase` (ADR 0059); unseen lookups auto-create; heartbeats
+  every 100k entries; `--dry-run` writes nothing (not even lookups) and
+  reports the would-be counts. `--target-lang`/`--profile`/`--no-link`
+  are accepted but inert until the bilingual/profile tickets. Re-imports
+  refresh `l_word` only — curated frequency ranks survive, and
+  `clearUnmatchedForLanguage` gives entity tokens another linking chance.
+- `laravel/app/Support/WordLookupKey.php` — the `l_word` normalization
+  (lowercase + combining-mark strip via `StressMarks`) factored out of
+  `WiktionaryParser` and now shared by both importers.
+- **Bug fix in `WiktionaryParser::insertNewOnly`**: the existing-rows map
+  was filled inside `each(fn …)`, and arrow functions capture by value —
+  the map stayed empty, so the documented "re-imports text-dedupe" never
+  fired and re-imports duplicated definitions. Both parsers now fill the
+  map in a plain `foreach`; verified empirically on the testing DB (two
+  imports of one gloss → one row).
+- Tests: `tests/Feature/ImportGoldenDictCommandTest.php` (validation,
+  happy path on the hand-written fixture
+  `tests/Fixtures/goldendict-sample.jsonl`, brand-new-language lookup
+  auto-creation, dry-run, `--max-entries`, idempotent re-run +
+  frequency-rank preservation, inert flags) and
+  `tests/Unit/WordLookupKeyTest.php`. Targeted suites green (45 passed /
+  188 assertions incl. the wiktionary import suites);
+  `composer run test:tia` green except 10 failures that also fail on the
+  clean tree (live Google Translate 403s, pre-existing, unrelated).
+
+Wiki: `wiki/domains/dictionary-import.md` (GoldenDict components +
+`WordLookupKey` + dedupe-fix note) and
+`wiki/playbooks/import-dictionary-data.md` (GoldenDict entry-point
+section) extended; `wiki/reference/commands.md` regenerated via
+`wiki:sync` (timestamp-only churn on models/web-routes references
+reverted); `wiki:validate` conformant.
+
 ## 2026-10-14 (goldendict-import ticket 01 — MDX→JSONL converter)
 
 First commit of the goldendict-import feature (branch `goldendict-import`):

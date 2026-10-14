@@ -1,11 +1,11 @@
 ---
 type: Playbook
 title: Importing Dictionary Data
-description: How to import Kaikki/Wiktionary dumps into the unified language-keyed dictionary tables and link translations.
-tags: [dictionary, import, wiktionary, kaikki]
+description: How to import Kaikki/Wiktionary dumps and GoldenDict-format dictionaries into the unified language-keyed dictionary tables and link translations.
+tags: [dictionary, import, wiktionary, kaikki, goldendict]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-10T19:55:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T15:12:09+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -22,6 +22,12 @@ sources:
   - id: extractor
     resource: laravel/app/Classes/RawWiktextractExtractor.php
     title: Raw dump per-language extractor
+  - id: goldendict-cmd
+    resource: laravel/app/Console/Commands/ImportGoldenDictCommand.php
+    title: goldendict:import command
+  - id: goldendict
+    resource: laravel/app/Classes/GoldenDictParser.php
+    title: GoldenDict JSONL parser
 ---
 
 # Overview
@@ -124,6 +130,43 @@ Two source shapes exist:
    the **Translations** tab offers **Attach translation** (pick an existing
    word in another language) and **Create word & link** (create the missing
    target word and link it in one step). Links work from either word.
+
+# Steps — GoldenDict dictionary (goldendict:import)
+
+For GoldenDict-format dictionaries (freemdict etc.: MDict `.mdx` so far;
+DSL/StarDict conversion is a later ticket). Two stages:
+
+1. **Convert** on the host through the bind-mounted python venv (stage 1,
+   writes the JSONL next to the source; encrypted/regcode MDX is rejected
+   with a clear error):
+
+   ```bash
+   docker-compose/python/ai/venv/bin/python \
+       docker-compose/python/ai/goldendict_convert.py DICT.mdx
+   # -> DICT.mdx.jsonl with {"word", "alts", "html"} records
+   ```
+
+2. **Smoke-run the import dry** against the testing DB, then import
+   (stage 2; `--lang` accepts any registry code, missing lookups
+   auto-create like the Wiktionary import):
+
+   ```bash
+   docker exec ext_app_laravel sh -c 'cd /var/www && DB_CONNECTION=testing php artisan migrate:fresh --seed'
+   docker exec ext_app_laravel sh -c 'cd /var/www && DB_CONNECTION=testing php artisan goldendict:import DICT.mdx.jsonl --lang=xx --max-entries=500 --dry-run'
+   docker exec ext_app_laravel php artisan goldendict:import DICT.mdx.jsonl --lang=xx
+   ```
+
+   Extraction is a generic heuristic (plain-text block segments →
+   definitions, `[bracketed]`/`/slashed/` IPA → transcriptions under the
+   auto-created `ipa` type, POS abbreviations → word-class slugs, `alts` →
+   forms, multi-word headwords → `phrase`). `--target-lang`, `--profile`
+   and `--no-link` are accepted but inert until the bilingual and profile
+   tickets land. Re-runs upsert and text-dedupe — raw article HTML never
+   enters the database, so a better extractor just re-imports the JSONL.
+
+3. Verify in the Filament admin like the Wiktionary flow above. freemdict
+   dictionaries are frequently commercial rips — fine for personal
+   learning use, do not redistribute the extracted data.
 
 # Notes
 

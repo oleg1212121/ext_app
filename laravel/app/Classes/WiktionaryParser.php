@@ -10,6 +10,7 @@ use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\Word;
 use App\Models\WordClass;
+use App\Support\WordLookupKey;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -221,7 +222,7 @@ class WiktionaryParser
 
         return [
             'word' => $word,
-            'l_word' => $this->normalizeLookupKey($word),
+            'l_word' => WordLookupKey::normalize($word),
             'pos' => $pos,
             'definitions' => array_values(array_unique($definitions)),
             'forms' => array_values(array_unique($forms)),
@@ -364,15 +365,6 @@ class WiktionaryParser
         }
     }
 
-    /**
-     * Lookup key for matching: lowercased with combining marks (Russian
-     * headwords' stress marks) stripped. The display `word` keeps them.
-     */
-    private function normalizeLookupKey(string $word): string
-    {
-        return (string) preg_replace('/\p{M}/u', '', mb_strtolower($word));
-    }
-
     private function flushForms(array $batch, object $wordIds, int $defaultWordClassId): void
     {
         $rows = [];
@@ -382,9 +374,10 @@ class WiktionaryParser
                 continue;
             }
             foreach ($record['forms'] as $form) {
+                $form = mb_substr($form, 0, 256);
                 $rows[] = [
-                    'form' => mb_substr($form, 0, 256),
-                    'l_word' => $this->normalizeLookupKey(mb_substr($form, 0, 256)),
+                    'form' => $form,
+                    'l_word' => WordLookupKey::normalize($form),
                     'word_id' => $wordId,
                 ];
             }
@@ -455,9 +448,11 @@ class WiktionaryParser
 
         $existing = [];
         foreach (array_chunk($wordIds, 100) as $chunk) {
-            $model::whereIn($fkColumn, $chunk)
-                ->get([$fkColumn, $textColumn])
-                ->each(fn ($r) => $existing[$r->{$fkColumn}.'|'.mb_strtolower($r->{$textColumn})] = true);
+            foreach ($model::whereIn($fkColumn, $chunk)->get([$fkColumn, $textColumn]) as $row) {
+                // A foreach, not an each(arrow fn): arrow functions capture
+                // by value, so the write would never reach $existing.
+                $existing[$row->{$fkColumn}.'|'.mb_strtolower($row->{$textColumn})] = true;
+            }
         }
 
         $newRows = array_filter($rows, function ($row) use ($existing, $textColumn, $fkColumn) {

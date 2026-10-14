@@ -1,0 +1,9 @@
+{"word": "cat", "alts": [], "html": "<div><b>cat</b> <span class=\"pos\">n.</span> [kæt] a small domesticated feline</div>"}
+{"word": "hello", "alts": ["hi"], "html": "<div><i>(interj.)</i> /həˈləʊ/ <p>a greeting used when meeting someone</p><p>an expression of surprise</p></div>"}
+{"word": "give up", "alts": [], "html": "<div><span class=\"pos\">v</span> to stop trying to do something</div>"}
+
+not json at all
+{"word": "   ", "alts": [], "html": "<div>whitespace headword is skipped</div>"}
+{"word": "приве́т", "alts": [], "html": "<div>русская форма приветствия, см. также <a href=\"bword://здравствуйте\">здравствуйте</a></div>"}
+{"word": "long", "alts": [], "html": "<div>word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word</div>"}
+{"word": "blank", "alts": [], "html": ""}
