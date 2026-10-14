@@ -1,5 +1,45 @@
 # Directory Update Log
 
+## 2026-10-14 (goldendict-import review fixes — stats accuracy, extraction edges, converter error)
+
+Review-fix commit on the `goldendict-import` branch: five two-axis review
+defects fixed test-first (red → green), no command signature changes, no
+schema changes.
+
+- `laravel/app/Classes/GoldenDictParser.php` — (1) `translation_candidates`
+  is now counted in real runs too (per staged record in `flushBatch`,
+  matching the dry-run `tallyRecord` semantics) instead of printing 0 in
+  every real run's stats table; (2) `target_words_created` counts only
+  genuinely created rows — the batch's triples are diffed against the
+  target language's existing words through a new `existingTargetWords`
+  helper (the `flushTranslationLinks` new-only rule), and the same
+  knowledge makes `--dry-run` tallies DB-honest: pending would-be-created
+  target words resolve in batches against the DB, so re-import previews no
+  longer overstate (would-be links stay an in-run estimate). The target
+  word-class map is now preloaded like the source-side maps, so dry runs
+  hand out real ids for existing classes and `lookups_created` counts only
+  genuinely missing target classes in both modes; (3) a profile selector
+  whose matched nodes hold only whitespace/bracket text is now a miss for
+  that kind (falls back to the heuristic) instead of silently emptying the
+  extraction — such articles count as "Profile no-match articles";
+  (4) translation candidates equal to the article's own headword
+  (case/normalization-insensitive via `WordLookupKey`) are dropped, so
+  "Katze, cat" no longer creates a junk target word linking cat to itself.
+- `laravel/app/Console/Commands/ImportGoldenDictCommand.php` — untouched.
+- `docker-compose/python/ai/goldendict_convert.py` — `mdx_encryption` now
+  catches `struct.error` (a truncated `.mdx` is shorter than the 4-byte
+  header-length prefix), so the normal pyglossary failure path produces
+  the one-line error instead of a traceback.
+- Tests: 5 new Pest tests (stats real-run/dry-run honesty ×3, profile
+  empty-match fallback ×1, self-candidate guard ×1) + 2 new fixtures
+  (`goldendict-profile-empty-match.jsonl`,
+  `goldendict-self-candidate.jsonl`); 1 new pytest
+  (`test_truncated_mdx_is_a_clean_error`). `ImportGoldenDictCommandTest` →
+  25 passed; import-family regression filter → 72 passed; python suite →
+  158 passed. Playbook (`import-dictionary-data.md`) and this concept
+  updated where they asserted the old behavior; `generated.at` bumped on
+  both.
+
 ## 2026-10-14 (goldendict-import feature closure — playbook runbook, wiki sweep, deploy note)
 
 Closure of the goldendict-import feature (branch `goldendict-import`,

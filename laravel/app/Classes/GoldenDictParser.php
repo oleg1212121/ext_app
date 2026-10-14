@@ -113,6 +113,13 @@ class GoldenDictParser
     /** @var array<string, true> target-word triples already tallied (dry run) */
     private array $dryTargetWordKeys = [];
 
+    /**
+     * @var array<string, array{word: string, word_class_id: int}> target-word
+     *                                                             triples whose would-be-created count is still pending the batched
+     *                                                             DB existence check (dry run)
+     */
+    private array $dryPendingTargetWords = [];
+
     /** @var array<string, true> (source triple, candidate) pairs already tallied (dry run) */
     private array $dryLinkKeys = [];
 
@@ -245,6 +252,12 @@ class GoldenDictParser
             $this->flushBatch($batch);
         }
 
+        // A dry run's pending would-be-created target words resolve against
+        // the DB before the stats are reported.
+        if ($this->dryRun) {
+            $this->tallyDryTargetWordCreations();
+        }
+
         // Profile authors read this one: which articles nothing matched in.
         $this->logProfileMisses();
 
@@ -339,6 +352,13 @@ class GoldenDictParser
             foreach (preg_split('/[;,]/u', $text) ?: [] as $piece) {
                 $piece = trim($piece, self::CANDIDATE_TRIM);
                 if ($piece === '') {
+                    continue;
+                }
+
+                // A piece equal to the headword (case/normalization
+                // insensitive) is the article naming itself, not a
+                // translation — "Katze, cat" must not link cat to itself.
+                if (WordLookupKey::normalize($piece) === WordLookupKey::normalize($headword)) {
                     continue;
                 }
 
@@ -622,9 +642,11 @@ class GoldenDictParser
     /**
      * Layer the profile over the heuristic results for one article: each
      * selector kind overrides its counterpart only when it matched something
-     * in THIS article — a miss falls back to the heuristic, so the entry is
-     * never dropped. Articles where NO selector matched are counted and
-     * sampled (capped) for the profile author.
+     * usable in THIS article — a selector whose matched nodes hold only
+     * whitespace/bracket text is a miss for that kind, just like a selector
+     * that matched no nodes, and falls back to the heuristic (an extraction
+     * is never silently emptied). Articles where NO selector matched are
+     * counted and sampled (capped) for the profile author.
      *
      * @param  array<string, list<string>>  $texts
      * @return array{definitions?: list<string>, transcriptions?: list<string>, translations?: list<string>}
@@ -635,20 +657,33 @@ class GoldenDictParser
         $matched = false;
 
         if ($texts['transcriptions'] !== []) {
-            $matched = true;
-            $override['transcriptions'] = $this->profileTranscriptions($texts['transcriptions']);
+            $values = $this->profileTranscriptions($texts['transcriptions']);
+            if ($values !== []) {
+                $matched = true;
+                $override['transcriptions'] = $values;
+            }
         }
 
         if ($texts['definitions'] !== []) {
-            $matched = true;
-            $override['definitions'] = $this->profileSegments($texts['definitions']);
+            $segments = $this->profileSegments($texts['definitions']);
+            if ($segments !== []) {
+                $matched = true;
+                $override['definitions'] = $segments;
+            }
         }
 
         if ($texts['translations'] !== []) {
-            // The matched texts replace the heuristic segments as the source
-            // of translation candidates; the noise filters still apply.
-            $matched = true;
-            $override['translations'] = $texts['translations'];
+            $cells = array_values(array_filter(
+                $texts['translations'],
+                fn (string $text): bool => trim($text) !== '',
+            ));
+            if ($cells !== []) {
+                // The matched texts replace the heuristic segments as the
+                // source of translation candidates; the noise filters still
+                // apply.
+                $matched = true;
+                $override['translations'] = $cells;
+            }
         }
 
         if (! $matched) {
@@ -739,12 +774,21 @@ class GoldenDictParser
         foreach ($record['translations'] as $candidate) {
             $this->stats['translation_candidates']++;
             $slug = $this->candidateClassSlug($candidate, $record['pos']);
-            $this->ensureTargetWordClass($slug);
+            $classId = $this->ensureTargetWordClass($slug);
 
             $wordKey = mb_strtolower($candidate).'|'.$slug;
             if (! isset($this->dryTargetWordKeys[$wordKey])) {
                 $this->dryTargetWordKeys[$wordKey] = true;
-                $this->stats['target_words_created']++;
+                // Counted when the batched DB existence check resolves: a
+                // word the target language already has is an upsert, not a
+                // would-be creation.
+                $this->dryPendingTargetWords[$wordKey] = [
+                    'word' => $candidate,
+                    'word_class_id' => $classId,
+                ];
+                if (count($this->dryPendingTargetWords) >= $this->batchSize) {
+                    $this->tallyDryTargetWordCreations();
+                }
             }
 
             $linkKey = mb_strtolower($record['word']).'|'.$record['pos'].'=>'.$wordKey;
@@ -766,6 +810,16 @@ class GoldenDictParser
             ->where('language_id', $this->languageId)
             ->pluck('id', 'slug')
             ->toArray();
+
+        // Preloaded like the source-side maps, so the dry run hands out real
+        // ids for existing target classes (the existence checks key on them)
+        // and lookups_created only counts classes that are genuinely missing.
+        if ($this->targetLanguageId !== null) {
+            $this->targetWordClassMap = WordClass::query()
+                ->where('language_id', $this->targetLanguageId)
+                ->pluck('id', 'slug')
+                ->toArray();
+        }
     }
 
     private function ensureWordClass(string $slug): int
@@ -878,6 +932,12 @@ class GoldenDictParser
             $this->stats['words_imported'] += count($wordUpserts);
             $this->stats['batches_flushed']++;
 
+            // The dry-run tally counts these per record (tallyRecord); the
+            // real run counts them where they are staged.
+            foreach ($batch as $record) {
+                $this->stats['translation_candidates'] += count($record['translations']);
+            }
+
             $wordIds = Word::query()
                 ->where('language_id', $this->languageId)
                 ->whereIn('word', collect($batch)->pluck('word')->unique()->toArray())
@@ -960,14 +1020,89 @@ class GoldenDictParser
         }
 
         $this->uniqueByCompound($rows, ['word', 'language_id', 'word_class_id']);
+
+        // Count only genuinely created rows (the flushTranslationLinks rule):
+        // diff the batch's triples against the target language's existing
+        // words BEFORE the upsert.
+        $candidates = [];
+        foreach ($rows as $row) {
+            $candidates[mb_strtolower($row['word']).'|'.$row['word_class_id']] = [
+                'word' => $row['word'],
+                'word_class_id' => $row['word_class_id'],
+            ];
+        }
+        $existing = $this->existingTargetWords($candidates);
+
         Word::upsert($rows, ['word', 'language_id', 'word_class_id'], ['l_word']);
-        $this->stats['target_words_created'] += count($rows);
+        $this->stats['target_words_created'] += count(array_filter(
+            $rows,
+            fn (array $row): bool => ! isset($existing[mb_strtolower($row['word']).'|'.$row['word_class_id']]),
+        ));
 
         return Word::query()
             ->where('language_id', $this->targetLanguageId)
             ->whereIn('word', collect($rows)->pluck('word')->unique()->toArray())
             ->get(['id', 'word', 'word_class_id'])
             ->keyBy(fn ($w) => mb_strtolower($w->word).'|'.$w->word_class_id);
+    }
+
+    /**
+     * Which of the given target-word candidates already exist in the target
+     * language — the existing-rows knowledge behind the new-only
+     * target_words_created counting, shared by the real flush
+     * (flushTargetWords) and the dry-run tally. Returns the
+     * "lower(word)|classId" keys found in the DB among the candidates (a
+     * dry-run class-id 0 placeholder means the class row itself is missing,
+     * so no word can exist under it and it is never reported existing).
+     *
+     * @param  array<string, array{word: string, word_class_id: int}>  $candidates
+     * @return array<string, true>
+     */
+    private function existingTargetWords(array $candidates): array
+    {
+        $wanted = [];
+        foreach ($candidates as $candidate) {
+            if ($candidate['word_class_id'] !== 0) {
+                $wanted[$candidate['word']][] = $candidate['word_class_id'];
+            }
+        }
+
+        if ($wanted === []) {
+            return [];
+        }
+
+        $existing = [];
+        foreach (Word::query()
+            ->where('language_id', $this->targetLanguageId)
+            ->whereIn('word', array_keys($wanted))
+            ->get(['word', 'word_class_id']) as $row) {
+            if (in_array($row->word_class_id, $wanted[$row->word], true)) {
+                $existing[mb_strtolower($row->word).'|'.$row->word_class_id] = true;
+            }
+        }
+
+        return $existing;
+    }
+
+    /**
+     * Resolve the dry run's pending would-be-created target words through the
+     * same existingTargetWords knowledge the real flush counts through: keys
+     * the target language already has are would-be upserts, not creations.
+     */
+    private function tallyDryTargetWordCreations(): void
+    {
+        if ($this->dryPendingTargetWords === []) {
+            return;
+        }
+
+        $existing = $this->existingTargetWords($this->dryPendingTargetWords);
+        foreach ($this->dryPendingTargetWords as $pending) {
+            if (! isset($existing[mb_strtolower($pending['word']).'|'.$pending['word_class_id']])) {
+                $this->stats['target_words_created']++;
+            }
+        }
+
+        $this->dryPendingTargetWords = [];
     }
 
     /**

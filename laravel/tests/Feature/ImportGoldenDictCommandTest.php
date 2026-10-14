@@ -1,5 +1,6 @@
 <?php
 
+use App\Classes\GoldenDictParser;
 use App\Models\Definition;
 use App\Models\Form;
 use App\Models\Language;
@@ -509,4 +510,143 @@ it('logs capped samples of articles where the profile matched nothing', function
     // A profile that matches nothing never drops entries: everything the
     // generic heuristics find still imported.
     expect(Word::count())->toBe(6);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Review fixes: stats accuracy and extraction edges
+|--------------------------------------------------------------------------
+*/
+
+function goldendictSelfCandidateFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-self-candidate.jsonl';
+}
+
+function goldendictEmptyMatchFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-profile-empty-match.jsonl';
+}
+
+it('counts translation candidates in real runs, not only dry runs', function () {
+    createLanguages(['en', 'de']);
+
+    $stats = (new GoldenDictParser('en', 500, false, 'de'))
+        ->import(goldendictBilingualFixturePath());
+
+    // The four articles stage 7 candidates (cat 2, hello 3, give up 2; the
+    // junk article none) — the same number the dry-run tally reports.
+    $dryStats = (new GoldenDictParser('en', 500, true, 'de'))
+        ->import(goldendictBilingualFixturePath());
+
+    expect($stats['translation_candidates'])->toBe(7)
+        ->and($stats['target_words_created'])->toBe(7)
+        ->and($stats['translations_linked'])->toBe(7)
+        ->and($dryStats['translation_candidates'])->toBe(7);
+});
+
+it('counts only genuinely created target words on re-imports', function () {
+    createLanguages(['en', 'de']);
+
+    $first = (new GoldenDictParser('en', 500, false, 'de'))
+        ->import(goldendictBilingualFixturePath());
+    expect($first['target_words_created'])->toBe(7);
+
+    // A re-import upserts the same 7 rows — none of them is a creation.
+    $second = (new GoldenDictParser('en', 500, false, 'de'))
+        ->import(goldendictBilingualFixturePath());
+
+    expect($second['target_words_created'])->toBe(0)
+        ->and($second['translations_linked'])->toBe(0)
+        // Candidates are re-extracted every run regardless.
+        ->and($second['translation_candidates'])->toBe(7)
+        ->and(Word::query()->where('word', 'Katze')->count())->toBe(1);
+});
+
+it('makes the dry-run target-word tally honest against the database', function () {
+    createLanguages(['en', 'de']);
+
+    // Empty DB: every candidate would be a creation.
+    $before = (new GoldenDictParser('en', 500, true, 'de'))
+        ->import(goldendictBilingualFixturePath());
+    expect($before['target_words_created'])->toBe(7);
+
+    (new GoldenDictParser('en', 500, false, 'de'))
+        ->import(goldendictBilingualFixturePath());
+
+    // Same file against the now-populated DB: the preview must not overstate
+    // would-be creations, and the existing target lookups must not count as
+    // would-be-created either.
+    $after = (new GoldenDictParser('en', 500, true, 'de'))
+        ->import(goldendictBilingualFixturePath());
+
+    expect($after['target_words_created'])->toBe(0)
+        ->and($after['lookups_created'])->toBe(0)
+        ->and($after['translation_candidates'])->toBe(7);
+});
+
+it('treats a profile match whose nodes hold only empty text as a miss', function () {
+    Log::spy();
+    createLanguages(['en', 'de']);
+
+    // Every article's matched node holds only whitespace/brackets: the
+    // profile kind is a miss and must fall back to the heuristics — never
+    // silently empty that extraction.
+    test()->artisan('goldendict:import', [
+        'file' => goldendictEmptyMatchFixturePath(),
+        '--lang' => 'en',
+        '--target-lang' => 'de',
+        '--profile' => 'example-classes',
+    ])->assertSuccessful();
+
+    // tree: the .sense div holds only whitespace — the definition comes from
+    // the heuristic block segment.
+    $tree = Word::query()->where('word', 'tree')->firstOrFail();
+    expect($tree->definitions->pluck('definition')->all())->toBe(['Baum, Tanne']);
+
+    // bird: the .ts span holds only empty brackets — the heuristic IPA from
+    // the article body survives.
+    $bird = Word::query()->where('word', 'bird')->firstOrFail();
+    expect($bird->transcriptions->pluck('transcription')->all())->toBe(['vɔˈgəl']);
+
+    // fish: the .tr span holds only whitespace — the candidate comes from
+    // the heuristic segments.
+    $fish = Word::query()->where('word', 'fish')->firstOrFail();
+    expect($fish->translations)->toBe(['Fisch']);
+
+    // No selector effectively matched anywhere, so all three articles count
+    // (and sample) as profile misses for the author.
+    Log::shouldHaveReceived('notice')
+        ->once()
+        ->withArgs(fn (string $message) => str_contains($message, 'in 3 articles'));
+
+    expect(Word::query()->where('word', 'Baum')->exists())->toBeTrue()
+        ->and(Word::query()->where('word', 'Tanne')->exists())->toBeTrue()
+        ->and(Word::query()->where('word', 'Vogel')->exists())->toBeTrue()
+        ->and(Word::query()->where('word', 'Fisch')->exists())->toBeTrue();
+});
+
+it('drops translation candidates equal to the headword itself', function () {
+    createLanguages(['en', 'de']);
+    $en = Language::query()->where('code', 'en')->first();
+    $de = Language::query()->where('code', 'de')->first();
+
+    test()->artisan('goldendict:import', [
+        'file' => goldendictSelfCandidateFixturePath(),
+        '--lang' => 'en',
+        '--target-lang' => 'de',
+    ])->assertSuccessful();
+
+    // "cat" is cat's own headword and "HOUSE" is house's in another case:
+    // neither may become a junk target word linking the word to itself.
+    expect(Word::query()->where('word', 'cat')->count())->toBe(1)
+        ->and(Word::query()->where('word', 'HOUSE')->exists())->toBeFalse()
+        ->and(Word::query()->where('language_id', $de->id)->pluck('word')->sort()->values()->all())
+        ->toBe(['Haus', 'Katze'])
+        ->and(WordTranslation::count())->toBe(2);
+
+    $cat = Word::query()->where('language_id', $en->id)->where('word', 'cat')->firstOrFail();
+    $house = Word::query()->where('language_id', $en->id)->where('word', 'house')->firstOrFail();
+    expect($cat->translations)->toBe(['Katze'])
+        ->and($house->translations)->toBe(['Haus']);
 });

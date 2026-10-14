@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-14T16:52:46+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T17:40:43+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -162,7 +162,10 @@ do not redistribute the extracted data.
 
 2. **Preview dry** — parse a capped slice and report what would be
    written (stat rows only; nothing is written, not even auto-created
-   lookups):
+   lookups). The would-be-created target-word count is diffed against the
+   database, so re-previewing an already-imported dictionary reports the
+   rows that are genuinely missing; would-be links stay an in-run
+   estimate (deduplicated within the run only):
 
    ```bash
    docker exec ext_app_laravel sh -c 'cd /var/www && php artisan goldendict:import goldendict/DICT.mdx.jsonl --lang=xx --max-entries=500 --dry-run'
@@ -232,8 +235,11 @@ dictionary — no code changes per dictionary. To author one:
 3. Smoke-run **with** `--profile=<slug> --dry-run` and compare the stat
    rows — the demo is the same JSONL visibly extracting differently.
 4. Iterate: a selector that matches nothing in an article falls back to
-   the heuristic for that kind and article — an entry is never dropped —
-   and every article where NO selector matched is counted in the
+   the heuristic for that kind and article — and so does a selector whose
+   matched nodes hold only whitespace/bracket text (a matched-but-empty
+   kind is a miss, never a silently emptied extraction) — an entry is
+   never dropped. Every article where NO selector effectively matched is
+   counted in the
    "Profile no-match articles" stat row and sampled (capped) into one
    `Goldendict profile '…': no selector matched in N articles` notice in
    `storage/logs/laravel.log`, so you can see what you are missing.

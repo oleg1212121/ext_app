@@ -233,6 +233,24 @@ def test_encrypted_mdx_is_rejected_with_one_line_error(tmp_path: Path) -> None:
     assert not (tmp_path / "locked.mdx.jsonl").exists()
 
 
+def test_truncated_mdx_is_a_clean_error(tmp_path: Path) -> None:
+    """A truncated .mdx (shorter than the 4-byte header-length prefix) fails
+    with the one-line error shape: the header probe's struct.error must not
+    escape as a traceback — mdx_encryption returns None and the real error
+    surfaces from pyglossary instead."""
+    mdx = tmp_path / "truncated.mdx"
+    mdx.write_bytes(b"MD")
+
+    result = run_converter(str(mdx))
+
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr
+    lines = [line for line in result.stderr.splitlines() if line]
+    assert len(lines) == 1
+    assert "truncated.mdx" in lines[0]
+    assert not (tmp_path / "truncated.mdx.jsonl").exists()
+
+
 def test_unsupported_input_is_a_clean_error(tmp_path: Path) -> None:
     """A non-dictionary file fails with the one-line error shape, not a
     traceback."""

@@ -75,7 +75,10 @@ def mdx_encryption(path: Path) -> str | None:
         if header_bytes[-2:] != b"\x00\x00":
             return None
         header = header_bytes[:-2].decode("utf-16")
-    except (OSError, ValueError):
+    except (OSError, ValueError, struct.error):
+        # struct.error: a truncated file is shorter than the 4-byte header
+        # length prefix — a parse failure like any other, so pyglossary
+        # surfaces the real one-line error.
         return None
     match = re.search(r'Encrypted="([^"]*)"', header)
     if match is None or match.group(1) in _UNENCRYPTED_VALUES:
