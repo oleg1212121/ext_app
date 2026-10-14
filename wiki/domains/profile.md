@@ -4,8 +4,8 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T22:55:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T22:55:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T23:00:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T23:00:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -49,6 +49,9 @@ sources:
   - id: adr-popup-visibility
     resource: docs/adr/0046-per-user-popup-section-visibility.md
     title: ADR 0046 — Per-user popup section visibility
+  - id: adr-anki
+    resource: docs/adr/0077-browser-side-ankiconnect.md
+    title: ADR 0077 — Anki export is browser-side; values-always-sent + hide-class template semantics
   - id: routes
     resource: laravel/routes/web.php
     title: Routes (auth group)
@@ -127,8 +130,9 @@ page as the `popupVisibility` Inertia prop.
 
 # Anki tab
 
-Per-user **Anki settings** (the Anki-export feature, spec
-`.scratch/anki-connection/spec.md`): connection settings and card content,
+Per-user **Anki settings** (the Anki-export feature, ADR 0077, spec
+`.scratch/anki-connection/spec.md`; the flow's front door is
+[Anki Export](/domains/anki-export.md)): connection settings and card content,
 autosaved together through `useUiSettingsAutosave('anki', …)` into
 `ui_settings.anki` — one state object, because the endpoint replaces the
 section wholesale (a fields-only save would wipe the connection and vice

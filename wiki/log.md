@@ -5799,3 +5799,29 @@ component layout; `interactive-words` explain-endpoint source path; minor
 precision in `entities` (illustration hash in text digest) and the
 dictionary-import pair (bracket-trim scoped to transcriptions, DSL UTF-16BE).
 `wiki:validate` exit 0 / 0 warnings; `WikiTest` green.
+
+## 2026-10-14 (anki connection 05: knowledge-base closure — ADR 0077, GLOSSARY.md, anki-export concept)
+
+The Anki-connection feature (tickets 01–04) closed out documentation-first,
+no feature code touched. **ADR 0077** (`docs/adr/0077-browser-side-ankiconnect.md`)
+records the two decisions a future reader would otherwise re-litigate — the
+browser is the only AnkiConnect caller because the server's topology
+(Docker/WSL2 dev, remote prod) can never reach a user's desktop Anki, and
+the values-always-sent + hide-class template semantics (Anki cannot remove
+note-type fields, so a toggle is a template class, and re-syncing restyles
+existing cards without re-export) — plus the app-owned "ExtApp Vocabulary"
+note type (foreign field sets warn, never rewrite), find-before-add
+duplicates, and ticket 04's native-language pitfall as a Consequences rule:
+`buildNoteFields` compares language *codes* while settings store a numeric
+`native_language_id` — mixing the units fails silently. **`GLOSSARY.md`**
+created at the repo root (domain-modeling format): Anki-export terms only —
+AnkiConnect, connection settings, card field, note type, card template,
+hide class, template sync, send to Anki, sample card. **`wiki/domains/anki-export.md`**
+is the feature's front-door concept (sources = the ADR + the five feature
+files): why-browser-side, the four-step flow (settings → template → sync →
+sends), and the boundaries (the twelve-field set is the schema version;
+sends only add; Anki ops are never server-initiated) — cross-linking
+`profile.md` (tab side) and `interactive-words.md` (popup send) rather than
+duplicating them, and linked from `wiki/index.md`. Both linked concepts
+gained ADR 0077 source entries + inline pointers with stamp bumps.
+`wiki:validate` → 0 warnings; `WikiTest` green.

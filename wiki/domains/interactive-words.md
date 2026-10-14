@@ -5,8 +5,8 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-14T22:50:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T22:50:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T23:00:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T23:00:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -65,6 +65,9 @@ sources:
   - id: adr-family-class-scope
     resource: docs/adr/0047-class-scoped-word-family-base-groups.md
     title: ADR 0047 (class-scoped word-family base groups)
+  - id: adr-anki
+    resource: docs/adr/0077-browser-side-ankiconnect.md
+    title: ADR 0077 (Anki export is browser-side; values-always-sent + hide-class template semantics)
 ---
 
 # What it does
@@ -308,7 +311,9 @@ The popup footer's **Save to Anki** button sends the clicked word to the
 user's desktop Anki deck in one click — everywhere the popup renders
 (reader, simulator), and **independent of the popup-visibility toggles**
 (ADR 0046): the footer always renders, and the `progress_actions` opt-out
-hides only the progress buttons inside the row. Everything browser-side —
+hides only the progress buttons inside the row. Everything browser-side
+(ADR 0077 — the Anki-export flow's front door is
+[Anki Export](/domains/anki-export.md)) —
 the settings come from the shared `ankiSettings` Inertia prop, the send is
 orchestrated by `resources/js/lib/ankiSync.js` and the note is built by
 `resources/js/lib/ankiTemplate.js`'s `buildNoteFields()` from the payload
