@@ -80,6 +80,18 @@ function ConnectionHint({settings, testId, onPermission = null}) {
     )
 }
 
+// AnkiConnect's requestPermission shows the origin-approval popup inside
+// Anki; anything short of "granted" (a dismissed popup included) is a
+// failure carrying the permission answer. Shared by the test probe and the
+// sync failure's grant-and-retry.
+const grantPermission = async (config) => {
+    const result = await requestPermission(config)
+    if (result?.permission !== 'granted') {
+        throw new AnkiConnectError('anki', String(result?.permission ?? 'permission denied'))
+    }
+    return result
+}
+
 // One state object so every autosave PATCH carries the WHOLE anki section —
 // the endpoint replaces the section wholesale, so a fields-only save would
 // wipe the connection settings (and vice versa).
@@ -118,6 +130,15 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
         fields: {...current.fields, [key]: !current.fields[key]},
     }))
 
+    // The sample note built from the shared fixture (the same fixture the
+    // Popups tab previews with): one construction feeding both the live
+    // template preview and the "Send sample card" action.
+    const sampleNoteFields = buildNoteFields(SAMPLE_DATA, {
+        familiarity: SAMPLE_FAMILIARITY,
+        tags: SAMPLE_TAGS,
+        nativeLanguage,
+    })
+
     const probe = async (call) => {
         setTest({status: 'testing'})
         try {
@@ -132,13 +153,7 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
     // AnkiConnect's requestPermission triggers the approval popup inside
     // Anki for origins not yet on webCorsOriginList; approval turns the
     // failure panel into a success message without touching the config.
-    const runPermission = () => probe(async () => {
-        const result = await requestPermission(settings)
-        if (result?.permission !== 'granted') {
-            throw new AnkiConnectError('anki', String(result?.permission ?? 'permission denied'))
-        }
-        return result.version
-    })
+    const runPermission = () => probe(async () => (await grantPermission(settings)).version)
 
     // The tab's write path into Anki. `settings` doubles as the sync config
     // (url/port/deck/fields) that lib/ankiSync.js acts on. The sync button
@@ -160,12 +175,7 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
     })
 
     const runSample = () => runAction(async () => {
-        const noteFields = buildNoteFields(SAMPLE_DATA, {
-            familiarity: SAMPLE_FAMILIARITY,
-            tags: SAMPLE_TAGS,
-            nativeLanguage,
-        })
-        const result = await sendAnkiNote(settings, noteFields, {tags: SAMPLE_TAGS, word: SAMPLE_DATA.word})
+        const result = await sendAnkiNote(settings, sampleNoteFields, {tags: SAMPLE_TAGS, word: SAMPLE_DATA.word})
         return result.added ? 'sent' : 'duplicate'
     })
 
@@ -175,27 +185,19 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
     const retryWithPermission = () => {
         const blocked = lastAction.current
         runAction(async () => {
-            const result = await requestPermission(settings)
-            if (result?.permission !== 'granted') {
-                throw new AnkiConnectError('anki', String(result?.permission ?? 'permission denied'))
-            }
+            await grantPermission(settings)
             return blocked()
         })
     }
 
-    // The generated template + the note built from the shared sample fixture:
-    // the preview renders what Anki renders at review time, and the copy
-    // buttons hand out the exact artifacts the template sync pushes.
+    // The generated template + the sample note built above: the preview
+    // renders what Anki renders at review time, and the copy buttons hand
+    // out the exact artifacts the template sync pushes.
     const template = generateCardTemplate(settings.fields)
-    const noteFields = buildNoteFields(SAMPLE_DATA, {
-        familiarity: SAMPLE_FAMILIARITY,
-        tags: SAMPLE_TAGS,
-        nativeLanguage,
-    })
     const previewDoc = (side) => [
         '<!doctype html><html><head><meta charset="utf-8">',
         `<style>${template.css}</style></head>`,
-        `<body class="card">${renderCardHtml(template[side], noteFields)}</body></html>`,
+        `<body class="card">${renderCardHtml(template[side], sampleNoteFields)}</body></html>`,
     ].join('')
 
     const copy = async (text) => {
@@ -364,8 +366,9 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
 
             {/* Template sync + sample card: the tab's write path into Anki.
                 Both actions run entirely from the browser (spec) and reuse the
-                generated artifacts shown above; failures render the same
-                connection hint as the test probe. */}
+                generated artifacts shown above; failures render by the error's
+                kind — note-type mismatch, Anki's own error verbatim, and the
+                connection hint for everything unreachable. */}
             <div className="mt-12 max-w-xl">
                 <h2 className="font-serif text-lg sm:text-xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
                     {t('profile.anki_sync_title')}
@@ -424,6 +427,18 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
                                         expected: sync.error.expected.join(', '),
                                         found: sync.error.found.join(', '),
                                     })}
+                            </p>
+                        </div>
+                    ) : sync.error instanceof AnkiConnectError && sync.error.kind === 'anki' ? (
+                        // AnkiConnect answered with an error of its own (e.g. an
+                        // addNote duplicate-race): the endpoint was reached, so
+                        // the connection steps would mislead — show the message.
+                        <div
+                            data-testid="anki-sync-anki-error"
+                            className="mt-4 rounded-sm border border-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)] p-4"
+                        >
+                            <p className="text-sm text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+                                {t('profile.anki_anki_error', {message: sync.error.message})}
                             </p>
                         </div>
                     ) : (

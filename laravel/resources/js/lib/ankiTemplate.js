@@ -8,9 +8,11 @@
 // field gets the `ef-hidden` class baked into the generated HTML, so
 // re-syncing the template restyles all existing cards instead of dropping
 // data. Front shows the recognition pair (Word + Transcription); the Back
-// carries all twelve wrappers. Nothing in this module touches Anki — the
-// template push and sample card reuse these artifacts from the later Anki
-// tickets.
+// carries all twelve wrappers. One rule breaks the symmetry: the Front NEVER
+// hides Word — it is the recognition cue and the duplicate-search key, so a
+// hidden Word would blank the card's face — and Word's toggle keeps hiding
+// its Back wrapper. Nothing in this module touches Anki — the template push
+// and sample card reuse these artifacts from the later Anki tickets.
 
 // Settings key → Anki note-type field name, in the note type's fixed field
 // order (must stay in lockstep with App\Support\AnkiSettings::FIELDS).
@@ -73,15 +75,21 @@ const TEMPLATE_CSS = `.card {
 export function generateCardTemplate(fields = {}) {
     const byKey = new Map(ANKI_FIELDS.map((field) => [field.key, field]))
 
-    const wrapper = (key) => {
+    // `side` exists for one exception: the Front face never hides `word` —
+    // it is the recognition cue and the duplicate-search key (sendAnkiNote
+    // queries Word:"…"), so hiding it would blank the card's face. Word's
+    // toggle keeps hiding its Back wrapper; every other field — Front
+    // transcription included — hides through the class as configured.
+    const wrapper = (key, side) => {
         const field = byKey.get(key)
-        const hidden = fields[key] === false ? ` ${HIDDEN_CLASS}` : ''
+        const hideable = !(side === 'front' && key === 'word')
+        const hidden = hideable && fields[key] === false ? ` ${HIDDEN_CLASS}` : ''
         return `<div class="ef-field ef-${key}${hidden}">{{${field.name}}}</div>`
     }
 
     return {
-        front: ['word', 'transcription'].map(wrapper).join('\n'),
-        back: ANKI_FIELDS.map(({key}) => wrapper(key)).join('\n'),
+        front: ['word', 'transcription'].map((key) => wrapper(key, 'front')).join('\n'),
+        back: ANKI_FIELDS.map(({key}) => wrapper(key, 'back')).join('\n'),
         css: TEMPLATE_CSS,
     }
 }

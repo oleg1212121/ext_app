@@ -4,8 +4,8 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T23:00:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T23:00:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -165,13 +165,17 @@ Dictionary details / Tags & progress); absent key = on, the Popups tab's
 convention. `AnkiSettings::FIELDS` is the canonical server-side list, whose
 one JS mirror `resources/js/lib/ankiTemplate.js` also owns the field-key →
 Anki-field-name mapping (Word, Transcription, PartOfSpeech, … — the note
-type's fixed order) and the "ExtApp Vocabulary" note-type name.
+type's fixed order), the "ExtApp Vocabulary" note-type name and the
+connection defaults — a lockstep pinned by
+`tests/Unit/AnkiSettingsMirrorTest.php`.
 `generateCardTemplate(fields)` deterministically emits the Front/Back HTML +
 CSS: every field wrapped `<div class="ef-field ef-<key>">{{Field}}</div>`,
 a toggled-off field additionally carrying the `ef-hidden` class (values
 always carry every field — hide-class semantics, so re-syncing the template
 restyles existing cards instead of dropping data); Front shows Word +
-Transcription, the Back all twelve; the CSS defines the `.card` base plus
+Transcription, the Back all twelve — and the Front never hides Word (it is
+the recognition cue and the duplicate-search key), its toggle keeps hiding
+the Back wrapper only; the CSS defines the `.card` base plus
 `.ef-hidden { display: none }`. `buildNoteFields()` builds the full
 12-field note from a word payload (what the sample card — and, from the
 next ticket, the word popup — puts on the wire; Translations narrow to the
@@ -203,10 +207,13 @@ a race net), and no existing note is ever modified. The ensure is memoized
 once per page session per endpoint+deck, so subsequent sends skip straight
 to the duplicate check; changing the endpoint or deck misses the memo
 naturally (field toggles don't invalidate it — values always carry every
-field). Inline status lines report sync / sent / duplicate outcomes; any
-`AnkiConnectError` renders the same connection-hint panel as the test
-probe, whose **Request permission** step grants the origin approval and
-then replays the blocked action in one click.
+field). Inline status lines report sync / sent / duplicate outcomes;
+failures render by the error's kind — a note-type mismatch the expected-vs-
+found warning, an Anki-side `AnkiConnectError` (kind `anki`, e.g. a
+addNote duplicate race) the inline "Anki error: …" panel, and everything
+unreachable the same connection-hint panel as the test probe, whose
+**Request permission** step grants the origin approval and then replays
+the blocked action in one click.
 
 The word popup's per-word **Save to Anki** send (see
 [Interactive Words](/domains/interactive-words.md)) reuses this exact

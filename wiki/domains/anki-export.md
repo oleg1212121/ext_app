@@ -4,8 +4,8 @@ title: Anki Export
 description: The path from saved words to the user's desktop Anki — per-user connection settings and card-field toggles on the profile's Anki tab, a deterministic card template with hide-class semantics, one-click template sync into Anki, and duplicate-checked per-word sends from the word popup, all driven browser-side through AnkiConnect (ADR 0077).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T23:00:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T23:00:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
 sources:
   - id: adr
     resource: docs/adr/0077-browser-side-ankiconnect.md
@@ -74,8 +74,14 @@ sources below).
    the `ef-hidden` hide class. **Values always carry every field** — the
    hide class, not omission, is what a toggle changes, so re-syncing the
    template restyles all existing cards without re-exporting a single note
-   (Anki cannot remove fields from a note type anyway). The tab previews
+   (Anki cannot remove fields from a note type anyway). One rule breaks the
+   symmetry: **the Front never hides Word** — it is the recognition cue and
+   the duplicate-search key, so a hidden Word would blank the card's face;
+   Word's toggle keeps hiding its Back wrapper. The tab previews
    the real generated artifacts in a sandboxed iframe with copy buttons.
+   The twelve-field list and the connection defaults live canonically in
+   `AnkiSettings` (PHP) mirrored by hand into the JS modules — a lockstep
+   pinned by `tests/Unit/AnkiSettingsMirrorTest.php`.
 3. **Template sync** — one browser-side ensure pass: deck
    create-if-missing, the app-owned "ExtApp Vocabulary" note type
    create-if-missing (twelve fields, fixed order, "Recognition" card), and
@@ -84,12 +90,15 @@ sources below).
    is never rewritten.
 4. **Sends** — a note is built from a word payload (the sample fixture on
    the tab, the popup's live payload in the word popup), then
-   find-before-add duplicate-checked (deck + Word + Language) and added
-   with `allowDuplicate: false` as a race net. The first send of a page
-   session auto-ensures the target (memoized per endpoint+deck, module
-   state shared between the tab and the popup). Failures are never silent:
-   network errors render the connection-hint panel, Anki-side errors
-   verbatim, note-type mismatches as re-sync warnings. The per-word send's
+   find-before-add duplicate-checked (deck + Word + Language — the search
+   word must be the RAW payload word, required, since the note's Word field
+   value is HTML-escaped) and added with `allowDuplicate: false` as a race
+   net. The first send of a page session auto-ensures the target (memoized
+   per endpoint+deck, module state shared between the tab and the popup).
+   Failures are never silent, and both surfaces (tab and popup) branch on
+   the same error kinds: network errors render the connection-hint panel,
+   Anki-side errors (kind `anki`) verbatim, note-type mismatches as
+   re-sync warnings. The per-word send's
    behavior — always-visible footer button, independent of the
    popup-visibility toggles — is specified in
    [Interactive Words](/domains/interactive-words.md).

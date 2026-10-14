@@ -1,5 +1,49 @@
 # Directory Update Log
 
+## 2026-10-14 (anki-connection review: six code-review fixes — eager tags, mirror lockstep test, kind-true error panels, Word always on Front)
+
+Post-feature review pass over tickets 01–05: two deduplications, one
+executable contract, one misdiagnosis fix, one card-template rule, one
+eager-load, one API tightening. Findings deliberately rejected: the legacy
+`--color-*` tokens in the Anki tab (the whole host Profile surface uses
+them; parity until that surface migrates) and "deduplicating" the error
+taxonomy if-cascade between WordPopup.jsx and the tab (the surfaces
+intentionally emit different i18n string sets, `word.*` vs `profile.*`).
+
+- `laravel/app/Classes/WordFamily.php` — `EAGER_LOAD` gains `tags` (plain
+  relation, pivot columns needed): `WordController::show` plucks tag names
+  off the bound word, which previously cost one lazy query per popup open.
+- `laravel/tests/Unit/AnkiSettingsMirrorTest.php` (new) — the PHP↔JS
+  mirror is now executable: reads
+  `resources/js/lib/ankiTemplate.js`/`ankiConnect.js` from disk and pins
+  the twelve field keys + Anki field names (key→name map and
+  `AnkiSettings::FIELDS` order), the three connection defaults and the
+  note-type/card-name strings. Plain string assertions, no JS runtime;
+  proven red on a fake drift before going green.
+- `laravel/resources/js/Pages/Profile/AnkiSettings.jsx` — the
+  requestPermission-then-throw block deduplicated into a module-level
+  `grantPermission(config)` (test probe + sync grant-and-retry share it),
+  the sample-note construction hoisted into one `sampleNoteFields` (feeds
+  the live preview and the sample-card send), and the sync failure panel
+  now branches on the error's kind: `AnkiConnectError` with kind `anki`
+  renders an inline "Anki error: <message>" panel (`anki-sync-anki-error`)
+  instead of misdiagnosing as a connection problem — network/unknown keep
+  the connection hint.
+- `laravel/database/seeders/ui-strings/profile.php` — new
+  `profile.anki_anki_error` (en/ru/be); reseeded via `UiStringSeeder`.
+- `laravel/resources/js/lib/ankiTemplate.js` — `generateCardTemplate`'s
+  Front face NEVER hides `word` (recognition cue + duplicate-search key; a
+  hidden Word would blank the card), though Word's toggle still hides its
+  Back wrapper; Transcription on Front may still hide.
+- `laravel/resources/js/lib/ankiSync.js` — `sendAnkiNote`'s `word` option
+  is required, no fallback to the HTML-escaped `noteFields.Word`: a
+  missing raw word throws an `AnkiConnectError` instead of silently
+  breaking the duplicate search (both callers already pass it raw).
+- Wiki: `anki-export.md` records the Front-never-hides-Word rule, the
+  raw-word requirement and that both surfaces branch on the same error
+  kinds; `interactive-words.md`'s endpoint row notes the tags eager load;
+  stamps bumped. `wiki:validate` 0 warnings.
+
 ## 2026-10-14 (anki-connection 04 — per-word "Save to Anki" in the word popup)
 
 Fourth ticket of the Anki-export feature: the word popup's footer gains a

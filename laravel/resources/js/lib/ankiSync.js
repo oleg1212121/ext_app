@@ -18,6 +18,7 @@ import {
     generateCardTemplate,
 } from './ankiTemplate'
 import {
+    AnkiConnectError,
     addNote,
     ankiConnectEndpoint,
     createDeck,
@@ -124,13 +125,22 @@ export async function ensureAnkiTarget(config, {force = false} = {}) {
 const searchEscape = (value) => String(value).replaceAll('"', '')
 
 // Add a note to the configured deck with a find-before-add duplicate check
-// scoped to deck + Word + Language. `word` is the RAW word (the caller has
-// it before buildNoteFields HTML-escapes the field values) and only serves
-// the search; `noteFields` is the complete 12-field value map. Returns
-// {added: true, noteId} or, on a duplicate, {added: false, noteId} — no
-// existing note is ever modified, and addNote's allowDuplicate stays false
-// as a last-resort net against races between the search and the add.
-export async function sendAnkiNote(config, noteFields, {tags = [], word = noteFields.Word} = {}) {
+// scoped to deck + Word + Language. `word` is REQUIRED and RAW — the caller
+// has it before buildNoteFields HTML-escapes the field values, and it only
+// serves the search. There is no fallback to noteFields.Word on purpose: an
+// escaped (or missing) word would silently miss existing duplicates, so a
+// call without it throws instead. Returns {added: true, noteId} or, on a
+// duplicate, {added: false, noteId} — no existing note is ever modified, and
+// addNote's allowDuplicate stays false as a last-resort net against races
+// between the search and the add.
+export async function sendAnkiNote(config, noteFields, {tags = [], word} = {}) {
+    if (word == null || word === '') {
+        throw new AnkiConnectError(
+            'anki',
+            'sendAnkiNote needs the raw word for the duplicate search (noteFields.Word is HTML-escaped)',
+        )
+    }
+
     await ensureAnkiTarget(config)
 
     const query = [

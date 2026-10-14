@@ -51,6 +51,10 @@ class WordFamily
         'transcriptions.transcriptionType:id,slug,title',
         'examples:id,word_id,example',
         'etymologies:id,word_id,etymology',
+        // Plain relation (no column list): the tagged_words pivot columns must
+        // ride along. WordController::show plucks tag names off the bound word
+        // for the popup's "Save to Anki" card.
+        'tags',
     ];
 
     /**
