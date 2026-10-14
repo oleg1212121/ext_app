@@ -5,7 +5,8 @@ description: One words table (+ satellites) keyed by language, per-language word
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2026-12-27
-generated: { by: agent:zcode, at: 2026-10-11T13:28:32+00:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php

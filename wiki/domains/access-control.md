@@ -5,7 +5,7 @@ description: Role- and approval-based authorization for users, the admin bypass,
 tags: [auth, authorization, roles, admin, approval]
 status: stable
 stale_after: 2026-11-06
-generated: { by: agent/glm-5.3-flash, at: 2026-09-21T14:05:00Z }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 verified: { by: human:alex, at: 2026-09-07T00:00:00Z }
 sources:
    - id: app-provider
@@ -31,7 +31,7 @@ sources:
      title: Panel config + TOPBAR_LOGO_AFTER welcome link
    - id: entity-models
      resource: laravel/app/Models/Entity.php
-     title: is_restricted flag + grantedUsers relation + en_entity_user pivot
+     title: is_restricted flag + grantedUsers relation + entity_user pivot
 ---
 
 # Purpose
@@ -59,9 +59,9 @@ mirrors the server-side checks instead of re-implementing them.
 - **Post-auth landing page.** After login or registration, an approved user is
   redirected to `/` (the root Inertia `Welcome` page) — the `dashboard` page is
   unused. Unapproved users are instead redirected to the `pending-approval`
-  screen after login. The auth controllers redirect with
-  `redirect()->intended('/')` so an originally-requested protected URL wins when
-  present.
+  screen after login. Login redirects with `redirect()->intended('/')` so an
+  originally-requested protected URL wins when present; registration redirects
+  with a plain `redirect('/')`.
 - **Admin bypass.** An approved admin passes every ability automatically via a
   `Gate::before` hook. Ability definitions therefore only ever encode the
   non-admin rule; they never repeat `if admin`.
@@ -83,13 +83,15 @@ mirrors the server-side checks instead of re-implementing them.
   admin cannot blank out an existing user's password.
 - **Entity-access enforcers.** `EntityAccessService` gates reads in
   `EntityController`, `ReaderController`, `SimulatorController`,
-  `AlignmentController` (pair list + detail), and `AlignmentEditorController`
-  (every read and mutation endpoint: rows / unmatched / needs-review reads, plus
-  store / approve / destroy row, store / update / unlink / destroy / move
-  sentence). Both alignment controllers run
-  `abort_unless($access->canReadMatch(auth()->user(), $entityMatch), 403)` as the
-  first statement of each endpoint, before any DB work, so non-granted users get
-  403 (never 404) regardless of whether a nested id is valid.
+  `AlignmentController::show`, and `AlignmentEditorController` (every read and
+  mutation endpoint: rows / unmatched / needs-review reads, plus store /
+  approve / disapprove / destroy row, refine, and store / update / unlink /
+  destroy / move sentence). Reads run
+  `abort_unless($access->canReadMatch(auth()->user(), $entityMatch), 403)`
+  before DB work, so non-granted users get 403 (never 404) regardless of
+  whether a nested id is valid; mutation endpoints gate the same way but via
+  **`canEditMatch`** (admin, or neither side approved yet and `canReadMatch` —
+  i.e. a match with an approved side is edit-frozen for non-admins).
 - **Entity-edit enforcer (ADR 0015).** `EntityAccessService::canEdit` mirrors
   `canRead` (admin bypass; Restricted → grantees; Public → any approved user)
   and gates `EntityController::edit`, `update`, `sentences`, `storeSentence`,

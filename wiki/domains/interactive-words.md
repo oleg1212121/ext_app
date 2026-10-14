@@ -5,7 +5,8 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, react, inertia]
 status: stable
 stale_after: 2027-01-22
-generated: { by: agent:zcode, at: 2026-10-12T16:03:37+00:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -23,7 +24,7 @@ sources:
     resource: laravel/app/Classes/EntityWordAdoption.php
     title: EntityWordAdoption (entity tokens become dictionary words)
   - id: word-explain-endpoint
-    resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
+    resource: laravel/app/Http/Controllers/ReadingAiController.php
     title: ReadingAiController::explainWord (AI Context explanation)
   - id: word-explain-request
     resource: laravel/app/Http/Requests/AiWordExplainRequest.php

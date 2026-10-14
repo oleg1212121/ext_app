@@ -4,7 +4,8 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, provider API key management, account deletion.
 tags: [profile, settings, popups, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-12T16:03:37+00:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -66,8 +67,12 @@ one width variant, `profileWidthClass(width, cappedClass)` in `ui.jsx`.
 | AI Models | Answer + explanation model selects · AI Provider API Keys | `PATCH /profile/ai-models` (`profile.ai-models.update`), `POST /profile/api-keys` + `DELETE /profile/api-keys/{providerKey}` |
 | Danger zone | Delete Account (password modal) | `DELETE /profile` (`profile.destroy`) |
 
-Every form keeps its own Inertia `useForm` state and redirects back to its
-own tab after saving (`Redirect::route('profile.edit', ['tab' => ...])`).
+Every form keeps its own Inertia `useForm` state. Only the Preferences and
+AI-model saves redirect back to their tab
+(`Redirect::route('profile.edit', ['tab' => ...])`); the Account and both
+API-key forms redirect to plain `profile.edit`, which resolves the active tab
+solely from `?tab=` — so saving or removing an API key lands on the Account
+tab.
 
 # Popups tab
 

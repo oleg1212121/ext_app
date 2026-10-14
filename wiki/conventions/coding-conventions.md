@@ -4,7 +4,7 @@ title: Coding Conventions
 description: Project-wide rules for code style, structure, testing, and agent behavior in this repository.
 tags: [conventions, style, testing]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-17T23:40:00Z }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 verified: { by: human:alex, at: 2026-07-26T18:45:00Z }
 sources:
   - id: agents
@@ -21,7 +21,8 @@ sources:
 
 # Laravel 12+ structure
 
-* No `app/Http/Middleware/` — register middleware in `bootstrap/app.php`.
+* Middleware classes live in `app/Http/Middleware/` but there is **no
+  `Http/Kernel.php`** — they are registered/aliased in `bootstrap/app.php`.
 * No `app/Console/Kernel.php` — commands in `app/Console/Commands/`
   **auto-register**; scheduling lives in `routes/console.php`.
 * Use `php artisan make:*` generators (with `--no-interaction`) for new files.
@@ -46,7 +47,8 @@ sources:
   Blade. See [Frontend](/architecture/frontend.md).
 * Tailwind 4: CSS-first config only (`resources/css/app.css`); gap utilities
   for spacing; support `dark:` where existing pages do.
-* Livewire events: `$this->dispatch()`, never `emit`.
+* Livewire events (`$this->dispatch()`, never `emit`) now apply only inside
+  Filament — no app-level Livewire components exist.
 
 # Testing
 
@@ -67,7 +69,8 @@ sources:
 
 # Documentation freshness trap
 
-`laravel/CLAUDE.md` (Boost guidelines) and `.github/copilot-instructions.md`
-list **outdated** package versions (Laravel 12, Filament 3, Livewire 3, Pest 3,
+Older AI-authored guideline files (a `laravel/CLAUDE.md` from the Boost era,
+`.github/copilot-instructions.md` — neither exists in the tree anymore) listed
+**outdated** package versions (Laravel 12, Filament 3, Livewire 3, Pest 3,
 Tailwind 3). Trust `composer.lock`/`package.json` and
 [Application Overview](/architecture/overview.md#version-truth) instead.

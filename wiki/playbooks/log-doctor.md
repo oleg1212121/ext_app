@@ -1,14 +1,15 @@
 ---
 type: Playbook
 title: Log Doctor (scheduled error triage)
-description: Hourly GitHub Actions workflow on the self-hosted prod runner — collect.sh scans laravel logs, failed_jobs and scheduler output since the last completed run, the read-only log-doctor opencode agent diagnoses each unique error against the live checkout, and issue-report.php deterministically files or comments GitHub issues (cause + solution); clean runs cost nothing and the window only advances after successful filing.
+description: 12-hourly GitHub Actions workflow on the self-hosted prod runner — collect.sh scans laravel logs, failed_jobs and scheduler output since the last completed run, the read-only log-doctor opencode agent diagnoses each unique error against the live checkout, and issue-report.php deterministically files or comments GitHub issues (cause + solution); clean runs cost nothing and the window only advances after successful filing.
 tags: [production, monitoring, opencode, github-actions, automation, howto]
 status: stable
-generated: { by: agent/opencode-go, at: 2026-08-31T20:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
 sources:
   - id: workflow
     resource: .github/workflows/log-doctor.yml
-    title: Scheduled workflow (hourly cron + manual dispatch)
+    title: Scheduled workflow (12-hour cron + manual dispatch)
   - id: collect
     resource: laravel/scripts/log-doctor/collect.sh
     title: Host-side collector (logs, failed_jobs, scheduler)
@@ -28,9 +29,18 @@ sources:
 
 # Model
 
-`.github/workflows/log-doctor.yml` runs hourly (UTC cron) on the **same
-self-hosted prod runner** `deploy.yml` uses (`runs-on: [self-hosted, prod]`),
-against the prod checkout (`PROD_CHECKOUT` — the bind-mounted, live source).
+`.github/workflows/log-doctor.yml` runs every 12 hours (`0 */12 * * *` UTC
+cron) on the **same self-hosted prod runner** `deploy.yml` uses
+(`runs-on: [self-hosted, prod]`), against the prod checkout (`PROD_CHECKOUT`).
+
+> **Stale-layout warning (2026-10-14):** the whole chain — the `PROD_CHECKOUT`
+> path, `docker exec ext_app_laravel` for `failed_jobs`, `docker compose ps`
+> for the scheduler container, and the container-resident `issue-report.php`
+> step — still assumes the **pre-2026-09-14 Docker prod machine**. `deploy.yml`
+> has since switched to `deploy-native.sh` on a native (no-Docker) server, so
+> log-doctor's Docker calls no longer match the running prod layout and the
+> workflow needs porting before its output can be trusted again.
+
 Four steps, three scripts:
 
 ```

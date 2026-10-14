@@ -4,7 +4,8 @@ title: Frontend Architecture
 description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, Vite build, JS module layering (lib/, hooks/, page-local), and vitest for pure logic.
 tags: [frontend, react, inertia, livewire, tailwind, vitest]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-05T20:05:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: package
     resource: laravel/package.json
@@ -24,8 +25,9 @@ sources:
 
 | Stack | Where | Used for |
 |-------|-------|----------|
-| **Inertia + React 19 (JSX)** | `resources/js/Pages/` | **Primary.** All new pages. Bilinguals simulator, Reader, Entities/Alignments, Dashboard, Welcome, auth pages |
-| **Livewire 4** | `app/Livewire/`, `resources/views/livewire/` | Filament admin pages and the Filament alignment editor |
+| **Inertia + React 19 (JSX)** | `resources/js/Pages/` | **Primary.** All new pages. Bilinguals simulator, Reader, Entities/Alignments (incl. the manual alignment editor page), Dashboard, Welcome |
+| **Livewire 4** | (dependency only — `app/Livewire/` and `resources/views/livewire/` were deleted) | Filament's internal rendering engine; no app Livewire components exist |
+| **Blade (Breeze)** | `resources/views/auth/` | Auth pages (login/register/reset) — plain Blade, not React |
 | **Alpine.js 3** | started in `resources/js/app.jsx`, only on non-Inertia pages | Lightweight interactivity in Blade (auth-page nav dropdowns) |
 
 **Rule: new pages are Inertia/React (JSX).** Do not add new Livewire
@@ -36,7 +38,8 @@ pages). On React pages its global MutationObserver would re-walk every node
 React touches — pure overhead there and a freeze ingredient on the reader
 (see wiki/log.md, 2026-09-23).
 
-UI kit: `flowbite-react` components (see `resources/js/Pages/` for usage).
+UI kit: `flowbite-react` components (imported from `resources/js/Components/`
+and across `resources/js/Pages/`).
 
 # Tailwind CSS 4 — CSS-first config
 
@@ -71,7 +74,8 @@ mode use `dark:` utilities.
 
 * Controllers return `Inertia::render('Page/Name', [...props])`.
 * POST endpoints consumed by React return `JsonResponse`, not Inertia
-  redirects (see `SimulatorController::text()`, `askAi()`).
+  redirects (see `SimulatorController::text()`,
+  `ReadingAiController::askAi()`).
 
 # JS module layering
 
@@ -85,8 +89,8 @@ De-facto convention, now documented (follow it for new code):
   helpers (`http.js`, `wordFamiliarity.js`). The `.mjs` extension marks
   modules loadable outside the app bundle (Node/CLI/vitest) — keep pure
   logic there so vitest can pin it.
-* **`resources/js/hooks/`** — shared React hooks with an ADR-citing header
-  comment: `useSideFlip` (ADR 0037), `useUiSettingsAutosave` (ADR 0024),
+* **`resources/js/hooks/`** — shared React hooks (most carry an ADR-citing
+  header comment): `useSideFlip` (ADR 0037), `useUiSettingsAutosave`,
   `useDragResize` (panel drag mechanics shared by the simulator's AI panel
   and workplace and the crossword right panel). Hooks never touch
   localStorage directly — they import the load/save pair from `lib/`.

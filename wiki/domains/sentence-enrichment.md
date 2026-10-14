@@ -5,7 +5,8 @@ description: Local-only per-sentence enrichment — Russian/Belarusian/English s
 tags: [enrichment, stress-marks, multi-word-verbs, enrichers, annotations, python-service, spacy, reader, simulator, silero, belarusian]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-11T12:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php

@@ -5,7 +5,8 @@ description: Works grouping per-language entities, their sentences, and the mach
 tags: [database, schema, alignment, entities, works, hash, illustrations, tags]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-11T18:20:00+00:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
@@ -126,7 +127,7 @@ sources:
   Re-align / Run from scratch / full editor save / re-import acts on or
   clears it), `aligning`, `completed`, `failed`. Sentence mutations on the
   entity page flip `aligning`/`completed`/`failed` → `stale`
-  (`EntityController::markMatchesStale()`); a `pending` match is left alone.
+  (`EntitySentenceStore::markMatchesStale()`); a `pending` match is left alone.
   A `stale` match holds no processing slot (ADR 0044 counts only
   `pending`/`aligning`). The historical `verifying` value was never written
   by any code and is retired.

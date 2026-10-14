@@ -5,6 +5,7 @@ description: How to run the Pest test suite against the dedicated ext_app_test d
 tags: [testing, pest, vitest]
 status: stable
 generated: { by: agent:zcode, at: 2026-10-14T18:50:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml

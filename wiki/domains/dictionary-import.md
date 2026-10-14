@@ -5,7 +5,8 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-14T17:40:43+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
 sources:
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
@@ -136,7 +137,9 @@ mirrored per-language tables, and a single `word_translations` pivot —
   layered over the generic heuristics, so structured dictionaries extract
   cleanly without code changes. Per selector kind and per article, a
   selector that matched nothing — or whose matched nodes hold only
-  whitespace/bracket text after normalization — falls back to the
+  whitespace text after normalization (transcriptions additionally trim
+  bracket/slash delimiters, so a bracket-only node is a miss too) — falls
+  back to the
   heuristic; an extraction kind is never silently emptied and an entry is
   never dropped; profile-selected transcriptions skip the IPA-marker gate
   (the profile author vouches for the nodes), profile-selected

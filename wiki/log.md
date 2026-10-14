@@ -5560,3 +5560,43 @@ and the full `composer run test` is green (1,149 passed / 0 failed, 334.6s,
 additional network leakers surfaced under the guard. Contract recorded in
 `wiki/playbooks/running-tests.md` ("The suite is hermetic — and green"):
 on a clean tree, any failure is yours.
+
+## 2026-10-14 (retro fixes 02–04: Wiktionary idempotency test, orchestration doc, wiki warning burn-down 88 → 0)
+
+Retro-fixes branch, three more findings closed. **02** — regression test for
+the Wiktionary re-import dedupe at the command level
+(`ImportWiktionaryCommandTest`, import ×3 → stable counts + zero duplicate
+`(word_id, lower(definition))` groups), mutation-checked: reintroducing the
+by-value `$existing` capture makes it the exactly-one failure. **03** —
+`docs/agents/orchestration.md` (local-only dir like its siblings) records
+agent-type session-start registration, why worktree parallelism is banned
+here, and disk-anchored resumable dispatches. **04** — the wiki warning
+burn-down: `wiki:validate` went from 88 standing warnings to **0**, so it is
+a quiet pass/fail signal again. The 88 decomposed into 4 dead source paths
+in `ai-providers.md` (migrations squashed into `2026_09_10_000002`) and 84
+mtime-drift warnings over 23 concepts (48 genuine, 36 checkout artifacts).
+All 23 concepts (plus the two dictionary-import concepts the goldendict
+review commit re-staled) were re-verified against current code by read-only
+agents; verified claims got `verified: { by: agent:zcode }` stamps (existing
+`human:alex` verifications preserved), `generated.at` re-stamped past source
+mtimes. Substantive content fixes: **`production-deployment.md` and
+`log-doctor.md` still documented the Docker prod machine that
+`deploy.yml` abandoned on 2026-09-14** — the playbook now leads with the
+native model (`deploy-native.sh`: pull-first, flock, ai_env pip self-heal,
+python restart + `/health` gate only on python diffs, 4 seeds,
+daemon-reload + unit restarts) and marks the deploy.sh/stamp-guard sections
+as Docker-layout; log-doctor gained a stale-layout warning (its workflow
+still targets Docker prod, needs porting). Also corrected: alignment editor
+is now the Inertia page with `canEditMatch` mutation gating (13 endpoints,
+approved-side freeze) and work-nested routes (`EditEntityAlignment` and flat
+`/alignments/{id}` gone) across `sentence-alignment` / `entities-alignment`
+/ `run-alignment` / `frontend` / `overview`; signature model split
+(BGE-M3 active for signatures via env, LaBSE code default / align-only) in
+`docker-services` / `overview` / `run-alignment` / `sentence-alignment`;
+`coding-conventions` middleware rule (dir exists, no Kernel) and the
+nonexistent CLAUDE.md/copilot references; `profile` tab-redirect behavior;
+`access-control` pivot name + registration redirect; `bilinguals-simulator`
+component layout; `interactive-words` explain-endpoint source path; minor
+precision in `entities` (illustration hash in text digest) and the
+dictionary-import pair (bracket-trim scoped to transcriptions, DSL UTF-16BE).
+`wiki:validate` exit 0 / 0 warnings; `WikiTest` green.

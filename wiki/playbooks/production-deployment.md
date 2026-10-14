@@ -1,14 +1,18 @@
 ---
 type: Playbook
 title: Production Deployment
-description: Bind-mount deploy model — the standalone prod machine runs docker-compose.prod.yml (queue/scheduler/backups/tunnel, db untouched from the baked setup); every release is ./deploy.sh (git pull + composer + npm build + caches + additive migrate); images rebuild only when a Dockerfile changes; deploy.sh refuses to run until containers are recreated and re-stamped after a container-definition change; pushes to master autodeploy via a self-hosted runner.
+description: Prod runs natively (no Docker) since 2026-09-14 — pushes to master autodeploy via deploy-native.sh on a self-hosted runner (git pull, composer/npm, additive migrate, seeds, systemd restarts; python restart + /health gate only when python code/deps changed). The Docker bind-mount model (docker-compose.prod.yml + ./deploy.sh + container stamp guard) is still in tree for the dev machine and the legacy prod layout; its sections below are labeled.
 tags: [docker, production, deployment, devops, howto]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-26T00:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
+  - id: deploy-native
+    resource: deploy-native.sh
+    title: Native prod deploy script (current autodeploy target)
   - id: deploy
     resource: deploy.sh
-    title: Deploy script
+    title: Docker-layout deploy script (dev machine / legacy prod)
   - id: compose
     resource: docker-compose.yml
     title: Docker Compose manifest (base, both machines)
@@ -31,22 +35,65 @@ sources:
 
 # Model
 
-Two machines, one model: images are only the runtime (PHP + node + composer in
-`eng_ext_laravel`; the ML stack in the python image), and the live code is the
-host checkout bind-mounted at `./laravel`. No code is ever baked into an image
-(the baked-image overlay of 2026-08-26..30 lives in git history).
+**Current prod (since commit 7ecdb02, 2026-09-14): a native Ubuntu server, no
+Docker.** The app processes run straight from the checkout
+(`/home/alex/projects/ext_app`) under systemd units — `ext-queue@.service` ×2
+(`queue:work --tries=1 --timeout=620 --queue=default,low`),
+`ext-scheduler.service` (`schedule:work`), `ext-python.service`,
+`ext-cloudflared.service` — with PostgreSQL native on the machine and the
+python venv at `docker-compose/python/ai/ai_env/`. Releases are
+`deploy-native.sh`, autodeployed on push to master.
 
-| | Dev machine | Prod machine (standalone) |
+The Docker bind-mount model below remains accurate **for the Docker layout** —
+the dev machine (`docker compose up -d`, images as runtime only, code live via
+bind mounts, no code baked into images) and the legacy standalone prod overlay
+(`docker-compose.prod.yml` + `./deploy.sh`), which stays in tree but no longer
+describes the running prod machine.
+
+| | Dev machine (Docker layout) | Prod machine (native — current) |
 |---|---|---|
-| Stack | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile cloudflare up -d` |
-| Extra services | — | `queue` (2× `queue:work --queue=default,low`), `scheduler` (`schedule:work`), `backups` (daily `pg_dump`), cloudflared |
-| DB data | `docker-compose/postgres/`, creds in `laravel/.env` | `docker-compose/prod/postgres/`, creds in `docker-compose/prod/postgres.env` (identical to the baked setup) |
-| Release | edits are live instantly (bind mount) | `./deploy.sh` (autodeployed on push to master) |
+| Stack | `docker compose up -d` | systemd units at the repo root + native PostgreSQL |
+| Services | — (queue/scheduler run via `composer run dev`) | `ext-queue@1`, `ext-queue@2`, `ext-scheduler`, `ext-python`, `ext-cloudflared`, backups crontab |
+| Release | edits are live instantly (bind mount) | `deploy-native.sh` (autodeployed on push to master) |
 
-# Deploy (prod machine)
+# Release to prod (native — current)
 
 ```bash
-./deploy.sh          # or just push to master — the Deploy workflow runs it
+# or just push to master — the Deploy workflow runs deploy-native.sh
+bash deploy-native.sh
+```
+
+What it does (in-place in the prod checkout; `deploy.yml` runs
+`bash "$PROD_CHECKOUT/deploy-native.sh"`, `PROD_CHECKOUT=/home/alex/projects/ext_app`):
+
+1. Guards: master-only (refuses any other branch) and an `.deploy.lock` flock —
+   a manual SSH run and the CI runner can never interleave. **No container
+   stamp guard** — that mechanism is deploy.sh/Docker-only; the native gates
+   are these two plus the python health check below.
+2. `git fetch` + `git pull --ff-only origin master`.
+3. `ai_env/bin/pip install -r docker-compose/python/requirements.txt` — the
+   python venv is gitignored (machine-local), so it self-heals from
+   requirements.txt on every deploy (pip is a no-op when satisfied).
+4. If this pull touched `docker-compose/python/` or `ext-python.service`:
+   `systemctl restart ext-python`, then a `/health` gate (up to 60s) —
+   a missing/broken requirement fails the deploy here instead of in users'
+   requests. Unrelated deploys skip the restart and never drop in-flight
+   python requests.
+5. `composer install`, `npm ci` + `npm run build`, `storage:link`,
+   `optimize:clear` → `config:cache` / `route:cache` / `view:cache`.
+6. `migrate --force` — **additive only**, never fresh/refresh/reset/wipe.
+7. Idempotent reference-data seeds: `SentenceTypeSeeder`, `AiProviderSeeder`,
+   `LanguageSeeder`, `UiStringSeeder` (deploy.sh additionally seeds
+   `PromptTemplateSeeder`).
+8. `systemctl daemon-reload` (a unit file shipped by the pull only reaches
+   restart after the manager reloads definitions) then
+   `systemctl restart ext-queue@1 ext-queue@2 ext-scheduler` — workers finish
+   their current job first.
+
+# Deploy.sh (Docker layout)
+
+```bash
+./deploy.sh          # Docker layout only — the Deploy workflow runs deploy-native.sh instead
 ```
 
 What it does (all inside the running `ext_app_laravel` container):
@@ -70,7 +117,7 @@ What it does (all inside the running `ext_app_laravel` container):
 7. `migrate --force` — **additive only**: applies pending migrations. Never
    fresh/refresh/reset/wipe (see the destructive-command warning in AGENTS.md).
 8. Idempotent reference-data seeds: `SentenceTypeSeeder`, `AiProviderSeeder`,
-   `LanguageSeeder`.
+   `LanguageSeeder`, `UiStringSeeder`, `PromptTemplateSeeder`.
 9. `queue:restart` — recycles the overlay's queue workers onto the new code
    (workers finish their current job, the container restarts, the new worker
    loads the new code and schema).
@@ -78,7 +125,7 @@ What it does (all inside the running `ext_app_laravel` container):
 No PHP restart is needed: the image has no OPcache, so new code takes effect
 on the next request.
 
-# Container stamp guard
+# Container stamp guard (deploy.sh / Docker layout only)
 
 Containers and images are defined by five files: `docker-compose.yml`,
 `docker-compose.prod.yml`, `LaravelDockerfile`,
@@ -88,7 +135,8 @@ requirements.txt; `docker-compose.override.yml` is skipped on prod by the
 explicit `-f` files, and gitignored `.env` files never change via git).
 Nothing tracks whether the running containers were created from their
 *current* content — compose's config-hash ignores Dockerfile-only changes —
-so `deploy.sh` keeps its own record:
+so `deploy.sh` keeps its own record. The native prod path has no equivalent
+(git pull + systemd; no containers to drift).
 
 - `./deploy.sh --stamp` writes the files' sha256 into `.container-stamp`
   (gitignored, prod-machine-local). Run it once after every manual
@@ -173,12 +221,15 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d          #
 # CI gate
 
 `.github/workflows/tests.yml` runs the Pest suite + `vendor/bin/pint --test`
-on every push to `master` (and on PRs). `.github/workflows/deploy.yml`
+plus the Vitest `frontend` job on every push to `master` (and on PRs; also
+`workflow_dispatch`). `.github/workflows/deploy.yml`
 autodeploys: the self-hosted runner on the prod machine (labels
-`self-hosted`, `prod`) runs `./deploy.sh` against the prod checkout on every
-push to `master` (and via `workflow_dispatch` to re-run after a manual
-container fix). Tests and deploy run in parallel — the stamp guard is the
-container-level safety valve; the test suite is not a deploy gate.
+`self-hosted`, `prod`) runs `deploy-native.sh` against the prod checkout on
+every push to `master` (and via `workflow_dispatch` to re-run after a manual
+fix; a red run means the script aborted midway — fix on the prod machine and
+re-run). Tests and deploy run in parallel — the test suite is not a deploy
+gate; the native deploy's own gates are master-only, the flock, and the
+python `/health` check.
 
 The same runner also drives the hourly Log Doctor error triage
 (`.github/workflows/log-doctor.yml` → `wiki/playbooks/log-doctor.md`).
@@ -220,7 +271,8 @@ carry a `safe.directory` entry for it). See the one-time setup below.
   machine they don't exist — jobs process only while `composer run dev` runs,
   and `alignments:resume` doesn't tick.
 - **Queue lanes**: all workers consume `--queue=default,low` (strict order; a
-  job's lane is a class property, ADR 0042). Changing the `queue` service
+  job's lane is a class **attribute**, `#[Queue(QueueLane::DEFAULT)]` —
+  ADR 0042). Changing the `queue` service
   command is a **container-definition change** — `docker-compose.prod.yml` is
   one of the five stamped files, so the next deploy refuses until you
   recreate (`up -d`) and re-stamp (`./deploy.sh --stamp`). On the native
@@ -238,8 +290,15 @@ carry a `safe.directory` entry for it). See the one-time setup below.
 
 # Restore
 
-Dumps live in `docker-compose/prod/backups/` on the prod machine. Restore
-against the prod DB — never the `testing` connection:
+Native prod (current): dumps from the backups crontab restore directly
+against the machine-local PostgreSQL — never the `testing` connection:
+
+```bash
+gunzip -c <backup>.sql.gz | psql -h localhost -U ext_app -d ext_app
+```
+
+Docker layout: dumps live in `docker-compose/prod/backups/` on the prod
+machine. Restore against the prod DB:
 
 ```bash
 gunzip -c docker-compose/prod/backups/ext_app-YYYYMMDD-HHMMSS.sql.gz \

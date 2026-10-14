@@ -5,7 +5,8 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-06T15:58:38+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -237,8 +238,9 @@ variants.
 
 # Frontend
 
-React page `resources/js/Pages/Bilinguals/` (`Bilinguals.jsx` plus `AI/`,
-`TextContent/`, `Workplace/` sub-components). The page is layout + toolbar +
+React page `resources/js/Pages/Bilinguals/` (`Bilinguals.jsx`, the `AI.jsx`,
+`TextContent.jsx` and `Workplace.jsx` component files under `Components/`).
+The page is layout + toolbar +
 wiring over three page-local engine hooks (ADR 0066's layering;
 `wiki/architecture/frontend.md`):
 

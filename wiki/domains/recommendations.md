@@ -5,7 +5,8 @@ description: The personalized reading queue at /recommendations — the viewer's
 tags: [recommendations, entities, works, word-knowledge, inertia, react, languages]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-07T15:00:00Z }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/RecommendationsController.php

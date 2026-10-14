@@ -5,7 +5,8 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-11T12:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -991,8 +992,10 @@ editor-shaped row.
     `/works/{work}/alignments/create`
     (`LibraryController@createAlignment`/`@storeAlignment`, routes
     `works.alignments.create`/`works.alignments.store`; the former
-    global `/alignments` list, `/alignments/create` form, and the navbar
-    item are gone). The form is the old create minus the work picker: two
+    flat `/alignments` routes are gone without redirects, while alignment
+    browsing gained a cross-work list at `GET /works/alignments`
+    (`works.alignments.index`) with its own navbar item). The form is the
+    old create minus the work picker: two
     entity selects (`first_entity_id` / `second_entity_id`) of the route
     work's eligible entities (grouped by language, the second select
     excludes the first pick). Entities are eligible when **readable by the
@@ -1025,9 +1028,13 @@ editor-shaped row.
     (route `works.alignments.edit`, `AlignmentController@show`) is a
     parallel entry point backed by the surgical `AlignmentEditorController`
     endpoints under the same work-nested prefix (ADR 0072: the page at
-    `GET /works/{work}/alignments/{entityMatch}/edit`, all eleven JSON
+    `GET /works/{work}/alignments/{entityMatch}/edit`, all thirteen JSON
     endpoints beside it; every action binds `Work` and 404s when the match
-    path names another work, and the old flat `/alignments/{id}` routes are
+    path names another work, reads gate on
+    `EntityAccessService::canReadMatch` while every mutation gates on
+    **`canEditMatch`** — admin, or neither side approved yet, so a match
+    with an approved side is edit-frozen for non-admins — and the old flat
+    `/alignments/{id}` routes are
     deleted without redirects) — create/delete pair, approve pair (set
     `similarity = 1.0` + `alignment_chunk = -1`, promoting a row to a hard
     landmark), **disapprove pair** (`POST .../rows/{row}/disapprove` →
@@ -1190,7 +1197,9 @@ editor-shaped row.
 * **Two models, loaded lazily on first use** (not in the FastAPI lifespan, so
   `uvicorn --reload` can restart the app in ~1–2s after a source edit without
   re-loading the multi-GB model files; `ai/models_cache.py` is the lazy loader):
-  - **Signature model** `MODEL_PATH` (default BGE-M3, 1024-dim) — used by
+  - **Signature model** `MODEL_PATH` (code default `models/labse`, 768-dim;
+    the repo `.env` pins it to **BGE-M3**, `/app/models/bge_m3`, 1024-dim) —
+    used by
     `/embed` (signature generation only; the cosine compare happens in PHP,
     `TextSignatureService::cosineSimilarity`). Backs `TextSignatureService`.
     The old `/embed/batch` and `/cosine/batch` endpoints were removed (they

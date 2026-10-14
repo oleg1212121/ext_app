@@ -5,7 +5,8 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-14T17:40:43+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -140,7 +141,7 @@ Two source shapes exist:
 # Steps — GoldenDict dictionary (goldendict:import)
 
 For GoldenDict-format dictionaries (freemdict etc.). The converter accepts
-MDict `.mdx`, ABBYY Lingvo `.dsl` (UTF-8 or UTF-16LE) and StarDict sets
+MDict `.mdx`, ABBYY Lingvo `.dsl` (UTF-8 or UTF-16LE/BE) and StarDict sets
 (an `.ifo` path or a directory containing exactly one set) — see the usage
 note in `docker-compose/python/ai/goldendict_convert.py`. Two stages: a
 host-side pyglossary conversion, then the container-side import. Put the
@@ -236,7 +237,8 @@ dictionary — no code changes per dictionary. To author one:
    rows — the demo is the same JSONL visibly extracting differently.
 4. Iterate: a selector that matches nothing in an article falls back to
    the heuristic for that kind and article — and so does a selector whose
-   matched nodes hold only whitespace/bracket text (a matched-but-empty
+   matched nodes hold only whitespace text (transcriptions also trim
+   bracket/slash delimiters; a matched-but-empty
    kind is a miss, never a silently emptied extraction) — an entry is
    never dropped. Every article where NO selector effectively matched is
    counted in the

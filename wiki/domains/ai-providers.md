@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent/zcode, at: 2026-10-04T17:50:46Z }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base
@@ -52,15 +52,9 @@ sources:
    - id: provider-model
      resource: laravel/app/Models/AiProvider.php
      title: DB-backed AI provider (enable overlay)
-   - id: provider-migration
-     resource: laravel/database/migrations/2026_08_23_000001_create_ai_providers_table.php
-     title: ai_providers table
-    - id: model-fk-migration
-      resource: laravel/database/migrations/2026_08_23_000002_add_ai_provider_id_to_ai_models.php
-      title: ai_models.ai_provider_id FK (added nullable)
-    - id: model-fk-not-null
-      resource: laravel/database/migrations/2026_08_24_000001_make_ai_models_provider_not_null.php
-      title: ai_models.ai_provider_id made NOT NULL + cascade delete
+   - id: ai-tables-migration
+     resource: laravel/database/migrations/2026_09_10_000002_create_ai_tables.php
+     title: ai_providers / ai_models (NOT NULL ai_provider_id FK) / user_api_keys
    - id: provider-seeder
      resource: laravel/database/seeders/AiProviderSeeder.php
      title: AiProviderSeeder
@@ -70,9 +64,6 @@ sources:
    - id: user-key-model
      resource: laravel/app/Models/UserApiKey.php
      title: Per-user API key (encrypted)
-   - id: user-key-migration
-     resource: laravel/database/migrations/2026_08_23_000003_create_user_api_keys_table.php
-     title: user_api_keys table
    - id: user-key-request
      resource: laravel/app/Http/Requests/StoreApiKeyRequest.php
      title: StoreApiKeyRequest
@@ -213,9 +204,8 @@ reads its enabled, unexpired models from `ai_models` in its constructor, via the
 **NOT NULL** `ai_provider_id` foreign key to `ai_providers` (unique with
 `external_id`, `cascadeOnDelete`), reconstructing the legacy
 `key => "Name ($X.XX/$Y.YY)"` display format via `AiModel::displayLabel()`. The
-column was originally added nullable (leaving pre-existing catalog rows
-orphaned); a follow-up migration enforces NOT NULL, so orphan rows can no longer
-exist.
+baseline migration creates the column NOT NULL with cascade delete
+(`2026_09_10_000002_create_ai_tables`), so orphan rows cannot exist.
 
 * `App\Services\AiModelSync` (abstract, implements `App\Contracts\ModelSync`)
   holds the shared fetch / upsert / delete-missing logic. `sync()` reads the
