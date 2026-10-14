@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Word;
 use App\Models\WordClass;
 use App\Models\WordTranslation;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Testing\PendingCommand;
 
 function goldendictFixturePath(): string
@@ -144,17 +145,22 @@ it('is idempotent on re-runs and keeps curated frequency ranks', function () {
     expect((float) $cat->refresh()->frequency)->toBe(500.5);
 });
 
-it('accepts the inert --profile flag without side effects', function () {
+it('imports monolingually with an extraction profile and writes no links', function () {
+    // A profile without --target-lang tunes definitions/transcriptions only;
+    // the bilingual machinery stays dormant.
     $this->artisan('goldendict:import', [
-        'file' => goldendictFixturePath(),
+        'file' => goldendictProfileFixturePath(),
         '--lang' => 'be',
-        '--profile' => 'sample',
+        '--profile' => 'example-classes',
     ])
-        ->expectsOutputToContain('not implemented yet')
+        ->expectsOutputToContain('Extraction profile: example-classes')
         ->assertSuccessful();
 
-    expect(WordTranslation::count())->toBe(0);
-    expect(Word::query()->whereNotNull('translations')->count())->toBe(0);
+    $tree = Word::query()->where('word', 'tree')->firstOrFail();
+    expect($tree->definitions->pluck('definition')->all())->toBe(['a tall plant with a woody trunk'])
+        ->and($tree->transcriptions->pluck('transcription')->all())->toBe(['tri:'])
+        ->and(WordTranslation::count())->toBe(0)
+        ->and($tree->translations)->toBeNull();
 });
 
 /*
@@ -385,4 +391,122 @@ it('writes nothing at all on --dry-run in bilingual mode', function () {
         ->and(Definition::count())->toBe(0)
         ->and(WordClass::count())->toBe(0)
         ->and(Word::query()->whereNotNull('translations')->count())->toBe(0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Extraction profiles (--profile)
+|--------------------------------------------------------------------------
+*/
+
+function goldendictProfileFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-profile.jsonl';
+}
+
+function goldendictNoMatchFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-profile-nomatch.jsonl';
+}
+
+it('applies the profile selectors over the generic heuristics and falls back per selector', function () {
+    createLanguages(['en', 'de']);
+    $en = Language::query()->where('code', 'en')->first();
+    $de = Language::query()->where('code', 'de')->first();
+
+    $import = fn (array $extra = []) => test()->artisan('goldendict:import', array_merge([
+        'file' => goldendictProfileFixturePath(),
+        '--lang' => 'en',
+        '--target-lang' => 'de',
+    ], $extra));
+
+    $import(['--profile' => 'example-classes'])
+        ->expectsOutputToContain('Import completed!')
+        ->assertSuccessful();
+
+    // With the profile: definitions only from .sense blocks, transcriptions
+    // from .ts nodes ("tri:" is not bracketed/IPA-marked — the generic
+    // heuristic would never find it), translations only from .tr nodes.
+    $tree = Word::query()->where('language_id', $en->id)->where('word', 'tree')->firstOrFail();
+    expect($tree->definitions->pluck('definition')->all())->toBe(['a tall plant with a woody trunk'])
+        ->and($tree->transcriptions->pluck('transcription')->all())->toBe(['tri:'])
+        ->and($tree->translations)->toBe(['Baum'])
+        ->and(Word::query()->where('language_id', $de->id)->where('word', 'Baum')->exists())->toBeTrue()
+        ->and(Word::query()->where('language_id', $de->id)->where('word', 'a tall plant with a woody trunk')->exists())->toBeFalse();
+
+    // Per-selector fallback: bird's .tr2 class matches nothing, so its
+    // translations come from the heuristic segments while its definitions
+    // still come from the profile's .sense selector.
+    $bird = Word::query()->where('language_id', $en->id)->where('word', 'bird')->firstOrFail();
+    expect($bird->definitions->pluck('definition')->all())->toBe(['animal with feathers'])
+        ->and(Word::query()->where('language_id', $de->id)->where('word', 'Vogel')->exists())->toBeTrue()
+        ->and(Word::query()->where('language_id', $de->id)->where('word', 'animal with feathers')->exists())->toBeTrue();
+
+    // Plain-text article (StarDict sametypesequence=m shape): every selector
+    // misses, the generic heuristics handle the whole entry — nothing drops.
+    $dog = Word::query()->where('language_id', $en->id)->where('word', 'dog')->firstOrFail();
+    expect($dog->definitions->pluck('definition')->all())->toBe(['dog [dɔg] n. Hund, Köter'])
+        ->and($dog->transcriptions->pluck('transcription')->all())->toBe(['dɔg'])
+        ->and(Word::query()->where('language_id', $de->id)->where('word', 'Hund')->exists())->toBeTrue()
+        ->and(Word::query()->where('language_id', $de->id)->where('word', 'Köter')->exists())->toBeTrue();
+
+    // The demo: the SAME jsonl again without the profile visibly changes what
+    // is extracted — the heuristic now stages the phrase candidate and the raw
+    // block definition the profile had excluded.
+    $import()->assertSuccessful();
+
+    expect(Word::query()->where('language_id', $de->id)->where('word', 'a tall plant with a woody trunk')->exists())->toBeTrue()
+        ->and($tree->refresh()->definitions->count())->toBe(2)
+        ->and($tree->translations)->toBe(['Baum', 'a tall plant with a woody trunk']);
+});
+
+it('errors on an unknown --profile slug listing the known profiles', function () {
+    $this->artisan('goldendict:import', [
+        'file' => goldendictProfileFixturePath(),
+        '--lang' => 'be',
+        '--profile' => 'nope',
+    ])
+        ->expectsOutputToContain('Unknown extraction profile: nope')
+        ->expectsOutputToContain('example-classes')
+        ->assertFailed();
+
+    expect(Word::count())->toBe(0);
+});
+
+it('rejects a profile with unknown selector keys', function () {
+    config(['goldendict.profiles.typo' => ['transcription' => '//span']]);
+
+    $this->artisan('goldendict:import', [
+        'file' => goldendictProfileFixturePath(),
+        '--lang' => 'be',
+        '--profile' => 'typo',
+    ])
+        ->expectsOutputToContain('unknown key')
+        ->assertFailed();
+
+    expect(Word::count())->toBe(0);
+});
+
+it('logs capped samples of articles where the profile matched nothing', function () {
+    Log::spy();
+
+    $this->artisan('goldendict:import', [
+        'file' => goldendictNoMatchFixturePath(),
+        '--lang' => 'be',
+        '--profile' => 'example-classes',
+    ])
+        ->expectsOutputToContain('Profile no-match articles')
+        ->assertSuccessful();
+
+    // Six no-match articles, only the first five kept as samples.
+    Log::shouldHaveReceived('notice')
+        ->once()
+        ->withArgs(fn (string $message) => str_contains($message, 'in 6 articles')
+            && str_contains($message, 'w1 —')
+            && str_contains($message, 'w5 —')
+            && ! str_contains($message, 'w6'));
+
+    // A profile that matches nothing never drops entries: everything the
+    // generic heuristics find still imported.
+    expect(Word::count())->toBe(6);
 });

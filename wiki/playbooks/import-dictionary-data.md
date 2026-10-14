@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-14T18:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T16:29:38+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -28,6 +28,12 @@ sources:
   - id: goldendict
     resource: laravel/app/Classes/GoldenDictParser.php
     title: GoldenDict JSONL parser
+  - id: goldendict-profiles
+    resource: laravel/config/goldendict.php
+    title: Extraction profiles (config/goldendict.php)
+  - id: goldendict-convert
+    resource: docker-compose/python/ai/goldendict_convert.py
+    title: goldendict_convert.py (MDX/DSL/StarDict → JSONL)
 ---
 
 # Overview
@@ -133,8 +139,10 @@ Two source shapes exist:
 
 # Steps — GoldenDict dictionary (goldendict:import)
 
-For GoldenDict-format dictionaries (freemdict etc.: MDict `.mdx` so far;
-DSL/StarDict conversion is a later ticket). Two stages:
+For GoldenDict-format dictionaries (freemdict etc.). The converter accepts
+MDict `.mdx`, ABBYY Lingvo `.dsl` (UTF-8 or UTF-16LE) and StarDict sets
+(an `.ifo` path or a directory containing exactly one set) — see the usage
+note in `docker-compose/python/ai/goldendict_convert.py`. Two stages:
 
 1. **Convert** on the host through the bind-mounted python venv (stage 1,
    writes the JSONL next to the source; encrypted/regcode MDX is rejected
@@ -166,9 +174,52 @@ DSL/StarDict conversion is a later ticket). Two stages:
    into the target language, multi-word candidates → `phrase` — plus
    canonical `word_translations` links and `words.translations` JSON
    staging, all written directly (no separate link pass; `--no-link`
-   skips these phases). `--profile` stays inert until the profile
-   tickets. Re-runs upsert and text-dedupe — raw article HTML never
-   enters the database, so a better extractor just re-imports the JSONL.
+   skips these phases). For dictionaries whose articles have structure
+   the heuristics mangle, add `--profile=<slug>` (below). Re-runs upsert
+   and text-dedupe — raw article HTML never enters the database, so a
+   better extractor just re-imports the JSONL.
+
+### Extraction profiles (--profile=<slug>)
+
+A profile is a declarative XPath selector map in
+`laravel/config/goldendict.php` that tunes the generic heuristics for ONE
+dictionary — no code changes per dictionary. To author one:
+
+1. Convert a slice of the dictionary and smoke-run **without** the profile
+   (`--dry-run --max-entries=500`) to get the baseline stat row.
+2. Copy the `example-classes` profile in `config/goldendict.php`, rename
+   the slug, and retarget the three selector keys at the dictionary's
+   article structure:
+   * `transcriptions` — each matched node's text becomes a transcription
+     (enclosing `[brackets]`/`/slashes/` trimmed; **not** gated on the
+     IPA-marker heuristic — the profile author vouches for these nodes,
+     so non-IPA transcription systems work).
+   * `translations` — the matched nodes' texts replace the heuristic
+     block segments as the source of translation candidates (the noise
+     filters still apply: comma/semicolon split, grammar tags and junk
+     dropped). Bilingual mode only.
+   * `definitions` — the matched nodes' texts are the definition
+     segments instead of the heuristic nearest-block grouping.
+   Each value is an XPath 1.0 string or a list of them (queried in
+   order). The `contains(concat(" ", normalize-space(@class), " "), "…")`
+   idiom matches a class as a whole token.
+3. Smoke-run **with** `--profile=<slug> --dry-run` and compare the stat
+   rows — the demo is the same JSONL visibly extracting differently.
+4. Iterate: a selector that matches nothing in an article falls back to
+   the heuristic for that kind and article — an entry is never dropped —
+   and every article where NO selector matched is counted in the
+   "Profile no-match articles" stat row and sampled (capped) into one
+   `Goldendict profile '…': no selector matched in N articles` notice in
+   `storage/logs/laravel.log`, so you can see what you are missing.
+5. Known-slug safety: an unknown slug fails the command with the known
+   list; unknown keys or syntactically broken XPath fail up front before
+   anything is written.
+
+Format quirks to keep in mind (from the converter): DSL parenthesized
+title variants concatenate into the headword (`dog(n.)` → `dogn.`), DSL
+curly-brace homonym markers surface as a bold `<b>…</b>` prefix, and
+StarDict sets with `sametypesequence=m` yield **plain-text** bodies in
+`html` — selectors must not assume strict HTML.
 
 3. Verify in the Filament admin like the Wiktionary flow above. freemdict
    dictionaries are frequently commercial rips — fine for personal

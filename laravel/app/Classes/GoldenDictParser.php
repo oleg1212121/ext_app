@@ -34,9 +34,13 @@ use Symfony\Component\Console\Output\OutputInterface;
  * separate link pass needed for this path.
  *
  * The extraction is a generic heuristic (block-level text segments, pos-ish
- * abbreviations, IPA-delimited runs); per-dictionary extraction profiles
- * that tune it are a later ticket. Raw article HTML never enters the
- * database — the JSONL stays on disk and can be re-imported anytime.
+ * abbreviations, IPA-delimited runs) that per-dictionary extraction profiles
+ * (config/goldendict.php, selected with --profile=<slug>) layer over: XPath
+ * selectors for transcription nodes, translation cells and definition blocks
+ * override their heuristic counterpart per selector kind, and a selector
+ * that matches nothing in an article falls back to the heuristic — entries
+ * are never dropped. Raw article HTML never enters the database — the JSONL
+ * stays on disk and can be re-imported anytime.
  */
 class GoldenDictParser
 {
@@ -47,6 +51,9 @@ class GoldenDictParser
     private const TRANSCRIPTION_CAP = 100;
 
     private const FORM_CAP = 256;
+
+    /** How many nothing-matched article samples to keep for profile authors. */
+    private const PROFILE_MISS_SAMPLE_CAP = 5;
 
     /** Block-level elements: text nodes group into one segment per block. */
     private const BLOCK_TAGS = [
@@ -87,6 +94,16 @@ class GoldenDictParser
 
     private bool $dryRun;
 
+    /**
+     * Active extraction profile: ['slug' => string] plus an XPath selector
+     * list per key (transcriptions/translations/definitions), pre-validated
+     * by the command. Null = the generic heuristics alone.
+     */
+    private ?array $profile;
+
+    /** @var list<string> capped "word — snippet" samples of no-match articles */
+    private array $profileMissSamples = [];
+
     /** @var array<string, int> */
     private array $wordClassMap = [];
 
@@ -114,9 +131,10 @@ class GoldenDictParser
         'translation_candidates' => 0,
         'target_words_created' => 0,
         'translations_linked' => 0,
+        'profile_no_match_articles' => 0,
     ];
 
-    public function __construct(string $lang, int $batchSize = 500, bool $dryRun = false, ?string $targetLang = null)
+    public function __construct(string $lang, int $batchSize = 500, bool $dryRun = false, ?string $targetLang = null, ?array $profile = null)
     {
         $language = Language::query()->where('code', $lang)->first();
         if ($language === null) {
@@ -139,10 +157,11 @@ class GoldenDictParser
 
         $this->batchSize = max(1, $batchSize);
         $this->dryRun = $dryRun;
+        $this->profile = $profile;
     }
 
     /**
-     * @return array{entries_read: int, entries_skipped: int, words_imported: int, definitions_imported: int, transcriptions_imported: int, forms_imported: int, lookups_created: int, batches_flushed: int, translation_candidates: int, target_words_created: int, translations_linked: int}
+     * @return array{entries_read: int, entries_skipped: int, words_imported: int, definitions_imported: int, transcriptions_imported: int, forms_imported: int, lookups_created: int, batches_flushed: int, translation_candidates: int, target_words_created: int, translations_linked: int, profile_no_match_articles: int}
      */
     public function import(string $path, ?OutputInterface $output = null, ?int $maxEntries = null): array
     {
@@ -226,6 +245,9 @@ class GoldenDictParser
             $this->flushBatch($batch);
         }
 
+        // Profile authors read this one: which articles nothing matched in.
+        $this->logProfileMisses();
+
         if ($progressBar) {
             $progressBar->finish();
             $output->writeln('');
@@ -263,6 +285,17 @@ class GoldenDictParser
         $html = is_string($entry->html ?? null) ? $entry->html : '';
         $article = $this->parseHtml($html);
 
+        $segments = $article['segments'];
+        $ipa = $article['ipa'];
+        $translationSegments = $article['segments'];
+
+        if ($article['profileTexts'] !== null) {
+            $override = $this->applyProfile($article['profileTexts'], $word, trim($article['text']));
+            $segments = $override['definitions'] ?? $segments;
+            $ipa = $override['transcriptions'] ?? $ipa;
+            $translationSegments = $override['translations'] ?? $translationSegments;
+        }
+
         $posHints = $article['posHints'];
         $classSlug = str_contains($word, ' ')
             ? 'phrase'
@@ -274,12 +307,12 @@ class GoldenDictParser
             'pos' => $classSlug,
             'definitions' => array_values(array_unique(array_map(
                 fn (string $segment) => mb_substr($segment, 0, self::DEFINITION_CAP),
-                $article['segments'],
+                $segments,
             ))),
-            'transcriptions' => $article['ipa'],
+            'transcriptions' => $ipa,
             'forms' => array_values(array_unique($forms)),
             'translations' => $this->targetLanguageId !== null
-                ? $this->extractTranslationCandidates($word, $article['segments'])
+                ? $this->extractTranslationCandidates($word, $translationSegments)
                 : [],
         ];
     }
@@ -378,11 +411,11 @@ class GoldenDictParser
     }
 
     /**
-     * @return array{segments: list<string>, ipa: list<string>, posHints: list<string>}
+     * @return array{segments: list<string>, ipa: list<string>, posHints: list<string>, profileTexts: array<string, list<string>>|null, text: string}
      */
     private function parseHtml(string $html): array
     {
-        $empty = ['segments' => [], 'ipa' => [], 'posHints' => []];
+        $empty = ['segments' => [], 'ipa' => [], 'posHints' => [], 'profileTexts' => null, 'text' => ''];
         if (trim($html) === '') {
             return $empty;
         }
@@ -413,11 +446,48 @@ class GoldenDictParser
             $node->parentNode?->removeChild($node);
         }
 
-        return [
+        $result = [
             'segments' => $this->extractSegments($xpath),
             'ipa' => $this->extractIpa($dom->textContent),
             'posHints' => $this->extractPosHints($xpath),
+            'profileTexts' => null,
+            'text' => '',
         ];
+
+        if ($this->profile !== null) {
+            // An article whose HTML is empty is a converter degenerate case,
+            // not a selector signal — it never counts as a profile miss.
+            $result['text'] = $dom->textContent;
+            $result['profileTexts'] = [
+                'transcriptions' => $this->profileMatches($xpath, 'transcriptions'),
+                'translations' => $this->profileMatches($xpath, 'translations'),
+                'definitions' => $this->profileMatches($xpath, 'definitions'),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Texts of the nodes a profile selector kind matches in one article —
+     * empty when nothing matched (the per-selector fallback signal).
+     *
+     * @return list<string>
+     */
+    private function profileMatches(\DOMXPath $xpath, string $kind): array
+    {
+        $texts = [];
+        foreach ($this->profile[$kind] ?? [] as $query) {
+            $nodes = $xpath->query($query);
+            if ($nodes === false) {
+                continue; // the command syntax-checks selectors; belt and braces
+            }
+            foreach ($nodes as $node) {
+                $texts[] = (string) $node->textContent;
+            }
+        }
+
+        return $texts;
     }
 
     /**
@@ -547,6 +617,112 @@ class GoldenDictParser
         }
 
         return self::POS_BY_ABBREVIATION[$normalized] ?? null;
+    }
+
+    /**
+     * Layer the profile over the heuristic results for one article: each
+     * selector kind overrides its counterpart only when it matched something
+     * in THIS article — a miss falls back to the heuristic, so the entry is
+     * never dropped. Articles where NO selector matched are counted and
+     * sampled (capped) for the profile author.
+     *
+     * @param  array<string, list<string>>  $texts
+     * @return array{definitions?: list<string>, transcriptions?: list<string>, translations?: list<string>}
+     */
+    private function applyProfile(array $texts, string $word, string $articleText): array
+    {
+        $override = [];
+        $matched = false;
+
+        if ($texts['transcriptions'] !== []) {
+            $matched = true;
+            $override['transcriptions'] = $this->profileTranscriptions($texts['transcriptions']);
+        }
+
+        if ($texts['definitions'] !== []) {
+            $matched = true;
+            $override['definitions'] = $this->profileSegments($texts['definitions']);
+        }
+
+        if ($texts['translations'] !== []) {
+            // The matched texts replace the heuristic segments as the source
+            // of translation candidates; the noise filters still apply.
+            $matched = true;
+            $override['translations'] = $texts['translations'];
+        }
+
+        if (! $matched) {
+            $this->stats['profile_no_match_articles']++;
+            if (count($this->profileMissSamples) < self::PROFILE_MISS_SAMPLE_CAP) {
+                $this->profileMissSamples[] = $word.' — '.mb_substr($articleText, 0, 80);
+            }
+        }
+
+        return $override;
+    }
+
+    /**
+     * Profile-selected transcription texts: enclosing [brackets]//slashes/
+     * trimmed, deduped, capped — but NOT gated on the IPA-marker heuristic:
+     * the profile author vouches for these nodes, so non-IPA transcription
+     * systems work.
+     *
+     * @param  list<string>  $texts
+     * @return list<string>
+     */
+    private function profileTranscriptions(array $texts): array
+    {
+        $values = [];
+        foreach ($texts as $text) {
+            $value = trim((string) preg_replace('~^[\[/]+|[\]/]+$~u', '', trim($text)));
+            if ($value !== '') {
+                $values[] = mb_substr($value, 0, self::TRANSCRIPTION_CAP);
+            }
+        }
+
+        return array_values(array_unique($values));
+    }
+
+    /**
+     * Profile-selected definition texts, whitespace-normalized — the
+     * parseEntry pass dedupes and caps them like heuristic segments.
+     *
+     * @param  list<string>  $texts
+     * @return list<string>
+     */
+    private function profileSegments(array $texts): array
+    {
+        $segments = [];
+        foreach ($texts as $text) {
+            $segment = trim((string) preg_replace('/\s+/u', ' ', $text));
+            if ($segment !== '') {
+                $segments[] = $segment;
+            }
+        }
+
+        return $segments;
+    }
+
+    /**
+     * One capped log notice for the run — articles where no profile selector
+     * matched, with "word — snippet" samples — so a profile author sees what
+     * they are missing without trawling the JSONL.
+     */
+    private function logProfileMisses(): void
+    {
+        $count = $this->stats['profile_no_match_articles'];
+        if ($count === 0) {
+            return;
+        }
+
+        Log::notice(sprintf(
+            "Goldendict profile '%s': no selector matched in %d article%s. Samples (max %d): %s",
+            $this->profile['slug'] ?? '?',
+            $count,
+            $count === 1 ? '' : 's',
+            self::PROFILE_MISS_SAMPLE_CAP,
+            implode('; ', $this->profileMissSamples),
+        ));
     }
 
     private function tallyRecord(array $record): void

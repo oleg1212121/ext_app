@@ -1,5 +1,59 @@
 # Directory Update Log
 
+## 2026-10-14 (goldendict-import ticket 05 — extraction profiles)
+
+Fifth commit of the goldendict-import feature (branch `goldendict-import`):
+`goldendict:import --profile=<slug>` now selects a declarative XPath
+selector map layered over the generic heuristic extractor, so structured
+dictionaries extract cleanly without code changes per dictionary:
+
+- `laravel/config/goldendict.php` (new) — the profile registry. Per
+  profile: `transcriptions` (matched nodes' texts become transcriptions,
+  enclosing `[brackets]`/`/slashes/` trimmed, NOT gated on the IPA-marker
+  heuristic — the profile author vouches for the nodes), `translations`
+  (matched nodes' texts replace the heuristic block segments as the
+  translation-candidate source; the noise filters still apply) and
+  `definitions` (matched nodes' texts are the definition segments instead
+  of the nearest-block grouping). Each value is an XPath 1.0 string or a
+  list of them queried in order; the
+  `contains(concat(" ", normalize-space(@class), " "), "…")` idiom matches
+  a class as a whole token. Ships with an `example-classes` shape profile
+  — **no real freemdict dictionary exists on this machine**, so the first
+  real profile is still to be authored (ticket left `ready-for-human`).
+- `GoldenDictParser` — constructor takes the command-validated profile;
+  per article each selector kind overrides only its own extraction and
+  only when it matched something in THAT article (a miss falls back to
+  the heuristic — an entry is never dropped; a StarDict
+  `sametypesequence=m` plain-text body therefore flows through the
+  heuristics untouched). Articles where NO selector matched are counted
+  (`profile_no_match_articles` stat row "Profile no-match articles") and
+  sampled — first 5, as `word — <80-char snippet>` — into one
+  `Goldendict profile '…': no selector matched in N articles` log notice
+  at the end of the run. Empty-HTML articles never count as misses.
+- `ImportGoldenDictCommand` — `--profile` is live (the inert warn is
+  gone): unknown slug fails with the known list, unknown profile keys or
+  non-string/empty selector values fail before anything is written, and
+  selectors are compile-checked against a throwaway document so broken
+  XPath fails up front instead of silently matching nothing. Demoed:
+  the same fixture JSONL under `--dry-run` flips from 5 definitions /
+  1 transcription (heuristics) to 3 definitions / 2 transcriptions /
+  1 no-match article (profile).
+- Tests: `ImportGoldenDictCommandTest` grows 4 profile cases (selectors
+  apply + per-kind fallback + the with/without-profile re-import demo,
+  unknown slug, unknown selector keys, capped no-match sampling via
+  `Log::spy`) on new fixtures `tests/Fixtures/goldendict-profile.jsonl`
+  and `goldendict-profile-nomatch.jsonl`; the ticket-03 inert-`--profile`
+  test became a real monolingual profile import. Targeted suite:
+  20 passed (163 assertions); import-family regression (6 suites):
+  67 passed (316 assertions).
+- Wiki: this log, the import playbook gained an "Extraction profiles"
+  how-to (plus the converter's now-real DSL/StarDict input list and the
+  DSL/StarDict profile-authoring quirks), `dictionary-import.md` gained
+  the profile component bullet, `generated.at` bumped on both.
+  `wiki:sync` produced timestamp-only churn on the reference files (the
+  command was already recorded in ticket 02) — reverted;
+  `wiki:validate` conformant (88 warnings, the same pre-existing set).
+
 ## 2026-10-14 (goldendict-import ticket 04 — DSL + StarDict conversion)
 
 Fourth commit of the goldendict-import feature (branch `goldendict-import`):

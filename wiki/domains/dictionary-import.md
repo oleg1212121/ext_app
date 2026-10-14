@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs]
 status: stable
 stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-14T18:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T16:29:38+03:00 }
 sources:
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
@@ -28,6 +28,9 @@ sources:
   - id: goldendict
     resource: laravel/app/Classes/GoldenDictParser.php
     title: GoldenDict JSONL parser
+  - id: goldendict-profiles
+    resource: laravel/config/goldendict.php
+    title: Extraction profiles (config/goldendict.php)
   - id: lookup-key
     resource: laravel/app/Support/WordLookupKey.php
     title: shared l_word normalization
@@ -110,10 +113,27 @@ mirrored per-language tables, and a single `word_translations` pivot —
   (ADR 0059). Raw HTML never enters the database — the JSONL stays on disk
   and a better extractor can re-import it anytime. Flags: `--dry-run`
   (parse and report, write nothing — not even auto-created lookups),
-  `--max-entries` (smoke runs), `--batch-size`, `--profile` (inert stub
-  until the extraction-profile tickets). New words get the
-  `FREQUENCY_UNRANKED` sentinel; re-imports refresh `l_word` only, so
-  curated frequency ranks and staged translations survive.
+  `--max-entries` (smoke runs), `--batch-size`, `--profile` (below). New
+  words get the `FREQUENCY_UNRANKED` sentinel; re-imports refresh `l_word`
+  only, so curated frequency ranks and staged translations survive.
+* `goldendict:import --profile=<slug>` — **extraction profiles**: a
+  declarative XPath selector map per dictionary in
+  `config/goldendict.php` (`transcriptions`/`translations`/`definitions`
+  keys; a class matches as a whole token via the
+  `contains(concat(" ", normalize-space(@class), " "), "…")` idiom)
+  layered over the generic heuristics, so structured dictionaries extract
+  cleanly without code changes. Per selector kind and per article, a
+  selector that matched nothing falls back to the heuristic — an entry is
+  never dropped; profile-selected transcriptions skip the IPA-marker gate
+  (the profile author vouches for the nodes), profile-selected
+  translation cells still pass the noise filters. Articles where NO
+  selector matched are counted ("Profile no-match articles" stat row) and
+  sampled (capped at 5) into one log notice so profile authors see what
+  they are missing; an unknown slug fails with the known list, unknown
+  keys or broken XPath fail up front. Tune profiles incrementally against
+  real dictionaries (how-to: [Importing Dictionary Data](
+  /playbooks/import-dictionary-data.md)) — no schema migrations, the
+  JSONL just re-imports.
 * `goldendict:import --target-lang=xx` — **bilingual mode**: the bulk
   mirror of the `FetchWordTranslations` semantics. Translation candidates
   come out of each article (comma/semicolon-delimited segments after
@@ -141,8 +161,8 @@ normalization through `App\Support\WordLookupKey` (lowercase + combining-
 mark strip via `App\Support\StressMarks` — the display `word` keeps the
 marks). The Wiktionary side reads kaikki JSONL with structured fields
 (`pos`, `senses`, `sounds`, `translations`); the GoldenDict side extracts
-everything heuristically from article HTML, and per-dictionary extraction
-profiles tuning that extraction are a later addition. Translation linking
+everything heuristically from article HTML and tunes per dictionary with
+`--profile` extraction profiles (above). Translation linking
 differs: the Wiktionary path **stores** translations during import and a
 separate `wiktionary:link-translations` pass links them against
 already-existing words; the GoldenDict bilingual path creates its own
