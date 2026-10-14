@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, and the vitest suite for pure JS logic.
 tags: [testing, pest, vitest]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-11T19:02:52+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T18:50:00+03:00 }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -45,6 +45,16 @@ sources:
 * Test database: **`ext_app_test`** (set in `phpunit.xml` and `.env.testing`,
   not the default `testing` DB). Tests use `QUEUE_CONNECTION=sync`, array
   cache/session.
+* **The suite is hermetic — and green.** `tests/Pest.php` arms
+  `Http::preventStrayRequests()` for every Feature test, and `phpunit.xml`
+  force-blanks the external API keys (`OPENROUTER_API_KEY`,
+  `GOOGLE_TRANSLATE_API_KEY`, `YANDEX_TRANSLATE_API_KEY`), so an unfaked
+  network call fails fast and "no provider configured" is the default test
+  world (a leaked real Google key used to keep 10 tests permanently red with
+  `API_KEY_SERVICE_BLOCKED` — fixed 2026-10-14). **Any failure on a clean
+  tree is yours**: never wave it off as pre-existing. Tests opt into the
+  translate providers per test via `enableTranslationProviders()` +
+  `Http::fake()`.
 * **CI needs a `.env` file.** Laravel boots off `.env` via phpdotenv's
   `@file_get_contents('.env')`; with no env file at all, PHPUnit flags a
   warning on roughly every test and (under the CI runtime) ~45 of them
@@ -266,7 +276,12 @@ Rules for any new or modified test:
   maps to in production — so an unexpected call fails loudly. Wire-level
   `Http::fake()` lives only in `PythonClientTest` (the adapter's own tests);
   a file-level `beforeEach(fn () => fakePython())` suffices when tests only
-  assert dispatches (see `FilamentReAlignActionTest.php`).
+  assert dispatches (see `FilamentReAlignActionTest.php`). Since 2026-10-14
+  the guard is suite-wide: `tests/Pest.php` arms
+  `Http::preventStrayRequests()` for every Feature test, so a leaked wire
+  call throws immediately instead of hanging (Google/Yandex keys are
+  force-blanked in `phpunit.xml`; opt in with
+  `enableTranslationProviders()` + `Http::fake()`).
 * **Cap drain loops.** A `while` loop that re-runs a job until the match
   leaves `aligning` needs a small guard (`$guard < 10`) *and* a convergence
   assertion after the loop (`status === 'completed'`) so a stalled job fails

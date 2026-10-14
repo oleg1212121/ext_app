@@ -11,6 +11,7 @@ use App\Models\Work;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\Support\FakePythonClient;
 use Tests\TestCase;
 
@@ -36,6 +37,14 @@ pest()->extend(TestCase::class)
 beforeEach(function () {
     expect(DB::connection()->getName())->toBe('testing');
 });
+
+// Hermeticity guard: a Feature test that reaches the network without a fake
+// fails fast instead of calling a live API (the sync queue would run fetch
+// jobs inline mid-request). Tests opt into HTTP via Http::fake() (+
+// enableTranslationProviders() for the translate providers).
+beforeEach(function () {
+    Http::preventStrayRequests();
+})->in('Feature');
 
 pest()->tia()
     ->filtered()

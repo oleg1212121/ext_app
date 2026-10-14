@@ -5535,3 +5535,28 @@ pivot carries zero rows (no orphans; the scaffold was dormant) and all six
 new tables exist. Learner-facing tag UI, tag-name translations, seed
 vocabularies, and work→entity tag inheritance remain out of scope per
 ADR 0076.
+
+## 2026-10-14 (retro fixes 01: hermetic test baseline — suite green on a clean tree)
+
+Fixed the broken green baseline (retro finding #1): ten tests across five
+Feature suites (WordEndpoint, RefreshEntityWordsJob, AdoptEntityWords,
+EntityEnrichment, WordTranslationFetch) failed on every run with a live
+Google Translate `403 API_KEY_SERVICE_BLOCKED`. Root cause was not missing
+`Http::fake()` per se but an env leak: `phpunit.xml` force-blanked
+`OPENROUTER_API_KEY` only, so dev `.env`'s real Google key leaked into tests
+as a "configured" provider pointed at `translation.googleapis.com`, and
+`QUEUE_CONNECTION=sync` ran `FetchWordTranslations` inline inside the
+request — nine tests died on the propagated 403, and the tenth
+(`WordTranslationFetchTest` "does not queue a fetch when no provider is
+configured", a `Queue::assertNotPushed`) failed on the same leak and was
+unfixable by faking. Fix: force-blank `GOOGLE_TRANSLATE_API_KEY` and
+`YANDEX_TRANSLATE_API_KEY` in `phpunit.xml` (tests opt in per test via
+`enableTranslationProviders()` + `Http::fake()`), and arm
+`Http::preventStrayRequests()` for every Feature test in `tests/Pest.php`
+so any future leaked wire call throws immediately instead of hanging.
+Zero test-body edits needed — the five suites pass standalone (62 passed)
+and the full `composer run test` is green (1,149 passed / 0 failed, 334.6s,
+8 workers) for the first time since the translate-fetch feature landed; no
+additional network leakers surfaced under the guard. Contract recorded in
+`wiki/playbooks/running-tests.md` ("The suite is hermetic — and green"):
+on a clean tree, any failure is yours.
