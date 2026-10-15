@@ -812,8 +812,11 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // The per-word "Save to Anki" send: the note is built from the payload
     // the popup already loaded — the same builder the Anki tab's sample card
     // uses, with the Translations field narrowed to the user's native
-    // language (the shared auth prop carries its code) and the word's tags
-    // from the payload — then handed to lib/ankiSync.js's duplicate-checked
+    // language (the shared auth prop carries its code), the word's tags
+    // from the payload, and the popup's own UI-language strings as the
+    // structured values' labels (counted summaries, "+N more…" expander,
+    // "form of") — the same baking the tab does, so a card is worded in the
+    // sender's language — then handed to lib/ankiSync.js's duplicate-checked
     // add. The ensure (deck / note type / template) is memoized module state
     // shared with the tab, so the first send of a session auto-creates them
     // and later sends skip straight to the duplicate check. Failures land in
@@ -824,7 +827,18 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         }
         setAnkiSend({status: 'sending'});
         const tags = data.tags ?? [];
-        const noteFields = buildNoteFields(data, {familiarity, tags, nativeLanguage});
+        const noteFields = buildNoteFields(data, {
+            familiarity,
+            tags,
+            nativeLanguage,
+            labels: {
+                definitions: (count) => t('word.definitions', {count}),
+                examples: (count) => t('word.examples', {count}),
+                etymology: (count) => t('word.etymology', {count}),
+                more: (count) => t('word.more', {count}),
+                formOf: t('word.form_of'),
+            },
+        });
         sendAnkiNote(ankiSettings, noteFields, {tags, word: data.word}).then(
             (result) => setAnkiSend({status: result.added ? 'added' : 'duplicate'}),
             (error) => setAnkiSend({status: 'error', error}),
