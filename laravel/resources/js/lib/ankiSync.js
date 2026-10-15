@@ -7,9 +7,9 @@
 //
 // Spec decisions encoded here: values always carry every field (hide-class
 // semantics — the pushed template, not an omission, hides content); a
-// same-name note type whose fields don't match the app-owned twelve is never
-// silently rewritten — the caller surfaces a warning instead; duplicates are
-// skipped, foreign notes are never updated.
+// same-name note type whose fields don't match the app-owned thirteen is
+// never silently rewritten — the caller surfaces a warning instead;
+// duplicates are skipped, foreign notes are never updated.
 
 import {
     ANKI_CARD_NAME,
@@ -34,9 +34,12 @@ import {
 } from './ankiConnect'
 
 // Anki already holds a note type named "ExtApp Vocabulary" that isn't the one
-// this app manages: `kind` is 'fields' when the twelve field names differ
-// (pushing our Front/Back onto it could break its cards) or 'card' when the
-// field names match but no "Recognition" card exists (AnkiConnect's
+// this app manages: `kind` is 'fields' when the thirteen field names differ
+// (including the schema-v2 upgrade case: AnkiConnect cannot add a field to an
+// existing note type, so a pre-v2 twelve-field install mismatches and the
+// caller's UI teaches the delete-note-type-and-resync fix — pushing our
+// Front/Back onto a foreign-shaped model could break its cards) or 'card'
+// when the field names match but no "Recognition" card exists (AnkiConnect's
 // updateModelTemplates silently skips unknown card names, so the push would
 // be a silent no-op). `expected`/`found` are name lists for the warning UI.
 export class AnkiNoteTypeMismatchError extends Error {

@@ -220,6 +220,7 @@ test('authenticated user can save anki card field toggles', function () {
                     'transcription' => true,
                     'definitions' => false,
                     'etymology' => false,
+                    'body' => false,
                 ],
             ],
         ])
@@ -230,6 +231,7 @@ test('authenticated user can save anki card field toggles', function () {
     expect($anki['url'])->toBe('http://localhost')
         ->and($anki['fields']['definitions'])->toBeFalse()
         ->and($anki['fields']['etymology'])->toBeFalse()
+        ->and($anki['fields']['body'])->toBeFalse()
         ->and($anki['fields']['word'])->toBeTrue();
 });
 

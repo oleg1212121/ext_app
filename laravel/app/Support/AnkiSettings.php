@@ -25,7 +25,10 @@ class AnkiSettings
      * Every card field toggle, in the note type's fixed field order — the
      * canonical server-side list the JS template module mirrors
      * (resources/js/lib/ankiTemplate.js). Absent keys mean on, the Popups
-     * tab's convention.
+     * tab's convention. Schema v2: `body` is the 13th field (Body, last) —
+     * the value-carrier of the popup-interleaved dictionary body; like the
+     * other body section toggles it is applied at SEND time (the senders
+     * pass the resolved map), while the scalar toggles stay template-side.
      */
     public const FIELDS = [
         'word',
@@ -40,6 +43,7 @@ class AnkiSettings
         'tags',
         'familiarity',
         'language',
+        'body',
     ];
 
     /**

@@ -28,4 +28,12 @@ describe('WordPopup sendToAnki', () => {
         // Anki tab's sample send shares; the builder is the single source.
         expect(send).not.toMatch(/labels: \{/);
     });
+
+    it('passes the resolved anki fields map — the body toggles shape the Body value at send time', () => {
+        const send = popupSource.slice(popupSource.indexOf('const sendToAnki'));
+        // The shared ankiSettings prop carries the user's saved toggles
+        // (AnkiSettings::for), body master toggle included. Without it the
+        // card's Body would ignore the user's section opt-outs.
+        expect(send).toContain('fields: ankiSettings.fields');
+    });
 });

@@ -1,32 +1,39 @@
 // The Anki card-template generator (the profile's Anki tab). This module is
 // the single JS mirror of App\Support\AnkiSettings::FIELDS — the field-key →
 // Anki-field-name mapping lives HERE and nowhere else — and it generates the
-// note type's Front/Back HTML and CSS deterministically from the twelve field
+// note type's Front/Back HTML and CSS deterministically from the scalar field
 // toggles: the same toggles always produce byte-identical artifacts.
 //
-// Semantics (spec decisions): values ALWAYS carry every field; a toggled-off
-// field gets the `ef-hidden` class baked into the generated HTML, so
-// re-syncing the template restyles all existing cards instead of dropping
-// data. Front shows the word alone — the recognition cue and the
+// Semantics (spec decisions, V2): values ALWAYS carry every field; a
+// toggled-off scalar gets the `ef-hidden` class baked into the generated
+// HTML, so re-syncing the template restyles all existing cards instead of
+// dropping data. Front shows the word alone — the recognition cue and the
 // duplicate-search key. The Back mirrors the reading popup's shape: a header
-// (word title, then Familiarity / Frequency / form-of / part-of-speech /
-// bracketed-transcription meta lines), the dictionary body sections, and a
-// muted Tags · Language footer. Meta lines whose value carries literal
-// decoration sit inside Anki-native `{{#Field}}…{{/Field}}` conditionals, so
-// an empty field drops the whole line (renderCardHtml does the same for the
-// tab's preview); the form-of line needs none — its localized label is part
-// of the value. The values themselves carry the popup's structure: per-entry
-// "WORD — pos" labels for multi-entry words, counted <details> sections for
-// Definitions/Examples/Etymology, the translations preview behind a
-// "+N more…" expander — with the UI-language summary/label wording baked in
-// at send time via the labels option (English defaults). One rule breaks the
-// hide symmetry: the Front NEVER hides Word — hiding it would blank the
-// card's face — and Word's toggle keeps hiding its Back wrapper. Nothing in
-// this module touches Anki — the template push and sample card reuse these
-// artifacts from lib/ankiSync.js.
+// (word title, then the Familiarity / Frequency / form-of / part-of-speech
+// meta lines), the dictionary Body, and a muted Tags · Language footer. The
+// dictionary itself is the 13th field's VALUE: Body carries the popup's
+// per-entry sections — "WORD — pos" label, translations (preview cap,
+// "+N more…" expander, the calm empty placeholder), bracketed transcriptions,
+// counted collapsed Definitions/Examples/Etymology, hairline separators —
+// interleaved in exactly the popup's order (flat fields can never express
+// that ordering). The body section toggles (translations, transcription,
+// definitions, examples, etymology) plus the `body` master toggle are
+// SEND-TIME: senders pass the resolved fields map and the value is shaped
+// accordingly, so they affect newly sent cards only. Meta lines whose value
+// carries literal decoration sit inside Anki-native `{{#Field}}…{{/Field}}`
+// conditionals, so an empty field drops the whole line (renderCardHtml does
+// the same for the tab's preview); the form-of line needs none — its
+// localized label is part of the value. UI-language wording for the value's
+// labels is baked in at send time via the labels option (English defaults).
+// One rule breaks the hide symmetry: the Front NEVER hides Word — hiding it
+// would blank the card's face — and Word's toggle keeps hiding its Back
+// wrapper. Nothing in this module touches Anki — the template push and
+// sample card reuse these artifacts from lib/ankiSync.js.
 
 // Settings key → Anki note-type field name, in the note type's fixed field
 // order (must stay in lockstep with App\Support\AnkiSettings::FIELDS).
+// Schema v2: `body` is the 13th field, last — the value-carrier of the
+// dictionary body.
 export const ANKI_FIELDS = [
     {key: 'word', name: 'Word'},
     {key: 'transcription', name: 'Transcription'},
@@ -40,6 +47,7 @@ export const ANKI_FIELDS = [
     {key: 'tags', name: 'Tags'},
     {key: 'familiarity', name: 'Familiarity'},
     {key: 'language', name: 'Language'},
+    {key: 'body', name: 'Body'},
 ]
 
 export const ANKI_NOTE_TYPE = 'ExtApp Vocabulary'
@@ -47,23 +55,28 @@ export const ANKI_CARD_NAME = 'Recognition'
 
 const HIDDEN_CLASS = 'ef-hidden'
 
-// Meta lines whose value carries literal decoration (a prefix, a suffix,
-// brackets) wrap the whole line in an Anki-native conditional block: an
-// empty field drops the line entire instead of leaving a dangling
-// "Frequency: #" or "[]" on the card. The wording mirrors the popup's
-// English strings (database/seeders/ui-strings/words.php). WordFamily needs
-// no conditional: its localized "form of" label is part of the VALUE
-// (buildNoteFields bakes it at send time), so an empty field renders an
-// empty placeholder — nothing dangles.
+// Meta lines whose value carries literal decoration (a prefix, a suffix)
+// wrap the whole line in an Anki-native conditional block: an empty field
+// drops the line entire instead of leaving a dangling "Frequency: #" on the
+// card. The wording mirrors the popup's English strings
+// (database/seeders/ui-strings/words.php). WordFamily needs no conditional:
+// its localized "form of" label is part of the VALUE (buildNoteFields bakes
+// it at send time), so an empty field renders an empty placeholder — nothing
+// dangles. The V1 bracketed-transcription header line is gone (schema v2):
+// transcriptions live per-entry in the Body value.
 const META_LINES = {
     familiarity: (name) => `{{#${name}}}Familiarity: {{${name}}}/100{{/${name}}}`,
     frequency: (name) => `{{#${name}}}Frequency: #{{${name}}}{{/${name}}}`,
-    transcription: (name) => `{{#${name}}}[{{${name}}}]{{/${name}}}`,
 }
 
 // The footer's " · " join renders only when BOTH footer fields carry values
 // — nested conditionals, exactly Anki's own semantics.
 const FOOTER_SEPARATOR = '{{#Tags}}{{#Language}}<span class="ef-footer-sep"> · </span>{{/Language}}{{/Tags}}'
+
+// The Body slot: Anki's conditional drops it whole when the value is empty
+// (the `body` master toggle off, or a word with no dictionary content) so
+// the header meets the footer with nothing dangling between.
+const BODY_SLOT = '{{#Body}}<div class="ef-dictionary">{{Body}}</div>{{/Body}}'
 
 const placeholder = (key, name) => (META_LINES[key] ? META_LINES[key](name) : `{{${name}}}`)
 
@@ -109,7 +122,7 @@ const TEMPLATE_CSS = `.card {
     padding: 14px 14px 10px;
     border-bottom: 1px solid var(--ef-hairline);
 }
-.ef-body {
+.ef-dictionary {
     padding: 12px 14px;
 }
 .ef-footer {
@@ -145,52 +158,47 @@ const TEMPLATE_CSS = `.card {
     margin-top: 4px;
 }
 
-/* The bracketed transcription line. */
-.ef-transcription {
-    font-size: 0.857em;
-    opacity: 0.8;
-    margin-top: 4px;
-}
-
-/* Dictionary body: translations are the popup's primary verdigris line,
-   the dictionary sections follow at its 0.857em reading size. */
+/* Dictionary body: the Body value's per-entry sections (buildNoteFields
+   bakes these classes into the field value). Translations are the popup's
+   primary verdigris line; the popup's hairline rules separate the entry
+   blocks; a small even rhythm between an entry's lines stands in for its
+   mt-0.5/mt-1/mt-2 mix. */
 .ef-translations {
     font-size: 0.929em;
     color: var(--ef-verdigris);
 }
-.ef-body > .ef-field + .ef-field { margin-top: 8px; }
-.ef-definitions, .ef-examples, .ef-etymology {
+.ef-transcriptions {
     font-size: 0.857em;
+    opacity: 0.8;
 }
-
-/* Value-side structure (buildNoteFields bakes these classes into the field
-   values): the popup's per-entry blocks — its label type and hairline
-   section rules — the tap-to-open counted summaries, and the translations
-   "+N more…" expander, an inline <details> so it opens into the same
-   line instead of breaking the joined list. */
 .ef-entry + .ef-entry {
     margin-top: 10px;
     padding-top: 10px;
     border-top: 1px solid var(--ef-hairline);
 }
+.ef-entry > * + * { margin-top: 4px; }
 .ef-entry-label {
     display: block;
     margin-bottom: 4px;
-    /* The popup sizes section labels at 0.786em of the card; the label sits
-       inside the section's 0.857em context, so compensate (0.786/0.857). */
-    font-size: 0.917em;
+    /* The popup sizes section labels at 0.786em of the card; the entry sits
+       at the card's base size (each line carries its own em), so the
+       label's size is the popup's own. */
+    font-size: 0.786em;
     letter-spacing: 0.05em;
     opacity: 0.6;
 }
-/* The counted sections carry the popup's mt-2 on the <details> itself,
-   exactly where the popup puts it. Both summary flavors — the counted
-   sections' ef-summary and the expander's ef-more-summary — share the tap
-   affordance. The expander's summary is its own class (the baked
-   Translations values carry ef-more-summary, so the selectors must name
-   that class: values are frozen into already-sent notes and a
-   .ef-more .ef-summary descendant would match nothing), styled by the
-   later rule. */
-.ef-details { margin-top: 2px; }
+/* The counted sections carry the popup's dictionary size (0.857em) on the
+   <details> itself; the definitions list inside compounds one step like the
+   popup's text-[0.929em] does. Both summary flavors — the counted sections'
+   ef-summary and the expander's ef-more-summary — share the tap affordance.
+   The expander's summary is its own class (the baked values carry
+   ef-more-summary, so the selectors must name that class: values are frozen
+   into already-sent notes and a .ef-more .ef-summary descendant would match
+   nothing), styled by the later rule. */
+.ef-details {
+    margin-top: 2px;
+    font-size: 0.857em;
+}
 .ef-summary, .ef-more-summary {
     cursor: pointer;
     list-style: none;
@@ -218,6 +226,13 @@ const TEMPLATE_CSS = `.card {
     font-style: italic;
     opacity: 0.75;
 }
+/* The calm empty-state lines (the popup's "No translations yet" /
+   "No definitions yet"). */
+.ef-empty {
+    margin: 0;
+    font-size: 0.857em;
+    opacity: 0.6;
+}
 .ef-more { display: inline; }
 .ef-more-summary {
     margin: 0 4px;
@@ -232,19 +247,20 @@ const TEMPLATE_CSS = `.card {
 }
 .ef-tags, .ef-language { display: inline; }
 
-/* The hide class the field toggles bake into the wrappers. */
+/* The hide class the scalar field toggles bake into the wrappers. */
 .ef-hidden { display: none; }`
 
-// Generate the note type's card template from the field toggles. `fields`
-// maps field key → boolean; an absent key means on (the settings blob is
-// sparse and the defaults are all-on).
+// Generate the note type's card template from the scalar field toggles.
+// `fields` maps field key → boolean; an absent key means on (the settings
+// blob is sparse and the defaults are all-on). The body toggles are not
+// template concerns: the Body value is shaped at send time.
 export function generateCardTemplate(fields = {}) {
     const byKey = new Map(ANKI_FIELDS.map((field) => [field.key, field]))
 
     // `side` exists for one exception: the Front face never hides `word` —
     // it is the recognition cue and the duplicate-search key (sendAnkiNote
     // queries Word:"…"), so hiding it would blank the card's face. Word's
-    // toggle keeps hiding its Back wrapper; every other field hides through
+    // toggle keeps hiding its Back wrapper; every other scalar hides through
     // the class as configured.
     const wrapper = (key, side) => {
         const field = byKey.get(key)
@@ -258,8 +274,10 @@ export function generateCardTemplate(fields = {}) {
     // card's only section).
     const front = wrapper('word', 'front')
 
-    // The Back mirrors the popup's shape. Wrapper order here is the card's
-    // visual order; the note type's field order (ANKI_FIELDS) is untouched.
+    // The Back mirrors the popup's shape: header meta, the Body slot (the
+    // whole dictionary, rendered from the send-time Body value), the muted
+    // footer. Wrapper order here is the card's visual order; the note type's
+    // field order (ANKI_FIELDS) is untouched.
     const back = [
         '<div class="ef-header">',
         wrapper('word', 'back'),
@@ -267,14 +285,8 @@ export function generateCardTemplate(fields = {}) {
         wrapper('frequency', 'back'),
         wrapper('word_family', 'back'),
         wrapper('part_of_speech', 'back'),
-        wrapper('transcription', 'back'),
         '</div>',
-        '<div class="ef-body">',
-        wrapper('translations', 'back'),
-        wrapper('definitions', 'back'),
-        wrapper('examples', 'back'),
-        wrapper('etymology', 'back'),
-        '</div>',
+        BODY_SLOT,
         '<div class="ef-footer">',
         wrapper('tags', 'back'),
         FOOTER_SEPARATOR,
@@ -302,8 +314,10 @@ const distinct = (values) => [...new Set(values)]
 
 // --- Value-side structure: the popup's dictionary body ----------------------
 
-// The popup's translations preview cap (WordPopup's TRANSLATIONS_PREVIEW).
+// The popup's preview caps (WordPopup's TRANSLATIONS_PREVIEW /
+// TRANSCRIPTIONS_PREVIEW).
 const TRANSLATIONS_PREVIEW = 8
+const TRANSCRIPTIONS_PREVIEW = 1
 
 // English default wording for the value-side labels — the popup's own
 // strings (database/seeders/ui-strings/words.php). Senders (the word popup's
@@ -317,9 +331,11 @@ const DEFAULT_LABELS = {
     etymology: (count) => `Etymology (${count})`,
     more: (count) => `+${count} more…`,
     formOf: 'form of',
+    noTranslations: 'No translations yet — automatic translation may still be in progress.',
+    noDefinitions: 'No definitions yet.',
 }
 
-// The localized counterpart of the defaults: the same five keys pulled from
+// The localized counterpart of the defaults: the same seven keys pulled from
 // the app's own ui-strings (database/seeders/ui-strings/words.php). Both
 // senders (the word popup's sendToAnki, the Anki tab's sampleNoteFields)
 // call this with their `useI18n` t — one definition of the mapping, so the
@@ -333,6 +349,8 @@ export function uiLabels(t) {
         etymology: (count) => t('word.etymology', {count}),
         more: (count) => t('word.more', {count}),
         formOf: t('word.form_of'),
+        noTranslations: t('word.no_translations'),
+        noDefinitions: t('word.no_definitions'),
     }
 }
 
@@ -355,8 +373,20 @@ const countedSection = (summary, content) =>
 
 const listItems = (items) => items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
 
-// The popup's per-entry blocks for one field: only entries carrying content
-// render (no dangling label over nothing), each wrapped with its
+// The translations line, shared by the flat field and the Body's per-entry
+// line: the popup's preview cap, the rest behind a "+N more…" expander —
+// an inline <details> so it opens into the same line instead of breaking
+// the joined list.
+const translationsLine = (words, wording) => {
+    const previewed = words.slice(0, TRANSLATIONS_PREVIEW).map(escapeHtml).join(', ')
+    const rest = words.slice(TRANSLATIONS_PREVIEW)
+    return rest.length === 0
+        ? previewed
+        : `${previewed}<details class="ef-more"><summary class="ef-more-summary">${wording.more(rest.length)}</summary>${rest.map(escapeHtml).join(', ')}</details>`
+}
+
+// The popup's per-entry blocks for one flat field: only entries carrying
+// content render (no dangling label over nothing), each wrapped with its
 // "WORD — pos" label when the payload has 2+ entries — a single-entry word
 // gets the popup's simple unlabeled case.
 const entrySections = (entries, headword, labeled, render) => entries
@@ -381,19 +411,100 @@ const formOfValue = (forms, formOf) => {
     return list === '' ? '' : `${formOf} ${list}`
 }
 
-// Build the complete 12-field note from a word payload (the GET /words/{word}
-// shape) — exactly what the send-to-Anki paths put on the wire. Every field
-// gets a value, toggles or not: hide-class semantics mean the template,
-// never an omission, hides content. `nativeLanguage` (a language code) narrows
-// Translations to the user's native language, falling back to all
-// translations when none match (or nothing was passed). `labels` carries the
-// sender's UI-language summary/expander/form-of strings (English defaults).
-export function buildNoteFields(data, {familiarity = null, tags = [], nativeLanguage = null, labels = {}} = {}) {
+// One entry's Body section — the popup's dictionary pane, top to bottom:
+// the "WORD — pos" label, the translations line (or its calm placeholder),
+// the bracketed transcriptions (first, the rest behind the expander), the
+// counted collapsed Definitions ("No definitions yet." when empty, exactly
+// the popup), Examples and Etymologies (hidden whole when empty). The
+// send-time section toggles drop their lines entire — placeholder included,
+// exactly like the popup's section gates. Null when nothing renders, so a
+// fully-suppressed entry leaves no empty block behind.
+const entryBody = (entry, headword, wording, fields) => {
+    const parts = []
+
+    const label = entryLabel(entry, headword)
+    if (label !== '') {
+        parts.push(`<span class="ef-entry-label">${label}</span>`)
+    }
+
+    if (fields?.translations !== false) {
+        const words = (entry.translations ?? []).map((translation) => translation.word)
+        parts.push(words.length === 0
+            ? `<p class="ef-empty">${wording.noTranslations}</p>`
+            : `<span class="ef-translations">${translationsLine(words, wording)}</span>`)
+    }
+
+    const transcriptions = (entry.transcriptions ?? []).map((item) => item.value)
+    if (fields?.transcription !== false && transcriptions.length > 0) {
+        const rest = transcriptions.slice(TRANSCRIPTIONS_PREVIEW)
+        parts.push(`<span class="ef-transcriptions">[${escapeHtml(transcriptions[0])}]${
+            rest.length === 0
+                ? ''
+                : `<details class="ef-more"><summary class="ef-more-summary">${wording.more(rest.length)}</summary> · ${rest.map(escapeHtml).join(' · ')}</details>`
+        }</span>`)
+    }
+
+    if (fields?.definitions !== false) {
+        const items = entry.definitions ?? []
+        parts.push(items.length === 0
+            ? `<p class="ef-empty">${wording.noDefinitions}</p>`
+            : countedSection(wording.definitions(items.length), `<ol class="ef-definitions-list">${listItems(items)}</ol>`))
+    }
+
+    if (fields?.examples !== false) {
+        const items = entry.examples ?? []
+        if (items.length > 0) {
+            parts.push(countedSection(wording.examples(items.length), `<ul class="ef-examples-list">${listItems(items)}</ul>`))
+        }
+    }
+
+    if (fields?.etymology !== false) {
+        const items = entry.etymologies ?? []
+        if (items.length > 0) {
+            parts.push(countedSection(
+                wording.etymology(items.length),
+                items.map((item) => `<p class="ef-etymology-item">${escapeHtml(item)}</p>`).join(''),
+            ))
+        }
+    }
+
+    return parts.length === 0 ? null : parts.join('\n')
+}
+
+// The Body value: one hairline-separated section per entry, in the popup's
+// order. Every entry gets its label (the popup renders sectionLabel for the
+// headword's own single entry too); the separator between sections is CSS
+// (.ef-entry + .ef-entry), so a single-entry word is one unlabeled-by-rules
+// block — the popup's simple case.
+const bodyValue = (entries, headword, wording, fields) => entries
+    .map((entry) => {
+        const section = entryBody(entry, headword, wording, fields)
+        return section === null ? null : `<div class="ef-entry">${section}</div>`
+    })
+    .filter(Boolean)
+    .join('\n')
+
+// Build the complete 13-field note from a word payload (the GET
+// /words/{word} shape) — exactly what the send-to-Anki paths put on the
+// wire. Every field gets a value, toggles or not: hide-class semantics mean
+// the template, never an omission, hides the scalars. `nativeLanguage` (a
+// language code) narrows the flat Translations field to the user's native
+// language, falling back to all translations when none match (or nothing
+// was passed) — the Body copies the popup instead: per-entry translations
+// as the payload carries them, native-first. `labels` carries the sender's
+// UI-language summary/expander/form-of/placeholder strings (English
+// defaults). `fields` is the resolved Anki settings map: the body section
+// toggles (translations, transcription, definitions, examples, etymology)
+// plus the `body` master toggle shape the Body value at SEND TIME — they
+// affect newly sent cards only; an absent key means on.
+export function buildNoteFields(data, {familiarity = null, tags = [], nativeLanguage = null, labels = {}, fields = {}} = {}) {
     const entries = data?.entries ?? []
     const word = data?.word ?? ''
     const wording = {...DEFAULT_LABELS, ...labels}
 
-    // 2+ dictionary entries get the popup's per-entry section labels.
+    // 2+ dictionary entries get the popup's per-entry section labels — in
+    // the flat fields, where a label disambiguates stacked entries. The Body
+    // labels every section, like the popup.
     const labeled = entries.length >= 2
 
     const translations = entries.flatMap((entry) => entry.translations ?? [])
@@ -401,8 +512,6 @@ export function buildNoteFields(data, {familiarity = null, tags = [], nativeLang
         ? translations.filter((translation) => translation.language_code === nativeLanguage)
         : []
     const words = (native.length ? native : translations).map((translation) => translation.word)
-    const previewed = words.slice(0, TRANSLATIONS_PREVIEW).map(escapeHtml).join(', ')
-    const rest = words.slice(TRANSLATIONS_PREVIEW)
 
     return {
         Word: escapeHtml(word),
@@ -417,9 +526,7 @@ export function buildNoteFields(data, {familiarity = null, tags = [], nativeLang
                 `<ol class="ef-definitions-list">${listItems(items)}</ol>`,
             )
         }),
-        Translations: rest.length === 0
-            ? previewed
-            : `${previewed}<details class="ef-more"><summary class="ef-more-summary">${wording.more(rest.length)}</summary>${rest.map(escapeHtml).join(', ')}</details>`,
+        Translations: translationsLine(words, wording),
         Examples: entrySections(entries, word, labeled, (entry) => {
             const items = entry.examples ?? []
             return items.length === 0 ? null : countedSection(
@@ -438,6 +545,7 @@ export function buildNoteFields(data, {familiarity = null, tags = [], nativeLang
         Tags: inlineValue(tags),
         Familiarity: familiarity == null ? '' : escapeHtml(familiarity),
         Language: escapeHtml(data?.language_code ?? ''),
+        Body: fields?.body === false ? '' : bodyValue(entries, word, wording, fields),
     }
 }
 
@@ -446,10 +554,11 @@ export function buildNoteFields(data, {familiarity = null, tags = [], nativeLang
 // renders exactly what Anki renders at review time. Conditional blocks
 // resolve one nesting level per pass: a block whose field carries a value is
 // replaced by its content, an empty field drops the whole block (a
-// literal-prefixed meta line disappears entire), and an unknown field name
-// is left untouched like an unknown placeholder. Values are substituted
-// only after the conditionals have resolved, so a value carrying {{…}} text
-// is never re-parsed as template syntax — the same order Anki uses.
+// literal-prefixed meta line disappears entire, and an empty Body drops the
+// dictionary slot), and an unknown field name is left untouched like an
+// unknown placeholder. Values are substituted only after the conditionals
+// have resolved, so a value carrying {{…}} text is never re-parsed as
+// template syntax — the same order Anki uses.
 export function renderCardHtml(templateHtml, noteFields = {}) {
     const known = (name) => Object.prototype.hasOwnProperty.call(noteFields, name)
     const isEmpty = (value) => value == null || String(value) === ''

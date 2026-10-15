@@ -816,11 +816,15 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // from the payload, and the popup's own UI-language strings as the
     // structured values' labels (counted summaries, "+N more…" expander,
     // "form of") — the same baking the tab does, so a card is worded in the
-    // sender's language — then handed to lib/ankiSync.js's duplicate-checked
-    // add. The ensure (deck / note type / template) is memoized module state
-    // shared with the tab, so the first send of a session auto-creates them
-    // and later sends skip straight to the duplicate check. Failures land in
-    // `ankiSend` for the footer's inline hint — never a silent no-op.
+    // sender's language. The resolved fields map rides along too: the body
+    // toggles (plus the `body` master toggle) shape the Body value at SEND
+    // time — newly sent cards only (spec V2); the scalar toggles stay
+    // template-side. Then the note is handed to lib/ankiSync.js's
+    // duplicate-checked add. The ensure (deck / note type / template) is
+    // memoized module state shared with the tab, so the first send of a
+    // session auto-creates them and later sends skip straight to the
+    // duplicate check. Failures land in `ankiSend` for the footer's inline
+    // hint — never a silent no-op.
     const sendToAnki = () => {
         if (!ankiSettings || !data || ankiSend?.status === 'sending') {
             return;
@@ -832,6 +836,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             tags,
             nativeLanguage,
             labels: uiLabels(t),
+            fields: ankiSettings.fields,
         });
         sendAnkiNote(ankiSettings, noteFields, {tags, word: data.word}).then(
             (result) => setAnkiSend({status: result.added ? 'added' : 'duplicate'}),

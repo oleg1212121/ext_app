@@ -58,7 +58,7 @@ class UpdateUiSettingsRequest extends FormRequest
             'anki.url' => ['nullable', 'string', 'max:255'],
             'anki.port' => ['nullable', 'integer', 'min:1', 'max:65535'],
             'anki.deck' => ['nullable', 'string', 'max:100'],
-            // Card content: the twelve field toggles (absent key = on), one
+            // Card content: the thirteen field toggles (absent key = on), one
             // rule each from AnkiSettings::FIELDS — the canonical list.
             'anki.fields' => ['nullable', 'array'],
         ];

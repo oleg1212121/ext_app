@@ -58,7 +58,8 @@ test('profile page shares anki settings with every card field on by default', fu
             ->where('ankiSettings.fields.word_family', true)
             ->where('ankiSettings.fields.tags', true)
             ->where('ankiSettings.fields.familiarity', true)
-            ->where('ankiSettings.fields.language', true));
+            ->where('ankiSettings.fields.language', true)
+            ->where('ankiSettings.fields.body', true));
 });
 
 test('anki settings prop reflects the saved connection and field opt-outs', function () {

@@ -101,7 +101,7 @@ const paramsOf = (action, occurrence = 0) => JSON.parse(
 ).params;
 
 describe('ensureAnkiTarget', () => {
-    it('creates deck + note type on a cold session: 12 ordered fields, Recognition card, CSS with the hide class', async () => {
+    it('creates deck + note type on a cold session: 13 ordered fields with Body last, Recognition card, CSS with the hide class', async () => {
         stubAnki({
             deckNames: () => [],
             createDeck: () => null,
@@ -114,6 +114,10 @@ describe('ensureAnkiTarget', () => {
 
         expect(actionsOf()).toEqual(['deckNames', 'createDeck', 'modelNames', 'createModel']);
         expect(paramsOf('createDeck')).toEqual({deck: 'ExtApp'});
+        // Schema v2: the note type is created with all thirteen fields,
+        // the Body value-carrier last.
+        expect(NAMES).toHaveLength(13);
+        expect(NAMES[NAMES.length - 1]).toBe('Body');
         const model = paramsOf('createModel');
         expect(model.modelName).toBe(ANKI_NOTE_TYPE);
         expect(model.inOrderFields).toEqual(NAMES);
@@ -156,7 +160,7 @@ describe('ensureAnkiTarget', () => {
         await ensureAnkiTarget(cfg);
         const afterFirst = fetchMock.mock.calls.length;
 
-        cfg.fields = {definitions: false};
+        cfg.fields = {familiarity: false};
         await ensureAnkiTarget(cfg, {force: true});
 
         expect(actionsOf(afterFirst)).toEqual([
@@ -169,12 +173,17 @@ describe('ensureAnkiTarget', () => {
         expect(paramsOf('updateModelStyling', 1)).toEqual({
             model: {name: ANKI_NOTE_TYPE, css: template.css},
         });
-        // Hide-class semantics: the toggled-off field hides through the
-        // template while the Back still carries all twelve placeholders.
-        expect(template.back).toContain('class="ef-field ef-definitions ef-hidden"');
-        for (const name of NAMES) {
+        // Hide-class semantics: the toggled-off SCALAR hides through the
+        // template while the Back still carries every rendered placeholder —
+        // the seven scalars plus the Body slot's (the body toggles are
+        // send-time and never touch the template; the flat dictionary
+        // fields keep their values but no longer render).
+        expect(template.back).toContain('class="ef-field ef-familiarity ef-hidden"');
+        const rendered = NAMES.filter((name) => !['Transcription', 'Translations', 'Definitions', 'Examples', 'Etymology'].includes(name));
+        for (const name of rendered) {
             expect(template.back).toContain(`{{${name}}}`);
         }
+        expect(rendered).toHaveLength(8);
     });
 
     it('throws a fields mismatch after exactly the probe calls and never memoizes it', async () => {
@@ -197,6 +206,30 @@ describe('ensureAnkiTarget', () => {
         expect(fetchMock.mock.calls.length).toBeGreaterThan(afterFirstAttempt);
     });
 
+    it('raises the fields mismatch against a pre-v2 12-field install — AnkiConnect cannot add a field', async () => {
+        // The migration case: Anki already holds the V1 note type (twelve
+        // fields, no Body). The order-insensitive set check must reject it —
+        // createModel is create-only, so the 13th field can only land after
+        // the user deletes the note type and the next sync recreates it.
+        const v1 = NAMES.filter((name) => name !== 'Body');
+        expect(v1).toHaveLength(12);
+        stubAnki(existingHandlers({modelFieldNames: () => v1}));
+        const cfg = config();
+
+        const error = await ensureAnkiTarget(cfg).catch((caught) => caught);
+        expect(error).toBeInstanceOf(AnkiNoteTypeMismatchError);
+        expect(error.kind).toBe('fields');
+        expect(error.expected).toEqual(NAMES);
+        expect(error.found).toEqual(v1);
+        expect(actionsOf()).toEqual(['deckNames', 'modelNames', 'modelFieldNames']);
+
+        // The failed ensure never memoizes: the retry after the user's
+        // delete-and-resync re-probes and recreates the note type.
+        const afterFirstAttempt = fetchMock.mock.calls.length;
+        await expect(ensureAnkiTarget(cfg)).rejects.toThrow(AnkiNoteTypeMismatchError);
+        expect(fetchMock.mock.calls.length).toBeGreaterThan(afterFirstAttempt);
+    });
+
     it('throws a card mismatch when the model matches but lacks the Recognition card', async () => {
         stubAnki(existingHandlers({
             modelTemplates: () => ({Cloze: {Front: 'x', Back: 'y'}}),
@@ -212,7 +245,7 @@ describe('ensureAnkiTarget', () => {
 });
 
 describe('sendAnkiNote', () => {
-    it('first send: memoized ensure, find-before-add query, 12-field addNote with allowDuplicate false', async () => {
+    it('first send: memoized ensure, find-before-add query, 13-field addNote with allowDuplicate false', async () => {
         stubAnki(existingHandlers({
             findNotes: () => [],
             addNote: () => 1714055939624,

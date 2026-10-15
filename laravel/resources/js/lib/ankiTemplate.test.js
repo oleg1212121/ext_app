@@ -32,7 +32,7 @@ const DATA = {
     ],
 };
 
-// A two-entry payload exercising the popup's per-entry labels: a base-word
+// A two-entry payload exercising the popup's per-entry sections: a base-word
 // entry ("MELT — verb") plus the headword's own ("MELTED — adjective") —
 // the shared sample fixture's shape, kept minimal here.
 const MULTI = {
@@ -91,32 +91,33 @@ describe('generateCardTemplate', () => {
         }
     });
 
-    it('back lays the twelve fields out in the popup\'s header/body/footer structure', () => {
+    it('carries the thirteen-field note type with Body last (schema v2)', () => {
+        expect(NAMES).toHaveLength(13);
+        expect(NAMES[NAMES.length - 1]).toBe('Body');
+    });
+
+    it('back is header + conditional Body slot + footer — the dictionary lives in the Body value', () => {
         const {back} = generateCardTemplate({});
         expect(back).toContain('<div class="ef-header">');
-        expect(back).toContain('<div class="ef-body">');
+        expect(back).toContain('{{#Body}}<div class="ef-dictionary">{{Body}}</div>{{/Body}}');
         expect(back).toContain('<div class="ef-footer">');
 
-        // Header: the word title, then the meta lines (Familiarity /
-        // Frequency / form-of / part of speech / bracketed transcription).
-        // Body: the dictionary sections, translations as the primary line.
-        // Footer: the muted Tags · Language line.
-        const order = [
-            'Word', 'Familiarity', 'Frequency', 'WordFamily', 'PartOfSpeech', 'Transcription',
-            'Translations', 'Definitions', 'Examples', 'Etymology',
-            'Tags', 'Language',
-        ];
+        // Scalar placeholders only: the flat dictionary fields keep their
+        // values (searchable in Anki's browser) but no longer render — the
+        // per-entry Body value is the dictionary. The header transcription
+        // line is gone with them: transcriptions live per-entry in the body.
+        const order = ['Word', 'Familiarity', 'Frequency', 'WordFamily', 'PartOfSpeech', 'Tags', 'Language'];
         const positions = order.map((name) => back.indexOf(`{{${name}}}`));
         expect(positions.every((position) => position >= 0)).toBe(true);
         expect([...positions].sort((a, b) => a - b)).toEqual(positions);
 
-        expect(back).toContain('<div class="ef-field ef-part_of_speech">{{PartOfSpeech}}</div>');
-        expect(back).toContain('<div class="ef-field ef-translations">{{Translations}}</div>');
-        expect(back).toContain('<div class="ef-field ef-definitions">{{Definitions}}</div>');
-        expect(back).toContain('<div class="ef-field ef-examples">{{Examples}}</div>');
-        expect(back).toContain('<div class="ef-field ef-etymology">{{Etymology}}</div>');
-        expect(back).toContain('<div class="ef-field ef-tags">{{Tags}}</div>');
-        expect(back).toContain('<div class="ef-field ef-language">{{Language}}</div>');
+        for (const name of ['Transcription', 'Translations', 'Definitions', 'Examples', 'Etymology']) {
+            expect(back).not.toContain(`{{${name}}}`);
+        }
+
+        // The slot sits between the header and the footer.
+        expect(back.indexOf('{{#Body}}')).toBeGreaterThan(back.indexOf('{{PartOfSpeech}}'));
+        expect(back.indexOf('{{#Body}}')).toBeLessThan(back.indexOf('{{Tags}}'));
     });
 
     it('wraps the literal-prefixed meta lines in Anki-native conditionals', () => {
@@ -126,9 +127,6 @@ describe('generateCardTemplate', () => {
         );
         expect(back).toContain(
             '<div class="ef-field ef-frequency">{{#Frequency}}Frequency: #{{Frequency}}{{/Frequency}}</div>',
-        );
-        expect(back).toContain(
-            '<div class="ef-field ef-transcription">{{#Transcription}}[{{Transcription}}]{{/Transcription}}</div>',
         );
         // The form-of label lives IN the value (buildNoteFields bakes the
         // sender's UI language into it at send time), so WordFamily is a
@@ -143,19 +141,24 @@ describe('generateCardTemplate', () => {
         expect(back).toContain('{{#Tags}}{{#Language}}<span class="ef-footer-sep"> · </span>{{/Language}}{{/Tags}}');
     });
 
-    it('bakes ef-hidden into toggled-off back wrappers while the note still carries all twelve values', () => {
-        const {back} = generateCardTemplate({definitions: false, examples: false});
-        expect(back).toContain('class="ef-field ef-definitions ef-hidden"');
-        expect(back).toContain('class="ef-field ef-examples ef-hidden"');
+    it('bakes ef-hidden into toggled-off scalar wrappers while the note still carries all thirteen values', () => {
+        const {back} = generateCardTemplate({familiarity: false, tags: false});
+        expect(back).toContain('class="ef-field ef-familiarity ef-hidden"');
+        expect(back).toContain('class="ef-field ef-tags ef-hidden"');
         expect(back).toContain('class="ef-field ef-word"');
         expect(back).not.toContain('class="ef-field ef-word ef-hidden"');
 
-        // Hide-class semantics (ADR 0077): the toggle is a template class,
-        // never a note omission — values always carry every field.
+        // The body toggles are SEND-TIME: the master toggle never bakes a
+        // hide class — an empty Body value drops the slot instead.
+        const bodyOff = generateCardTemplate({body: false});
+        expect(bodyOff.back).not.toContain('ef-hidden');
+        expect(bodyOff.back).toContain('{{#Body}}');
+
+        // Hide-class semantics (ADR 0077): the scalar toggle is a template
+        // class, never a note omission — values always carry every field.
         const note = buildNoteFields(DATA, {tags: ['A2']});
         expect(Object.keys(note)).toEqual(NAMES);
-        expect(note.Definitions).toContain('<details class="ef-details">');
-        expect(note.Definitions).toContain('To change from a solid to a liquid state.');
+        expect(note.Body).toContain('Definitions (1)');
     });
 
     it('never hides Word on the front, even toggled off — its back wrapper hides as configured', () => {
@@ -179,12 +182,16 @@ describe('generateCardTemplate', () => {
         expect(css).toContain('.card {');
         expect(css).toContain('.ef-hidden { display: none; }');
         // The value-side structure's rules: the popup's hairline separators
-        // between per-entry blocks, the section labels and summaries, and
+        // between per-entry sections, the section labels and summaries, and
         // the translations expander opening inline into its own line.
         expect(css).toContain('.ef-entry + .ef-entry');
         expect(css).toContain('.ef-entry-label');
         expect(css).toContain('.ef-summary');
         expect(css).toContain('.ef-more { display: inline; }');
+        // The Body slot's container and the per-entry lines the value bakes.
+        expect(css).toContain('.ef-dictionary');
+        expect(css).toContain('.ef-transcriptions');
+        expect(css).toContain('.ef-empty');
     });
 
     it('styles every class the template and the values emit — the CSS↔markup pairing cannot drift', () => {
@@ -192,13 +199,14 @@ describe('generateCardTemplate', () => {
         // the CSS kept a `.ef-more .ef-summary` descendant selector: the rule
         // matched nothing and the "+N more…" affordance lost its cursor and
         // marker suppression. Every ef-* class the generated markup carries
-        // (template HTML, hide classes, value-side structure) must therefore
-        // appear as a class selector in TEMPLATE_CSS.
-        const toggled = generateCardTemplate({definitions: false});
+        // (template HTML, hide classes, value-side structure — the Body
+        // value included) must therefore appear as a class selector in
+        // TEMPLATE_CSS.
+        const toggled = generateCardTemplate({familiarity: false});
         const structured = buildNoteFields(MULTI, {familiarity: 40, tags: ['A2']});
         const expanded = buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS}]});
 
-        const sources = [toggled.front, toggled.back, ...Object.values(structured), expanded.Translations];
+        const sources = [toggled.front, toggled.back, ...Object.values(structured), expanded.Translations, expanded.Body];
         const emitted = new Set([...sources.join('\n').matchAll(/class="([^"]+)"/g)]
             .flatMap(([, classes]) => classes.split(/\s+/))
             .filter((cls) => cls.startsWith('ef-')));
@@ -209,7 +217,7 @@ describe('generateCardTemplate', () => {
 });
 
 describe('buildNoteFields', () => {
-    it('builds exactly the twelve Anki fields in fixed note-type order', () => {
+    it('builds exactly the thirteen Anki fields in fixed note-type order, Body last', () => {
         const note = buildNoteFields(DATA, {familiarity: 40, tags: ['A2', 'top-3000'], nativeLanguage: 'ru'});
         expect(Object.keys(note)).toEqual(NAMES);
         expect(note.Word).toBe('melted');
@@ -249,7 +257,7 @@ describe('buildNoteFields', () => {
         expect(note.WordFamily).toBe('');
     });
 
-    it('labels each entry\'s sections "WORD — pos" only when the payload has 2+ entries', () => {
+    it('labels each flat section "WORD — pos" only when the payload has 2+ entries', () => {
         const note = buildNoteFields(MULTI);
 
         expect(note.Definitions).toContain('<span class="ef-entry-label">MELT — verb</span>');
@@ -262,7 +270,7 @@ describe('buildNoteFields', () => {
         expect(note.Examples).toContain('MELT — verb');
         expect(note.Examples).not.toContain('MELTED — adjective');
 
-        // A single-entry word is the popup's simple case: no labels at all.
+        // A single-entry flat section is the popup's simple case: no labels.
         const single = buildNoteFields(DATA);
         expect(single.Definitions).not.toContain('ef-entry');
         expect(single.Examples).not.toContain('ef-entry');
@@ -362,6 +370,137 @@ describe('buildNoteFields', () => {
         expect(note.Definitions).toContain('<span class="ef-entry-label">&lt;I&gt;MELT&lt;/I&gt; — verb</span>');
         expect(note.Translations).toContain('&lt;таять&gt;');
         expect(note.WordFamily).toBe('form of m&amp;elt');
+        // The Body value obeys the same rule: per-entry labels and payload
+        // text escape, the trusted placeholder wording does not.
+        expect(note.Body).toContain('<span class="ef-entry-label">&lt;I&gt;MELT&lt;/I&gt; — verb</span>');
+        expect(note.Body).toContain('<span class="ef-translations">&lt;таять&gt;</span>');
+        expect(note.Body).toContain('<li>a &amp; &quot;b&quot; &lt;c&gt;</li>');
+    });
+});
+
+describe('buildNoteFields Body', () => {
+    it('interleaves one section per entry in the popup\'s order — label, translations, transcriptions, sections', () => {
+        const body = buildNoteFields(MULTI).Body;
+
+        // Two hairline-separated sections (the CSS styles .ef-entry + .ef-entry).
+        expect(body.match(/<div class="ef-entry">/g)).toHaveLength(2);
+
+        const secondStart = body.lastIndexOf('<div class="ef-entry">');
+        const first = body.slice(0, secondStart);
+        const markers = [
+            '<span class="ef-entry-label">MELT — verb</span>',
+            '<span class="ef-translations">таять, плавить</span>',
+            '<span class="ef-transcriptions">[melt]',
+            'Definitions (2)',
+            'Examples (1)',
+            'Etymology (1)',
+        ];
+        const positions = markers.map((marker) => first.indexOf(marker));
+        expect(positions.every((position) => position >= 0)).toBe(true);
+        expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+
+        // The headword's own entry keeps the popup's per-entry order even
+        // when part of it is empty: label, placeholder, counted section.
+        const second = body.slice(secondStart);
+        expect(second).toContain('<span class="ef-entry-label">MELTED — adjective</span>');
+        const secondMarkers = [
+            '<span class="ef-entry-label">MELTED — adjective</span>',
+            'No translations yet',
+            'Definitions (1)',
+        ];
+        const secondPositions = secondMarkers.map((marker) => second.indexOf(marker));
+        expect(secondPositions.every((position) => position >= 0)).toBe(true);
+        expect([...secondPositions].sort((a, b) => a - b)).toEqual(secondPositions);
+    });
+
+    it('gives a single-entry word the popup\'s simple case: one labeled section, no separators', () => {
+        const body = buildNoteFields(DATA).Body;
+        expect(body.match(/<div class="ef-entry">/g)).toHaveLength(1);
+        expect(body).toContain('<span class="ef-entry-label">MELTED — verb</span>');
+        expect(body).toContain('<span class="ef-translations">таять, таяць</span>');
+        expect(body).toContain('<span class="ef-transcriptions">[melt]</span>');
+        expect(body).toContain('<summary class="ef-summary">Definitions (1)</summary>');
+        expect(body).toContain('<summary class="ef-summary">Examples (1)</summary>');
+        expect(body).toContain('<summary class="ef-summary">Etymology (1)</summary>');
+    });
+
+    it('caps per-entry translations at 8 and expands the rest behind "+N more…"', () => {
+        const body = buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS}]}).Body;
+        // No word_class on the entry: the popup's label is the bare headword.
+        expect(body).toBe('<div class="ef-entry">'
+            + '<span class="ef-entry-label">MELT</span>\n'
+            + '<span class="ef-translations">t0, t1, t2, t3, t4, t5, t6, t7'
+            + '<details class="ef-more"><summary class="ef-more-summary">+2 more…</summary>t8, t9</details></span>\n'
+            + '<p class="ef-empty">No definitions yet.</p></div>');
+    });
+
+    it('brackets per-entry transcriptions and expands the rest behind "+N more…"', () => {
+        const body = buildNoteFields(MULTI).Body;
+        // The first is bracketed like the popup's collapsed line; the rest
+        // open behind the expander, joined with the popup's " · ".
+        expect(body)
+            .toContain('<span class="ef-transcriptions">[melt]'
+                + '<details class="ef-more"><summary class="ef-more-summary">+1 more…</summary> · MELT</details></span>');
+        // An entry without transcriptions carries no line at all.
+        expect(body.slice(body.lastIndexOf('<div class="ef-entry">'))).not.toContain('ef-transcriptions');
+    });
+
+    it('shows the calm placeholders when an entry has no translations or definitions', () => {
+        const body = buildNoteFields({word: 'melt', entries: [{word_class: 'Verb'}]}).Body;
+        expect(body).toBe('<div class="ef-entry">'
+            + '<span class="ef-entry-label">MELT — verb</span>\n'
+            + '<p class="ef-empty">No translations yet — automatic translation may still be in progress.</p>\n'
+            + '<p class="ef-empty">No definitions yet.</p></div>');
+    });
+
+    it('omits a section entire when its send-time toggle is off — placeholder included', () => {
+        const body = buildNoteFields(MULTI, {fields: {
+            translations: false,
+            transcription: false,
+            definitions: false,
+            examples: false,
+            etymology: false,
+        }}).Body;
+        expect(body).not.toContain('ef-translations');
+        expect(body).not.toContain('No translations yet');
+        expect(body).not.toContain('ef-transcriptions');
+        expect(body).not.toContain('ef-details');
+        expect(body).not.toContain('No definitions yet');
+        // The labels survive their empty sections — a section is never just
+        // a dangling label.
+        expect(body).toContain('<span class="ef-entry-label">MELT — verb</span>');
+        expect(body).toContain('<span class="ef-entry-label">MELTED — adjective</span>');
+    });
+
+    it('shapes only the Body: the flat fields keep their full values and 13-key shape', () => {
+        const note = buildNoteFields(MULTI, {fields: {translations: false, etymology: false}});
+        expect(Object.keys(note)).toEqual(NAMES);
+        expect(note.Translations).toBe('таять, плавить');
+        expect(note.Etymology).toContain('Etymology (1)');
+        expect(note.Body).not.toContain('ef-translations');
+        expect(note.Body).not.toContain('Etymology (1)');
+        expect(note.Body).toContain('Definitions (2)');
+    });
+
+    it('empties the Body when the master toggle is off — the flat fields still carry everything', () => {
+        const note = buildNoteFields(DATA, {fields: {body: false}});
+        expect(note.Body).toBe('');
+        expect(Object.keys(note)).toEqual(NAMES);
+        expect(note.Definitions).toContain('Definitions (1)');
+    });
+
+    it('leaves the Body empty when there is nothing to interleave', () => {
+        expect(buildNoteFields({word: 'melt', entries: []}).Body).toBe('');
+        expect(buildNoteFields({}).Body).toBe('');
+    });
+
+    it('takes the placeholder wording from the labels parameter', () => {
+        const body = buildNoteFields(
+            {word: 'melt', entries: [{word_class: 'Verb'}]},
+            {labels: {noTranslations: 'Переводов пока нет.', noDefinitions: 'Определений пока нет.'}},
+        ).Body;
+        expect(body).toContain('<p class="ef-empty">Переводов пока нет.</p>');
+        expect(body).toContain('<p class="ef-empty">Определений пока нет.</p>');
     });
 });
 
@@ -377,17 +516,23 @@ describe('uiLabels', () => {
         return calls;
     };
 
-    it('resolves the form-of string eagerly — it is a value, not a count function', () => {
+    it('resolves the value-strings eagerly — they are values, not count functions', () => {
         const calls = [];
         uiLabels((key, params) => (calls.push({key, params}), key));
-        expect(calls).toEqual([{key: 'word.form_of', params: undefined}]);
+        expect(calls).toEqual([
+            {key: 'word.form_of', params: undefined},
+            {key: 'word.no_translations', params: undefined},
+            {key: 'word.no_definitions', params: undefined},
+        ]);
     });
 
-    it('maps the five keys to the app\'s word.* ui-strings — the mapping both senders share', () => {
+    it('maps the seven keys to the app\'s word.* ui-strings — the mapping both senders share', () => {
         expect(probe((labels) => labels.definitions(3))).toEqual([{key: 'word.definitions', params: {count: 3}}]);
         expect(probe((labels) => labels.examples(2))).toEqual([{key: 'word.examples', params: {count: 2}}]);
         expect(probe((labels) => labels.etymology(1))).toEqual([{key: 'word.etymology', params: {count: 1}}]);
         expect(probe((labels) => labels.more(5))).toEqual([{key: 'word.more', params: {count: 5}}]);
+        expect(probe((labels) => labels.noTranslations)).toEqual([]);
+        expect(probe((labels) => labels.noDefinitions)).toEqual([]);
     });
 
     it('feeds buildNoteFields directly — a localized card without hand-rolled labels', () => {
@@ -397,6 +542,7 @@ describe('uiLabels', () => {
         const note = buildNoteFields(MULTI, {labels: uiLabels(t)});
         expect(note.Definitions).toContain('<summary class="ef-summary">Определения (2)</summary>');
         expect(note.WordFamily).toBe('форма слова melt');
+        expect(note.Body).toContain('Определения (2)');
     });
 });
 
@@ -413,7 +559,6 @@ describe('renderCardHtml', () => {
         expect(html).toContain('Familiarity: 40/100');
         expect(html).toContain('Frequency: #2143');
         expect(html).toContain('form of melt');
-        expect(html).toContain('[melt]');
         expect(html).toContain('<span class="ef-footer-sep"> · </span>');
         expect(html).not.toContain('{{#');
         expect(html).not.toContain('{{/');
@@ -424,7 +569,6 @@ describe('renderCardHtml', () => {
         const html = renderCardHtml(back, buildNoteFields(MULTI, {familiarity: 40, tags: ['A2']}));
         expect(html).toContain('<span class="ef-entry-label">MELT — verb</span>');
         expect(html).toContain('<details class="ef-details"><summary class="ef-summary">Definitions (2)</summary>');
-        expect(html).toContain('[melt · MELT]');
 
         const expanded = renderCardHtml(
             back,
@@ -432,6 +576,21 @@ describe('renderCardHtml', () => {
         );
         expect(expanded)
             .toContain('<details class="ef-more"><summary class="ef-more-summary">+2 more…</summary>t8, t9</details>');
+    });
+
+    it('renders a non-empty Body inside the ef-dictionary slot', () => {
+        const {back} = generateCardTemplate({});
+        const html = renderCardHtml(back, buildNoteFields(DATA));
+        expect(html).toContain('<div class="ef-dictionary"><div class="ef-entry">');
+        expect(html).toContain('MELTED — verb');
+    });
+
+    it('drops the Body slot entire when the body value is empty — header meets footer', () => {
+        const {back} = generateCardTemplate({});
+        const html = renderCardHtml(back, {...buildNoteFields(DATA), Body: ''});
+        expect(html).not.toContain('ef-dictionary');
+        expect(html).not.toContain('{{#');
+        expect(html).not.toContain('{{/');
     });
 
     it('drops a conditional line entirely when its field is empty — no dangling prefix', () => {

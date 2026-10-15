@@ -7,7 +7,7 @@ uses(TestCase::class);
 
 /*
  * The PHP<->JS mirror lockstep: App\Support\AnkiSettings owns the canonical
- * twelve-field list and the connection defaults server-side, while the
+ * thirteen-field list and the connection defaults server-side, while the
  * browser modules (resources/js/lib/ankiTemplate.js, ankiConnect.js)
  * hand-mirror them — no JS runtime here, just string assertions against the
  * sources read from disk. A field added, renamed or re-ordered on either
@@ -18,7 +18,8 @@ uses(TestCase::class);
  * The Anki note-type field names keyed by settings key, in the note type's
  * fixed field order. The names only exist browser-side; this map is the
  * executable record of the mapping the generated template and the duplicate
- * search both rely on.
+ * search both rely on. Schema v2: `body` is the 13th field (Body, last) —
+ * the value-carrier of the popup-interleaved dictionary body.
  */
 const MIRRORED_ANKI_FIELDS = [
     'word' => 'Word',
@@ -33,6 +34,7 @@ const MIRRORED_ANKI_FIELDS = [
     'tags' => 'Tags',
     'familiarity' => 'Familiarity',
     'language' => 'Language',
+    'body' => 'Body',
 ];
 
 it('mirrors every AnkiSettings field key and its Anki field name into the JS template module', function () {
@@ -40,7 +42,8 @@ it('mirrors every AnkiSettings field key and its Anki field name into the JS tem
 
     preg_match_all("/\{key: '(?<key>[a-z_]+)', name: '(?<name>[A-Za-z]+)'\}/", $templateModule, $matches);
 
-    expect($matches['key'])->toBe(AnkiSettings::FIELDS)
+    expect(count(AnkiSettings::FIELDS))->toBe(13)
+        ->and($matches['key'])->toBe(AnkiSettings::FIELDS)
         ->and($matches['name'])->toBe(array_values(MIRRORED_ANKI_FIELDS));
 });
 

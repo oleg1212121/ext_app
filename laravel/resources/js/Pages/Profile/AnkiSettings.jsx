@@ -18,7 +18,7 @@ import {CheckboxRow, InputLabel, SecondaryButton, SectionHeader, TextInput} from
 // The profile's Anki tab: connection settings (AnkiConnect URL + port, target
 // deck) autosaved into ui_settings.anki with a browser-side "Test connection"
 // probe — AnkiConnect lives on the user's desktop, so the server can never
-// reach it — plus the card-content side: twelve field toggles and a live
+// reach it — plus the card-content side: thirteen field toggles and a live
 // Front/Back preview of the real generated template (lib/ankiTemplate.js),
 // and the write path into Anki: template sync and a duplicate-checked sample
 // card (lib/ankiSync.js). Everything except the Anki actions works offline;
@@ -135,12 +135,16 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
     // template preview and the "Send sample card" action. The label strings
     // come from the tab's UI language through the shared uiLabels builder —
     // the same baking a real send does (buildNoteFields' English defaults
-    // cover senders that pass none).
+    // cover senders that pass none) — and the resolved fields map rides
+    // along: the body toggles (plus the `body` master toggle) shape the
+    // Body value at send time, so the preview reflects them live, exactly
+    // like a send from the popup would.
     const sampleNoteFields = buildNoteFields(SAMPLE_DATA, {
         familiarity: SAMPLE_FAMILIARITY,
         tags: SAMPLE_TAGS,
         nativeLanguage,
         labels: uiLabels(t),
+        fields: settings.fields,
     })
 
     const probe = async (call) => {
