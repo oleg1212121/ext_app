@@ -28,6 +28,11 @@ const ICON_PATHS = {
     stop: 'M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z',
     chevronLeft: 'M15.75 19.5 8.25 12l7.5-7.5',
     chevronRight: 'M8.25 4.5l7.5 7.5-7.5 7.5',
+    // Word popup action toolbar.
+    checkCircle: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+    minusCircle: 'M15 12H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+    // A plus on the front of two stacked cards — the collection's new note.
+    ankiAdd: 'M16.5 8.25V6a2.25 2.25 0 0 0-2.25-2.25H6A2.25 2.25 0 0 0 3.75 6v8.25A2.25 2.25 0 0 0 6 16.5h2.25m8.25-8.25H18A2.25 2.25 0 0 1 20.25 10.5V18A2.25 2.25 0 0 1 18 20.25h-7.5A2.25 2.25 0 0 1 8.25 18v-7.5A2.25 2.25 0 0 1 10.5 8.25h6ZM14.25 11.75v5m-2.5-2.5h5',
 };
 
 export function Icon({name, className, strokeWidth = 2}) {

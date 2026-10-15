@@ -7,6 +7,7 @@ import {getCsrfToken} from '../lib/http';
 import {renderMarkdown} from '../lib/markdown';
 import {canAskExplanation} from '../lib/wordExplain';
 import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
+import {Icon} from './icons.jsx';
 import {AnkiConnectError} from '../lib/ankiConnect';
 import {buildNoteFields, uiLabels} from '../lib/ankiTemplate';
 import {AnkiNoteTypeMismatchError, sendAnkiNote} from '../lib/ankiSync';
@@ -50,6 +51,18 @@ const tabButtonClass = (active) => [
         : 'border-transparent opacity-60 hover:opacity-100',
 ].join(' ');
 
+// Action-toolbar icon buttons (the popup's first row). The glyphs carry no
+// color of their own — these text classes drive the resting and hover states:
+// "I know this word" keeps the verdigris accent the old footer button's
+// border gave it, the other two rest at the tab strip's reduced opacity.
+const toolbarButtonClass = (accent) => [
+    'rounded-sm p-1 transition-[opacity,background-color]',
+    accent
+        ? 'text-[var(--color-verdigris)] hover:bg-[var(--color-verdigris)]/10 dark:text-[var(--color-verdigris-night)] dark:hover:bg-[var(--color-verdigris-night)]/10'
+        : 'opacity-80 hover:opacity-100',
+    'disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
+].join(' ');
+
 // Popup typography derives from the host page's font-size setting (ADR 0031):
 // the page passes the size it computed with popupFontSizeFor(); this default
 // only covers callers that don't (≈ today's look, slightly larger than the
@@ -74,7 +87,7 @@ export function popupFontSizeFor(pageFontSize, {
  * Position the popover next to the clicked word, always inside the viewport:
  * it opens below the word unless there is more room above (then it flips up,
  * anchored to the word's top edge), and its height is capped to the larger
- * side so the footer actions stay reachable. Width scales with the popup
+ * side so the top action toolbar stays reachable. Width scales with the popup
  * font (560px at the default 17px) so proportions hold as the user scales
  * text from the page's +/- controls.
  */
@@ -353,12 +366,19 @@ function ExplainPane({explain, explainKey, preview = false}) {
 
 /**
  * The word popup's body — everything inside the box, minus the box itself:
- * the headword header (familiarity, frequency, form-of lines), the tab strip
- * with the Models-used icon, the dictionary sections of the word family, the
- * Explanation tab and the progress footer. Shared verbatim by the real
- * portal popup and the profile's Popups-tab preview, so the preview can
- * never drift from the real thing.
+ * the action toolbar (the card's first row, above the headword), the
+ * headword header (familiarity, frequency, form-of lines), the tab strip
+ * with the Models-used icon, the dictionary sections of the word family and
+ * the Explanation tab. Shared verbatim by the real portal popup and the
+ * profile's Popups-tab preview, so the preview can never drift from the
+ * real thing.
  *
+ * The toolbar hosts the three actions as line-art icons — "I know this
+ * word" / "Remove mark" on the left, "Save to Anki" on the right — with the
+ * transient Anki status lines directly beneath. All three always render: an
+ * inapplicable icon is disabled, not hidden (know: familiarity already max
+ * or busy; remove mark: no mark or busy; anki: no handler or a send in
+ * flight). Tooltips and aria-labels come from the existing word ui-strings.
  * The title shows the clicked word only — each section carries the POS in
  * its "WORD — pos" heading. Per section, top to bottom: translations as the
  * primary line (a calm no-translations placeholder when a section has none —
@@ -373,18 +393,20 @@ function ExplainPane({explain, explainKey, preview = false}) {
  * set to false drops that block, anything else renders. `explanation` false
  * removes the whole tab strip — the popup renders as it does for words
  * without an explain payload. `word_family` false filters the dictionary
- * sections down to the headword's own, dropping base-word sections.
+ * sections down to the headword's own, dropping base-word sections. In the
+ * toolbar, only the two progress icons answer to `progress_actions` — the
+ * Anki icon ignores the popup-visibility toggles.
  *
- * `onProgressAction` (null in the preview) drives the footer buttons; the
- * buttons render disabled without it. `preview` additionally swaps the
- * Explanation tab's auto-request for a canned answer (no network).
+ * `onProgressAction` (null in the preview) drives the progress icons; they
+ * render disabled without it. `preview` additionally swaps the Explanation
+ * tab's auto-request for a canned answer (no network).
  *
- * The footer also carries the "Save to Anki" button (`onAnkiSend` /
- * `ankiSend`, both null in the preview — the button renders disabled
- * there): it sits OUTSIDE the `progress_actions` gate, so it shows on
- * every surface no matter which popup blocks are hidden. `ankiSend`
- * holds the send's outcome ({status: 'sending'|'added'|'duplicate'|
- * 'error', error?}) for the inline status line under the buttons.
+ * The toolbar also carries the "Save to Anki" icon (`onAnkiSend` /
+ * `ankiSend`, both null in the preview — the icon renders disabled there):
+ * it sits OUTSIDE the `progress_actions` gate, so it shows on every surface
+ * no matter which popup blocks are hidden. `ankiSend` holds the send's
+ * outcome ({status: 'sending'|'added'|'duplicate'|'error', error?}) for the
+ * inline status line beneath the icon row.
  */
 export function PopupContent({
     surface,
@@ -418,6 +440,82 @@ export function PopupContent({
 
     return (
         <>
+            {/* The action toolbar — the popup's first row, above the word.
+                "I know this word" / "Remove mark" on the left, "Save to
+                Anki" pushed right. All three always render: an inapplicable
+                icon is disabled, not hidden (know: familiarity already max
+                or busy; remove mark: no mark or busy; anki: no handler or a
+                send in flight). The `progress_actions` visibility gate hides
+                only the two progress icons — the Anki icon ignores the
+                popup-visibility toggles (spec). The Anki status lines render
+                directly beneath the icon row. */}
+            <div className="word-popup-actions shrink-0 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]">
+                <div className="flex items-center gap-1 py-1.5">
+                    {sections.progress_actions !== false && (
+                        <button
+                            type="button"
+                            title={t('word.i_know_this')}
+                            aria-label={t('word.i_know_this')}
+                            disabled={progressBusy || onProgressAction == null || familiarity === FAMILIARITY_MAX}
+                            onClick={() => onProgressAction?.('known')}
+                            className={`word-popup-progress-known ${toolbarButtonClass(true)}`}
+                        >
+                            <Icon name="checkCircle" className="h-[1.25em] w-[1.25em]"/>
+                        </button>
+                    )}
+                    {sections.progress_actions !== false && (
+                        <button
+                            type="button"
+                            title={t('word.remove_mark')}
+                            aria-label={t('word.remove_mark')}
+                            disabled={progressBusy || onProgressAction == null || familiarity == null}
+                            onClick={() => onProgressAction?.('reset')}
+                            className={`word-popup-progress-reset ${toolbarButtonClass(false)}`}
+                        >
+                            <Icon name="minusCircle" className="h-[1.25em] w-[1.25em]"/>
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        title={ankiSend?.status === 'sending' ? t('word.anki_sending') : t('word.anki_send')}
+                        aria-label={ankiSend?.status === 'sending' ? t('word.anki_sending') : t('word.anki_send')}
+                        disabled={onAnkiSend == null || ankiSend?.status === 'sending'}
+                        onClick={onAnkiSend}
+                        className={`word-popup-anki-send ${toolbarButtonClass(false)} ml-auto`}
+                    >
+                        <Icon name="ankiAdd" className="h-[1.25em] w-[1.25em]"/>
+                    </button>
+                </div>
+
+                {ankiSend?.status === 'added' && (
+                    <p className="word-popup-anki-added pb-2 text-[0.857em] text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
+                        {t('word.anki_added')}
+                    </p>
+                )}
+                {ankiSend?.status === 'duplicate' && (
+                    <p className="word-popup-anki-duplicate pb-2 text-[0.857em] opacity-70">
+                        {t('word.anki_already')}
+                    </p>
+                )}
+                {ankiSend?.status === 'error' && (
+                    <div className="word-popup-anki-error pb-2 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
+                        <p>
+                            {ankiSend.error instanceof AnkiNoteTypeMismatchError
+                                ? t('word.anki_mismatch')
+                                : (ankiSend.error instanceof AnkiConnectError && ankiSend.error.kind === 'anki'
+                                    ? t('word.anki_failed', {message: ankiSend.error.message})
+                                    : t('word.anki_unreachable'))}
+                        </p>
+                        <Link
+                            href="/profile?tab=anki"
+                            className="mt-1 inline-block underline underline-offset-2 hover:opacity-80"
+                        >
+                            {t('word.anki_go_to_settings')}
+                        </Link>
+                    </div>
+                )}
+            </div>
+
             <div className="word-popup-header shrink-0 px-3.5 pb-1 pt-3">
                 <div className="flex items-baseline gap-2 flex-wrap">
                     {/* Reading font: RU headwords carry U+0301, which gaps when
@@ -488,7 +586,7 @@ export function PopupContent({
             )}
 
             {showDictionary && (
-                <div className="word-popup-dictionary min-h-0 flex-1 overflow-y-auto px-3.5 pb-1">
+                <div className="word-popup-dictionary min-h-0 flex-1 overflow-y-auto px-3.5 pb-2.5">
                     {entries?.map((entry, index) => (
                         <section
                             key={entry.id}
@@ -588,71 +686,6 @@ export function PopupContent({
                 </div>
             )}
 
-            {/* The footer always renders: the "Save to Anki" send is
-                independent of the popup-visibility toggles (spec) — the
-                `progress_actions` gate only hides the progress buttons
-                inside the row. */}
-            <div className="word-popup-footer mt-2 shrink-0 border-t border-[var(--color-hairline)] px-3.5 py-2.5 dark:border-[var(--color-hairline-night)]">
-                <div className="flex gap-2">
-                    {sections.progress_actions !== false && familiarity !== FAMILIARITY_MAX && (
-                        <button
-                            type="button"
-                            disabled={progressBusy || onProgressAction == null}
-                            onClick={() => onProgressAction?.('known')}
-                            className="word-popup-progress-known rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]"
-                        >
-                            {t('word.i_know_this')}
-                        </button>
-                    )}
-                    {sections.progress_actions !== false && familiarity != null && (
-                        <button
-                            type="button"
-                            disabled={progressBusy || onProgressAction == null}
-                            onClick={() => onProgressAction?.('reset')}
-                            className="word-popup-progress-reset rounded-sm border border-[var(--color-hairline)] px-2.5 py-1 text-[0.857em] opacity-80 hover:opacity-100 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-hairline-night)]"
-                        >
-                            {t('word.remove_mark')}
-                        </button>
-                    )}
-                    <button
-                        type="button"
-                        disabled={onAnkiSend == null || ankiSend?.status === 'sending'}
-                        onClick={onAnkiSend}
-                        className="word-popup-anki-send ml-auto rounded-sm border border-[var(--color-hairline)] px-2.5 py-1 text-[0.857em] opacity-80 hover:opacity-100 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-hairline-night)]"
-                    >
-                        {ankiSend?.status === 'sending' ? t('word.anki_sending') : t('word.anki_send')}
-                    </button>
-                </div>
-
-                {ankiSend?.status === 'added' && (
-                    <p className="word-popup-anki-added mt-2 text-[0.857em] text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
-                        {t('word.anki_added')}
-                    </p>
-                )}
-                {ankiSend?.status === 'duplicate' && (
-                    <p className="word-popup-anki-duplicate mt-2 text-[0.857em] opacity-70">
-                        {t('word.anki_already')}
-                    </p>
-                )}
-                {ankiSend?.status === 'error' && (
-                    <div className="word-popup-anki-error mt-2 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
-                        <p>
-                            {ankiSend.error instanceof AnkiNoteTypeMismatchError
-                                ? t('word.anki_mismatch')
-                                : (ankiSend.error instanceof AnkiConnectError && ankiSend.error.kind === 'anki'
-                                    ? t('word.anki_failed', {message: ankiSend.error.message})
-                                    : t('word.anki_unreachable'))}
-                        </p>
-                        <Link
-                            href="/profile?tab=anki"
-                            className="mt-1 inline-block underline underline-offset-2 hover:opacity-80"
-                        >
-                            {t('word.anki_go_to_settings')}
-                        </Link>
-                    </div>
-                )}
-            </div>
-
             {showTabs && (
                 <ModelsUsedPopup
                     open={modelsOpen}
@@ -671,10 +704,10 @@ export function PopupContent({
 /**
  * Word popover shown next to a Ctrl-clicked word: one section per part of
  * speech under the headword (details fetched lazily from GET /words/{id}),
- * plus the word progress actions in a footer that never scrolls away.
- * `fontSize` (px) is the popup's root font, derived by the host page from
- * its reading font size (popupFontSizeFor); every inner text size is
- * em-relative to it, and the width scales with it.
+ * plus the word progress actions and the Anki send in a top toolbar that
+ * never scrolls away. `fontSize` (px) is the popup's root font, derived by
+ * the host page from its reading font size (popupFontSizeFor); every inner
+ * text size is em-relative to it, and the width scales with it.
  *
  * With an `explain` payload ({rowKind, rowId, side, sentenceIndex, modelKey,
  * enabled, modelLabel, followsAnswer, answerLabel}) the popup grows a tab
@@ -691,8 +724,8 @@ export function PopupContent({
  *
  * `sections` (the user's Popup preferences, ADR 0046) hides individual
  * blocks; it defaults to the popupVisibility prop shared to every page,
- * and an absent map means everything renders. The "Save to Anki" footer
- * button ignores those toggles (always visible); it sends through
+ * and an absent map means everything renders. The "Save to Anki" toolbar
+ * icon ignores those toggles (always visible); it sends through
  * lib/ankiSync.js with the ankiSettings shared prop. The body itself
  * lives in the exported PopupContent, which the profile's Popups tab
  * reuses for its live preview.
@@ -823,7 +856,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // duplicate-checked add. The ensure (deck / note type / template) is
     // memoized module state shared with the tab, so the first send of a
     // session auto-creates them and later sends skip straight to the
-    // duplicate check. Failures land in `ankiSend` for the footer's inline
+    // duplicate check. Failures land in `ankiSend` for the toolbar's inline
     // hint — never a silent no-op.
     const sendToAnki = () => {
         if (!ankiSettings || !data || ankiSend?.status === 'sending') {
