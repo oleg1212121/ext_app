@@ -31,6 +31,17 @@ it('seeds every interface-enabled language that has a value for the key', functi
     ]);
 });
 
+it('seeds the Anki tab language-selector string in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    expect(seededUiStringTexts('profile.anki_language'))->toBe([
+        'en' => 'Language',
+        'ru' => 'Язык',
+        'be' => 'Мова',
+    ]);
+});
+
 it('seeds be texts for sampled keys across every group', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();

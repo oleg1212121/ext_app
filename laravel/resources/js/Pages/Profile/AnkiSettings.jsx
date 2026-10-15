@@ -10,19 +10,37 @@ import {
     ankiConnectVersion,
     requestPermission,
 } from '../../lib/ankiConnect'
-import {ANKI_CARD_NAME, ANKI_FIELDS, buildNoteFields, generateCardTemplate, renderCardHtml, uiLabels} from '../../lib/ankiTemplate'
+import {
+    ANKI_CARD_NAME,
+    buildNoteFields,
+    generateCardTemplate,
+    renderCardHtml,
+    uiLabels,
+} from '../../lib/ankiTemplate'
 import {AnkiNoteTypeMismatchError, ensureAnkiTarget, sendAnkiNote} from '../../lib/ankiSync'
+import {
+    ankiTabDefaultCode,
+    ankiTabEntry,
+    ankiTabSampleData,
+    ankiTabSetDeck,
+    ankiTabState,
+    ankiTabSyncConfig,
+    ankiTabToggleField,
+} from '../../lib/ankiTabState'
 import {SAMPLE_DATA, SAMPLE_FAMILIARITY, SAMPLE_TAGS} from './sampleWordData'
-import {CheckboxRow, InputLabel, SecondaryButton, SectionHeader, TextInput} from './ui.jsx'
+import {CheckboxRow, InputLabel, SecondaryButton, SectionHeader, SelectInput, TextInput} from './ui.jsx'
 
-// The profile's Anki tab: connection settings (AnkiConnect URL + port, target
-// deck) autosaved into ui_settings.anki with a browser-side "Test connection"
-// probe — AnkiConnect lives on the user's desktop, so the server can never
-// reach it — plus the card-content side: thirteen field toggles and a live
-// Front/Back preview of the real generated template (lib/ankiTemplate.js),
-// and the write path into Anki: template sync and a duplicate-checked sample
-// card (lib/ankiSync.js). Everything except the Anki actions works offline;
-// no Anki call is ever made from PHP (spec).
+// The profile's Anki tab. The connection block (AnkiConnect URL + port with
+// a browser-side "Test connection" probe — AnkiConnect lives on the user's
+// desktop, so the server can never reach it) is global: one endpoint for
+// every language. Everything below the language selector acts on the
+// SELECTED language: its deck, its thirteen field toggles, the live
+// Front/Back preview of the generated template (lib/ankiTemplate.js), and
+// the write path into Anki — template sync pushes to the per-language note
+// type ("ExtApp Vocabulary ⋅ <code>") and the duplicate-checked sample card
+// lands in the selected deck carrying the selected language (lib/ankiSync.js).
+// Everything except the Anki actions works offline; no Anki call is ever
+// made from PHP (spec).
 
 // Display grouping only — each checkbox is independent. The two groups carry
 // the V2 semantics split (each description says which side its toggles act
@@ -46,15 +64,6 @@ const FIELD_GROUPS = [
         keys: ['body', 'translations', 'transcription', 'definitions', 'examples', 'etymology'],
     },
 ]
-
-const initialFields = (saved) => {
-    const resolved = {}
-    for (const {key} of ANKI_FIELDS) {
-        // Absent key = on, the Popups tab's convention.
-        resolved[key] = saved?.fields?.[key] ?? true
-    }
-    return resolved
-}
 
 // The connection-hint failure panel, shared by both write surfaces (Test
 // connection and template sync / sample card): the ordered fix list with the
@@ -108,23 +117,23 @@ const grantPermission = async (config) => {
     return result
 }
 
-// One state object so every autosave PATCH carries the WHOLE anki section —
-// the endpoint replaces the section wholesale, so a fields-only save would
-// wipe the connection settings (and vice versa).
-const initialState = (saved) => ({
-    url: saved?.url ?? ANKI_DEFAULT_URL,
-    port: saved?.port ?? ANKI_DEFAULT_PORT,
-    deck: saved?.deck ?? ANKI_DEFAULT_DECK,
-    fields: initialFields(saved),
-})
-
-// `nativeLanguage` is the user's native language CODE (the shared auth prop,
-// not the settings id) — buildNoteFields compares it against the payload
-// translations' language_code to narrow the Translations field, falling back
-// to all when none match.
-export default function AnkiSettings({ankiSettings = null, nativeLanguage = null}) {
+// `ankiSettings` is the resolved prop (App\Support\AnkiSettings::for): the
+// connection, the legacy global base, and one resolved deck+fields entry per
+// enabled language. `languages` is the profile page's enabled-language list
+// (code + names) — the selector's options. `nativeLanguage` is the user's
+// native language CODE (the shared auth prop, not the settings id): it
+// seeds the selector, and buildNoteFields compares it against the payload
+// translations' language_code to narrow the Translations field, falling
+// back to all when none match. The state shape mirrors the persisted anki
+// section exactly — connection + legacy base + the complete per-language
+// map (lib/ankiTabState.js) — because every autosave PATCH carries the
+// WHOLE section: the endpoint replaces it wholesale, so a partial save
+// would wipe the rest. Selection itself is not persisted; a reload re-derives it.
+export default function AnkiSettings({ankiSettings = null, languages = [], nativeLanguage = null}) {
     const {t} = useI18n()
-    const [settings, setSettings] = useState(() => initialState(ankiSettings))
+    const codes = languages.map((language) => language.code)
+    const [settings, setSettings] = useState(() => ankiTabState(ankiSettings, codes))
+    const [selected, setSelected] = useState(() => ankiTabDefaultCode(codes, nativeLanguage))
     const [test, setTest] = useState({status: 'idle'})
     const [sync, setSync] = useState({status: 'idle'})
     const [face, setFace] = useState('front')
@@ -134,33 +143,36 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
     useUiSettingsAutosave('anki', settings)
 
     const setUrl = (value) => setSettings((current) => ({...current, url: value.trim()}))
-    const setDeck = (value) => setSettings((current) => ({...current, deck: value.trim()}))
     const setPort = (value) => {
         const parsed = Number.parseInt(value, 10)
         // Empty/invalid input parks the port at null (passes the server's
         // nullable rule); a reload resolves it back to the default.
         setSettings((current) => ({...current, port: Number.isNaN(parsed) ? null : parsed}))
     }
-    const toggleField = (key) => setSettings((current) => ({
-        ...current,
-        fields: {...current.fields, [key]: !current.fields[key]},
-    }))
+    const setDeck = (value) => setSettings((current) => ankiTabSetDeck(current, selected, value))
+    const toggleField = (key) => setSettings((current) => ankiTabToggleField(current, selected, key))
+
+    // The selected language's editable entry — its deck and its resolved
+    // field toggles; the legacy global base without a selection.
+    const active = ankiTabEntry(settings, selected)
 
     // The sample note built from the shared fixture (the same fixture the
-    // Popups tab previews with): one construction feeding both the live
-    // template preview and the "Send sample card" action. The label strings
-    // come from the tab's UI language through the shared uiLabels builder —
-    // the same baking a real send does (buildNoteFields' English defaults
-    // cover senders that pass none) — and the resolved fields map rides
-    // along: the body toggles (plus the `body` master toggle) shape the
-    // Body value at send time, so the preview reflects them live, exactly
-    // like a send from the popup would.
-    const sampleNoteFields = buildNoteFields(SAMPLE_DATA, {
+    // Popups tab previews with), stamped with the selected language so the
+    // preview's footer, the note's Language field and the duplicate search
+    // all speak the selection (lib/ankiTabState.js). One construction feeds
+    // both the live template preview and the "Send sample card" action. The
+    // label strings come from the tab's UI language through the shared
+    // uiLabels builder — the same baking a real send does (buildNoteFields'
+    // English defaults cover senders that pass none) — and the resolved
+    // fields map rides along: the body toggles (plus the `body` master
+    // toggle) shape the Body value at send time, so the preview reflects
+    // them live, exactly like a send from the popup would.
+    const sampleNoteFields = buildNoteFields(ankiTabSampleData(SAMPLE_DATA, selected), {
         familiarity: SAMPLE_FAMILIARITY,
         tags: SAMPLE_TAGS,
         nativeLanguage,
         labels: uiLabels(t),
-        fields: settings.fields,
+        fields: active.fields,
     })
 
     const probe = async (call) => {
@@ -179,11 +191,12 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
     // failure panel into a success message without touching the config.
     const runPermission = () => probe(async () => (await grantPermission(settings)).version)
 
-    // The tab's write path into Anki. `settings` doubles as the sync config
-    // (url/port/deck/fields) that lib/ankiSync.js acts on. The sync button
-    // always forces a fresh ensure pass — that is what re-applies the
-    // toggled-off hide classes to all existing cards; the sample card goes
-    // through the memoized ensure + duplicate-checked add.
+    // The tab's write path into Anki. The config is the selected language's
+    // slice of the settings (url/port global; deck/fields/noteType per
+    // language) that lib/ankiSync.js acts on. The sync button always forces
+    // a fresh ensure pass — that is what re-applies the toggled-off hide
+    // classes to all existing cards; the sample card goes through the
+    // memoized ensure + duplicate-checked add.
     const runAction = (action) => {
         lastAction.current = action
         setSync({status: 'running'})
@@ -194,12 +207,16 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
     }
 
     const runSync = () => runAction(async () => {
-        await ensureAnkiTarget(settings, {force: true})
+        await ensureAnkiTarget(ankiTabSyncConfig(settings, selected), {force: true})
         return 'synced'
     })
 
     const runSample = () => runAction(async () => {
-        const result = await sendAnkiNote(settings, sampleNoteFields, {tags: SAMPLE_TAGS, word: SAMPLE_DATA.word})
+        const result = await sendAnkiNote(
+            ankiTabSyncConfig(settings, selected),
+            sampleNoteFields,
+            {tags: SAMPLE_TAGS, word: SAMPLE_DATA.word},
+        )
         return result.added ? 'sent' : 'duplicate'
     })
 
@@ -217,7 +234,7 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
     // The generated template + the sample note built above: the preview
     // renders what Anki renders at review time, and the copy buttons hand
     // out the exact artifacts the template sync pushes.
-    const template = generateCardTemplate(settings.fields)
+    const template = generateCardTemplate(active.fields)
     const previewDoc = (side) => [
         '<!doctype html><html><head><meta charset="utf-8">',
         `<style>${template.css}</style></head>`,
@@ -242,6 +259,8 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
                 description={t('profile.anki_description')}
             />
 
+            {/* Connection: global regardless of the selected language — one
+                AnkiConnect endpoint serves every per-language deck. */}
             <div className="mt-8 max-w-xl space-y-4">
                 <div>
                     <InputLabel htmlFor="anki-url">{t('profile.anki_url')}</InputLabel>
@@ -256,32 +275,18 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
                     />
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                        <InputLabel htmlFor="anki-port">{t('profile.anki_port')}</InputLabel>
-                        <TextInput
-                            id="anki-port"
-                            type="number"
-                            min="1"
-                            max="65535"
-                            value={settings.port ?? ''}
-                            onChange={(event) => setPort(event.target.value)}
-                            placeholder={String(ANKI_DEFAULT_PORT)}
-                            autoComplete="off"
-                        />
-                    </div>
-                    <div>
-                        <InputLabel htmlFor="anki-deck">{t('profile.anki_deck')}</InputLabel>
-                        <TextInput
-                            id="anki-deck"
-                            type="text"
-                            value={settings.deck ?? ''}
-                            onChange={(event) => setDeck(event.target.value)}
-                            placeholder={ANKI_DEFAULT_DECK}
-                            autoComplete="off"
-                            spellCheck={false}
-                        />
-                    </div>
+                <div>
+                    <InputLabel htmlFor="anki-port">{t('profile.anki_port')}</InputLabel>
+                    <TextInput
+                        id="anki-port"
+                        type="number"
+                        min="1"
+                        max="65535"
+                        value={settings.port ?? ''}
+                        onChange={(event) => setPort(event.target.value)}
+                        placeholder={String(ANKI_DEFAULT_PORT)}
+                        autoComplete="off"
+                    />
                 </div>
 
                 <div className="flex items-center gap-4 pt-2">
@@ -303,17 +308,50 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
                 )}
             </div>
 
-            {/* Card content: two columns at lg+ mirroring the Popups tab —
-                field toggles ~1/3 left, live template preview ~2/3 right. */}
-            <div className="mt-12 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-10">
-                <div>
-                    <h2 className="font-serif text-lg sm:text-xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
-                        {t('profile.anki_card_title')}
-                    </h2>
-                    <p className="mt-2 max-w-md font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
-                        {t('profile.anki_card_description')}
-                    </p>
+            {/* Card content: the selector picks the language every control
+                below acts on — its deck, its field toggles, its note type.
+                The selector + deck pair leads the section full-width so the
+                scope is stated above both the toggles and the preview. */}
+            <div className="mt-12 max-w-xl">
+                <h2 className="font-serif text-lg sm:text-xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+                    {t('profile.anki_card_title')}
+                </h2>
+                <p className="mt-2 max-w-md font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
+                    {t('profile.anki_card_description')}
+                </p>
 
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <InputLabel htmlFor="anki-language">{t('profile.anki_language')}</InputLabel>
+                        <SelectInput
+                            id="anki-language"
+                            value={selected ?? ''}
+                            onChange={(event) => setSelected(event.target.value === '' ? null : event.target.value)}
+                        >
+                            {languages.map((language) => (
+                                <option key={language.code} value={language.code}>
+                                    {language.native_name ?? language.name}
+                                </option>
+                            ))}
+                        </SelectInput>
+                    </div>
+                    <div>
+                        <InputLabel htmlFor="anki-deck">{t('profile.anki_deck')}</InputLabel>
+                        <TextInput
+                            id="anki-deck"
+                            type="text"
+                            value={active.deck ?? ''}
+                            onChange={(event) => setDeck(event.target.value)}
+                            placeholder={ANKI_DEFAULT_DECK}
+                            autoComplete="off"
+                            spellCheck={false}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-10 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-10">
+                <div>
                     <div className="mt-6 space-y-6">
                         {FIELD_GROUPS.map((group) => (
                             <div key={group.titleKey}>
@@ -328,7 +366,7 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
                                         <CheckboxRow
                                             key={key}
                                             id={`anki-field-${key}`}
-                                            checked={settings.fields[key]}
+                                            checked={active.fields[key]}
                                             onChange={() => toggleField(key)}
                                             label={t(`profile.anki_field_${key}`)}
                                         />
@@ -395,7 +433,8 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
 
             {/* Template sync + sample card: the tab's write path into Anki.
                 Both actions run entirely from the browser (spec) and reuse the
-                generated artifacts shown above; failures render by the error's
+                generated artifacts shown above, targeting the selected
+                language's deck and note type; failures render by the error's
                 kind — note-type mismatch, Anki's own error verbatim, and the
                 connection hint for everything unreachable. */}
             <div className="mt-12 max-w-xl">
@@ -420,7 +459,7 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
                         data-testid="anki-sync-ok"
                         className="mt-4 font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
                     >
-                        {t('profile.anki_sync_ok', {deck: settings.deck})}
+                        {t('profile.anki_sync_ok', {deck: active.deck})}
                     </p>
                 )}
                 {sync.status === 'sent' && (
@@ -428,7 +467,7 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
                         data-testid="anki-sample-ok"
                         className="mt-4 font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
                     >
-                        {t('profile.anki_sample_ok', {deck: settings.deck})}
+                        {t('profile.anki_sample_ok', {deck: active.deck})}
                     </p>
                 )}
                 {sync.status === 'duplicate' && (
@@ -449,10 +488,12 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
                             <p className="text-sm text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
                                 {sync.error.kind === 'card'
                                     ? t('profile.anki_mismatch_card', {
+                                        model: sync.error.modelName,
                                         card: ANKI_CARD_NAME,
                                         found: sync.error.found.join(', '),
                                     })
                                     : t('profile.anki_mismatch_fields', {
+                                        model: sync.error.modelName,
                                         expected: sync.error.expected.join(', '),
                                         found: sync.error.found.join(', '),
                                     })}

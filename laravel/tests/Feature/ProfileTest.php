@@ -171,6 +171,22 @@ test('anki settings prop carries one entry per enabled language plus default', f
             }));
 });
 
+test('profile page shares language codes with the languages prop', function () {
+    // The Anki tab's language selector keys off the code (the per-language
+    // settings map and the per-language note type are code-keyed), so the
+    // shared prop carries it beside the id.
+    createLanguages(['en', 'ru']);
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('languages.0.code', 'en')
+            ->where('languages.1.code', 'ru'));
+});
+
 test('popup visibility prop reflects the saved opt-outs', function () {
     $user = User::factory()->create();
     $user->settings()->updateOrCreate([], [

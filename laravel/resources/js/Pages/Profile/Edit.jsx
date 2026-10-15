@@ -145,9 +145,11 @@ export default function Edit({
                     <TabPanel active={activeTab === 'anki'} width="wide">
                         <Card width="wide">
                             {/* The tab's note builder needs the native language CODE
-                                (shared auth prop), not the settings' numeric id. */}
+                                (shared auth prop), not the settings' numeric id; the
+                                selector needs the enabled-language list with codes. */}
                             <AnkiSettings
                                 ankiSettings={ankiSettings}
+                                languages={languages}
                                 nativeLanguage={auth?.user?.native_language ?? null}
                             />
                         </Card>

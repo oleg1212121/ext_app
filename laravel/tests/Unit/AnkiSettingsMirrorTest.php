@@ -66,6 +66,27 @@ it('surfaces every field key as exactly one checkbox across the Anki tab\'s togg
         ->and($matches['key'])->toEqualCanonicalizing(AnkiSettings::FIELDS);
 });
 
+it('drives the Anki tab\'s per-language editing through the shared state module', function () {
+    $ankiTab = file_get_contents(base_path('resources/js/Pages/Profile/AnkiSettings.jsx'));
+
+    // The tab's whole-section state, per-language entry accessors, sync
+    // config (note type wiring) and sample payload all come from
+    // resources/js/lib/ankiTabState.js — the executable behavior lives there
+    // (ankiTabState.test.js), the tab only renders it.
+    expect($ankiTab)
+        ->toContain("from '../../lib/ankiTabState'")
+        ->toContain('ankiTabState(')
+        ->toContain('ankiTabDefaultCode(')
+        ->toContain('ankiTabEntry(')
+        ->toContain('ankiTabSetDeck(')
+        ->toContain('ankiTabToggleField(')
+        ->toContain('ankiTabSyncConfig(')
+        ->toContain('ankiTabSampleData(')
+        // The resolved `default` entry is never selectable and never
+        // persisted: the selector lists the enabled languages only.
+        ->and($ankiTab)->not->toContain("'default'");
+});
+
 it('mirrors the connection defaults into the JS AnkiConnect module', function () {
     $connectModule = file_get_contents(base_path('resources/js/lib/ankiConnect.js'));
 

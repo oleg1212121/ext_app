@@ -4,8 +4,8 @@ title: Anki Export
 description: The path from saved words to the user's desktop Anki — per-user connection settings and card-field toggles on the profile's Anki tab, a deterministic popup-styled card template (the Front is the word; the Back is header + the 13th Body field's popup-interleaved dictionary + footer) with split toggle semantics — scalar toggles hide-class template-side, body toggles shape the Body value at send time — one-click template sync into Anki, and duplicate-checked per-word sends from the word popup, all driven browser-side through AnkiConnect (ADR 0077 + addendum v2).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T21:10:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T21:10:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T14:56:00+00:00 }
+verified: { by: agent:zcode, at: 2026-10-15T14:56:00+00:00 }
 sources:
   - id: adr
     resource: docs/adr/0077-browser-side-ankiconnect.md
@@ -15,7 +15,10 @@ sources:
     title: AnkiSettings (saved connection, per-language deck/fields over the legacy global base, resolved per enabled language + default)
   - id: anki-tab
     resource: laravel/resources/js/Pages/Profile/AnkiSettings.jsx
-    title: AnkiSettings tab section (connection settings, field toggle groups, template preview, template sync + sample card)
+    title: AnkiSettings tab section (language selector, per-language field toggle groups + deck, template preview, template sync + sample card)
+  - id: anki-tab-state
+    resource: laravel/resources/js/lib/ankiTabState.js
+    title: ankiTabState.js (the tab's per-language editing state — whole-section shape, entry accessors, per-language sync config + sample payload)
   - id: anki-connect
     resource: laravel/resources/js/lib/ankiConnect.js
     title: ankiConnect.js (the only AnkiConnect caller — browser-side protocol wrappers)
@@ -77,10 +80,13 @@ sources below).
    enabled language plus a `default` entry for words with an unknown or
    missing `language_code` — each walking the chain per-language → legacy
    global base → defaults, so a user who never customized a language
-   resolves to today's global deck/fields. The tab still edits the legacy
-   global shape (the language selector is pending); `default` is never
-   persistable. Tab layout, autosave, and validation details live in
-   [Profile](/domains/profile.md).
+   resolves to today's global deck/fields. The tab's language selector
+   edits these per-language entries directly (deck + toggles + preview +
+   the sync/sample targets all follow the selection; connection stays
+   global; `default` is never selectable), autosaving the whole `anki`
+   section — legacy base + complete languages map — on every change;
+   `default` is never persistable. Tab layout, autosave, and validation
+   details live in [Profile](/domains/profile.md).
 2. **Template** — `generateCardTemplate(fields)` deterministically emits
    Front/Back/CSS in the reading popup's image. The **Front is the word
    alone** — the recognition cue and the duplicate-search key, never
@@ -124,15 +130,20 @@ sources below).
    first vitest file outside `lib/`, blessed by the ADR 0077 addendum —
    stubbed fetch, Node only).
 3. **Template sync** — one browser-side ensure pass: deck
-   create-if-missing, the app-owned "ExtApp Vocabulary" note type
-   create-if-missing (thirteen fields, fixed order, `Body` last,
+   create-if-missing, the app-owned note type create-if-missing — the
+   per-language "ExtApp Vocabulary ⋅ <code>" when the caller names one
+   (`noteTypeForLanguage`; the tab syncs the selected language's type, the
+   unsuffixed "ExtApp Vocabulary" remains the base for words with an
+   unknown language and for language-less callers)
+   (thirteen fields, fixed order, `Body` last,
    "Recognition" card), and a templates + CSS push when it already exists.
    A same-name note type with a foreign field set raises a warning naming
-   expected vs found — it is never rewritten. On a **pre-v2 twelve-field
-   install** the check fails by design (AnkiConnect cannot add a field to
-   an existing note type) and the mismatch copy teaches the one-time fix:
-   in Anki, Tools → Manage Note Types, delete "ExtApp Vocabulary" — its
-   notes are deleted with it — then sync again and re-send the words.
+   the model, expected vs found — it is never rewritten. On a **pre-v2
+   twelve-field install** the check fails by design (AnkiConnect cannot add
+   a field to an existing note type) and the mismatch copy teaches the
+   one-time fix: in Anki, Tools → Manage Note Types, delete the named
+   type — its notes are deleted with it — then sync again and re-send the
+   words.
 4. **Sends** — `buildNoteFields` flattens a word payload (the sample
    fixture on the tab, the popup's live payload in the word popup) into
    exactly thirteen escaped values that carry the popup's dictionary

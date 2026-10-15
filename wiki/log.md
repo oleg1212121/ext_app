@@ -1,5 +1,62 @@
 # Directory Update Log
 
+## 2026-10-15 (anki-popup-refresh 04 — Anki tab: language selector + per-language editing)
+
+Fourth ticket of the word-popup refresh (spec
+`.scratch/anki-popup-refresh/spec.md`): the profile Anki tab's card-content
+side becomes per-language — deck, the thirteen toggles, the template
+preview, and the sync/sample targets all follow one language selector,
+while the connection block stays global.
+
+- `laravel/resources/js/lib/ankiTabState.js` (new) — the tab's per-language
+  editing state as pure functions over the resolved `ankiSettings` prop and
+  the page's enabled-language codes: whole-section state shaped exactly like
+  the persisted `anki` section (connection + legacy base + complete
+  languages map, so every autosave PATCH round-trips the WHOLE section — a
+  languages-only payload would wipe the legacy base via wholesale section
+  replace; the never-persistable `default` entry never enters the state),
+  entry accessors + scoped deck/toggle setters, the selection rule (native
+  language when enabled, else the first enabled code, else none — and with
+  none selected the tab edits the legacy base), the sync-layer config
+  (`ankiTabSyncConfig`: selected deck/fields + `noteType` from ticket 02's
+  `noteTypeForLanguage`, the key omitted without a selection), and the
+  sample payload stamped with the selected language (one override point —
+  the Language field AND the duplicate search both derive from the
+  payload's `language_code`). Pinned executable by the new
+  `ankiTabState.test.js` (15 tests).
+- `laravel/resources/js/Pages/Profile/AnkiSettings.jsx` — the selector
+  (enabled languages from the page's `languages` prop, labels via
+  `native_name ?? name`) + the deck input now lead the card-content section
+  full-width; the deck left the connection block (URL/port/test alone up
+  top); toggles, preview, sample build and both write actions read the
+  selected entry; the sync/sample status lines report the active deck; the
+  mismatch panel passes the error's `modelName` into the copy. Tab source
+  pins added to `AnkiSettingsMirrorTest` (module wiring + the quoted
+  `'default'` literal banned from the tab).
+- `laravel/app/Http/Controllers/ProfileController.php` — the shared
+  `languages` prop gains `code` (the selector and the per-language map/note
+  type are code-keyed); `Edit.jsx` passes the prop through to the tab.
+- Strings — `profile.anki_language` (en "Language" / ru "Язык" / be "Мова")
+  added and seeded (`UiStringSeeder` re-run); the two mismatch strings now
+  interpolate the mismatched model via `:model` (the hardcoded "ExtApp
+  Vocabulary" would mislead against a per-language type), and
+  `profile.anki_sync_description` no longer names the base type — it says
+  "the selected language's deck and note type".
+- Tests — ProfileTest pins `languages.N.code`; UiStringSeederTest pins the
+  selector string in en/ru/be; vitest 177/177; Pest (touched suites + TIA)
+  green.
+- Wiki — `domains/profile.md` (Anki tab: selector paragraph, global
+  connection, per-language card content + Send to Anki) and
+  `domains/anki-export.md` (flow steps 1 + 3) updated, stamps bumped. Two
+  adjacent stale facts were corrected in passing because my edits touch
+  their sentences: the ensure memo key is endpoint+deck+NOTE TYPE (ticket
+  02's change), and a found duplicate of one of the app's own note types is
+  refreshed in place (ticket 02's reversal — the tab still reports it with
+  the calm "nothing was duplicated" line). The full ADR 0077 addendum v3 /
+  decision-record closure remains ticket 06's; the popup-side per-language
+  wiring (send/detect config from `ankiSettings.languages`) remains ticket
+  05's.
+
 ## 2026-10-15 (anki-popup-refresh 01 — per-language Anki settings: storage, resolution, validation)
 
 First ticket of the word-popup refresh (spec
