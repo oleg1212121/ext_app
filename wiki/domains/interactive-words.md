@@ -5,8 +5,8 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-15T13:45:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T13:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T18:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T18:20:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -320,8 +320,15 @@ orchestrated by `resources/js/lib/ankiSync.js` and the note is built by
 the popup already loaded (identical values to the Anki tab's sample card;
 see [Profile](/domains/profile.md) for the Anki tab side):
 
-* **Note values.** All twelve fields always ride along (hide-class
-  semantics). Translations narrow to the user's **native language** (the
+* **Note values.** All thirteen fields always ride along. The twelve flat
+  fields keep the hide-class template semantics (a toggled-off scalar is
+  hidden by the template, never omitted); the 13th **Body** field carries
+  the popup's dictionary rendered per entry, and the body section toggles
+  plus the `body` master are **send-time** — the send passes the user's
+  resolved `ankiSettings.fields` (the shared Inertia prop) and the value is
+  shaped accordingly, so those toggles affect newly sent cards only
+  (ADR 0077 addendum v2). The flat Translations field narrows to the user's
+  **native language** (the
   code shared as `auth.user.native_language` — the same filter the Anki
   tab's preview uses), falling back to all translations when none match;
   `Tags` carries the linked word's tag names (`data.tags`, additive in the
@@ -342,8 +349,12 @@ see [Profile](/domains/profile.md) for the Anki tab side):
 * **Failure is never silent.** An unreachable AnkiConnect (fetch rejection,
   HTTP/non-JSON answers) shows the short "Can't reach Anki" hint with a
   link to Profile → Anki; an Anki-side error string is shown verbatim
-  (`Anki error: …`); `AnkiNoteTypeMismatchError` aborts with the
-  re-sync warning pointing at the same tab. The status line lives under
+  (`Anki error: …`); `AnkiNoteTypeMismatchError` aborts with the teaching
+  copy — expected vs found fields plus the one-time fix: in Anki, delete
+  the "ExtApp Vocabulary" note type (its notes are deleted with it), then
+  sync again from the same tab and re-send the words; a pre-v2
+  twelve-field install hits this by design, since AnkiConnect cannot add a
+  field to an existing note type. The status line lives under
   the footer buttons (`word-popup-anki-*` classes), and the button shows
   "Saving…" disabled while the send is in flight.
 * The profile's Popups-tab preview renders the button disabled (no send

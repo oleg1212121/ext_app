@@ -1,5 +1,76 @@
 # Directory Update Log
 
+## 2026-10-15 (anki-popup-card 07 — Route A closure: toggle semantics split in the Anki tab, ADR 0077 addendum v2, wiki)
+
+V2 round closure for the anki-popup-card feature. Ticket 06 shipped the
+code (schema v2 — the 13th `Body` field carries the popup-interleaved
+dictionary, rendered at send time; the body toggles plus the `body` master
+became send-time while the scalars kept the V1 hide-class template
+semantics) but deliberately left the tab's toggles unregrouped and the
+knowledge base unstaled. This ticket lands the presentation split and the
+knowledge-base reversal; no template/value/sync logic changes.
+
+- `laravel/resources/js/Pages/Profile/AnkiSettings.jsx` — the card-content
+  toggles regrouped from three display groups into two whose descriptions
+  state the semantics split: **Template fields** (word, familiarity,
+  frequency, word_family, part_of_speech, tags, language — the Back's
+  header/footer scalars in visual order; "re-syncing the template restyles
+  ALL cards") and **Dictionary body** (the `body` master — now with its
+  first-ever checkbox, the data/validation/send paths having shipped in
+  ticket 06 — plus translations, transcription, definitions, examples,
+  etymology in the popup's per-entry order; "shapes newly sent cards
+  only"). Each group renders a muted-italic description line under its
+  title.
+- `laravel/database/seeders/ui-strings/profile.php` — new en/ru/be keys:
+  `profile.anki_field_group_template` +
+  `profile.anki_field_group_template_description`,
+  `profile.anki_field_group_body` +
+  `profile.anki_field_group_body_description`, and
+  `profile.anki_field_body`; the three dead V1 group-title keys removed
+  from the source of truth (their DB rows linger orphaned — the seeder
+  only upserts); `profile.anki_card_description` rewritten in place (its
+  "a switched-off field is hidden by the card template" sentence was
+  scalar-only truth after the split). Seeded against the dev DB
+  (updateOrCreate, non-destructive); ru/be spot-checked served.
+- `docs/adr/0077-browser-side-ankiconnect.md` — new "Addendum v2
+  (2026-10-15): Route A" recording the reversal: schema v2 (thirteen
+  fields, `Body` last; flat fields keep searchable values but only Body
+  renders the dictionary; the bracketed header-transcription line is
+  gone), the toggle-blind invariant split — scalars keep values-always-
+  sent + hide-class semantics, body toggles are send-time via the fields
+  map both senders pass, so re-sync no longer restyles the body content of
+  existing cards (accepted consequence, taught in the tab's group
+  descriptions) — the shipped value-side fidelity notes (Body labels
+  every entry; Body translations not native-narrowed; two calm
+  placeholder label keys), and the user-visible 12 → 13 migration taught
+  by the mismatch copy (delete the note type in Anki — notes go with it —
+  sync again, re-send).
+- `wiki/domains/anki-export.md` — description, flow steps 2–4 and
+  boundaries rewritten for schema v2: the Back as header + `{{#Body}}`
+  slot + footer, scalar-vs-body toggle semantics, the 13-field note with
+  the Body as the rendered dictionary, the seven-string labels option,
+  the twelve-field-install mismatch migration, and the pre-v2 old-notes
+  consequence (no Body value → slot drops → header + footer only, until
+  the migration's delete-and-resend); stamps bumped.
+- `wiki/domains/profile.md` — Anki tab section rewritten: thirteen toggles
+  in the two semantics-labeled groups (the `body` checkbox included), the
+  schema-v2 Back, `buildNoteFields`' `fields` option and 13-field note,
+  the sync section's teaching mismatch copy; tabs table row updated;
+  stamps bumped.
+- `wiki/domains/interactive-words.md` — the Save-to-Anki "Note values"
+  bullet rewritten (thirteen fields; the send-time body toggles ride the
+  shared `ankiSettings.fields` prop) and the mismatch failure bullet now
+  describes the teaching copy; stamps bumped.
+- GLOSSARY.md still says "twelve" — out of this ticket's file scope,
+  flagged for a follow-up.
+
+Checks: vitest 131 passed (15 files); PHP `AnkiSettingsMirrorTest` +
+`ProfileTest` + `UiSettingsTest` + `UiStringSeederTest` + `UiStringsTest` +
+`WikiTest` green; `wiki:validate` back to the 8 pre-existing warnings (the
+10 staleness flags ticket 06's code commits raised on these three concepts
+cleared by these content updates); pint PASS. No routes/models/commands
+touched — no `wiki:sync` needed.
+
 ## 2026-10-15 (anki-popup-card 05 — review fixes: expander CSS pairing, shared label builder, doc sync)
 
 Review-fix commit on `anki-popup-card` closing the two-axis review of the

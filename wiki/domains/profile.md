@@ -4,8 +4,8 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T13:45:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T13:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T18:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T18:20:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -82,7 +82,7 @@ one width variant, `profileWidthClass(width, cappedClass)` in `ui.jsx`.
 | Account | Profile Information (name/email) · Update Password | `PATCH /profile` (`profile.update`), `PUT /password` (`password.update`, auth routes) |
 | Preferences | Native + interface language | `PATCH /profile/settings` (`profile.settings.update`) |
 | Popups | Word popup block visibility (checkbox groups) + live preview | autosaved `PATCH /ui-settings` (`ui-settings.update`, auth-only — section `popup`) |
-| Anki | Anki connection: AnkiConnect URL · port · deck name · Test connection; card content: 12 field toggles + generated-template preview (Copy HTML/CSS); Send to Anki: template sync + sample card | autosaved `PATCH /ui-settings` (auth-only — section `anki`); AnkiConnect itself is called from the browser only |
+| Anki | Anki connection: AnkiConnect URL · port · deck name · Test connection; card content: 13 field toggles in two semantics-labeled groups + generated-template preview (Copy HTML/CSS); Send to Anki: template sync + sample card | autosaved `PATCH /ui-settings` (auth-only — section `anki`); AnkiConnect itself is called from the browser only |
 | AI Models | Answer + explanation model selects · AI Provider API Keys | `PATCH /profile/ai-models` (`profile.ai-models.update`), `POST /profile/api-keys` + `DELETE /profile/api-keys/{providerKey}` |
 | Danger zone | Delete Account (password modal) | `DELETE /profile` (`profile.destroy`) |
 
@@ -144,7 +144,7 @@ section wholesale (a fields-only save would wipe the connection and vice
 versa). The section is fully separate from `popup`/`simulator`/`reader`; the
 server resolves saved values over the defaults in
 `App\Support\AnkiSettings::for()` (URL default `http://127.0.0.1`, port
-`8765`, deck `ExtApp`, all twelve fields on) and shares them to every page as
+`8765`, deck `ExtApp`, all thirteen fields on) and shares them to every page as
 the `ankiSettings` Inertia prop.
 
 **Connection** — AnkiConnect endpoint (URL + port) and target deck name,
@@ -163,40 +163,58 @@ app's origin (shown live from `window.location.origin`) to
 module normalizes both failure shapes — fetch rejection (CORS/refused) and
 AnkiConnect's error string inside HTTP 200 — into `AnkiConnectError`.
 
-**Card content** — twelve field toggles (Word, Transcription, Part of
-speech, Frequency, Definitions, Translations, Examples, Etymology, Word
-family, Tags, Familiarity, Language) in three display groups (Word details /
-Dictionary details / Tags & progress); absent key = on, the Popups tab's
-convention. `AnkiSettings::FIELDS` is the canonical server-side list, whose
+**Card content** — thirteen field toggles in two display groups, each
+group's description stating its toggles' semantics (ADR 0077 addendum v2):
+**Template fields** (Word, Familiarity, Frequency, Word family, Part of
+speech, Tags, Language — the Back's header/footer scalars in the card's
+visual order; "re-syncing the template restyles ALL cards") and
+**Dictionary body** (the `body` master — "Body (whole dictionary)" — plus
+Translations, Transcription, Definitions, Examples, Etymology in the
+popup's per-entry order; "shapes newly sent cards only"). Absent key = on,
+the Popups tab's convention. `AnkiSettings::FIELDS` is the canonical
+server-side list, whose
 one JS mirror `resources/js/lib/ankiTemplate.js` also owns the field-key →
-Anki-field-name mapping (Word, Transcription, PartOfSpeech, … — the note
-type's fixed order), the "ExtApp Vocabulary" note-type name and the
+Anki-field-name mapping (Word, Transcription, PartOfSpeech, …, Body — the
+note type's fixed order), the "ExtApp Vocabulary" note-type name and the
 connection defaults — a lockstep pinned by
 `tests/Unit/AnkiSettingsMirrorTest.php`.
 `generateCardTemplate(fields)` deterministically emits the Front/Back HTML +
 CSS in the reading popup's image: the **Front is the word alone** (never
-hidden — the recognition cue and the duplicate-search key; the
-transcription moved off it), the **Back** re-orders the twelve classed
-wrappers (`<div class="ef-field ef-<key>">{{Field}}</div>`, a toggled-off
-field additionally carrying the `ef-hidden` class — values always carry
-every field, hide-class semantics, so re-syncing the template restyles
-existing cards instead of dropping data) into the popup's header/body/
-footer: the word title plus the Familiarity / Frequency / form-of /
-part-of-speech / bracketed-transcription meta lines, the dictionary
-sections, a muted Tags · Language footer. Meta lines whose value carries
+hidden — the recognition cue and the duplicate-search key), the **Back**
+is the popup's three parts — the word title plus the Familiarity /
+Frequency / form-of / part-of-speech meta lines in an `ef-header`, the
+`{{#Body}}` slot (dropped whole when the Body value is empty), a muted
+Tags · Language footer. The scalar toggles bake the `ef-hidden` hide class
+into their wrappers (`<div class="ef-field ef-<key>[ ef-hidden]">` —
+values always carry every field, so re-syncing the template restyles all
+existing cards' scalar fields instead of dropping data); the body toggles
+are not template concerns. Meta lines whose value carries
 literal decoration sit inside Anki-native `{{#Field}}…{{/Field}}`
 conditionals, so an empty field drops the whole line; the card surface is
 the popup's palette (vellum/ink/hairline/verdigris, light + Anki night
 mode), 560px study width centered, serif headword, local font stacks only.
-`buildNoteFields()` builds the full 12-field note from a word payload —
-what the sample card and the word popup put on the wire (Translations
-narrow to the user's native language when it matches, falling back to all)
-— with the popup's dictionary structure baked into the values: per-entry
-"WORD — pos" labels for 2+-entry words, counted `<details>` summaries for
-Definitions/Examples/Etymology, the translations preview behind a
-"+N more…" expander, " · "-joined transcriptions, and the localized
-"form of" prefix inside the WordFamily value. A `labels` option carries the
-five UI-language strings (summaries, expander, "form of") — the tab passes
+`buildNoteFields()` builds the full 13-field note from a word payload —
+what the sample card and the word popup put on the wire (the flat
+Translations field narrows to the user's native language when it matches,
+falling back to all; the Body's per-entry translations are not narrowed —
+the popup renders them raw, native-first sorted by the backend) — with the
+popup's dictionary structure baked into the values: per-entry "WORD — pos"
+labels for 2+-entry words in the flat fields, counted `<details>`
+summaries for Definitions/Examples/Etymology, the translations preview
+behind a "+N more…" expander, " · "-joined transcriptions, and the
+localized "form of" prefix inside the WordFamily value. The 13th **Body**
+value is the whole dictionary rendered per entry in the popup's order —
+"WORD — pos" label on every entry (single-entry words included, exactly
+the popup's pane), the translations line (cap 8 + expander, or the calm
+"No translations yet" placeholder), bracketed transcriptions, the counted
+collapsed sections ("No definitions yet." when empty), hairline
+separators. A `fields` option (the resolved Anki settings map, passed by
+both senders — the tab's `settings.fields`, the popup's shared
+`ankiSettings` prop) shapes that Body at send time: the body section
+toggles plus the `body` master drop their sections entire, placeholder
+included — newly sent cards only. A `labels` option carries the seven
+UI-language strings (summaries, expander, "form of", the two calm
+placeholders) — the tab passes
 its locale's via `useI18n` (both senders share `ankiTemplate.js`'s
 `uiLabels(t)` builder over the app's `word.*` strings), so the preview
 shows the real wording; the wording is frozen into the note at send time.
@@ -215,14 +233,20 @@ have one source.
 **Send to Anki** — the tab's write path, orchestrated by
 `resources/js/lib/ankiSync.js` on top of `ankiConnect.js`. **Create /
 update template in Anki** runs a fresh ensure pass: deck create-if-missing,
-the "ExtApp Vocabulary" note type create-if-missing (all 12 fields in fixed
-order + the "Recognition" card generated from the current toggles) or —
+the "ExtApp Vocabulary" note type create-if-missing (all 13 fields in fixed
+order, `Body` last, + the "Recognition" card generated from the current
+scalar toggles) or —
 when it already exists — field-set verification followed by a
 templates + CSS push, which is what re-applies toggled-off `ef-hidden`
-classes to all existing cards. A same-name note type whose field set (or
+classes to all existing cards' scalar fields (the Body values are send-time
+and untouched by it). A same-name note type whose field set (or
 whose card naming, which AnkiConnect would silently skip) doesn't match the
-app-owned twelve raises `AnkiNoteTypeMismatchError`, surfaced as a warning
-naming expected vs found — it is never rewritten. **Send sample card** adds
+app-owned thirteen raises `AnkiNoteTypeMismatchError`, surfaced with the
+teaching copy — expected vs found plus the one-time fix: in Anki, Tools →
+Manage Note Types, delete "ExtApp Vocabulary" (its notes are deleted with
+it), then sync again and re-send the words; a pre-v2 twelve-field install
+hits exactly this by design, since AnkiConnect cannot add a field to an
+existing note type — it is never rewritten. **Send sample card** adds
 a note built from the shared fixture with a find-before-add duplicate check
 scoped to deck + Word + Language (`sendAnkiNote`): a duplicate shows
 "Already in Anki" and nothing is re-added (`allowDuplicate` stays false as

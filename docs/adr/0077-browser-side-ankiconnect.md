@@ -198,3 +198,71 @@ the standing blessing: a source-pin mirror test may live in vitest next to
 the wiring it pins, where the pinned decision is untestable at any runtime
 seam and the surrounding behavior is already pinned at the real seams
 (`ankiSync.test.js`, `ankiTemplate.test.js`).
+
+## Addendum v2 (2026-10-15): Route A — the dictionary body is the 13th field's send-time value
+
+A review of the real card against the popup killed addendum A's remaining
+compromise: the popup interleaves — one section per part of speech carrying
+that entry's translations, transcriptions, definitions and etymology
+together — and flat per-info-type fields can never express that ordering,
+however their values are structured. Decision (feature round V2, tickets
+06–07): the whole dictionary body is rendered at send time into the value
+of a new 13th field, and the body section toggles move from the template to
+the send. This addendum supersedes the toggle-blind invariant **for the
+body sections only**; everything else above stands.
+
+### Schema v2: thirteen fields, `Body` last
+
+The "ExtApp Vocabulary" note type gains `Body` as its 13th and last field.
+The flat fields keep their full structured values — they stay searchable in
+Anki's browser — but only `Body` renders the dictionary. The Back is the
+header (word title, then the Familiarity / Frequency / form-of /
+part-of-speech meta lines; the bracketed header-transcription line is gone —
+transcriptions live per-entry in the body), the `{{#Body}}` slot, and the
+Tags · Language footer. The slot is dropped whole when the value is empty
+(the `body` master toggle off, or a word with no dictionary content), so
+the header meets the footer with nothing dangling.
+
+### The toggle-blind invariant is split, not abandoned
+
+For the **scalar toggles** (word, familiarity, frequency, word_family,
+part_of_speech, tags, language) nothing changes: values always sent,
+hide-class template semantics, re-syncing the template restyles ALL cards —
+existing ones included. The **body toggles** (translations, transcription,
+definitions, examples, etymology, plus the new `body` master) are
+**send-time**: both senders (the popup's per-word send and the tab's sample
+card/preview) pass the resolved fields map, and `buildNoteFields` shapes
+the Body value accordingly — a dropped section leaves no dangling label or
+placeholder behind. Accepted consequence: re-syncing the template no longer
+restyles the body content of existing cards — the body a note carries is
+the body it was sent with; only a new send re-shapes it, and the
+find-before-add duplicate check means an existing note is refreshed only
+after Anki-side deletion. The Anki tab's toggle groups are relabeled to say
+which semantics each group has (the tab is the only place both kinds are
+edited, so the split has to be legible there).
+
+### Value-side fidelity notes (shipped judgement calls)
+
+- The Body labels **every** entry — including a single-entry word's own
+  section, exactly the popup's pane. The flat fields keep the V1 rule of
+  labeling only when a word has 2+ entries (there a label disambiguates
+  stacked entries; in the Body it is the popup's section header).
+- The Body's per-entry translations are **not** narrowed by native
+  language — the popup renders the payload raw (the backend sorts
+  native-first); the flat Translations field keeps its narrowing.
+- Two calm placeholder strings ("No translations yet…", "No definitions
+  yet.") travel through the labels option beside the counted summaries, so
+  a localized sender bakes localized placeholders (seven labels total:
+  three counted summaries, the "more" expander, "form of", the two
+  placeholders).
+
+### The 12 → 13 field migration is user-visible, and the error teaches it
+
+AnkiConnect cannot add a field to an existing note type, so a pre-v2
+twelve-field install fails the field-set check with
+`AnkiNoteTypeMismatchError` (expected 13, found 12). The mismatch UI copy
+(popup error line and Anki tab) teaches the one-time fix: in Anki, Tools →
+Manage Note Types, delete "ExtApp Vocabulary" — its notes are deleted with
+it — then sync again and re-send the words. Decisions 2 and 5 stand: no
+silent push, no rewrite of a foreign note type, and the deletion is the
+user's own action in Anki, not something the app ever does.

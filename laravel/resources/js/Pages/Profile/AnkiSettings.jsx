@@ -24,11 +24,27 @@ import {CheckboxRow, InputLabel, SecondaryButton, SectionHeader, TextInput} from
 // card (lib/ankiSync.js). Everything except the Anki actions works offline;
 // no Anki call is ever made from PHP (spec).
 
-// Display grouping only — each checkbox is independent.
+// Display grouping only — each checkbox is independent. The two groups carry
+// the V2 semantics split (each description says which side its toggles act
+// on): the template fields are template-side — a toggled-off scalar gets the
+// `ef-hidden` hide class baked into the generated HTML, so re-syncing the
+// template restyles ALL cards; the body toggles (plus the `body` master) are
+// send-time — they shape the Body field's value when a card is sent, so they
+// affect newly sent cards only. Checkbox order follows the card's visual
+// order: the scalars in the Back's header→footer sequence, the body sections
+// in the popup's per-entry order (translations, transcriptions, definitions,
+// examples, etymology) — the order the preview's body renders in.
 const FIELD_GROUPS = [
-    {titleKey: 'profile.anki_field_group_word', keys: ['word', 'transcription', 'part_of_speech', 'frequency', 'language']},
-    {titleKey: 'profile.anki_field_group_dictionary', keys: ['definitions', 'translations', 'examples', 'etymology', 'word_family']},
-    {titleKey: 'profile.anki_field_group_tracking', keys: ['tags', 'familiarity']},
+    {
+        titleKey: 'profile.anki_field_group_template',
+        descriptionKey: 'profile.anki_field_group_template_description',
+        keys: ['word', 'familiarity', 'frequency', 'word_family', 'part_of_speech', 'tags', 'language'],
+    },
+    {
+        titleKey: 'profile.anki_field_group_body',
+        descriptionKey: 'profile.anki_field_group_body_description',
+        keys: ['body', 'translations', 'transcription', 'definitions', 'examples', 'etymology'],
+    },
 ]
 
 const initialFields = (saved) => {
@@ -304,7 +320,10 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
                                 <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
                                     {t(group.titleKey)}
                                 </h3>
-                                <div className="mt-1">
+                                <p className="mt-1 max-w-md font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
+                                    {t(group.descriptionKey)}
+                                </p>
+                                <div className="mt-2">
                                     {group.keys.map((key) => (
                                         <CheckboxRow
                                             key={key}
