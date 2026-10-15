@@ -10,7 +10,8 @@ import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
 import {Icon} from './icons.jsx';
 import {AnkiConnectError} from '../lib/ankiConnect';
 import {buildNoteFields, uiLabels} from '../lib/ankiTemplate';
-import {AnkiNoteTypeMismatchError, sendAnkiNote} from '../lib/ankiSync';
+import {AnkiNoteTypeMismatchError, findExistingNote, sendAnkiNote} from '../lib/ankiSync';
+import {ankiWordSyncConfig} from '../lib/ankiWordConfig';
 
 const POPUP_MARGIN = 8;
 const VIEWPORT_MARGIN = 12;
@@ -404,9 +405,15 @@ function ExplainPane({explain, explainKey, preview = false}) {
  * The toolbar also carries the "Save to Anki" icon (`onAnkiSend` /
  * `ankiSend`, both null in the preview — the icon renders disabled there):
  * it sits OUTSIDE the `progress_actions` gate, so it shows on every surface
- * no matter which popup blocks are hidden. `ankiSend` holds the send's
- * outcome ({status: 'sending'|'added'|'duplicate'|'error', error?}) for the
- * inline status line beneath the icon row.
+ * no matter which popup blocks are hidden. The icon carries the word's
+ * in-deck state (`ankiExisting`: 'checking' | 'found' | 'absent' — the
+ * on-open duplicate check's outcome): 'found' flips it to the update glyph
+ * with the "Update in Anki" tooltip, every other value keeps the add form —
+ * including a silent detection failure. `ankiSend` holds the send's outcome
+ * ({status: 'sending'|'added'|'updated'|'duplicate'|'error', error?}) for
+ * the inline status line beneath the icon row; 'duplicate' is reachable
+ * only for a FOREIGN-model note — a note of our own types updates in place
+ * (lib/ankiSync.js) and reports 'updated' instead.
  */
 export function PopupContent({
     surface,
@@ -421,6 +428,7 @@ export function PopupContent({
     progressBusy = false,
     onAnkiSend = null,
     ankiSend = null,
+    ankiExisting = 'absent',
     preview = false,
 }) {
     const {t} = useI18n();
@@ -475,15 +483,25 @@ export function PopupContent({
                             <Icon name="minusCircle" className="h-[1.25em] w-[1.25em]"/>
                         </button>
                     )}
+                    {/* The Anki icon carries the word's in-deck state:
+                        'found' (the on-open check located the note) shows
+                        the update glyph + "Update in Anki"; checking,
+                        absent and a silent failure all keep the add form —
+                        the send still runs find-before-add, so a misjudged
+                        icon can never create a second card. */}
                     <button
                         type="button"
-                        title={ankiSend?.status === 'sending' ? t('word.anki_sending') : t('word.anki_send')}
-                        aria-label={ankiSend?.status === 'sending' ? t('word.anki_sending') : t('word.anki_send')}
+                        title={ankiSend?.status === 'sending'
+                            ? t('word.anki_sending')
+                            : (ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send'))}
+                        aria-label={ankiSend?.status === 'sending'
+                            ? t('word.anki_sending')
+                            : (ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send'))}
                         disabled={onAnkiSend == null || ankiSend?.status === 'sending'}
                         onClick={onAnkiSend}
                         className={`word-popup-anki-send ${toolbarButtonClass(false)} ml-auto`}
                     >
-                        <Icon name="ankiAdd" className="h-[1.25em] w-[1.25em]"/>
+                        <Icon name={ankiExisting === 'found' ? 'ankiUpdate' : 'ankiAdd'} className="h-[1.25em] w-[1.25em]"/>
                     </button>
                 </div>
 
@@ -492,6 +510,14 @@ export function PopupContent({
                         {t('word.anki_added')}
                     </p>
                 )}
+                {ankiSend?.status === 'updated' && (
+                    <p className="word-popup-anki-updated pb-2 text-[0.857em] text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
+                        {t('word.anki_updated')}
+                    </p>
+                )}
+                {/* Reachable only when a FOREIGN-model note matched deck +
+                    Word + Language: a note of our own types updates in place
+                    and reports 'updated' above (lib/ankiSync.js). */}
                 {ankiSend?.status === 'duplicate' && (
                     <p className="word-popup-anki-duplicate pb-2 text-[0.857em] opacity-70">
                         {t('word.anki_already')}
@@ -726,9 +752,14 @@ export function PopupContent({
  * blocks; it defaults to the popupVisibility prop shared to every page,
  * and an absent map means everything renders. The "Save to Anki" toolbar
  * icon ignores those toggles (always visible); it sends through
- * lib/ankiSync.js with the ankiSettings shared prop. The body itself
- * lives in the exported PopupContent, which the profile's Popups tab
- * reuses for its live preview.
+ * lib/ankiSync.js with the word's resolved config from the ankiSettings
+ * shared prop (lib/ankiWordConfig.js: the language entry's deck + toggles,
+ * per-language note type). On open a silent duplicate check
+ * (lib/ankiSync.js's memoized findExistingNote — it never creates decks or
+ * note types, and fails silently when Anki is off) drives the icon's add vs
+ * update form; a send of an already-saved word updates the note in place.
+ * The body itself lives in the exported PopupContent, which the profile's
+ * Popups tab reuses for its live preview.
  */
 export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain, sections}) {
     const {t} = useI18n();
@@ -741,6 +772,21 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [ankiSend, setAnkiSend] = useState(null);
+    // The on-open duplicate check's outcome for the current word:
+    // 'checking' while the findNotes round-trip is in flight (the icon
+    // stays in add form — no spinner), 'found' once the word sits in its
+    // language's deck (the icon flips to the update glyph), 'absent' when
+    // it does not — or when Anki was unreachable: the sync layer collapses
+    // "not found" and "couldn't ask" into one null, and a send still runs
+    // its own find-before-add, so a misjudged icon can never create a
+    // second card.
+    const [ankiExisting, setAnkiExisting] = useState('checking');
+    // Mirrors `data` on every render; the send's completion paths compare
+    // the data they started with against it, so a late result for a
+    // previous word never lands on the current one (the explainKey
+    // precedent in ExplainPane).
+    const dataRef = useRef(null);
+    dataRef.current = data;
     const [modelsOpen, setModelsOpen] = useState(false);
     // Read by the document-level close handlers below: while the nested
     // Models used popup is open, that modal owns Escape and outside-click
@@ -763,6 +809,10 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         setError(null);
         setData(null);
         setAnkiSend(null);
+        // The new word starts undetected — the previous word's 'found' must
+        // never paint onto it (the detection effect below re-asserts
+        // 'checking' when it runs for the loaded data).
+        setAnkiExisting('checking');
 
         fetch(`/words/${wordId}?surface=${encodeURIComponent(surface)}`, {
             headers: {Accept: 'application/json'},
@@ -793,6 +843,32 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             cancelled = true;
         };
     }, [wordId, surface, t]);
+
+    // On-open duplicate detection (anki-popup-refresh): the popup silently
+    // asks Anki whether this word is already saved — scoped to the word's
+    // language deck + Word + Language through lib/ankiSync.js's
+    // findExistingNote, which never runs the ensure (detection must not
+    // create decks or note types), answers from its page-session memo on
+    // re-opens and on send-seeded entries, and resolves null on ANY failure
+    // — so an unreachable Anki quietly leaves the add-form icon. Keyed to
+    // the loaded data like the fetch effect above; the cancelled guard
+    // drops a late answer for a popup that has since moved to another word.
+    useEffect(() => {
+        if (!ankiSettings || !data) {
+            return;
+        }
+        let cancelled = false;
+        setAnkiExisting('checking');
+        const language = data.language_code ?? null;
+        findExistingNote(ankiWordSyncConfig(ankiSettings, language), {word: data.word, language}).then((noteId) => {
+            if (!cancelled) {
+                setAnkiExisting(noteId == null ? 'absent' : 'found');
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [ankiSettings, data]);
 
     useEffect(() => {
         const onKeyDown = (event) => {
@@ -842,26 +918,37 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             .catch(() => setBusy(false));
     };
 
-    // The per-word "Save to Anki" send: the note is built from the payload
-    // the popup already loaded — the same builder the Anki tab's sample card
-    // uses, with the Translations field narrowed to the user's native
-    // language (the shared auth prop carries its code), the word's tags
-    // from the payload, and the popup's own UI-language strings as the
-    // structured values' labels (counted summaries, "+N more…" expander,
-    // "form of") — the same baking the tab does, so a card is worded in the
-    // sender's language. The resolved fields map rides along too: the body
-    // toggles (plus the `body` master toggle) shape the Body value at SEND
-    // time — newly sent cards only (spec V2); the scalar toggles stay
-    // template-side. Then the note is handed to lib/ankiSync.js's
-    // duplicate-checked add. The ensure (deck / note type / template) is
-    // memoized module state shared with the tab, so the first send of a
+    // The per-word "Save to Anki" / "Update in Anki" send: the note is built
+    // from the payload the popup already loaded — the same builder the Anki
+    // tab's sample card uses, with the Translations field narrowed to the
+    // user's native language (the shared auth prop carries its code), the
+    // word's tags from the payload, and the popup's own UI-language strings
+    // as the structured values' labels (counted summaries, "+N more…"
+    // expander, "form of") — the same baking the tab does, so a card is
+    // worded in the sender's language. The resolved fields map rides along
+    // too: the body toggles (plus the `body` master toggle) shape the Body
+    // value at SEND time — newly sent cards only (spec V2); the scalar
+    // toggles stay template-side. The config is the WORD's, not the global
+    // base: ankiWordSyncConfig resolves the language entry
+    // (languages[code] ?? languages.default) — the same config the on-open
+    // detection used, so send and check can never target different decks.
+    // The send then goes find-before-add through lib/ankiSync.js: a fresh
+    // word is added, a found note of OUR types (configured per-language or
+    // legacy base) is refreshed in place — all thirteen values rebuilt, tags
+    // replaced, id/deck/scheduling untouched — and only a foreign-model note
+    // stops at "Already in Anki.". The ensure (deck / note type / template)
+    // is memoized module state shared with the tab, so the first send of a
     // session auto-creates them and later sends skip straight to the
     // duplicate check. Failures land in `ankiSend` for the toolbar's inline
-    // hint — never a silent no-op.
+    // hint — never a silent no-op — and every completion first checks the
+    // mirrored data ref: a popup that moved to another word never adopts the
+    // previous word's result.
     const sendToAnki = () => {
         if (!ankiSettings || !data || ankiSend?.status === 'sending') {
             return;
         }
+        const language = data.language_code ?? null;
+        const config = ankiWordSyncConfig(ankiSettings, language);
         setAnkiSend({status: 'sending'});
         const tags = data.tags ?? [];
         const noteFields = buildNoteFields(data, {
@@ -869,11 +956,29 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             tags,
             nativeLanguage,
             labels: uiLabels(t),
-            fields: ankiSettings.fields,
+            fields: config.fields,
         });
-        sendAnkiNote(ankiSettings, noteFields, {tags, word: data.word}).then(
-            (result) => setAnkiSend({status: result.added ? 'added' : 'duplicate'}),
-            (error) => setAnkiSend({status: 'error', error}),
+        sendAnkiNote(config, noteFields, {tags, word: data.word}).then(
+            (result) => {
+                if (dataRef.current !== data) {
+                    return;
+                }
+                const status = result.added ? 'added' : result.updated ? 'updated' : 'duplicate';
+                setAnkiSend({status});
+                if (result.added || result.updated) {
+                    // Our note is in the deck now: flip the icon to its
+                    // update form without a re-query — the sync layer also
+                    // seeded the detection memo, so the next open answers
+                    // from the memo too.
+                    setAnkiExisting('found');
+                }
+            },
+            (error) => {
+                if (dataRef.current !== data) {
+                    return;
+                }
+                setAnkiSend({status: 'error', error});
+            },
         );
     };
 
@@ -910,6 +1015,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                     progressBusy={busy}
                     onAnkiSend={sendToAnki}
                     ankiSend={ankiSend}
+                    ankiExisting={ankiExisting}
                 />
             )}
         </div>,

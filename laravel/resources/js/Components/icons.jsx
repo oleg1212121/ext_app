@@ -33,6 +33,9 @@ const ICON_PATHS = {
     minusCircle: 'M15 12H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
     // A plus on the front of two stacked cards — the collection's new note.
     ankiAdd: 'M16.5 8.25V6a2.25 2.25 0 0 0-2.25-2.25H6A2.25 2.25 0 0 0 3.75 6v8.25A2.25 2.25 0 0 0 6 16.5h2.25m8.25-8.25H18A2.25 2.25 0 0 1 20.25 10.5V18A2.25 2.25 0 0 1 18 20.25h-7.5A2.25 2.25 0 0 1 8.25 18v-7.5A2.25 2.25 0 0 1 10.5 8.25h6ZM14.25 11.75v5m-2.5-2.5h5',
+    // Two chasing arrows (heroicons-outline arrow-path) — the word already
+    // sits in the deck; a click refreshes the card in place.
+    ankiUpdate: 'M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99',
 };
 
 export function Icon({name, className, strokeWidth = 2}) {

@@ -26,8 +26,13 @@ return [
     'word.definitions' => ['en' => 'Definitions (:count)', 'ru' => 'Определения (:count)', 'be' => 'Вызначэнні (:count)'],
     'word.no_translations' => ['en' => 'No translations yet — automatic translation may still be in progress.', 'ru' => 'Переводов пока нет — автоматический перевод ещё может выполняться.', 'be' => 'Перакладаў пакуль няма — аўтаматычны пераклад яшчэ можа выконвацца.'],
     'word.anki_send' => ['en' => 'Save to Anki', 'ru' => 'Сохранить в Anki', 'be' => 'Захаваць у Anki'],
+    'word.anki_update' => ['en' => 'Update in Anki', 'ru' => 'Обновить в Anki', 'be' => 'Абнавіць у Anki'],
     'word.anki_sending' => ['en' => 'Saving…', 'ru' => 'Сохраняем…', 'be' => 'Захоўваем…'],
     'word.anki_added' => ['en' => 'Added to Anki.', 'ru' => 'Добавлено в Anki.', 'be' => 'Дададзена ў Anki.'],
+    'word.anki_updated' => ['en' => 'Updated in Anki.', 'ru' => 'Обновлено в Anki.', 'be' => 'Абноўлена ў Anki.'],
+    // Only the foreign-model duplicate still lands here (anki-popup-refresh):
+    // a note of the app's own types updates in place and reports
+    // word.anki_updated instead.
     'word.anki_already' => ['en' => 'Already in Anki.', 'ru' => 'Уже в Anki.', 'be' => 'Ужо ў Anki.'],
     'word.anki_unreachable' => ['en' => 'Can\'t reach Anki — make sure desktop Anki with AnkiConnect is running.', 'ru' => 'Нет связи с Anki — убедитесь, что запущен настольный Anki с AnkiConnect.', 'be' => 'Няма сувязі з Anki — пераканайцеся, што запушчаны настольны Anki з AnkiConnect.'],
     'word.anki_mismatch' => ['en' => 'The "ExtApp Vocabulary" note type in Anki is out of date. In Anki, open Tools → Manage Note Types and delete "ExtApp Vocabulary" (its notes are deleted with it), then sync again from Profile → Anki and send your words again.', 'ru' => 'Тип заметок «ExtApp Vocabulary» в Anki устарел. В Anki откройте «Инструменты → Управление типами заметок» и удалите «ExtApp Vocabulary» (его заметки удалятся вместе с ним), затем снова синхронизируйте профиль → Anki и отправьте слова заново.', 'be' => 'Тып нататак «ExtApp Vocabulary» у Anki састарэў. У Anki адкрыйце «Інструменты → Кіраванне тыпамі нататак» і выдаліце «ExtApp Vocabulary» (яго нататкі выдалзяцца разам з ім), затым зноў сінхранізуйце профіль → Anki і адпраўце словы яшчэ раз.'],

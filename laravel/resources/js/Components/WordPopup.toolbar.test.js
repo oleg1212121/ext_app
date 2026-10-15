@@ -9,11 +9,14 @@ import {describe, expect, it} from 'vitest';
 // the word header, with no bottom footer — and always render, disabled
 // rather than hidden, when inapplicable (the `progress_actions` visibility
 // gate covers only the two progress icons; the Anki icon ignores
-// popup-visibility toggles). Tooltips and aria-labels come from the
-// existing word.* ui-strings, the glyphs from the shared line-art set in
-// Components/icons.jsx (currentColor, no own color), and the Anki status
-// lines render inside the toolbar strip. The profile preview's inertness
-// (no handlers reach PopupContent) is pinned on PopupsSettings.jsx.
+// popup-visibility toggles). The Anki icon carries the popup's two forms:
+// the add glyph for a word not (yet) known to be in the deck, the update
+// glyph + "Update in Anki" once the on-open detection found it. Tooltips
+// and aria-labels come from the existing word.* ui-strings, the glyphs from
+// the shared line-art set in Components/icons.jsx (currentColor, no own
+// color), and the Anki status lines render inside the toolbar strip. The
+// profile preview's inertness (no handlers reach PopupContent) is pinned on
+// PopupsSettings.jsx.
 
 const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
 const iconsSource = readFileSync(new URL('./icons.jsx', import.meta.url), 'utf8');
@@ -85,19 +88,29 @@ describe('WordPopup action toolbar', () => {
     it('draws the glyphs from the shared line-art set — no inline SVG', () => {
         expect(buttonIn('word-popup-progress-known')).toContain('<Icon name="checkCircle"');
         expect(buttonIn('word-popup-progress-reset')).toContain('<Icon name="minusCircle"');
-        expect(buttonIn('word-popup-anki-send')).toContain('<Icon name="ankiAdd"');
-        for (const name of ['checkCircle', 'minusCircle', 'ankiAdd']) {
+        for (const name of ['checkCircle', 'minusCircle', 'ankiAdd', 'ankiUpdate']) {
             expect(iconsSource).toMatch(new RegExp(`^    ${name}: '`, 'm'));
         }
     });
 
-    it('keeps today’s add-only send — no update glyph wired yet', () => {
-        expect(popupSource).not.toContain('ankiUpdate');
+    it('flips the Anki icon between its add and update forms on the detection outcome', () => {
+        const anki = buttonIn('word-popup-anki-send');
+        // found → the update glyph + "Update in Anki"; checking / absent /
+        // unknown-Anki → the add form stays (a silent detection failure
+        // renders no error of its own, the spec's "icon stays add form").
+        expect(anki).toContain("ankiExisting === 'found' ? 'ankiUpdate' : 'ankiAdd'");
+        expect(anki).toContain("ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send')");
     });
 
     it('renders the Anki status lines inside the toolbar strip', () => {
         expect(toolbar).toContain('word-popup-anki-added');
+        expect(toolbar).toContain('word-popup-anki-updated');
+        expect(toolbar).toContain("t('word.anki_updated')");
+        // The duplicate line survives ONLY for a foreign-model note (our own
+        // notes update in place instead) — "Already in Anki." stays accurate
+        // there.
         expect(toolbar).toContain('word-popup-anki-duplicate');
+        expect(toolbar).toContain("t('word.anki_already')");
         expect(toolbar).toContain('word-popup-anki-error');
         expect(toolbar).toContain('/profile?tab=anki');
     });

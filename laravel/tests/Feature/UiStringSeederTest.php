@@ -42,6 +42,24 @@ it('seeds the Anki tab language-selector string in all three interface languages
     ]);
 });
 
+it('seeds the word popup update-affordance strings in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // anki-popup-refresh ticket 05: the toolbar icon's update form and its
+    // "Updated in Anki." status — the duplicate dead-end's replacements.
+    expect(seededUiStringTexts('word.anki_update'))->toBe([
+        'en' => 'Update in Anki',
+        'ru' => 'Обновить в Anki',
+        'be' => 'Абнавіць у Anki',
+    ]);
+    expect(seededUiStringTexts('word.anki_updated'))->toBe([
+        'en' => 'Updated in Anki.',
+        'ru' => 'Обновлено в Anki.',
+        'be' => 'Абноўлена ў Anki.',
+    ]);
+});
+
 it('seeds be texts for sampled keys across every group', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();
