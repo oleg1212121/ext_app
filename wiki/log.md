@@ -1,5 +1,49 @@
 # Directory Update Log
 
+## 2026-10-15 (anki-popup-card 05 — review fixes: expander CSS pairing, shared label builder, doc sync)
+
+Review-fix commit on `anki-popup-card` closing the two-axis review of the
+feature's diff (standards + spec). Three code findings, one doc finding,
+one spec amendment:
+
+- `laravel/resources/js/lib/ankiTemplate.js` — real defect fixed: the
+  translations expander's emitted `<summary class="ef-more-summary">` was
+  matched by no CSS rule (the selector was the descendant form
+  `.ef-more .ef-summary`, which matches nothing in the baked value), so the
+  "+N more…" affordance lost its pointer cursor, `list-style: none`, and
+  marker suppression. Since field VALUES are frozen into already-sent
+  notes, the CSS now names the emitted class: `.ef-more-summary` joins the
+  shared tap-affordance rule and the marker-suppression rule, and the
+  override rule targets it directly. `.ef-details` — emitted with no rule —
+  got the rule it deserves: the popup's `mt-2` lives on the `<details>`
+  itself, so the spacing moved off the summary onto `.ef-details`. A new
+  pairing test in `ankiTemplate.test.js` extracts every `ef-*` class the
+  generated template HTML, hide classes, and value-side structure emit and
+  requires each to appear as a class selector in TEMPLATE_CSS — this class
+  of miss cannot recur.
+- `ankiTemplate.js` + `WordPopup.jsx` + `AnkiSettings.jsx` — the five-key
+  labels object (identical in both senders) became the shared
+  `uiLabels(t)` builder in `ankiTemplate.js` (the localized counterpart of
+  `DEFAULT_LABELS`, over the app's `word.*` ui-strings). The send-path
+  source pin (`WordPopup.ankiSend.test.js`) now pins
+  `labels: uiLabels(t)` and forbids a hand-rolled object; the key→string
+  mapping is pinned behaviorally in `ankiTemplate.test.js` (a lib export,
+  so stronger than the old anywhere-in-the-send-block substring match).
+- `wiki/domains/anki-export.md` — step 4 names `uiLabels(t)` as the shared
+  mapping; `generated.at` corrected forward (ticket 04 had bumped it
+  backwards, 15:20 → 13:05).
+- `wiki/playbooks/running-tests.md` — vitest section de-staled: the suite
+  is lib modules PLUS the one blessed Components-side source pin
+  (ADR 0077 addendum point E), colocation bullet states the exception.
+  Its 15:20+03:00 stamp was future-dated (authored in an 11:07 commit);
+  reset to the true edit time.
+- `wiki/domains/profile.md` + `wiki/domains/interactive-words.md` — the
+  senders' label sentence in each now names the shared `uiLabels(t)`
+  builder (their "tab passes its locale's via `useI18n`, as the popup does"
+  / "passed from `sendToAnki`" prose stayed true but the seam moved);
+  stamps bumped (both had also been verified as moved forward, not
+  backwards, in ticket 04).
+
 ## 2026-10-15 (anki-popup-card 04 — knowledge-base closure: the Anki card looks like the reading popup)
 
 Closure of the anki-popup-card feature (code in its tickets 01–03: the

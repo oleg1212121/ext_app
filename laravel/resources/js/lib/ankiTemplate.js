@@ -182,13 +182,21 @@ const TEMPLATE_CSS = `.card {
     letter-spacing: 0.05em;
     opacity: 0.6;
 }
-.ef-summary {
-    margin-top: 2px;
+/* The counted sections carry the popup's mt-2 on the <details> itself,
+   exactly where the popup puts it. Both summary flavors — the counted
+   sections' ef-summary and the expander's ef-more-summary — share the tap
+   affordance. The expander's summary is its own class (the baked
+   Translations values carry ef-more-summary, so the selectors must name
+   that class: values are frozen into already-sent notes and a
+   .ef-more .ef-summary descendant would match nothing), styled by the
+   later rule. */
+.ef-details { margin-top: 2px; }
+.ef-summary, .ef-more-summary {
     cursor: pointer;
     list-style: none;
     opacity: 0.7;
 }
-.ef-summary::-webkit-details-marker { display: none; }
+.ef-summary::-webkit-details-marker, .ef-more-summary::-webkit-details-marker { display: none; }
 .ef-definitions-list {
     margin: 6px 0 0;
     padding: 0;
@@ -211,7 +219,7 @@ const TEMPLATE_CSS = `.card {
     opacity: 0.75;
 }
 .ef-more { display: inline; }
-.ef-more .ef-summary {
+.ef-more-summary {
     margin: 0 4px;
     text-decoration: underline;
     text-underline-offset: 2px;
@@ -309,6 +317,23 @@ const DEFAULT_LABELS = {
     etymology: (count) => `Etymology (${count})`,
     more: (count) => `+${count} more…`,
     formOf: 'form of',
+}
+
+// The localized counterpart of the defaults: the same five keys pulled from
+// the app's own ui-strings (database/seeders/ui-strings/words.php). Both
+// senders (the word popup's sendToAnki, the Anki tab's sampleNoteFields)
+// call this with their `useI18n` t — one definition of the mapping, so the
+// senders cannot drift apart and a new key lands everywhere at once. The
+// key names here are the single JS statement of which ui-strings feed the
+// labels option.
+export function uiLabels(t) {
+    return {
+        definitions: (count) => t('word.definitions', {count}),
+        examples: (count) => t('word.examples', {count}),
+        etymology: (count) => t('word.etymology', {count}),
+        more: (count) => t('word.more', {count}),
+        formOf: t('word.form_of'),
+    }
 }
 
 // The popup's per-entry section label (WordPopup's sectionLabel, ADR 0045):

@@ -4,8 +4,8 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T13:10:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T13:10:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T13:45:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T13:45:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -197,7 +197,8 @@ Definitions/Examples/Etymology, the translations preview behind a
 "+N more…" expander, " · "-joined transcriptions, and the localized
 "form of" prefix inside the WordFamily value. A `labels` option carries the
 five UI-language strings (summaries, expander, "form of") — the tab passes
-its locale's via `useI18n`, exactly as the popup send does, so the preview
+its locale's via `useI18n` (both senders share `ankiTemplate.js`'s
+`uiLabels(t)` builder over the app's `word.*` strings), so the preview
 shows the real wording; the wording is frozen into the note at send time.
 
 **Template preview** — the tab renders the exact generated artifacts in a

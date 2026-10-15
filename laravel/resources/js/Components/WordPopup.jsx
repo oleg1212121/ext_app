@@ -8,7 +8,7 @@ import {renderMarkdown} from '../lib/markdown';
 import {canAskExplanation} from '../lib/wordExplain';
 import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
 import {AnkiConnectError} from '../lib/ankiConnect';
-import {buildNoteFields} from '../lib/ankiTemplate';
+import {buildNoteFields, uiLabels} from '../lib/ankiTemplate';
 import {AnkiNoteTypeMismatchError, sendAnkiNote} from '../lib/ankiSync';
 
 const POPUP_MARGIN = 8;
@@ -831,13 +831,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             familiarity,
             tags,
             nativeLanguage,
-            labels: {
-                definitions: (count) => t('word.definitions', {count}),
-                examples: (count) => t('word.examples', {count}),
-                etymology: (count) => t('word.etymology', {count}),
-                more: (count) => t('word.more', {count}),
-                formOf: t('word.form_of'),
-            },
+            labels: uiLabels(t),
         });
         sendAnkiNote(ankiSettings, noteFields, {tags, word: data.word}).then(
             (result) => setAnkiSend({status: result.added ? 'added' : 'duplicate'}),

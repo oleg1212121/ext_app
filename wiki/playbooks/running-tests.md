@@ -4,8 +4,8 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T15:20:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T13:40:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T13:40:00+03:00 }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -135,12 +135,17 @@ sources:
 
 * `docker exec ext_app_laravel npm run test` (= `vitest run`) executes
   `resources/js/**/*.test.{js,mjs}` in Node. The suite pins pure `lib/`
-  modules only (SSE parsing, payload mapping, clamps, position store, error
+  modules (SSE parsing, payload mapping, clamps, position store, error
   chains, and the anki JS trio — wire-shape client, template generator, sync
   orchestration, exercised with `vi.stubGlobal('fetch', …)` since the
-  browser-side AnkiConnect client is pure request/response logic) — **no
-  jsdom, no React/component tests**: pages and hooks are wiring, covered by
-  Pest and manual verification (ADR 0066).
+  browser-side AnkiConnect client is pure request/response logic) plus
+  exactly one blessed Components-side source pin:
+  `Components/WordPopup.ankiSend.test.js` reads the popup's `sendToAnki`
+  JSX as text and pins the send-path's labels pass-through (the note must
+  be built with `uiLabels(t)`, so cards carry the sender's UI language —
+  ADR 0077 addendum point E). **No jsdom, no React/component tests**: pages
+  and hooks are wiring, covered by Pest and manual verification (ADR 0066);
+  a second out-of-`lib/` file needs its own ADR blessing.
 * `vitest.config.js` is standalone and deliberately does NOT load the
   laravel-vite plugin or the app's `vite.config.js` — keep it that way, or
   the suite becomes a build.
@@ -149,7 +154,9 @@ sources:
   load-bearing). `composer run test` deliberately does NOT chain it: Pest
   runs without Vite/npm and must stay PHP-only.
 * Test files are colocated next to the module they pin
-  (`resources/js/lib/*.test.*`). When extracting logic from a page, put the
+  (`resources/js/lib/*.test.*`); the standing exception is the blessed
+  Components-side source pin above, which pins wiring inside the component
+  file it reads. When extracting logic from a page, put the
   pure part in `lib/` (`.mjs` if it must stay framework-free) so it has a
   home to test in.
 * A module with its own memo cache (e.g. `lib/ankiSync.js` memoizes ensures

@@ -4,8 +4,8 @@ title: Anki Export
 description: The path from saved words to the user's desktop Anki — per-user connection settings and card-field toggles on the profile's Anki tab, a deterministic popup-styled card template (the Front is the word, the Back mirrors the reading popup's header/body/footer) with hide-class semantics and popup-structured field values, one-click template sync into Anki, and duplicate-checked per-word sends from the word popup, all driven browser-side through AnkiConnect (ADR 0077).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T13:05:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T13:05:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T13:40:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T13:40:00+03:00 }
 sources:
   - id: adr
     resource: docs/adr/0077-browser-side-ankiconnect.md
@@ -125,9 +125,10 @@ sources below).
    transcriptions, and the localized "form of" prefix inside the WordFamily
    value. A `labels` option carries the five UI-language strings (the three
    counted summaries, the expander, "form of"): senders pass their locale's
-   wording and it is frozen into the note at send time — English defaults
-   cover senders that pass none, and no in-app sender relies on them. The
-   note is then find-before-add duplicate-checked (deck + Word + Language —
+   wording — both build it with `ankiTemplate.js`'s `uiLabels(t)` over the
+   app's `word.*` ui-strings, one shared mapping — and it is frozen into
+   the note at send time; English defaults cover senders that pass none,
+   and no in-app sender relies on them. The note is then find-before-add duplicate-checked (deck + Word + Language —
    the search word must be the RAW payload word, required, since the note's
    Word field value is HTML-escaped) and added with `allowDuplicate: false`
    as a race net. The first send of a page session auto-ensures the target

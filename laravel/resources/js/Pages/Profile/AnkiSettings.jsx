@@ -10,7 +10,7 @@ import {
     ankiConnectVersion,
     requestPermission,
 } from '../../lib/ankiConnect'
-import {ANKI_CARD_NAME, ANKI_FIELDS, buildNoteFields, generateCardTemplate, renderCardHtml} from '../../lib/ankiTemplate'
+import {ANKI_CARD_NAME, ANKI_FIELDS, buildNoteFields, generateCardTemplate, renderCardHtml, uiLabels} from '../../lib/ankiTemplate'
 import {AnkiNoteTypeMismatchError, ensureAnkiTarget, sendAnkiNote} from '../../lib/ankiSync'
 import {SAMPLE_DATA, SAMPLE_FAMILIARITY, SAMPLE_TAGS} from './sampleWordData'
 import {CheckboxRow, InputLabel, SecondaryButton, SectionHeader, TextInput} from './ui.jsx'
@@ -133,19 +133,14 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
     // The sample note built from the shared fixture (the same fixture the
     // Popups tab previews with): one construction feeding both the live
     // template preview and the "Send sample card" action. The label strings
-    // come from the tab's UI language — the same baking a real send does
-    // (buildNoteFields' English defaults cover senders that pass none).
+    // come from the tab's UI language through the shared uiLabels builder —
+    // the same baking a real send does (buildNoteFields' English defaults
+    // cover senders that pass none).
     const sampleNoteFields = buildNoteFields(SAMPLE_DATA, {
         familiarity: SAMPLE_FAMILIARITY,
         tags: SAMPLE_TAGS,
         nativeLanguage,
-        labels: {
-            definitions: (count) => t('word.definitions', {count}),
-            examples: (count) => t('word.examples', {count}),
-            etymology: (count) => t('word.etymology', {count}),
-            more: (count) => t('word.more', {count}),
-            formOf: t('word.form_of'),
-        },
+        labels: uiLabels(t),
     })
 
     const probe = async (call) => {

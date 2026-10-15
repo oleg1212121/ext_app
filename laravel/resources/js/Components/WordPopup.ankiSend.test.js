@@ -5,35 +5,27 @@ import {describe, expect, it} from 'vitest';
 // React wiring — ADR 0066 keeps components outside vitest's behavioral
 // reach — so its one untestable-elsewhere decision is pinned the way the
 // PHP mirror suites pin their hand-mirrored JSX: a source assertion. What
-// it locks: the popup must feed buildNoteFields the app's own UI-language
-// strings (database/seeders/ui-strings/words.php) as the labels option, so
-// a card sent from the reader carries the sender's language in its counted
+// it locks: the send must feed buildNoteFields the app's UI-language label
+// wording through lib/ankiTemplate.js's shared uiLabels(t) builder, so a
+// card sent from the reader carries the sender's language in its counted
 // summaries, its "+N more…" expander, and its "form of" label — not always
-// English. The builder's handling of labels is pinned in
-// lib/ankiTemplate.test.js; the wire behavior around the built note in
-// lib/ankiSync.test.js. This test only guards the pass-through itself.
+// English. The builder's key→string mapping is pinned behaviorally in
+// lib/ankiTemplate.test.js (uiLabels is a lib export); the wire behavior
+// around the built note in lib/ankiSync.test.js. This test only guards the
+// pass-through itself (ADR 0077 addendum point E).
 
 const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
-
-// The five value-side wording strings the builder understands, keyed by the
-// app's own ui-string keys — the same five the Anki tab's sample send passes.
-const LABEL_STRINGS = [
-    "t('word.definitions', {count})",
-    "t('word.examples', {count})",
-    "t('word.etymology', {count})",
-    "t('word.more', {count})",
-    "t('word.form_of')",
-];
 
 describe('WordPopup sendToAnki', () => {
     it('builds the note fields with the labels option', () => {
         expect(popupSource).toMatch(/buildNoteFields\(data, \{[^}]*labels:/s);
     });
 
-    it('passes the popup\'s own UI-language strings as those labels', () => {
+    it('takes those labels from the shared uiLabels builder — no hand-rolled object', () => {
         const send = popupSource.slice(popupSource.indexOf('const sendToAnki'));
-        for (const label of LABEL_STRINGS) {
-            expect(send).toContain(label);
-        }
+        expect(send).toContain('labels: uiLabels(t)');
+        // An inline labels object here would fork the five-key mapping the
+        // Anki tab's sample send shares; the builder is the single source.
+        expect(send).not.toMatch(/labels: \{/);
     });
 });

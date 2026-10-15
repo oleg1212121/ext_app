@@ -6,6 +6,7 @@ import {
     buildNoteFields,
     generateCardTemplate,
     renderCardHtml,
+    uiLabels,
 } from './ankiTemplate';
 
 // Minimal word payload with the shape the word popup receives (GET
@@ -185,6 +186,26 @@ describe('generateCardTemplate', () => {
         expect(css).toContain('.ef-summary');
         expect(css).toContain('.ef-more { display: inline; }');
     });
+
+    it('styles every class the template and the values emit — the CSS↔markup pairing cannot drift', () => {
+        // The expander's summary class was once renamed in the values while
+        // the CSS kept a `.ef-more .ef-summary` descendant selector: the rule
+        // matched nothing and the "+N more…" affordance lost its cursor and
+        // marker suppression. Every ef-* class the generated markup carries
+        // (template HTML, hide classes, value-side structure) must therefore
+        // appear as a class selector in TEMPLATE_CSS.
+        const toggled = generateCardTemplate({definitions: false});
+        const structured = buildNoteFields(MULTI, {familiarity: 40, tags: ['A2']});
+        const expanded = buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS}]});
+
+        const sources = [toggled.front, toggled.back, ...Object.values(structured), expanded.Translations];
+        const emitted = new Set([...sources.join('\n').matchAll(/class="([^"]+)"/g)]
+            .flatMap(([, classes]) => classes.split(/\s+/))
+            .filter((cls) => cls.startsWith('ef-')));
+        const styled = new Set([...toggled.css.matchAll(/\.([A-Za-z0-9_-]+)/g)].map((match) => match[1]));
+
+        expect([...emitted].filter((cls) => !styled.has(cls))).toEqual([]);
+    });
 });
 
 describe('buildNoteFields', () => {
@@ -341,6 +362,41 @@ describe('buildNoteFields', () => {
         expect(note.Definitions).toContain('<span class="ef-entry-label">&lt;I&gt;MELT&lt;/I&gt; — verb</span>');
         expect(note.Translations).toContain('&lt;таять&gt;');
         expect(note.WordFamily).toBe('form of m&amp;elt');
+    });
+});
+
+describe('uiLabels', () => {
+    // A fresh t-spy per probe: each label must reach the app's ui-strings
+    // with exactly its key and, where the wording counts, the count.
+    const probe = (invoke) => {
+        const calls = [];
+        const t = (key, params) => (calls.push({key, params}), key);
+        const labels = uiLabels(t);
+        calls.length = 0;
+        invoke(labels);
+        return calls;
+    };
+
+    it('resolves the form-of string eagerly — it is a value, not a count function', () => {
+        const calls = [];
+        uiLabels((key, params) => (calls.push({key, params}), key));
+        expect(calls).toEqual([{key: 'word.form_of', params: undefined}]);
+    });
+
+    it('maps the five keys to the app\'s word.* ui-strings — the mapping both senders share', () => {
+        expect(probe((labels) => labels.definitions(3))).toEqual([{key: 'word.definitions', params: {count: 3}}]);
+        expect(probe((labels) => labels.examples(2))).toEqual([{key: 'word.examples', params: {count: 2}}]);
+        expect(probe((labels) => labels.etymology(1))).toEqual([{key: 'word.etymology', params: {count: 1}}]);
+        expect(probe((labels) => labels.more(5))).toEqual([{key: 'word.more', params: {count: 5}}]);
+    });
+
+    it('feeds buildNoteFields directly — a localized card without hand-rolled labels', () => {
+        const t = (key, params) => (key === 'word.definitions'
+            ? `Определения (${params.count})`
+            : key === 'word.form_of' ? 'форма слова' : key);
+        const note = buildNoteFields(MULTI, {labels: uiLabels(t)});
+        expect(note.Definitions).toContain('<summary class="ef-summary">Определения (2)</summary>');
+        expect(note.WordFamily).toBe('форма слова melt');
     });
 });
 
