@@ -21,29 +21,37 @@ profile's Anki tab. Distinct from popup visibility even though both autosave
 into the same per-user settings blob.
 
 **Card field**:
-One of the twelve named slots every card carries: Word, Transcription, Part
-of speech, Frequency, Definitions, Translations, Examples, Etymology, Word
-family, Tags, Familiarity, Language. Values for all twelve always ride on
-every note — a field the user turned off is hidden, never omitted.
+One of the thirteen named slots every note carries (schema v2, ADR 0077):
+the flat reading fields — Word, Transcription, Part of speech, Frequency,
+Definitions, Translations, Examples, Etymology, Word family, Tags,
+Familiarity, Language — plus Body, the whole rendered dictionary, last.
+Values for all of them always ride on every note — a field the user turned
+off is hidden, never omitted.
 
 **Note type**:
-"ExtApp Vocabulary" — the app-owned Anki note type: the twelve card fields
-in fixed order plus one card template. A same-named note type with a
-different field set is treated as foreign and warned about, never rewritten.
+"ExtApp Vocabulary" — the app-owned Anki note type: the thirteen card
+fields in fixed order (Body last) plus one card template. A same-named
+note type with a different field set is treated as foreign and warned
+about, never rewritten.
 _Avoid_: model (Anki's API term — fine inside AnkiConnect calls, not in
 prose)
 
 **Card template**:
 The Front/Back HTML + CSS Anki renders a note with, generated
 deterministically from the user's field toggles and never hand-edited:
-Front shows the word alone, the Back renders all twelve fields in the
-reading popup's header/body/footer shape, each in its own classed wrapper.
+Front shows the word alone; the Back is the reading popup's
+header/dictionary/footer shape — scalar header and footer fields in
+classed wrappers around the Body slot, which renders the whole dictionary
+from its send-time-shaped value (the other flat fields stay searchable
+note values the template no longer renders; schema v2, ADR 0077).
 
 **Hide class**:
 The marker (`ef-hidden`) the generated template bakes into a toggled-off
-card field's wrapper so the template hides it while the note still carries
-the value. Toggling fields off and re-syncing restyles existing cards
-without re-exporting any note.
+scalar field's wrapper so the template hides it while the note still
+carries the value. Toggling the template fields off and re-syncing
+restyles existing cards without re-exporting any note (the body section
+toggles work at send time instead — they shape the Body value when a card
+is sent; schema v2, ADR 0077).
 
 **Template sync**:
 The one-click push that makes Anki match the app: deck create-if-missing,

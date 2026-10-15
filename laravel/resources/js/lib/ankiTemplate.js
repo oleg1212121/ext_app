@@ -373,6 +373,22 @@ const countedSection = (summary, content) =>
 
 const listItems = (items) => items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
 
+// The three counted collapsed sections — Definitions, Examples, Etymology —
+// in the popup's shape. Shared by the flat fields (entrySections: an empty
+// entry renders nothing) and the Body's per-entry sections (entryBody:
+// Definitions swaps in the popup's calm placeholder, the other two drop
+// whole), so the summary-wording + list-markup composition lives here once
+// and the two contexts cannot drift. Null on empty: each caller tells its
+// own empty story.
+const definitionsSection = (items, wording) => items.length === 0 ? null
+    : countedSection(wording.definitions(items.length), `<ol class="ef-definitions-list">${listItems(items)}</ol>`)
+
+const examplesSection = (items, wording) => items.length === 0 ? null
+    : countedSection(wording.examples(items.length), `<ul class="ef-examples-list">${listItems(items)}</ul>`)
+
+const etymologySection = (items, wording) => items.length === 0 ? null
+    : countedSection(wording.etymology(items.length), items.map((item) => `<p class="ef-etymology-item">${escapeHtml(item)}</p>`).join(''))
+
 // The translations line, shared by the flat field and the Body's per-entry
 // line: the popup's preview cap, the rest behind a "+N more…" expander —
 // an inline <details> so it opens into the same line instead of breaking
@@ -383,6 +399,17 @@ const translationsLine = (words, wording) => {
     return rest.length === 0
         ? previewed
         : `${previewed}<details class="ef-more"><summary class="ef-more-summary">${wording.more(rest.length)}</summary>${rest.map(escapeHtml).join(', ')}</details>`
+}
+
+// The bracketed transcriptions line, the Body's per-entry counterpart of
+// translationsLine: the popup's first reading, the rest behind a "+N
+// more…" expander whose content leads with the " · " separator.
+const transcriptionsLine = (values, wording) => {
+    const rest = values.slice(TRANSCRIPTIONS_PREVIEW)
+    const more = rest.length === 0
+        ? ''
+        : `<details class="ef-more"><summary class="ef-more-summary">${wording.more(rest.length)}</summary> · ${rest.map(escapeHtml).join(' · ')}</details>`
+    return `[${escapeHtml(values[0])}]${more}`
 }
 
 // The popup's per-entry blocks for one flat field: only entries carrying
@@ -411,6 +438,13 @@ const formOfValue = (forms, formOf) => {
     return list === '' ? '' : `${formOf} ${list}`
 }
 
+// The send-time toggles arrive as the sparse settings map (the resolved
+// `fields` option): an absent key means on — the Popups tab's convention —
+// and `false` means the user turned the section off. One reader for the six
+// decision points (entryBody's five sections, buildNoteFields' Body master)
+// so the convention is stated once and cannot drift apart between them.
+const isOn = (fields, key) => fields?.[key] !== false
+
 // One entry's Body section — the popup's dictionary pane, top to bottom:
 // the "WORD — pos" label, the translations line (or its calm placeholder),
 // the bracketed transcriptions (first, the rest behind the expander), the
@@ -427,7 +461,7 @@ const entryBody = (entry, headword, wording, fields) => {
         parts.push(`<span class="ef-entry-label">${label}</span>`)
     }
 
-    if (fields?.translations !== false) {
+    if (isOn(fields, 'translations')) {
         const words = (entry.translations ?? []).map((translation) => translation.word)
         parts.push(words.length === 0
             ? `<p class="ef-empty">${wording.noTranslations}</p>`
@@ -435,36 +469,26 @@ const entryBody = (entry, headword, wording, fields) => {
     }
 
     const transcriptions = (entry.transcriptions ?? []).map((item) => item.value)
-    if (fields?.transcription !== false && transcriptions.length > 0) {
-        const rest = transcriptions.slice(TRANSCRIPTIONS_PREVIEW)
-        parts.push(`<span class="ef-transcriptions">[${escapeHtml(transcriptions[0])}]${
-            rest.length === 0
-                ? ''
-                : `<details class="ef-more"><summary class="ef-more-summary">${wording.more(rest.length)}</summary> · ${rest.map(escapeHtml).join(' · ')}</details>`
-        }</span>`)
+    if (isOn(fields, 'transcription') && transcriptions.length > 0) {
+        parts.push(`<span class="ef-transcriptions">${transcriptionsLine(transcriptions, wording)}</span>`)
     }
 
-    if (fields?.definitions !== false) {
+    if (isOn(fields, 'definitions')) {
         const items = entry.definitions ?? []
-        parts.push(items.length === 0
-            ? `<p class="ef-empty">${wording.noDefinitions}</p>`
-            : countedSection(wording.definitions(items.length), `<ol class="ef-definitions-list">${listItems(items)}</ol>`))
+        parts.push(definitionsSection(items, wording) ?? `<p class="ef-empty">${wording.noDefinitions}</p>`)
     }
 
-    if (fields?.examples !== false) {
-        const items = entry.examples ?? []
-        if (items.length > 0) {
-            parts.push(countedSection(wording.examples(items.length), `<ul class="ef-examples-list">${listItems(items)}</ul>`))
+    if (isOn(fields, 'examples')) {
+        const section = examplesSection(entry.examples ?? [], wording)
+        if (section !== null) {
+            parts.push(section)
         }
     }
 
-    if (fields?.etymology !== false) {
-        const items = entry.etymologies ?? []
-        if (items.length > 0) {
-            parts.push(countedSection(
-                wording.etymology(items.length),
-                items.map((item) => `<p class="ef-etymology-item">${escapeHtml(item)}</p>`).join(''),
-            ))
+    if (isOn(fields, 'etymology')) {
+        const section = etymologySection(entry.etymologies ?? [], wording)
+        if (section !== null) {
+            parts.push(section)
         }
     }
 
@@ -519,33 +543,15 @@ export function buildNoteFields(data, {familiarity = null, tags = [], nativeLang
             .map(escapeHtml).join(' · '),
         PartOfSpeech: inlineValue(distinct(entries.map((entry) => entry.word_class))),
         Frequency: data?.frequency == null ? '' : escapeHtml(data.frequency),
-        Definitions: entrySections(entries, word, labeled, (entry) => {
-            const items = entry.definitions ?? []
-            return items.length === 0 ? null : countedSection(
-                wording.definitions(items.length),
-                `<ol class="ef-definitions-list">${listItems(items)}</ol>`,
-            )
-        }),
+        Definitions: entrySections(entries, word, labeled, (entry) => definitionsSection(entry.definitions ?? [], wording)),
         Translations: translationsLine(words, wording),
-        Examples: entrySections(entries, word, labeled, (entry) => {
-            const items = entry.examples ?? []
-            return items.length === 0 ? null : countedSection(
-                wording.examples(items.length),
-                `<ul class="ef-examples-list">${listItems(items)}</ul>`,
-            )
-        }),
-        Etymology: entrySections(entries, word, labeled, (entry) => {
-            const items = entry.etymologies ?? []
-            return items.length === 0 ? null : countedSection(
-                wording.etymology(items.length),
-                items.map((item) => `<p class="ef-etymology-item">${escapeHtml(item)}</p>`).join(''),
-            )
-        }),
+        Examples: entrySections(entries, word, labeled, (entry) => examplesSection(entry.examples ?? [], wording)),
+        Etymology: entrySections(entries, word, labeled, (entry) => etymologySection(entry.etymologies ?? [], wording)),
         WordFamily: formOfValue(data?.form_of ?? [], wording.formOf),
         Tags: inlineValue(tags),
         Familiarity: familiarity == null ? '' : escapeHtml(familiarity),
         Language: escapeHtml(data?.language_code ?? ''),
-        Body: fields?.body === false ? '' : bodyValue(entries, word, wording, fields),
+        Body: isOn(fields, 'body') ? bodyValue(entries, word, wording, fields) : '',
     }
 }
 

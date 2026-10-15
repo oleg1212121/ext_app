@@ -8,10 +8,11 @@ uses(TestCase::class);
 /*
  * The PHP<->JS mirror lockstep: App\Support\AnkiSettings owns the canonical
  * thirteen-field list and the connection defaults server-side, while the
- * browser modules (resources/js/lib/ankiTemplate.js, ankiConnect.js)
- * hand-mirror them — no JS runtime here, just string assertions against the
- * sources read from disk. A field added, renamed or re-ordered on either
- * side fails these tests until both sides agree again.
+ * browser modules (resources/js/lib/ankiTemplate.js, ankiConnect.js) and
+ * the Anki tab (resources/js/Pages/Profile/AnkiSettings.jsx) hand-mirror
+ * them — no JS runtime here, just string assertions against the sources
+ * read from disk. A field added, renamed or re-ordered on either side
+ * fails these tests until both sides agree again.
  */
 
 /**
@@ -49,6 +50,20 @@ it('mirrors every AnkiSettings field key and its Anki field name into the JS tem
 
 it('keeps the field mapping and the AnkiSettings::FIELDS list in the same order', function () {
     expect(array_keys(MIRRORED_ANKI_FIELDS))->toBe(AnkiSettings::FIELDS);
+});
+
+it('surfaces every field key as exactly one checkbox across the Anki tab\'s toggle groups', function () {
+    $ankiTab = file_get_contents(base_path('resources/js/Pages/Profile/AnkiSettings.jsx'));
+
+    preg_match('/const FIELD_GROUPS = \[(?<groups>[\s\S]*?)\n\]/', $ankiTab, $array);
+    preg_match_all('/keys: \[(?<keys>[^\]]*)\]/', $array['groups'] ?? '', $groups);
+    preg_match_all("/'(?<key>[a-z_]+)'/", implode(', ', $groups['keys']), $matches);
+
+    // Grouping is display-only, so coverage is the invariant: no key lost
+    // to an unsurfaced toggle (the regression that shipped `body`
+    // checkbox-less), none duplicated across groups, nothing foreign.
+    expect($matches['key'])->toHaveCount(count(AnkiSettings::FIELDS))
+        ->and($matches['key'])->toEqualCanonicalizing(AnkiSettings::FIELDS);
 });
 
 it('mirrors the connection defaults into the JS AnkiConnect module', function () {

@@ -1,5 +1,52 @@
 # Directory Update Log
 
+## 2026-10-15 (anki-popup-card 08 — Route A review fixes: glossary count, group-coverage pin, small tidy)
+
+The two-axis review of the whole popup-card feature (`git diff
+625a93a...HEAD`) raised three hard items and four smells; this ticket
+closes the hards and takes the cheap tides. No behavior changes — the
+card's emitted HTML/CSS and the tab's rendering are byte-identical (the
+behavioral vitest pins prove it: ankiTemplate.test.js 45/45 untouched).
+
+- `laravel/tests/Unit/AnkiSettingsMirrorTest.php` — new group-coverage
+  pin closing the gap that let `body` ship checkbox-less in ticket 06:
+  it regex-extracts `FIELD_GROUPS` from the Anki tab's JSX source on
+  disk (the house mirror-pin pattern — both sibling pins live PHP-side,
+  and a second Components-side vitest file would need its own ADR
+  blessing) and asserts the flattened keys cover all thirteen exactly
+  once — none lost, none duplicated, nothing foreign. Red-drilled by
+  dropping a key: exactly the new test failed; reverted green.
+- `laravel/resources/js/lib/ankiTemplate.js` — value-side tidy, output
+  byte-identical: the sparse-map "absent = on" convention got a name
+  (`isOn(fields, key)` — six decision points, one home); the counted
+  sections' composition (summary wording + list markup) deduped into
+  `definitionsSection`/`examplesSection`/`etymologySection`, shared by
+  the flat fields and the Body's per-entry sections with each context
+  keeping its own empty story (placeholder vs. nothing); the dense
+  nested-ternary transcriptions push became `transcriptionsLine`,
+  mirroring `translationsLine`.
+- `GLOSSARY.md` — the three "twelve" mentions fixed honestly for schema
+  v2, implementation-light: "Card field" names thirteen once and anchors
+  the field-set to ADR 0077 (flat reading fields enumerated, `Body`
+  last); "Note type" says thirteen with Body last; "Card template" now
+  tells the V2 truth — the Back is header/footer scalars around the Body
+  slot, the other flat fields searchable values the template no longer
+  renders (the old "Back renders all twelve fields" was false twice
+  over). The "Hide class" entry qualified: only the template (scalar)
+  toggles restyle via re-sync; the body toggles are send-time.
+- `wiki/playbooks/running-tests.md` — the Facts bullet on the blessed
+  Components-side vitest pin now names both pass-throughs it locks
+  (labels AND the resolved `fields` map — fields went send-time in
+  ticket 06); stamps bumped.
+- `wiki/domains/anki-export.md` — the vitest-specs sentence extended the
+  same way (label and fields pass-throughs); stamps bumped.
+
+Checks: full vitest 131 passed (15 files); `AnkiSettingsMirrorTest` +
+`WikiTest` 8 passed (23 assertions) with the red-drill demonstrated;
+`wiki:validate` 8 warnings = the pre-existing baseline; `npm run build`
+clean (pre-existing chunk-size warning only); `vendor/bin/pint --dirty`
+PASS (315 files).
+
 ## 2026-10-15 (anki-popup-card 07 — Route A closure: toggle semantics split in the Anki tab, ADR 0077 addendum v2, wiki)
 
 V2 round closure for the anki-popup-card feature. Ticket 06 shipped the

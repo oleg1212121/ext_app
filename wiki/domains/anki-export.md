@@ -4,8 +4,8 @@ title: Anki Export
 description: The path from saved words to the user's desktop Anki — per-user connection settings and card-field toggles on the profile's Anki tab, a deterministic popup-styled card template (the Front is the word; the Back is header + the 13th Body field's popup-interleaved dictionary + footer) with split toggle semantics — scalar toggles hide-class template-side, body toggles shape the Body value at send time — one-click template sync into Anki, and duplicate-checked per-word sends from the word popup, all driven browser-side through AnkiConnect (ADR 0077 + addendum v2).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T18:20:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T18:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
 sources:
   - id: adr
     resource: docs/adr/0077-browser-side-ankiconnect.md
@@ -110,9 +110,9 @@ sources below).
    orchestration pinned executable by the colocated vitest specs
    (`resources/js/lib/ankiTemplate.test.js`, `ankiConnect.test.js`,
    `ankiSync.test.js`, plus `Components/WordPopup.ankiSend.test.js` — a
-   source pin on the popup send's label pass-through, the first vitest
-   file outside `lib/`, blessed by the ADR 0077 addendum — stubbed fetch,
-   Node only).
+   source pin on the popup send's label and fields pass-throughs, the
+   first vitest file outside `lib/`, blessed by the ADR 0077 addendum —
+   stubbed fetch, Node only).
 3. **Template sync** — one browser-side ensure pass: deck
    create-if-missing, the app-owned "ExtApp Vocabulary" note type
    create-if-missing (thirteen fields, fixed order, `Body` last,

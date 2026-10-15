@@ -4,8 +4,8 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T13:40:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T13:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -141,11 +141,14 @@ sources:
   browser-side AnkiConnect client is pure request/response logic) plus
   exactly one blessed Components-side source pin:
   `Components/WordPopup.ankiSend.test.js` reads the popup's `sendToAnki`
-  JSX as text and pins the send-path's labels pass-through (the note must
-  be built with `uiLabels(t)`, so cards carry the sender's UI language —
-  ADR 0077 addendum point E). **No jsdom, no React/component tests**: pages
-  and hooks are wiring, covered by Pest and manual verification (ADR 0066);
-  a second out-of-`lib/` file needs its own ADR blessing.
+  JSX as text and pins the send-path's two pass-throughs — the `labels`
+  (the note must be built with `uiLabels(t)`, so cards carry the sender's
+  UI language — ADR 0077 addendum point E) and, since the Route A body
+  toggles went send-time, the resolved `fields` map (the body toggles plus
+  the `body` master must shape the Body value at send time). **No jsdom,
+  no React/component tests**: pages and hooks are wiring, covered by Pest
+  and manual verification (ADR 0066); a second out-of-`lib/` file needs
+  its own ADR blessing.
 * `vitest.config.js` is standalone and deliberately does NOT load the
   laravel-vite plugin or the app's `vite.config.js` — keep it that way, or
   the suite becomes a build.
