@@ -4,7 +4,7 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T11:21:41+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
 sources:
   - id: controller
@@ -126,7 +126,12 @@ class as the real portal wrapper (`WordPopup.jsx`) — minus the portal's
 `absolute z-50` positioning, which stays portal-only — so user styles and
 tests can target both identically. The server resolves saved state over
 defaults in `App\Support\PopupVisibility::for()` and shares it to every
-page as the `popupVisibility` Inertia prop.
+page as the `popupVisibility` Inertia prop. The tab's module-local
+`POPUP_SECTIONS` constant (display-only grouping in `POPUP_GROUPS`
+notwithstanding) hand-mirrors `PopupVisibility::SECTIONS` — the same
+keys in the same order, unexported — a lockstep pinned by
+`tests/Unit/PopupSectionsMirrorTest.php`, so a section added, renamed
+or re-ordered on either side fails until both agree.
 
 # Anki tab
 

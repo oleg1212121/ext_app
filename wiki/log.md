@@ -5966,3 +5966,25 @@ first test's memoized key (ensures silently become memo hits); reuse one config 
 test to exercise the shared-session memo. Suite 52→94 tests, all green; `npm run lint` exit 0 (new
 files add no warnings); pint PASS; `anki-export.md` + `running-tests.md` mention the pins,
 `generated.at` bumped on both; no routes/models/commands touched, no `wiki:sync` needed.
+
+## 2026-10-15 (retro-fixes 09: the popup sections mirror gets the Anki lockstep treatment)
+
+Round-2 retro finding #4: the anki review's mirror-lockstep test (`AnkiSettingsMirrorTest`) covered
+only the new feature, while the older PHP↔JS mirror it flagged as "synced only by comments" —
+`PopupVisibility::SECTIONS` ↔ the Popups tab's module-local, unexported `POPUP_SECTIONS`
+(`resources/js/Pages/Profile/PopupsSettings.jsx`), guarded since ADR 0046 by nothing but the owner
+comment — stayed untested, so a renamed or reordered section silently desynced the server-side
+defaults (`PopupVisibility::for()` via `HandleInertiaRequests`' `popupVisibility` prop) from the
+settings UI. New `tests/Unit/PopupSectionsMirrorTest.php` copies the established pattern: read the
+JSX source from disk, regex-extract the `const POPUP_SECTIONS = […]` body, `preg_match_all` the
+quoted keys, one order-sensitive `expect(...)->toBe(PopupVisibility::SECTIONS)` — keys and order in
+a single assertion, no JS runtime, and the pure-regex extraction held so the export-the-constant
+fallback stayed unused. `POPUP_GROUPS` deliberately not mirrored: display grouping only, every key
+it lists is a member of `POPUP_SECTIONS`, and `PopupVisibility` has no grouping concept. Desync
+proof: renaming `'etymologies'` → `'etymology'` in the JSX fails the test with a per-key array diff
+at index 9; restored and green. `profile.md`'s Popups tab section names the pin (`generated.at`
+bumped); `interactive-words.md` left alone — its `PopupVisibility` mention is the runtime
+visibility behavior, not the settings mirror. Test file only; pint PASS; suite green 1166 passed
+(via `--fresh` local TIA baseline record — gh is unauthenticated so the remote-baseline fetch
+errors; the documented `--fresh` run records locally and subsequent `test:tia` replays work). No
+routes/models/commands touched, no `wiki:sync` needed.
