@@ -36,6 +36,13 @@ const buttonIn = (hook) => {
     return toolbar.slice(start, toolbar.indexOf('</button>', at));
 };
 
+// The hoisted label const the Anki button's title + aria-label share.
+const labelConstSource = () => {
+    const at = popupSource.indexOf('const ankiActionLabel');
+    expect(at, 'ankiActionLabel is hoisted in PopupContent').toBeGreaterThan(-1);
+    return popupSource.slice(at, popupSource.indexOf(';', at));
+};
+
 describe('WordPopup action toolbar', () => {
     it('is the popup’s first row — the toolbar renders above the word header', () => {
         expect(toolbarStart).toBeGreaterThan(-1);
@@ -78,9 +85,14 @@ describe('WordPopup action toolbar', () => {
     it('labels every icon with tooltip + aria from the existing word ui-strings', () => {
         expect(buttonIn('word-popup-progress-known')).toContain("t('word.i_know_this')");
         expect(buttonIn('word-popup-progress-reset')).toContain("t('word.remove_mark')");
+        // The Anki button's title AND aria-label read one hoisted label const
+        // — the sending/update/add ternary written once, above the toolbar.
         const anki = buttonIn('word-popup-anki-send');
-        expect(anki).toContain("t('word.anki_send')");
-        expect(anki).toContain("t('word.anki_sending')");
+        expect(anki).toContain('title={ankiActionLabel}');
+        expect(anki).toContain('aria-label={ankiActionLabel}');
+        const label = popupSource.match(/const ankiActionLabel =[\s\S]*?ankiExisting === 'found' \? t\('word\.anki_update'\) : t\('word\.anki_send'\)/);
+        expect(label).toHaveLength(1);
+        expect(label[0]).toContain("t('word.anki_sending')");
         expect(toolbar.match(/title=/g)).toHaveLength(3);
         expect(toolbar.match(/aria-label=/g)).toHaveLength(3);
     });
@@ -95,11 +107,12 @@ describe('WordPopup action toolbar', () => {
 
     it('flips the Anki icon between its add and update forms on the detection outcome', () => {
         const anki = buttonIn('word-popup-anki-send');
-        // found → the update glyph + "Update in Anki"; checking / absent /
-        // unknown-Anki → the add form stays (a silent detection failure
-        // renders no error of its own, the spec's "icon stays add form").
+        // found → the update glyph + the shared label const's update wording
+        // ("Update in Anki"); checking / absent / unknown-Anki → the add
+        // form stays (a silent detection failure renders no error of its
+        // own, the spec's "icon stays add form").
         expect(anki).toContain("ankiExisting === 'found' ? 'ankiUpdate' : 'ankiAdd'");
-        expect(anki).toContain("ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send')");
+        expect(labelConstSource()).toContain("ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send')");
     });
 
     it('renders the Anki status lines inside the toolbar strip', () => {

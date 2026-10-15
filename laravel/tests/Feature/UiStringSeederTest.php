@@ -60,6 +60,34 @@ it('seeds the word popup update-affordance strings in all three interface langua
     ]);
 });
 
+it('seeds the model-aware popup mismatch string in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // anki-popup-refresh review fixes: per-language note types can mismatch
+    // too, so the popup copy interpolates the actual :model (mirroring the
+    // profile tab's strings) instead of hardcoding the legacy base name.
+    expect(seededUiStringTexts('word.anki_mismatch'))->toBe([
+        'en' => 'The ":model" note type in Anki is out of date. In Anki, open Tools → Manage Note Types and delete ":model" (its notes are deleted with it), then sync again from Profile → Anki and send your words again.',
+        'ru' => 'Тип заметок «:model» в Anki устарел. В Anki откройте «Инструменты → Управление типами заметок» и удалите «:model» (его заметки удалятся вместе с ним), затем снова синхронизируйте профиль → Anki и отправьте слова заново.',
+        'be' => 'Тып нататак «:model» у Anki састарэў. У Anki адкрыйце «Інструменты → Кіраванне тыпамі нататак» і выдаліце «:model» (яго нататкі выдаляцца разам з ім), затым зноў сінхранізуйце профіль → Anki і адпраўце словы яшчэ раз.',
+    ]);
+});
+
+it('seeds the sample-card updated string in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // anki-popup-refresh review fixes: the sync layer reports {added,
+    // updated}, so a re-sent sample that refreshed the app's own note in
+    // place reports "updated" instead of "nothing was duplicated".
+    expect(seededUiStringTexts('profile.anki_sample_updated'))->toBe([
+        'en' => 'Sample card updated in ":deck".',
+        'ru' => 'Пример карточки обновлён в «:deck».',
+        'be' => 'Прыклад карткі абноўлены ў «:deck».',
+    ]);
+});
+
 it('seeds be texts for sampled keys across every group', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();

@@ -2,14 +2,20 @@
 // pure helpers over the resolved ankiSettings prop (the shape
 // App\Support\AnkiSettings::for shares) plus the enabled-language list the
 // profile page passes in. The tab autosaves the WHOLE anki section on every
-// change — connection + legacy base + the complete per-language map —
-// because the endpoint replaces the section wholesale: a languages-only
-// payload would wipe the legacy base. The resolved `default` entry (words
-// with unknown/missing language_code) is computed server-side, never
-// persistable (the endpoint whitelists enabled codes only) and never
-// selectable, so it never enters the state — the editable map carries the
-// enabled codes alone, and with no selection (no enabled languages) the tab
-// edits the legacy global base, the pre-per-language behavior.
+// change — connection + the complete per-language map — because the endpoint
+// replaces the section wholesale. The legacy global base (top-level
+// deck/fields) is NOT part of the state: it is read-only since the review
+// fixes (the endpoint strips incoming deck/fields and preserves the saved
+// pair server-side), so the state carries only what the endpoint accepts and
+// the base survives every save untouched. The base is still READ as a
+// resolution layer: per-language entries resolve over it exactly as before.
+// The resolved `default` entry (words with unknown/missing language_code) is
+// computed server-side, never persistable (the endpoint whitelists enabled
+// codes only) and never selectable, so it never enters the state — the
+// editable map carries the enabled codes alone. Without a selection (no
+// enabled languages) nothing is writable: ankiTabDefaultEntry serves the
+// resolved `default` entry as a READ-ONLY view for the preview and the
+// sync/sample targets, and the setters are no-ops.
 
 import {ANKI_DEFAULT_DECK, ANKI_DEFAULT_PORT, ANKI_DEFAULT_URL} from './ankiConnect'
 import {ANKI_FIELDS, noteTypeForLanguage} from './ankiTemplate'
@@ -23,15 +29,13 @@ const resolvedFields = (...layers) => {
 }
 
 // The whole persisted section the tab keeps in state and autosaves: the
-// global connection, the legacy global base (deck + field toggles, still
-// the fallback for words with an unknown language) and one fully-resolved
-// deck+fields entry per enabled code.
+// global connection and one fully-resolved deck+fields entry per enabled
+// code — no top-level deck/fields (the read-only legacy base never rides
+// along; the endpoint preserves the saved one).
 export function ankiTabState(saved, codes) {
     return {
         url: saved?.url ?? ANKI_DEFAULT_URL,
         port: saved?.port ?? ANKI_DEFAULT_PORT,
-        deck: saved?.deck ?? ANKI_DEFAULT_DECK,
-        fields: resolvedFields({}, saved?.fields),
         languages: Object.fromEntries(codes.map((code) => [code, {
             deck: saved?.languages?.[code]?.deck ?? saved?.deck ?? ANKI_DEFAULT_DECK,
             fields: resolvedFields(saved?.fields, saved?.languages?.[code]?.fields),
@@ -40,33 +44,44 @@ export function ankiTabState(saved, codes) {
 }
 
 // The entry the tab's deck input, toggles, preview and write actions act
-// on: the selected language's, or the legacy global base without a
-// selection.
+// on: the selected language's — or null without a selection, when no
+// language is enabled and nothing is editable (the legacy global base is
+// read-only; ankiTabDefaultEntry serves its read-only view instead).
 export function ankiTabEntry(state, code) {
-    return code && state.languages[code]
-        ? state.languages[code]
-        : {deck: state.deck, fields: state.fields}
+    return (code && state.languages[code]) || null
 }
 
-// Deck edit on the selected language — or on the legacy base when nothing
-// is selected. The state comes back whole, so the autosave never drops the
-// other languages or the connection.
-export function ankiTabSetDeck(state, code, value) {
-    const deck = value.trim()
-    if (!code) {
-        return {...state, deck}
+// The no-selection view of the legacy global base: the resolved `default`
+// entry (computed server-side in AnkiSettings::for), falling back to the
+// sparse saved base and then the all-on defaults. Never persisted — this is
+// the preview/sync target and the disabled controls' display values only.
+export function ankiTabDefaultEntry(saved) {
+    return saved?.languages?.default ?? {
+        deck: saved?.deck ?? ANKI_DEFAULT_DECK,
+        fields: resolvedFields({}, saved?.fields),
     }
+}
+
+// Deck edit on the selected language. The state comes back whole, so the
+// autosave never drops the other languages or the connection; without a
+// selection the state is returned untouched (the base is not writable).
+export function ankiTabSetDeck(state, code, value) {
     const entry = ankiTabEntry(state, code)
+    if (!entry) {
+        return state
+    }
+    const deck = value.trim()
     return {...state, languages: {...state.languages, [code]: {...entry, deck}}}
 }
 
-// Field-toggle flip, scoped exactly like ankiTabSetDeck.
+// Field-toggle flip, scoped exactly like ankiTabSetDeck — a no-op without a
+// selection.
 export function ankiTabToggleField(state, code, key) {
     const entry = ankiTabEntry(state, code)
-    const fields = {...entry.fields, [key]: !entry.fields[key]}
-    if (!code) {
-        return {...state, fields}
+    if (!entry) {
+        return state
     }
+    const fields = {...entry.fields, [key]: !entry.fields[key]}
     return {...state, languages: {...state.languages, [code]: {...entry, fields}}}
 }
 
@@ -79,11 +94,16 @@ export function ankiTabDefaultCode(codes, nativeLanguage) {
 
 // The sync-layer config for the selected language: its deck and resolved
 // toggles, plus its per-language note type ("ExtApp Vocabulary ⋅ <code>",
-// lib/ankiTemplate.js's noteTypeForLanguage). The noteType key is omitted
-// entirely without a selection so lib/ankiSync.js keeps the unsuffixed
-// base type — the pre-per-language behavior.
-export function ankiTabSyncConfig(state, code) {
-    const entry = ankiTabEntry(state, code)
+// lib/ankiTemplate.js's noteTypeForLanguage). `baseEntry` (the tab passes
+// ankiTabDefaultEntry's read-only view) stands in without a selection, and
+// the noteType key is omitted entirely then, so lib/ankiSync.js keeps the
+// unsuffixed base type — the pre-per-language behavior. There is no config
+// without either.
+export function ankiTabSyncConfig(state, code, baseEntry = null) {
+    const entry = ankiTabEntry(state, code) ?? baseEntry
+    if (!entry) {
+        throw new Error('ankiTabSyncConfig needs a selected language or the read-only base entry')
+    }
     return {
         url: state.url,
         port: state.port,

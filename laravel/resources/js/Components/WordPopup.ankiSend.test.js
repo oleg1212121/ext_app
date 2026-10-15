@@ -68,6 +68,13 @@ describe('WordPopup sendToAnki', () => {
         // instead of lighting the current word's status line.
         expect(sendSource().match(/dataRef\.current !== data/g)).toHaveLength(2);
     });
+
+    it('names the mismatched note type in the popup error — :model from the error', () => {
+        // Per-language types can mismatch too, so the popup string
+        // interpolates the error's modelName instead of the hardcoded base
+        // name (the profile tab's mismatch copy has done so since ticket 04).
+        expect(popupSource).toContain("t('word.anki_mismatch', {model: ankiSend.error.modelName})");
+    });
 });
 
 describe('WordPopup on-open duplicate detection', () => {

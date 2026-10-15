@@ -4,8 +4,8 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, per-language Anki settings (a language selector over deck + card content) with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
-verified: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
+generated: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
+verified: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -180,12 +180,18 @@ the card-content header beside the selector (it left the connection block,
 where the global deck used to sit next to the port). The selection itself is
 not persisted — a reload re-derives it — and the resolved `default` entry is
 never selectable. The tab's editable state mirrors the persisted `anki`
-section exactly (connection + legacy base + the complete per-language map)
-through `resources/js/lib/ankiTabState.js`, so every autosave PATCH carries
-the WHOLE section — a languages-only payload would wipe the legacy base via
-wholesale section replace — and a save for one language never disturbs
-another language or the connection (pinned executable by
-`ankiTabState.test.js`, source-side by `AnkiSettingsMirrorTest`).
+section exactly (connection + the complete per-language map) through
+`resources/js/lib/ankiTabState.js`, so every autosave PATCH carries the
+WHOLE section, and a save for one language never disturbs another language
+or the connection (pinned executable by `ankiTabState.test.js`, source-side
+by `AnkiSettingsMirrorTest`). The legacy top-level base is deliberately
+ABSENT from that payload (review fixes): the endpoint strips incoming
+`deck`/`fields` — no rule accepts them — and preserves the previously saved
+pair server-side, so a tab save can never rewrite the read-only base the
+word-level fallback still reads; without a selection (no enabled languages)
+nothing is writable — `ankiTabDefaultEntry` serves the resolved `default`
+entry as a read-only view for the preview and the sync/sample targets while
+the deck input and toggles render disabled.
 
 **Connection** — AnkiConnect endpoint (URL + port), global for every
 language, plus a **Test connection** button that calls AnkiConnect's `version` action
@@ -302,14 +308,17 @@ deck + Word + Language (`sendAnkiNote`): a fresh sample is added
 of the app's OWN note types is refreshed in place since ticket 02 — all
 thirteen values and the tag set rebuilt, note id / deck / review scheduling
 untouched (the anki-popup-refresh reversal; the ADR amendment lands in
-ticket 06) — which the tab still reports with the calm
-"Already in Anki — nothing was duplicated" line. The ensure is memoized
+ticket 06) — reported since the review fixes with its own
+"Sample card updated in \":deck\"." line (the old "nothing was duplicated"
+copy remains only for a foreign-model duplicate, the one outcome an update
+cannot touch). The ensure is memoized
 once per page session per endpoint+deck+note type, so subsequent sends skip
 straight
 to the duplicate check; changing the endpoint, deck, or language misses the
 memo
 naturally (field toggles don't invalidate it — values always carry every
-field). Inline status lines report sync / sent / duplicate outcomes;
+field). Inline status lines report sync / sent / updated / duplicate
+outcomes;
 failures render by the error's kind — a note-type mismatch the expected-vs-
 found warning, an Anki-side `AnkiConnectError` (kind `anki`, e.g. a
 addNote duplicate race) the inline "Anki error: …" panel, and everything

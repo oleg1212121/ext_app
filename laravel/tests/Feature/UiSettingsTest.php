@@ -143,7 +143,6 @@ test('authenticated user can save anki connection settings', function () {
             'anki' => [
                 'url' => 'http://localhost',
                 'port' => 8766,
-                'deck' => 'My deck',
             ],
         ])
         ->assertOk()
@@ -152,7 +151,9 @@ test('authenticated user can save anki connection settings', function () {
     $anki = $user->settings()->first()->ui_settings['anki'];
     expect($anki['url'])->toBe('http://localhost')
         ->and($anki['port'])->toBe(8766)
-        ->and($anki['deck'])->toBe('My deck');
+        // The legacy global base is no longer writable: a user without a
+        // saved base gains no deck key from a save.
+        ->and($anki)->not->toHaveKey('deck');
 });
 
 test('saving the anki section keeps the other sections intact', function () {
@@ -161,6 +162,7 @@ test('saving the anki section keeps the other sections intact', function () {
         'simulator' => ['font_size' => 30],
         'reader' => ['highlight' => true],
         'popup' => ['definitions' => false],
+        'anki' => ['deck' => 'My deck'],
     ]);
 
     $this->actingAs($user)
@@ -171,7 +173,9 @@ test('saving the anki section keeps the other sections intact', function () {
     expect($ui['simulator']['font_size'])->toBe(30)
         ->and($ui['reader']['highlight'])->toBeTrue()
         ->and($ui['popup']['definitions'])->toBeFalse()
-        ->and($ui['anki']['port'])->toBe(8765);
+        ->and($ui['anki']['port'])->toBe(8765)
+        // The untouched legacy base rides along.
+        ->and($ui['anki']['deck'])->toBe('My deck');
 });
 
 test('anki junk values are rejected and unknown keys never persist', function () {
@@ -193,12 +197,11 @@ test('anki junk values are rejected and unknown keys never persist', function ()
         ->patch('/ui-settings', ['anki' => ['url' => str_repeat('a', 256)]])
         ->assertInvalid('anki.url');
 
-    $this->actingAs($user)
-        ->patch('/ui-settings', ['anki' => ['deck' => str_repeat('a', 101)]])
-        ->assertInvalid('anki.deck');
-
     // Unknown keys pass validation but validated() strips them, exactly like
     // the other sections — the connection config never grows junk fields.
+    // The legacy base keys (deck/fields) are unknown input now too: stripped
+    // on the way in, never validated (the preservation tests below pin the
+    // server-side graft of the saved pair).
     $this->actingAs($user)
         ->patch('/ui-settings', ['anki' => ['apiKey' => 'secret', 'url' => 'http://127.0.0.1']])
         ->assertOk();
@@ -207,22 +210,27 @@ test('anki junk values are rejected and unknown keys never persist', function ()
     expect($anki)->toBe(['url' => 'http://127.0.0.1']);
 });
 
-test('authenticated user can save anki card field toggles', function () {
+test('saving the anki section preserves the saved legacy base untouched', function () {
+    // The pre-per-language global base stays readable as the word-level
+    // fallback, so the Anki tab's wholesale section replace must never wipe
+    // or rewrite it — a tab save carries url/port/languages only.
+    createLanguages(['en']);
     $user = User::factory()->create();
+    withSavedUiSettings($user, [
+        'anki' => [
+            'url' => 'http://old',
+            'port' => 8765,
+            'deck' => 'My deck',
+            'fields' => ['etymology' => false, 'tags' => false],
+        ],
+    ]);
 
     $this->actingAs($user)
         ->patch('/ui-settings', [
             'anki' => [
                 'url' => 'http://localhost',
-                'port' => 8765,
-                'deck' => 'ExtApp',
-                'fields' => [
-                    'word' => true,
-                    'transcription' => true,
-                    'definitions' => false,
-                    'etymology' => false,
-                    'body' => false,
-                ],
+                'port' => 8766,
+                'languages' => ['en' => ['deck' => 'English deck']],
             ],
         ])
         ->assertOk()
@@ -230,46 +238,40 @@ test('authenticated user can save anki card field toggles', function () {
 
     $anki = $user->settings()->first()->ui_settings['anki'];
     expect($anki['url'])->toBe('http://localhost')
-        ->and($anki['fields']['definitions'])->toBeFalse()
-        ->and($anki['fields']['etymology'])->toBeFalse()
-        ->and($anki['fields']['body'])->toBeFalse()
-        ->and($anki['fields']['word'])->toBeTrue();
+        ->and($anki['port'])->toBe(8766)
+        ->and($anki['languages']['en']['deck'])->toBe('English deck')
+        ->and($anki['deck'])->toBe('My deck')
+        // Key-wise: the jsonb round-trip does not preserve key order.
+        ->and($anki['fields'])->toEqualCanonicalizing(['etymology' => false, 'tags' => false]);
 });
 
-test('anki field junk is rejected and unknown field keys never persist', function () {
-    $user = User::factory()->create();
-
-    $this->actingAs($user)
-        ->patch('/ui-settings', ['anki' => ['fields' => ['definitions' => 'banana']]])
-        ->assertInvalid('anki.fields.definitions');
-
-    // Unknown field keys pass validation but validated() strips them, exactly
-    // like the section's connection keys — the toggle map never grows junk.
-    $this->actingAs($user)
-        ->patch('/ui-settings', ['anki' => ['fields' => ['audio' => true, 'word' => false]]])
-        ->assertOk();
-
-    $anki = $user->settings()->first()->ui_settings['anki'];
-    expect($anki['fields'])->toBe(['word' => false]);
-});
-
-test('anki fields save keeps the other sections intact', function () {
+test('an anki payload that tries to write the legacy base is stripped back to the saved one', function () {
+    // No rule accepts anki.deck / anki.fields anymore: a stale or hostile
+    // payload cannot overwrite the preserved base — and oversized junk in
+    // those keys no longer even validates (they are unknown input now).
     $user = User::factory()->create();
     withSavedUiSettings($user, [
-        'simulator' => ['font_size' => 30],
-        'reader' => ['highlight' => true],
-        'popup' => ['definitions' => false],
+        'anki' => [
+            'deck' => 'My deck',
+            'fields' => ['etymology' => false],
+        ],
     ]);
 
     $this->actingAs($user)
-        ->patch('/ui-settings', ['anki' => ['fields' => ['tags' => false]]])
+        ->patch('/ui-settings', [
+            'anki' => [
+                'port' => 8765,
+                'deck' => str_repeat('a', 101),
+                'fields' => ['etymology' => true, 'audio' => true],
+                'languages' => [],
+            ],
+        ])
         ->assertOk();
 
-    $ui = $user->settings()->first()->ui_settings;
-    expect($ui['simulator']['font_size'])->toBe(30)
-        ->and($ui['reader']['highlight'])->toBeTrue()
-        ->and($ui['popup']['definitions'])->toBeFalse()
-        ->and($ui['anki']['fields']['tags'])->toBeFalse();
+    $anki = $user->settings()->first()->ui_settings['anki'];
+    expect($anki['deck'])->toBe('My deck')
+        ->and($anki['fields'])->toBe(['etymology' => false])
+        ->and($anki['port'])->toBe(8765);
 });
 
 test('authenticated user can save per-language anki settings', function () {
@@ -309,15 +311,17 @@ test('saving per-language anki settings keeps the other sections intact', functi
         'popup' => ['definitions' => false],
     ]);
 
-    // The Anki tab autosaves the whole section (connection + legacy base +
-    // the full languages map), so the endpoint's wholesale replace never
-    // sees a languages-only payload from it.
+    // The Anki tab autosaves the whole section (connection + the full
+    // languages map), so the endpoint's wholesale replace never sees a
+    // languages-only payload from it. Top-level deck/fields in a payload
+    // are unknown input now: stripped, and with no saved legacy base there
+    // is nothing to preserve.
     $this->actingAs($user)
         ->patch('/ui-settings', [
             'anki' => [
                 'url' => 'http://localhost',
                 'port' => 8765,
-                'deck' => 'My deck',
+                'deck' => 'Ignored deck',
                 'fields' => ['etymology' => false],
                 'languages' => ['en' => ['deck' => 'English deck']],
             ],
@@ -329,8 +333,8 @@ test('saving per-language anki settings keeps the other sections intact', functi
         ->and($ui['reader']['highlight'])->toBeTrue()
         ->and($ui['popup']['definitions'])->toBeFalse()
         ->and($ui['anki']['url'])->toBe('http://localhost')
-        ->and($ui['anki']['deck'])->toBe('My deck')
-        ->and($ui['anki']['fields']['etymology'])->toBeFalse()
+        ->and($ui['anki'])->not->toHaveKey('deck')
+        ->and($ui['anki'])->not->toHaveKey('fields')
         ->and($ui['anki']['languages'])->toBe(['en' => ['deck' => 'English deck']]);
 });
 
@@ -381,11 +385,11 @@ test('an unapproved user can save anki settings', function () {
     $user = User::factory()->unapproved()->create();
 
     $this->actingAs($user)
-        ->patch('/ui-settings', ['anki' => ['deck' => 'ExtApp']])
+        ->patch('/ui-settings', ['anki' => ['port' => 8766]])
         ->assertOk()
         ->assertJson(['saved' => true]);
 
-    expect($user->settings()->first()->ui_settings['anki']['deck'])->toBe('ExtApp');
+    expect($user->settings()->first()->ui_settings['anki']['port'])->toBe(8766);
 });
 
 test('an unapproved user can update ui settings', function () {

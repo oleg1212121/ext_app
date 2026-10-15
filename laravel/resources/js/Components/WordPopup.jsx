@@ -446,6 +446,13 @@ export function PopupContent({
         ? (data.entries ?? []).filter((entry) => entryMatchesHeadword(entry, data.word))
         : data.entries;
 
+    // The Anki icon's label, shared by its title and aria-label (written
+    // once): a send in flight wins, otherwise the icon's in-deck state picks
+    // between the update and add forms.
+    const ankiActionLabel = ankiSend?.status === 'sending'
+        ? t('word.anki_sending')
+        : (ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send'));
+
     return (
         <>
             {/* The action toolbar — the popup's first row, above the word.
@@ -491,12 +498,8 @@ export function PopupContent({
                         icon can never create a second card. */}
                     <button
                         type="button"
-                        title={ankiSend?.status === 'sending'
-                            ? t('word.anki_sending')
-                            : (ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send'))}
-                        aria-label={ankiSend?.status === 'sending'
-                            ? t('word.anki_sending')
-                            : (ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send'))}
+                        title={ankiActionLabel}
+                        aria-label={ankiActionLabel}
                         disabled={onAnkiSend == null || ankiSend?.status === 'sending'}
                         onClick={onAnkiSend}
                         className={`word-popup-anki-send ${toolbarButtonClass(false)} ml-auto`}
@@ -527,7 +530,7 @@ export function PopupContent({
                     <div className="word-popup-anki-error pb-2 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
                         <p>
                             {ankiSend.error instanceof AnkiNoteTypeMismatchError
-                                ? t('word.anki_mismatch')
+                                ? t('word.anki_mismatch', {model: ankiSend.error.modelName})
                                 : (ankiSend.error instanceof AnkiConnectError && ankiSend.error.kind === 'anki'
                                     ? t('word.anki_failed', {message: ankiSend.error.message})
                                     : t('word.anki_unreachable'))}

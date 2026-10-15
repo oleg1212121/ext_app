@@ -17,7 +17,10 @@ use App\Models\User;
  * Deck and fields are per-language: `ui_settings.anki.languages` holds a
  * sparse map keyed by enabled language code, while the legacy global
  * `deck`/`fields` keys stay readable as the fallback base — a user who never
- * customized a language resolves every entry to today's global values.
+ * customized a language resolves every entry to today's global values. That
+ * base is read-only (anki-popup-refresh): no validation rule accepts it, and
+ * UiSettingsController grafts the previously saved pair back onto the stored
+ * section, which the Anki tab replaces wholesale on every autosave.
  */
 class AnkiSettings
 {
@@ -54,6 +57,24 @@ class AnkiSettings
         return $code === null || $code === ''
             ? self::NOTE_TYPE_BASE
             : self::NOTE_TYPE_BASE.self::NOTE_TYPE_SEPARATOR.$code;
+    }
+
+    /**
+     * The enabled language codes in display order — the single source for
+     * both consumers of the whitelist: the anki section's per-language
+     * validation rules (UpdateUiSettingsRequest) and the resolved `languages`
+     * map's keys here in for().
+     *
+     * @return list<string>
+     */
+    public static function enabledCodes(): array
+    {
+        return Language::query()
+            ->enabled()
+            ->orderBy('sort_order')
+            ->orderBy('code')
+            ->pluck('code')
+            ->all();
     }
 
     /**
@@ -150,11 +171,7 @@ class AnkiSettings
         ];
 
         $entries = [];
-        $codes = Language::query()
-            ->enabled()
-            ->orderBy('sort_order')
-            ->orderBy('code')
-            ->pluck('code');
+        $codes = self::enabledCodes();
         foreach ($codes as $code) {
             $savedEntry = $saved['languages'][$code] ?? [];
             $entries[(string) $code] = [

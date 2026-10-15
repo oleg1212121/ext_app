@@ -4,8 +4,8 @@ title: Anki Export
 description: The path from saved words to the user's desktop Anki — per-user per-language connection/card settings (deck + field toggles per enabled language over a legacy global base) on the profile's Anki tab, a deterministic popup-styled card template (the Front is the word; the Back is header + the 13th Body field's popup-interleaved dictionary + footer) with split toggle semantics — scalar toggles hide-class template-side, body toggles shape the Body value at send time — one-click template sync into Anki, and per-word sends from the word popup that detect on open and refresh an already-saved own note in place, all driven browser-side through AnkiConnect (ADR 0077 + addenda; v3 records the updates-in-place reversal).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
-verified: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
+generated: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
+verified: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
 sources:
   - id: adr
     resource: docs/adr/0077-browser-side-ankiconnect.md
@@ -93,8 +93,15 @@ sources below).
    edits these per-language entries directly (deck + toggles + preview +
    the sync/sample targets all follow the selection; connection stays
    global; `default` is never selectable), autosaving the whole `anki`
-   section — legacy base + complete languages map — on every change;
-   `default` is never persistable. Tab layout, autosave, and validation
+   section — connection + complete languages map — on every change. The
+   legacy top-level base is deliberately absent from that payload (review
+   fixes): the endpoint strips incoming `deck`/`fields` — no rule accepts
+   them — and grafts the previously saved pair back onto the stored
+   section, so a tab save can never rewrite the read-only base the
+   word-level fallback reads; without enabled languages nothing is
+   editable (the resolved `default` entry serves as a read-only view and
+   the deck input + toggles render disabled). `default` is never
+   persistable. Tab layout, autosave, and validation
    details live in [Profile](/domains/profile.md).
 2. **Template** — `generateCardTemplate(fields)` deterministically emits
    Front/Back/CSS in the reading popup's image. The **Front is the word
@@ -191,7 +198,10 @@ sources below).
    payload word, required, since the note's Word field value is
    HTML-escaped): a fresh word is **added** with `allowDuplicate: false`
    as a race net; a hit on one of the app's OWN note types (the configured
-   per-language type, or the unsuffixed legacy one) is **updated in
+   per-language type, the unsuffixed legacy base, or any name carrying the
+   app prefix — a language disabled since the note was sent resolves its
+   word to the `default` entry while its note still wears the
+   "⋅ <code>" name) is **updated in
    place** — all thirteen values rebuilt, the tag set replaced, the note
    addressed by id alone so deck and review scheduling cannot move (ADR
    0077 addendum v3's decision-5 reversal); a foreign-model-only match is

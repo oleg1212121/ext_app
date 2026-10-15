@@ -5,8 +5,8 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
-verified: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
+generated: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
+verified: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -382,8 +382,10 @@ see [Profile](/domains/profile.md) for the Anki tab side):
 * **Duplicates become updates.** The send still runs find-before-add
   scoped to deck + Word + Language, so a second card can never be
   created: a hit on one of the app's own note types (the word's
-  per-language type or the unsuffixed legacy one — notes saved under an
-  earlier config stay updatable) is **updated in place** — all thirteen
+  per-language type, the unsuffixed legacy base, or any name carrying
+  the app prefix — a language disabled since the note was sent resolves
+  its word to the `default` entry while its note keeps the
+  "⋅ <code>" name) is **updated in place** — all thirteen
   values rebuilt, the tag set replaced, note id / deck / review
   scheduling untouched (ADR 0077 addendum v3) — and the status line
   reports "Updated in Anki." (`word.anki_updated`,
@@ -395,7 +397,8 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   link to Profile → Anki; an Anki-side error string is shown verbatim
   (`Anki error: …`); `AnkiNoteTypeMismatchError` aborts with the teaching
   copy — which model mismatched (the error carries the model name it
-  inspected), expected vs found fields, plus the one-time fix: in Anki,
+  inspected, interpolated into the popup's copy since the review fixes),
+  expected vs found fields, plus the one-time fix: in Anki,
   delete the named note type (its notes are deleted with it), then
   sync again from the Anki tab and re-send the words; a pre-v2
   twelve-field install hits this by design, since AnkiConnect cannot add

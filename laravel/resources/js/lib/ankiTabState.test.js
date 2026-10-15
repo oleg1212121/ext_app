@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {
     ankiTabDefaultCode,
+    ankiTabDefaultEntry,
     ankiTabEntry,
     ankiTabSampleData,
     ankiTabSetDeck,
@@ -28,19 +29,28 @@ const SAVED = {
 const CODES = ['en', 'ru'];
 
 describe('ankiTabState', () => {
-    it('builds the whole persisted section: connection + legacy base + per-language entries', () => {
+    it('builds the whole persisted section: connection + per-language entries', () => {
         const state = ankiTabState(SAVED, CODES);
 
         expect(state).toEqual({
             url: 'http://localhost',
             port: 8766,
-            deck: 'My deck',
-            fields: expect.objectContaining({etymology: false}),
             languages: {
                 en: expect.objectContaining({deck: 'English deck'}),
                 ru: expect.objectContaining({deck: 'My deck'}),
             },
         });
+    });
+
+    it('keeps the legacy global base out of the persisted section — it is read-only', () => {
+        // The endpoint strips incoming deck/fields and preserves the saved
+        // pair server-side, so the autosave payload must not carry them (a
+        // save rewrites the whole section, which would otherwise rewrite the
+        // base on every tab save).
+        const state = ankiTabState(SAVED, CODES);
+
+        expect(state).not.toHaveProperty('deck');
+        expect(state).not.toHaveProperty('fields');
     });
 
     it('never carries the resolved `default` entry — it is not persistable', () => {
@@ -62,26 +72,18 @@ describe('ankiTabState', () => {
     it('falls back to defaults without a saved blob and without languages', () => {
         const state = ankiTabState(null, []);
 
-        expect(state).toMatchObject({
+        expect(state).toEqual({
             url: 'http://127.0.0.1',
             port: 8765,
-            deck: 'ExtApp',
             languages: {},
         });
-        // Every canonical field key present and on — the autosave round-trips
-        // the full map, not the sparse saved one.
-        expect(Object.keys(state.fields)).toContain('body');
-        expect(state.fields.body).toBe(true);
     });
 
-    it('edits one language without disturbing the legacy base, the connection or other languages', () => {
+    it('edits one language without disturbing the connection or other languages', () => {
         const state = ankiTabState(SAVED, CODES);
         const next = ankiTabSetDeck(state, 'ru', ' Russian deck ');
 
         expect(next.languages.ru.deck).toBe('Russian deck');
-        // The whole section still rides along — a languages-only payload
-        // would wipe the legacy base via wholesale section replace.
-        expect(next.deck).toBe('My deck');
         expect(next.url).toBe('http://localhost');
         expect(next.port).toBe(8766);
         expect(next.languages.en).toEqual(state.languages.en);
@@ -95,21 +97,38 @@ describe('ankiTabState', () => {
         expect(next.languages.en.fields.etymology).toBe(false);
         expect(next.languages.en.fields.tags).toBe(false);
         expect(next.languages.ru.fields.etymology).toBe(false);
-        expect(next.deck).toBe('My deck');
     });
 
-    it('edits the legacy base when no language is selected', () => {
+    it('is unwritable without a selection — the legacy base is read-only', () => {
         const state = ankiTabState(SAVED, CODES);
 
-        expect(ankiTabSetDeck(state, null, 'Global deck').deck).toBe('Global deck');
-        expect(ankiTabToggleField(state, null, 'tags').fields.tags).toBe(false);
+        expect(ankiTabSetDeck(state, null, 'Global deck')).toEqual(state);
+        expect(ankiTabToggleField(state, null, 'tags')).toEqual(state);
     });
 
-    it('serves the active entry: the selected language, or the legacy base', () => {
+    it('serves the selected language\'s entry, or null without a selection', () => {
         const state = ankiTabState(SAVED, CODES);
 
         expect(ankiTabEntry(state, 'en')).toEqual({deck: 'English deck', fields: state.languages.en.fields});
-        expect(ankiTabEntry(state, null).deck).toBe('My deck');
+        expect(ankiTabEntry(state, null)).toBeNull();
+    });
+});
+
+describe('ankiTabDefaultEntry', () => {
+    it('serves the resolved `default` entry — the read-only view of the legacy base', () => {
+        expect(ankiTabDefaultEntry(SAVED)).toEqual({deck: 'My deck', fields: SAVED.languages.default.fields});
+    });
+
+    it('falls back to the sparse saved base and then the defaults', () => {
+        const legacy = {deck: 'My deck', fields: {etymology: false}};
+        expect(ankiTabDefaultEntry(legacy).deck).toBe('My deck');
+        expect(ankiTabDefaultEntry(legacy).fields.etymology).toBe(false);
+        expect(ankiTabDefaultEntry(legacy).fields.word).toBe(true);
+
+        expect(ankiTabDefaultEntry(null)).toEqual({
+            deck: 'ExtApp',
+            fields: expect.objectContaining({word: true, body: true}),
+        });
     });
 });
 
@@ -141,15 +160,21 @@ describe('ankiTabSyncConfig', () => {
         });
     });
 
-    it('omits noteType without a selection — base-type behavior', () => {
+    it('targets the read-only base entry without a selection — base-type behavior', () => {
         const state = ankiTabState(SAVED, CODES);
 
-        expect(ankiTabSyncConfig(state, null)).toEqual({
+        expect(ankiTabSyncConfig(state, null, ankiTabDefaultEntry(SAVED))).toEqual({
             url: 'http://localhost',
             port: 8766,
             deck: 'My deck',
-            fields: state.fields,
+            fields: SAVED.languages.default.fields,
         });
+    });
+
+    it('refuses to build a config with neither a selection nor a base entry', () => {
+        const state = ankiTabState(SAVED, CODES);
+
+        expect(() => ankiTabSyncConfig(state, null)).toThrow();
     });
 });
 

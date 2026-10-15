@@ -73,6 +73,26 @@ Anki."). This ticket lands only the knowledge base; zero feature code.
   commands changed). No test reads the docs (grep: only code comments
   mention the ADR).
 
+Review fixes pass (anki-popup-refresh 07, same day) — the two-axis
+review's findings, folded into this closure's facts rather than a new
+concept: `UiSettingsController` now strips incoming top-level
+`anki.deck`/`anki.fields` (the request has no rules for them anymore) and
+grafts the previously saved legacy base back onto the wholesale-replaced
+section, so a tab save can never rewrite the read-only base — the tab's
+autosave payload (`lib/ankiTabState.js`) correspondingly carries the
+connection + languages map only, and without enabled languages the tab
+falls back to the resolved `default` entry as a read-only view (deck input
++ toggles disabled); note ownership in `lib/ankiSync.js` is now "any note
+type with the app prefix" (`ANKI_NOTE_TYPE` + the separator exported from
+`lib/ankiTemplate.js` — a language disabled since the note was sent still
+gets its "⋅ <code>" note updated in place); the popup's `word.anki_mismatch`
+interpolates the actual `:model` (per-language types can mismatch too);
+and the tab's re-sent sample reports the new
+`profile.anki_sample_updated` ("Sample card updated in \":deck\".") instead
+of the calm "nothing was duplicated" line this entry and ticket 04's note
+describe. `docs/adr/0077` addendum v3 points A and D corrected
+accordingly; both concepts' stamps bumped.
+
 ## 2026-10-15 (anki-popup-refresh 04 — Anki tab: language selector + per-language editing)
 
 Fourth ticket of the word-popup refresh (spec

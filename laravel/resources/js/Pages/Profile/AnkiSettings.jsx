@@ -20,6 +20,7 @@ import {
 import {AnkiNoteTypeMismatchError, ensureAnkiTarget, sendAnkiNote} from '../../lib/ankiSync'
 import {
     ankiTabDefaultCode,
+    ankiTabDefaultEntry,
     ankiTabEntry,
     ankiTabSampleData,
     ankiTabSetDeck,
@@ -124,11 +125,16 @@ const grantPermission = async (config) => {
 // native language CODE (the shared auth prop, not the settings id): it
 // seeds the selector, and buildNoteFields compares it against the payload
 // translations' language_code to narrow the Translations field, falling
-// back to all when none match. The state shape mirrors the persisted anki
-// section exactly — connection + legacy base + the complete per-language
-// map (lib/ankiTabState.js) — because every autosave PATCH carries the
-// WHOLE section: the endpoint replaces it wholesale, so a partial save
-// would wipe the rest. Selection itself is not persisted; a reload re-derives it.
+// back to all when none match. The state shape mirrors the PERSISTED anki
+// section exactly — connection + the complete per-language map
+// (lib/ankiTabState.js) — because every autosave PATCH carries the WHOLE
+// section: the endpoint replaces it wholesale, so a partial save would wipe
+// the rest. The legacy top-level deck/fields are deliberately absent (the
+// endpoint strips them and preserves the saved base server-side), so
+// without a selection — no enabled languages — nothing is writable: the
+// tab falls back to the resolved `default` entry as a read-only view
+// (preview + sync/sample targets) and disables the deck input and toggles.
+// Selection itself is not persisted; a reload re-derives it.
 export default function AnkiSettings({ankiSettings = null, languages = [], nativeLanguage = null}) {
     const {t} = useI18n()
     const codes = languages.map((language) => language.code)
@@ -142,6 +148,11 @@ export default function AnkiSettings({ankiSettings = null, languages = [], nativ
 
     useUiSettingsAutosave('anki', settings)
 
+    // The read-only view of the legacy global base — the resolved `default`
+    // entry — that stands in for the editable entry when nothing is
+    // selectable (lib/ankiTabState.js).
+    const baseEntry = ankiTabDefaultEntry(ankiSettings)
+
     const setUrl = (value) => setSettings((current) => ({...current, url: value.trim()}))
     const setPort = (value) => {
         const parsed = Number.parseInt(value, 10)
@@ -153,8 +164,8 @@ export default function AnkiSettings({ankiSettings = null, languages = [], nativ
     const toggleField = (key) => setSettings((current) => ankiTabToggleField(current, selected, key))
 
     // The selected language's editable entry — its deck and its resolved
-    // field toggles; the legacy global base without a selection.
-    const active = ankiTabEntry(settings, selected)
+    // field toggles; the read-only legacy base without a selection.
+    const active = ankiTabEntry(settings, selected) ?? baseEntry
 
     // The sample note built from the shared fixture (the same fixture the
     // Popups tab previews with), stamped with the selected language so the
@@ -207,17 +218,20 @@ export default function AnkiSettings({ankiSettings = null, languages = [], nativ
     }
 
     const runSync = () => runAction(async () => {
-        await ensureAnkiTarget(ankiTabSyncConfig(settings, selected), {force: true})
+        await ensureAnkiTarget(ankiTabSyncConfig(settings, selected, baseEntry), {force: true})
         return 'synced'
     })
 
+    // A fresh sample is added ('sent'); a found duplicate of one of the
+    // app's own note types is refreshed in place (lib/ankiSync.js) and
+    // reports 'updated'; only a foreign-model note stops at 'duplicate'.
     const runSample = () => runAction(async () => {
         const result = await sendAnkiNote(
-            ankiTabSyncConfig(settings, selected),
+            ankiTabSyncConfig(settings, selected, baseEntry),
             sampleNoteFields,
             {tags: SAMPLE_TAGS, word: SAMPLE_DATA.word},
         )
-        return result.added ? 'sent' : 'duplicate'
+        return result.added ? 'sent' : result.updated ? 'updated' : 'duplicate'
     })
 
     // The sync failure panel's permission step: request the origin approval,
@@ -345,6 +359,7 @@ export default function AnkiSettings({ankiSettings = null, languages = [], nativ
                             placeholder={ANKI_DEFAULT_DECK}
                             autoComplete="off"
                             spellCheck={false}
+                            disabled={selected == null}
                         />
                     </div>
                 </div>
@@ -369,6 +384,7 @@ export default function AnkiSettings({ankiSettings = null, languages = [], nativ
                                             checked={active.fields[key]}
                                             onChange={() => toggleField(key)}
                                             label={t(`profile.anki_field_${key}`)}
+                                            disabled={selected == null}
                                         />
                                     ))}
                                 </div>
@@ -468,6 +484,14 @@ export default function AnkiSettings({ankiSettings = null, languages = [], nativ
                         className="mt-4 font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
                     >
                         {t('profile.anki_sample_ok', {deck: active.deck})}
+                    </p>
+                )}
+                {sync.status === 'updated' && (
+                    <p
+                        data-testid="anki-sample-updated"
+                        className="mt-4 font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
+                    >
+                        {t('profile.anki_sample_updated', {deck: active.deck})}
                     </p>
                 )}
                 {sync.status === 'duplicate' && (

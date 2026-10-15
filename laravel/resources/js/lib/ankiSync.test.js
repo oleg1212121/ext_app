@@ -390,6 +390,39 @@ describe('sendAnkiNote', () => {
         expect(updatedIds).toEqual([999]);
     });
 
+    it('updates a note under an app-prefixed type its language no longer configures', async () => {
+        // The disabled-language case: the note was sent as
+        // "ExtApp Vocabulary ⋅ en", then 'en' stopped being enabled — the
+        // word now resolves to the `default` entry and sends target the
+        // unsuffixed base type. The note is still ours (the app prefix),
+        // so the send must update it, not dead-end on "foreign".
+        let updatedIds = [];
+        stubAnki(existingHandlers({
+            findNotes: () => [777],
+            notesInfo: () => [{noteId: 777, modelName: noteTypeForLanguage('en')}],
+            updateNote: ({note}) => updatedIds.push(note.id),
+        }));
+        const noteFields = buildNoteFields(WORD_DATA, {nativeLanguage: 'ru'});
+
+        await expect(sendAnkiNote(config(), noteFields, {word: 'melted'}))
+            .resolves.toEqual({added: false, updated: true, noteId: 777});
+        expect(updatedIds).toEqual([777]);
+
+        // Same for a per-language config: any "⋅ <code>" sibling counts.
+        updatedIds = [];
+        const perLanguage = noteTypeForLanguage('ru');
+        stubAnki(existingHandlers({
+            modelNames: () => [ANKI_NOTE_TYPE, perLanguage],
+            findNotes: () => [778],
+            notesInfo: () => [{noteId: 778, modelName: noteTypeForLanguage('be')}],
+            updateNote: ({note}) => updatedIds.push(note.id),
+        }));
+
+        await expect(sendAnkiNote(config({noteType: perLanguage}), noteFields, {word: 'melted'}))
+            .resolves.toEqual({added: false, updated: true, noteId: 778});
+        expect(updatedIds).toEqual([778]);
+    });
+
     it('skips a foreign-model-only match unmodified — our updates address our models only', async () => {
         const updatedIds = [];
         stubAnki(existingHandlers({
@@ -400,6 +433,22 @@ describe('sendAnkiNote', () => {
 
         await expect(sendAnkiNote(config(), buildNoteFields(WORD_DATA, {nativeLanguage: 'ru'}), {word: 'melted'}))
             .resolves.toEqual({added: false, updated: false, noteId: 555});
+        expect(updatedIds).toEqual([]);
+    });
+
+    it('does not mistake a lookalike foreign model for ours — the prefix ends at the separator', async () => {
+        // "ExtApp Vocabulary (copy)" shares the base name but not the
+        // app prefix "ExtApp Vocabulary ⋅ " — a renamed/copied user model
+        // stays foreign even though its name starts with ours.
+        const updatedIds = [];
+        stubAnki(existingHandlers({
+            findNotes: () => [556],
+            notesInfo: () => [{noteId: 556, modelName: 'ExtApp Vocabulary (copy)'}],
+            updateNote: ({note}) => updatedIds.push(note.id),
+        }));
+
+        await expect(sendAnkiNote(config(), buildNoteFields(WORD_DATA, {nativeLanguage: 'ru'}), {word: 'melted'}))
+            .resolves.toEqual({added: false, updated: false, noteId: 556});
         expect(updatedIds).toEqual([]);
     });
 

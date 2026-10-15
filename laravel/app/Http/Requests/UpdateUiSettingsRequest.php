@@ -3,7 +3,6 @@
 namespace App\Http\Requests;
 
 use App\Classes\Enrichment\EnricherRegistry;
-use App\Models\Language;
 use App\Support\AnkiSettings;
 use App\Support\SavedUiSettings;
 use Illuminate\Foundation\Http\FormRequest;
@@ -53,20 +52,18 @@ class UpdateUiSettingsRequest extends FormRequest
             'popup.etymologies' => ['boolean'],
             'popup.explanation' => ['boolean'],
             // Anki connection (the profile's Anki tab): AnkiConnect endpoint
-            // + target deck. The browser calls AnkiConnect directly; Laravel
+            // + port. The browser calls AnkiConnect directly; Laravel
             // only stores these (unknown keys are stripped by validated()).
+            // The legacy global base — top-level anki.deck/anki.fields —
+            // deliberately has NO rules (anki-popup-refresh): it is
+            // read-only now, so a payload's values are stripped as unknown
+            // keys while UiSettingsController preserves the previously
+            // saved pair the word-level fallback still reads.
             'anki' => ['nullable', 'array'],
             'anki.url' => ['nullable', 'string', 'max:255'],
             'anki.port' => ['nullable', 'integer', 'min:1', 'max:65535'],
-            'anki.deck' => ['nullable', 'string', 'max:100'],
-            // Card content: the thirteen field toggles (absent key = on), one
-            // rule each from AnkiSettings::FIELDS — the canonical list.
-            'anki.fields' => ['nullable', 'array'],
+            'anki.languages' => ['nullable', 'array'],
         ];
-
-        foreach (AnkiSettings::FIELDS as $field) {
-            $rules["anki.fields.{$field}"] = ['boolean'];
-        }
 
         // Per-language deck + field toggles (the Anki tab's language
         // selector). Rules exist only for enabled language codes, so
@@ -75,9 +72,7 @@ class UpdateUiSettingsRequest extends FormRequest
         // language that stops being enabled silently loses its overrides.
         // The resolved `default` entry is computed server-side from the
         // legacy global base (AnkiSettings::for) and is never persistable.
-        $rules['anki.languages'] = ['nullable', 'array'];
-        $codes = Language::query()->enabled()->orderBy('sort_order')->orderBy('code')->pluck('code');
-        foreach ($codes as $code) {
+        foreach (AnkiSettings::enabledCodes() as $code) {
             $rules["anki.languages.{$code}.deck"] = ['nullable', 'string', 'max:100'];
             $rules["anki.languages.{$code}.fields"] = ['nullable', 'array'];
             foreach (AnkiSettings::FIELDS as $field) {

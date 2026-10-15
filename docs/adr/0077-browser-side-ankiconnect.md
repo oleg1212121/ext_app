@@ -285,8 +285,11 @@ with per-language sibling note types; everything else above stands.
 The find-before-add search is unchanged — deck + Word + Language,
 note-type-agnostic (so a word saved under an earlier config is still
 found). What changed is what a hit means. When the found note's model is
-one of the app's own note types (the configured per-language type, or the
-unsuffixed legacy one), the send **updates that note in place** and
+one of the app's own note types (the configured per-language type, the
+unsuffixed legacy base, or any name carrying the app prefix — a language
+disabled since the note was sent resolves its word to the `default` entry
+while its note still wears the "⋅ <code>" name), the send **updates that
+note in place** and
 reports "updated" instead of adding; when only a foreign-model note
 matches the word, the send still skips with "Already in Anki" — a note we
 do not own is never rewritten, and it is never touched even when our own
@@ -326,8 +329,12 @@ failure must not silently degrade into a partial update.
 
 `ui_settings.anki` gains an optional sparse `languages` map beside the
 unchanged global connection (`url`, `port`) and the legacy global base
-(`deck`, `fields` — still stored and still read, but no longer written by
-the tab): `languages.<code> = {deck?, fields?}`. The endpoint whitelists
+(`deck`, `fields` — still stored and still read, but no longer written:
+since the review fixes the endpoint strips incoming `deck`/`fields` from
+any payload and preserves the previously saved pair server-side, so the
+tab's wholesale section replace cannot rewrite the base the word-level
+fallback reads):
+`languages.<code> = {deck?, fields?}`. The endpoint whitelists
 exactly the enabled language codes (rules are built per enabled code, so
 `validated()` strips whole non-enabled entries and unknown keys inside an
 entry — a language that stops being enabled silently loses its overrides

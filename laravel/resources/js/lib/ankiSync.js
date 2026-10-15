@@ -26,6 +26,7 @@ import {
     ANKI_CARD_NAME,
     ANKI_FIELDS,
     ANKI_NOTE_TYPE,
+    ANKI_NOTE_TYPE_SEPARATOR,
     generateCardTemplate,
 } from './ankiTemplate'
 import {
@@ -85,6 +86,20 @@ const fieldNames = () => ANKI_FIELDS.map(({name}) => name)
 // put one on the config (noteTypeForLanguage's output), the unsuffixed base
 // otherwise — callers that pass no language keep today's behavior exactly.
 const noteTypeFor = (config) => config.noteType || ANKI_NOTE_TYPE
+
+// Ownership test for a note found in the deck (the update branch in
+// sendAnkiNote): a note is OURS when its model is the configured
+// (per-language) type, the unsuffixed legacy base, or ANY name carrying the
+// app prefix (base + separator) — a language disabled since the note was
+// sent resolves its word to the `default` entry, so the send targets the
+// base type while the note still wears its "⋅ <code>" name. The prefix ends
+// at the separator, so a user model named "ExtApp Vocabulary (copy)" stays
+// foreign. Foreign models are never modified — they only mark the word as
+// already in Anki.
+const isOwnNoteType = (modelName, config) =>
+    modelName === noteTypeFor(config)
+    || modelName === ANKI_NOTE_TYPE
+    || String(modelName ?? '').startsWith(`${ANKI_NOTE_TYPE}${ANKI_NOTE_TYPE_SEPARATOR}`)
 
 // Deck create-if-missing; note type create-if-missing, otherwise verify its
 // field set and push the generated Front/Back + CSS. Every real pass re-pushes
@@ -265,11 +280,11 @@ export async function sendAnkiNote(config, noteFields, {tags = [], word} = {}) {
     const existing = await findNotes(config, duplicateQuery(config, word, language))
     if (existing.length > 0) {
         const infos = await notesInfo(config, existing)
-        // A note of our own types — the configured (per-language) model or
-        // the unsuffixed legacy one — gets the in-place refresh. Any other
-        // model matching deck+word+language only marks the word as taken.
-        const modelName = noteTypeFor(config)
-        const own = infos.find((info) => info?.modelName === modelName || info?.modelName === ANKI_NOTE_TYPE)
+        // A note of our own types — the configured (per-language) model, the
+        // unsuffixed legacy one, or any name with the app prefix (see
+        // isOwnNoteType) — gets the in-place refresh. Any other model
+        // matching deck+word+language only marks the word as taken.
+        const own = infos.find((info) => isOwnNoteType(info?.modelName, config))
         if (own) {
             await updateAnkiNote(config, own.noteId, {fields: noteFields, tags})
             seedDetection(config, {word, language}, own.noteId)

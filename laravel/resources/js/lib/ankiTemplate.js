@@ -53,6 +53,19 @@ export const ANKI_FIELDS = [
 export const ANKI_NOTE_TYPE = 'ExtApp Vocabulary'
 export const ANKI_CARD_NAME = 'Recognition'
 
+// The join between ANKI_NOTE_TYPE and a language code in a per-language note
+// type name — exported for the sync layer's ownership check (a note type is
+// ours when it wears the app prefix, i.e. starts with base + separator).
+// The PHP twin is App\Support\AnkiSettings::NOTE_TYPE_SEPARATOR, pinned by
+// tests/Unit/AnkiSettingsMirrorTest.php.
+export const ANKI_NOTE_TYPE_SEPARATOR = ' ⋅ '
+
+// The resolved-entry key for words whose language_code is unknown or
+// missing — a member of the settings' `languages` map, never a persistable
+// language code. The PHP twin is App\Support\AnkiSettings::DEFAULT_LANGUAGE_KEY,
+// pinned by tests/Unit/AnkiSettingsMirrorTest.php.
+export const ANKI_DEFAULT_LANGUAGE_KEY = 'default'
+
 // Per-language note type name (anki-popup-refresh): "ExtApp Vocabulary ⋅ en"
 // — one template per language, identical today, free to diverge later. An
 // empty or missing code (a word with unknown/missing language_code resolves
@@ -63,7 +76,7 @@ export const ANKI_CARD_NAME = 'Recognition'
 // tests/Unit/AnkiSettingsMirrorTest.php; the behavior here is pinned by
 // ankiTemplate.test.js.
 export function noteTypeForLanguage(code) {
-    return code ? `${ANKI_NOTE_TYPE} ⋅ ${code}` : ANKI_NOTE_TYPE
+    return code ? `${ANKI_NOTE_TYPE}${ANKI_NOTE_TYPE_SEPARATOR}${code}` : ANKI_NOTE_TYPE
 }
 
 const HIDDEN_CLASS = 'ef-hidden'

@@ -69,14 +69,15 @@ it('surfaces every field key as exactly one checkbox across the Anki tab\'s togg
 it('drives the Anki tab\'s per-language editing through the shared state module', function () {
     $ankiTab = file_get_contents(base_path('resources/js/Pages/Profile/AnkiSettings.jsx'));
 
-    // The tab's whole-section state, per-language entry accessors, sync
-    // config (note type wiring) and sample payload all come from
-    // resources/js/lib/ankiTabState.js — the executable behavior lives there
-    // (ankiTabState.test.js), the tab only renders it.
+    // The tab's whole-section state, per-language entry accessors, read-only
+    // legacy-base view, sync config (note type wiring) and sample payload
+    // all come from resources/js/lib/ankiTabState.js — the executable
+    // behavior lives there (ankiTabState.test.js), the tab only renders it.
     expect($ankiTab)
         ->toContain("from '../../lib/ankiTabState'")
         ->toContain('ankiTabState(')
         ->toContain('ankiTabDefaultCode(')
+        ->toContain('ankiTabDefaultEntry(')
         ->toContain('ankiTabEntry(')
         ->toContain('ankiTabSetDeck(')
         ->toContain('ankiTabToggleField(')
@@ -85,6 +86,20 @@ it('drives the Anki tab\'s per-language editing through the shared state module'
         // The resolved `default` entry is never selectable and never
         // persisted: the selector lists the enabled languages only.
         ->and($ankiTab)->not->toContain("'default'");
+});
+
+it('keeps the legacy anki base out of the tab\'s autosave payload', function () {
+    $tabState = file_get_contents(base_path('resources/js/lib/ankiTabState.js'));
+
+    // The tab autosaves the object ankiTabState returns verbatim, so its
+    // top-level keys ARE the PATCH payload. The legacy global base (top-level
+    // deck/fields) must not ride along (anki-popup-refresh review fixes):
+    // the endpoint strips incoming values and preserves the saved pair, so
+    // a tab save can never rewrite the base the word-level fallback reads.
+    preg_match('/export function ankiTabState\(saved, codes\) \{(?<body>[\s\S]*?)\n\}/', $tabState, $state);
+    preg_match_all('/^        (?<key>[a-z_]+):/m', $state['body'] ?? '', $keys);
+
+    expect($keys['key'])->toBe(['url', 'port', 'languages']);
 });
 
 it('mirrors the connection defaults into the JS AnkiConnect module', function () {
@@ -114,11 +129,35 @@ it('mirrors the per-language note type naming into the JS template module', func
         ->and(AnkiSettings::noteTypeForLanguage(''))->toBe(AnkiSettings::NOTE_TYPE_BASE)
         ->and(AnkiSettings::noteTypeForLanguage(null))->toBe(AnkiSettings::NOTE_TYPE_BASE)
         // The JS twin, pinned source-side (no JS runtime here): the same
-        // base-name constant, the same separator, and the helper the send
-        // paths build config.noteType with — its behavior is pinned
-        // executable in ankiTemplate.test.js.
+        // base-name constant and the same exported separator constant —
+        // which the sync layer's ownership check reuses (any note type with
+        // the app prefix is ours), so the literal lives in one place — plus
+        // the helper the send paths build config.noteType with; the runtime
+        // behavior is pinned executable in ankiTemplate.test.js and
+        // ankiSync.test.js.
         ->and($templateModule)
         ->toContain("ANKI_NOTE_TYPE = '".AnkiSettings::NOTE_TYPE_BASE."'")
-        ->toContain('export function noteTypeForLanguage(code)')
-        ->toContain(AnkiSettings::NOTE_TYPE_SEPARATOR);
+        ->toContain("ANKI_NOTE_TYPE_SEPARATOR = '".AnkiSettings::NOTE_TYPE_SEPARATOR."'")
+        ->toContain('export function noteTypeForLanguage(code)');
+
+    $syncModule = file_get_contents(base_path('resources/js/lib/ankiSync.js'));
+
+    expect($syncModule)
+        ->toContain('ANKI_NOTE_TYPE_SEPARATOR')
+        ->toContain('isOwnNoteType');
+});
+
+it('mirrors the default-language key into the JS template module', function () {
+    $templateModule = file_get_contents(base_path('resources/js/lib/ankiTemplate.js'));
+    $wordConfig = file_get_contents(base_path('resources/js/lib/ankiWordConfig.js'));
+
+    // The resolved `default` entry's key — the word-level config falls back
+    // to it (never a persistable language code), so the JS side reads it
+    // through the pinned constant instead of a hand-copied literal.
+    expect(AnkiSettings::DEFAULT_LANGUAGE_KEY)->toBe('default')
+        ->and($templateModule)
+        ->toContain("ANKI_DEFAULT_LANGUAGE_KEY = '".AnkiSettings::DEFAULT_LANGUAGE_KEY."'")
+        ->and($wordConfig)
+        ->toContain('ANKI_DEFAULT_LANGUAGE_KEY')
+        ->not->toContain('languages?.default');
 });
