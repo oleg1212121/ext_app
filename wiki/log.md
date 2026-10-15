@@ -5988,3 +5988,27 @@ visibility behavior, not the settings mirror. Test file only; pint PASS; suite g
 (via `--fresh` local TIA baseline record — gh is unauthenticated so the remote-baseline fetch
 errors; the documented `--fresh` run records locally and subsequent `test:tia` replays work). No
 routes/models/commands touched, no `wiki:sync` needed.
+
+## 2026-10-15 (retro-fixes 10: round-2 closure — remaining staleness cleared, verification battery green)
+
+Round-2 bookkeeping close. The two staleness warnings carried since retro-fixes 05 (both concepts
+list `AGENTS.md` as a source, which the vitest-block edit re-staled) are cleared: **`conventions/coding-conventions.md`**
+got a content update, not just a stamp — its Testing section covered Pest only and would have
+re-created exactly the false belief the round exists to kill, so it now states the JS rule (pure-JS
+logic in `resources/js/lib/` is vitest-tested, new lib modules get vitest tests beside the module,
+same as Pest for PHP); **`architecture/docker-services.md`** content checked unaffected (the golden
+rule + services table are untouched by the Testing-section edit) and re-stamped. Both `generated.at`
+bumped past the AGENTS.md mtime, existing `verified` stamps preserved per round-1 (ticket 04)
+convention; `wiki:validate` → **0 warnings**. Verification battery, all sequential in-container:
+full `composer run test` **1166 passed / 0 failed** (6056 assertions, 8 parallel workers, 508s —
+the exact parallel conditions that used to trip the WordClassSeederTest flake, now fixed by
+retro-fixes 06), vitest **94/94 in 14 files** (up from 52/11 — retro-fixes 08's 42 anki specs),
+`npm run lint` exit 0 with 0 errors / 81 documented warnings (retro-fixes 07's deliberate warn
+decisions), `npm run build` green, `pint --dirty` PASS. Round totals: findings #1 (AGENTS.md
+vitest guardrail + anki vitest port), #2 (ESLint + CI), #4 (popup lockstep test), #5 (flake), #6
+(researcher citation rule) fixed; #3 closed as a false premise (`.zcode/` gitignored by design —
+documented in the spec, nothing to commit). Commits `7c085ce` / `1a09abc` / `1db51e0` / `0f87321`
+/ `cd6e6ff` / this one, all on `anki-connection`; spec addendum + tickets 06–09 live in
+`.scratch/retro-fixes/`. Carry-forward (operational, not a finding): bare `composer run test:tia`
+errors pre-run on the unauthenticated-`gh` remote-baseline fetch — run the documented `--fresh`
+invocation once locally or authenticate `gh`.

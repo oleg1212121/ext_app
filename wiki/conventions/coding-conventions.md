@@ -4,7 +4,7 @@ title: Coding Conventions
 description: Project-wide rules for code style, structure, testing, and agent behavior in this repository.
 tags: [conventions, style, testing]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T11:25:11+03:00 }
 verified: { by: human:alex, at: 2026-07-26T18:45:00Z }
 sources:
   - id: agents
@@ -53,6 +53,9 @@ sources:
 # Testing
 
 * Pest syntax only; tests in `tests/Feature` / `tests/Unit`.
+* Pure-JS logic in `resources/js/lib/` is tested with vitest
+  (`docker exec ext_app_laravel npm run test`); new lib modules get vitest
+  tests beside the module, same as Pest for PHP.
 * Use specific assertions: `assertForbidden()`, `assertNotFound()`,
   `assertSuccessful()` — not `assertStatus(403)`.
 * Test database is `ext_app_test` (from `phpunit.xml`) — never the dev DB.
