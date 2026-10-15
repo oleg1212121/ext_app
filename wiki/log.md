@@ -5895,3 +5895,20 @@ commit. AGENTS.md is not a wiki concept, so no concept stamps change;
 tickets 06–09 for the remaining findings (#2 ESLint, #4 popup-sections
 mirror test, #5 WordClassSeederTest ordering flake, #1-follow-up anki
 vitest port) live in `.scratch/retro-fixes/`.
+
+## 2026-10-15 (retro-fixes 06: WordClassSeederTest deterministic ordering — kill the parallel flake)
+
+From the anki-connection session retro (2026-10-14), finding #5: `tests/Feature/WordClassSeederTest.php`
+compared two DB queries with no `orderBy` (line 23 matched `$beClasses->keys()` against
+`$enSlugs->values()`), so the en/be slug-sequence alignment rested on Postgres natural row order —
+stable only while both queries scan the same physical layout, which the parallel workers' freshly
+created `ext_app_test_test_{N}` databases do not guarantee; it failed exactly once in ticket 01's
+full-suite run while passing in isolation, and a flaky red trains agents to discount red. Fix is
+test-only: both compared sides now `orderBy('slug')` (total order via the `(language_id, slug)`
+unique index on `word_classes`), so the sequence-vs-sequence assertion keeps checking that the be
+slug sequence mirrors the en slug sequence — still fails on any missing/extra slug — plus the four
+spot-checked Belarusian titles; the idempotency test is count-only and untouched. Seeders and
+models unchanged; the seeder's curated `CLASSES` order is an iteration order, not a persisted one
+(rows carry no order column), so sorted comparison matches the seeder's actual contract ("Same slug
+set as English"). `running-tests.md` doesn't name the test, so it stays as-is; no routes/models/
+commands touched, no `wiki:sync` needed.
