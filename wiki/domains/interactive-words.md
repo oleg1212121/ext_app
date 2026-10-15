@@ -5,8 +5,8 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-15T10:30:26+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T13:12:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T13:12:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -326,6 +326,11 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   tab's preview uses), falling back to all translations when none match;
   `Tags` carries the linked word's tag names (`data.tags`, additive in the
   `GET /words/{word}` payload); `Familiarity` is the popup's current score.
+  The values carry the popup's dictionary structure (per-entry labels,
+  counted `<details>` summaries, the translations "+N more…" expander), and
+  the label wording is the popup's own UI-language strings — passed to the
+  builder from `sendToAnki` and frozen into the note at send time, so a
+  card sent from an ru/be UI keeps that wording in Anki.
 * **Auto-ensure.** The first send of a page session runs the memoized
   ensure (deck create-if-missing, the app-owned note type + generated
   template) — module state shared with the Anki tab, so a tab sync and a

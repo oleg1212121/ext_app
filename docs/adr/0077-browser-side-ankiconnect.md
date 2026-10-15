@@ -115,3 +115,86 @@ the tab's explicit sync button forces a fresh pass.
   scheduled bulk exports without an open browser).
 - Bulk export of all saved words stays a follow-up; the per-word send keeps
   sends user-paced, and the duplicate check makes re-sending harmless.
+
+## Addendum (2026-10-15): the card looks like the reading popup
+
+Feature `anki-popup-card` reworked the generated card artifacts: the Front
+is the word alone, and the Back re-renders the twelve fields in the
+reading popup's own structure — header (word title, then the
+Familiarity / Frequency / form-of / part-of-speech / bracketed-transcription
+meta lines), dictionary body, muted Tags · Language footer — on the popup's
+palette, light and Anki night mode. Every decision above still holds
+unchanged: same app-owned note type, same twelve fields in fixed order,
+values-always-sent, hide-class semantics, deterministic generation,
+find-before-add sends. What follows are the refinements the rework forced.
+
+### A. Structure lives in the field values; the template stays static
+
+The popup shows the dictionary body as per-entry blocks ("MELT — verb"),
+counted collapsed sections ("Definitions (3)"), and a translations preview
+behind a "+N more…" expander. None of that can live in the template:
+counts and entry labels are **per-note data** (true of one note, not of the
+note type), and the label wording is the sender's **UI language**, which a
+template cannot know. Anki templates are computationally near-blind — a
+template can test a field's emptiness and substitute its value, nothing
+more. So `buildNoteFields` bakes the structure into the values at send
+time: per-entry labels for words with 2+ dictionary entries, counted
+summaries, the preview/expander split, " · "-joined transcriptions, and the
+localized "form of" prefix inside the WordFamily value. A `labels` option
+carries the five UI-language strings (three counted summaries, the
+"more" expander, "form of"); both senders (the word popup's send and the
+Anki tab's sample card) pass their locale's wording — it is frozen into the
+note like every other value, and the English defaults serve no in-app
+sender. The template stays a static, deterministic function of the twelve
+toggles that renders whatever the values carry; its own literals shrank to
+three meta-line prefixes ("Familiarity: …/100", "Frequency: #…", the
+bracketed transcription), each wrapped in an Anki-native
+`{{#Field}}…{{/Field}}` conditional so an empty field drops the whole line
+instead of leaving a dangling "Frequency: #". The form-of line needs no
+template literal precisely because its label moved into the value.
+
+### B. The Back's dictionary sections are collapsed `<details>` elements
+
+The card copies the popup's tap-to-open sections with native HTML
+`<details>`/`<summary>` — collapsible in Anki's WebView with no JavaScript
+and **collapsed by default**, so a review flip shows the word, its
+translations, and clean counted summaries instead of a wall of examples;
+expanding is one tap where the learner wants depth. The popup's interactive
+affordances that mean nothing at review time (the Explanation tab, the
+progress buttons, the Save-to-Anki footer) stay off the card.
+
+### C. Local font stacks only
+
+Review must never fetch webfonts: the template CSS uses local stacks only —
+Figtree degrading through Segoe UI/Arial sans, Source Serif 4 through
+Georgia serif — with no `@import` and no `url()`. A card must look right
+offline and never cost a network request per review; the app's exact fonts
+are a progressive enhancement, not a dependency.
+
+### D. Previously-sent notes keep their old values until re-sent
+
+Template sync restyles every existing card, but the *values* on notes sent
+before this rework are the old plain `<br>`-joined strings — verified to
+render as clean plain lines under the new template (no dangling conditionals,
+no half-structure). Two cosmetic deltas remain next to a freshly-sent note:
+the WordFamily line shows the bare headword list without its "form of"
+prefix (the label moved into the value, so old values predate it), and the
+transcription line shows "[a, b]" — the old ", " join, not the popup's
+" · ". Re-sending cannot refresh an old note: the find-before-add check
+(decision 5) resolves the existing Word+Language match as a duplicate and
+adds nothing. Old notes update only via Anki-side deletion and re-send, or
+future tooling — accepted, per the feature spec.
+
+### E. The send path's pin is the first vitest file outside lib/
+
+ADR 0066 scopes vitest to the pure modules in `lib/`. The popup's
+`sendToAnki` is React wiring with no runtime seam, but it carries one real
+decision — the send must pass the UI-language labels — so
+`Components/WordPopup.ankiSend.test.js` reads the JSX as text and pins the
+pass-through: the same source-pin pattern the Pest mirror suites use
+(`AnkiSettingsMirrorTest`, `PopupSectionsMirrorTest`). Node-only, nothing
+rendered — within ADR 0066's intent, outside its letter. This addendum is
+the standing blessing: a source-pin mirror test may live in vitest next to
+the wiring it pins, where the pinned decision is untestable at any runtime
+seam and the surrounding behavior is already pinned at the real seams
+(`ankiSync.test.js`, `ankiTemplate.test.js`).

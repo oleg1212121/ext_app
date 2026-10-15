@@ -36,8 +36,8 @@ prose)
 **Card template**:
 The Front/Back HTML + CSS Anki renders a note with, generated
 deterministically from the user's field toggles and never hand-edited:
-Front shows Word + Transcription, the Back all twelve fields, each in its
-own classed wrapper.
+Front shows the word alone, the Back renders all twelve fields in the
+reading popup's header/body/footer shape, each in its own classed wrapper.
 
 **Hide class**:
 The marker (`ef-hidden`) the generated template bakes into a toggled-off

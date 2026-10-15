@@ -1,5 +1,51 @@
 # Directory Update Log
 
+## 2026-10-15 (anki-popup-card 04 — knowledge-base closure: the Anki card looks like the reading popup)
+
+Closure of the anki-popup-card feature (code in its tickets 01–03: the
+generated card template now puts the word alone on the Front and the
+reading popup's header/body/footer structure on the Back with the popup's
+palette and local font stacks; field values carry the popup's dictionary
+structure — per-entry "WORD — pos" labels, counted `<details>` summaries,
+the translations "+N more…" expander, " · " transcriptions, the localized
+"form of" prefix — with UI-language label strings baked per note at send
+time). This ticket lands only the knowledge base; zero feature code.
+
+- `docs/adr/0077-browser-side-ankiconnect.md` — new "Addendum
+  (2026-10-15): the card looks like the reading popup" with five points:
+  (A) structure lives in the field VALUES while the template stays static
+  (counts/entry labels are per-note data, label wording is the sender's UI
+  language — neither computable in an Anki template; its own literals
+  shrank to three conditional meta-line prefixes), (B) the Back's sections
+  are native collapsed `<details>` — no JS, collapsed by default, (C)
+  local font stacks only — review never fetches webfonts, (D) the accepted
+  old-notes consequence — pre-rework notes keep their plain values under
+  the new template with two cosmetic deltas (bare WordFamily without
+  "form of"; "[a, b]" transcriptions) and no re-send refresh
+  (find-before-add blocks it), (E) the first vitest file outside `lib/`
+  (`WordPopup.ankiSend.test.js`, a source-pin mirror of the send's label
+  pass-through) blessed within ADR 0066's intent.
+- `wiki/domains/anki-export.md` — flow step 2 rewritten for the
+  popup-styled template (Front = word alone, Back header/body/footer,
+  conditional meta lines, popup surface, local fonts); step 4 rewritten
+  for the structured values + send-time label baking + the old-notes
+  consequence; a "static by design" boundary bullet added; vitest
+  spec list gains the Components-side source pin; description + source
+  titles updated; stamps bumped.
+- `wiki/domains/profile.md` — Anki tab's Card content / Template preview
+  paragraphs rewritten: the tab's preview and sample card show the
+  popup-styled card with conditionals resolved, and `buildNoteFields`'s
+  labels option (the tab passes its locale's via `useI18n`, as the popup
+  send does); stamps bumped.
+- `wiki/domains/interactive-words.md` — the Save-to-Anki "Note values"
+  bullet notes the popup-structured values and the UI-language label
+  baking from `sendToAnki`; stamps bumped.
+- `GLOSSARY.md` — the "Card template" term's stale sentence fixed
+  ("Front shows Word + Transcription" → the word alone on the Front, the
+  popup's header/body/footer on the Back); glossary-only, no new terms.
+- Checks: `wiki:validate` green; `tests/Feature/WikiTest.php` green.
+  `wiki:sync` not needed — no routes/models/commands touched.
+
 ## 2026-10-14 (anki-connection review: six code-review fixes — eager tags, mirror lockstep test, kind-true error panels, Word always on Front)
 
 Post-feature review pass over tickets 01–05: two deduplications, one

@@ -4,8 +4,8 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T11:21:41+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T13:10:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T13:10:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -27,7 +27,7 @@ sources:
     title: AnkiSettings (saved connection + field toggles resolved over defaults)
   - id: anki-template
     resource: laravel/resources/js/lib/ankiTemplate.js
-    title: ankiTemplate.js (field-key → Anki-field-name map, deterministic Front/Back/CSS generator)
+    title: ankiTemplate.js (field-key → Anki-field-name map, deterministic popup-styled Front/Back/CSS generator, structured buildNoteFields)
   - id: anki-sync
     resource: laravel/resources/js/lib/ankiSync.js
     title: ankiSync.js (ensure deck/note-type/template, memoized per session; duplicate-checked note send)
@@ -174,25 +174,42 @@ type's fixed order), the "ExtApp Vocabulary" note-type name and the
 connection defaults — a lockstep pinned by
 `tests/Unit/AnkiSettingsMirrorTest.php`.
 `generateCardTemplate(fields)` deterministically emits the Front/Back HTML +
-CSS: every field wrapped `<div class="ef-field ef-<key>">{{Field}}</div>`,
-a toggled-off field additionally carrying the `ef-hidden` class (values
-always carry every field — hide-class semantics, so re-syncing the template
-restyles existing cards instead of dropping data); Front shows Word +
-Transcription, the Back all twelve — and the Front never hides Word (it is
-the recognition cue and the duplicate-search key), its toggle keeps hiding
-the Back wrapper only; the CSS defines the `.card` base plus
-`.ef-hidden { display: none }`. `buildNoteFields()` builds the full
-12-field note from a word payload (what the sample card — and, from the
-next ticket, the word popup — puts on the wire; Translations narrow to the
-user's native language when it matches, falling back to all).
+CSS in the reading popup's image: the **Front is the word alone** (never
+hidden — the recognition cue and the duplicate-search key; the
+transcription moved off it), the **Back** re-orders the twelve classed
+wrappers (`<div class="ef-field ef-<key>">{{Field}}</div>`, a toggled-off
+field additionally carrying the `ef-hidden` class — values always carry
+every field, hide-class semantics, so re-syncing the template restyles
+existing cards instead of dropping data) into the popup's header/body/
+footer: the word title plus the Familiarity / Frequency / form-of /
+part-of-speech / bracketed-transcription meta lines, the dictionary
+sections, a muted Tags · Language footer. Meta lines whose value carries
+literal decoration sit inside Anki-native `{{#Field}}…{{/Field}}`
+conditionals, so an empty field drops the whole line; the card surface is
+the popup's palette (vellum/ink/hairline/verdigris, light + Anki night
+mode), 560px study width centered, serif headword, local font stacks only.
+`buildNoteFields()` builds the full 12-field note from a word payload —
+what the sample card and the word popup put on the wire (Translations
+narrow to the user's native language when it matches, falling back to all)
+— with the popup's dictionary structure baked into the values: per-entry
+"WORD — pos" labels for 2+-entry words, counted `<details>` summaries for
+Definitions/Examples/Etymology, the translations preview behind a
+"+N more…" expander, " · "-joined transcriptions, and the localized
+"form of" prefix inside the WordFamily value. A `labels` option carries the
+five UI-language strings (summaries, expander, "form of") — the tab passes
+its locale's via `useI18n`, exactly as the popup send does, so the preview
+shows the real wording; the wording is frozen into the note at send time.
 
 **Template preview** — the tab renders the exact generated artifacts in a
 sandboxed iframe (`srcDoc` = generated CSS + HTML with the sample values
-substituted for the `{{Field}}` placeholders, i.e. what Anki renders at
-review time) as Front/Back tabs, with read-only Copy HTML (the selected
-face) and Copy CSS buttons. The note comes from the shared sample fixture
-`Pages/Profile/sampleWordData.js` — the same "melted → melt" fixture the
-Popups tab's preview renders, so both previews have one source.
+substituted for the `{{Field}}` placeholders and the
+`{{#Field}}…{{/Field}}` conditionals resolved the way Anki resolves them —
+an empty field drops its whole meta line — i.e. exactly what Anki renders
+at review time: the popup-styled card) as Front/Back tabs, with read-only
+Copy HTML (the selected face) and Copy CSS buttons. The note comes from the
+shared sample fixture `Pages/Profile/sampleWordData.js` — the same
+"melted → melt" fixture the Popups tab's preview renders, so both previews
+have one source.
 
 **Send to Anki** — the tab's write path, orchestrated by
 `resources/js/lib/ankiSync.js` on top of `ankiConnect.js`. **Create /
@@ -225,7 +242,9 @@ The word popup's per-word **Save to Anki** send (see
 path — the same `sendAnkiNote` and the same memoized ensure (module state
 shared with the tab, so a tab sync and a popup send in one page session
 don't redo each other's work) — with the note built from the popup's live
-payload instead of the fixture. The tab's preview/sample card narrow
+payload instead of the fixture and the popup's own UI-language label
+strings passed, so a card sent from the reader carries the sender's
+locale. The tab's preview/sample card narrow
 Translations with the native language **code** from the shared
 `auth.user.native_language` prop (an early version passed the numeric
 `native_language_id`, which never matched a `language_code` and silently
