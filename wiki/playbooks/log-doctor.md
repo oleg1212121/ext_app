@@ -4,7 +4,7 @@ title: Log Doctor (scheduled error triage)
 description: 12-hourly GitHub Actions workflow on the self-hosted prod runner — collect.sh scans laravel logs, failed_jobs and scheduler output since the last completed run, the read-only log-doctor opencode agent diagnoses each unique error against the live checkout, and issue-report.php deterministically files or comments GitHub issues (cause + solution); clean runs cost nothing and the window only advances after successful filing.
 tags: [production, monitoring, opencode, github-actions, automation, howto]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T10:33:25+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
 sources:
   - id: workflow

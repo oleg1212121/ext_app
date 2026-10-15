@@ -5,7 +5,7 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T10:30:26+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
 sources:
   - id: word-controller

@@ -27,7 +27,7 @@ function tierClass(familiarity, highlight) {
 
 // Mirror of the tokenizer's word pattern: the gaps between key segments can
 // still pack single-letter words (я, о, а) that a stress mark can land on.
-const WORD_RUN_PATTERN = /[\p{L}\p{M}]+(?:['’\-][\p{L}\p{M}]+)*/gu;
+const WORD_RUN_PATTERN = /[\p{L}\p{M}]+(?:['’-][\p{L}\p{M}]+)*/gu;
 
 const renderStressMarks = (offsets) => offsets.map((offset) => (
     <span key={offset} className="stress-mark" data-offset={offset} aria-hidden="true"/>

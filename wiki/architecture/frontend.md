@@ -1,15 +1,18 @@
 ---
 type: Architecture
 title: Frontend Architecture
-description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, Vite build, JS module layering (lib/, hooks/, page-local), and vitest for pure logic.
-tags: [frontend, react, inertia, livewire, tailwind, vitest]
+description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, Vite build, JS module layering (lib/, hooks/, page-local), vitest for pure logic, and ESLint for static correctness.
+tags: [frontend, react, inertia, livewire, tailwind, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T10:30:26+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: package
     resource: laravel/package.json
     title: NPM manifest
+  - id: eslint-config
+    resource: laravel/eslint.config.js
+    title: ESLint flat config (correctness rules over resources/js, warn-tier carve-outs)
   - id: css
     resource: laravel/resources/css/app.css
     title: Tailwind 4 CSS-first configuration
@@ -111,3 +114,18 @@ the Pest feature suite and manual verification (ADR 0066). `vitest.config.js`
 is standalone and must not load the laravel-vite plugin. CI runs it as the
 `frontend` job in `tests.yml`; `composer run test` deliberately does not
 chain it. Invoke via `docker exec ext_app_laravel npm run test`.
+
+# Static analysis (ESLint, correctness only)
+
+`npm run lint` (= `eslint resources/js`) statically checks every
+`resources/js/**/*.{js,mjs,jsx}`. It exists because Vite bundles but does
+not statically resolve identifiers — a missing import once shipped through
+`vite build` and only a manual Node smoke caught it (wiki/log.md,
+2026-10-15). `laravel/eslint.config.js` is flat config (eslint 10) with
+deliberate, in-file-commented tiers: `no-undef` + core recommended +
+rules-of-hooks fail the run; legacy-but-working hook patterns the v7
+analyzer flags sit at `warn`; deliberate idioms have file-scoped carve-outs
+(`no-control-regex` in `lib/markdown.js`, `react-hooks/globals` in
+`i18n.jsx`). Warnings are review signal, never a reformat mandate — fix
+real bugs in place. CI runs it as the `lint` job in `tests.yml`. Invoke via
+`docker exec ext_app_laravel npm run lint`.

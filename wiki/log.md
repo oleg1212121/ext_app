@@ -5912,3 +5912,29 @@ models unchanged; the seeder's curated `CLASSES` order is an iteration order, no
 (rows carry no order column), so sorted comparison matches the seeder's actual contract ("Same slug
 set as English"). `running-tests.md` doesn't name the test, so it stays as-is; no routes/models/
 commands touched, no `wiki:sync` needed.
+
+## 2026-10-15 (retro-fixes 07: ESLint flat config + CI lint job — the static no-undef/imports/hooks guard)
+
+From the anki-connection session retro (2026-10-14), finding #2: ticket 03's missing `deckNames`
+import in `resources/js/lib/ankiSync.js` — a guaranteed runtime ReferenceError — passed `vite
+build` (Vite bundles but does no static resolution of what an identifier refers to) and was caught
+only by the implementer's ad-hoc Node smoke; vitest pins only what has tests, so the other ~73
+`.jsx` files had nothing statically checking them. Landed: eslint 10 + `@eslint/js` 10 +
+`eslint-plugin-react-hooks` 7 + globals 17 as devDeps (installed inside the container),
+`laravel/eslint.config.js` (flat config over `resources/js/**/*.{js,mjs,jsx}`; browser globals
+everywhere, Node globals for the vitest specs and `lib/wordTokenizer.cli.mjs`; ignores
+node_modules/vendor/public), `"lint": "eslint resources/js"` in package.json, and a `lint` job in
+`tests.yml` mirroring the `frontend` job (`npm ci` + `npm run lint`, Node 22, npm cache off the
+lockfile). Goal is correctness, not style, and the tiers say so: `no-undef` + core recommended +
+rules-of-hooks stay `error` (canary-proofed: a file using `deckNames` un-imported and a hook after
+an early return both fail the run); the v7 compiler-*analysis* rules whose hits are all
+legacy-but-working patterns (`refs` 14, `set-state-in-effect` 13, `immutability` 2,
+`preserve-manual-memoization` 1) sit at `warn`; two deliberate patterns got file-scoped carve-outs
+with in-file comments (`no-control-regex` off in `lib/markdown.js` — the \u0000/\u0001 sentinels
+ARE the code-span protection mechanism; `react-hooks/globals` off in `i18n.jsx` — the module-level
+`strings` cache IS the `t()` mechanism). Genuine violations fixed in place: two `no-useless-escape`
+hits (`\-` → `-` in the mirrored tokenizer/WordText word patterns — semantics-identical,
+TokenizerParityTest green). The 51→81 warnings (17 unused legacy `import React`,
+destructuring leftovers, exhaustive-deps stability nags) are review signal, deliberately not
+mass-fixed. `running-tests.md` gains the lint command + rule-tier contract and an
+`eslint.config.js` source, `generated.at` bumped.

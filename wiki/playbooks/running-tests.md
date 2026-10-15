@@ -1,10 +1,10 @@
 ---
 type: Playbook
 title: Running Tests
-description: How to run the Pest test suite against the dedicated ext_app_test database, and the vitest suite for pure JS logic.
-tags: [testing, pest, vitest]
+description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
+tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T18:50:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T10:30:26+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: phpunit
@@ -24,13 +24,16 @@ sources:
     title: Testing environment file template (tracked; .env.testing is gitignored)
   - id: ciworkflow
     resource: .github/workflows/tests.yml
-    title: Tests workflow (CI env provisioning, wiki mtime skip, frontend vitest job)
+    title: Tests workflow (CI env provisioning, wiki mtime skip, frontend vitest + eslint lint jobs)
   - id: wikiconfig
     resource: laravel/config/wiki.php
     title: Wiki validation config (skip_mtime_staleness flag)
   - id: packagejson
     resource: laravel/package.json
-    title: NPM scripts (vitest run)
+    title: NPM scripts (vitest run, eslint)
+  - id: eslintconfig
+    resource: laravel/eslint.config.js
+    title: ESLint flat config (correctness rules over resources/js, warn-tier carve-outs)
   - id: pytestini
     resource: docker-compose/python/ai/pytest.ini
     title: Python service pytest config (markers, pythonpath)
@@ -147,6 +150,28 @@ sources:
   pure part in `lib/` (`.mjs` if it must stay framework-free) so it has a
   home to test in.
 
+# Frontend static analysis (ESLint, correctness only)
+
+* `docker exec ext_app_laravel npm run lint` (= `eslint resources/js`)
+  statically checks every `resources/js/**/*.{js,mjs,jsx}` for **correctness,
+  not style**: `no-undef` (the guard this pass exists for — a missing import
+  once sailed through `vite build`; only a manual Node smoke caught it),
+  the core recommended set, and `eslint-plugin-react-hooks` (rules-of-hooks
+  + the v7 compiler-backed set). Errors fail the run; warnings don't.
+* `laravel/eslint.config.js` is flat config (eslint 10). Rule tiers are
+  deliberate and commented in-file: genuine-violation rules stay `error`;
+  legacy-but-working patterns the v7 hook analyzer flags
+  (`refs`, `set-state-in-effect`, `immutability`,
+  `preserve-manual-memoization`) sit at `warn`; two deliberate patterns have
+  file-scoped carve-offs (`no-control-regex` in `lib/markdown.js` — the
+  \u0000/\u0001 sentinels ARE the mechanism; `react-hooks/globals` in
+  `i18n.jsx` — the module-level strings cache IS the t() mechanism). A new
+  warning is review signal, not a reformat mandate: fix real bugs in place,
+  never mass-edit to silence a rule.
+* CI runs it as the **`lint`** job in `tests.yml` (`npm ci` + `npm run
+  lint`, Node with npm cache off `package-lock.json`), mirroring the
+  `frontend` job.
+
 # Commands
 
 ```bash
@@ -177,6 +202,10 @@ docker exec ext_app_laravel sh -c 'cd /var/www && PHP_INI_SCAN_DIR=/usr/local/et
 
 # Frontend: pure-logic JS tests (vitest, Node only — no DB, no build)
 docker exec ext_app_laravel npm run test
+
+# Frontend static analysis: ESLint over resources/js (correctness only —
+# errors fail, warnings don't)
+docker exec ext_app_laravel npm run lint
 
 # Python service (pytest, inside the ext_python container; ~5s, no weights)
 docker exec ext_python python -m pytest /app/ai -q

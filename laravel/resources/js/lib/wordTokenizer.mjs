@@ -2,7 +2,7 @@
 // the interactive word map sent by the server is keyed by the PHP tokenizer's
 // lowercase l_word values, and the parity is enforced by
 // tests/Unit/TokenizerParityTest.php.
-const TOKEN_PATTERN = /[\p{L}\p{M}]+(?:['’\-][\p{L}\p{M}]+)*/gu;
+const TOKEN_PATTERN = /[\p{L}\p{M}]+(?:['’-][\p{L}\p{M}]+)*/gu;
 
 // Keys strip combining marks (stress marks, U+0301) after lowercasing: the
 // dictionary's l_word keys are mark-free (WiktionaryParser::normalizeLookupKey),

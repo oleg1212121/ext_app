@@ -4,7 +4,7 @@ title: Production Deployment
 description: Prod runs natively (no Docker) since 2026-09-14 — pushes to master autodeploy via deploy-native.sh on a self-hosted runner (git pull, composer/npm, additive migrate, seeds, systemd restarts; python restart + /health gate only when python code/deps changed). The Docker bind-mount model (docker-compose.prod.yml + ./deploy.sh + container stamp guard) is still in tree for the dev machine and the legacy prod layout; its sections below are labeled.
 tags: [docker, production, deployment, devops, howto]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T10:30:26+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: deploy-native
@@ -221,7 +221,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d          #
 # CI gate
 
 `.github/workflows/tests.yml` runs the Pest suite + `vendor/bin/pint --test`
-plus the Vitest `frontend` job on every push to `master` (and on PRs; also
+plus the Vitest `frontend` and ESLint `lint` jobs on every push to `master` (and on PRs; also
 `workflow_dispatch`). `.github/workflows/deploy.yml`
 autodeploys: the self-hosted runner on the prod machine (labels
 `self-hosted`, `prod`) runs `deploy-native.sh` against the prod checkout on
