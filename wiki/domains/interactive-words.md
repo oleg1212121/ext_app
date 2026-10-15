@@ -1,12 +1,12 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an optional second tab with the AI Context explanation of the word in its sentence, a per-word "Save to Anki" send from the popup footer, render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, ledger-deduped with a permanent exclusions list).
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left, Anki send right, status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-15T18:20:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T18:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
+verified: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -67,7 +67,10 @@ sources:
     title: ADR 0047 (class-scoped word-family base groups)
   - id: adr-anki
     resource: docs/adr/0077-browser-side-ankiconnect.md
-    title: ADR 0077 (Anki export is browser-side; values-always-sent + hide-class template semantics)
+    title: ADR 0077 (Anki export is browser-side; values-always-sent + hide-class template semantics; addendum v3 — re-sends update own notes in place)
+  - id: anki-word-config
+    resource: laravel/resources/js/lib/ankiWordConfig.js
+    title: ankiWordConfig.js (the popup's per-word Anki sync config — deck/fields from the word's resolved language entry, note type follows it)
 ---
 
 # What it does
@@ -76,9 +79,12 @@ Makes words in a text interactive on both reading surfaces: tokens that link
 to a dictionary **Word** open the **Word popup** on **Ctrl+click** — one
 section per part of speech recorded under the headword (language + `l_word`),
 each with its definitions, transcriptions, translations (native language
-first), examples and etymology, plus a footer that never scrolls away
-carrying the word progress actions and the always-visible **Save to Anki**
-send (independent of the popup-visibility toggles). A plain click does
+first), examples and etymology, plus an **action toolbar as the popup's
+first row** — "I know this word" and "Remove mark" icons on the left, the
+always-visible Anki send icon on the right with the Anki status lines
+directly beneath (the two progress icons are the only toolbar elements
+the `progress_actions` visibility opt-out still hides; inapplicable
+toolbar icons disable rather than disappear). A plain click does
 nothing (ADR 0030), and a plain
 double-click natively selects the word so browser extensions (translators,
 dictionaries) can act on it. Their text is
@@ -153,9 +159,11 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    `-translations-placeholder`, `-transcriptions`, `-transcriptions-more`,
    `-no-definitions`, `-definitions` (with `-definitions-list` on its `ol`),
    `-examples` (with `-examples-list` on its `ul`), `-etymologies`,
-   `-summary` on every collapse summary, `-footer`, `-progress-known`,
-   `-progress-reset`, `-anki-send` (the Save-to-Anki button) with its
-   `-anki-added` / `-anki-duplicate` / `-anki-error` status lines,
+   `-summary` on every collapse summary, `-actions` (the first-row toolbar
+   strip), `-progress-known`,
+   `-progress-reset`, `-anki-send` (the Anki icon button — add or update
+   glyph) with its `-anki-added` / `-anki-updated` / `-anki-duplicate` /
+   `-anki-error` status lines,
    `-explain` (the Explanation pane) with
    `-explain-guidance`, `-explain-loading`, `-explain-error` (its retry
    button `-explain-retry`), `-explain-answer` (empty-answer note
@@ -168,8 +176,10 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    (`App\Support\PopupVisibility::for()` — the saved `ui_settings.popup`
    opt-outs resolved over all-visible defaults, edited on the profile's
    Popups tab) drops the familiarity/frequency/form-of lines, the family's
-   base-word sections (`word_family`), each satellite, the progress footer,
-   or the whole Explanation tab strip; the popup body lives in the exported
+   base-word sections (`word_family`), each satellite, the progress
+   actions (the `progress_actions` opt-out hides the toolbar's two
+   progress icons entirely), or the whole Explanation tab strip; the popup
+   body lives in the exported
    `PopupContent`, which the profile tab reuses for a live preview.
    It always fits the viewport: it opens below the word, flips above it when
    there is more room above, its height is capped to the larger side, the
@@ -305,27 +315,51 @@ outside-click closing — the word popup underneath stays put.
   provider-error mapping, throttle; `AIModelResolver` mocked at the
   container — provider calls are raw cURL and invisible to `Http::fake`).
 
-# Save to Anki (per-word send)
+# Anki send from the popup toolbar (per-word send)
 
-The popup footer's **Save to Anki** button sends the clicked word to the
-user's desktop Anki deck in one click — everywhere the popup renders
-(reader, simulator), and **independent of the popup-visibility toggles**
-(ADR 0046): the footer always renders, and the `progress_actions` opt-out
-hides only the progress buttons inside the row. Everything browser-side
+The popup toolbar's **Anki icon** (`word-popup-anki-send`, right end of
+the first-row `word-popup-actions` strip) sends the clicked word to the
+user's desktop Anki deck — everywhere the popup renders (reader,
+simulator), and **independent of the popup-visibility toggles**
+(ADR 0046): the toolbar's icons always render and disable (never hide)
+when inapplicable, and the `progress_actions` opt-out hides only the two
+progress icons — the Anki button references no visibility setting.
+Everything browser-side
 (ADR 0077 — the Anki-export flow's front door is
 [Anki Export](/domains/anki-export.md)) —
-the settings come from the shared `ankiSettings` Inertia prop, the send is
+the settings come from the shared `ankiSettings` Inertia prop, the word's
+own target is resolved by `resources/js/lib/ankiWordConfig.js`'s
+`ankiWordSyncConfig(settings, code)` (deck + fields from
+`languages[code] ?? languages.default`, global url/port, the note type
+following the RESOLVED entry — a code that fell through to `default`
+keeps the unsuffixed base type, so a send never mints a "⋅ <code>" type
+for a language the user never enabled), the send is
 orchestrated by `resources/js/lib/ankiSync.js` and the note is built by
 `resources/js/lib/ankiTemplate.js`'s `buildNoteFields()` from the payload
 the popup already loaded (identical values to the Anki tab's sample card;
 see [Profile](/domains/profile.md) for the Anki tab side):
 
+* **Detect on open — the icon reflects the deck.** Opening a popup fires
+  a silent duplicate check (the send path's own deck + Word + Language
+  search) through the sync layer's memoized `findExistingNote`: it never
+  runs the ensure (creates no decks or note types — Anki may not even be
+  running), is memoized per page session (re-opening the same word does
+  not re-query), and resolves null on any failure (Anki off, CORS,
+  Anki-side error), which leaves the ordinary add form. When the word is
+  found, the icon switches to its update glyph with the
+  `word.anki_update` ("Update in Anki") tooltip/aria; otherwise it shows
+  the add glyph + `word.anki_send`. Stale responses can never land: the
+  detection carries its own `cancelled` guard and both completion paths
+  pass through a `dataRef` mirror of the loaded word, so a late result
+  for a popup that has moved on is dropped; a send result seeds the
+  memo (and sets the state directly), keeping the icon correct without
+  a re-query.
 * **Note values.** All thirteen fields always ride along. The twelve flat
   fields keep the hide-class template semantics (a toggled-off scalar is
   hidden by the template, never omitted); the 13th **Body** field carries
   the popup's dictionary rendered per entry, and the body section toggles
-  plus the `body` master are **send-time** — the send passes the user's
-  resolved `ankiSettings.fields` (the shared Inertia prop) and the value is
+  plus the `body` master are **send-time** — the send passes the word's
+  resolved per-language fields (via `ankiWordSyncConfig`) and the value is
   shaped accordingly, so those toggles affect newly sent cards only
   (ADR 0077 addendum v2). The flat Translations field narrows to the user's
   **native language** (the
@@ -340,26 +374,38 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   frozen into the note at send time, so a card sent from an ru/be UI keeps
   that wording in Anki.
 * **Auto-ensure.** The first send of a page session runs the memoized
-  ensure (deck create-if-missing, the app-owned note type + generated
-  template) — module state shared with the Anki tab, so a tab sync and a
+  ensure (deck create-if-missing, the word's resolved note type — the
+  per-language "ExtApp Vocabulary ⋅ <code>" or the unsuffixed base —
+  plus the generated template; memoized per endpoint+deck+note type) —
+  module state shared with the Anki tab, so a tab sync and a
   popup send in one session don't redo each other's work.
-* **Duplicates.** Find-before-add scoped to deck + Word + Language: a
-  duplicate shows the inline "Already in Anki." notice and nothing is
-  created; no existing note is ever modified.
+* **Duplicates become updates.** The send still runs find-before-add
+  scoped to deck + Word + Language, so a second card can never be
+  created: a hit on one of the app's own note types (the word's
+  per-language type or the unsuffixed legacy one — notes saved under an
+  earlier config stay updatable) is **updated in place** — all thirteen
+  values rebuilt, the tag set replaced, note id / deck / review
+  scheduling untouched (ADR 0077 addendum v3) — and the status line
+  reports "Updated in Anki." (`word.anki_updated`,
+  `word-popup-anki-updated`). Only a foreign-model note matching the
+  word still skips with "Already in Anki." (`word.anki_already`,
+  kept for exactly that case) and is never modified.
 * **Failure is never silent.** An unreachable AnkiConnect (fetch rejection,
   HTTP/non-JSON answers) shows the short "Can't reach Anki" hint with a
   link to Profile → Anki; an Anki-side error string is shown verbatim
   (`Anki error: …`); `AnkiNoteTypeMismatchError` aborts with the teaching
-  copy — expected vs found fields plus the one-time fix: in Anki, delete
-  the "ExtApp Vocabulary" note type (its notes are deleted with it), then
-  sync again from the same tab and re-send the words; a pre-v2
-  twelve-field install hits this by design, since AnkiConnect cannot add a
-  field to an existing note type. The status line lives under
-  the footer buttons (`word-popup-anki-*` classes), and the button shows
-  "Saving…" disabled while the send is in flight.
-* The profile's Popups-tab preview renders the button disabled (no send
-  handler in preview mode), matching how the progress buttons render
-  without their handler.
+  copy — which model mismatched (the error carries the model name it
+  inspected), expected vs found fields, plus the one-time fix: in Anki,
+  delete the named note type (its notes are deleted with it), then
+  sync again from the Anki tab and re-send the words; a pre-v2
+  twelve-field install hits this by design, since AnkiConnect cannot add
+  a field to an existing note type. The status lines live directly
+  beneath the toolbar (`word-popup-anki-*` classes), and the icon's
+  tooltip/aria swaps to "Saving…" (`word.anki_sending`) while the send is
+  in flight, the button disabled.
+* The profile's Popups-tab preview renders the toolbar's icons disabled
+  (no handlers in preview mode), so the preview cannot drift from the
+  real popup's first row.
 
 # Familiarity events (ADR 0028)
 

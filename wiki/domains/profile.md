@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Profile
-description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings with template sync + sample card, provider API key management, account deletion.
+description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, per-language Anki settings (a language selector over deck + card content) with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T14:56:00+00:00 }
-verified: { by: agent:zcode, at: 2026-10-15T14:56:00+00:00 }
+generated: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
+verified: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -99,7 +99,7 @@ tab.
 # Popups tab
 
 Per-user **Popup preferences** (ADR 0046): which blocks the Word popup
-renders — familiarity line, progress buttons, form-of line, word family
+renders — familiarity line, progress actions, form-of line, word family
 sections, frequency line, transcriptions, definitions, translations,
 examples, etymology, Explanation tab. Eleven checkboxes in display groups
 (Knowledge / Word family / Dictionary details / Tabs & info), each bound to
@@ -120,8 +120,9 @@ Right of the checkbox groups at `lg`+ (stacked below them on smaller
 screens), a **live preview** renders the popup's real body — the exported
 `PopupContent` from `Components/WordPopup.jsx` with a fixture-style
 "melted → melt" sample family — bound to the current checkbox state, so the
-preview cannot drift from the real popup; in preview mode progress buttons
-are inert and the Explanation tab shows a canned answer (the activation
+preview cannot drift from the real popup; in preview mode the action
+toolbar's icons render disabled (no handlers) and the Explanation tab
+shows a canned answer (the activation
 auto-request is suppressed — no tokens spent).
 The preview wrapper keeps a realistic inline `width: min(560px, 100%)` at
 the default popup font size and carries the same `word-popup` structural
@@ -164,7 +165,9 @@ chain per-language → legacy global `deck`/`fields` → all-on defaults, so a
 user with only legacy settings resolves identically to before; the prop
 carries that map under `ankiSettings.languages` (enabled codes in
 `sort_order`, `default` last) beside the unchanged top-level legacy base
-(`url`, `port`, `deck`, `fields`) that the popup's send still reads today.
+(`url`, `port`, `deck`, `fields`) that survives as the read-fallback for
+a prop without a `languages` map (the popup resolves
+`languages[code] ?? languages.default` first).
 
 **The tab's language selector** (anki-popup-refresh ticket 04) edits those
 per-language entries: it lists the enabled languages — the page's shared
@@ -314,14 +317,18 @@ unreachable the same connection-hint panel as the test probe, whose
 **Request permission** step grants the origin approval and then replays
 the blocked action in one click.
 
-The word popup's per-word **Save to Anki** send (see
+The word popup's per-word **Anki send** (see
 [Interactive Words](/domains/interactive-words.md)) reuses this exact
 path — the same `sendAnkiNote` and the same memoized ensure (module state
 shared with the tab, so a tab sync and a popup send in one page session
-don't redo each other's work) — with the note built from the popup's live
-payload instead of the fixture and the popup's own UI-language label
-strings passed, so a card sent from the reader carries the sender's
-locale. The tab's preview/sample card narrow
+don't redo each other's work) — with the word's per-language target
+resolved by `ankiWordSyncConfig` (deck + fields from the word's language
+entry, note type following the resolved entry) and the note built from
+the popup's live payload instead of the fixture, with the popup's own
+UI-language label strings passed, so a card sent from the reader carries
+the sender's locale; on-open detection and the update-in-place semantics
+live in [Interactive Words](/domains/interactive-words.md). The tab's
+preview/sample card narrow
 Translations with the native language **code** from the shared
 `auth.user.native_language` prop (an early version passed the numeric
 `native_language_id`, which never matched a `language_code` and silently

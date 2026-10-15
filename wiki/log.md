@@ -1,5 +1,78 @@
 # Directory Update Log
 
+## 2026-10-15 (anki-popup-refresh 06 — knowledge-base closure: updates in place, per-language Anki targets, popup action toolbar)
+
+Closure of the anki-popup-refresh feature (code in its tickets 01–05:
+per-language Anki settings over the legacy global base; per-language note
+types "ExtApp Vocabulary ⋅ <code>" with update-on-duplicate sends and a
+memoized on-open duplicate lookup; the popup footer replaced by an icon
+action toolbar as the popup's first row; the Anki tab's language
+selector; popup detect-on-open with an update glyph and "Updated in
+Anki."). This ticket lands only the knowledge base; zero feature code.
+
+- `docs/adr/0077-browser-side-ankiconnect.md` — new "Addendum v3
+  (2026-10-15): anki-popup-refresh — re-sends update in place,
+  per-language targets, detect on open", five points: (A) decision 5
+  reversed for the app's own notes — the unchanged deck+Word+Language
+  search now ends in an in-place refresh (all thirteen values rebuilt,
+  tags replaced, the note addressed by id alone so deck and review
+  scheduling cannot move) when the hit is one of our own types, while a
+  foreign-model-only match still skips and `allowDuplicate: false` stays
+  as the race net (explicitly supersedes addendum D's closing sentence
+  and addendum v2's "refreshed only after Anki-side deletion"); (B) the
+  update is a full value refresh addressed by id; (C) wire shapes
+  verified against the plugin source — the combined action is
+  `updateNote` (singular, `{note: {id, fields?, tags?}}`, supplied tags
+  REPLACE the set; no plural `updateNotes` exists in any release), the
+  fallback is `updateNoteFields` + a real tag replacement
+  (`getNoteTags`→`removeTags`→`addTags`), entered only on
+  "unsupported action"-style errors; (D) the per-language decisions —
+  the sparse `languages` settings map over the legacy global base
+  (per-language → legacy → defaults, `default` computed server-side and
+  never persistable), per-language note types `ExtApp Vocabulary ⋅
+  <code>`, the note type following the RESOLVED entry, the unsuffixed
+  legacy type never rewritten but its notes updatable, ensure memo per
+  endpoint+deck+note type; (E) detect-on-open — a findNotes query that
+  never ensures, resolves null on failure, memoizes per page session
+  (failures un-memoized), seeded by send results.
+- `GLOSSARY.md` — new terms Deck, Per-language Anki settings, Language
+  note type, Update send; Send to Anki / Note type / Sample card
+  refreshed for the add-or-refresh semantics, the per-language variants,
+  and the selected language (glossary-only, implementation-free).
+- `wiki/domains/anki-export.md` — description + source titles updated
+  (per-language, updates-in-place, `ankiWordConfig.js` and the
+  note-update wrappers sourced); "What it does" states add-or-refresh;
+  flow step 2's vitest list gains the new specs; step 4 rewritten —
+  find-before-add now adds or updates in place, per-word target
+  resolution via `ankiWordSyncConfig` (note type follows the resolved
+  entry), memo per endpoint+deck+note type, detect-on-open pointer to
+  Interactive Words, and the legacy-notes story flipped (a re-send now
+  brings pre-rework/pre-v2 notes current; only a pre-v2 twelve-field
+  TYPE needs the taught migration); the "sends only add" boundary bullet
+  replaced.
+- `wiki/domains/interactive-words.md` — the footer is gone from the
+  prose: description, "What it does", the `word-popup-*` class list
+  (`-footer` → `-actions`, `-anki-updated` added), and the Save-to-Anki
+  section rewritten as "Anki send from the popup toolbar" — icon states
+  + detect-on-open (memoized, never ensures, silent fail → add form,
+  cancelled/dataRef stale guards), per-language resolution via
+  `ankiWordSyncConfig`, duplicates-become-updates ("Updated in Anki.";
+  `word.anki_already` kept for foreign-model matches only), status lines
+  beneath the toolbar; the ADR 0046 bullet now says the opt-out hides
+  the toolbar's two progress icons.
+- `wiki/domains/profile.md` — description names per-language Anki
+  settings; the legacy-base sentence corrected (read-fallback, not what
+  the popup resolves first); the popup cross-reference paragraph names
+  `ankiWordSyncConfig` and the toolbar send; Popups-tab preview wording
+  (toolbar icons render disabled); "progress buttons" → "progress
+  actions". All three concepts' stamps bumped.
+- Checks: `wiki:validate` → conformant, 9 warnings, all pre-existing and
+  unrelated (none on the touched concepts; ticket 05's expected
+  anki-export staleness warning cleared by this rewrite). `wiki:sync`
+  run to verify: no reference drift — stamps only (no routes/models/
+  commands changed). No test reads the docs (grep: only code comments
+  mention the ADR).
+
 ## 2026-10-15 (anki-popup-refresh 04 — Anki tab: language selector + per-language editing)
 
 Fourth ticket of the word-popup refresh (spec

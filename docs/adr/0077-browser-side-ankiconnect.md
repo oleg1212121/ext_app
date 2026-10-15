@@ -266,3 +266,105 @@ Manage Note Types, delete "ExtApp Vocabulary" — its notes are deleted with
 it — then sync again and re-send the words. Decisions 2 and 5 stand: no
 silent push, no rewrite of a foreign note type, and the deletion is the
 user's own action in Anki, not something the app ever does.
+
+## Addendum v3 (2026-10-15): anki-popup-refresh — re-sends update in place, per-language targets, detect on open
+
+Feature `anki-popup-refresh` revises the two decisions this ADR had made
+permanent: decision 5's "sends only add — nothing is ever modified" is
+**reversed for the app's own notes**, and the single global target (one
+deck, one note type, one field-toggle set) became **per-language**.
+Decisions 1–4 and 6 stand untouched, and the reversal has a hard boundary:
+a note the app does not own is still never modified. This addendum
+supersedes decision 5 **for notes of the app's own note types only** —
+along with addendum D's closing sentence and addendum v2's "an existing
+note is refreshed only after Anki-side deletion" — and extends decision 2
+with per-language sibling note types; everything else above stands.
+
+### A. Decision 5 reversed for our own notes: a re-send refreshes in place
+
+The find-before-add search is unchanged — deck + Word + Language,
+note-type-agnostic (so a word saved under an earlier config is still
+found). What changed is what a hit means. When the found note's model is
+one of the app's own note types (the configured per-language type, or the
+unsuffixed legacy one), the send **updates that note in place** and
+reports "updated" instead of adding; when only a foreign-model note
+matches the word, the send still skips with "Already in Anki" — a note we
+do not own is never rewritten, and it is never touched even when our own
+note sits beside it (the first own-type hit wins). `allowDuplicate: false`
+stays on the add path as the race net, so a send can still never create a
+second card for the same word + language in the same deck. Rationale: the
+duplicate check had turned "re-send" into a dead end — a saved word could
+never pick up new translations, dictionary content, or template-era value
+structure short of deleting the note in Anki by hand.
+
+### B. The update is a full value refresh addressed by id — nothing else moves
+
+An update rebuilds **all thirteen field values** from the current popup
+(or sample-fixture) data and overwrites the note's values; the tag set is
+**REPLACED**, not merged. The wire payload addresses the note by id alone
+— deck membership and review scheduling are not part of the update wire,
+so they cannot be touched. This is decision 3's values-always-sent
+philosophy applied to existing notes: a stored note is the word's current
+rendering, and the cheapest way to keep it true is to rewrite its values.
+
+### C. Wire shapes: the combined action is `updateNote` — no plural `updateNotes` exists
+
+Verified against AnkiConnect plugin releases 24.7.25.0 / 24.11.5.0 /
+25.11.9.0 and the current legacy API docs (2026-10): the combined action
+is **`updateNote`** (singular) — `{note: {id, fields?, tags?}}`, where
+supplied tags REPLACE the note's tag set — present since at least July
+2024. The plural `updateNotes` the feature ticket first assumed does not
+exist in any release. Fallback for older builds: `updateNoteFields`
+(`{note: {id, fields}}`, fields only, unknown names ignored) plus an
+explicit tag replacement — `getNoteTags` → `removeTags` → `addTags` —
+because `addTags` alone is additive and could not replace. Only an
+"unsupported action"-style Anki-side error reroutes into the fallback;
+any other `updateNote` failure propagates as a real error — a genuine
+failure must not silently degrade into a partial update.
+
+### D. Per-language targets: settings, note types, and the fallback chain
+
+`ui_settings.anki` gains an optional sparse `languages` map beside the
+unchanged global connection (`url`, `port`) and the legacy global base
+(`deck`, `fields` — still stored and still read, but no longer written by
+the tab): `languages.<code> = {deck?, fields?}`. The endpoint whitelists
+exactly the enabled language codes (rules are built per enabled code, so
+`validated()` strips whole non-enabled entries and unknown keys inside an
+entry — a language that stops being enabled silently loses its overrides
+on the next save of the section). `AnkiSettings::for()` resolves one
+`{deck, fields}` entry per enabled language plus a `default` entry — for
+words with an unknown or missing `language_code`; computed server-side,
+never persistable — each walking the chain **per-language → legacy global
+base → defaults**. Every language therefore starts as today's global
+deck/fields and a legacy-only user resolves identically to before: the
+migration is "global values become defaults", no data migration.
+
+Each enabled language also gets its own note type, named
+`ExtApp Vocabulary ⋅ <code>` (`noteTypeForLanguage(code)`, mirrored
+PHP↔JS; empty/unknown codes name the unsuffixed base). The thirteen fields
+and the generated template are identical today — the per-language types
+exist so templates can diverge per language later. The note type **follows
+the resolved settings entry**: a code the settings actually carry gets its
+suffixed type; a code that fell through to `default` (missing or not an
+enabled language) keeps the base type — a send must never mint a
+"⋅ <code>" type the user never enabled. The ensure is memoized per
+endpoint + deck + note type. The legacy unsuffixed type itself is never
+rewritten (still only created-if-missing/verified), but its **notes**
+remain first-class: the duplicate search never mentions note type, so a
+word saved under the legacy type (or another language's type) is found
+and refreshed in place like any other own-type note.
+
+### E. Detection on popup open: a findNotes query, never a creation
+
+Opening a word popup fires a silent duplicate check — the send path's own
+search, unchanged scope — so the popup's Anki icon can show the saved
+state before any click. Detection **never runs the ensure** (it must not
+create decks or note types — Anki may not even be running) and resolves
+null on any failure (Anki off, CORS, Anki-side error), which the popup
+renders as the ordinary add-form icon. Results memoize per page session
+per endpoint + deck + word + language; failures do **not** memoize (a
+later open retries once Anki is back); send results seed the memo so the
+icon stays correct after a send without re-querying. Accepted costs: one
+`findNotes` per newly opened word (free on re-open within the session),
+and an AnkiConnect that supports no update action only surfaces on an
+actual update click — every build since July 2024 takes the primary path.

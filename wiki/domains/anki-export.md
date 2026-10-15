@@ -1,36 +1,39 @@
 ---
 type: Feature
 title: Anki Export
-description: The path from saved words to the user's desktop Anki — per-user connection settings and card-field toggles on the profile's Anki tab, a deterministic popup-styled card template (the Front is the word; the Back is header + the 13th Body field's popup-interleaved dictionary + footer) with split toggle semantics — scalar toggles hide-class template-side, body toggles shape the Body value at send time — one-click template sync into Anki, and duplicate-checked per-word sends from the word popup, all driven browser-side through AnkiConnect (ADR 0077 + addendum v2).
+description: The path from saved words to the user's desktop Anki — per-user per-language connection/card settings (deck + field toggles per enabled language over a legacy global base) on the profile's Anki tab, a deterministic popup-styled card template (the Front is the word; the Back is header + the 13th Body field's popup-interleaved dictionary + footer) with split toggle semantics — scalar toggles hide-class template-side, body toggles shape the Body value at send time — one-click template sync into Anki, and per-word sends from the word popup that detect on open and refresh an already-saved own note in place, all driven browser-side through AnkiConnect (ADR 0077 + addenda; v3 records the updates-in-place reversal).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T14:56:00+00:00 }
-verified: { by: agent:zcode, at: 2026-10-15T14:56:00+00:00 }
+generated: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
+verified: { by: agent:zcode, at: 2026-10-15T15:40:00+00:00 }
 sources:
   - id: adr
     resource: docs/adr/0077-browser-side-ankiconnect.md
-    title: ADR 0077 — Anki export is browser-side; values-always-sent + hide-class template semantics (+ addendum v2 — schema v2, send-time body)
+    title: ADR 0077 — Anki export is browser-side; values-always-sent + hide-class template semantics (+ addenda; v3 — re-sends update own notes in place, per-language targets)
   - id: anki-settings
     resource: laravel/app/Support/AnkiSettings.php
-    title: AnkiSettings (saved connection, per-language deck/fields over the legacy global base, resolved per enabled language + default)
+    title: AnkiSettings (saved connection, per-language deck/fields over the legacy global base, resolved per enabled language + default, per-language note-type naming)
   - id: anki-tab
     resource: laravel/resources/js/Pages/Profile/AnkiSettings.jsx
     title: AnkiSettings tab section (language selector, per-language field toggle groups + deck, template preview, template sync + sample card)
   - id: anki-tab-state
     resource: laravel/resources/js/lib/ankiTabState.js
     title: ankiTabState.js (the tab's per-language editing state — whole-section shape, entry accessors, per-language sync config + sample payload)
+  - id: anki-word-config
+    resource: laravel/resources/js/lib/ankiWordConfig.js
+    title: ankiWordConfig.js (the popup's per-word sync config — deck/fields from the word's resolved language entry, note type follows the resolved entry)
   - id: anki-connect
     resource: laravel/resources/js/lib/ankiConnect.js
-    title: ankiConnect.js (the only AnkiConnect caller — browser-side protocol wrappers)
+    title: ankiConnect.js (the only AnkiConnect caller — browser-side protocol wrappers incl. the note-update actions)
   - id: anki-sync
     resource: laravel/resources/js/lib/ankiSync.js
-    title: ankiSync.js (ensure deck/note-type/template, memoized per session; duplicate-checked note send)
+    title: ankiSync.js (ensure deck/note-type/template memoized per endpoint+deck+note type; find-before-add send that updates our own notes in place; memoized on-open duplicate lookup)
   - id: anki-template
     resource: laravel/resources/js/lib/ankiTemplate.js
-    title: ankiTemplate.js (field-key map, deterministic popup-styled Front/Back/CSS generator, structured buildNoteFields)
+    title: ankiTemplate.js (field-key map, per-language note-type naming, deterministic popup-styled Front/Back/CSS generator, structured buildNoteFields)
   - id: word-popup
     resource: laravel/resources/js/Components/WordPopup.jsx
-    title: WordPopup (per-word "Save to Anki" send in the popup footer — UI-language labels baked at send time)
+    title: WordPopup (per-word Anki send from the popup's action toolbar — detect-on-open, update-in-place, UI-language labels baked at send time)
 ---
 
 # What it does
@@ -41,14 +44,18 @@ no more hand-copying word data into cards. The feature has three moving
 parts, all keyed to the user: **connection settings** (AnkiConnect URL,
 port, target deck), **card content settings** (thirteen field toggles in
 two groups whose descriptions say which semantics each kind has — scalar
-toggles restyle all cards on template re-sync, body toggles shape newly
-sent cards only — driving a deterministic, read-only card template shaped
+toggles restyle all cards on template re-sync, body toggles shape the Body
+value at send time — driving a deterministic, read-only card template shaped
 like the app's reading popup), and two one-click writes —
-**template sync** (deck + "ExtApp Vocabulary" note type + Front/Back/CSS
-landed in Anki) and **send to Anki** (the Anki tab's sample card, and a
-per-word send in the word popup's footer everywhere it renders). Duplicates
-are skipped with an "Already in Anki" notice; no existing note is ever
-modified. Domain terms are collected in the repo-root `GLOSSARY.md`.
+**template sync** (deck + the language's "ExtApp Vocabulary" note type +
+Front/Back/CSS landed in Anki) and **send to Anki** (the Anki tab's sample
+card, and a per-word send from the word popup's action toolbar everywhere
+it renders). A word already in the deck is never duplicated: a re-send of
+one of the app's own notes **refreshes it in place** — all thirteen values
+rebuilt, tags replaced, note id / deck / scheduling untouched — and only a
+foreign-model note leaves the send as an "Already in Anki" skip (ADR 0077
+addendum v3). Deck and card content are **per-language**. Domain terms are
+collected in the repo-root `GLOSSARY.md`.
 
 # Why the browser calls Anki, not PHP (ADR 0077)
 
@@ -62,7 +69,9 @@ stores settings only. The corollary: CORS is a one-time user setup step
 (approve via `requestPermission`, or add the app's origin to
 `webCorsOriginList`), and the connection test's failure UI teaches exactly
 that. The full decision record — app-owned note type, values-always-sent +
-hide-class template semantics, find-before-add duplicates — is
+hide-class template semantics, find-before-add duplicates, and (addendum
+v3) re-sends that refresh our own notes in place across per-language
+targets — is
 [ADR 0077](../../docs/adr/0077-browser-side-ankiconnect.md) (also in the
 sources below).
 
@@ -121,14 +130,17 @@ sources below).
    buttons.
    The thirteen-field list and the connection defaults live canonically in
    `AnkiSettings` (PHP) mirrored by hand into the JS modules — a lockstep
-   pinned by `tests/Unit/AnkiSettingsMirrorTest.php`, with the JS side's
-   template semantics, AnkiConnect wire shapes, and ensure/send
-   orchestration pinned executable by the colocated vitest specs
-   (`resources/js/lib/ankiTemplate.test.js`, `ankiConnect.test.js`,
-   `ankiSync.test.js`, plus `Components/WordPopup.ankiSend.test.js` — a
-   source pin on the popup send's label and fields pass-throughs, the
-   first vitest file outside `lib/`, blessed by the ADR 0077 addendum —
-   stubbed fetch, Node only).
+   pinned by `tests/Unit/AnkiSettingsMirrorTest.php` (the mirror now also
+   covers the per-language note-type naming), with the JS side's
+   template semantics, AnkiConnect wire shapes (the note-update actions
+   included), and ensure/send orchestration pinned executable by the
+   colocated vitest specs (`resources/js/lib/ankiTemplate.test.js`,
+   `ankiConnect.test.js`, `ankiSync.test.js`, `ankiTabState.test.js`,
+   `ankiWordConfig.test.js`, plus the Components-side source pins
+   `Components/WordPopup.ankiSend.test.js` — label and fields
+   pass-throughs — and `WordPopup.toolbar.test.js`, the first vitest files
+   outside `lib/`, blessed by the ADR 0077 addendum — stubbed fetch, Node
+   only).
 3. **Template sync** — one browser-side ensure pass: deck
    create-if-missing, the app-owned note type create-if-missing — the
    per-language "ExtApp Vocabulary ⋅ <code>" when the caller names one
@@ -175,28 +187,43 @@ sources below).
    `word.*` ui-strings, one shared mapping — and it is frozen into
    the note at send time; English defaults cover senders that pass none,
    and no in-app sender relies on them. The note is then find-before-add
-   duplicate-checked (deck + Word + Language —
-   the search word must be the RAW payload word, required, since the note's
-   Word field value is HTML-escaped) and added with `allowDuplicate: false`
-   as a race net. The first send of a page session auto-ensures the target
-   (memoized per endpoint+deck, module state shared between the tab and the
-   popup). Failures are never silent, and both surfaces (tab and popup)
+   checked (deck + Word + Language — the search word must be the RAW
+   payload word, required, since the note's Word field value is
+   HTML-escaped): a fresh word is **added** with `allowDuplicate: false`
+   as a race net; a hit on one of the app's OWN note types (the configured
+   per-language type, or the unsuffixed legacy one) is **updated in
+   place** — all thirteen values rebuilt, the tag set replaced, the note
+   addressed by id alone so deck and review scheduling cannot move (ADR
+   0077 addendum v3's decision-5 reversal); a foreign-model-only match is
+   skipped, never modified. Each word resolves its own target: the popup
+   goes through `ankiWordSyncConfig(settings, code)` — deck + fields from
+   `languages[code] ?? languages.default`, global url/port, and the note
+   type following the RESOLVED entry, so a code that fell through to
+   `default` keeps the base type and a send can never mint a
+   "⋅ <code>" type the user never enabled. The first send of a page
+   session auto-ensures the target (memoized per endpoint+deck+note type,
+   module state shared between the tab and the popup). The popup also
+   **detects on open**: the same search runs silently
+   (`findExistingNote` — memoized per session, never runs the ensure,
+   resolves null on any failure) so the Anki icon can show the word's
+   saved state before any click; the icon semantics live in
+   [Interactive Words](/domains/interactive-words.md). Failures are never
+   silent, and both surfaces (tab and popup)
    branch on the same error kinds: network errors render the
    connection-hint panel, Anki-side errors (kind `anki`) verbatim,
    note-type mismatches with the teaching copy (step 3's delete-and-resync
-   fix). The per-word send's
-   behavior — always-visible footer button, independent of the
-   popup-visibility toggles — is specified in
-   [Interactive Words](/domains/interactive-words.md). Accepted
-   consequence: notes sent before the popup-card rework keep their old
-   plain `<br>`-joined values, which render as plain lines under the new
-   template (bare WordFamily without the "form of" prefix, transcriptions
-   "[a, b]") until the note is deleted and re-sent Anki-side — the
-   duplicate check blocks a re-send from refreshing it
-   (ADR 0077 addendum, point D). Notes sent before schema v2 carry no Body
-   value at all, so the slot drops and they render as header + footer
-   only; on a pre-v2 install the mismatch migration (step 3) deletes the
-   note type and its notes anyway, and the re-send lands the full card.
+   fix; the error names the model it inspected). The per-word send's
+   behavior — toolbar icon placement, disabled-not-hidden, the
+   added/updated/duplicate status lines — is specified in
+   [Interactive Words](/domains/interactive-words.md). Legacy notes: a
+   word saved before the popup-card rework (plain `<br>`-joined values) or
+   before schema v2 (no Body value at all) is brought current by simply
+   re-sending it — the update rebuilds all thirteen values, current
+   structure included (addendum v3 closes addendum D's old-notes gap; the
+   duplicate check no longer blocks a refresh). Only a pre-v2 twelve-field
+   note TYPE needs the taught migration (step 3) — AnkiConnect cannot add
+   a field to an existing type — and that migration deletes its notes with
+   it, after which the re-sends land the full card.
 
 # Boundaries
 
@@ -212,9 +239,11 @@ sources below).
   scalar fields only** since schema v2: the body toggles are send-time,
   so an existing note's Body value never changes under it (ADR 0077
   addendum v2 records the split and the rationale).
-* Sends only add: nothing in the user's collection is ever updated or
-  deleted by the app, and bulk export of all saved words is a follow-up
-  (out of scope).
+* Sends add or refresh, never destroy: a send creates a note or updates
+  one of the app's own in place (ADR 0077 addendum v3's decision-5
+  reversal) — nothing in the user's collection is ever deleted by the
+  app, foreign-model notes are never touched, and bulk export of all
+  saved words is a follow-up (out of scope).
 * Anki operations are never server-initiated — no scheduled exports
   without an open browser; that is the price of the browser-side
   architecture, accepted in ADR 0077.
