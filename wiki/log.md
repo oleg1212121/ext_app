@@ -1,5 +1,40 @@
 # Directory Update Log
 
+## 2026-10-15 (anki-popup-refresh 01 — per-language Anki settings: storage, resolution, validation)
+
+First ticket of the word-popup refresh (spec
+`.scratch/anki-popup-refresh/spec.md`): deck + field toggles become
+per-language server-side, while every existing consumer keeps reading the
+unchanged legacy shape.
+
+- `laravel/app/Support/AnkiSettings.php` — `for()` now also returns a
+  resolved `languages` map: one `{deck, fields}` entry per
+  `Language::enabled()` code (in `sort_order`, then code) plus a `default`
+  entry for words with an unknown/missing `language_code`, each walking
+  per-language → legacy global `deck`/`fields` → all-on defaults — the
+  agreed "global values become defaults" migration, so legacy-only users
+  resolve identically to before. Top-level `url`/`port`/`deck`/`fields`
+  unchanged; `default` (new `DEFAULT_LANGUAGE_KEY`) is never persistable.
+- `laravel/app/Http/Requests/UpdateUiSettingsRequest.php` — the `anki`
+  section gains `languages` rules built per enabled code (deck nullable
+  string max 100; the canonical thirteen boolean field rules), so
+  `validated()` strips whole non-enabled entries and unknown keys inside an
+  entry — same pattern as every other section key. Controller untouched
+  (wholesale section replace as before).
+- Tests — `UiSettingsTest`: per-language round-trip, other-sections
+  intact, junk rejection (`anki.languages.en.deck` length,
+  `anki.languages.en.fields.*` non-boolean), non-enabled/absent codes and
+  unknown keys stripped; `ProfileTest`: prop carries every enabled
+  language + `default` (exact key-set pin), legacy-base fallback chain,
+  per-language-over-legacy preference. `AnkiSettingsMirrorTest` untouched
+  and green — this ticket changes no JS-mirrored constant (the note-type
+  naming twin is ticket 02's); vitest 131/131.
+- Wiki — `domains/anki-export.md` (flow step 1) and `domains/profile.md`
+  (Anki tab) updated for the per-language storage/validation/resolution;
+  stamps bumped. The tab's language selector (ticket 04), popup wiring
+  (ticket 05) and the ADR addendum closure (ticket 06) are pending, so the
+  concepts note the interim state explicitly.
+
 ## 2026-10-15 (anki-popup-card 08 — Route A review fixes: glossary count, group-coverage pin, small tidy)
 
 The two-axis review of the whole popup-card feature (`git diff

@@ -2,6 +2,7 @@
 
 use App\Models\AiModel;
 use App\Models\AiProvider;
+use App\Models\Language;
 use App\Models\User;
 use App\Models\UserApiKey;
 use App\Models\UserSettings;
@@ -269,6 +270,109 @@ test('anki fields save keeps the other sections intact', function () {
         ->and($ui['reader']['highlight'])->toBeTrue()
         ->and($ui['popup']['definitions'])->toBeFalse()
         ->and($ui['anki']['fields']['tags'])->toBeFalse();
+});
+
+test('authenticated user can save per-language anki settings', function () {
+    createLanguages(['en', 'ru']);
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', [
+            'anki' => [
+                'url' => 'http://localhost',
+                'port' => 8766,
+                'languages' => [
+                    'en' => ['deck' => 'English deck', 'fields' => ['etymology' => false, 'tags' => false]],
+                    'ru' => ['deck' => 'Russian deck'],
+                ],
+            ],
+        ])
+        ->assertOk()
+        ->assertJson(['saved' => true]);
+
+    $anki = $user->settings()->first()->ui_settings['anki'];
+    expect($anki['url'])->toBe('http://localhost')
+        ->and($anki['languages']['en']['deck'])->toBe('English deck')
+        // Key-wise: the jsonb round-trip does not preserve key order.
+        ->and($anki['languages']['en']['fields']['etymology'])->toBeFalse()
+        ->and($anki['languages']['en']['fields']['tags'])->toBeFalse()
+        ->and($anki['languages']['ru']['deck'])->toBe('Russian deck')
+        ->and($anki['languages']['ru'])->not->toHaveKey('fields');
+});
+
+test('saving per-language anki settings keeps the other sections intact', function () {
+    createLanguages(['en']);
+    $user = User::factory()->create();
+    withSavedUiSettings($user, [
+        'simulator' => ['font_size' => 30],
+        'reader' => ['highlight' => true],
+        'popup' => ['definitions' => false],
+    ]);
+
+    // The Anki tab autosaves the whole section (connection + legacy base +
+    // the full languages map), so the endpoint's wholesale replace never
+    // sees a languages-only payload from it.
+    $this->actingAs($user)
+        ->patch('/ui-settings', [
+            'anki' => [
+                'url' => 'http://localhost',
+                'port' => 8765,
+                'deck' => 'My deck',
+                'fields' => ['etymology' => false],
+                'languages' => ['en' => ['deck' => 'English deck']],
+            ],
+        ])
+        ->assertOk();
+
+    $ui = $user->settings()->first()->ui_settings;
+    expect($ui['simulator']['font_size'])->toBe(30)
+        ->and($ui['reader']['highlight'])->toBeTrue()
+        ->and($ui['popup']['definitions'])->toBeFalse()
+        ->and($ui['anki']['url'])->toBe('http://localhost')
+        ->and($ui['anki']['deck'])->toBe('My deck')
+        ->and($ui['anki']['fields']['etymology'])->toBeFalse()
+        ->and($ui['anki']['languages'])->toBe(['en' => ['deck' => 'English deck']]);
+});
+
+test('per-language anki settings junk values are rejected', function () {
+    createLanguages(['en']);
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['languages' => ['en' => ['deck' => str_repeat('a', 101)]]]])
+        ->assertInvalid('anki.languages.en.deck');
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', ['anki' => ['languages' => ['en' => ['fields' => ['word' => 'banana']]]]])
+        ->assertInvalid('anki.languages.en.fields.word');
+});
+
+test('anki per-language saves strip non-enabled codes and unknown keys', function () {
+    // 'en' is enabled; 'fr' exists but is disabled — neither a code absent
+    // from the languages table nor a disabled one may ever persist.
+    createLanguages(['en']);
+    Language::create(['code' => 'fr', 'name' => 'French', 'is_enabled' => false, 'sort_order' => 9]);
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch('/ui-settings', [
+            'anki' => [
+                'languages' => [
+                    'en' => ['deck' => 'English deck', 'junk' => 'goes', 'fields' => ['audio' => true, 'tags' => false]],
+                    'fr' => ['deck' => 'Never persisted'],
+                    'zz' => ['deck' => 'Never persisted either'],
+                ],
+            ],
+        ])
+        ->assertOk();
+
+    $anki = $user->settings()->first()->ui_settings['anki'];
+    // validated() builds the persisted map from the per-enabled-code rules
+    // only, so unknown keys inside an entry and whole non-enabled entries
+    // are stripped, exactly like the section's connection keys.
+    expect($anki['languages'])->toBe([
+        'en' => ['deck' => 'English deck', 'fields' => ['tags' => false]],
+    ]);
 });
 
 test('an unapproved user can save anki settings', function () {

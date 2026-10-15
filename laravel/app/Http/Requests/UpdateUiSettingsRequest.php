@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Classes\Enrichment\EnricherRegistry;
+use App\Models\Language;
 use App\Support\AnkiSettings;
 use App\Support\SavedUiSettings;
 use Illuminate\Foundation\Http\FormRequest;
@@ -65,6 +66,23 @@ class UpdateUiSettingsRequest extends FormRequest
 
         foreach (AnkiSettings::FIELDS as $field) {
             $rules["anki.fields.{$field}"] = ['boolean'];
+        }
+
+        // Per-language deck + field toggles (the Anki tab's language
+        // selector). Rules exist only for enabled language codes, so
+        // validated() strips whole non-enabled entries and unknown keys
+        // inside an entry, exactly like the section's other keys — a
+        // language that stops being enabled silently loses its overrides.
+        // The resolved `default` entry is computed server-side from the
+        // legacy global base (AnkiSettings::for) and is never persistable.
+        $rules['anki.languages'] = ['nullable', 'array'];
+        $codes = Language::query()->enabled()->orderBy('sort_order')->orderBy('code')->pluck('code');
+        foreach ($codes as $code) {
+            $rules["anki.languages.{$code}.deck"] = ['nullable', 'string', 'max:100'];
+            $rules["anki.languages.{$code}.fields"] = ['nullable', 'array'];
+            foreach (AnkiSettings::FIELDS as $field) {
+                $rules["anki.languages.{$code}.fields.{$field}"] = ['boolean'];
+            }
         }
 
         // The annotation display preferences are registry-owned (ADR 0067):

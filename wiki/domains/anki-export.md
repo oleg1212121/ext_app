@@ -4,15 +4,15 @@ title: Anki Export
 description: The path from saved words to the user's desktop Anki — per-user connection settings and card-field toggles on the profile's Anki tab, a deterministic popup-styled card template (the Front is the word; the Back is header + the 13th Body field's popup-interleaved dictionary + footer) with split toggle semantics — scalar toggles hide-class template-side, body toggles shape the Body value at send time — one-click template sync into Anki, and duplicate-checked per-word sends from the word popup, all driven browser-side through AnkiConnect (ADR 0077 + addendum v2).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T21:10:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T21:10:00+03:00 }
 sources:
   - id: adr
     resource: docs/adr/0077-browser-side-ankiconnect.md
     title: ADR 0077 — Anki export is browser-side; values-always-sent + hide-class template semantics (+ addendum v2 — schema v2, send-time body)
   - id: anki-settings
     resource: laravel/app/Support/AnkiSettings.php
-    title: AnkiSettings (saved connection + field toggles resolved over defaults)
+    title: AnkiSettings (saved connection, per-language deck/fields over the legacy global base, resolved per enabled language + default)
   - id: anki-tab
     resource: laravel/resources/js/Pages/Profile/AnkiSettings.jsx
     title: AnkiSettings tab section (connection settings, field toggle groups, template preview, template sync + sample card)
@@ -69,8 +69,18 @@ sources below).
    toggles into the `anki` section of the per-user `ui_settings` blob
    (separate from `popup`/`simulator`/`reader`); the server resolves saved
    values over defaults in `AnkiSettings::for()` and shares them to every
-   page as the `ankiSettings` Inertia prop. Tab layout, autosave, and
-   validation details live in [Profile](/domains/profile.md).
+   page as the `ankiSettings` Inertia prop. Deck and fields are
+   **per-language** (anki-popup-refresh): the section may carry a sparse
+   `languages` map keyed by enabled language code (`{deck?, fields?}` per
+   entry), the endpoint whitelists exactly those codes (non-enabled codes
+   and unknown keys never persist), and `for()` resolves one entry per
+   enabled language plus a `default` entry for words with an unknown or
+   missing `language_code` — each walking the chain per-language → legacy
+   global base → defaults, so a user who never customized a language
+   resolves to today's global deck/fields. The tab still edits the legacy
+   global shape (the language selector is pending); `default` is never
+   persistable. Tab layout, autosave, and validation details live in
+   [Profile](/domains/profile.md).
 2. **Template** — `generateCardTemplate(fields)` deterministically emits
    Front/Back/CSS in the reading popup's image. The **Front is the word
    alone** — the recognition cue and the duplicate-search key, never

@@ -3,6 +3,7 @@
 use App\Models\Language;
 use App\Models\User;
 use Database\Seeders\LanguageSeeder;
+use Illuminate\Support\Collection;
 
 test('profile page is displayed', function () {
     $user = User::factory()->create();
@@ -83,6 +84,91 @@ test('anki settings prop reflects the saved connection and field opt-outs', func
             ->where('ankiSettings.deck', 'ExtApp')
             ->where('ankiSettings.fields.etymology', false)
             ->where('ankiSettings.fields.word', true));
+});
+
+test('anki settings prop resolves every enabled language over the legacy global base', function () {
+    // A user with only legacy saved settings (no per-language entries) must
+    // resolve every language — and `default` — to today's global values.
+    createLanguages(['en', 'ru']);
+    $user = User::factory()->create();
+    $user->settings()->updateOrCreate([], [
+        'ui_settings' => ['anki' => [
+            'deck' => 'My deck',
+            'fields' => ['etymology' => false],
+        ]],
+    ]);
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            // The legacy base stays at the top level, unchanged from before.
+            ->where('ankiSettings.deck', 'My deck')
+            ->where('ankiSettings.fields.etymology', false)
+            ->where('ankiSettings.languages.en.deck', 'My deck')
+            ->where('ankiSettings.languages.en.fields.etymology', false)
+            ->where('ankiSettings.languages.en.fields.word', true)
+            ->where('ankiSettings.languages.ru.deck', 'My deck')
+            ->where('ankiSettings.languages.ru.fields.etymology', false)
+            // Words with an unknown or missing language code resolve here.
+            ->where('ankiSettings.languages.default.deck', 'My deck')
+            ->where('ankiSettings.languages.default.fields.etymology', false));
+});
+
+test('anki settings prop prefers saved per-language entries over the legacy base', function () {
+    createLanguages(['en', 'ru']);
+    $user = User::factory()->create();
+    $user->settings()->updateOrCreate([], [
+        'ui_settings' => ['anki' => [
+            'deck' => 'My deck',
+            'fields' => ['etymology' => false],
+            'languages' => [
+                'en' => ['deck' => 'English deck', 'fields' => ['etymology' => true, 'tags' => false]],
+            ],
+        ]],
+    ]);
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('ankiSettings.languages.en.deck', 'English deck')
+            // Per-language values win; keys that language never saved walk
+            // the chain per-language → legacy base → defaults.
+            ->where('ankiSettings.languages.en.fields.etymology', true)
+            ->where('ankiSettings.languages.en.fields.tags', false)
+            ->where('ankiSettings.languages.en.fields.word', true)
+            // Untouched languages and `default` stay on the legacy base.
+            ->where('ankiSettings.languages.ru.deck', 'My deck')
+            ->where('ankiSettings.languages.ru.fields.etymology', false)
+            ->where('ankiSettings.languages.default.deck', 'My deck'));
+});
+
+test('anki settings prop carries one entry per enabled language plus default', function () {
+    // Disabled languages get no entry at all; `default` always exists for
+    // words with an unknown or missing language code.
+    createLanguages(['en']);
+    Language::create(['code' => 'fr', 'name' => 'French', 'is_enabled' => false, 'sort_order' => 9]);
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('ankiSettings.languages', function (Collection $languages) {
+                // The fluent where() hands the prop over as a Collection;
+                // the entries themselves stay plain arrays.
+                $languages = $languages->all();
+
+                expect(array_keys($languages))->toBe(['en', 'default'])
+                    ->and(array_keys($languages['en']))->toBe(['deck', 'fields'])
+                    ->and(array_keys($languages['default']))->toBe(['deck', 'fields']);
+
+                return true;
+            }));
 });
 
 test('popup visibility prop reflects the saved opt-outs', function () {

@@ -4,8 +4,8 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, Anki connection settings with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T18:20:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T18:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T21:10:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T21:10:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -24,7 +24,7 @@ sources:
     title: AnkiSettings tab section (connection settings + test connection)
   - id: anki-settings
     resource: laravel/app/Support/AnkiSettings.php
-    title: AnkiSettings (saved connection + field toggles resolved over defaults)
+    title: AnkiSettings (saved connection, per-language deck/fields over the legacy global base, resolved per enabled language + default)
   - id: anki-template
     resource: laravel/resources/js/lib/ankiTemplate.js
     title: ankiTemplate.js (field-key → Anki-field-name map, deterministic popup-styled Front/Back/CSS generator, structured buildNoteFields)
@@ -146,6 +146,24 @@ server resolves saved values over the defaults in
 `App\Support\AnkiSettings::for()` (URL default `http://127.0.0.1`, port
 `8765`, deck `ExtApp`, all thirteen fields on) and shares them to every page as
 the `ankiSettings` Inertia prop.
+
+**Per-language deck + fields** (anki-popup-refresh): the `anki` section may
+additionally carry a sparse `languages` map keyed by **enabled language
+code** — `{deck?, fields?}` per entry, absent keys meaning "fall through".
+`UpdateUiSettingsRequest` builds its rules per enabled `Language::enabled()`
+code, so `validated()` strips whole non-enabled entries and unknown keys
+inside an entry (a language that stops being enabled silently loses its
+overrides); the resolved `default` entry — for words with an unknown or
+missing `language_code` — is computed server-side from the legacy global
+base and is never persistable. `AnkiSettings::for()` resolves one
+`{deck, fields}` entry per enabled language plus `default`, each walking the
+chain per-language → legacy global `deck`/`fields` → all-on defaults, so a
+user with only legacy settings resolves identically to before; the prop
+carries that map under `ankiSettings.languages` (enabled codes in
+`sort_order`, `default` last) beside the unchanged top-level legacy base
+(`url`, `port`, `deck`, `fields`) that the tab and the popup's send still
+read today. The Anki tab's language selector for editing these entries is
+pending; until it lands the tab keeps autosaving the legacy global shape.
 
 **Connection** — AnkiConnect endpoint (URL + port) and target deck name,
 plus a **Test connection** button that calls AnkiConnect's `version` action
