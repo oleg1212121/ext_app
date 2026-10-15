@@ -7,12 +7,17 @@
 // Semantics (spec decisions): values ALWAYS carry every field; a toggled-off
 // field gets the `ef-hidden` class baked into the generated HTML, so
 // re-syncing the template restyles all existing cards instead of dropping
-// data. Front shows the recognition pair (Word + Transcription); the Back
-// carries all twelve wrappers. One rule breaks the symmetry: the Front NEVER
-// hides Word — it is the recognition cue and the duplicate-search key, so a
-// hidden Word would blank the card's face — and Word's toggle keeps hiding
-// its Back wrapper. Nothing in this module touches Anki — the template push
-// and sample card reuse these artifacts from the later Anki tickets.
+// data. Front shows the word alone — the recognition cue and the
+// duplicate-search key. The Back mirrors the reading popup's shape: a header
+// (word title, then Familiarity / Frequency / form-of / part-of-speech /
+// bracketed-transcription meta lines), the dictionary body sections, and a
+// muted Tags · Language footer. Meta lines whose value carries literal
+// decoration sit inside Anki-native `{{#Field}}…{{/Field}}` conditionals, so
+// an empty field drops the whole line (renderCardHtml does the same for the
+// tab's preview). One rule breaks the hide symmetry: the Front NEVER hides
+// Word — hiding it would blank the card's face — and Word's toggle keeps
+// hiding its Back wrapper. Nothing in this module touches Anki — the
+// template push and sample card reuse these artifacts from lib/ankiSync.js.
 
 // Settings key → Anki note-type field name, in the note type's fixed field
 // order (must stay in lockstep with App\Support\AnkiSettings::FIELDS).
@@ -36,38 +41,129 @@ export const ANKI_CARD_NAME = 'Recognition'
 
 const HIDDEN_CLASS = 'ef-hidden'
 
-// The styling side of the "ExtApp Vocabulary" note type: the `.card` base
-// plus the hide class the generated HTML leans on, with a night-mode variant
-// for Anki's dark theme. Static by design — the toggles shape the HTML, the
-// CSS just knows how to hide.
+// Meta lines whose value carries literal decoration (a prefix, a suffix,
+// brackets) wrap the whole line in an Anki-native conditional block: an
+// empty field drops the line entire instead of leaving a dangling
+// "Frequency: #" or "[]" on the card. The wording mirrors the popup's
+// English strings (database/seeders/ui-strings/words.php).
+const META_LINES = {
+    familiarity: (name) => `{{#${name}}}Familiarity: {{${name}}}/100{{/${name}}}`,
+    frequency: (name) => `{{#${name}}}Frequency: #{{${name}}}{{/${name}}}`,
+    word_family: (name) => `{{#${name}}}form of {{${name}}}{{/${name}}}`,
+    transcription: (name) => `{{#${name}}}[{{${name}}}]{{/${name}}}`,
+}
+
+// The footer's " · " join renders only when BOTH footer fields carry values
+// — nested conditionals, exactly Anki's own semantics.
+const FOOTER_SEPARATOR = '{{#Tags}}{{#Language}}<span class="ef-footer-sep"> · </span>{{/Language}}{{/Tags}}'
+
+const placeholder = (key, name) => (META_LINES[key] ? META_LINES[key](name) : `{{${name}}}`)
+
+// The styling side of the "ExtApp Vocabulary" note type: the popup's card
+// surface (vellum, hairline, soft shadow, 560px study width) plus the hide
+// class the generated HTML leans on, with a night-mode variant for Anki's
+// dark theme. Static by design — the toggles shape the HTML, the CSS just
+// knows how to hide. Local font stacks only: review must never fetch
+// webfonts, so Figtree and Source Serif 4 degrade to their installed
+// neighbors (Segoe UI/Arial, Georgia).
 const TEMPLATE_CSS = `.card {
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 20px;
+    /* The popup's chrome (WordPopup's popupContainerClass): vellum surface,
+       hairline border, soft shadow — capped to the popup's 560px study
+       width and centered on the review screen. */
+    --ef-surface: #FDFBF5;
+    --ef-ink: #1A1814;
+    --ef-hairline: #C7BC9C;
+    --ef-verdigris: #2F6E66;
+    font-family: "Figtree", "Segoe UI", -apple-system, Arial, sans-serif;
+    font-size: 17px;
     line-height: 1.5;
-    color: #2b2620;
-    background-color: #f3edde;
-    text-align: center;
-    padding: 1.5rem;
+    text-align: left;
+    color: var(--ef-ink);
+    background-color: var(--ef-surface);
+    max-width: 560px;
+    margin: 12px auto;
+    border: 1px solid var(--ef-hairline);
+    border-radius: 6px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -4px rgba(0, 0, 0, 0.2);
 }
-.ef-field { margin: 0.35em 0; }
-.ef-word { font-size: 1.9em; font-weight: 600; line-height: 1.2; }
-.ef-transcription { font-style: italic; color: #6f6654; }
-.ef-part_of_speech { font-style: italic; color: #6f6654; }
-.ef-frequency { font-size: 0.8em; color: #8a8170; }
-.ef-tags { font-size: 0.8em; color: #8a8170; }
-.ef-familiarity { font-size: 0.8em; color: #8a8170; }
-.ef-language { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.08em; color: #8a8170; }
-.ef-hidden { display: none; }
-.nightMode .card {
-    color: #e6dfcf;
-    background-color: #26221b;
+/* Anki's night mode (the class lands on the card body itself or an
+   ancestor, depending on the platform). */
+.nightMode .card, .card.nightMode {
+    --ef-surface: #1C1915;
+    --ef-ink: #E7DFCC;
+    --ef-hairline: #3A352A;
+    --ef-verdigris: #6FA89F;
 }
-.nightMode .ef-transcription,
-.nightMode .ef-part_of_speech { color: #b3a98f; }
-.nightMode .ef-frequency,
-.nightMode .ef-tags,
-.nightMode .ef-familiarity,
-.nightMode .ef-language { color: #948b76; }`
+
+/* The popup's sections — header, dictionary body, muted footer — separated
+   by the popup's hairline rules (its tab strip above, its footer below). */
+.ef-header {
+    padding: 14px 14px 10px;
+    border-bottom: 1px solid var(--ef-hairline);
+}
+.ef-body {
+    padding: 12px 14px;
+}
+.ef-footer {
+    padding: 8px 14px 10px;
+    border-top: 1px solid var(--ef-hairline);
+}
+.ef-field { margin: 0; }
+
+/* The headword in the popup's title style (font-reading, 1.286em). On the
+   Front it is the whole card, so it carries the card padding itself. */
+.ef-word {
+    font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+    font-size: 1.286em;
+    line-height: 1.25;
+    padding: 14px;
+}
+.ef-header .ef-word { padding: 0; }
+
+/* Header meta lines in the popup's small muted type (0.786em opacity-60,
+   tabular ranks). */
+.ef-familiarity, .ef-frequency {
+    font-size: 0.786em;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.6;
+    margin-top: 2px;
+}
+
+/* Form-of and part of speech, in the popup's italic annotation style. */
+.ef-word_family, .ef-part_of_speech {
+    font-size: 0.857em;
+    font-style: italic;
+    opacity: 0.7;
+    margin-top: 4px;
+}
+
+/* The bracketed transcription line. */
+.ef-transcription {
+    font-size: 0.857em;
+    opacity: 0.8;
+    margin-top: 4px;
+}
+
+/* Dictionary body: translations are the popup's primary verdigris line,
+   the dictionary sections follow at its 0.857em reading size. */
+.ef-translations {
+    font-size: 0.929em;
+    color: var(--ef-verdigris);
+}
+.ef-body > .ef-field + .ef-field { margin-top: 8px; }
+.ef-definitions, .ef-examples, .ef-etymology {
+    font-size: 0.857em;
+}
+
+/* The muted footer line: Tags · Language. */
+.ef-tags, .ef-language, .ef-footer-sep {
+    font-size: 0.786em;
+    opacity: 0.6;
+}
+.ef-tags, .ef-language { display: inline; }
+
+/* The hide class the field toggles bake into the wrappers. */
+.ef-hidden { display: none; }`
 
 // Generate the note type's card template from the field toggles. `fields`
 // maps field key → boolean; an absent key means on (the settings blob is
@@ -78,18 +174,47 @@ export function generateCardTemplate(fields = {}) {
     // `side` exists for one exception: the Front face never hides `word` —
     // it is the recognition cue and the duplicate-search key (sendAnkiNote
     // queries Word:"…"), so hiding it would blank the card's face. Word's
-    // toggle keeps hiding its Back wrapper; every other field — Front
-    // transcription included — hides through the class as configured.
+    // toggle keeps hiding its Back wrapper; every other field hides through
+    // the class as configured.
     const wrapper = (key, side) => {
         const field = byKey.get(key)
         const hideable = !(side === 'front' && key === 'word')
         const hidden = hideable && fields[key] === false ? ` ${HIDDEN_CLASS}` : ''
-        return `<div class="ef-field ef-${key}${hidden}">{{${field.name}}}</div>`
+        return `<div class="ef-field ef-${key}${hidden}">${placeholder(key, field.name)}</div>`
     }
 
+    // The Front is the recognition cue alone — the word in the popup's serif
+    // title style (the .ef-word rule carries the card padding when it is the
+    // card's only section).
+    const front = wrapper('word', 'front')
+
+    // The Back mirrors the popup's shape. Wrapper order here is the card's
+    // visual order; the note type's field order (ANKI_FIELDS) is untouched.
+    const back = [
+        '<div class="ef-header">',
+        wrapper('word', 'back'),
+        wrapper('familiarity', 'back'),
+        wrapper('frequency', 'back'),
+        wrapper('word_family', 'back'),
+        wrapper('part_of_speech', 'back'),
+        wrapper('transcription', 'back'),
+        '</div>',
+        '<div class="ef-body">',
+        wrapper('translations', 'back'),
+        wrapper('definitions', 'back'),
+        wrapper('examples', 'back'),
+        wrapper('etymology', 'back'),
+        '</div>',
+        '<div class="ef-footer">',
+        wrapper('tags', 'back'),
+        FOOTER_SEPARATOR,
+        wrapper('language', 'back'),
+        '</div>',
+    ].join('\n')
+
     return {
-        front: ['word', 'transcription'].map((key) => wrapper(key, 'front')).join('\n'),
-        back: ANKI_FIELDS.map(({key}) => wrapper(key, 'back')).join('\n'),
+        front,
+        back,
         css: TEMPLATE_CSS,
     }
 }
@@ -135,10 +260,30 @@ export function buildNoteFields(data, {familiarity = null, tags = [], nativeLang
     }
 }
 
-// Substitute note values for Anki's {{Field}} placeholders — what Anki does
-// at review time — so the tab's preview renders the real generated card.
+// Substitute note values for Anki's field syntax — the {{Field}} placeholder
+// and the conditional block {{#Field}}…{{/Field}} — so the tab's preview
+// renders exactly what Anki renders at review time. Conditional blocks
+// resolve one nesting level per pass: a block whose field carries a value is
+// replaced by its content, an empty field drops the whole block (a
+// literal-prefixed meta line disappears entire), and an unknown field name
+// is left untouched like an unknown placeholder. Values are substituted
+// only after the conditionals have resolved, so a value carrying {{…}} text
+// is never re-parsed as template syntax — the same order Anki uses.
 export function renderCardHtml(templateHtml, noteFields = {}) {
-    return templateHtml.replace(/\{\{(\w+)\}\}/g, (placeholder, name) => (
-        Object.prototype.hasOwnProperty.call(noteFields, name) ? noteFields[name] : placeholder
+    const known = (name) => Object.prototype.hasOwnProperty.call(noteFields, name)
+    const isEmpty = (value) => value == null || String(value) === ''
+    const conditional = /\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g
+
+    let html = templateHtml
+    let previous = null
+    while (html !== previous) {
+        previous = html
+        html = html.replace(conditional, (block, name, content) => (
+            known(name) ? (isEmpty(noteFields[name]) ? '' : content) : block
+        ))
+    }
+
+    return html.replace(/\{\{(\w+)\}\}/g, (placeholder, name) => (
+        known(name) ? String(noteFields[name] ?? '') : placeholder
     ))
 }

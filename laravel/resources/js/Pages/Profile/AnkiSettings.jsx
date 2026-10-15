@@ -354,11 +354,13 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
                     {/* The exact generated artifact: generated CSS + HTML with
                         the sample values substituted for {{Field}}, in a
                         sandboxed frame so the template's styling can't leak
-                        into (or inherit from) the app. */}
+                        into (or inherit from) the app. Tall enough for the
+                        popup-styled back, which stacks more than the old
+                        flat card did. */}
                     <iframe
                         title={t('profile.anki_template_preview_title')}
                         sandbox=""
-                        className="mt-3 h-96 w-full rounded-sm border border-[var(--color-hairline)] bg-white dark:border-[var(--color-hairline-night)]"
+                        className="mt-3 h-[34rem] w-full rounded-sm border border-[var(--color-hairline)] bg-white dark:border-[var(--color-hairline-night)]"
                         srcDoc={previewDoc(face)}
                     />
                 </div>
