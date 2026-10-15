@@ -16,7 +16,17 @@
 // Back}], css, isCloze}; updateModelTemplates and updateModelStyling take a
 // model OBJECT — {name, templates: {[cardName]: {Front?, Back?}}} and
 // {name, css} — where unknown card names are silently skipped (ankiSync.js
-// guards against that).
+// guards against that). The note-update actions (anki-popup-refresh, re-checked
+// at releases 24.7.25.0 and 25.11.9.0): updateNote takes a single note OBJECT
+// {note: {id, fields?, tags?}} applying both in one call with supplied tags
+// REPLACING the set (present since at least 24.7, July 2024; no plural
+// "updateNotes" action exists in any release); updateNoteFields takes
+// {note: {id, fields}} and silently ignores unknown field names (a
+// foreign-shaped model would update only the matching fields — ankiSync.js
+// only sends it to our own models); getNoteTags takes {note: <single id>}
+// and answers a tag-string array; addTags/removeTags take a note-id array
+// plus a SPACE-JOINED tag string — addTags is additive, so tag replacement
+// without updateNote means removeTags-then-addTags.
 
 export const ANKI_DEFAULT_URL = 'http://127.0.0.1'
 export const ANKI_DEFAULT_PORT = 8765
@@ -119,4 +129,30 @@ export function notesInfo(config, notes) {
 
 export function addNote(config, note) {
     return invoke('addNote', {note}, config)
+}
+
+// The note-update group (anki-popup-refresh): updateNote applies fields and
+// tags in one call, supplied tags replacing the set. updateNoteFields is the
+// fields-only half of the fallback for AnkiConnect builds predating it; the
+// tag half is a getNoteTags -> removeTags -> addTags replacement (addTags
+// alone cannot replace). Tag arrays are sent space-joined — AnkiConnect's
+// tag string convention.
+export function updateNote(config, note) {
+    return invoke('updateNote', {note}, config)
+}
+
+export function updateNoteFields(config, note) {
+    return invoke('updateNoteFields', {note}, config)
+}
+
+export function getNoteTags(config, noteId) {
+    return invoke('getNoteTags', {note: noteId}, config)
+}
+
+export function addTags(config, notes, tags) {
+    return invoke('addTags', {notes, tags: tags.join(' ')}, config)
+}
+
+export function removeTags(config, notes, tags) {
+    return invoke('removeTags', {notes, tags: tags.join(' ')}, config)
 }

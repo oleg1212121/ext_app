@@ -6,20 +6,25 @@ import {
     ANKI_NOTE_TYPE,
     buildNoteFields,
     generateCardTemplate,
+    noteTypeForLanguage,
 } from './ankiTemplate';
 import {
     AnkiNoteTypeMismatchError,
     ensureAnkiTarget,
+    findExistingNote,
     sendAnkiNote,
 } from './ankiSync';
 
-// ankiSync.js memoizes ensures in a module-level Set keyed endpoint|deck, so
-// every config() call mints a fresh port — a distinct memo key, i.e. a cold
-// page session — from a counter that never resets across the file. A test
-// that needs a MEMOIZED session (second ensure, forced re-push, multi-word
-// sends) reuses one cfg object and gets the shared-session behavior; a test
-// that calls config() twice gets two independent sessions. Resetting the
-// counter per test was tried and is wrong: every test then re-mints the same
+// ankiSync.js memoizes ensures in a module-level Set keyed
+// endpoint|deck|noteType, so every config() call mints a fresh port — a
+// distinct memo key, i.e. a cold page session — from a counter that never
+// resets across the file. The detection memo (findExistingNote, seeded by
+// send results) is a module-level Map over the same shape plus word and
+// language, so the same rule applies. A test that needs a MEMOIZED session
+// (second ensure, forced re-push, multi-word sends, send-then-detect) reuses
+// one cfg object and gets the shared-session behavior; a test that calls
+// config() twice gets two independent sessions. Resetting the counter per
+// test was tried and is wrong: every test then re-mints the same
 // endpoint|deck key the first test already memoized, and the ensures silently
 // become memo hits. (vi.resetModules() + dynamic import was also tried and
 // rejected: each re-evaluation of the module chain mints NEW
@@ -76,6 +81,22 @@ function stubAnki(handlers) {
         return {ok: true, status: 200, json: async () => ({result: await handlers[action](params), error: null})};
     });
 }
+
+// The same, with chosen actions answered as Anki-side failures (the error
+// string arrives inside HTTP 200 — kind 'anki' — exactly how an AnkiConnect
+// build that predates an action answers it).
+const stubAnkiWithErrors = (handlers, errors) => {
+    fetchMock.mockImplementation(async (_url, init) => {
+        const {action, params} = JSON.parse(init.body);
+        if (Object.hasOwn(errors, action)) {
+            return {ok: true, status: 200, json: async () => ({result: null, error: errors[action]})};
+        }
+        if (!Object.hasOwn(handlers, action)) {
+            throw new Error(`unexpected AnkiConnect action: ${action}`);
+        }
+        return {ok: true, status: 200, json: async () => ({result: await handlers[action](params), error: null})};
+    });
+};
 
 // The "deck + note type + card all exist" path: a full ensure pass pushes
 // templates + styling and creates nothing. createDeck is stubbed anyway so
@@ -242,6 +263,53 @@ describe('ensureAnkiTarget', () => {
         expect(error.found).toEqual(['Cloze']);
         expect(actionsOf()).toEqual(['deckNames', 'modelNames', 'modelFieldNames', 'modelTemplates']);
     });
+
+    it('honors config.noteType: creates the per-language model when absent', async () => {
+        stubAnki(existingHandlers({createModel: () => 1714055939640}));
+
+        await ensureAnkiTarget(config({noteType: noteTypeForLanguage('ru')}));
+
+        expect(actionsOf()).toEqual(['deckNames', 'modelNames', 'createModel']);
+        // The per-language model carries the identical thirteen fields and
+        // generated template — the languages diverge later if ever.
+        const model = paramsOf('createModel');
+        expect(model.modelName).toBe('ExtApp Vocabulary ⋅ ru');
+        expect(model.inOrderFields).toEqual(NAMES);
+        expect(model.cardTemplates).toEqual([
+            {Name: ANKI_CARD_NAME, Front: generateCardTemplate({}).front, Back: generateCardTemplate({}).back},
+        ]);
+    });
+
+    it('misses the memo when only the note type differs (key is endpoint|deck|noteType)', async () => {
+        stubAnki(existingHandlers({createModel: () => 1714055939640}));
+        const cfg = config();
+
+        await ensureAnkiTarget(cfg);
+        const afterFirst = fetchMock.mock.calls.length;
+
+        cfg.noteType = noteTypeForLanguage('ru');
+        await ensureAnkiTarget(cfg);
+        expect(actionsOf(afterFirst)).toEqual(['deckNames', 'modelNames', 'createModel']);
+        expect(paramsOf('createModel').modelName).toBe('ExtApp Vocabulary ⋅ ru');
+    });
+
+    it('names the model it actually inspected in the mismatch error', async () => {
+        const found = [...NAMES];
+        found[5] = 'Translation';
+        const perLanguage = noteTypeForLanguage('ru');
+        stubAnki(existingHandlers({
+            modelNames: () => [ANKI_NOTE_TYPE, perLanguage],
+            modelFieldNames: () => found,
+        }));
+
+        const error = await ensureAnkiTarget(config({noteType: perLanguage})).catch((caught) => caught);
+        expect(error).toBeInstanceOf(AnkiNoteTypeMismatchError);
+        expect(error.modelName).toBe(perLanguage);
+        expect(error.message).toContain(perLanguage);
+        expect(error.kind).toBe('fields');
+        expect(error.expected).toEqual(NAMES);
+        expect(error.found).toEqual(found);
+    });
 });
 
 describe('sendAnkiNote', () => {
@@ -254,7 +322,7 @@ describe('sendAnkiNote', () => {
         const noteFields = buildNoteFields(WORD_DATA, {familiarity: 40, tags: SAMPLE_TAGS, nativeLanguage: 'ru'});
 
         await expect(sendAnkiNote(cfg, noteFields, {tags: SAMPLE_TAGS, word: 'melted'}))
-            .resolves.toEqual({added: true, noteId: 1714055939624});
+            .resolves.toEqual({added: true, updated: false, noteId: 1714055939624});
 
         expect(actionsOf()).toEqual([
             'deckNames', 'modelNames', 'modelFieldNames', 'modelTemplates', 'updateModelTemplates', 'updateModelStyling',
@@ -271,39 +339,68 @@ describe('sendAnkiNote', () => {
         expect(note.options).toEqual({allowDuplicate: false});
     });
 
-    it('duplicate re-send only finds + inspects and resolves {added: false} without addNote', async () => {
+    it('duplicate re-send updates our note in place: find, inspect, updateNote with rebuilt values + replaced tags', async () => {
         let searches = 0;
         stubAnki(existingHandlers({
-            findNotes: () => {
-                searches += 1;
-                return searches === 1 ? [] : [1714055939624];
-            },
-            notesInfo: () => [{noteId: 1714055939624, modelName: ANKI_NOTE_TYPE}],
+            findNotes: () => (searches += 1) === 1 ? [] : [1714055939624],
+            notesInfo: () => [{noteId: 1714055939624, modelName: ANKI_NOTE_TYPE, tags: ['stale']}],
             addNote: () => 1714055939624,
+            updateNote: () => null,
         }));
         const cfg = config();
-        const noteFields = buildNoteFields(WORD_DATA, {tags: SAMPLE_TAGS, nativeLanguage: 'ru'});
-
-        await sendAnkiNote(cfg, noteFields, {tags: SAMPLE_TAGS, word: 'melted'});
+        await sendAnkiNote(cfg, buildNoteFields(WORD_DATA, {familiarity: 10, tags: ['stale'], nativeLanguage: 'ru'}), {tags: ['stale'], word: 'melted'});
         const afterFirst = fetchMock.mock.calls.length;
 
+        const noteFields = buildNoteFields(
+            {...WORD_DATA, frequency: 999},
+            {familiarity: 40, tags: SAMPLE_TAGS, nativeLanguage: 'ru'},
+        );
         await expect(sendAnkiNote(cfg, noteFields, {tags: SAMPLE_TAGS, word: 'melted'}))
-            .resolves.toEqual({added: false, noteId: 1714055939624});
-        expect(actionsOf(afterFirst)).toEqual(['findNotes', 'notesInfo']);
+            .resolves.toEqual({added: false, updated: true, noteId: 1714055939624});
+
+        expect(actionsOf(afterFirst)).toEqual(['findNotes', 'notesInfo', 'updateNote']);
+        // The full thirteen values go back over and the tag set REPLACES;
+        // the payload carries id + fields + tags only — deck and scheduling
+        // are not addressable here, so they cannot be touched (spec).
+        expect(paramsOf('updateNote')).toEqual({
+            note: {id: 1714055939624, fields: noteFields, tags: SAMPLE_TAGS},
+        });
+
+        // The send seeds the detection memo — ticket 05's icon state stays
+        // correct without a re-query.
+        const afterUpdate = fetchMock.mock.calls.length;
+        await expect(findExistingNote(cfg, {word: 'melted', language: 'en'})).resolves.toBe(1714055939624);
+        expect(fetchMock.mock.calls.length).toBe(afterUpdate);
     });
 
-    it('counts a foreign-model match as a duplicate too, preferring our own note type id', async () => {
+    it('updates our own note even when a foreign-model note matches too — the foreign one is never touched', async () => {
+        const updatedIds = [];
         stubAnki(existingHandlers({
             findNotes: () => [555, 999],
             notesInfo: () => [
                 {noteId: 555, modelName: 'Basic'},
                 {noteId: 999, modelName: ANKI_NOTE_TYPE},
             ],
+            updateNote: ({note}) => updatedIds.push(note.id),
         }));
         const noteFields = buildNoteFields(WORD_DATA, {nativeLanguage: 'ru'});
 
         await expect(sendAnkiNote(config(), noteFields, {word: 'melted'}))
-            .resolves.toEqual({added: false, noteId: 999});
+            .resolves.toEqual({added: false, updated: true, noteId: 999});
+        expect(updatedIds).toEqual([999]);
+    });
+
+    it('skips a foreign-model-only match unmodified — our updates address our models only', async () => {
+        const updatedIds = [];
+        stubAnki(existingHandlers({
+            findNotes: () => [555],
+            notesInfo: () => [{noteId: 555, modelName: 'Basic'}],
+            updateNote: ({note}) => updatedIds.push(note.id),
+        }));
+
+        await expect(sendAnkiNote(config(), buildNoteFields(WORD_DATA, {nativeLanguage: 'ru'}), {word: 'melted'}))
+            .resolves.toEqual({added: false, updated: false, noteId: 555});
+        expect(updatedIds).toEqual([]);
     });
 
     it('sends a second word with find + add only (memoized ensure)', async () => {
@@ -318,7 +415,7 @@ describe('sendAnkiNote', () => {
 
         const other = buildNoteFields({...WORD_DATA, word: 'molt'}, {tags: [], nativeLanguage: 'ru'});
         await expect(sendAnkiNote(cfg, other, {tags: [], word: 'molt'}))
-            .resolves.toEqual({added: true, noteId: 1714055939625});
+            .resolves.toEqual({added: true, updated: false, noteId: 1714055939625});
 
         expect(actionsOf(afterFirst)).toEqual(['findNotes', 'addNote']);
         expect(JSON.parse(fetchMock.mock.calls[afterFirst][1].body).params.query).toBe('deck:"ExtApp" Word:"molt" Language:"en"');
@@ -330,6 +427,145 @@ describe('sendAnkiNote', () => {
         const error = await sendAnkiNote(config(), {Language: 'en'}, {tags: []}).catch((caught) => caught);
         expect(error).toBeInstanceOf(AnkiConnectError);
         expect(error.kind).toBe('anki');
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('sends against the per-language note type: create-if-missing, addNote on that model', async () => {
+        stubAnki(existingHandlers({
+            createModel: () => 1714055939640,
+            findNotes: () => [],
+            addNote: () => 1714055939626,
+        }));
+        const perLanguage = noteTypeForLanguage('ru');
+        const cfg = config({noteType: perLanguage});
+        const noteFields = buildNoteFields(WORD_DATA, {tags: SAMPLE_TAGS, nativeLanguage: 'ru'});
+
+        await expect(sendAnkiNote(cfg, noteFields, {tags: SAMPLE_TAGS, word: 'melted'}))
+            .resolves.toEqual({added: true, updated: false, noteId: 1714055939626});
+
+        expect(paramsOf('createModel').modelName).toBe(perLanguage);
+        expect(paramsOf('addNote').note.modelName).toBe(perLanguage);
+    });
+
+    it('seeds the detection memo after an add: the later lookup resolves without fetches', async () => {
+        stubAnki(existingHandlers({
+            findNotes: () => [],
+            addNote: () => 1714055939624,
+        }));
+        const cfg = config();
+        await sendAnkiNote(cfg, buildNoteFields(WORD_DATA, {nativeLanguage: 'ru'}), {tags: [], word: 'melted'});
+        const afterAdd = fetchMock.mock.calls.length;
+
+        await expect(findExistingNote(cfg, {word: 'melted', language: 'en'})).resolves.toBe(1714055939624);
+        expect(fetchMock.mock.calls.length).toBe(afterAdd);
+    });
+
+    it('falls back to updateNoteFields + explicit tag replacement when updateNote is unsupported', async () => {
+        stubAnkiWithErrors(existingHandlers({
+            findNotes: () => [1714055939624],
+            notesInfo: () => [{noteId: 1714055939624, modelName: ANKI_NOTE_TYPE}],
+            getNoteTags: () => ['stale', 'old-tag'],
+            updateNoteFields: () => null,
+            removeTags: () => null,
+            addTags: () => null,
+        }), {updateNote: 'unsupported action'});
+        const noteFields = buildNoteFields(WORD_DATA, {familiarity: 40, tags: SAMPLE_TAGS, nativeLanguage: 'ru'});
+
+        await expect(sendAnkiNote(config(), noteFields, {tags: SAMPLE_TAGS, word: 'melted'}))
+            .resolves.toEqual({added: false, updated: true, noteId: 1714055939624});
+
+        expect(actionsOf().slice(-7)).toEqual([
+            'findNotes', 'notesInfo', 'updateNote', 'updateNoteFields', 'getNoteTags', 'removeTags', 'addTags',
+        ]);
+        // The fallback rebuilds the fields (no tags key on this action) and
+        // replaces the tag set by hand: read old, remove old, add new.
+        expect(paramsOf('updateNoteFields')).toEqual({note: {id: 1714055939624, fields: noteFields}});
+        expect(paramsOf('removeTags')).toEqual({notes: [1714055939624], tags: 'stale old-tag'});
+        expect(paramsOf('addTags')).toEqual({notes: [1714055939624], tags: 'A2 top-3000'});
+    });
+
+    it('fallback skips the tag round-trips when either side carries no tags', async () => {
+        stubAnkiWithErrors(existingHandlers({
+            findNotes: () => [1714055939624],
+            notesInfo: () => [{noteId: 1714055939624, modelName: ANKI_NOTE_TYPE}],
+            getNoteTags: () => [],
+            updateNoteFields: () => null,
+            removeTags: () => null,
+            addTags: () => null,
+        }), {updateNote: 'unsupported action'});
+
+        await sendAnkiNote(config(), buildNoteFields(WORD_DATA, {nativeLanguage: 'ru'}), {tags: [], word: 'melted'});
+
+        expect(actionsOf().slice(-3)).toEqual(['updateNote', 'updateNoteFields', 'getNoteTags']);
+    });
+
+    it('rethrows real updateNote failures — only unsupported-action errors fall back', async () => {
+        stubAnkiWithErrors(existingHandlers({
+            findNotes: () => [1714055939624],
+            notesInfo: () => [{noteId: 1714055939624, modelName: ANKI_NOTE_TYPE}],
+        }), {updateNote: 'Note was deleted'});
+
+        const error = await sendAnkiNote(config(), buildNoteFields(WORD_DATA, {nativeLanguage: 'ru'}), {word: 'melted'})
+            .catch((caught) => caught);
+        expect(error).toBeInstanceOf(AnkiConnectError);
+        expect(error.kind).toBe('anki');
+        expect(error.message).toBe('Note was deleted');
+        expect(actionsOf().at(-1)).toBe('updateNote');
+    });
+});
+
+describe('findExistingNote', () => {
+    it('finds a note by deck + word + language with a bare findNotes — never the ensure', async () => {
+        stubAnki({findNotes: () => [1714055939624]});
+        const cfg = config();
+
+        await expect(findExistingNote(cfg, {word: 'melted', language: 'en'})).resolves.toBe(1714055939624);
+        expect(actionsOf()).toEqual(['findNotes']);
+        expect(paramsOf('findNotes').query).toBe('deck:"ExtApp" Word:"melted" Language:"en"');
+    });
+
+    it('omits the Language clause when no language is passed and resolves null on a miss', async () => {
+        stubAnki({findNotes: () => []});
+
+        await expect(findExistingNote(config(), {word: 'melt'})).resolves.toBeNull();
+        expect(paramsOf('findNotes').query).toBe('deck:"ExtApp" Word:"melt"');
+    });
+
+    it('memoizes per endpoint|deck|word|language: a repeat word makes zero fetches, another word queries', async () => {
+        stubAnki({findNotes: ({query}) => (query.includes('molt') ? [] : [1714055939624])});
+        const cfg = config();
+
+        await findExistingNote(cfg, {word: 'melted', language: 'en'});
+        const afterFirst = fetchMock.mock.calls.length;
+
+        await expect(findExistingNote(cfg, {word: 'melted', language: 'en'})).resolves.toBe(1714055939624);
+        expect(fetchMock.mock.calls.length).toBe(afterFirst);
+
+        await expect(findExistingNote(cfg, {word: 'molt', language: 'en'})).resolves.toBeNull();
+        expect(fetchMock.mock.calls.length).toBe(afterFirst + 1);
+    });
+
+    it('resolves null on any failure — network or Anki-side — and never memoizes it', async () => {
+        const cfg = config();
+        fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+        fetchMock.mockResolvedValueOnce({ok: true, status: 200, json: async () => ({result: null, error: 'deck was not found'})});
+        stubAnki({findNotes: () => [1714055939624]});
+
+        // Anki off (network kind)...
+        await expect(findExistingNote(cfg, {word: 'melted', language: 'en'})).resolves.toBeNull();
+        // ...or an Anki-side error string: both swallow to null.
+        await expect(findExistingNote(cfg, {word: 'melted', language: 'en'})).resolves.toBeNull();
+
+        // Failures never memoize: with Anki back up, the same word queries again.
+        await expect(findExistingNote(cfg, {word: 'melted', language: 'en'})).resolves.toBe(1714055939624);
+        expect(actionsOf()).toEqual(['findNotes', 'findNotes', 'findNotes']);
+    });
+
+    it('resolves null without querying when the word is missing — detection never throws', async () => {
+        stubAnki({findNotes: () => [1714055939624]});
+
+        await expect(findExistingNote(config(), {})).resolves.toBeNull();
+        await expect(findExistingNote(config(), {word: '', language: 'en'})).resolves.toBeNull();
         expect(fetchMock).not.toHaveBeenCalled();
     });
 });

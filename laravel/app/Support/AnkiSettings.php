@@ -28,6 +28,35 @@ class AnkiSettings
     public const DEFAULT_DECK = 'ExtApp';
 
     /**
+     * The base name of the app-owned Anki note type — the JS twin is
+     * ANKI_NOTE_TYPE in resources/js/lib/ankiTemplate.js.
+     */
+    public const NOTE_TYPE_BASE = 'ExtApp Vocabulary';
+
+    /**
+     * The join between NOTE_TYPE_BASE and a language code in a per-language
+     * note type name (anki-popup-refresh): one template per language,
+     * identical today, free to diverge later. JS twin: noteTypeForLanguage
+     * in the same module.
+     */
+    public const NOTE_TYPE_SEPARATOR = ' ⋅ ';
+
+    /**
+     * The per-language note type name for a language code ("ExtApp
+     * Vocabulary ⋅ en"), falling back to the unsuffixed base for an empty or
+     * missing code — a word with unknown/missing language_code resolves to
+     * the settings' `default` entry. Notes of the base type stay found +
+     * updatable under either name (the duplicate search is note-type
+     * agnostic).
+     */
+    public static function noteTypeForLanguage(?string $code): string
+    {
+        return $code === null || $code === ''
+            ? self::NOTE_TYPE_BASE
+            : self::NOTE_TYPE_BASE.self::NOTE_TYPE_SEPARATOR.$code;
+    }
+
+    /**
      * The resolved entry's key for words whose language_code is unknown or
      * missing — a member of the resolved `languages` map, never a persistable
      * language code (the endpoint's whitelist is the enabled languages).

@@ -53,6 +53,19 @@ export const ANKI_FIELDS = [
 export const ANKI_NOTE_TYPE = 'ExtApp Vocabulary'
 export const ANKI_CARD_NAME = 'Recognition'
 
+// Per-language note type name (anki-popup-refresh): "ExtApp Vocabulary ⋅ en"
+// — one template per language, identical today, free to diverge later. An
+// empty or missing code (a word with unknown/missing language_code resolves
+// to the settings' `default` entry, whose note type is the base name) falls
+// back to the unsuffixed legacy name, whose existing notes stay found +
+// updatable. The PHP twin is App\Support\AnkiSettings::noteTypeForLanguage
+// over NOTE_TYPE_BASE + NOTE_TYPE_SEPARATOR, pinned by
+// tests/Unit/AnkiSettingsMirrorTest.php; the behavior here is pinned by
+// ankiTemplate.test.js.
+export function noteTypeForLanguage(code) {
+    return code ? `${ANKI_NOTE_TYPE} ⋅ ${code}` : ANKI_NOTE_TYPE
+}
+
 const HIDDEN_CLASS = 'ef-hidden'
 
 // Meta lines whose value carries literal decoration (a prefix, a suffix)

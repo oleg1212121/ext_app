@@ -5,6 +5,7 @@ import {
     ANKI_NOTE_TYPE,
     buildNoteFields,
     generateCardTemplate,
+    noteTypeForLanguage,
     renderCardHtml,
     uiLabels,
 } from './ankiTemplate';
@@ -68,6 +69,24 @@ const MULTI = {
 const TEN_TRANSLATIONS = [...Array(10).keys()].map((index) => ({word: `t${index}`, language_code: 'ru'}));
 
 const NAMES = ANKI_FIELDS.map(({name}) => name);
+
+describe('noteTypeForLanguage', () => {
+    it('suffixes the language code onto the base note type — one template per language', () => {
+        expect(noteTypeForLanguage('en')).toBe('ExtApp Vocabulary ⋅ en');
+        expect(noteTypeForLanguage('ru')).toBe('ExtApp Vocabulary ⋅ ru');
+        expect(noteTypeForLanguage('be')).toBe('ExtApp Vocabulary ⋅ be');
+    });
+
+    it('falls back to the unsuffixed base name for an empty or missing code', () => {
+        // Words with unknown/missing language_code resolve to the settings'
+        // `default` entry, whose note type is the base name — the legacy
+        // type, whose existing notes stay found + updatable.
+        expect(noteTypeForLanguage('')).toBe(ANKI_NOTE_TYPE);
+        expect(noteTypeForLanguage(null)).toBe(ANKI_NOTE_TYPE);
+        expect(noteTypeForLanguage()).toBe(ANKI_NOTE_TYPE);
+        expect(noteTypeForLanguage()).toBe('ExtApp Vocabulary');
+    });
+});
 
 describe('generateCardTemplate', () => {
     it('is byte-deterministic — same toggles always produce identical artifacts', () => {

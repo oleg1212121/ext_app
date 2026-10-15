@@ -4,20 +4,25 @@ import {
     ANKI_DEFAULT_URL,
     AnkiConnectError,
     addNote,
+    addTags,
     ankiConnectEndpoint,
     ankiConnectVersion,
     createDeck,
     createModel,
     deckNames,
     findNotes,
+    getNoteTags,
     invoke,
     modelFieldNames,
     modelNames,
     modelTemplates,
     notesInfo,
+    removeTags,
     requestPermission,
     updateModelStyling,
     updateModelTemplates,
+    updateNote,
+    updateNoteFields,
 } from './ankiConnect';
 
 const CONFIG = {url: 'http://127.0.0.1', port: 8765};
@@ -195,6 +200,50 @@ describe('action wrappers', () => {
         await expect(addNote(CONFIG, note)).resolves.toBe(1714055939624);
         expect(sentBody().action).toBe('addNote');
         expect(sentBody().params).toEqual({note});
+    });
+
+    // The note-update actions, verified against the plugin source (release
+    // 24.7.25.0 / 25.11.9.0): updateNote applies fields and tags in one call
+    // with supplied tags REPLACING the set — no "updateNotes" (plural)
+    // action exists in any release. updateNoteFields touches fields only
+    // (unknown field names are ignored). Tag actions take a note-id array
+    // plus a space-joined tag string; getNoteTags takes a single id.
+    describe('note-update actions', () => {
+        it('updateNote wraps {note: {id, fields, tags}}', async () => {
+            fetchMock.mockResolvedValue(okAnswer(null));
+            await updateNote(CONFIG, {id: 1714055939624, fields: {Word: 'melted'}, tags: ['A2', 'top-3000']});
+            expect(sentBody().action).toBe('updateNote');
+            expect(sentBody().params).toEqual({
+                note: {id: 1714055939624, fields: {Word: 'melted'}, tags: ['A2', 'top-3000']},
+            });
+        });
+
+        it('updateNoteFields wraps {note: {id, fields}} — no tags key', async () => {
+            fetchMock.mockResolvedValue(okAnswer(null));
+            await updateNoteFields(CONFIG, {id: 1714055939624, fields: {Word: 'melted'}});
+            expect(sentBody().action).toBe('updateNoteFields');
+            expect(sentBody().params).toEqual({note: {id: 1714055939624, fields: {Word: 'melted'}}});
+            expect(sentBody().params.note).not.toHaveProperty('tags');
+        });
+
+        it('getNoteTags posts {note: <single id>} and resolves the tag array', async () => {
+            fetchMock.mockResolvedValue(okAnswer(['A2', 'top-3000']));
+            await expect(getNoteTags(CONFIG, 1714055939624)).resolves.toEqual(['A2', 'top-3000']);
+            expect(sentBody().action).toBe('getNoteTags');
+            expect(sentBody().params).toEqual({note: 1714055939624});
+        });
+
+        it('addTags and removeTags post {notes, tags} with the tag array space-joined', async () => {
+            fetchMock.mockResolvedValue(okAnswer(null));
+
+            await addTags(CONFIG, [1714055939624], ['A2', 'top-3000']);
+            expect(sentBody().action).toBe('addTags');
+            expect(sentBody().params).toEqual({notes: [1714055939624], tags: 'A2 top-3000'});
+
+            await removeTags(CONFIG, [1714055939624, 1714055939625], ['legacy']);
+            expect(sentBody(1).action).toBe('removeTags');
+            expect(sentBody(1).params).toEqual({notes: [1714055939624, 1714055939625], tags: 'legacy'});
+        });
     });
 
     it('requestPermission posts the bare action', async () => {

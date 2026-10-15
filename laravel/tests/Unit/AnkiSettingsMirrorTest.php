@@ -82,3 +82,22 @@ it('pins the app-owned note type and card name in the JS template module', funct
         ->toContain("ANKI_NOTE_TYPE = 'ExtApp Vocabulary'")
         ->toContain("ANKI_CARD_NAME = 'Recognition'");
 });
+
+it('mirrors the per-language note type naming into the JS template module', function () {
+    $templateModule = file_get_contents(base_path('resources/js/lib/ankiTemplate.js'));
+
+    // The PHP behavior: base + " ⋅ " + code, base alone for an empty or
+    // missing code (words with unknown/missing language_code resolve to the
+    // settings' `default` entry).
+    expect(AnkiSettings::noteTypeForLanguage('en'))->toBe('ExtApp Vocabulary ⋅ en')
+        ->and(AnkiSettings::noteTypeForLanguage(''))->toBe(AnkiSettings::NOTE_TYPE_BASE)
+        ->and(AnkiSettings::noteTypeForLanguage(null))->toBe(AnkiSettings::NOTE_TYPE_BASE)
+        // The JS twin, pinned source-side (no JS runtime here): the same
+        // base-name constant, the same separator, and the helper the send
+        // paths build config.noteType with — its behavior is pinned
+        // executable in ankiTemplate.test.js.
+        ->and($templateModule)
+        ->toContain("ANKI_NOTE_TYPE = '".AnkiSettings::NOTE_TYPE_BASE."'")
+        ->toContain('export function noteTypeForLanguage(code)')
+        ->toContain(AnkiSettings::NOTE_TYPE_SEPARATOR);
+});
