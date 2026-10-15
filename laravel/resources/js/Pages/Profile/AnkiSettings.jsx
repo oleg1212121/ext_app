@@ -132,11 +132,20 @@ export default function AnkiSettings({ankiSettings = null, nativeLanguage = null
 
     // The sample note built from the shared fixture (the same fixture the
     // Popups tab previews with): one construction feeding both the live
-    // template preview and the "Send sample card" action.
+    // template preview and the "Send sample card" action. The label strings
+    // come from the tab's UI language — the same baking a real send does
+    // (buildNoteFields' English defaults cover senders that pass none).
     const sampleNoteFields = buildNoteFields(SAMPLE_DATA, {
         familiarity: SAMPLE_FAMILIARITY,
         tags: SAMPLE_TAGS,
         nativeLanguage,
+        labels: {
+            definitions: (count) => t('word.definitions', {count}),
+            examples: (count) => t('word.examples', {count}),
+            etymology: (count) => t('word.etymology', {count}),
+            more: (count) => t('word.more', {count}),
+            formOf: t('word.form_of'),
+        },
     })
 
     const probe = async (call) => {

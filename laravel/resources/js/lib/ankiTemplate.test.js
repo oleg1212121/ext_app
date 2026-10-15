@@ -31,6 +31,41 @@ const DATA = {
     ],
 };
 
+// A two-entry payload exercising the popup's per-entry labels: a base-word
+// entry ("MELT — verb") plus the headword's own ("MELTED — adjective") —
+// the shared sample fixture's shape, kept minimal here.
+const MULTI = {
+    word: 'melted',
+    language_code: 'en',
+    form_of: ['melt'],
+    entries: [
+        {
+            word: 'melt',
+            word_class: 'Verb',
+            transcriptions: [{value: 'melt'}, {value: 'MELT'}],
+            definitions: ['To change from a solid to a liquid state.', 'To dissolve.'],
+            translations: [
+                {word: 'таять', language_code: 'ru'},
+                {word: 'плавить', language_code: 'ru'},
+            ],
+            examples: ['The snow melted in the sun.'],
+            etymologies: ['From Old English meltan.'],
+        },
+        {
+            word: 'melted',
+            word_class: 'Adjective',
+            transcriptions: [],
+            definitions: ['Changed into liquid form.'],
+            translations: [],
+            examples: [],
+            etymologies: [],
+        },
+    ],
+};
+
+// One past the popup's 8-line translations preview cap.
+const TEN_TRANSLATIONS = [...Array(10).keys()].map((index) => ({word: `t${index}`, language_code: 'ru'}));
+
 const NAMES = ANKI_FIELDS.map(({name}) => name);
 
 describe('generateCardTemplate', () => {
@@ -92,11 +127,14 @@ describe('generateCardTemplate', () => {
             '<div class="ef-field ef-frequency">{{#Frequency}}Frequency: #{{Frequency}}{{/Frequency}}</div>',
         );
         expect(back).toContain(
-            '<div class="ef-field ef-word_family">{{#WordFamily}}form of {{WordFamily}}{{/WordFamily}}</div>',
-        );
-        expect(back).toContain(
             '<div class="ef-field ef-transcription">{{#Transcription}}[{{Transcription}}]{{/Transcription}}</div>',
         );
+        // The form-of label lives IN the value (buildNoteFields bakes the
+        // sender's UI language into it at send time), so WordFamily is a
+        // plain placeholder — no template-side literal to double up, and an
+        // empty value leaves nothing dangling.
+        expect(back).toContain('<div class="ef-field ef-word_family">{{WordFamily}}</div>');
+        expect(back).not.toContain('{{#WordFamily}}');
     });
 
     it('joins the footer\'s Tags · Language with a separator that needs both values', () => {
@@ -115,7 +153,8 @@ describe('generateCardTemplate', () => {
         // never a note omission — values always carry every field.
         const note = buildNoteFields(DATA, {tags: ['A2']});
         expect(Object.keys(note)).toEqual(NAMES);
-        expect(note.Definitions).toBe('To change from a solid to a liquid state.');
+        expect(note.Definitions).toContain('<details class="ef-details">');
+        expect(note.Definitions).toContain('To change from a solid to a liquid state.');
     });
 
     it('never hides Word on the front, even toggled off — its back wrapper hides as configured', () => {
@@ -138,6 +177,13 @@ describe('generateCardTemplate', () => {
         // The hide rule the toggles lean on, verbatim.
         expect(css).toContain('.card {');
         expect(css).toContain('.ef-hidden { display: none; }');
+        // The value-side structure's rules: the popup's hairline separators
+        // between per-entry blocks, the section labels and summaries, and
+        // the translations expander opening inline into its own line.
+        expect(css).toContain('.ef-entry + .ef-entry');
+        expect(css).toContain('.ef-entry-label');
+        expect(css).toContain('.ef-summary');
+        expect(css).toContain('.ef-more { display: inline; }');
     });
 });
 
@@ -149,14 +195,86 @@ describe('buildNoteFields', () => {
         expect(note.Transcription).toBe('melt');
         expect(note.PartOfSpeech).toBe('Verb');
         expect(note.Frequency).toBe('2143');
-        expect(note.Examples).toBe('The snow melted in the sun.');
-        expect(note.Etymology).toBe('From Old English meltan.');
-        expect(note.WordFamily).toBe('melt');
+        expect(note.WordFamily).toBe('form of melt');
         expect(note.Tags).toBe('A2, top-3000');
         expect(note.Familiarity).toBe('40');
         expect(note.Language).toBe('en');
         expect(note[ANKI_CARD_NAME]).toBeUndefined();
         expect(ANKI_NOTE_TYPE).toBe('ExtApp Vocabulary');
+    });
+
+    it('renders Definitions/Examples/Etymology as the popup\'s counted collapsed sections', () => {
+        const note = buildNoteFields(DATA);
+        expect(note.Definitions).toBe(
+            '<details class="ef-details"><summary class="ef-summary">Definitions (1)</summary>'
+            + '<ol class="ef-definitions-list"><li>To change from a solid to a liquid state.</li></ol></details>',
+        );
+        expect(note.Examples).toBe(
+            '<details class="ef-details"><summary class="ef-summary">Examples (1)</summary>'
+            + '<ul class="ef-examples-list"><li>The snow melted in the sun.</li></ul></details>',
+        );
+        expect(note.Etymology).toBe(
+            '<details class="ef-details"><summary class="ef-summary">Etymology (1)</summary>'
+            + '<p class="ef-etymology-item">From Old English meltan.</p></details>',
+        );
+    });
+
+    it('leaves a structured section empty when no entry has content for it', () => {
+        const note = buildNoteFields({word: 'melt', language_code: 'en', entries: [{word_class: 'Verb'}]});
+        expect(note.Definitions).toBe('');
+        expect(note.Translations).toBe('');
+        expect(note.Examples).toBe('');
+        expect(note.Etymology).toBe('');
+        expect(note.WordFamily).toBe('');
+    });
+
+    it('labels each entry\'s sections "WORD — pos" only when the payload has 2+ entries', () => {
+        const note = buildNoteFields(MULTI);
+
+        expect(note.Definitions).toContain('<span class="ef-entry-label">MELT — verb</span>');
+        expect(note.Definitions).toContain('<span class="ef-entry-label">MELTED — adjective</span>');
+        expect(note.Definitions.match(/<div class="ef-entry">/g)).toHaveLength(2);
+
+        // Only the base-word entry has examples: exactly one labeled block,
+        // and no dangling label for the entry with nothing under it.
+        expect(note.Examples.match(/<div class="ef-entry">/g)).toHaveLength(1);
+        expect(note.Examples).toContain('MELT — verb');
+        expect(note.Examples).not.toContain('MELTED — adjective');
+
+        // A single-entry word is the popup's simple case: no labels at all.
+        const single = buildNoteFields(DATA);
+        expect(single.Definitions).not.toContain('ef-entry');
+        expect(single.Examples).not.toContain('ef-entry');
+        expect(single.Etymology).not.toContain('ef-entry');
+    });
+
+    it('matches an entry\'s word to the headword case-insensitively when labeling', () => {
+        const note = buildNoteFields({
+            word: 'melted',
+            entries: [
+                {word: 'MELTED', word_class: 'Noun', definitions: ['a']},
+                {word: 'melt', word_class: 'Verb', definitions: ['b']},
+            ],
+        });
+        expect(note.Definitions).toContain('<span class="ef-entry-label">MELTED — noun</span>');
+        expect(note.Definitions).toContain('<span class="ef-entry-label">MELT — verb</span>');
+    });
+
+    it('previews the first 8 translations, expanding the rest behind "+N more…"', () => {
+        const note = buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS}]});
+        expect(note.Translations).toBe(
+            't0, t1, t2, t3, t4, t5, t6, t7'
+            + '<details class="ef-more"><summary class="ef-more-summary">+2 more…</summary>t8, t9</details>',
+        );
+
+        // At the cap the value stays a plain joined line.
+        const atCap = buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS.slice(0, 8)}]});
+        expect(atCap.Translations).toBe('t0, t1, t2, t3, t4, t5, t6, t7');
+    });
+
+    it('joins transcriptions with the popup\'s " · " separator', () => {
+        expect(buildNoteFields(MULTI).Transcription).toBe('melt · MELT');
+        expect(buildNoteFields(DATA).Transcription).toBe('melt');
     });
 
     it('narrows translations to the native language code', () => {
@@ -165,15 +283,15 @@ describe('buildNoteFields', () => {
     });
 
     it('falls back to all translations when no translation matches the code', () => {
-        expect(buildNoteFields(DATA, {nativeLanguage: 'de'}).Translations).toBe('таять<br>таяць');
-        expect(buildNoteFields(DATA, {}).Translations).toBe('таять<br>таяць');
+        expect(buildNoteFields(DATA, {nativeLanguage: 'de'}).Translations).toBe('таять, таяць');
+        expect(buildNoteFields(DATA, {}).Translations).toBe('таять, таяць');
     });
 
     it('compares language codes — a numeric native_language_id matches nothing (ADR 0077)', () => {
         // Settings store user_settings.native_language_id; passing the id
         // where the code belongs silently degrades to the all-translations
         // fallback instead of erroring — convert at the boundary.
-        expect(buildNoteFields(DATA, {nativeLanguage: 1}).Translations).toBe('таять<br>таяць');
+        expect(buildNoteFields(DATA, {nativeLanguage: 1}).Translations).toBe('таять, таяць');
     });
 
     it('renders an empty Tags field for an empty tags payload', () => {
@@ -181,14 +299,48 @@ describe('buildNoteFields', () => {
         expect(buildNoteFields(DATA).Tags).toBe('');
     });
 
-    it('escapes HTML in field values', () => {
+    it('takes summary, expander, and form-of wording from the labels parameter', () => {
+        const labels = {
+            definitions: (count) => `Определения (${count})`,
+            examples: (count) => `Примеры (${count})`,
+            etymology: (count) => `Этимология (${count})`,
+            more: (count) => `ещё ${count}…`,
+            formOf: 'форма слова',
+        };
+        const note = buildNoteFields(MULTI, {labels});
+        expect(note.Definitions).toContain('<summary class="ef-summary">Определения (2)</summary>');
+        expect(note.Examples).toContain('<summary class="ef-summary">Примеры (1)</summary>');
+        expect(note.Etymology).toContain('<summary class="ef-summary">Этимология (1)</summary>');
+        expect(note.WordFamily).toBe('форма слова melt');
+        expect(buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS}]}, {labels}).Translations)
+            .toContain('<summary class="ef-more-summary">ещё 2…</summary>');
+
+        // English defaults when the sender passes nothing.
+        const plain = buildNoteFields(DATA);
+        expect(plain.Definitions).toContain('Definitions (1)');
+        expect(plain.WordFamily).toBe('form of melt');
+    });
+
+    it('escapes HTML in field values — payload text, never the trusted label wording', () => {
         const note = buildNoteFields({
             word: '<b>melted</b>',
             language_code: 'en',
-            entries: [{definitions: ['a & "b" <c>']}],
+            form_of: ['m&elt'],
+            entries: [
+                {
+                    word: '<i>melt</i>',
+                    word_class: 'Verb',
+                    definitions: ['a & "b" <c>'],
+                    translations: [{word: '<таять>'}],
+                },
+                {word: 'other', word_class: 'Noun', definitions: ['d']},
+            ],
         });
         expect(note.Word).toBe('&lt;b&gt;melted&lt;/b&gt;');
-        expect(note.Definitions).toBe('a &amp; &quot;b&quot; &lt;c&gt;');
+        expect(note.Definitions).toContain('<li>a &amp; &quot;b&quot; &lt;c&gt;</li>');
+        expect(note.Definitions).toContain('<span class="ef-entry-label">&lt;I&gt;MELT&lt;/I&gt; — verb</span>');
+        expect(note.Translations).toContain('&lt;таять&gt;');
+        expect(note.WordFamily).toBe('form of m&amp;elt');
     });
 });
 
@@ -209,6 +361,21 @@ describe('renderCardHtml', () => {
         expect(html).toContain('<span class="ef-footer-sep"> · </span>');
         expect(html).not.toContain('{{#');
         expect(html).not.toContain('{{/');
+    });
+
+    it('renders the structured values untouched — labels, details, and expander survive substitution', () => {
+        const {back} = generateCardTemplate({});
+        const html = renderCardHtml(back, buildNoteFields(MULTI, {familiarity: 40, tags: ['A2']}));
+        expect(html).toContain('<span class="ef-entry-label">MELT — verb</span>');
+        expect(html).toContain('<details class="ef-details"><summary class="ef-summary">Definitions (2)</summary>');
+        expect(html).toContain('[melt · MELT]');
+
+        const expanded = renderCardHtml(
+            back,
+            buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS}]}, {tags: ['A2']}),
+        );
+        expect(expanded)
+            .toContain('<details class="ef-more"><summary class="ef-more-summary">+2 more…</summary>t8, t9</details>');
     });
 
     it('drops a conditional line entirely when its field is empty — no dangling prefix', () => {

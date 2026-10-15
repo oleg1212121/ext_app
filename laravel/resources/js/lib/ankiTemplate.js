@@ -14,10 +14,16 @@
 // muted Tags · Language footer. Meta lines whose value carries literal
 // decoration sit inside Anki-native `{{#Field}}…{{/Field}}` conditionals, so
 // an empty field drops the whole line (renderCardHtml does the same for the
-// tab's preview). One rule breaks the hide symmetry: the Front NEVER hides
-// Word — hiding it would blank the card's face — and Word's toggle keeps
-// hiding its Back wrapper. Nothing in this module touches Anki — the
-// template push and sample card reuse these artifacts from lib/ankiSync.js.
+// tab's preview); the form-of line needs none — its localized label is part
+// of the value. The values themselves carry the popup's structure: per-entry
+// "WORD — pos" labels for multi-entry words, counted <details> sections for
+// Definitions/Examples/Etymology, the translations preview behind a
+// "+N more…" expander — with the UI-language summary/label wording baked in
+// at send time via the labels option (English defaults). One rule breaks the
+// hide symmetry: the Front NEVER hides Word — hiding it would blank the
+// card's face — and Word's toggle keeps hiding its Back wrapper. Nothing in
+// this module touches Anki — the template push and sample card reuse these
+// artifacts from lib/ankiSync.js.
 
 // Settings key → Anki note-type field name, in the note type's fixed field
 // order (must stay in lockstep with App\Support\AnkiSettings::FIELDS).
@@ -45,11 +51,13 @@ const HIDDEN_CLASS = 'ef-hidden'
 // brackets) wrap the whole line in an Anki-native conditional block: an
 // empty field drops the line entire instead of leaving a dangling
 // "Frequency: #" or "[]" on the card. The wording mirrors the popup's
-// English strings (database/seeders/ui-strings/words.php).
+// English strings (database/seeders/ui-strings/words.php). WordFamily needs
+// no conditional: its localized "form of" label is part of the VALUE
+// (buildNoteFields bakes it at send time), so an empty field renders an
+// empty placeholder — nothing dangles.
 const META_LINES = {
     familiarity: (name) => `{{#${name}}}Familiarity: {{${name}}}/100{{/${name}}}`,
     frequency: (name) => `{{#${name}}}Frequency: #{{${name}}}{{/${name}}}`,
-    word_family: (name) => `{{#${name}}}form of {{${name}}}{{/${name}}}`,
     transcription: (name) => `{{#${name}}}[{{${name}}}]{{/${name}}}`,
 }
 
@@ -155,6 +163,60 @@ const TEMPLATE_CSS = `.card {
     font-size: 0.857em;
 }
 
+/* Value-side structure (buildNoteFields bakes these classes into the field
+   values): the popup's per-entry blocks — its label type and hairline
+   section rules — the tap-to-open counted summaries, and the translations
+   "+N more…" expander, an inline <details> so it opens into the same
+   line instead of breaking the joined list. */
+.ef-entry + .ef-entry {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--ef-hairline);
+}
+.ef-entry-label {
+    display: block;
+    margin-bottom: 4px;
+    /* The popup sizes section labels at 0.786em of the card; the label sits
+       inside the section's 0.857em context, so compensate (0.786/0.857). */
+    font-size: 0.917em;
+    letter-spacing: 0.05em;
+    opacity: 0.6;
+}
+.ef-summary {
+    margin-top: 2px;
+    cursor: pointer;
+    list-style: none;
+    opacity: 0.7;
+}
+.ef-summary::-webkit-details-marker { display: none; }
+.ef-definitions-list {
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: decimal inside;
+    font-size: 0.929em;
+    line-height: 1.375;
+}
+.ef-definitions-list li + li { margin-top: 4px; }
+.ef-examples-list {
+    margin: 4px 0 0 16px;
+    padding: 0;
+    list-style: disc;
+    font-style: italic;
+    opacity: 0.8;
+}
+.ef-examples-list li + li { margin-top: 2px; }
+.ef-etymology-item {
+    margin: 4px 0 0;
+    font-style: italic;
+    opacity: 0.75;
+}
+.ef-more { display: inline; }
+.ef-more .ef-summary {
+    margin: 0 4px;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
 /* The muted footer line: Tags · Language. */
 .ef-tags, .ef-language, .ef-footer-sep {
     font-size: 0.786em;
@@ -225,35 +287,129 @@ const escapeHtml = (value) => String(value)
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
 
-// Sentence-sized lists stack vertically; short inline values join compactly.
-const listValue = (values) => values.filter(Boolean).map(escapeHtml).join('<br>')
+// Short inline values join compactly.
 const inlineValue = (values) => values.filter(Boolean).map(escapeHtml).join(', ')
 
 const distinct = (values) => [...new Set(values)]
 
+// --- Value-side structure: the popup's dictionary body ----------------------
+
+// The popup's translations preview cap (WordPopup's TRANSLATIONS_PREVIEW).
+const TRANSLATIONS_PREVIEW = 8
+
+// English default wording for the value-side labels — the popup's own
+// strings (database/seeders/ui-strings/words.php). Senders (the word popup's
+// send, the Anki tab) pass their UI language's strings through the `labels`
+// option; the wording is baked into the note values at send time (spec), so
+// the template stays language-free and deterministic. Trusted app strings —
+// never escaped, exactly like the template's literal prefixes.
+const DEFAULT_LABELS = {
+    definitions: (count) => `Definitions (${count})`,
+    examples: (count) => `Examples (${count})`,
+    etymology: (count) => `Etymology (${count})`,
+    more: (count) => `+${count} more…`,
+    formOf: 'form of',
+}
+
+// The popup's per-entry section label (WordPopup's sectionLabel, ADR 0045):
+// headword uppercase, POS lowercase, em dash — "MELT — verb" for a
+// base-word entry, the headword's own form for its matching entry. An
+// entry belongs to the headword when its word matches (case-insensitively)
+// or is absent. Data-derived text, so it is escaped like every payload value.
+const entryMatchesHeadword = (entry, headword) =>
+    !entry.word || entry.word.toLowerCase() === String(headword ?? '').toLowerCase()
+
+const entryLabel = (entry, headword) => [
+    String(entryMatchesHeadword(entry, headword) ? headword : entry.word ?? '').toUpperCase(),
+    entry.word_class?.toLowerCase(),
+].filter(Boolean).map(escapeHtml).join(' — ')
+
+// One tap-to-open counted section, the popup's <details> summary.
+const countedSection = (summary, content) =>
+    `<details class="ef-details"><summary class="ef-summary">${summary}</summary>${content}</details>`
+
+const listItems = (items) => items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
+
+// The popup's per-entry blocks for one field: only entries carrying content
+// render (no dangling label over nothing), each wrapped with its
+// "WORD — pos" label when the payload has 2+ entries — a single-entry word
+// gets the popup's simple unlabeled case.
+const entrySections = (entries, headword, labeled, render) => entries
+    .map((entry) => {
+        const section = render(entry)
+        if (section === null) {
+            return null
+        }
+        const label = labeled ? entryLabel(entry, headword) : null
+        return label
+            ? `<div class="ef-entry"><span class="ef-entry-label">${label}</span>${section}</div>`
+            : section
+    })
+    .filter(Boolean)
+    .join('\n')
+
+// The localized "form of" label is part of the VALUE, so the template needs
+// no literal (and no conditional): an empty list yields an empty value and
+// the meta line disappears whole.
+const formOfValue = (forms, formOf) => {
+    const list = forms.filter(Boolean).map(escapeHtml).join(', ')
+    return list === '' ? '' : `${formOf} ${list}`
+}
+
 // Build the complete 12-field note from a word payload (the GET /words/{word}
-// shape) — exactly what the send-to-Anki tickets will put on the wire. Every
-// field gets a value, toggles or not: hide-class semantics mean the template,
+// shape) — exactly what the send-to-Anki paths put on the wire. Every field
+// gets a value, toggles or not: hide-class semantics mean the template,
 // never an omission, hides content. `nativeLanguage` (a language code) narrows
 // Translations to the user's native language, falling back to all
-// translations when none match (or nothing was passed).
-export function buildNoteFields(data, {familiarity = null, tags = [], nativeLanguage = null} = {}) {
+// translations when none match (or nothing was passed). `labels` carries the
+// sender's UI-language summary/expander/form-of strings (English defaults).
+export function buildNoteFields(data, {familiarity = null, tags = [], nativeLanguage = null, labels = {}} = {}) {
     const entries = data?.entries ?? []
+    const word = data?.word ?? ''
+    const wording = {...DEFAULT_LABELS, ...labels}
+
+    // 2+ dictionary entries get the popup's per-entry section labels.
+    const labeled = entries.length >= 2
+
     const translations = entries.flatMap((entry) => entry.translations ?? [])
     const native = nativeLanguage
         ? translations.filter((translation) => translation.language_code === nativeLanguage)
         : []
+    const words = (native.length ? native : translations).map((translation) => translation.word)
+    const previewed = words.slice(0, TRANSLATIONS_PREVIEW).map(escapeHtml).join(', ')
+    const rest = words.slice(TRANSLATIONS_PREVIEW)
 
     return {
-        Word: escapeHtml(data?.word ?? ''),
-        Transcription: inlineValue(distinct(entries.flatMap((entry) => (entry.transcriptions ?? []).map((t) => t.value)))),
+        Word: escapeHtml(word),
+        Transcription: distinct(entries.flatMap((entry) => (entry.transcriptions ?? []).map((t) => t.value)))
+            .map(escapeHtml).join(' · '),
         PartOfSpeech: inlineValue(distinct(entries.map((entry) => entry.word_class))),
         Frequency: data?.frequency == null ? '' : escapeHtml(data.frequency),
-        Definitions: listValue(entries.flatMap((entry) => entry.definitions ?? [])),
-        Translations: listValue((native.length ? native : translations).map((translation) => translation.word)),
-        Examples: listValue(entries.flatMap((entry) => entry.examples ?? [])),
-        Etymology: listValue(entries.flatMap((entry) => entry.etymologies ?? [])),
-        WordFamily: inlineValue(data?.form_of ?? []),
+        Definitions: entrySections(entries, word, labeled, (entry) => {
+            const items = entry.definitions ?? []
+            return items.length === 0 ? null : countedSection(
+                wording.definitions(items.length),
+                `<ol class="ef-definitions-list">${listItems(items)}</ol>`,
+            )
+        }),
+        Translations: rest.length === 0
+            ? previewed
+            : `${previewed}<details class="ef-more"><summary class="ef-more-summary">${wording.more(rest.length)}</summary>${rest.map(escapeHtml).join(', ')}</details>`,
+        Examples: entrySections(entries, word, labeled, (entry) => {
+            const items = entry.examples ?? []
+            return items.length === 0 ? null : countedSection(
+                wording.examples(items.length),
+                `<ul class="ef-examples-list">${listItems(items)}</ul>`,
+            )
+        }),
+        Etymology: entrySections(entries, word, labeled, (entry) => {
+            const items = entry.etymologies ?? []
+            return items.length === 0 ? null : countedSection(
+                wording.etymology(items.length),
+                items.map((item) => `<p class="ef-etymology-item">${escapeHtml(item)}</p>`).join(''),
+            )
+        }),
+        WordFamily: formOfValue(data?.form_of ?? [], wording.formOf),
         Tags: inlineValue(tags),
         Familiarity: familiarity == null ? '' : escapeHtml(familiarity),
         Language: escapeHtml(data?.language_code ?? ''),
