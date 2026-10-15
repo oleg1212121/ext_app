@@ -5869,3 +5869,29 @@ sends only add; Anki ops are never server-initiated) — cross-linking
 duplicating them, and linked from `wiki/index.md`. Both linked concepts
 gained ADR 0077 source entries + inline pointers with stamp bumps.
 `wiki:validate` → 0 warnings; `WikiTest` green.
+
+## 2026-10-15 (retro-fixes 05: AGENTS.md vitest guardrail + researcher source-citation rule)
+
+From the anki-connection session retro (2026-10-14), finding #1: AGENTS.md's
+Testing section listed only Pest and pytest while `laravel/package.json`
+ships `"test": "vitest run"`, CI gates it (`.github/workflows/tests.yml`
+"Vitest (pure JS logic)" job), 11 `*.test.{js,mjs}` files live beside the
+modules in `resources/js/lib/`, and `running-tests.md` documented all of it
+— so planning sessions that (correctly) trust AGENTS.md as the command
+surface concluded JS had no test infra, and the anki feature's JS modules
+got ad-hoc Node smoke runs instead of real vitest tests. AGENTS.md now has
+the **JS logic tests (vitest)** block: `npm run test` in the container,
+tests beside modules, Node-only per ADR 0066, "new lib modules get vitest
+tests, same as Pest for PHP", CI job pointer. Finding #6: the retro's
+AnkiConnect research recorded pre-2022 `updateModelTemplates` /
+`updateModelStyling` shapes from search summaries; the implementer caught it
+only by reading the plugin source. `.zcode/agents/researcher.md` (machine-
+local, gitignored) gains a rule: external-API request/response shapes must
+be verified against official docs or upstream source, with the URL cited in
+the notes. Finding #3 ($high agent-model pins "uncommitted") closed as a
+false premise — `.zcode/` is gitignored by design, the pins persist on
+disk, and future sessions read agent definitions at start; nothing to
+commit. AGENTS.md is not a wiki concept, so no concept stamps change;
+tickets 06–09 for the remaining findings (#2 ESLint, #4 popup-sections
+mirror test, #5 WordClassSeederTest ordering flake, #1-follow-up anki
+vitest port) live in `.scratch/retro-fixes/`.

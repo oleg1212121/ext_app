@@ -137,6 +137,16 @@ Test database: `ext_app_test` (configured in phpunit.xml, not the default).
 docker exec ext_python python -m pytest /app/ai -q
 ```
 
+**JS logic tests (vitest)** — pure JS modules in `resources/js/lib/` are
+covered by vitest tests beside them (`*.test.js` / `*.test.mjs`, Node
+environment, no Vite build — ADR 0066). New lib modules get vitest tests,
+same as Pest for PHP. CI gates them via the "Vitest (pure JS logic)" job in
+`.github/workflows/tests.yml`:
+
+```bash
+docker exec ext_app_laravel npm run test
+```
+
 ### Database
 
 > **⚠️ DESTRUCTIVE COMMAND WARNING**
