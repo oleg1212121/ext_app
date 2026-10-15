@@ -5938,3 +5938,31 @@ TokenizerParityTest green). The 51→81 warnings (17 unused legacy `import React
 destructuring leftovers, exhaustive-deps stability nags) are review signal, deliberately not
 mass-fixed. `running-tests.md` gains the lint command + rule-tier contract and an
 `eslint.config.js` source, `generated.at` bumped.
+
+## 2026-10-15 (retro-fixes 08: anki JS modules vitest port — the ad-hoc Node smoke runs become real tests)
+
+Follow-up to the anki-connection retro's finding #1: that session believed JS had no test infra
+(false — vitest, 11 existing `lib/*.test.{js,mjs}`, CI `frontend` job) and verified
+`ankiConnect.js` / `ankiTemplate.js` / `ankiSync.js` with ad-hoc Node smoke runs that are gone the
+moment they end — though they earned their keep (ticket 03's caught the missing `deckNames` import
+the Vite build missed). Landed three colocated specs transcribing the recorded smoke scenarios:
+`ankiTemplate.test.js` (12 tests: byte-determinism, Front = Word + Transcription only, hide-class
+back wrappers vs all-twelve `buildNoteFields` values (ADR 0077 semantics), the Front-never-hides-Word
+exception, native-language CODE filter with all-translations fallback — including the numeric
+`native_language_id` silent-degrade trap from ADR 0077's Consequences, HTML escaping,
+`{{Field}}` substitution), `ankiConnect.test.js` (19 tests: endpoint defaults/trimming/coercion,
+invoke's JSON POST shape + the three failure normalizations into `AnkiConnectError` kinds, and one
+representative wire-shape assert per action wrapper — including the nested `model:{name,
+templates:{card:{Front,Back}}}` objects ticket 03 corrected against the plugin source),
+`ankiSync.test.js` (11 tests: cold-ensure create wire shape, memoization + memo-miss by deck,
+`{force: true}` re-push with hide classes baked, both mismatch kinds after exactly the probe calls,
+first-send find-before-add query + 12-field `allowDuplicate: false` addNote, duplicate/foreign-model
+skips, memoized second word, raw-word guard). Modules untouched. Testing-pattern lessons recorded in
+`running-tests.md`: `vi.stubGlobal('fetch', …)` for the request/response client, and for a module
+with module-level memo state (ankiSync's `ensured` Set) use static single-generation imports with a
+unique endpoint|deck key per test — `vi.resetModules()` + dynamic import mints fresh error classes
+that break `instanceof`, and a per-test config counter that resets makes every test re-mint the
+first test's memoized key (ensures silently become memo hits); reuse one config object within a
+test to exercise the shared-session memo. Suite 52→94 tests, all green; `npm run lint` exit 0 (new
+files add no warnings); pint PASS; `anki-export.md` + `running-tests.md` mention the pins,
+`generated.at` bumped on both; no routes/models/commands touched, no `wiki:sync` needed.

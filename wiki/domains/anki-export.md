@@ -4,7 +4,7 @@ title: Anki Export
 description: The path from saved words to the user's desktop Anki — per-user connection settings and card-field toggles on the profile's Anki tab, a deterministic card template with hide-class semantics, one-click template sync into Anki, and duplicate-checked per-word sends from the word popup, all driven browser-side through AnkiConnect (ADR 0077).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T15:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T23:45:00+03:00 }
 sources:
   - id: adr
@@ -81,7 +81,11 @@ sources below).
    the real generated artifacts in a sandboxed iframe with copy buttons.
    The twelve-field list and the connection defaults live canonically in
    `AnkiSettings` (PHP) mirrored by hand into the JS modules — a lockstep
-   pinned by `tests/Unit/AnkiSettingsMirrorTest.php`.
+   pinned by `tests/Unit/AnkiSettingsMirrorTest.php`, with the JS side's
+   template semantics, AnkiConnect wire shapes, and ensure/send orchestration
+   pinned executable by the colocated vitest specs
+   (`resources/js/lib/ankiTemplate.test.js`, `ankiConnect.test.js`,
+   `ankiSync.test.js` — stubbed fetch, Node only).
 3. **Template sync** — one browser-side ensure pass: deck
    create-if-missing, the app-owned "ExtApp Vocabulary" note type
    create-if-missing (twelve fields, fixed order, "Recognition" card), and

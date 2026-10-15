@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T10:30:26+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T15:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: phpunit
@@ -136,8 +136,11 @@ sources:
 * `docker exec ext_app_laravel npm run test` (= `vitest run`) executes
   `resources/js/**/*.test.{js,mjs}` in Node. The suite pins pure `lib/`
   modules only (SSE parsing, payload mapping, clamps, position store, error
-  chains) — **no jsdom, no React/component tests**: pages and hooks are
-  wiring, covered by Pest and manual verification (ADR 0066).
+  chains, and the anki JS trio — wire-shape client, template generator, sync
+  orchestration, exercised with `vi.stubGlobal('fetch', …)` since the
+  browser-side AnkiConnect client is pure request/response logic) — **no
+  jsdom, no React/component tests**: pages and hooks are wiring, covered by
+  Pest and manual verification (ADR 0066).
 * `vitest.config.js` is standalone and deliberately does NOT load the
   laravel-vite plugin or the app's `vite.config.js` — keep it that way, or
   the suite becomes a build.
@@ -149,6 +152,15 @@ sources:
   (`resources/js/lib/*.test.*`). When extracting logic from a page, put the
   pure part in `lib/` (`.mjs` if it must stay framework-free) so it has a
   home to test in.
+* A module with its own memo cache (e.g. `lib/ankiSync.js` memoizes ensures
+  in a module-level Set) is tested with static single-generation imports and
+  a unique memo key per test, NOT `vi.resetModules()` + dynamic import:
+  re-evaluating the module chain per test mints fresh error classes, so
+  `instanceof` against the test file's static imports fails, and a per-test
+  port/config counter that resets re-mints keys an earlier test already
+  memoized (ensures silently become memo hits). Reuse one config object
+  within a test to exercise the shared-session memo; mint a fresh one for a
+  cold session.
 
 # Frontend static analysis (ESLint, correctness only)
 
