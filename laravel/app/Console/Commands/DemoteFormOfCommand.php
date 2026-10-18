@@ -92,6 +92,13 @@ class DemoteFormOfCommand extends Command
 
     public function handle(): int
     {
+        // The relay map keeps the whole language's vocabulary in memory until
+        // the stream ends (the raw-wiktextract importer flushes batches, this
+        // command cannot), and single decoded dump lines can spike past the
+        // CLI default of 128M mid-scan.
+        ini_set('memory_limit', '2G');
+        set_time_limit(0);
+
         $langCode = (string) $this->option('lang');
         $language = $langCode === ''
             ? null

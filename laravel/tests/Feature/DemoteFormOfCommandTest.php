@@ -191,6 +191,26 @@ it('rejects an unknown language', function () {
     expect(demoteSnapshot())->toBe($before);
 });
 
+it('raises the memory ceiling above the CLI default before any scan work', function () {
+    // The relay map holds the whole language's vocabulary in memory, so the
+    // command must lift the 128M CLI default itself — the raw-wiktextract
+    // importer precedent. Probed through the fast unknown-language failure
+    // path: the bump precedes every other statement in handle().
+    $original = ini_get('memory_limit');
+    ini_set('memory_limit', '128M');
+
+    try {
+        $this->artisan('wiktionary:demote-form-of', [
+            '--lang' => 'xx',
+            '--file' => __DIR__.'/../Fixtures/kaikki-demote-form-of.jsonl',
+        ])->assertFailed();
+
+        expect(ini_get('memory_limit'))->toBe('2G');
+    } finally {
+        ini_set('memory_limit', $original);
+    }
+});
+
 it('rejects a missing dump file', function () {
     $this->artisan('wiktionary:demote-form-of', [
         '--lang' => 'ru',
