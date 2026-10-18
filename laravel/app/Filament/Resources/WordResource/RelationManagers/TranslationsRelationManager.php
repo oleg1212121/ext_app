@@ -2,13 +2,18 @@
 
 namespace App\Filament\Resources\WordResource\RelationManagers;
 
+use App\Models\Form;
 use App\Models\Language;
 use App\Models\Word;
 use App\Models\WordClass;
 use App\Models\WordTranslation;
+use App\Support\LemmaForms;
+use App\Support\StressMarks;
+use App\Support\WordLookupKey;
 use Filament\Actions;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Tables\Columns\TextColumn;
@@ -83,12 +88,17 @@ class TranslationsRelationManager extends RelationManager
                     ->searchable()
                     ->required()
                     ->getSearchResultsUsing(function (string $search, RelationManager $livewire): array {
+                        // The stored l_word key is the shared normalization
+                        // (lowercase, no combining marks): a stressed search
+                        // string must resolve against it too.
+                        $key = WordLookupKey::normalize($search);
+
                         return Word::query()
                             ->where('language_id', '!=', $livewire->getOwnerRecord()->language_id)
-                            ->where(function (Builder $query) use ($search): void {
+                            ->where(function (Builder $query) use ($search, $key): void {
                                 $query
                                     ->where('word', 'like', "%{$search}%")
-                                    ->orWhere('l_word', 'like', "%{$search}%");
+                                    ->orWhere('l_word', 'like', "%{$key}%");
                             })
                             ->with(['language', 'wordClass'])
                             ->orderBy('word')
@@ -127,7 +137,7 @@ class TranslationsRelationManager extends RelationManager
             ->action(function (array $data, RelationManager $livewire): void {
                 WordTranslation::link((int) $livewire->getOwnerRecord()->getKey(), (int) $data['translation_word_id']);
 
-                \Filament\Notifications\Notification::make()
+                Notification::make()
                     ->title('Translation linked.')
                     ->success()
                     ->send();
@@ -165,18 +175,33 @@ class TranslationsRelationManager extends RelationManager
                     ->required(),
             ])
             ->action(function (array $data, RelationManager $livewire): void {
+                // The shared creator hygiene: the display word stores plain
+                // (no combining stress marks for ru/be/uk), the lookup key
+                // goes through WordLookupKey, and the created word carries
+                // itself as its lemma form.
+                $language = Language::query()->findOrFail($data['language_id']);
+                $stripsMarks = StressMarks::stripsFor((string) $language->code);
+                $display = $stripsMarks ? StressMarks::strip($data['word']) : $data['word'];
+
                 $target = Word::query()->firstOrCreate(
                     [
-                        'word' => $data['word'],
+                        'word' => $display,
                         'language_id' => $data['language_id'],
                         'word_class_id' => $data['word_class_id'],
                     ],
-                    ['l_word' => mb_strtolower($data['word'])],
+                    ['l_word' => WordLookupKey::normalize($data['word'])],
                 );
+
+                if ($target->wasRecentlyCreated) {
+                    Form::upsert(
+                        LemmaForms::rows($target->word, [], $target->id, $stripsMarks),
+                        ['form', 'word_id'],
+                    );
+                }
 
                 WordTranslation::link((int) $livewire->getOwnerRecord()->getKey(), (int) $target->getKey());
 
-                \Filament\Notifications\Notification::make()
+                Notification::make()
                     ->title($target->wasRecentlyCreated
                         ? "Created word «{$target->word}» and linked it as a translation."
                         : "Linked the existing word «{$target->word}».")

@@ -2,11 +2,15 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Form;
 use App\Models\Language;
 use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\Word;
 use App\Models\WordClass;
+use App\Support\LemmaForms;
+use App\Support\StressMarks;
+use App\Support\WordLookupKey;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -63,6 +67,8 @@ class ImportCmudictCommand extends Command
 
     private int $unknownClassId;
 
+    private bool $stripsMarks;
+
     public function handle(): int
     {
         $file = $this->argument('file');
@@ -86,6 +92,7 @@ class ImportCmudictCommand extends Command
             ['language_id' => $this->langId, 'slug' => 'ipa'],
             ['title' => 'IPA', 'description' => 'International Phonetic Alphabet'],
         )->id;
+        $this->stripsMarks = StressMarks::stripsFor((string) $language->code);
 
         $unknownClass = WordClass::query()
             ->where('language_id', $this->langId)
@@ -250,6 +257,10 @@ class ImportCmudictCommand extends Command
      * carrying a ˈ-marked IPA transcription are left untouched (Kaikki wins
      * where it has stress data). Rows with only unstressed IPA still gain
      * the CMUdict variants — the hint query orders ˈ-bearing variants first.
+     * An l_word with an existing row never mints a second (unknown-class
+     * twin) row — the transcription attaches to what is there; only truly
+     * absent l_words create a row, through the shared display-strip and
+     * lemma-form conventions.
      *
      * @param  array<string, list<string>>  $entries
      * @param  array<string, int>  $stats
@@ -262,15 +273,15 @@ class ImportCmudictCommand extends Command
             ->where('language_id', $this->langId)
             ->whereIn('l_word', $keys)
             ->orderBy('id')
-            ->get(['id', 'l_word'])
+            ->get(['id', 'word', 'l_word'])
             ->groupBy('l_word');
 
         $missing = array_diff($keys, $byLWord->keys()->all());
 
         if ($missing !== []) {
             $rows = array_map(fn (string $word) => [
-                'word' => $word,
-                'l_word' => $word,
+                'word' => $this->stripsMarks ? StressMarks::strip($word) : $word,
+                'l_word' => WordLookupKey::normalize($word),
                 'language_id' => $this->langId,
                 'word_class_id' => $this->unknownClassId,
             ], $missing);
@@ -285,8 +296,21 @@ class ImportCmudictCommand extends Command
                 ->where('language_id', $this->langId)
                 ->whereIn('l_word', $missing)
                 ->orderBy('id')
-                ->get(['id', 'l_word'])
+                ->get(['id', 'word', 'l_word'])
                 ->groupBy('l_word');
+
+            // Every new row is a dictionary headword: it carries itself as
+            // its lemma form through the shared helper.
+            $formRows = [];
+            foreach ($created as $group) {
+                foreach ($group as $word) {
+                    array_push($formRows, ...LemmaForms::rows($word->word, [], $word->id, $this->stripsMarks));
+                }
+            }
+            if ($formRows !== []) {
+                Form::upsert($formRows, ['form', 'word_id']);
+            }
+
             // Plain collect: Eloquent::merge would re-key by model getKey.
             $byLWord = collect(array_merge($byLWord->all(), $created->all()));
         }

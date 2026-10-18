@@ -6789,3 +6789,33 @@ end-to-end test now asserts the prune contract (fully-matched words store null).
 `domains/dictionary-import.md` (command bullet + linking-differs paragraph + source title),
 `database/dictionary.md` (words.translations flow bullet), `generated.at` bumped; `wiki:validate`
 passes. Manual command — run after populating all languages.
+
+## 2026-10-18 (dictionary-word-purity 08: duplicate prevention at the remaining creators)
+
+The two creators still minting `unknown`-class twins of classed rows (uniqueness is
+`(word, language_id, word_class_id)` — 2,954 twins in the dev data) now resolve against the
+language's existing `l_word`s and only create when nothing matches. `dictionary:import-cmudict`
+already attached transcriptions to existing same-`l_word` rows; its creation path now goes through
+the shared conventions — plain display word (`StressMarks` strip on the shared path, a no-op for
+en), `App\Support\WordLookupKey` key and the `App\Support\LemmaForms` lemma form, so a
+cmudict-created word carries itself as its form like every imported word. `EntityWordAdoption`
+replaced the raw-token `firstOrCreate` (which matched on the surface string and class, so a token
+whose `l_word` the dictionary already carried minted a twin): adoption attaches to the EXISTING
+same-`l_word` row — first non-unknown-class row in id order, else the lowest id — via one batched
+candidates query per 500-token chunk (the pass runs inside `crossword:refresh`); a genuinely new
+token creates one row with a plain display word (combining stress marks stripped off the raw surface
+for ru/be/uk, casing kept) and its lemma form, and a marks-only token stays stamped instead of
+storing a junk row. Filament joins the contract: the Word page's "Create word & link" strips the
+display word for ru/be/uk (a stressed input reuses the existing plain row), normalizes `l_word`
+through `WordLookupKey` instead of a bare `mb_strtolower`, adds the lemma form on create, and its
+word search matches the normalized key; the Forms relation manager strips the display form for the
+stress-mark languages and autofills a blank `l_word` through the same key (create + edit). Tests:
+`CmudictImportTest` (attach-to-existing with no twin, lemma form on create, re-run idempotent),
+`AdoptEntityWordsTest` (lemma form, existing-row adoption preferring the classed row over a
+lower-id unknown, plain ru display + lemma form), `Filament/WordTranslationsRelationManagerTest`
+(normalized key + lemma form; stressed input collapses into the plain row),
+`Filament/WordFormsRelationManagerTest` (new file — normalized key autofill, ru form strip, en
+create/edit). Targeted suites green (20 + 36), `composer run test:tia` green (1272). Wiki:
+`domains/dictionary-import.md` (new "Creator hygiene" section + sources), `domains/crossword.md`
+and `domains/interactive-words.md` (adoption attach-don't-twin semantics), `generated.at` bumped;
+no routes/models/commands signatures touched, no `wiki:sync` needed; `wiki:validate` passes.

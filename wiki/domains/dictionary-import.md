@@ -1,12 +1,12 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; both importers store plain (stress-free) display words, share one pos alias table and one lemma-form rule, kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059).
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; both importers store plain (stress-free) display words, share one pos alias table and one lemma-form rule, kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions.
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T15:25:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-18T15:25:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -47,6 +47,12 @@ sources:
   - id: form-of-classifier
     resource: laravel/app/Classes/Wiktionary/FormOfClassifier.php
     title: parser-agnostic kaikki form-of relay verdict (entry-shape in → relay + base out)
+  - id: cmudict-cmd
+    resource: laravel/app/Console/Commands/ImportCmudictCommand.php
+    title: dictionary:import-cmudict (attach-to-existing, plain + lemma form on create)
+  - id: adoption
+    resource: laravel/app/Classes/EntityWordAdoption.php
+    title: EntityWordAdoption (adopts existing l_word rows; new tokens store plain + lemma form)
   - id: reclass-cmd
     resource: laravel/app/Console/Commands/ReclassMultiwordWordsCommand.php
     title: words:reclass-multiword
@@ -338,6 +344,42 @@ write the same staged-JSON contract (`App\Support\StagedTranslations`:
 exact stored strings, union-merge in, prune-on-link out) and resolve
 through the same `App\Support\TranslationTargets` semantics, as does the
 popup auto-fetch job.
+
+# Creator hygiene (no unknown-class twins)
+
+Word uniqueness is `(word, language_id, word_class_id)`, so a same-`l_word`
+row under a different class is a second row — an `unknown`-class twin of a
+properly classed word (2,954 of them in the 2026-10-18 dev data, minted by
+the cmudict import running before kaikki and by entity adoption). Every
+remaining creator resolves against the language's existing `l_word`s and
+only mints a row when nothing matches:
+
+* `dictionary:import-cmudict` looks each batch headword up by `l_word`
+  first: the transcription attaches to the row(s) already there (every
+  row without a ˈ-marked IPA gains it — the entity link may point at any
+  class row of a homonym), and only an `l_word` no row carries creates a
+  word row — through the shared conventions: plain display word
+  (`StressMarks` strip on the shared path), `WordLookupKey` key and the
+  `LemmaForms` lemma form (a cmudict-created word carries itself as its
+  form).
+* `EntityWordAdoption` (the crossword refresh chain, one batched
+  candidates query per 500-token chunk) attaches a stamped token to the
+  EXISTING same-`l_word` row of the language when one exists — the first
+  non-unknown-class row in id order, else the lowest id, never a new
+  `unknown` twin. Only a genuinely new token creates a row: class
+  `unknown`, a plain display word (the combining stress marks leave the
+  raw surface token for ru/be/uk; casing stays) that carries itself as its
+  lemma form. A token that is nothing but combining marks stays stamped
+  instead of storing a junk row.
+* Filament's manual creators join the same contract. The Word page's
+  "Create word & link" (Translations relation manager) strips the display
+  word for ru/be/uk (a stressed input reuses the existing plain row),
+  normalizes `l_word` through `WordLookupKey` instead of a bare
+  `mb_strtolower`, adds the lemma form on create, and its word search
+  matches the normalized key so a stressed query still finds the plain
+  row; the Forms relation manager strips the display form for the
+  stress-mark languages and autofills a blank `l_word` through the same
+  key.
 
 # Performance notes
 

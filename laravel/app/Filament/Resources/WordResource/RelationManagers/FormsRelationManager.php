@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\WordResource\RelationManagers;
 
+use App\Support\StressMarks;
+use App\Support\WordLookupKey;
 use Filament\Actions;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -36,23 +38,11 @@ class FormsRelationManager extends RelationManager
             ])
             ->headerActions([
                 Actions\CreateAction::make()
-                    ->mutateFormDataUsing(function (array $data): array {
-                        if (blank($data['l_word'] ?? null)) {
-                            $data['l_word'] = mb_strtolower((string) $data['form']);
-                        }
-
-                        return $data;
-                    }),
+                    ->mutateFormDataUsing(fn (array $data, RelationManager $livewire): array => $this->normalizeFormRow($data, $livewire)),
             ])
             ->recordActions([
                 Actions\EditAction::make()
-                    ->mutateFormDataUsing(function (array $data): array {
-                        if (blank($data['l_word'] ?? null)) {
-                            $data['l_word'] = mb_strtolower((string) $data['form']);
-                        }
-
-                        return $data;
-                    }),
+                    ->mutateFormDataUsing(fn (array $data, RelationManager $livewire): array => $this->normalizeFormRow($data, $livewire)),
                 Actions\DeleteAction::make(),
             ])
             ->toolbarActions([
@@ -60,5 +50,30 @@ class FormsRelationManager extends RelationManager
                     Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * The manual form row obeys the import conventions: the display form
+     * stores plain (the combining stress marks leave it for ru/be/uk, so a
+     * stressed variant collapses into the same row as its plain spelling),
+     * and the blank l_word autofills through the shared lookup-key rule
+     * instead of a bare lowercase.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function normalizeFormRow(array $data, RelationManager $livewire): array
+    {
+        $stripsMarks = StressMarks::stripsFor((string) $livewire->getOwnerRecord()->language->code);
+
+        if ($stripsMarks) {
+            $data['form'] = StressMarks::strip((string) ($data['form'] ?? ''));
+        }
+
+        if (blank($data['l_word'] ?? null)) {
+            $data['l_word'] = WordLookupKey::normalize((string) ($data['form'] ?? ''));
+        }
+
+        return $data;
     }
 }

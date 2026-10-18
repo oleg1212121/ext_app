@@ -5,8 +5,8 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -245,13 +245,17 @@ popup opens.
   (`WordTranslationFetchService::dispatchIfEligible`).
 * **Entity-word adoption.** `EntityWordAdoption` — run by the 5-minute
   word-list refresh after its link pass (`RefreshEntityWords`), or by
-  `words:adopt-from-entities {--entity=*} {--language=} {--to=}` — creates
-  `words` rows (class `unknown`) for linker-stamped unmatchable tokens,
-  points `entity_words.word_id` at them, and queues the same fetch for every
-  entity word still lacking translations. Every entity token ends up
-  clickable and eventually translated; junk tokens land in the exclusions
-  after one lookup. See [Crossword](/domains/crossword.md) and
-  [Dictionary](/database/dictionary.md).
+  `words:adopt-from-entities {--entity=*} {--language=} {--to=}` — attaches
+  linker-stamped unmatchable tokens to the existing same-`l_word` word row
+  of the language when one exists (first non-unknown-class row in id order,
+  else the lowest id — never an `unknown`-class twin), creates a `words` row
+  only for a genuinely new token (class `unknown`; a plain display word —
+  the combining stress marks leave the raw surface for ru/be/uk — that
+  carries itself as its lemma form), points `entity_words.word_id` at it,
+  and queues the same fetch for every entity word still lacking
+  translations. Every entity token ends up clickable and eventually
+  translated; junk tokens land in the exclusions after one lookup. See
+  [Crossword](/domains/crossword.md) and [Dictionary](/database/dictionary.md).
 * Tests: `tests/Feature/WordTranslationFetchTest.php` (trigger, link-only
   job — the no-creation invariant, defensive stress strip, staging,
   counts — fallback, exclusion, cooldown),
