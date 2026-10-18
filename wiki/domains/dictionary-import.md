@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; both importers store plain (stress-free) display words, share one pos alias table and one lemma-form rule, kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions.
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; both importers store plain (stress-free) display words, share one pos alias table and one lemma-form rule, kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, unknown-twin merges, alias-class fold, lemma-form backfill).
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T23:59:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T01:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: adr-0078
@@ -53,6 +53,9 @@ sources:
   - id: demote-cmd
     resource: laravel/app/Console/Commands/DemoteFormOfCommand.php
     title: wiktionary:demote-form-of (dump-driven relay cleanup, --dry, chunked set-based phases)
+  - id: normalize-cmd
+    resource: laravel/app/Console/Commands/WordsNormalizeCommand.php
+    title: words:normalize (idempotent in-place repair phases, --dry, temp-map set-based merges)
   - id: cmudict-cmd
     resource: laravel/app/Console/Commands/ImportCmudictCommand.php
     title: dictionary:import-cmudict (attach-to-existing, plain + lemma form on create)
@@ -406,6 +409,66 @@ only mints a row when nothing matches:
   row; the Forms relation manager strips the display form for the
   stress-mark languages and autofills a blank `l_word` through the same
   key.
+
+# Data repair (words:normalize)
+
+The importers enforce the purity rules for NEW rows (above); the residual
+damage in already-stored rows is repaired in place by
+`php artisan words:normalize {--dry} {--chunk=20000}` — one idempotent,
+re-runnable command, four phases, every phase counted in a summary table,
+runbook in [Importing Dictionary Data](/playbooks/import-dictionary-data.md)
+(run `--dry` first; the real dev-DB run belongs to the ticket-11 pipeline):
+
+1. **Stress marks out of the display text** (spec rule 1): ru/be/uk
+   `words.word` and `forms.form` lose their combining marks. A stressed
+   word merges into an existing plain twin (same language + class +
+   stripped display; lowest id survives and absorbs the children through
+   the shared merge machinery below), without a twin it strips in place.
+   Stressed forms group per (word, stripped form): a group whose plain twin
+   already exists collapses onto it, otherwise the lowest form id survives
+   the strip and the other variants in the group dedupe away — two stressed
+   variants can strip to the same plain string (the earlier one-off repair's
+   collision gotcha). en diacritics ("café") are legitimate spelling and
+   untouched — the strip applies to the `App\Support\StressMarks` languages
+   only. A display that is nothing but combining marks is counted and left
+   alone (never deleted without a mandate).
+2. **Unknown-class twins merge** into the properly-classed same-`l_word`
+   row (lowest-id non-unknown survivor; the twins cmudict and entity
+   adoption minted before the ticket-08 attach rules). The cmudict
+   convention holds in the merge: a survivor already carrying a ˈ-marked
+   IPA transcription is final — the twin's transcriptions die with it
+   instead of stacking on top (Kaikki wins where it has stress data).
+3. **Alias word classes fold into their canonical class** per language
+   (`App\Support\PosAliases` semantics resolved by class-row slug — the
+   dev data's `adj` beside `adjective`): a word whose exact display twin
+   exists in the canonical class merges into it, the twinless leftovers
+   reclass in place (case variants never merge — capitalized entries can
+   be genuinely different words), and the orphan alias class rows delete
+   last.
+4. **Lemma-form backfill**: every word carries itself (its stripped
+   display, the `LemmaForms` conventions) as a form where missing
+   (~1.5M rows in dev) — insert-new-only through the `(form, word_id)`
+   unique, chunked by word-id ranges with a progress bar.
+
+Word merges share one set-based machinery: merge pairs land in a temp
+mapping table, then each child move is a single SQL statement per table —
+`definitions`/`etymologies`/`entity_words` update in place; unique-keyed
+children (`forms`, `transcriptions`, `examples`, `pronunciations`,
+`tagged_words`, `user_word`, `user_word_event`,
+`word_translation_fetches`) move through insert-select
+ON CONFLICT DO NOTHING + delete (collapsing onto the survivor's existing
+rows and deduping within the map); `word_translations` re-point through
+BOTH arms (canonical pairs, self-pairs dropped, insert-or-ignore dedupe);
+the staged `words.translations` JSON union-merges onto the survivor
+(`App\Support\StagedTranslations`); the frequency rank folds in as LEAST
+(ranks: lower is more common — never raises a rank, and the 0 "no rank"
+column default on cmudict/adoption rows never folds onto a ranked
+survivor; the ticket-10 fold with a zero guard those rows need). Absorbed
+word rows delete last (children cascade through the word_id-leading
+indexes). `--dry` prints every phase count and writes nothing — the
+child-move counts are pre-database approximations where insert-time dedupe
+applies. Case-variant same-class duplicates are deliberately NOT merged
+anywhere: March/march can be genuinely different words.
 
 # Performance notes
 

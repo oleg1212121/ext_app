@@ -6857,3 +6857,52 @@ runbook with the `--dry`-first guidance), `domains/dictionary-import.md` (the pl
 mention replaced by the implemented command + map semantics, sources), `reference/commands.md`
 regenerated (`wiki:sync`), `generated.at` bumped; `wiki:validate` passes. The real dev-DB run is
 ticket 11 (never this ticket).
+
+## 2026-10-18 (dictionary-word-purity 09: `words:normalize`)
+
+The idempotent in-place repair of the already-stored dictionary rows the
+importers cannot fix themselves — one command, four phases, every phase
+counted in a summary table, `--dry` first-class (prints every phase count,
+writes nothing). Phase 1 strips the combining stress marks from ru/be/uk
+display `words.word` and `forms.form` (spec rule 1; en diacritics are
+legitimate spelling and untouched): a stressed word merges into an existing
+plain twin (same language + class + stripped display, lowest id survives and
+absorbs the children), otherwise it strips in place; stressed forms group
+per (word, stripped form) — a group whose plain twin already exists
+collapses, otherwise the lowest form id survives and the other variants
+dedupe (two stressed variants can strip to one plain string — the earlier
+one-off repair's collision gotcha). Phase 2 merges `unknown`-class twins
+into the lowest-id non-unknown same-`l_word` row (the cmudict/adoption
+twins); a survivor already carrying a ˈ-marked IPA transcription is final —
+the twin's transcriptions die with the merge (Kaikki wins where it has
+stress data). Phase 3 folds alias word classes into their canonical class
+per language (PosAliases semantics resolved by class-row slug — `adj` into
+`adjective`): exact-display twins merge, twinless leftovers reclass in
+place, orphan alias class rows delete last. Phase 4 backfills the lemma
+form: every word carries itself (stripped display, LemmaForms conventions)
+where missing — insert-new-only on `(form, word_id)`, chunked word-id ranges
+with a progress bar (~1.5M rows in dev). Word merges share one set-based
+machinery: pairs land in a temp mapping table, each child move is a single
+SQL statement per table — definitions/etymologies/entity_words update in
+place; unique-keyed children (forms, transcriptions, examples,
+pronunciations, tagged_words, user_word, user_word_event,
+word_translation_fetches) move through insert-select ON CONFLICT DO NOTHING
++ delete; word_translations re-point through both arms (canonical pairs,
+self-pairs dropped, insert-or-ignore dedupe); staged `words.translations`
+JSON union-merges (StagedTranslations); the frequency rank folds in as
+LEAST with a zero guard — the cmudict/adoption rows carry the 0 "no rank"
+column default (kaikki rows carry the sentinel), and folding a 0 would wipe
+every survivor's rank, so only real ranks fold and never upward. Absorbed
+rows delete last; case-variant same-class duplicates are deliberately NOT
+merged (March/march). Tests: `WordsNormalizeCommandTest` (new, 7 / 64
+assertions — seeded mini-DB per phase incl. the ˈ-IPA gate and the
+both-arm/user_word/fetch-ledger moves, idempotent second run, `--dry`
+writes nothing, `--chunk=2` reaching the same state through tiny chunks).
+Targeted suite green, pint green, `composer run test:tia` green (1292
+passed / 6639 assertions, 7 new + 1285 replayed). Wiki:
+`playbooks/import-dictionary-data.md` (new "Repairing stored data in place"
+runbook with the `--dry`-first guidance and expected dev-DB phase counts),
+`domains/dictionary-import.md` (new "Data repair" section, sources),
+`reference/commands.md` regenerated (`wiki:sync`), `generated.at` bumped;
+`wiki:validate` passes. The real dev-DB run is ticket 11 (never this
+ticket).

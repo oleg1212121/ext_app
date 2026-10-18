@@ -1,11 +1,11 @@
 ---
 type: Playbook
 title: Importing Dictionary Data
-description: How to import Kaikki/Wiktionary dumps and GoldenDict-format dictionaries into the unified language-keyed dictionary tables and link translations.
-tags: [dictionary, import, wiktionary, kaikki, goldendict]
+description: How to import Kaikki/Wiktionary dumps and GoldenDict-format dictionaries into the unified language-keyed dictionary tables, link translations, and repair the already-stored rows in place (words:normalize, wiktionary:demote-form-of).
+tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T23:59:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T01:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T22:30:00+03:00 }
 sources:
   - id: import-cmd
@@ -222,6 +222,76 @@ from the dump map.
    second, so staged JSON the demote moved onto bases links in the same
    pass.
 
+# Repairing stored data in place (words:normalize)
+
+The importers enforce the purity rules for new rows; the damage already
+stored from before those rules is repaired in place by one idempotent
+command — no re-import, no wipe: every phase finds its rows by explicit
+mapping (strip diff, unknown-class twins, alias class rows, missing lemma
+forms) and a second run matches nothing. Dev-data scale as of 2026-10-18
+(what the counts in the summary should roughly land on): one stressed ru
+display word (the 13 en rows carry legitimate diacritics like "café" and
+are untouched — the strip applies to ru/be/uk only; forms were already
+stripped by the 2026-10-17 repair), 2,954 unknown-class twins
+(ru 1,536 / en 1,418, mostly cmudict transcriptions), 7,244 `adj`/
+`adjective` duplicate pairs (en), and ~1.54M missing lemma forms
+(en 1,507,795 / ru 29,171 — the long phase, a few minutes of chunked
+insert-or-ignore).
+
+1. **Dry first** — read every phase count before anything writes:
+
+   ```bash
+   docker exec ext_app_laravel php artisan words:normalize --dry
+   ```
+
+   Prints all phase rows without writing: stressed words merged into plain
+   twins / stripped in place, stressed forms collapsed / stripped /
+   deduped, unknown twins merged, alias-class words merged vs reclassed and
+   alias classes deleted, lemma forms backfilled, plus the merge-machinery
+   children (definitions/etymologies, forms, transcriptions incl. the
+   ˈ-IPA gate drops, examples, pronunciations, entity_words, tagged_words,
+   user_word(+event), fetch ledger, both-arm link re-points with self-pair
+   and dedupe counts, staged-JSON merges, LEAST rank folds, absorbed rows
+   deleted). The child-move counts are pre-database approximations where
+   insert-time dedupe applies; phase-3 reclass counts include rows a real
+   run would merge. Nothing else is approximate.
+
+2. **Real run, detached** (the lemma backfill dominates — tens of minutes
+   at en scale; the progress bar lands in the redirected log):
+
+   ```bash
+   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan words:normalize >> storage/logs/words-normalize.log 2>&1'
+   ```
+
+   Phases, in order: (1) ru/be/uk display `words.word`/`forms.form` lose
+   their combining stress marks — a stressed word merges into an existing
+   plain twin (same language + class + stripped display, lowest id
+   survives and absorbs the children), otherwise it strips in place;
+   stressed forms group per (word, stripped form) — a group whose plain
+   twin already exists collapses, otherwise the lowest form id survives
+   and the other variants dedupe (two stressed variants can strip to one
+   plain string). (2) `unknown`-class twins merge into the lowest-id
+   non-unknown same-`l_word` row; when the survivor already carries a
+   ˈ-marked IPA transcription the twin's transcriptions die with the merge
+   (the cmudict convention — Kaikki wins where it has stress data).
+   (3) Alias word classes fold into their canonical class per language
+   (PosAliases semantics, resolved by class-row slug): display twins merge,
+   twinless leftovers reclass in place, orphan alias class rows delete
+   last. (4) Every word gains itself as its lemma form where missing
+   (insert-new-only on the `(form, word_id)` unique, chunked).
+
+   `--chunk=N` (default 20000) sizes the scan passes and the lemma
+   backfill; the word merges are set-based through a temp mapping table —
+   one statement per child table. Never run two normalize runs at once.
+
+3. **Chain it in the ticket-11 pipeline** before/after the other repairs —
+   demote first (`wiktionary:demote-form-of`), then normalize, then
+   `dictionary:link-translations`, so staged JSON the merges moved onto
+   survivors links in the same pass. Re-run safe: every phase reports
+   zeros on a second run. Case-variant same-class duplicates are
+   deliberately NOT merged (March/march can be genuinely different words);
+   resolve genuine ones by hand.
+
 # Steps — GoldenDict dictionary (goldendict:import)
 
 For GoldenDict-format dictionaries (freemdict etc.). The converter accepts
@@ -316,9 +386,10 @@ When the import rules change in a way old data violates (stressed display
 twins — including the kaikki ru/be/uk headwords since the 2026-10-18
 carve-out reversal, `adj`/`adjective` alias twins, romanization-tagged
 forms, missing lemma forms, translation-created bare stubs, junk `phrase`
-rows), the fix is a wipe + re-import, not an in-place patch — unless a
-dedicated normalize/demote command covers the residual (see the
-dictionary-word-purity tickets). Import order matters — base
+rows), the fix is a wipe + re-import, not an in-place patch — unless the
+dedicated repair commands cover the residual (`words:normalize` and
+`wiktionary:demote-form-of`, above; the dictionary-word-purity tickets).
+Import order matters — base
 dictionaries before the bilingual runs, or the first bilingual run links
 almost nothing:
 
