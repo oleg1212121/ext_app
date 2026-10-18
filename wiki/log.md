@@ -1,5 +1,33 @@
 # Directory Update Log
 
+## 2026-10-18 (parser ru-edition field compat — ru-edition-import ticket 01)
+
+`WiktionaryParser` now reads the Russian-Wiktionary edition dump (ru.wiktionary
+kaikki extract) as correctly as the en-edition dumps, via two field-compat
+fixes; everything else in that dump was verified parser-compatible as-is
+(word/pos slugs, glosses, forms, IPA, `form_of` relays, hard-redirect skip):
+
+- **Etymology field shapes**: the parser read only the singular
+  `etymology_text` string (all the en edition emits); it now falls back to
+  the plural `etymology_texts` **array** of text blocks (all the ru edition
+  emits — 453k entries), joining its non-empty parts with newlines (the
+  same multi-line convention en-edition etymology strings already carry in
+  the DB); the singular wins when both appear, an all-empty array stores
+  nothing.
+- **Staged-translation target field**: `stagedCandidate` keyed the target
+  language on the object's `code` only; the ru edition's translation
+  objects carry only `lang_code`, so that edition would have staged zero
+  candidates. Now `code` falls back to `lang_code` (en-edition objects
+  carry both with equal values — no behavior change, no dedupe risk:
+  staged strings array_unique anyway). The stress-mark strip still keys on
+  the resolved code.
+
+Smoke on the real ru dump (testing connection, first 20k lines, 2,766 ru
+word rows): 2,558 etymologies and 2,288 staged-translation words landed,
+zero combining marks in stored words/forms. The full dev-DB import run and
+its numbers are ru-edition-import ticket 02; the edition-per-language
+knowledge closure (ADR 0080, playbook) is ticket 03.
+
 ## 2026-10-18 (code-review fix pass: kaikki staged candidates strip at staging time, one shared wanted-class decision — dictionary-word-purity ticket 13)
 
 The feature's code-review findings, fixed:

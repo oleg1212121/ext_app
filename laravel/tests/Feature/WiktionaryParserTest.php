@@ -2,6 +2,7 @@
 
 use App\Classes\WiktionaryParser;
 use App\Models\Definition;
+use App\Models\Etymology;
 use App\Models\Form;
 use App\Models\Language;
 use App\Models\Transcription;
@@ -425,6 +426,156 @@ it('skips class preference for an unknown-pos relay and falls back to the lowest
 
     expect(Form::where('form', 'бегом')->where('word_id', $noun->id)->count())->toBe(1)
         ->and(Form::where('form', 'бегом')->where('word_id', $unknown->id)->count())->toBe(0);
+
+    unlink($tmpFile);
+});
+
+it('joins a ru-edition etymology_texts array and still reads the en edition singular etymology_text', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+    $enId = $languages['en']->id;
+
+    // The ru.wiktionary edition carries etymologies as an ARRAY of text
+    // blocks (`etymology_texts`); the singular `etymology_text` it never
+    // emits must not gate them.
+    $ruFile = tempnam(sys_get_temp_dir(), 'wiktionary_ru_ety_');
+    file_put_contents($ruFile, json_encode([
+        'word' => 'майка', 'pos' => 'сущ',
+        'etymology_texts' => [
+            'От франц. maillot, переоформленного при помощи суффикса -к(а).',
+            'От майя — ‘лёгкая хлопчатобумажная ткань’, с помощью суффикса -к(а).',
+        ],
+        'senses' => [['glosses' => ['лёгкая приталенная футболка']]],
+    ])."\n");
+    (new WiktionaryParser('ru', 'en', 100))->import($ruFile);
+
+    $maika = Word::where('word', 'майка')->where('language_id', $ruId)->firstOrFail();
+    expect($maika->etymologies->pluck('etymology')->all())->toBe([
+        "От франц. maillot, переоформленного при помощи суффикса -к(а).\n"
+            .'От майя — ‘лёгкая хлопчатобумажная ткань’, с помощью суффикса -к(а).',
+    ]);
+    unlink($ruFile);
+
+    // En-edition regression guard: the singular string still lands, and it
+    // wins on the (never-occurring-in-real-dumps) entry carrying both fields.
+    $enFile = tempnam(sys_get_temp_dir(), 'wiktionary_en_ety_');
+    file_put_contents($enFile, implode("\n", [
+        json_encode(['word' => 'cat', 'pos' => 'noun', 'etymology_text' => 'From Middle English cat.',
+            'senses' => [['glosses' => ['A small domesticated feline']]]]),
+        json_encode(['word' => 'dog', 'pos' => 'noun',
+            'etymology_text' => 'From Old English docga.',
+            'etymology_texts' => ['would be a plural-field double import'],
+            'senses' => [['glosses' => ['A domesticated canine']]]]),
+    ])."\n");
+    (new WiktionaryParser('en', 'ru', 100))->import($enFile);
+
+    $cat = Word::where('word', 'cat')->where('language_id', $enId)->firstOrFail();
+    $dog = Word::where('word', 'dog')->where('language_id', $enId)->firstOrFail();
+    expect($cat->etymologies->pluck('etymology')->all())->toBe(['From Middle English cat.'])
+        ->and($dog->etymologies->pluck('etymology')->all())->toBe(['From Old English docga.']);
+    unlink($enFile);
+});
+
+it('stages translations from code-only, lang_code-only and both-fields objects', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_langcode_');
+    file_put_contents($tmpFile, implode("\n", [
+        // ru edition shape: lang_code only, no code.
+        json_encode(['word' => 'собака', 'pos' => 'сущ', 'translations' => [
+            ['word' => 'dog', 'lang_code' => 'en', 'lang' => 'Английский'],
+        ]]),
+        // en edition shape: both fields, equal values — stages exactly once.
+        json_encode(['word' => 'кот', 'pos' => 'сущ', 'translations' => [
+            ['word' => 'cat', 'code' => 'en', 'lang_code' => 'en', 'lang' => 'English'],
+        ]]),
+        // The legacy shape the en edition tests pinned: code only.
+        json_encode(['word' => 'лис', 'pos' => 'сущ', 'translations' => [
+            ['word' => 'fox', 'code' => 'en', 'lang' => 'English'],
+        ]]),
+        // Neither field: no target match, nothing stages.
+        json_encode(['word' => 'ёж', 'pos' => 'сущ', 'translations' => [
+            ['word' => 'hedgehog', 'lang' => 'English'],
+        ]]),
+    ])."\n");
+
+    (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+
+    expect(Word::where('word', 'собака')->where('language_id', $ruId)->firstOrFail()->translations)->toBe(['dog'])
+        ->and(Word::where('word', 'кот')->where('language_id', $ruId)->firstOrFail()->translations)->toBe(['cat'])
+        ->and(Word::where('word', 'лис')->where('language_id', $ruId)->firstOrFail()->translations)->toBe(['fox'])
+        ->and(Word::where('word', 'ёж')->where('language_id', $ruId)->firstOrFail()->translations)->toBeNull();
+
+    unlink($tmpFile);
+});
+
+it('stresses a lang_code-only candidate of a stress-mark target language at staging', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+
+    // The ru edition's lang_code-only objects reach StressMarks targets
+    // (be here) just like code-only ones did: the candidate strips at
+    // staging time, per the ADR 0079 rule.
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_langcode_be_');
+    file_put_contents($tmpFile, json_encode(['word' => 'дом', 'pos' => 'сущ', 'translations' => [
+        ['word' => 'до'."\u{0301}".'м', 'lang_code' => 'be', 'lang' => 'Беларуская'],
+    ]])."\n");
+    (new WiktionaryParser('ru', ['en', 'be'], 100))->import($tmpFile);
+
+    expect(Word::where('word', 'дом')->where('language_id', $ruId)->firstOrFail()->translations)->toBe(['дом']);
+
+    unlink($tmpFile);
+});
+
+it('demotes a ru-edition form-of relay to a form of its base, landing none of its content', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+
+    $base = 'кру'."\u{0301}".'глый'; // stressed, as the dump carries it
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_ru_relay_');
+    file_put_contents($tmpFile, implode("\n", [
+        // The lemma entry in the ru edition's own dialect: Russian pos
+        // abbreviation, plural-array etymology, lang_code-only translation.
+        json_encode([
+            'word' => 'круглый', 'pos' => 'прил', 'lang_code' => 'ru',
+            'etymology_texts' => ['Круг + -л-'],
+            'senses' => [['glosses' => ['имеющий форму круга; не угловатый']]],
+            'translations' => [['word' => 'round', 'lang_code' => 'en']],
+        ]),
+        // The relay: every sense a form_of pointer with the form-of tag,
+        // plus content that must not land anywhere.
+        json_encode([
+            'word' => 'кругла', 'pos' => 'прил', 'lang_code' => 'ru',
+            'etymology_texts' => ['relay etymology must not land'],
+            'senses' => [[
+                'glosses' => ['жен. р. к '.$base],
+                'tags' => ['form-of', 'feminine'],
+                'form_of' => [['word' => $base]],
+            ]],
+            'translations' => [['word' => 'relay must not stage', 'lang_code' => 'en']],
+        ]),
+    ])."\n");
+
+    $stats = (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+
+    // No word row for the relay — and nothing it carried anywhere.
+    expect(Word::where('l_word', 'кругла')->where('language_id', $ruId)->count())->toBe(0)
+        ->and(Definition::where('definition', 'like', '%к круглый%')->count())->toBe(0)
+        ->and(Etymology::where('etymology', 'like', '%must not%')->count())->toBe(0)
+        ->and(Word::where('translations', 'like', '%must not stage%')->count())->toBe(0);
+
+    // The lemma imports as a word with its ru-edition content; the relay
+    // headword attaches as its form.
+    $krugly = Word::where('word', 'круглый')->where('language_id', $ruId)->firstOrFail();
+    expect($krugly->definitions->pluck('definition')->all())->toBe(['имеющий форму круга; не угловатый'])
+        ->and($krugly->etymologies->pluck('etymology')->all())->toBe(['Круг + -л-'])
+        ->and($krugly->translations)->toBe(['round'])
+        ->and(Form::where('form', 'кругла')->where('word_id', $krugly->id)->count())->toBe(1)
+        ->and($stats['relays_demoted'])->toBe(1)
+        ->and($stats['relay_bases_created'])->toBe(0)
+        ->and($stats['words_imported'])->toBe(1);
 
     unlink($tmpFile);
 });

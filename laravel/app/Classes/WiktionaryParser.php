@@ -282,7 +282,19 @@ class WiktionaryParser
 
         $translations = $this->extractTranslations($line);
 
+        // The en edition carries one etymology string (`etymology_text`);
+        // the ru edition an ARRAY of text blocks (`etymology_texts`) — one
+        // block per etymology hypothesis. The singular wins when both
+        // appear; the array's non-empty parts join with newlines, the same
+        // multi-line convention the en edition's strings already carry.
         $etymology = $line->etymology_text ?? null;
+        if ($etymology === null) {
+            $parts = array_values(array_filter(
+                (array) ($line->etymology_texts ?? []),
+                fn ($part) => is_string($part) && trim($part) !== '',
+            ));
+            $etymology = $parts === [] ? null : implode("\n", $parts);
+        }
         if ($etymology !== null && trim($etymology) === '') {
             $etymology = null;
         }
@@ -330,10 +342,15 @@ class WiktionaryParser
      * the staged JSON verbatim until some pass converts it, so the stored
      * string itself must never carry the marks. A candidate that is nothing
      * but combining marks (a marks-only dump artifact) stages nothing.
+     *
+     * The target language reads `code`, falling back to `lang_code`: en-edition
+     * translation objects carry both (equal values); the ru edition's carry
+     * only `lang_code`.
      */
     private function stagedCandidate(object $translation): ?string
     {
-        if (! in_array($translation->code ?? null, $this->targetLangs, true)) {
+        $code = $translation->code ?? $translation->lang_code ?? null;
+        if (! in_array($code, $this->targetLangs, true)) {
             return null;
         }
 
@@ -342,7 +359,7 @@ class WiktionaryParser
             return null;
         }
 
-        if (StressMarks::stripsFor((string) $translation->code)) {
+        if (StressMarks::stripsFor((string) $code)) {
             $word = StressMarks::strip($word);
             if (trim($word) === '') {
                 return null;

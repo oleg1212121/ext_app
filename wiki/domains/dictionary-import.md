@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T21:10:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T21:15:00+03:00 }
 verified: { by: human:alex, at: 2026-10-18T19:40:00+03:00 }
 sources:
   - id: adr-0078
@@ -114,7 +114,16 @@ mirrored per-language tables, and a single `word_translations` pivot —
   converts them, so the strip happens at staging time (a marks-only
   candidate stages nothing), while a non-stress-mark target's candidate
   keeps its diacritics; legacy rows staged marked before this strip
-  remain prunable through the link pass's pairing-time strip. Raw `pos`
+  remain prunable through the link pass's pairing-time strip. The staged
+  candidate's target language reads its object's `code` **falling back to
+  `lang_code`** (2026-10-18): en-edition translation objects carry both
+  fields with equal values, while the ru-Wiktionary edition's carry only
+  `lang_code` — without the fallback that edition would stage zero
+  candidates. **Etymology reads both editions' field shapes** (2026-10-18):
+  the singular `etymology_text` string (all the en edition emits) wins when
+  present, else the plural `etymology_texts` **array** of text blocks (all
+  the ru edition emits) joins its non-empty parts with newlines (an all-empty
+  array stores nothing). Raw `pos`
   slugs canonicalize
   through the shared `App\Support\PosAliases` table before any word class
   is minted ("adj" joins "adjective" — one taxonomy, aliased lines of one
