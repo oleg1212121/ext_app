@@ -1,0 +1,11 @@
+{"word":"собака","pos":"noun","senses":[{"glosses":["Домашнее животное семейства псовых"]}],"forms":[{"form":"собаки"},{"form":"sobaka","tags":["romanization"]}]}
+{"word":"собак","pos":"noun","senses":[{"glosses":["род. п. от соба\u0301ка"],"tags":["form-of","genitive"],"form_of":[{"word":"соба\u0301ка"}]}]}
+{"word":"четвереньки","pos":"noun","senses":[{"glosses":["Положение тела с опорой на руки и ноги"]}]}
+{"word":"четвереньках","pos":"noun","senses":[{"glosses":["предл. от четвере\u0301ньки"],"tags":["form-of","prepositional"],"form_of":[{"word":"четвере\u0301ньки"}]}]}
+{"word":"четвереньке","pos":"noun","senses":[{"glosses":["дат. п. от четвере\u0301ньки"],"tags":["form-of","dative"],"form_of":[{"word":"четвере\u0301ньки"}]}]}
+{"word":"лучше","pos":"adv","senses":[{"glosses":["сравн. ст. к хоро\u0301ший"],"tags":["form-of","comparative"],"form_of":[{"word":"хоро\u0301ший"}]}]}
+{"word":"лучшему","pos":"adj","senses":[{"glosses":["дат. п. от лу\u0301чше"],"tags":["form-of","dative"],"form_of":[{"word":"лу\u0301чше"}]}]}
+{"word":"печь","pos":"verb","senses":[{"glosses":["Готовить в жару"]}]}
+{"word":"печь","pos":"noun","senses":[{"glosses":["ед. от пе\u0301чка"],"tags":["form-of"],"form_of":[{"word":"пе\u0301чка"}]}]}
+{"word":"баглонье","pos":"noun","senses":[{"glosses":["пр. от баглоно\u0301"],"tags":["form-of","prepositional"],"form_of":[{"word":"баглоно\u0301"}]}]}
+{"word":"привет","pos":"noun","senses":[{"glosses":["Приветствие"]}],"forms":[{"form":"privet","tags":["romanization"]}]}

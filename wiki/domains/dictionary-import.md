@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T23:59:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: adr-0078
@@ -47,6 +47,12 @@ sources:
   - id: form-of-classifier
     resource: laravel/app/Classes/Wiktionary/FormOfClassifier.php
     title: parser-agnostic kaikki form-of relay verdict (entry-shape in → relay + base out)
+  - id: relay-demotion-map
+    resource: laravel/app/Classes/Wiktionary/RelayDemotionMap.php
+    title: relay→base map unions (also-real subtraction, base conflicts, chain closure, cycle drop)
+  - id: demote-cmd
+    resource: laravel/app/Console/Commands/DemoteFormOfCommand.php
+    title: wiktionary:demote-form-of (dump-driven relay cleanup, --dry, chunked set-based phases)
   - id: cmudict-cmd
     resource: laravel/app/Console/Commands/ImportCmudictCommand.php
     title: dictionary:import-cmudict (attach-to-existing, plain + lemma form on create)
@@ -119,9 +125,29 @@ mirrored per-language tables, and a single `word_translations` pivot —
   relay line merged with a real line is a mixed entry (word); two relay
   lines demote together only onto an agreeing base. Import stats count the
   conversions (`relays_demoted`, `relay_bases_created`). Pre-existing
-  relay word rows in the data are cleaned up separately by the dump-driven
-  demote command (planned ticket); the `WordFamily` read-layer relay-gloss
-  defense stays until then. See
+  relay word rows in the data are cleaned up by the dump-driven
+  `wiktionary:demote-form-of` command (runbook in
+  [Importing Dictionary Data](/playbooks/import-dictionary-data.md)): it
+  streams the same dump, builds the exact relay→base map through the shared
+  classifier plus the pure `App\Classes\Wiktionary\RelayDemotionMap`
+  unions — a surface with any real dump entry stays a word, relay lines
+  disagreeing on the base stay a word, chains close onto the terminal base
+  (X→Y→Z demotes X and Y onto Z), cycles demote nobody — and applies it
+  set-based per chunk: links (both arms) and `entity_words` re-point onto
+  the base (canonical pairs deduped, self-pairs dropped, cross-chunk relay
+  pairs resolved through the full map), the relay's staged translations
+  JSON union-merges into the base, the relay surface attaches as a form
+  (upsert on `(form, word_id)` — a base that already claims it keeps one
+  row), the relay's frequency rank folds into the base as **LEAST** (ranks:
+  lower = more common — never raises a rank, the unranked sentinel
+  1,100,000 never demotes a ranked base; user-approved deviation from the
+  ticket's "max" wording), the relay rows delete (children cascade), and
+  romanization-tagged junk forms collected from the same stream delete by
+  exact (entry `l_word`, form `l_word`) pairs for the stress-mark
+  languages. Bases missing from the database keep their relays as words —
+  counted, sampled. Re-run safe: demoted relays no longer exist as word
+  rows. The `WordFamily` read-layer relay-gloss defense stays (harmless
+  after demotion). See
   [ADR 0078](../../docs/adr/0078-goldendict-plain-words-link-only-translations.md).
 * `App\Classes\RawWiktextractExtractor` — streams a **Raw dump** (the
   monolithic kaikki `raw-wiktextract-data` file, every Wiktionary language

@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T22:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T23:59:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T22:30:00+03:00 }
 sources:
   - id: import-cmd
@@ -151,6 +151,76 @@ Two source shapes exist:
    the **Translations** tab offers **Attach translation** (pick an existing
    word in another language) and **Create word & link** (create the missing
    target word and link it in one step). Links work from either word.
+
+# Cleaning imported relay rows (wiktionary:demote-form-of)
+
+Dumps imported before the form-of relay demotion (ticket-03 rule) left
+relay word rows in the data (~379k of 444k ru words, ~974k of 1.5M en —
+"четвереньках: prepositional of четвере́ньки" stored as a word). The
+cleanup streams the same kaikki dump for one language, rebuilds the exact
+relay→base verdict through the shared `App\Classes\Wiktionary\FormOfClassifier`
+plus the pure `App\Classes\Wiktionary\RelayDemotionMap` unions, and applies
+it set-based in chunks — no re-import, no wipe: it deletes by explicit ids
+from the dump map.
+
+1. **Dry first** — read the counts before anything writes:
+
+   ```bash
+   docker exec ext_app_laravel php artisan wiktionary:demote-form-of --lang=ru --dry
+   ```
+
+   Prints every phase count without writing: relay surfaces found (minus
+   surfaces that also carry a real dump entry, minus conflicting-base and
+   cycle participants), relay word rows matched vs kept (base missing from
+   the DB), would-be link re-points / self-pairs, entity_words, staged
+   JSON merges, forms attached, re-ranked bases, deletions, and
+   romanization junk forms. The `--dry` link counts are pre-database
+   approximations (the real run dedupes onto existing pairs at insert
+   time); everything else is exact.
+
+2. **Real run, detached** (the dump-streaming pass dominates — expect tens
+   of minutes at ru/en dump size; the progress bar lands in the redirected
+   log so detached runs stay observable):
+
+   ```bash
+   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan wiktionary:demote-form-of --lang=ru >> storage/logs/demote-ru.log 2>&1'
+   ```
+
+   Flags: `--file=` overrides the default dump path
+   (`kaikki/kaikki.org-dictionary-<Language name>.jsonl` under the app
+   root); `--chunk=N` (default 25000) sizes the set-based apply pass —
+   the in-memory map holds every relay surface of the language (~1M en
+   pairs fit comfortably; chunking bounds the DB statements, not the map).
+   Per chunk, in FK-safe order: translation links (both arms) re-point
+   onto the base — canonical pairs, insert-or-ignore dedupes onto
+   pre-existing pairs, self-pairs (relay→own base, two relays of one base)
+   dropped, relays demoting in a LATER chunk resolved through the full map
+   so their pairs survive both deletions; `entity_words.word_id` re-points
+   (the token's `l_word` stays the surface the entity text carries); the
+   relay's staged `words.translations` JSON union-merges into the base;
+   the relay surface attaches as a form of the base (upsert on
+   `(form, word_id)` — a base that already claims the surface keeps one
+   row); the relay's frequency rank folds into the base as **LEAST**
+   (ranks: lower = more common — never raises a rank; the unranked
+   sentinel 1,100,000 never demotes a ranked base, an unranked base
+   inherits a ranked relay's rank — the user-approved fold, ADR 0070's
+   convention); then the relay rows delete (definitions and relay-glosses
+   die with the row — pure pointers; children cascade fast through the
+   word_id-leading indexes). Finally, for the stress-mark languages
+   (ru/be/uk) the romanization-tagged junk forms (Latin transliterations
+   on Cyrillic words) collected from the same stream delete by exact
+   (entry `l_word`, form `l_word`) pairs — dump-derived, no heuristic.
+
+3. **What stays**: a surface with any real dump entry stays a word;
+   bases missing from the database keep their relays as words — counted
+   and sampled in the summary; relay rows that resolve nothing stay put.
+   **Re-run safe**: a demoted relay no longer exists as a word row, so a
+   second run matches nothing (the missing-base sample keeps reporting the
+   kept relays each run). The `WordFamily` read-layer relay-gloss defense
+   stays — harmless once the relays are gone. Chain the runs before
+   `dictionary:link-translations` in a fresh pipeline: demote first, link
+   second, so staged JSON the demote moved onto bases links in the same
+   pass.
 
 # Steps — GoldenDict dictionary (goldendict:import)
 

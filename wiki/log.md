@@ -6819,3 +6819,41 @@ create/edit). Targeted suites green (20 + 36), `composer run test:tia` green (12
 `domains/dictionary-import.md` (new "Creator hygiene" section + sources), `domains/crossword.md`
 and `domains/interactive-words.md` (adoption attach-don't-twin semantics), `generated.at` bumped;
 no routes/models/commands signatures touched, no `wiki:sync` needed; `wiki:validate` passes.
+
+## 2026-10-18 (dictionary-word-purity 10: `wiktionary:demote-form-of`)
+
+The dump-driven cleanup for the relay word rows the pre-ticket-03 import stored. The new command
+streams one kaikki dump per language (`--lang`, default file
+`kaikki/kaikki.org-dictionary-<Language name>.jsonl`, `--file` override), classifies every entry
+through the shared `FormOfClassifier`, and folds the verdicts through the new pure
+`App\Classes\Wiktionary\RelayDemotionMap` before anything writes: a surface with any real dump
+entry stays a word (also-real subtraction, order-independent), relay lines disagreeing on the base
+stay a word, chains close onto the terminal base (X→Y→Z demotes X and Y onto Z, so no relay
+re-points at a row its own run deletes), cycles demote nobody and stay valid link targets. The
+apply is set-based per `--chunk` (default 25000 relay keys, one transaction each; `--dry` prints
+every phase count and writes nothing — run it first): translation links re-point from relay rows
+onto bases through both `word_translations` arms (canonical pairs, insert-or-ignore dedupe,
+self-pairs dropped, later-chunk relays resolved through the full map so their pairs survive both
+deletions), `entity_words.word_id` re-points (the token `l_word` keeps the surface the entity text
+carries), staged `words.translations` JSON union-merges onto the base, the relay surface attaches
+as a base form (upsert on `(form, word_id)` — a base that already claims it keeps one row), the
+relay's frequency rank folds into the base as LEAST (best rank wins; the unranked sentinel
+1,100,000 never demotes a ranked base — user-approved deviation from the ticket's "max/GREATEST"
+wording, which would have flipped the flagship base `четвереньки` from rank 11,314 to unranked;
+matches ADR 0070's never-raise-a-rank fold), then the relay rows delete (relay glosses and
+self-forms die with the row — pure pointers). Romanization-tagged junk forms (Latin on ru/be/uk
+words) are collected from the same stream and deleted by exact (entry `l_word`, form `l_word`)
+pairs; the phase skips non-stress-mark languages. Bases missing from the DB keep their relays as
+words — counted, sampled, never deleted; re-runs match nothing (idempotent). Deletes by explicit
+ids from the dump map — never a wipe. Tests: `RelayDemotionMapTest` (new, 8 — subtraction,
+conflicts, chains, two- and three-entry cycles, self-base gate, missing-base passthrough),
+`DemoteFormOfCommandTest` (new, 5 / 39 assertions — seeded mini-DB plus the
+`tests/fixtures/kaikki-demote-form-of.jsonl` mini-dump: dry writes nothing, the demote end state
+including the flagship `четвереньках` case with `--chunk=2` forcing the cross-chunk link and
+staged-JSON paths, idempotent re-run, rejects unknown language and missing file). Targeted suites
+green (8 + 5), pint green, `composer run test:tia` green (1285 passed / 6575 assertions, 1285
+replayed). Wiki: `playbooks/import-dictionary-data.md` (new "Cleaning imported relay rows"
+runbook with the `--dry`-first guidance), `domains/dictionary-import.md` (the planned-ticket
+mention replaced by the implemented command + map semantics, sources), `reference/commands.md`
+regenerated (`wiki:sync`), `generated.at` bumped; `wiki:validate` passes. The real dev-DB run is
+ticket 11 (never this ticket).
