@@ -305,18 +305,51 @@ class WiktionaryParser
         $translations = [];
         foreach ($line->senses ?? [] as $sense) {
             foreach ($sense->translations ?? [] as $translation) {
-                if (in_array($translation->code ?? null, $this->targetLangs, true) && ($translation->word ?? null) !== null && trim($translation->word) !== '') {
-                    $translations[] = $translation->word;
+                $candidate = $this->stagedCandidate($translation);
+                if ($candidate !== null) {
+                    $translations[] = $candidate;
                 }
             }
         }
         foreach ($line->translations ?? [] as $translation) {
-            if (in_array($translation->code ?? null, $this->targetLangs, true) && ($translation->word ?? null) !== null && trim($translation->word) !== '') {
-                $translations[] = $translation->word;
+            $candidate = $this->stagedCandidate($translation);
+            if ($candidate !== null) {
+                $translations[] = $candidate;
             }
         }
 
         return array_values(array_unique($translations));
+    }
+
+    /**
+     * One staged translation candidate: kept only for this parser's target
+     * languages, and stored plain — a candidate whose target language is a
+     * StressMarks one (ru/be/uk) loses its combining marks HERE, at staging
+     * time (spec rule 1). The link pass strips at pairing time too and the
+     * auto-fetch strips before staging, but an unmatched candidate sits in
+     * the staged JSON verbatim until some pass converts it, so the stored
+     * string itself must never carry the marks. A candidate that is nothing
+     * but combining marks (a marks-only dump artifact) stages nothing.
+     */
+    private function stagedCandidate(object $translation): ?string
+    {
+        if (! in_array($translation->code ?? null, $this->targetLangs, true)) {
+            return null;
+        }
+
+        $word = $translation->word ?? null;
+        if ($word === null || trim($word) === '') {
+            return null;
+        }
+
+        if (StressMarks::stripsFor((string) $translation->code)) {
+            $word = StressMarks::strip($word);
+            if (trim($word) === '') {
+                return null;
+            }
+        }
+
+        return $word;
     }
 
     private function loadLookupMaps(): void

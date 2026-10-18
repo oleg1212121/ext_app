@@ -80,4 +80,59 @@ final class TranslationTargets
 
         return $ids;
     }
+
+    /**
+     * The wanted-class map for {@see pick()}/forLanguage(), shared by every
+     * staged-candidate writer (the popup auto-fetch, the wiktionary link
+     * pass): a multi-word candidate wants the target language's `phrase`
+     * class — translations never determine a real part of speech
+     * (ADR 0059) — a single-word one the class of its own pos slug, else
+     * the source word's class slug mapped into the target language; a slug
+     * the target language does not carry resolves to null, and the resolver
+     * then matches by l_word alone. Candidates sharing a lookup key keep
+     * the first one's verdict.
+     *
+     * @param  iterable<string|array{text: string, pos?: string|null}>  $candidates  staged strings (no pos) or provider candidates; each is trimmed before the multi-word check and the lookup-key normalization
+     * @param  array<string, int>  $classesBySlug  the TARGET language's class ids by slug
+     * @param  string|null  $sourceSlug  the source word's class slug (null when unclassed/unknown)
+     * @return array<string, int|null> l_word => wanted word_class_id (null = any class)
+     */
+    public static function wantedClasses(iterable $candidates, array $classesBySlug, ?string $sourceSlug): array
+    {
+        $wanted = [];
+        foreach ($candidates as $candidate) {
+            if (is_array($candidate)) {
+                $text = trim((string) $candidate['text']);
+                $pos = $candidate['pos'] ?? null;
+            } else {
+                $text = trim((string) $candidate);
+                $pos = null;
+            }
+
+            $normal = WordLookupKey::normalize($text);
+            if (! array_key_exists($normal, $wanted)) {
+                $wanted[$normal] = str_contains($text, ' ')
+                    ? ($classesBySlug['phrase'] ?? null)
+                    : self::singleWordClassId($pos, $sourceSlug, $classesBySlug);
+            }
+        }
+
+        return $wanted;
+    }
+
+    /**
+     * @param  array<string, int>  $classesBySlug
+     */
+    private static function singleWordClassId(?string $pos, ?string $sourceSlug, array $classesBySlug): ?int
+    {
+        if ($pos !== null && isset($classesBySlug[$pos])) {
+            return (int) $classesBySlug[$pos];
+        }
+
+        if ($sourceSlug !== null && isset($classesBySlug[$sourceSlug])) {
+            return (int) $classesBySlug[$sourceSlug];
+        }
+
+        return null;
+    }
 }

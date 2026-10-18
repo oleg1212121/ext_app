@@ -88,3 +88,44 @@ it('resolves nothing without wanted normals or rows', function () {
         ->and(TranslationTargets::pick(['hund' => 11], []))->toBe([])
         ->and(TranslationTargets::pick(['hund' => null], []))->toBe([]);
 });
+
+it('builds the wanted-class map: multi-word wants phrase, single word the mappable pos class', function () {
+    // noun=11, verb=22, phrase=13 — the TARGET language's class ids by slug.
+    $classes = ['noun' => 11, 'verb' => 22, 'phrase' => 13];
+
+    // A case variant of the first candidate dedupes onto its key.
+    expect(TranslationTargets::wantedClasses(
+        [['text' => 'aufgeben', 'pos' => 'verb'], ['text' => 'aufgeben mit'], ['text' => 'Aufgeben']],
+        $classes,
+        'noun',
+    ))->toBe([
+        'aufgeben' => 22,
+        'aufgeben mit' => 13,
+    ]);
+});
+
+it('falls back to the source word class for a single word with no mappable pos', function () {
+    $classes = ['noun' => 11];
+
+    expect(TranslationTargets::wantedClasses(
+        [['text' => 'katze', 'pos' => 'femnoun'], ['text' => 'hund', 'pos' => null], 'vogel'],
+        $classes,
+        'noun',
+    ))->toBe([
+        'katze' => 11, // unmappable pos → the source word's class
+        'hund' => 11, // no pos → the source word's class
+        'vogel' => 11, // staged string (no pos) → the source word's class
+    ]);
+});
+
+it('resolves the wanted class to null when neither pos nor source class maps', function () {
+    expect(TranslationTargets::wantedClasses([['text' => 'katze', 'pos' => 'femnoun']], ['noun' => 11], null))
+        ->toBe(['katze' => null])
+        ->and(TranslationTargets::wantedClasses(['katze'], ['noun' => 11], 'femnoun'))
+        ->toBe(['katze' => null]);
+});
+
+it('wants the phrase class only when the target language carries it', function () {
+    expect(TranslationTargets::wantedClasses(['aufgeben mit'], ['noun' => 11], 'noun'))
+        ->toBe(['aufgeben mit' => null]);
+});

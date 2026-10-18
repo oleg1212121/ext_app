@@ -1,5 +1,56 @@
 # Directory Update Log
 
+## 2026-10-18 (code-review fix pass: kaikki staged candidates strip at staging time, one shared wanted-class decision — dictionary-word-purity ticket 13)
+
+The feature's code-review findings, fixed:
+
+- **Kaikki staged translation candidates strip at staging time**
+  (`laravel/app/Classes/WiktionaryParser.php` `extractTranslations`): the
+  parser stored `$translation->word` verbatim, so a marked ru/be/uk
+  candidate sat in `words.translations` marked indefinitely (the link pass
+  strips at pairing time, but unmatched candidates waited). Now the strip
+  keys on the candidate's target `code` — stress-mark-language candidates
+  store plain (a marks-only candidate stages nothing, per the
+  marks-only-artifact convention), non-stress-mark targets keep their
+  diacritics. Old marked rows stay prunable through the link pass's
+  pairing-time strip.
+- **One shared wanted-class decision**
+  (`laravel/app/Support/TranslationTargets::wantedClasses`): the
+  "multi-word → target `phrase` class, single-word → its pos class, else
+  the source word's class, else null" map was built twice (popup
+  auto-fetch `FetchWordTranslations::wantedClasses`, link pass inline in
+  `LinkTranslationsCommand::linkDirection`); both now delegate to the
+  shared helper (staged strings and `array{text, pos}` provider
+  candidates both accepted). GoldenDictParser's per-record batch variant
+  does not fit the per-source-word shape and stays.
+- **words:normalize stat keys renamed self-evident** (internal keys only,
+  summary labels stable): `p3_merged`/`p3_reclassed`/`p3_classes` →
+  `alias_merged`/`alias_reclassed`/`alias_classes_deleted`,
+  `links_rep`/`links_self` → `links_repointed`/`links_self_dropped`.
+- **DemoteFormOfCommandTest's `$form` helper** keys through
+  `WordLookupKey::normalize` instead of a bare `mb_strtolower`.
+
+Recorded judgments (no code): `EntityWordAdoption::preferClassed` does
+NOT reuse `TranslationTargets::pick` — adoption prefers "first
+non-unknown-class row in id order, else lowest id", an exclusion pick()
+cannot express (a null wanted class there makes the unknown twin
+eligible), and the batched chunked-lookup shape is the point of that
+path; the single-word creator convention (strip → `WordLookupKey` →
+`LemmaForms`) stays as 3-line call sites backed by the two shared helpers
+— a payload wrapper would be a Middle Man over them; ADR 0079 gained one
+Consequences line on the repair commands' deliberate raw set-based SQL;
+SAMPLE_LIMIT/memory-limit constants duplication and the baseline
+`.gitignore` rewrite left as-is (trivial / historical).
+
+`dictionary-import.md` updated (kaikki bullet + link-pass bullet +
+"GoldenDict vs Wiktionary" paragraph document the staging-time strip and
+the shared wanted-class map; description refreshed, `generated.at`
+bumped). No routes/models/commands added → `wiki:sync` run anyway,
+`wiki:validate` 0 warnings. Tests: `WiktionaryParserTest` marked-candidate
+rewrite (plain storage, marks-only stages nothing, non-stress target
+verbatim) + `TranslationTargetsTest` wantedClasses unit blocks; TIA
+replay green.
+
 ## 2026-10-18 (kaikki import hygiene: plain display headwords, shared pos aliases, shared lemma-form rule, romanization skip — dictionary-word-purity ticket 02)
 
 The kaikki (Wiktionary) importer loses its three impurities, reversing the

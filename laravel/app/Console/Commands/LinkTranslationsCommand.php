@@ -112,25 +112,17 @@ class LinkTranslationsCommand extends Command
                 $translations = $fromWord->translations ?? [];
 
                 // One resolver query per staged word instead of the old
-                // per-candidate lookup: the wanted-class map follows the
-                // shared writers' contract — a multi-word candidate wants
-                // the target's phrase class, a single-word one the source
-                // word's class slug mapped into the target language, an
-                // unmappable slug null (match by l_word alone).
-                $slug = $slugByFromClassId[$fromWord->word_class_id] ?? null;
-                $sourceClassId = $slug !== null ? ($toClassBySlug[$slug] ?? null) : null;
-                $phraseClassId = $toClassBySlug['phrase'] ?? null;
-
-                $wanted = [];
-                foreach ($translations as $translation) {
-                    $candidate = trim((string) $translation);
-                    $normal = WordLookupKey::normalize($candidate);
-                    if (! array_key_exists($normal, $wanted)) {
-                        $wanted[$normal] = str_contains($candidate, ' ')
-                            ? $phraseClassId
-                            : $sourceClassId;
-                    }
-                }
+                // per-candidate lookup; the wanted-class map follows the
+                // shared writers' contract through the shared decision
+                // (TranslationTargets::wantedClasses): a multi-word
+                // candidate wants the target's phrase class, a single-word
+                // one the source word's class slug mapped into the target
+                // language, an unmappable slug null (match by l_word alone).
+                $wanted = TranslationTargets::wantedClasses(
+                    $translations,
+                    $toClassBySlug,
+                    $slugByFromClassId[$fromWord->word_class_id] ?? null,
+                );
 
                 $resolved = TranslationTargets::forLanguage($toLanguage->id, $wanted);
 

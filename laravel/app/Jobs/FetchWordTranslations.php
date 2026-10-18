@@ -174,52 +174,29 @@ class FetchWordTranslations implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * The wanted-class map for the shared resolver, built exactly like the
-     * GoldenDict parser's: a multi-word candidate wants the target
-     * language's `phrase` class — translations never determine a real part
-     * of speech (ADR 0059) — a single-word one the class of its pos slug,
-     * else the source word's class slug mapped into the target language; a
-     * class the target language does not carry resolves to null, and the
-     * resolver then matches by l_word alone.
+     * The wanted-class map for the shared resolver — the shared decision
+     * (TranslationTargets::wantedClasses): a multi-word candidate wants the
+     * target language's `phrase` class, a single-word one the class of its
+     * pos slug, else the source word's class slug mapped into the target
+     * language; an unmappable slug resolves to null and the resolver then
+     * matches by l_word alone.
      *
      * @param  list<array{text: string, pos: string|null}>  $candidates
      * @return array<string, int|null> l_word => wanted word_class_id
      */
     private function wantedClasses(array $candidates, Language $target, Word $word): array
     {
-        $bySlug = WordClass::query()
-            ->where('language_id', $target->id)
-            ->orderBy('id')
-            ->pluck('id', 'slug')
-            ->all();
-
-        $sourceSlug = $word->word_class_id !== null
-            ? WordClass::query()->whereKey($word->word_class_id)->value('slug')
-            : null;
-
-        $wanted = [];
-        foreach ($candidates as $candidate) {
-            $normal = WordLookupKey::normalize($candidate['text']);
-            if (! array_key_exists($normal, $wanted)) {
-                $wanted[$normal] = str_contains($candidate['text'], ' ')
-                    ? ($bySlug['phrase'] ?? null)
-                    : $this->singleWordClassId($candidate['pos'], $sourceSlug, $bySlug);
-            }
-        }
-
-        return $wanted;
-    }
-
-    /**
-     * @param  array<string, int>  $bySlug
-     */
-    private function singleWordClassId(?string $pos, ?string $sourceSlug, array $bySlug): ?int
-    {
-        if ($pos !== null && isset($bySlug[$pos])) {
-            return (int) $bySlug[$pos];
-        }
-
-        return $sourceSlug !== null ? ($bySlug[$sourceSlug] ?? null) : null;
+        return TranslationTargets::wantedClasses(
+            $candidates,
+            WordClass::query()
+                ->where('language_id', $target->id)
+                ->orderBy('id')
+                ->pluck('id', 'slug')
+                ->all(),
+            $word->word_class_id !== null
+                ? WordClass::query()->whereKey($word->word_class_id)->value('slug')
+                : null,
+        );
     }
 
     /**

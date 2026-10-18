@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T19:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T21:10:00+03:00 }
 verified: { by: human:alex, at: 2026-10-18T19:40:00+03:00 }
 sources:
   - id: import-cmd
@@ -119,7 +119,8 @@ Two source shapes exist:
    curate the placeholder titles in `/admin` afterwards. Every imported
    word stores itself as its lemma form (`App\Support\LemmaForms`), and
    `romanization`-tagged forms and stressed ru/be/uk headwords never
-   store.
+   store — nor do marks in the staged translation candidates for
+   ru/be/uk targets (they strip at staging time).
 4. Link words across languages through the staged translations:
 
    ```bash
@@ -132,7 +133,9 @@ Two source shapes exist:
    shared `App\Support\TranslationTargets` resolver — same class as the
    source word first, `phrase` for multi-word candidates, else any class
    (lowest id) — and the Cyrillic stress marks strip at pairing time
-   (e.g. `приве́т` → `привет`, the shared `App\Support\StressMarks`).
+   (e.g. `приве́т` → `привет`, the shared `App\Support\StressMarks`;
+   rows staged marked before the staging-time strip prune by their exact
+   stored string).
    **Prune-on-link**: every candidate it converts leaves the word's
    `words.translations` JSON (an emptied JSON stores null), so re-runs are
    idempotent and report fewer staged candidates; unmatched candidates

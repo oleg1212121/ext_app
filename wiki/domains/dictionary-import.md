@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; both importers store plain (stress-free) display words, share one pos alias table and one lemma-form rule, kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, unknown-twin merges, alias-class fold, lemma-form backfill).
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; both importers store plain (stress-free) display words and stage plain translation candidates for the stress-mark target languages, share one pos alias table and one lemma-form rule, kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, unknown-twin merges, alias-class fold, lemma-form backfill).
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T19:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T21:10:00+03:00 }
 verified: { by: human:alex, at: 2026-10-18T19:40:00+03:00 }
 sources:
   - id: adr-0078
@@ -107,7 +107,15 @@ mirrored per-language tables, and a single `word_translations` pivot —
   display-headword carve-out is reversed (2026-10-18 addendum): no stress
   marks in stored keys or display words on any writer, definition/example
   prose keeps its marks, and a headword that strips to the empty string
-  (a marks-only artifact) stores nothing. Raw `pos` slugs canonicalize
+  (a marks-only artifact) stores nothing. **Staged translation candidates
+  strip per target language** (2026-10-18 code review): a candidate whose
+  `code` is a stress-mark language stores plain — unmatched candidates sit
+  in the staged `words.translations` JSON verbatim until a link pass
+  converts them, so the strip happens at staging time (a marks-only
+  candidate stages nothing), while a non-stress-mark target's candidate
+  keeps its diacritics; legacy rows staged marked before this strip
+  remain prunable through the link pass's pairing-time strip. Raw `pos`
+  slugs canonicalize
   through the shared `App\Support\PosAliases` table before any word class
   is minted ("adj" joins "adjective" — one taxonomy, aliased lines of one
   word merge into a single row); `forms[]` entries tagged `romanization`
@@ -201,8 +209,11 @@ mirrored per-language tables, and a single `word_translations` pivot —
   among languages that have imported words (one canonical row per pair,
   `word_a_id < word_b_id`). Candidates resolve through the shared
   `App\Support\TranslationTargets` resolver (same class as the source word
-  → `phrase` for multi-word → any class, lowest id) with stress-mark
-  stripping at pairing time (`App\Support\StressMarks`); every candidate
+  → `phrase` for multi-word → any class, lowest id — the wanted-class map
+  itself is the shared `TranslationTargets::wantedClasses` decision) with
+  stress-mark stripping at pairing time (`App\Support\StressMarks`;
+  legacy kaikki rows staged marked before the staging-time strip still
+  arrive marked and prune by their exact stored string); every candidate
   it converts is **pruned** from the JSON (emptied JSON → null), so
   re-runs are idempotent and shrink the staging; unmatched candidates
   stay staged and are reported as a per-direction count plus a capped
@@ -391,8 +402,10 @@ candidates and links them directly against the target language's existing
 words (`--no-link` to opt out) — it never creates target rows. Both
 write the same staged-JSON contract (`App\Support\StagedTranslations`:
 exact stored strings, union-merge in, prune-on-link out) and resolve
-through the same `App\Support\TranslationTargets` semantics, as does the
-popup auto-fetch job.
+through the same `App\Support\TranslationTargets` semantics (wanted-class
+map included), as does the popup auto-fetch job — and both stage their
+candidates plain for the stress-mark languages (GoldenDict at segment
+strip, kaikki at candidate extraction).
 
 # Creator hygiene (no unknown-class twins)
 

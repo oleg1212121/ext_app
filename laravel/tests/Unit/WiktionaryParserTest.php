@@ -188,16 +188,32 @@ it('extracts translations via extractTranslations method', function () {
     expect($translations)->toHaveCount(2);
 });
 
-it('extracts translations with stress marks preserved', function () {
+it('stores a marked ru staged candidate plain', function () {
     $parser = new WiktionaryParser('en', 'ru');
     // Build JSON with actual combining acute accent (U+0301) embedded in the word
     $jsonStr = '{"word":"house","pos":"noun","senses":[{"glosses":["building"],"translations":[{"code":"ru","word":"до'."\u{0301}".'м"}]}]}';
     $line = json_decode($jsonStr);
 
-    $translations = $parser->extractTranslations($line);
-    expect($translations)->toHaveCount(1);
-    // Verify the translation contains the combining mark (U+0301)
-    expect(preg_match('/\x{0301}/u', $translations[0]))->toBe(1);
+    // Staged candidates sit in words.translations verbatim until a link
+    // pass converts them — so the strip happens at staging time (spec
+    // rule 1: staged candidates never carry combining marks).
+    expect($parser->extractTranslations($line))->toBe(['дом']);
+});
+
+it('stages nothing for a ru candidate that is nothing but combining marks', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"house","pos":"noun","translations":[{"code":"ru","word":"'."\u{0301}".'"}]}');
+
+    expect($parser->extractTranslations($line))->toBe([]);
+});
+
+it('keeps a non-stress-mark target candidate verbatim', function () {
+    $parser = new WiktionaryParser('en', ['ru', 'de']);
+    $line = json_decode('{"word":"house","pos":"noun","translations":[{"code":"de","word":"Gebäude"},{"code":"ru","word":"до'."\u{0301}".'м"}]}');
+
+    // Diacritics outside the StressMarks languages are legitimate spelling;
+    // the ru candidate strips anyway.
+    expect($parser->extractTranslations($line))->toBe(['Gebäude', 'дом']);
 });
 
 it('accepts multiple target languages for staged translations', function () {

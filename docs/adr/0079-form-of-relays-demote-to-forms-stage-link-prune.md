@@ -123,6 +123,10 @@ Five rules — three data shapes, one shared toolkit, one creator contract:
   runs), expect tens of minutes each, and are run `--dry` first (the
   runbook in `wiki/playbooks/import-dictionary-data.md`; pipeline order:
   demote → normalize → link-translations → frequency → crossword:link).
+  Both also deliberately skip Eloquent for their merge phases: the
+  set-based moves (temp mapping tables, insert-select ON CONFLICT,
+  VALUES-join updates) have no Eloquent expression, and per-row model
+  writes would not survive dump scale.
 - Relay demotion is dump-driven on purpose: a database-only heuristic
   (relay-gloss patterns) misfires on mixed entries and on language-mismatched
   glosses, while the dump's sense-level signal is exact. Bases the dump

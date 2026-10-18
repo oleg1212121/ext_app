@@ -4,6 +4,7 @@ use App\Models\EntityWord;
 use App\Models\Form;
 use App\Models\Word;
 use App\Models\WordTranslation;
+use App\Support\WordLookupKey;
 
 /**
  * The mini-DB mirroring the pre-demote dev-DB state: relay word rows with
@@ -35,7 +36,7 @@ function seedDemoteFixture(): array
     $form = fn (Word $word, string $form): Form => Form::query()->create([
         'word_id' => $word->id,
         'form' => $form,
-        'l_word' => mb_strtolower($form),
+        'l_word' => WordLookupKey::normalize($form),
     ]);
 
     $form($sobaka, 'собака');

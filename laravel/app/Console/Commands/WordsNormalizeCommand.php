@@ -94,9 +94,9 @@ class WordsNormalizeCommand extends Command
         'f_deduped' => 0,
         'f_marks_only' => 0,
         'twins' => 0,
-        'p3_merged' => 0,
-        'p3_reclassed' => 0,
-        'p3_classes' => 0,
+        'alias_merged' => 0,
+        'alias_reclassed' => 0,
+        'alias_classes_deleted' => 0,
         'lemmas' => 0,
         'definitions' => 0,
         'etymologies' => 0,
@@ -110,8 +110,8 @@ class WordsNormalizeCommand extends Command
         'user_word' => 0,
         'user_word_event' => 0,
         'word_translation_fetches' => 0,
-        'links_rep' => 0,
-        'links_self' => 0,
+        'links_repointed' => 0,
+        'links_self_dropped' => 0,
         'links_dedupe' => 0,
         'staged' => 0,
         'freq' => 0,
@@ -167,9 +167,9 @@ class WordsNormalizeCommand extends Command
             ['1. stressed form variants deduped', $this->stats['f_deduped']],
             ['1. marks-only form rows dropped', $this->stats['f_marks_only']],
             ['2. unknown-class twins merged', $this->stats['twins']],
-            ['3. alias-class words merged into canonical twins', $this->stats['p3_merged']],
-            ['3. alias-class words reclassed in place', $this->stats['p3_reclassed']],
-            ['3. alias word classes deleted', $this->stats['p3_classes']],
+            ['3. alias-class words merged into canonical twins', $this->stats['alias_merged']],
+            ['3. alias-class words reclassed in place', $this->stats['alias_reclassed']],
+            ['3. alias word classes deleted', $this->stats['alias_classes_deleted']],
             ['4. lemma forms backfilled', $this->stats['lemmas']],
             ['Merge children — definitions/etymologies moved', $this->stats['definitions'] + $this->stats['etymologies']],
             ['Merge children — forms moved', $this->stats['forms']],
@@ -182,8 +182,8 @@ class WordsNormalizeCommand extends Command
             ['Merge children — user_word rows re-pointed', $this->stats['user_word']],
             ['Merge children — user_word_event rows re-pointed', $this->stats['user_word_event']],
             ['Merge children — word_translation_fetches moved', $this->stats['word_translation_fetches']],
-            ['Merge links — translation links re-pointed', $this->stats['links_rep']],
-            ['Merge links — self-pairs dropped', $this->stats['links_self']],
+            ['Merge links — translation links re-pointed', $this->stats['links_repointed']],
+            ['Merge links — self-pairs dropped', $this->stats['links_self_dropped']],
             ['Merge links — deduped onto existing pairs', $this->stats['links_dedupe']],
             ['Merge — staged translation rows merged', $this->stats['staged']],
             ['Merge — survivors re-ranked (LEAST fold)', $this->stats['freq']],
@@ -479,8 +479,8 @@ class WordsNormalizeCommand extends Command
                         // No canonical class: no twin can exist — every alias
                         // word would reclass (creating the class) and the
                         // alias rows would drop.
-                        $this->stats['p3_reclassed'] += DB::table('words')->whereIn('word_class_id', $aliasIds)->count();
-                        $this->stats['p3_classes'] += count($aliasIds);
+                        $this->stats['alias_reclassed'] += DB::table('words')->whereIn('word_class_id', $aliasIds)->count();
+                        $this->stats['alias_classes_deleted'] += count($aliasIds);
 
                         continue;
                     }
@@ -502,7 +502,7 @@ class WordsNormalizeCommand extends Command
                     .' where a.word_class_id in ('.implode(', ', array_fill(0, count($aliasIds), '?')).')',
                     [$targetId, ...$aliasIds],
                 );
-                $this->stats['p3_merged'] += $this->mergeMapCount();
+                $this->stats['alias_merged'] += $this->mergeMapCount();
                 $this->applyMerge();
 
                 // Twinless leftovers: collapse same-display rows among
@@ -514,17 +514,17 @@ class WordsNormalizeCommand extends Command
                     $this->beginMergeMap($pairs);
                     $this->applyMerge();
                 }
-                $this->stats['p3_merged'] += count($pairs);
+                $this->stats['alias_merged'] += count($pairs);
                 if ($this->dry) {
                     // Approximation: includes rows a real run merged above.
-                    $this->stats['p3_reclassed'] += DB::table('words')->whereIn('word_class_id', $aliasIds)->count();
-                    $this->stats['p3_classes'] += count($aliasIds);
+                    $this->stats['alias_reclassed'] += DB::table('words')->whereIn('word_class_id', $aliasIds)->count();
+                    $this->stats['alias_classes_deleted'] += count($aliasIds);
                 } else {
-                    $this->stats['p3_reclassed'] += DB::affectingStatement(
+                    $this->stats['alias_reclassed'] += DB::affectingStatement(
                         'update words set word_class_id = ? where word_class_id in ('.implode(', ', array_fill(0, count($aliasIds), '?')).')',
                         [$targetId, ...$aliasIds],
                     );
-                    $this->stats['p3_classes'] += WordClass::query()->whereIn('id', $aliasIds)->delete();
+                    $this->stats['alias_classes_deleted'] += WordClass::query()->whereIn('id', $aliasIds)->delete();
                 }
             }
         }
@@ -860,13 +860,13 @@ class WordsNormalizeCommand extends Command
         DB::statement('drop table if exists relink');
         DB::statement('create temp table relink (word_a_id bigint, word_b_id bigint)');
         DB::statement('insert into relink select distinct least(sa, sb), greatest(sa, sb) from ('.$mapped.') t where sa <> sb');
-        $this->stats['links_self'] += (int) DB::selectOne(
+        $this->stats['links_self_dropped'] += (int) DB::selectOne(
             'select count(*) as n from ('.$mapped.') t where sa = sb',
         )->n;
 
         $pairCount = (int) DB::selectOne('select count(*) as n from relink')->n;
         if ($this->dry) {
-            $this->stats['links_rep'] += $pairCount; // pre-database approximation
+            $this->stats['links_repointed'] += $pairCount; // pre-database approximation
 
             return;
         }
@@ -881,7 +881,7 @@ class WordsNormalizeCommand extends Command
             .' on conflict (word_a_id, word_b_id) do nothing returning 1)'
             .' select count(*) as n from ins'
         )->n;
-        $this->stats['links_rep'] += $inserted;
+        $this->stats['links_repointed'] += $inserted;
         $this->stats['links_dedupe'] += $pairCount - $inserted;
         DB::statement('drop table if exists relink');
     }
