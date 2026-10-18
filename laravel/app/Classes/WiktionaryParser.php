@@ -2,6 +2,7 @@
 
 namespace App\Classes;
 
+use App\Classes\Wiktionary\FormOfClassifier;
 use App\Models\Definition;
 use App\Models\Etymology;
 use App\Models\Form;
@@ -13,6 +14,7 @@ use App\Models\WordClass;
 use App\Support\LemmaForms;
 use App\Support\PosAliases;
 use App\Support\StressMarks;
+use App\Support\TranslationTargets;
 use App\Support\WordLookupKey;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Console\Helper\ProgressBar;
@@ -40,6 +42,8 @@ class WiktionaryParser
     private array $stats = [
         'lines_read' => 0,
         'words_imported' => 0,
+        'relays_demoted' => 0,
+        'relay_bases_created' => 0,
         'lookups_created' => 0,
         'batches_flushed' => 0,
     ];
@@ -210,6 +214,37 @@ class WiktionaryParser
         $rawPos = $line->pos ?? 'unknown';
         $pos = PosAliases::canonical($rawPos) ?? $rawPos;
 
+        // A relay entry (every sense a form-of pointer — "четвереньках:
+        // prepositional of четвере́ньки") demotes to a FORM of its base word
+        // instead of a word row: its relay glosses, transcriptions,
+        // etymology and staged translations store nothing. Mixed entries
+        // (some relay senses + some real glosses) stay words — the shared
+        // classifier holds the verdict.
+        $relay = FormOfClassifier::classify($line);
+        $relayBase = null;
+        if ($relay['relay']) {
+            $base = $this->stripsDisplayMarks ? StressMarks::strip((string) $relay['base']) : (string) $relay['base'];
+            // A base that strips to nothing (a marks-only artifact) demotes
+            // to nothing: keep the entry a word instead of dropping it.
+            if (trim($base) !== '') {
+                $relayBase = $base;
+            }
+        }
+
+        if ($relayBase !== null) {
+            return [
+                'word' => $word,
+                'l_word' => WordLookupKey::normalize($word),
+                'pos' => $pos,
+                'relay_base' => $relayBase,
+                'definitions' => [],
+                'forms' => [],
+                'sounds' => [],
+                'etymology' => null,
+                'translations' => [],
+            ];
+        }
+
         $forms = [];
         foreach ($line->forms ?? [] as $form) {
             // Latin transliterations ("četverénʹkax" on a ru word) are
@@ -256,6 +291,7 @@ class WiktionaryParser
             'word' => $word,
             'l_word' => WordLookupKey::normalize($word),
             'pos' => $pos,
+            'relay_base' => null,
             'definitions' => array_values(array_unique($definitions)),
             'forms' => array_values(array_unique($forms)),
             'sounds' => $sounds,
@@ -329,6 +365,21 @@ class WiktionaryParser
 
     public function mergeRecord(array $existing, array $incoming): array
     {
+        // Relay demotion merges by union-of-senses semantics: a relay line
+        // merged with a real line is a mixed entry — it stays a word. Two
+        // relay lines demote together only when they point at the same base
+        // (compared on the normalized key: stress and case cannot divide
+        // them); disagreeing bases stay a word.
+        $existingBase = $existing['relay_base'] ?? null;
+        $incomingBase = $incoming['relay_base'] ?? null;
+        if ($existingBase !== null && $incomingBase !== null
+            && WordLookupKey::normalize($existingBase) === WordLookupKey::normalize($incomingBase)) {
+            $existing['relay_base'] = $existingBase;
+        } else {
+            // Both real, one of each (mixed), or disagreeing bases: a word.
+            $existing['relay_base'] = null;
+        }
+
         $existing['definitions'] = array_values(array_unique(array_merge($existing['definitions'], $incoming['definitions'])));
         $existing['forms'] = array_values(array_unique(array_merge($existing['forms'], $incoming['forms'])));
         $existing['sounds'] = array_values(array_unique(array_merge($existing['sounds'], $incoming['sounds']), SORT_REGULAR));
@@ -346,8 +397,20 @@ class WiktionaryParser
         DB::transaction(function () use ($batch) {
             $defaultWordClassId = $this->wordClassMap['unknown'] ?? reset($this->wordClassMap);
 
-            $wordUpserts = [];
+            // Relay records never become word rows; they attach as forms of
+            // their bases below.
+            $wordRecords = [];
+            $relayRecords = [];
             foreach ($batch as $record) {
+                if (($record['relay_base'] ?? null) !== null) {
+                    $relayRecords[] = $record;
+                } else {
+                    $wordRecords[] = $record;
+                }
+            }
+
+            $wordUpserts = [];
+            foreach ($wordRecords as $record) {
                 $posId = $this->wordClassMap[$record['pos']] ?? $defaultWordClassId;
                 $wordUpserts[] = [
                     'word' => $record['word'],
@@ -359,21 +422,105 @@ class WiktionaryParser
             }
 
             $this->uniqueByCompound($wordUpserts, ['word', 'language_id', 'word_class_id']);
-            Word::upsert($wordUpserts, ['word', 'language_id', 'word_class_id']);
+            if ($wordUpserts !== []) {
+                Word::upsert($wordUpserts, ['word', 'language_id', 'word_class_id']);
+            }
 
             $this->stats['words_imported'] += count($wordUpserts);
 
+            $this->demoteRelays($relayRecords, $defaultWordClassId);
+
             $wordIds = Word::query()
                 ->where('language_id', $this->languageId)
-                ->whereIn('word', collect($batch)->pluck('word')->unique()->toArray())
+                ->whereIn('word', collect($wordRecords)->pluck('word')->unique()->toArray())
                 ->get(['id', 'word', 'word_class_id'])
                 ->keyBy(fn ($w) => mb_strtolower($w->word).'|'.$w->word_class_id);
 
-            $this->flushDefinitions($batch, $wordIds, $defaultWordClassId);
-            $this->flushForms($batch, $wordIds, $defaultWordClassId);
-            $this->flushEtymologies($batch, $wordIds, $defaultWordClassId);
-            $this->flushTranscriptions($batch, $wordIds, $defaultWordClassId);
+            $this->flushDefinitions($wordRecords, $wordIds, $defaultWordClassId);
+            $this->flushForms($wordRecords, $wordIds, $defaultWordClassId);
+            $this->flushEtymologies($wordRecords, $wordIds, $defaultWordClassId);
+            $this->flushTranscriptions($wordRecords, $wordIds, $defaultWordClassId);
         });
+    }
+
+    /**
+     * A relay record becomes a form of its base word — never a word row.
+     * The base resolves among this language's existing rows by l_word with
+     * the shared class preference (same-class row, else lowest id; an
+     * unknown pos skips the preference). A base the dump never lists as a
+     * lemma is created here as a proxy headword — still a dictionary
+     * headword, so it carries itself as its lemma form.
+     *
+     * @param  list<array<string, mixed>>  $relays
+     */
+    private function demoteRelays(array $relays, int $defaultWordClassId): void
+    {
+        if ($relays === []) {
+            return;
+        }
+
+        $wanted = [];
+        $displayByLWord = [];
+        foreach ($relays as $relay) {
+            $baseLWord = WordLookupKey::normalize((string) $relay['relay_base']);
+            $displayByLWord[$baseLWord] ??= (string) $relay['relay_base'];
+            if (! array_key_exists($baseLWord, $wanted)) {
+                // The goldendict resolver semantics: the relay's pos prefers
+                // the same-class base row, else the lowest id wins — but an
+                // unknown pos (or a pos without a class) skips the
+                // preference entirely, so the placeholder-`unknown` twin of
+                // a properly classed base never wins it.
+                $wanted[$baseLWord] = $relay['pos'] === 'unknown'
+                    ? null
+                    : ($this->wordClassMap[$relay['pos']] ?? null);
+            }
+        }
+
+        $resolved = TranslationTargets::forLanguage($this->languageId, $wanted);
+
+        $missing = array_diff_key($wanted, $resolved);
+        $formRows = [];
+        if ($missing !== []) {
+            $baseRows = [];
+            foreach ($missing as $baseLWord => $classId) {
+                $baseRows[] = [
+                    'word' => $displayByLWord[$baseLWord],
+                    'l_word' => $baseLWord,
+                    'language_id' => $this->languageId,
+                    'word_class_id' => $classId ?? $defaultWordClassId,
+                    'translations' => null,
+                ];
+            }
+            Word::upsert($baseRows, ['word', 'language_id', 'word_class_id']);
+            $this->stats['relay_bases_created'] += count($baseRows);
+
+            $resolved += TranslationTargets::forLanguage($this->languageId, $missing);
+
+            // A proxy headword is a dictionary headword like any other: it
+            // carries itself as its lemma form through the shared helper.
+            foreach ($missing as $baseLWord => $classId) {
+                $baseId = $resolved[$baseLWord] ?? null;
+                if ($baseId !== null) {
+                    array_push($formRows, ...LemmaForms::rows($displayByLWord[$baseLWord], [], $baseId, $this->stripsDisplayMarks));
+                }
+            }
+        }
+
+        foreach ($relays as $relay) {
+            $baseId = $resolved[WordLookupKey::normalize((string) $relay['relay_base'])] ?? null;
+            if ($baseId === null) {
+                continue;
+            }
+            // The relay headword becomes the base's form — the same
+            // cap/strip/dedupe conventions as every other form row.
+            array_push($formRows, ...LemmaForms::rows((string) $relay['word'], [], $baseId, $this->stripsDisplayMarks));
+            $this->stats['relays_demoted']++;
+        }
+
+        if ($formRows !== []) {
+            $this->uniqueByCompound($formRows, ['form', 'word_id']);
+            Form::upsert($formRows, ['form', 'word_id']);
+        }
     }
 
     private function flushDefinitions(array $batch, object $wordIds, int $defaultWordClassId): void

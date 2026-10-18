@@ -1,12 +1,12 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; both importers store plain (stress-free) display words, share one pos alias table and one lemma-form rule, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059).
-tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs]
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; both importers store plain (stress-free) display words, share one pos alias table and one lemma-form rule, kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059).
+tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T19:05:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-18T19:05:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T22:40:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T22:40:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -44,6 +44,9 @@ sources:
   - id: lemma-forms
     resource: laravel/app/Support/LemmaForms.php
     title: shared lemma-form rule and form-row hygiene (cap/strip/empty-guard/dedupe)
+  - id: form-of-classifier
+    resource: laravel/app/Classes/Wiktionary/FormOfClassifier.php
+    title: parser-agnostic kaikki form-of relay verdict (entry-shape in → relay + base out)
   - id: reclass-cmd
     resource: laravel/app/Console/Commands/ReclassMultiwordWordsCommand.php
     title: words:reclass-multiword
@@ -88,7 +91,31 @@ mirrored per-language tables, and a single `word_translations` pivot —
   every imported word stores itself as its lemma form through the shared
   `App\Support\LemmaForms` row builder (column cap, stress strip,
   empty-after-strip guard, `(form, word_id)` dedupe, the word's own
-  headword first — the forms table alone resolves lookups). See
+  headword first — the forms table alone resolves lookups). **Form-of
+  relays demote to forms, not words** (2026-10-18): a kaikki entry whose
+  EVERY sense carries the sense-level `form_of` list (+ the `form-of` tag)
+  is an inflected variant standing alone ("четвереньках — prepositional of
+  четвере́ньки") and imports as a **form of its base word** — no word row,
+  no definitions/transcriptions/etymology/staged translations. The verdict
+  lives in the parser-agnostic shared helper
+  `App\Classes\Wiktionary\FormOfClassifier` (entry-shape in → relay +
+  base out; mixed entries — some relay senses + some real glosses — stay
+  words; an entry without senses stays a word; a base that collapses into
+  the entry's own lookup key would demote the entry onto itself, so it
+  stays a word; a trivially present entry-level `form_of` is honored). The
+  base = `form_of[0].word`, stress-stripped for ru/be/uk, resolved by
+  `l_word` with the shared class preference (same-class row, else lowest
+  id — `App\Support\TranslationTargets`); a base the dump never lists as a
+  lemma is **created** as a proxy dictionary headword (the relay's pos
+  class, no staged translations, carrying itself as its lemma form), and
+  the relay headword attaches to it through the same `LemmaForms`
+  conventions. Merged same-key lines follow union-of-senses semantics: a
+  relay line merged with a real line is a mixed entry (word); two relay
+  lines demote together only onto an agreeing base. Import stats count the
+  conversions (`relays_demoted`, `relay_bases_created`). Pre-existing
+  relay word rows in the data are cleaned up separately by the dump-driven
+  demote command (planned ticket); the `WordFamily` read-layer relay-gloss
+  defense stays until then. See
   [ADR 0078](../../docs/adr/0078-goldendict-plain-words-link-only-translations.md).
 * `App\Classes\RawWiktextractExtractor` — streams a **Raw dump** (the
   monolithic kaikki `raw-wiktextract-data` file, every Wiktionary language

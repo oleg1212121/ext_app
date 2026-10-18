@@ -6697,3 +6697,29 @@ flipped from seq scan to `Index Scan using idx_forms_word_id`, 0.159 ms / 3+8 bu
 index exists AND leads with `word_id`, so a future column reorder in the migration fails the suite).
 `database/dictionary.md` gained the indexes bullet + migration source, `generated.at` bumped;
 no routes/models/commands touched, no `wiki:sync` needed.
+
+## 2026-10-18 (dictionary-word-purity 03: kaikki form-of relays demote to forms, not words)
+
+Kaikki marks inflected variants as standalone entries whose every sense carries the sense-level
+`form_of` list (+ the `form-of` tag) — `четвереньках: prepositional of четвере́ньки` — and
+`WiktionaryParser` ignored the signal entirely, importing ~379k/444k ru and ~974k/1.5M en relay
+entries as full word rows with relay glosses and self-referential form rows. Now `parseLine`
+classifies every entry through the new parser-agnostic shared helper
+`App\Classes\Wiktionary\FormOfClassifier` (entry-shape in → `{relay, base}` out; also reusable by
+the planned demote command): relay iff every sense carries `form_of[0].word` or the `form-of` tag,
+mixed entries (some relay senses + real glosses) stay words, an entry without senses stays a word
+(no sense-level signal), a base that collapses into the entry's own lookup key would demote the
+entry onto itself (stays a word), and a trivially present entry-level `form_of` is honored. A relay
+record carries empty definitions/forms/sounds/translations/etymology and a `relay_base` (stress-
+stripped for ru/be/uk); `flushBatch` partitions it out of the word upsert and `demoteRelays`
+resolves the base by `l_word` with the shared class preference (`App\Support\TranslationTargets`,
+same-class row → lowest id; unknown pos skips the preference), creates a missing base as a proxy
+dictionary headword (relay's pos class, no staged translations, lemma form through the shared
+`App\Support\LemmaForms`), and attaches the relay headword as the base's form via the same
+`LemmaForms` conventions — never a word row. Same-key line merges follow union-of-senses semantics:
+relay+real → mixed word, relay+relay demote only onto an agreeing (normalized-equal) base. Import
+stats gained `relays_demoted` / `relay_bases_created`, surfaced in the `wiktionary:import` summary
+table. Pre-existing relay word rows are ticket 10's demote command; the `WordFamily` read-layer
+relay-gloss defense stays until then. `wiki/domains/dictionary-import.md` updated (parser bullet +
+frontmatter description/tags/sources), `generated.at` bumped. No routes/models/commands added (the
+command's output table changed, not its signature) — `wiki:sync` run, no-op.

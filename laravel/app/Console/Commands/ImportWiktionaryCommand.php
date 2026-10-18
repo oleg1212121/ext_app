@@ -80,6 +80,8 @@ class ImportWiktionaryCommand extends Command
         $this->table(['Metric', 'Count'], [
             ['Lines read', $stats['lines_read']],
             ['Words imported', $stats['words_imported']],
+            ['Relays demoted', $stats['relays_demoted']],
+            ['Relay bases created', $stats['relay_bases_created']],
             ['Lookups created', $stats['lookups_created']],
             ['Batches flushed', $stats['batches_flushed']],
         ]);

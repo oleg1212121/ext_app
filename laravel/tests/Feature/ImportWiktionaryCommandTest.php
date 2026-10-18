@@ -97,6 +97,37 @@ it('imports any language present in the registry without seeded lookups', functi
     unlink($tmpFile);
 });
 
+it('reports demoted relays and created proxy bases in the summary table', function () {
+    createLanguages();
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_cmd_relay_');
+    $base = 'четвере'."\u{0301}".'ньки';
+    file_put_contents($tmpFile, implode("\n", [
+        json_encode(['word' => 'четвереньки', 'pos' => 'noun', 'senses' => [['glosses' => ['on all fours']]]]),
+        json_encode(['word' => 'четвереньках', 'pos' => 'noun', 'senses' => [
+            ['glosses' => ['prepositional of '.$base], 'tags' => ['form-of', 'prepositional'],
+                'form_of' => [['word' => $base]]],
+        ]]),
+        // A relay whose base never appears as a lemma: proxy creation.
+        json_encode(['word' => 'четвереньку', 'pos' => 'noun', 'senses' => [
+            ['glosses' => ['dative of '.$base], 'tags' => ['form-of', 'dative'],
+                'form_of' => [['word' => $base]]],
+        ]]),
+    ])."\n");
+
+    $this->artisan('wiktionary:import', ['file' => $tmpFile, '--lang' => 'ru', '--target-lang' => 'en'])
+        ->expectsOutputToContain('Relays demoted')
+        ->expectsOutputToContain('Relay bases created')
+        ->assertSuccessful();
+
+    expect(Word::where('word', 'четвереньки')->count())->toBe(1)
+        ->and(Word::where('word', 'четвереньках')->count())->toBe(0)
+        ->and(Word::where('word', 'четвереньку')->count())->toBe(0)
+        ->and(Form::where('form', 'четвереньках')->count())->toBe(1)
+        ->and(Form::where('form', 'четвереньку')->count())->toBe(1);
+
+    unlink($tmpFile);
+});
+
 it('is idempotent on re-runs — definitions are not duplicated', function () {
     // Pins the insertNewOnly dedupe at the command level: the arrow-function
     // capture bug (fixed 2026-10, commit 871d0eb) made every re-import of the

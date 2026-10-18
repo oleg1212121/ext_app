@@ -4,6 +4,7 @@ use App\Classes\WiktionaryParser;
 use App\Models\Definition;
 use App\Models\Form;
 use App\Models\Language;
+use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\Word;
 use App\Models\WordClass;
@@ -260,6 +261,170 @@ it('skips romanization-tagged forms and keeps the lemma form', function () {
     expect($forms)->toContain('четвереньках')
         ->and($forms)->toContain('четвереньки')
         ->and($forms)->not->toContain('četverénʹkax');
+
+    unlink($tmpFile);
+});
+
+function relayFixtureLines(): array
+{
+    $base = 'четвере'."\u{0301}".'ньки';
+
+    return [
+        // The base lemma entry: a real word with a real gloss.
+        json_encode(['word' => 'четвереньки', 'pos' => 'noun', 'senses' => [['glosses' => ['on all fours']]]]),
+        // The relay entry, in the dump's own shape: stressed form_of base,
+        // form-of tag, plus content a relay must not import.
+        json_encode(['word' => 'четвереньках', 'pos' => 'noun',
+            'forms' => [
+                ['form' => 'четвере'."\u{0301}".'ньках', 'tags' => ['canonical', 'feminine', 'inanimate', 'plural']],
+                ['form' => 'četverénʹkax', 'tags' => ['romanization']],
+            ],
+            'sounds' => [['ipa' => '[t͡ɕɪtvʲɪˈrʲenʲkəx]']],
+            'senses' => [['glosses' => ['prepositional of '.$base.' (četverénʹki)'], 'tags' => ['form-of', 'prepositional'],
+                'form_of' => [['word' => $base, 'extra' => 'četverénʹki']]]],
+        ]),
+    ];
+}
+
+it('demotes a relay entry to a form of its base word', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_relay_');
+    file_put_contents($tmpFile, implode("\n", relayFixtureLines())."\n");
+    $stats = (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+
+    // No word row for the relay — and none of its content anywhere.
+    expect(Word::where('l_word', 'четвереньках')->where('language_id', $ruId)->count())->toBe(0)
+        ->and(Transcription::count())->toBe(0)
+        ->and(Definition::where('definition', 'like', '%prepositional of%')->count())->toBe(0);
+
+    // The base imports as a word; the relay headword is its form.
+    $base = Word::where('word', 'четвереньки')->where('language_id', $ruId)->firstOrFail();
+    expect($base->definitions->pluck('definition')->all())->toBe(['on all fours'])
+        ->and($base->forms->pluck('form')->sort()->values()->all())->toBe(['четвереньках', 'четвереньки'])
+        ->and(Form::where('form', 'четвереньках')->where('word_id', $base->id)->count())->toBe(1);
+
+    // No stressed twin of the relay form, no romanization.
+    expect(Form::count())->toBe(2);
+
+    // Stats count the demotion.
+    expect($stats['relays_demoted'])->toBe(1)
+        ->and($stats['relay_bases_created'])->toBe(0)
+        // The relay is not a word: only the base counts as imported.
+        ->and($stats['words_imported'])->toBe(1);
+
+    // Re-import stays idempotent: still one form row on the base.
+    (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+    expect(Form::where('form', 'четвереньках')->where('word_id', $base->id)->count())->toBe(1)
+        ->and(Form::count())->toBe(2)
+        ->and(Word::where('language_id', $ruId)->count())->toBe(1);
+
+    unlink($tmpFile);
+});
+
+it('creates a proxy headword for a relay base the dump never lists as a lemma', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_relay_orphan_');
+    file_put_contents($tmpFile, implode("\n", [relayFixtureLines()[1]])."\n");
+    $stats = (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+
+    // The base exists by proxy — a dictionary headword, not translation
+    // text: plain stripped display, the relay's pos class, no staged
+    // translations, and it carries itself as its lemma form.
+    $proxy = Word::where('l_word', 'четвереньки')->where('language_id', $ruId)->firstOrFail();
+    expect($proxy->word)->toBe('четвереньки')
+        ->and($proxy->wordClass->slug)->toBe('noun')
+        ->and($proxy->translations)->toBeNull()
+        ->and($proxy->definitions)->toHaveCount(0)
+        ->and($proxy->forms->pluck('form')->all())->toBe(['четвереньки', 'четвереньках']);
+
+    // The relay headword attaches as the proxy's form.
+    expect(Form::where('form', 'четвереньках')->where('word_id', $proxy->id)->count())->toBe(1)
+        ->and($stats['relays_demoted'])->toBe(1)
+        ->and($stats['relay_bases_created'])->toBe(1)
+        // The relay itself is still no word row; the proxy is the only row.
+        ->and(Word::where('language_id', $ruId)->count())->toBe(1);
+
+    unlink($tmpFile);
+});
+
+it('imports a mixed entry as a word with its real definitions', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_mixed_');
+    file_put_contents($tmpFile, implode("\n", [
+        json_encode(['word' => 'бегом', 'pos' => 'adverb', 'senses' => [
+            ['glosses' => ['running, at a run (of motion)']],
+            ['glosses' => ['instrumental of бег'], 'tags' => ['form-of', 'instrumental'],
+                'form_of' => [['word' => 'бег']]],
+        ]]),
+    ])."\n");
+    $stats = (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+
+    $word = Word::where('word', 'бегом')->where('language_id', $ruId)->firstOrFail();
+    // A mixed entry stays a word and keeps the definitions extraction it
+    // always had — real gloss AND the relay-sense gloss (definitions were
+    // explicitly left alone by the spec); only pure relays demote.
+    expect($word->definitions->pluck('definition')->all())->toBe(['running, at a run (of motion)', 'instrumental of бег'])
+        ->and(Word::where('language_id', $ruId)->count())->toBe(1)
+        ->and($stats['relays_demoted'])->toBe(0)
+        ->and($stats['relay_bases_created'])->toBe(0);
+
+    unlink($tmpFile);
+});
+
+it('resolves a relay base by class preference when several rows share the l_word', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+    $nounClass = WordClass::where('language_id', $ruId)->where('slug', 'noun')->firstOrFail();
+    $verbClass = WordClass::where('language_id', $ruId)->where('slug', 'verb')->firstOrFail();
+
+    // Two rows share the base l_word; the relay's noun pos must prefer the
+    // noun row over the lower-id verb row.
+    $verb = Word::create(['word' => 'четвереньки', 'l_word' => 'четвереньки', 'language_id' => $ruId, 'word_class_id' => $verbClass->id]);
+    $noun = Word::create(['word' => 'четвереньки', 'l_word' => 'четвереньки', 'language_id' => $ruId, 'word_class_id' => $nounClass->id]);
+    expect($verb->id)->toBeLessThan($noun->id);
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_relay_pref_');
+    file_put_contents($tmpFile, implode("\n", [relayFixtureLines()[1]])."\n");
+    $stats = (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+
+    expect(Form::where('form', 'четвереньках')->where('word_id', $noun->id)->count())->toBe(1)
+        ->and(Form::where('form', 'четвереньках')->where('word_id', $verb->id)->count())->toBe(0)
+        // Both rows already exist: no proxy creation.
+        ->and($stats['relay_bases_created'])->toBe(0)
+        ->and($stats['relays_demoted'])->toBe(1);
+
+    unlink($tmpFile);
+});
+
+it('skips class preference for an unknown-pos relay and falls back to the lowest id', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+    $nounClass = WordClass::where('language_id', $ruId)->where('slug', 'noun')->firstOrFail();
+    $unknownClass = WordClass::where('language_id', $ruId)->where('slug', 'unknown')->firstOrFail();
+
+    // The pinned resolver semantics (same-class → any-class → lowest id):
+    // a pos-less relay carries no wanted class, so the lowest-id row wins
+    // whatever class it carries — here the classed one, created first. An
+    // unknown twin never wins BECAUSE of its class; only by id.
+    $noun = Word::create(['word' => 'бег', 'l_word' => 'бег', 'language_id' => $ruId, 'word_class_id' => $nounClass->id]);
+    $unknown = Word::create(['word' => 'бег', 'l_word' => 'бег', 'language_id' => $ruId, 'word_class_id' => $unknownClass->id]);
+    expect($noun->id)->toBeLessThan($unknown->id);
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_relay_unknown_');
+    file_put_contents($tmpFile, json_encode(['word' => 'бегом', 'pos' => 'unknown', 'senses' => [
+        ['glosses' => ['instrumental of бег'], 'tags' => ['form-of', 'instrumental'],
+            'form_of' => [['word' => 'бег']]],
+    ]])."\n");
+    (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+
+    expect(Form::where('form', 'бегом')->where('word_id', $noun->id)->count())->toBe(1)
+        ->and(Form::where('form', 'бегом')->where('word_id', $unknown->id)->count())->toBe(0);
 
     unlink($tmpFile);
 });

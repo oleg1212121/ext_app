@@ -218,3 +218,114 @@ it('rejects an empty target language list', function () {
 it('rejects the source language as a target', function () {
     new WiktionaryParser('en', ['ru', 'en']);
 })->throws(InvalidArgumentException::class);
+
+function relayParserLine(): object
+{
+    // The real dump shape of the четвереньках relay entry: one sense
+    // carrying form_of + the form-of tag, plus the usual content keys a
+    // relay must NOT import.
+    $base = 'четвере'."\u{0301}".'ньки';
+
+    return json_decode('{"word":"четвереньках","pos":"noun",'
+        .'"forms":[{"form":"četverénʹkax","tags":["romanization"]}],'
+        .'"sounds":[{"ipa":"[t͡ɕɪtvʲɪˈrʲenʲkəx]"}],'
+        .'"senses":[{"glosses":["prepositional of '.$base.' (četverénʹki)"],"tags":["form-of","prepositional"],'
+        .'"form_of":[{"word":"'.$base.'","extra":"četverénʹki"}]}],'
+        .'"etymology_text":"From четвере'."\u{0301}".'ньки.",'
+        .'"translations":[{"code":"en","word":"all fours"}]}');
+}
+
+function relayRecord(string $word, string $base): array
+{
+    return [
+        'word' => $word,
+        'l_word' => mb_strtolower($word),
+        'pos' => 'noun',
+        'relay_base' => $base,
+        'definitions' => [],
+        'forms' => [],
+        'sounds' => [],
+        'etymology' => null,
+        'translations' => [],
+    ];
+}
+
+function realRecord(string $word): array
+{
+    return [
+        'word' => $word,
+        'l_word' => mb_strtolower($word),
+        'pos' => 'noun',
+        'relay_base' => null,
+        'definitions' => ['A real gloss'],
+        'forms' => [],
+        'sounds' => [],
+        'etymology' => null,
+        'translations' => [],
+    ];
+}
+
+it('marks a relay entry for demotion to a form of its base and carries no content', function () {
+    $parser = new WiktionaryParser('ru', 'en');
+
+    $result = $parser->parseLine(relayParserLine());
+
+    expect($result['relay_base'])->toBe('четвереньки')
+        ->and($result['definitions'])->toBe([])
+        ->and($result['forms'])->toBe([])
+        ->and($result['sounds'])->toBe([])
+        ->and($result['translations'])->toBe([])
+        ->and($result['etymology'])->toBeNull()
+        ->and($result['word'])->toBe('четвереньках')
+        ->and($result['l_word'])->toBe('четвереньках');
+});
+
+it('keeps a mixed entry a word with its real definitions', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"run","pos":"noun","senses":['
+        .'{"tags":["form-of"],"form_of":[{"word":"run"}]},'
+        .'{"glosses":["An act of running"]}]}');
+
+    $result = $parser->parseLine($line);
+
+    expect($result['relay_base'])->toBeNull()
+        ->and($result['definitions'])->toBe(['An act of running']);
+});
+
+it('keeps an en relay base verbatim where no strip applies', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"cats","pos":"noun","senses":[{"glosses":["plural of cat"],'
+        .'"tags":["form-of","plural"],"form_of":[{"word":"cat"}]}]}');
+
+    expect($parser->parseLine($line)['relay_base'])->toBe('cat');
+});
+
+it('merges a relay line with a real line into a word (union of senses is mixed)', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+
+    // Either order: the mixed union stays a word.
+    $relayThenReal = $parser->mergeRecord(relayRecord('cats', 'cat'), realRecord('cats'));
+    $realThenRelay = $parser->mergeRecord(realRecord('cats'), relayRecord('cats', 'cat'));
+
+    expect($relayThenReal['relay_base'])->toBeNull()
+        ->and($relayThenReal['definitions'])->toBe(['A real gloss'])
+        ->and($realThenRelay['relay_base'])->toBeNull()
+        ->and($realThenRelay['definitions'])->toBe(['A real gloss']);
+});
+
+it('merges two relay lines of one base into a single demotion', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+
+    $merged = $parser->mergeRecord(relayRecord('cats', 'cat'), relayRecord('cats', 'Cat'));
+
+    expect($merged['relay_base'])->toBe('cat');
+});
+
+it('keeps two relay lines with disagreeing bases a word', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+
+    $merged = $parser->mergeRecord(relayRecord('cats', 'cat'), relayRecord('cats', 'Cat'));
+
+    $disagreeing = $parser->mergeRecord($merged, relayRecord('cats', 'dog'));
+    expect($disagreeing['relay_base'])->toBeNull();
+});
