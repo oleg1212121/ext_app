@@ -152,3 +152,32 @@ it('stages translations for multiple target languages', function () {
 
     unlink($tmpFile);
 });
+
+it('strips stress marks from ru display forms while keeping en forms verbatim', function () {
+    $languages = createLanguages();
+
+    $ruFile = tempnam(sys_get_temp_dir(), 'wiktionary_ru_');
+    file_put_contents($ruFile, json_encode(['word' => 'дом', 'pos' => 'noun', 'forms' => [
+        ['form' => 'до́ма'],
+        ['form' => 'доме́'],
+    ]])."\n");
+    (new WiktionaryParser('ru', 'en', 100))->import($ruFile);
+
+    // The marks leave the stored display form: no stressed twin rows, the
+    // lookup keys were stripped all along.
+    $dom = Word::where('word', 'дом')->where('language_id', $languages['ru']->id)->firstOrFail();
+    expect($dom->forms->pluck('form')->sort()->values()->all())->toBe(['дома', 'доме'])
+        ->and($dom->forms->pluck('l_word')->sort()->values()->all())->toBe(['дома', 'доме']);
+    unlink($ruFile);
+
+    $enFile = tempnam(sys_get_temp_dir(), 'wiktionary_en_');
+    file_put_contents($enFile, json_encode(['word' => 'кот', 'pos' => 'noun', 'forms' => [
+        ['form' => 'cats'],
+    ]])."\n");
+    (new WiktionaryParser('en', 'ru', 100))->import($enFile);
+
+    // Non-stress-mark languages keep their forms exactly as the dump has them.
+    $kot = Word::where('word', 'кот')->where('language_id', $languages['en']->id)->firstOrFail();
+    expect($kot->forms->pluck('form')->all())->toBe(['cats']);
+    unlink($enFile);
+});

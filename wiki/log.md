@@ -1,5 +1,200 @@
 # Directory Update Log
 
+## 2026-10-17 (goldendict import rework: plain stress-free words, phrase only from headwords, link-only translations — ADR 0078)
+
+The first real bilingual imports left three junk classes in `words` —
+33,677 of 54,489 ru rows carried combining stress acutes in the display
+form (stressed twins of the same word multiplying per import), 21,980 ru
+rows sat in the invented `phrase` class mostly via multi-word translation
+candidates (including comma-split name lists like "Кулешова, Роза
+Алексеевна" and clause leftovers like "жировые складки на талии"), and
+40,398 of 54,489 ru words were bare translation-created stubs (96.9% of
+all `word_translations` pairs pointed at one). Reworked the GoldenDict
+importer (ADR
+[0078](../docs/adr/0078-goldendict-plain-words-link-only-translations.md),
+amending ADR 0059's scope; Wiktionary import and `FetchWordTranslations`
+deliberately untouched):
+
+- `laravel/app/Classes/GoldenDictParser.php` — (1) for the StressMarks
+  languages (ru/be/uk) the stored display `word`/`form` and every staged
+  translation candidate are stripped of combining acutes at parse time:
+  "приве́т" stores as "привет", stressed variants collapse into the plain
+  row, definition prose keeps its marks; (2) a multi-word headword with
+  sentence punctuation or more than 3 tokens is rejected (`headwords_rejected`
+  stat) — dictionary phrases like "give up"/"до свидания" still import as
+  `phrase`; translation candidates determine no word class at all; (3)
+  bilingual mode is **link-only**: candidates resolve by `l_word` against
+  the target language's EXISTING rows (same class preferred, multi-word
+  prefers `phrase`, else lowest id), never create rows — `flushTargetWords`
+  shrank to a resolve, `ensureTargetWordClass`/`candidateClassSlug`/the
+  dry would-be-created tally are gone, `target_words_created` is replaced
+  by `translation_targets_unmatched`, unmatched candidates stay staged in
+  `words.translations` for a later re-run; (4) new `forms` profile
+  selector kind: comma/semicolon/slash-split form lists merging with the
+  entry's `alts`.
+- `laravel/app/Classes/WiktionaryParser.php` — (5, data follow-up) the
+  kaikki raw dump carries the stressed ru variants in the inflected-form
+  lists ("до́ма" for "дом"): the parser now strips ru/be/uk display forms
+  through the same StressMarks rule (headwords stay as the lemma field
+  delivers them — unstressed), and the re-imported ru forms (1,401k
+  stressed rows) were repaired in place with a one-off strip+dedupe pass.
+- `laravel/app/Console/Commands/ImportGoldenDictCommand.php` — `forms`
+  joined `PROFILE_SELECTOR_KEYS`; stats rows swapped (Target words
+  created → Unmatched candidates, + Headwords rejected); `--target-lang`
+  help text updated.
+- `laravel/config/goldendict.php` — `forms` semantics documented,
+  `test-forms` test profile added.
+- Tests: 34 passing in `ImportGoldenDictCommandTest` — bilingual
+  expectations rewritten to the link-only semantics (pre-created target
+  rows, class-preference + decoy assertions, unmatched/staged counting,
+  dry-run honesty against the DB) and three new tests with fixtures
+  (headword junk guards, ru stress-strip collapse, forms selector).
+- Data: en+ru wiped (the `--fresh` chunked-cascade wipe crawled on missing
+  child-table indexes and was finished with a set-based child-first delete)
+  and re-imported through the reworked pipeline: kaikki raw dump
+  (1,473,492 en + 431,933 ru words — several times the old per-language
+  imports), 79,506 en↔ru links from the kaikki pass, cmudict IPA
+  (409,794 en transcriptions total), frequency ranks (331,484 en /
+  39,968 ru ranked), curated band lists, then the bilingual goldendict
+  runs — Mostitsky ru→en (12,314 clean words, 1,927 junk headwords
+  rejected, 4,006 links to existing en words, 6,931 candidates staged
+  only) and Oxford en→ru (42,260 clean words, 366 rejected, 29,073 new
+  links, 21,604 staged; the dry run's 43,550 estimate minus ~14.5k pairs
+  the kaikki pass had already linked). Verification: ru words and forms
+  carry no combining acutes, phrase rows only from dictionary headwords,
+  zero target rows created by the bilingual imports. Popup auto-fetch
+  still creates target words (`FetchWordTranslations`) — flagged for a
+  follow-up decision.
+- `wiki/domains/dictionary-import.md`, `wiki/database/dictionary.md`,
+  `wiki/playbooks/import-dictionary-data.md` updated (`generated.at`
+  bumped); no routes/models/commands added, `wiki:sync` run for the
+  reference pages; `wiki:validate` and `test:tia` green.
+
+## 2026-10-16 (Mostitsky eXtro (Ru-En) imported — second real extraction profile, JSONL pre-filter)
+
+The freemdict `Mostitsky eXtro (Ru-En)` dictionary (Igor Mostitsky's
+anomalous-phenomena dictionary, DSL in a 7z) is in the database:
+14,241 source words, ~58k definitions, 3,853 English target words,
+11,746 `word_translations` links (`goldendict:import --lang=ru
+--target-lang=en --profile=mostitsky-ru-en`; dry-run → testing-DB smoke
+→ detached real run per the playbook). Extraction went through a new
+**`mostitsky-ru-en`** profile in `config/goldendict.php` — the second
+real-world profile after `oxford-en-ru`, and a new selector technique:
+pyglossary renders the DSL `[trn]` equivalents as plain
+`padding-left:1em` paragraphs indistinguishable by shape from the
+`[com]` commentary, so the translations selector hooks the only
+remaining property — the absence of Cyrillic — via a `translate()`
+strips-the-Cyrillic-alphabet equality test; configuring it also vouches
+translations, which killed the heuristic's mined commentary candidates
+(1154 → 209 on the first 500 entries, target words 789 → 81).
+`span.sec` (► source links, «см. тж», GoldenDict artifacts) is stripped;
+the bold headword echo deliberately stays in the definitions (that
+dictionary's `<b>` carries real content elsewhere — a blanket strip
+would hit 1,167 articles), and its `[p]` tags are subject domains
+(`уфол.`, `астрон.`), not word classes — no `pos` selector. A
+conservative host-side JSONL pre-filter (documented in the playbook)
+dropped 73 non-word records (`[N]` citation stubs, `**`/`***` info
+cards, `_` navigation pages — eyeballed first: bare-number headwords
+like `1947` are real entries and stayed) and unquoted 5 DSL-syntax
+quoted headwords; the first filter version dropped the trailing newline
+on rewritten records and silently concatenated 5 pairs — caught by a
+`wc -l` vs record count mismatch, repaired with a raw_decode
+re-serialization pass (the JSONL is one-record-per-line again, all
+14,241 decode). Playbook + domain doc updated with the profile, the
+content-language selector trick and the pre-filter step (`generated.at`
+bumped); no routes/models/commands touched, no `wiki:sync` needed;
+`wiki:validate` and `test:tia` green.
+
+## 2026-10-15 (goldendict import quality fixes: no sentence words, no stressed duplicates, real word classes, pos/strip selectors)
+
+The Oxford En-Ru import's output triaged three data-quality complaints —
+sentences imported as Russian words ("cars zoomed past маши́ны
+проноси́лись ми́мо" as a single target word), stressed duplicates beside
+existing unstressed rows ("маши́ны" created although "машины" existed),
+and every word landing in the `unknown` class — to their parser roots and
+fixed them, then wiped the first import's rows (95,352 words deleted by
+the import's created_at window after verifying the window held nothing
+else — all unranked-frequency, all phrase/unknown classes) and re-imported
+clean (**84 s**): 66,481 candidates (was 93,302), 35,630 new ru words (was
+53,819), 64,086 links, and real classes (en noun/adjective/verb…;
+`unknown` down to a 1,402-article residue of unmappable POS labels).
+
+- `laravel/app/Classes/GoldenDictParser.php` — four fixes: (1) candidate
+  guards reject mixed Latin+Cyrillic pieces (glued example sentences) and
+  pieces over 4 whitespace tokens (clause-sized sentences; ≤4-token
+  phrases stay, the ADR 0059 shape); (2) two new profile selector kinds —
+  `pos` (matched texts through `posSlugFor`, length guard 12→24 so
+  "transitive verb" maps, first mappable text overrides the heuristic pos
+  hints below the multi-word→phrase precedence) and `strip` (matched
+  nodes removed from the article DOM before any extraction, never a
+  match/miss signal); (3) a configured translations selector **vouches**
+  for where equivalents live: a miss yields no candidates for the article
+  instead of the raw-block-text fallback (the fallback was what mined
+  example scaffolding into junk target words; definitions/transcriptions
+  keep their fallback); (4) target-word resolution is **by `l_word`** — a
+  candidate whose normalized key the target language already carries
+  under any class reuses that row (same class preferred, else lowest id)
+  for its link instead of creating a stressed/different-class duplicate;
+  only unseen l_words insert; the dry-run tally applies the same rule.
+- `laravel/app/Console/Commands/ImportGoldenDictCommand.php` — the two
+  new selector keys join `PROFILE_SELECTOR_KEYS` validation.
+- `laravel/config/goldendict.php` — `oxford-en-ru` gains `pos` →
+  `partOfSpeech` divs and `strip` → `exampleGroup` blocks.
+- Tests: 5 new (pos selector + fallback, strip before every extraction,
+  candidate guards with a kept 4-token phrase, l_word reuse of an
+  existing target word, l_word batch dedupe + idempotent zeros); two
+  tests re-pointed from the retired raw-text fallback to the vouching
+  rule (`falls back per selector`, `empty text as a miss` — definitions
+  and transcriptions still demonstrate the fallback there).
+- Dev-data cleanup beyond the re-import: 424 pre-existing en rows had
+  junk strings merged into their `words.translations` staging by the
+  first import (staging survives word deletes on rows it merged into);
+  524 mixed-script/over-long strings filtered out.
+
+## 2026-10-15 (first real dictionary import: Oxford Russian Dictionary En-Ru — oxford-en-ru profile, UTF-8-safe candidate trim, TIA gitignore)
+
+The first real GoldenDict dictionary went through the pipeline end to end
+(the "no real freemdict dictionary was available" placeholder is now
+retired): the Oxford Russian Dictionary (En-Ru) MDX, 43,164 articles —
+converted host-side with `goldendict_convert.py` (4.5 s) and imported with
+`goldendict:import --lang=en --target-lang=ru --profile=oxford-en-ru`
+(**59 s** wall: 42,134 source words, 62,494 definitions, 66,490
+transcriptions, 53,819 new Russian target words, 89,864 canonical
+`word_translations` links on top of the existing Wiktionary data).
+
+- `laravel/config/goldendict.php` — new `oxford-en-ru` extraction profile,
+  the first real one: transcriptions from the direct text nodes of
+  `phoneticText` divs/spans (the sound-play ▶ glyphs live in `<a>`
+  children, so direct-text selection yields clean "BrE dɒɡ"/"AmE dɔɡ"
+  strings; a `[normalize-space(.) != ","]` predicate drops the separator
+  text node between the BrE and AmE segments — without it every article
+  grew a stray "," transcription); translations from
+  `targetLangTranslation` spans excluding those inside `exampleGroup`
+  blocks (the phrase-book example translations would flood the target
+  words with multi-word junk); definitions from `sense-1`/`sense-2`
+  numbered sense units. Baseline dry-run comparison (500 entries):
+  transcriptions 1 → 955, candidates 2,541 → 1,573 (cleaner), definitions
+  3,294 → 1,190 (sense units, not raw blocks).
+- `laravel/app/Classes/GoldenDictParser.php` — bug fix found by the real
+  dictionary: `CANDIDATE_TRIM` as a byte-wise `trim()` mask cut Cyrillic
+  letters in half (the quote marks "«»„“”" share UTF-8 bytes with letters
+  — "л" ends in the same 0xBB as "»", "р" the same 0x80 as "…"), the
+  corrupted candidates died in Postgres with `invalid byte sequence for
+  encoding "UTF8": 0xd0` and the bilingual import crashed. The trim now
+  runs through a `/u` regex character class (`trimCandidateEnds()`).
+  Regression test `trims quote marks off Cyrillic candidates without
+  cutting letters in half` + `tests/Fixtures/goldendict-cyrillic-trim.jsonl`.
+- `laravel/.gitignore` — `/goldendict/` added (dictionary sources are
+  already ignored in the outer repo, but the Pest TIA git repo is rooted
+  at `laravel/`, and its ContentHash `file_get_contents`es every untracked
+  changed file → the 123 MB `.7z` blew the 128M CLI memory limit before
+  any test ran).
+- `wiki/domains/dictionary-import.md`, `wiki/playbooks/import-dictionary-data.md`
+  — the profile bullet now cites `oxford-en-ru` as the working example,
+  the bilingual-mode bullet documents the UTF-8-safe trim constraint, the
+  playbook's profile-authoring section points at the real profile.
+  `generated.at` bumped on both; `wiki:validate` green.
+
 ## 2026-10-15 (anki-popup-refresh 06 — knowledge-base closure: updates in place, per-language Anki targets, popup action toolbar)
 
 Closure of the anki-popup-refresh feature (code in its tickets 01–05:

@@ -4,8 +4,8 @@ title: Unified Dictionary Tables
 description: One words table (+ satellites) keyed by language, per-language word classes and transcription types, a symmetric word_translations pivot (one row per pair), and the word_translation_fetches ledger driving auto-fetched translations (Yandex→Google) that doubles as the exclusions list.
 tags: [database, schema, dictionary, words]
 status: stable
-stale_after: 2026-12-27
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+stale_after: 2027-01-17
+generated: { by: agent:zcode, at: 2026-10-17T19:53:08+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: migration
@@ -78,7 +78,11 @@ sources:
   combining marks** — Russian Wiktionary headwords carry stress marks
   (`свобо́дный`), and every matcher (the entity-word linker's exact pass,
   `words:import-frequency`) compares against unstressed text. The display
-  `word` keeps its marks.
+  `word` keeps its marks on the Wiktionary path (though the kaikki lemma
+  field is unstressed for ru); ru/be/uk inflected forms are stripped on
+  BOTH import paths, and the GoldenDict importer strips its headwords,
+  forms and staged candidates outright (ADR 0078) — so stressed variants
+  never sit beside their plain twins in the word-family views.
 * **Auto-fetched translations** (2026-09-29): when a popup word family has no
   translation link at all, `WordController::show` quietly queues
   `FetchWordTranslations` through the

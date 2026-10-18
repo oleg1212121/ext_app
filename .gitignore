@@ -1,51 +1,61 @@
-dual_translate_builder/
+CLAUDE.md
+.cursor
+.container-stamp
+.deploy.lock
+.agents/
+.zcode/
+.aider-desk/
+.scratch/
 .vscode/
+.playwright-mcp/
+.plans/
+.idea
+.phpstorm.meta.php
+.DS_Store
+.gitignore
+
+_ide_helper.php
+_ide_helper_models.php
+
 docker-compose/postgres/
 docker-compose/prod/postgres/
-# Host bind mounts for persistent Docker data (survive Docker Desktop "Purge
-# data" because they live on the host disk, not in named volumes / the VM).
 docker-compose/python/models/
 docker-compose/prod/backups/
 docker-compose/prod/storage/
 docker-compose/prod/public/
-.plans/
-.playwright-mcp/
 docker-compose/embedding/models/
-# Python service: model snapshots live in a named Docker volume, not the repo
 docker-compose/python/ai/bge_m3_local/
 docker-compose/python/ai/*_local/
-# Local env for ext_python (copy from env/.env.example)
 docker-compose/python/env/.env
-# Cloudflare tunnel token — must never be committed (rotate via Zero Trust dashboard)
 docker-compose/cloudflare/.env
 docker-compose/prod/postgres.env
 docker-compose/nginx/nginx.conf:Zone.Identifier
+!docker-compose/python/.gitignore
+
+
+
+
+
+
+laravel/public/kaikki_english*
 laravel/vendor/
 laravel/.devcontainer
 laravel/docker
 laravel/node_modules/
 laravel/npm-debug.log
 laravel/yarn-error.log
-
-# Laravel 4 specific
 laravel/bootstrap/compiled.php
 laravel/app/storage/
-
-# Laravel 5 & Lumen specific
 laravel/public/storage
 laravel/public/hot
-
-# Laravel 5 & Lumen specific with changed public path
 laravel/public_html/storage
 laravel/public_html/hot
-
 laravel/storage/*.key
 laravel/.env
 laravel/Homestead.yaml
 laravel/Homestead.json
 laravel/.vagrant
 laravel/.phpunit.result.cache
-
 laravel/public/build
 laravel/storage/pail
 laravel/.env.backup
@@ -54,57 +64,42 @@ laravel/.phpactor.json
 laravel/auth.json
 laravel/public/old_eng
 laravel/public/texts/*
-
-# wiktionary jsonl file 2.5gb
-laravel/public/kaikki_english*
-
-# Phpstorm
-.idea
-_ide_helper.php
-_ide_helper_models.php
-.phpstorm.meta.php
-.DS_Store
 laravel/builder.php
 laravel/4000.txt
 laravel/test.php
-combined_file.txt
-combined_file.txt:Zone.Identifier
-test.drawio
 laravel/app/Classes/Crossword3.php
 laravel/public/20000.txt
-.gitignore
-!docker-compose/python/.gitignore
 laravel/public/kai_ab.jsonl
 laravel/public/kai_aa.jsonl
 laravel/public/raw-wiktextract-data.jsonl.gz:Zone.Identifier
 laravel/public/words_alpha.txt
 laravel/public/words_alpha.txt:Zone.Identifier
 laravel/resources/views/components/crossword/SELECT * FROM users;.pgsql
-backup11.sql
-CLAUDE.md
 laravel/CLAUDE.md
-.cursor
 laravel/.mcp.json
 laravel/boost-mcp-wrapper.sh
-lalala
 laravel/debug_test2.php
 laravel/sample.jsonl
+laravel/.env.testing
+laravel/goldendict/
+
+backup11.sql
+lalala
 
 session-ses_01d8.md
 alignments-plan.md
 homepage-current.png
 
 # deploy.sh container-recreation guard (prod machine): stamp + deploy lock
-.container-stamp
-.deploy.lock
 actions-runner
-laravel/.env.testing
 errors.txt
 # Agent tooling (ZCode, Aider Desk) — local-only, never part of the app repo
-.agents/
-.zcode/
-.aider-desk/
+
 skills-lock.json
 # Skill-workflow docs (to-spec / to-tickets / issue tracker) — local-only
-.scratch/
 docs/agents/
+
+combined_file.txt
+combined_file.txt:Zone.Identifier
+test.drawio
+dual_translate_builder/

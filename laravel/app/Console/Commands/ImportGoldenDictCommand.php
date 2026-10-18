@@ -9,16 +9,16 @@ use Illuminate\Console\Command;
 class ImportGoldenDictCommand extends Command
 {
     /** Selector keys a profile may set besides its description. */
-    private const PROFILE_SELECTOR_KEYS = ['transcriptions', 'translations', 'definitions'];
+    private const PROFILE_SELECTOR_KEYS = ['transcriptions', 'translations', 'definitions', 'forms', 'pos', 'strip'];
 
     protected $signature = 'goldendict:import {file}
                             {--lang= : Source language code from the languages registry}
-                            {--target-lang= : Target language code for bilingual import (creates target words, word_translations links and words.translations staging)}
+                            {--target-lang= : Target language code for bilingual import (links candidates to existing target-language words and stages the raw strings in words.translations — creates no target rows)}
                             {--profile= : Extraction profile slug from config/goldendict.php (declarative XPath selectors layered over the generic heuristics)}
                             {--batch-size=500 : Number of records per DB flush}
                             {--max-entries= : Stop after this many parsed entries (smoke runs)}
                             {--dry-run : Parse and report what would be written, writing nothing}
-                            {--no-link : Skip the bilingual phases entirely (no target words, links or staging)}';
+                            {--no-link : Skip the bilingual phases entirely (no links or staging)}';
 
     protected $description = 'Import a converted GoldenDict JSONL ({"word","alts","html"} per line, from ai/goldendict_convert.py) into the dictionary tables';
 
@@ -96,7 +96,7 @@ class ImportGoldenDictCommand extends Command
             $this->info("Extraction profile: {$profileSlug}");
         }
         if ($targetLang !== '' && $noLink) {
-            $this->warn('--no-link: skipping the bilingual phases (no target words, links or staging).');
+            $this->warn('--no-link: skipping the bilingual phases (no links or staging).');
         }
         if ($dryRun) {
             $this->warn('DRY RUN — nothing will be written.');
@@ -130,12 +130,13 @@ class ImportGoldenDictCommand extends Command
         $rows = [
             ['Entries read', $stats['entries_read']],
             ['Entries skipped', $stats['entries_skipped']],
+            ['Headwords rejected', $stats['headwords_rejected']],
             ['Words imported', $stats['words_imported']],
             ['Definitions imported', $stats['definitions_imported']],
             ['Transcriptions imported', $stats['transcriptions_imported']],
             ['Forms imported', $stats['forms_imported']],
             ['Translation candidates', $stats['translation_candidates']],
-            ['Target words created', $stats['target_words_created']],
+            ['Unmatched candidates', $stats['translation_targets_unmatched']],
             ['Translation links', $stats['translations_linked']],
             ['Lookups created', $stats['lookups_created']],
             ['Batches flushed', $stats['batches_flushed']],

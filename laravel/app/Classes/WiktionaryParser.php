@@ -10,6 +10,7 @@ use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\Word;
 use App\Models\WordClass;
+use App\Support\StressMarks;
 use App\Support\WordLookupKey;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Console\Helper\ProgressBar;
@@ -26,6 +27,9 @@ class WiktionaryParser
 
     private int $languageId;
 
+    /** Display forms of this source language drop their stress marks (ru/be/uk). */
+    private bool $stripsFormMarks;
+
     private array $wordClassMap = [];
 
     private array $transcriptionTypeMap = [];
@@ -40,6 +44,7 @@ class WiktionaryParser
     public function __construct(string $lang, string|array $targetLang = 'ru', int $batchSize = 500)
     {
         $this->lang = $lang;
+        $this->stripsFormMarks = StressMarks::stripsFor($lang);
 
         $targets = is_string($targetLang) ? [$targetLang] : array_values($targetLang);
         if ($targets === []) {
@@ -375,6 +380,13 @@ class WiktionaryParser
             }
             foreach ($record['forms'] as $form) {
                 $form = mb_substr($form, 0, 256);
+                // Wiktionary ru/be/uk inflected forms arrive stressed
+                // ("до́ма"): the marks leave the stored display form, so a
+                // stressed variant never sits beside its plain twin (ADR
+                // 0078); l_word was already stripped either way.
+                if ($this->stripsFormMarks) {
+                    $form = StressMarks::strip($form);
+                }
                 $rows[] = [
                     'form' => $form,
                     'l_word' => WordLookupKey::normalize($form),

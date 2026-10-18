@@ -86,8 +86,10 @@ it('imports the fixture into a brand-new language with auto-created lookups', fu
     $giveUp = Word::query()->where('language_id', $be->id)->where('word', 'give up')->first();
     expect($giveUp->wordClass->slug)->toBe('phrase');
 
-    // Cyrillic stress marks: display word keeps them, l_word strips them.
-    $privet = Word::query()->where('language_id', $be->id)->where('word', 'приве́т')->first();
+    // Cyrillic stress marks: be display words store plain letters — the
+    // combining acute leaves the word entirely (the StressMarks rule), so
+    // the stressed headword lands as "привет".
+    $privet = Word::query()->where('language_id', $be->id)->where('word', 'привет')->first();
     expect($privet)->not->toBeNull();
     expect($privet->l_word)->toBe('привет');
     expect($privet->wordClass->slug)->toBe('unknown');
@@ -189,46 +191,47 @@ function importBilingual(string $targetLang = 'de', array $extra = []): PendingC
     ], $extra));
 }
 
-it('imports a bilingual fixture end-to-end into a brand-new target language', function () {
+it('links candidates to existing target words, preferring the same class and phrases', function () {
     createLanguages(['en', 'de']);
     $en = Language::query()->where('code', 'en')->first();
     $de = Language::query()->where('code', 'de')->first();
+
+    // The target language's own imports carry the rows: cat's equivalents
+    // under noun, give up's under verb — plus a same-l_word decoy under the
+    // wrong class for the multi-word candidate ("aufhören mit" exists under
+    // noun AND phrase; the phrase row must win).
+    $noun = WordClass::query()->create(['language_id' => $de->id, 'slug' => 'noun', 'title' => 'noun']);
+    $verb = WordClass::query()->create(['language_id' => $de->id, 'slug' => 'verb', 'title' => 'verb']);
+    $phrase = WordClass::query()->create(['language_id' => $de->id, 'slug' => 'phrase', 'title' => 'phrase']);
+    $katze = Word::query()->create(['word' => 'Katze', 'l_word' => 'katze', 'language_id' => $de->id, 'word_class_id' => $noun->id]);
+    $kater = Word::query()->create(['word' => 'Kater', 'l_word' => 'kater', 'language_id' => $de->id, 'word_class_id' => $noun->id]);
+    $aufgeben = Word::query()->create(['word' => 'aufgeben', 'l_word' => 'aufgeben', 'language_id' => $de->id, 'word_class_id' => $verb->id]);
+    $aufhoerenNoun = Word::query()->create(['word' => 'aufhören mit', 'l_word' => 'aufhören mit', 'language_id' => $de->id, 'word_class_id' => $noun->id]);
+    $aufhoerenPhrase = Word::query()->create(['word' => 'aufhören mit', 'l_word' => 'aufhören mit', 'language_id' => $de->id, 'word_class_id' => $phrase->id]);
 
     importBilingual()
         ->expectsOutputToContain('Import completed!')
         ->assertSuccessful();
 
-    // The target dictionary grew: seven target words from the three real
-    // articles (the junk article contributes none).
-    expect(Word::query()->where('language_id', $de->id)->count())->toBe(7);
+    // Link-only: no target row is created, the target classes are not
+    // touched, and hello's candidates (no de rows) stay unmatched.
+    expect(Word::query()->where('language_id', $de->id)->count())->toBe(5)
+        ->and(WordTranslation::count())->toBe(4);
 
-    // Display form preserved, lookup key normalized, source class mapped
-    // into the target language, unranked frequency sentinel applied.
-    $katze = Word::query()->where('language_id', $de->id)->where('word', 'Katze')->firstOrFail();
-    expect($katze->l_word)->toBe('katze')
-        ->and($katze->wordClass->slug)->toBe('noun')
-        ->and((float) $katze->frequency)->toBe((float) Word::FREQUENCY_UNRANKED);
-
-    // Multi-word candidates go to the phrase class (ADR 0059) regardless of
-    // the source word's own class.
-    $aufhoeren = Word::query()->where('language_id', $de->id)->where('word', 'aufhören mit')->firstOrFail();
-    expect($aufhoeren->wordClass->slug)->toBe('phrase');
-
-    // The brand-new target language's word classes auto-created with the
-    // slug as placeholder title (ensureWordClass convention).
-    $slugs = WordClass::query()->where('language_id', $de->id)->pluck('title', 'slug');
-    expect($slugs->keys()->sort()->values()->all())->toBe(['interjection', 'noun', 'phrase']);
-    expect($slugs['noun'])->toBe('noun');
-
-    // Canonical word_translations links (ADR 0020): source ↔ each target word.
     $cat = Word::query()->where('language_id', $en->id)->where('word', 'cat')->firstOrFail();
-    $kater = Word::query()->where('language_id', $de->id)->where('word', 'Kater')->firstOrFail();
+    $giveUp = Word::query()->where('language_id', $en->id)->where('word', 'give up')->firstOrFail();
+
     expect(WordTranslation::isLinked($cat->id, $katze->id))->toBeTrue()
         ->and(WordTranslation::isLinked($cat->id, $kater->id))->toBeTrue()
-        ->and(WordTranslation::count())->toBe(7);
+        ->and(WordTranslation::isLinked($giveUp->id, $aufgeben->id))->toBeTrue()
+        // The multi-word candidate prefers the phrase-class row over the
+        // lower-id noun decoy (ADR 0059 survives as a linking preference).
+        ->and(WordTranslation::isLinked($giveUp->id, $aufhoerenPhrase->id))->toBeTrue()
+        ->and(WordTranslation::isLinked($giveUp->id, $aufhoerenNoun->id))->toBeFalse();
 
     // Raw translation strings staged into words.translations JSON like the
-    // Wiktionary import (flat, deduplicated list).
+    // Wiktionary import (flat, deduplicated list) — staged even when the
+    // candidate stays unmatched.
     expect($cat->translations)->toBe(['Katze', 'Kater']);
 
     // The monolingual side is untouched by bilingual mode: definitions and
@@ -237,8 +240,14 @@ it('imports a bilingual fixture end-to-end into a brand-new target language', fu
         ->and($cat->transcriptions->first()->transcription)->toBe('kæt');
 });
 
-it('shows the imported translation in the word popup payload', function () {
+it('shows the linked translation in the word popup payload', function () {
     createLanguages(['en', 'de']);
+    $de = Language::query()->where('code', 'de')->first();
+    $noun = WordClass::query()->create(['language_id' => $de->id, 'slug' => 'noun', 'title' => 'noun']);
+    foreach (['Katze', 'Kater'] as $word) {
+        Word::query()->create(['word' => $word, 'l_word' => mb_strtolower($word), 'language_id' => $de->id, 'word_class_id' => $noun->id]);
+    }
+
     importBilingual()->assertSuccessful();
 
     $cat = Word::query()->where('language_id', Language::query()->where('code', 'en')->value('id'))
@@ -259,8 +268,7 @@ it('writes word_translations links in canonical order regardless of id order', f
     $de = Language::query()->where('code', 'de')->first();
 
     // The target word exists BEFORE the import, so its id is lower than the
-    // imported source word's id: the link must be canonicalized (swapped),
-    // and the existing row must be reused (firstOrCreate semantics).
+    // imported source word's id: the link must be canonicalized (swapped).
     $noun = WordClass::query()->create(['language_id' => $de->id, 'slug' => 'noun', 'title' => 'noun']);
     $existingKatze = Word::query()->create([
         'word' => 'Katze',
@@ -305,12 +313,16 @@ it('rejects junk translation candidates', function () {
 it('is idempotent on re-runs and merges staged translations without clobbering', function () {
     createLanguages(['en', 'de']);
     $de = Language::query()->where('code', 'de')->first();
+    $noun = WordClass::query()->create(['language_id' => $de->id, 'slug' => 'noun', 'title' => 'noun']);
+    foreach (['Katze', 'Kater'] as $word) {
+        Word::query()->create(['word' => $word, 'l_word' => mb_strtolower($word), 'language_id' => $de->id, 'word_class_id' => $noun->id]);
+    }
 
     importBilingual()->assertSuccessful();
     importBilingual()->assertSuccessful();
 
-    expect(Word::query()->where('language_id', $de->id)->count())->toBe(7)
-        ->and(WordTranslation::count())->toBe(7)
+    expect(Word::query()->where('language_id', $de->id)->count())->toBe(2)
+        ->and(WordTranslation::count())->toBe(2)
         ->and(Definition::count())->toBe(6);
 
     $cat = Word::query()->where('word', 'cat')->firstOrFail();
@@ -322,7 +334,7 @@ it('is idempotent on re-runs and merges staged translations without clobbering',
     importBilingual()->assertSuccessful();
 
     expect($cat->refresh()->translations)->toBe(['Katze', 'Kater', 'Kätzchen'])
-        ->and(WordTranslation::count())->toBe(7);
+        ->and(WordTranslation::count())->toBe(2);
 });
 
 it('skips the bilingual link and staging phases with --no-link', function () {
@@ -356,9 +368,14 @@ it('validates --target-lang', function () {
     expect(Word::count())->toBe(0);
 });
 
-it('keeps stress marks in the target display word and strips them from l_word', function () {
+it('strips stress marks from staged ru candidates and links existing plain rows', function () {
     createLanguages(['en', 'ru']);
     $ru = Language::query()->where('code', 'ru')->first();
+
+    // The target language's own import carries the plain rows (kaikki).
+    $noun = WordClass::query()->create(['language_id' => $ru->id, 'slug' => 'noun', 'title' => 'noun']);
+    $koshka = Word::query()->create(['word' => 'кошка', 'l_word' => 'кошка', 'language_id' => $ru->id, 'word_class_id' => $noun->id]);
+    $sobaka = Word::query()->create(['word' => 'собака', 'l_word' => 'собака', 'language_id' => $ru->id, 'word_class_id' => $noun->id]);
 
     test()->artisan('goldendict:import', [
         'file' => goldendictRussianFixturePath(),
@@ -366,18 +383,18 @@ it('keeps stress marks in the target display word and strips them from l_word', 
         '--target-lang' => 'ru',
     ])->assertSuccessful();
 
-    // Display form keeps the combining acute; the lookup key strips it
-    // (StressMarks rule for Cyrillic targets).
-    $koshka = Word::query()->where('language_id', $ru->id)->where('word', "ко\u{0301}шка")->firstOrFail();
-    expect($koshka->l_word)->toBe('кошка');
-
-    // Headword and IPA stripped out of the article line before extraction.
-    $sobaka = Word::query()->where('language_id', $ru->id)->where('word', "соба\u{0301}ка")->firstOrFail();
-    expect($sobaka->l_word)->toBe('собака');
-
+    // The candidates store as plain letters: the combining acutes leave the
+    // staged strings, so no stressed twin of "кошка" is ever looked up.
+    $cat = Word::query()->where('word', 'cat')->firstOrFail();
     $dog = Word::query()->where('word', 'dog')->firstOrFail();
-    expect(WordTranslation::isLinked($dog->id, $sobaka->id))->toBeTrue()
-        ->and($dog->translations)->toBe(["соба\u{0301}ка"]);
+    expect($cat->translations)->toBe(['кошка', 'кот'])
+        ->and($dog->translations)->toBe(['собака']);
+
+    // Links point at the existing plain rows ("кот" has no ru row: staged
+    // only); no ru word row was created.
+    expect(Word::query()->where('language_id', $ru->id)->count())->toBe(2)
+        ->and(WordTranslation::isLinked($cat->id, $koshka->id))->toBeTrue()
+        ->and(WordTranslation::isLinked($dog->id, $sobaka->id))->toBeTrue();
 });
 
 it('writes nothing at all on --dry-run in bilingual mode', function () {
@@ -427,38 +444,41 @@ it('applies the profile selectors over the generic heuristics and falls back per
 
     // With the profile: definitions only from .sense blocks, transcriptions
     // from .ts nodes ("tri:" is not bracketed/IPA-marked — the generic
-    // heuristic would never find it), translations only from .tr nodes.
+    // heuristic would never find it), translations only from .tr nodes —
+    // staged only, since no de row carries "Baum".
     $tree = Word::query()->where('language_id', $en->id)->where('word', 'tree')->firstOrFail();
     expect($tree->definitions->pluck('definition')->all())->toBe(['a tall plant with a woody trunk'])
         ->and($tree->transcriptions->pluck('transcription')->all())->toBe(['tri:'])
         ->and($tree->translations)->toBe(['Baum'])
-        ->and(Word::query()->where('language_id', $de->id)->where('word', 'Baum')->exists())->toBeTrue()
-        ->and(Word::query()->where('language_id', $de->id)->where('word', 'a tall plant with a woody trunk')->exists())->toBeFalse();
+        ->and(Word::query()->where('language_id', $de->id)->count())->toBe(0)
+        ->and(WordTranslation::count())->toBe(0);
 
-    // Per-selector fallback: bird's .tr2 class matches nothing, so its
-    // translations come from the heuristic segments while its definitions
-    // still come from the profile's .sense selector.
+    // Per-selector fallback: bird's .tr2 class matches nothing — for
+    // definitions that falls back to the heuristic, but a configured
+    // translations selector vouches for where the equivalents live: a
+    // miss means this article has no headword translations, so no
+    // candidate is mined from the raw block text.
     $bird = Word::query()->where('language_id', $en->id)->where('word', 'bird')->firstOrFail();
     expect($bird->definitions->pluck('definition')->all())->toBe(['animal with feathers'])
-        ->and(Word::query()->where('language_id', $de->id)->where('word', 'Vogel')->exists())->toBeTrue()
-        ->and(Word::query()->where('language_id', $de->id)->where('word', 'animal with feathers')->exists())->toBeTrue();
+        ->and($bird->translations)->toBeNull();
 
-    // Plain-text article (StarDict sametypesequence=m shape): every selector
-    // misses, the generic heuristics handle the whole entry — nothing drops.
+    // Plain-text article (StarDict sametypesequence=m shape): the
+    // transcriptions and definitions still fall back to the generic
+    // heuristics — nothing drops — while the vouched translations
+    // selector finds no nodes and yields no candidates.
     $dog = Word::query()->where('language_id', $en->id)->where('word', 'dog')->firstOrFail();
     expect($dog->definitions->pluck('definition')->all())->toBe(['dog [dɔg] n. Hund, Köter'])
         ->and($dog->transcriptions->pluck('transcription')->all())->toBe(['dɔg'])
-        ->and(Word::query()->where('language_id', $de->id)->where('word', 'Hund')->exists())->toBeTrue()
-        ->and(Word::query()->where('language_id', $de->id)->where('word', 'Köter')->exists())->toBeTrue();
+        ->and($dog->translations)->toBeNull();
 
     // The demo: the SAME jsonl again without the profile visibly changes what
-    // is extracted — the heuristic now stages the phrase candidate and the raw
-    // block definition the profile had excluded.
+    // is extracted — the heuristic now re-stages the raw block definition,
+    // but the 7-token segment is clause-sized: since the candidate guards it
+    // no longer becomes a candidate (4-token phrases stay).
     $import()->assertSuccessful();
 
-    expect(Word::query()->where('language_id', $de->id)->where('word', 'a tall plant with a woody trunk')->exists())->toBeTrue()
-        ->and($tree->refresh()->definitions->count())->toBe(2)
-        ->and($tree->translations)->toBe(['Baum', 'a tall plant with a woody trunk']);
+    expect($tree->refresh()->definitions->count())->toBe(2)
+        ->and($tree->translations)->toBe(['Baum']);
 });
 
 it('errors on an unknown --profile slug listing the known profiles', function () {
@@ -523,6 +543,11 @@ function goldendictSelfCandidateFixturePath(): string
     return __DIR__.'/../Fixtures/goldendict-self-candidate.jsonl';
 }
 
+function goldendictCyrillicTrimFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-cyrillic-trim.jsonl';
+}
+
 function goldendictEmptyMatchFixturePath(): string
 {
     return __DIR__.'/../Fixtures/goldendict-profile-empty-match.jsonl';
@@ -531,67 +556,84 @@ function goldendictEmptyMatchFixturePath(): string
 it('counts translation candidates in real runs, not only dry runs', function () {
     createLanguages(['en', 'de']);
 
+    // The empty target language leaves every candidate unmatched: counted
+    // identically in the real and the dry run.
     $stats = (new GoldenDictParser('en', 500, false, 'de'))
         ->import(goldendictBilingualFixturePath());
 
-    // The four articles stage 7 candidates (cat 2, hello 3, give up 2; the
-    // junk article none) — the same number the dry-run tally reports.
     $dryStats = (new GoldenDictParser('en', 500, true, 'de'))
         ->import(goldendictBilingualFixturePath());
 
     expect($stats['translation_candidates'])->toBe(7)
-        ->and($stats['target_words_created'])->toBe(7)
-        ->and($stats['translations_linked'])->toBe(7)
-        ->and($dryStats['translation_candidates'])->toBe(7);
+        ->and($stats['translation_targets_unmatched'])->toBe(7)
+        ->and($stats['translations_linked'])->toBe(0)
+        ->and($dryStats['translation_candidates'])->toBe(7)
+        ->and($dryStats['translation_targets_unmatched'])->toBe(7)
+        ->and($dryStats['translations_linked'])->toBe(0);
 });
 
-it('counts only genuinely created target words on re-imports', function () {
+it('reports zero new links on re-runs while the unmatched count repeats', function () {
     createLanguages(['en', 'de']);
+    $de = Language::query()->where('code', 'de')->first();
+    $noun = WordClass::query()->create(['language_id' => $de->id, 'slug' => 'noun', 'title' => 'noun']);
+    foreach (['Katze', 'Kater'] as $word) {
+        Word::query()->create(['word' => $word, 'l_word' => mb_strtolower($word), 'language_id' => $de->id, 'word_class_id' => $noun->id]);
+    }
 
     $first = (new GoldenDictParser('en', 500, false, 'de'))
         ->import(goldendictBilingualFixturePath());
-    expect($first['target_words_created'])->toBe(7);
+    expect($first['translations_linked'])->toBe(2)
+        ->and($first['translation_targets_unmatched'])->toBe(5);
 
-    // A re-import upserts the same 7 rows — none of them is a creation.
+    // A re-import re-resolves every candidate; the existing pairs make it a
+    // no-op for the link count, the missing de rows stay unmatched.
     $second = (new GoldenDictParser('en', 500, false, 'de'))
         ->import(goldendictBilingualFixturePath());
 
-    expect($second['target_words_created'])->toBe(0)
-        ->and($second['translations_linked'])->toBe(0)
+    expect($second['translations_linked'])->toBe(0)
+        ->and($second['translation_targets_unmatched'])->toBe(5)
         // Candidates are re-extracted every run regardless.
         ->and($second['translation_candidates'])->toBe(7)
-        ->and(Word::query()->where('word', 'Katze')->count())->toBe(1);
+        ->and(Word::query()->where('language_id', $de->id)->count())->toBe(2);
 });
 
-it('makes the dry-run target-word tally honest against the database', function () {
+it('makes the dry-run link tally honest against the database', function () {
     createLanguages(['en', 'de']);
 
-    // Empty DB: every candidate would be a creation.
+    // Empty DB: every candidate is unmatched.
     $before = (new GoldenDictParser('en', 500, true, 'de'))
         ->import(goldendictBilingualFixturePath());
-    expect($before['target_words_created'])->toBe(7);
+    expect($before['translations_linked'])->toBe(0)
+        ->and($before['translation_targets_unmatched'])->toBe(7);
 
-    (new GoldenDictParser('en', 500, false, 'de'))
-        ->import(goldendictBilingualFixturePath());
+    // The target language's own import carries cat's equivalents.
+    $de = Language::query()->where('code', 'de')->first();
+    $noun = WordClass::query()->create(['language_id' => $de->id, 'slug' => 'noun', 'title' => 'noun']);
+    foreach (['Katze', 'Kater'] as $word) {
+        Word::query()->create(['word' => $word, 'l_word' => mb_strtolower($word), 'language_id' => $de->id, 'word_class_id' => $noun->id]);
+    }
 
-    // Same file against the now-populated DB: the preview must not overstate
-    // would-be creations, and the existing target lookups must not count as
-    // would-be-created either.
+    // Same file against the now-populated DB: the preview reports exactly
+    // the pairs that would link, and the dry run still writes nothing.
     $after = (new GoldenDictParser('en', 500, true, 'de'))
         ->import(goldendictBilingualFixturePath());
 
-    expect($after['target_words_created'])->toBe(0)
-        ->and($after['lookups_created'])->toBe(0)
-        ->and($after['translation_candidates'])->toBe(7);
+    expect($after['translations_linked'])->toBe(2)
+        ->and($after['translation_targets_unmatched'])->toBe(5)
+        ->and(Word::count())->toBe(2)
+        ->and(WordTranslation::count())->toBe(0);
 });
 
 it('treats a profile match whose nodes hold only empty text as a miss', function () {
     Log::spy();
     createLanguages(['en', 'de']);
+    $de = Language::query()->where('code', 'de')->first();
 
     // Every article's matched node holds only whitespace/brackets: the
-    // profile kind is a miss and must fall back to the heuristics — never
-    // silently empty that extraction.
+    // definition and transcription kinds fall back to the heuristics —
+    // never silently emptied — while the configured translations selector
+    // vouches for its nodes, so a miss means no candidates rather than a
+    // raw-block-text fallback.
     test()->artisan('goldendict:import', [
         'file' => goldendictEmptyMatchFixturePath(),
         '--lang' => 'en',
@@ -609,10 +651,10 @@ it('treats a profile match whose nodes hold only empty text as a miss', function
     $bird = Word::query()->where('word', 'bird')->firstOrFail();
     expect($bird->transcriptions->pluck('transcription')->all())->toBe(['vɔˈgəl']);
 
-    // fish: the .tr span holds only whitespace — the candidate comes from
-    // the heuristic segments.
+    // fish: the .tr span holds only whitespace — the vouched translations
+    // selector missed, so no candidate is mined from the block text.
     $fish = Word::query()->where('word', 'fish')->firstOrFail();
-    expect($fish->translations)->toBe(['Fisch']);
+    expect($fish->translations)->toBeNull();
 
     // No selector effectively matched anywhere, so all three articles count
     // (and sample) as profile misses for the author.
@@ -620,10 +662,13 @@ it('treats a profile match whose nodes hold only empty text as a miss', function
         ->once()
         ->withArgs(fn (string $message) => str_contains($message, 'in 3 articles'));
 
-    expect(Word::query()->where('word', 'Baum')->exists())->toBeTrue()
-        ->and(Word::query()->where('word', 'Tanne')->exists())->toBeTrue()
-        ->and(Word::query()->where('word', 'Vogel')->exists())->toBeTrue()
-        ->and(Word::query()->where('word', 'Fisch')->exists())->toBeTrue();
+    // Link-only: nothing was staged for the missed articles and no de word
+    // exists for any would-be candidate.
+    expect(Word::query()->where('language_id', $de->id)->count())->toBe(0)
+        ->and(Word::query()->where('word', 'Baum')->exists())->toBeFalse()
+        ->and(Word::query()->where('word', 'Tanne')->exists())->toBeFalse()
+        ->and(Word::query()->where('word', 'Vogel')->exists())->toBeFalse()
+        ->and(Word::query()->where('word', 'Fisch')->exists())->toBeFalse();
 });
 
 it('drops translation candidates equal to the headword itself', function () {
@@ -638,15 +683,306 @@ it('drops translation candidates equal to the headword itself', function () {
     ])->assertSuccessful();
 
     // "cat" is cat's own headword and "HOUSE" is house's in another case:
-    // neither may become a junk target word linking the word to itself.
+    // neither may be staged or linked as the word's own translation.
     expect(Word::query()->where('word', 'cat')->count())->toBe(1)
         ->and(Word::query()->where('word', 'HOUSE')->exists())->toBeFalse()
-        ->and(Word::query()->where('language_id', $de->id)->pluck('word')->sort()->values()->all())
-        ->toBe(['Haus', 'Katze'])
-        ->and(WordTranslation::count())->toBe(2);
+        ->and(Word::query()->where('language_id', $de->id)->count())->toBe(0)
+        ->and(WordTranslation::count())->toBe(0);
 
     $cat = Word::query()->where('language_id', $en->id)->where('word', 'cat')->firstOrFail();
     $house = Word::query()->where('language_id', $en->id)->where('word', 'house')->firstOrFail();
     expect($cat->translations)->toBe(['Katze'])
         ->and($house->translations)->toBe(['Haus']);
+});
+
+it('trims quote marks off Cyrillic candidates without cutting letters in half', function () {
+    createLanguages(['en', 'ru']);
+    $ru = Language::query()->where('code', 'ru')->first();
+
+    test()->artisan('goldendict:import', [
+        'file' => goldendictCyrillicTrimFixturePath(),
+        '--lang' => 'en',
+        '--target-lang' => 'ru',
+    ])->assertSuccessful();
+
+    // "зал" ends in the same byte as "»" and "пар" in the same byte as "…":
+    // a byte-wise trim would leave an invalid half character behind and the
+    // staged string would be junk. The guillemet/schwabian quotes around
+    // "золото" must still come off, and the staged strings are plain letters
+    // (the ru target strips stress marks).
+    $hall = Word::query()->where('word', 'hall')->firstOrFail();
+    $steam = Word::query()->where('word', 'steam')->firstOrFail();
+    $gold = Word::query()->where('word', 'gold')->firstOrFail();
+
+    $words = collect([...$hall->translations, ...$steam->translations, ...$gold->translations])
+        ->sort()
+        ->values()
+        ->all();
+    expect($words)->toBe(['зал', 'золото', 'пар', 'пароход']);
+
+    foreach ($words as $word) {
+        expect(mb_check_encoding($word, 'UTF-8'))->toBeTrue();
+    }
+
+    // Link-only: the empty ru dictionary gains no rows.
+    expect(Word::query()->where('language_id', $ru->id)->count())->toBe(0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Oxford fix regression: pos/strip selectors, candidate guards, l_word
+| target-word resolution
+|--------------------------------------------------------------------------
+*/
+
+function goldendictPosStripFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-pos-strip.jsonl';
+}
+
+function goldendictCandidateGuardsFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-candidate-guards.jsonl';
+}
+
+function goldendictLwordReuseFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-lword-reuse.jsonl';
+}
+
+function goldendictLwordDedupeFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-lword-dedupe.jsonl';
+}
+
+it('assigns the word class from the profile pos selector with heuristic fallback', function () {
+    createLanguages(['en', 'ru']);
+    $en = Language::query()->where('code', 'en')->first();
+
+    test()->artisan('goldendict:import', [
+        'file' => goldendictPosStripFixturePath(),
+        '--lang' => 'en',
+        '--target-lang' => 'ru',
+        '--profile' => 'test-pos-strip',
+    ])->assertSuccessful();
+
+    // Oxford's <div class="partOfSpeech">transitive verb</div> (17 chars)
+    // maps through the raised length guard + POS dictionary to the verb
+    // class — the single-word headword is NOT in unknown.
+    $carry = Word::query()->where('language_id', $en->id)->where('word', 'carry')->firstOrFail();
+    expect($carry->wordClass->slug)->toBe('verb');
+
+    // Multi-word headword precedence is preserved: the pos selector says
+    // "noun", but a two-word headword stays a phrase (ADR 0059).
+    $zoomPast = Word::query()->where('language_id', $en->id)->where('word', 'zoom past')->firstOrFail();
+    expect($zoomPast->wordClass->slug)->toBe('phrase');
+
+    // An unmappable pos text ("usually singular") is a miss for the kind:
+    // the heuristic pos hints decide, and they find nothing here.
+    $fetch = Word::query()->where('language_id', $en->id)->where('word', 'fetch')->firstOrFail();
+    expect($fetch->wordClass->slug)->toBe('unknown');
+});
+
+it('removes strip-selector nodes from every extraction before matching', function () {
+    Log::spy();
+    createLanguages(['en', 'ru']);
+    $en = Language::query()->where('code', 'en')->first();
+
+    test()->artisan('goldendict:import', [
+        'file' => goldendictPosStripFixturePath(),
+        '--lang' => 'en',
+        '--target-lang' => 'ru',
+        '--profile' => 'test-pos-strip',
+    ])->assertSuccessful();
+
+    // The exampleBlock's translation cell and sense block are gone from the
+    // DOM before any extraction: no glued candidate, no junk definition,
+    // while the content outside the block extracts normally.
+    $glued = Word::query()->where('language_id', $en->id)->where('word', 'glued')->firstOrFail();
+    expect($glued->translations)->toBe(['пронестись'])
+        ->and($glued->definitions->pluck('definition')->all())->toBe(['настоящее определение']);
+    expect(Word::query()->where('word', 'машины проносились мимо')->exists())->toBeFalse();
+
+    // The headword of an article whose ONLY content was inside the stripped
+    // block still imports (entries are never dropped) — with nothing else.
+    $empty = Word::query()->where('word', 'empty')->firstOrFail();
+    expect($empty->definitions)->toBeEmpty()
+        ->and($empty->translations)->toBeNull();
+
+    // Strip is subtraction, never a match: the empty article's strip match
+    // does not count, so exactly that one article is a no-match article.
+    Log::shouldHaveReceived('notice')
+        ->once()
+        ->withArgs(fn (string $message) => str_contains($message, 'in 1 article'));
+});
+
+it('rejects mixed-script and over-long translation candidates but keeps 4-token phrases', function () {
+    createLanguages(['en', 'ru']);
+    $ru = Language::query()->where('code', 'ru')->first();
+
+    test()->artisan('goldendict:import', [
+        'file' => goldendictCandidateGuardsFixturePath(),
+        '--lang' => 'en',
+        '--target-lang' => 'ru',
+    ])->assertSuccessful();
+
+    // "cars проносились" (glued example text: Latin + Cyrillic) and the
+    // 6-token clause are rejected; the 3-token phrase is staged (plain
+    // letters), and the 4-token phrase stays.
+    $zoom = Word::query()->where('word', 'zoom')->firstOrFail();
+    $paste = Word::query()->where('word', 'paste')->firstOrFail();
+    expect($zoom->translations)->toBe(['один два три'])
+        ->and($paste->translations)->toBe(['клейкая паста для бумаги'])
+        // Link-only: the empty ru dictionary gains no rows.
+        ->and(Word::query()->where('language_id', $ru->id)->count())->toBe(0);
+});
+
+it('links candidates to the existing target word by l_word, staged strings plain', function () {
+    createLanguages(['en', 'ru']);
+    $ru = Language::query()->where('code', 'ru')->first();
+
+    // The target language already carries the unstressed row.
+    $noun = WordClass::query()->create(['language_id' => $ru->id, 'slug' => 'noun', 'title' => 'noun']);
+    $existing = Word::query()->create([
+        'word' => 'машины',
+        'l_word' => 'машины',
+        'language_id' => $ru->id,
+        'word_class_id' => $noun->id,
+        'frequency' => Word::FREQUENCY_UNRANKED,
+    ]);
+
+    test()->artisan('goldendict:import', [
+        'file' => goldendictLwordReuseFixturePath(),
+        '--lang' => 'en',
+        '--target-lang' => 'ru',
+    ])->assertSuccessful();
+
+    // The stressed candidate "маши́ны" normalizes to the existing l_word:
+    // no new ru row, the existing row keeps its display form and class.
+    expect(Word::query()->where('language_id', $ru->id)->count())->toBe(1);
+    expect($existing->refresh()->word)->toBe('машины')
+        ->and($existing->wordClass->slug)->toBe('noun');
+
+    // The link points at the existing row's id and the staged string is
+    // plain letters — the combining acute left it with the word.
+    $zoom = Word::query()->where('word', 'zoom')->firstOrFail();
+    expect(WordTranslation::isLinked($zoom->id, $existing->id))->toBeTrue()
+        ->and($zoom->translations)->toBe(['машины']);
+});
+
+it('dedupes candidate links by l_word against one existing row and reports zeros on re-run', function () {
+    createLanguages(['en', 'ru']);
+    $ru = Language::query()->where('code', 'ru')->first();
+
+    // "машины" (car) and "маши́ны" (cars) normalize to one l_word: both
+    // candidates link the single row the ru import carries.
+    $noun = WordClass::query()->create(['language_id' => $ru->id, 'slug' => 'noun', 'title' => 'noun']);
+    $existing = Word::query()->create([
+        'word' => 'машины',
+        'l_word' => 'машины',
+        'language_id' => $ru->id,
+        'word_class_id' => $noun->id,
+        'frequency' => Word::FREQUENCY_UNRANKED,
+    ]);
+
+    $first = (new GoldenDictParser('en', 500, false, 'ru'))
+        ->import(goldendictLwordDedupeFixturePath());
+    expect($first['translations_linked'])->toBe(2)
+        ->and($first['translation_targets_unmatched'])->toBe(0)
+        ->and(Word::query()->where('language_id', $ru->id)->count())->toBe(1);
+
+    $car = Word::query()->where('word', 'car')->firstOrFail();
+    $cars = Word::query()->where('word', 'cars')->firstOrFail();
+    expect(WordTranslation::isLinked($car->id, $existing->id))->toBeTrue()
+        ->and(WordTranslation::isLinked($cars->id, $existing->id))->toBeTrue()
+        ->and($car->translations)->toBe(['машины'])
+        ->and($cars->translations)->toBe(['машины']);
+
+    $second = (new GoldenDictParser('en', 500, false, 'ru'))
+        ->import(goldendictLwordDedupeFixturePath());
+
+    // The idempotent re-run reports zeros for linked and unmatched.
+    expect($second['translations_linked'])->toBe(0)
+        ->and($second['translation_targets_unmatched'])->toBe(0)
+        ->and(Word::query()->where('language_id', $ru->id)->count())->toBe(1);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Stress-mark stripping, headword guards and the forms selector
+|--------------------------------------------------------------------------
+*/
+
+function goldendictHeadwordGuardsFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-headword-guards.jsonl';
+}
+
+function goldendictStressStripFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-stress-strip.jsonl';
+}
+
+function goldendictFormsFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-forms.jsonl';
+}
+
+it('rejects junk multi-word headwords but keeps dictionary phrases', function () {
+    createLanguages(['ru']);
+    $ru = Language::query()->where('code', 'ru')->first();
+
+    $stats = (new GoldenDictParser('ru'))
+        ->import(goldendictHeadwordGuardsFixturePath());
+
+    // The comma-split name list and the 4-token clause are article junk the
+    // converter picked up; the 2- and 2-token phrases stay.
+    expect($stats['headwords_rejected'])->toBe(2)
+        ->and($stats['words_imported'])->toBe(2);
+
+    expect(Word::query()->where('language_id', $ru->id)->pluck('word')->sort()->values()->all())
+        ->toBe(['give up', 'до свидания'])
+        ->and(Word::query()->where('language_id', $ru->id)->where('word', 'до свидания')->firstOrFail()->wordClass->slug)->toBe('phrase')
+        ->and(Word::query()->where('language_id', $ru->id)->where('word', 'give up')->firstOrFail()->wordClass->slug)->toBe('phrase');
+});
+
+it('stores ru headwords and forms as plain letters and collapses stressed variants', function () {
+    createLanguages(['ru']);
+    $ru = Language::query()->where('code', 'ru')->first();
+
+    test()->artisan('goldendict:import', [
+        'file' => goldendictStressStripFixturePath(),
+        '--lang' => 'ru',
+    ])->assertSuccessful();
+
+    // "приве́т" and "привет" collapse into one row: the stressed headword is
+    // stripped to the plain letters before the unique triple is formed, and
+    // the alt form loses its acute too.
+    expect(Word::query()->where('language_id', $ru->id)->count())->toBe(1);
+
+    $privet = Word::query()->where('language_id', $ru->id)->firstOrFail();
+    expect($privet->word)->toBe('привет')
+        ->and($privet->l_word)->toBe('привет')
+        ->and($privet->definitions->pluck('definition')->all())->toBe(['greeting one', 'greeting two']);
+
+    expect(Form::query()->where('word_id', $privet->id)->pluck('form')->all())->toBe(['приветик']);
+});
+
+it('extracts forms from the profile forms selector and merges them with the alts', function () {
+    createLanguages(['en']);
+
+    test()->artisan('goldendict:import', [
+        'file' => goldendictFormsFixturePath(),
+        '--lang' => 'en',
+        '--profile' => 'test-forms',
+    ])->assertSuccessful();
+
+    // The fms span splits on commas/semicolons/slashes into five forms.
+    $be = Word::query()->where('word', 'be')->firstOrFail();
+    expect($be->forms->pluck('form')->all())->toBe(['am', 'is', 'are', 'was', 'were'])
+        ->and($be->definitions->pluck('definition')->all())->toBe(['to exist']);
+
+    // The alts merge with the selector's forms instead of being replaced.
+    $run = Word::query()->where('word', 'run')->firstOrFail();
+    expect($run->forms->pluck('form')->all())->toBe(['running', 'runs', 'ran']);
 });

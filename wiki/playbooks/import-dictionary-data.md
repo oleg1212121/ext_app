@@ -4,9 +4,9 @@ title: Importing Dictionary Data
 description: How to import Kaikki/Wiktionary dumps and GoldenDict-format dictionaries into the unified language-keyed dictionary tables and link translations.
 tags: [dictionary, import, wiktionary, kaikki, goldendict]
 status: stable
-stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
+stale_after: 2027-01-17
+generated: { by: agent:zcode, at: 2026-10-17T19:53:08+03:00 }
+verified: { by: agent:zcode, at: 2026-10-17T19:53:08+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -163,10 +163,10 @@ do not redistribute the extracted data.
 
 2. **Preview dry** — parse a capped slice and report what would be
    written (stat rows only; nothing is written, not even auto-created
-   lookups). The would-be-created target-word count is diffed against the
-   database, so re-previewing an already-imported dictionary reports the
-   rows that are genuinely missing; would-be links stay an in-run
-   estimate (deduplicated within the run only):
+   lookups). The bilingual link tally is diffed against the database, so
+   re-previewing an already-linked dictionary reports `translations_linked`
+   zeros and repeats the `unmatched candidates` count; would-be links stay
+   an in-run estimate (deduplicated within the run only):
 
    ```bash
    docker exec ext_app_laravel sh -c 'cd /var/www && php artisan goldendict:import goldendict/DICT.mdx.jsonl --lang=xx --max-entries=500 --dry-run'
@@ -194,20 +194,66 @@ do not redistribute the extracted data.
    the Wiktionary import. Extraction is a generic heuristic (plain-text
    block segments → definitions, `[bracketed]`/`/slashed/` IPA →
    transcriptions under the auto-created `ipa` type, POS abbreviations →
-   word-class slugs, `alts` → forms, multi-word headwords → `phrase`).
-   For a **bilingual** dictionary add `--target-lang=yy`: translation
-   candidates (the comma/semicolon-delimited article segments that
-   survive the noise filters) become target-language words — the source
-   class slug mapped into the target language, multi-word candidates →
-   `phrase` — plus canonical `word_translations` links and
-   `words.translations` JSON staging, all written directly (no separate
-   link pass; `--no-link` skips these phases). For dictionaries whose
-   articles have structure the heuristics mangle, add `--profile=<slug>`
-   (below). Re-runs upsert and text-dedupe — raw article HTML never
-   enters the database, so a better extractor just re-imports the JSONL.
+   word-class slugs, `alts` → forms, multi-word headwords → `phrase`
+   unless they are junk: a multi-word headword with sentence punctuation
+   or more than 3 tokens is rejected, ADR 0078). For ru/be/uk sources the
+   stored words and forms are **plain letters** — the combining stress
+   acutes are stripped at parse time, so stressed variants collapse into
+   the plain rows. For a **bilingual** dictionary add `--target-lang=yy`:
+   translation candidates (the comma/semicolon-delimited article segments
+   that survive the noise filters) **link to existing target-language
+   words** — resolved by `l_word` (same class preferred, multi-word
+   prefers `phrase`), never creating target rows — plus canonical
+   `word_translations` links and `words.translations` JSON staging for
+   every candidate (staged strings wait in the JSON for a re-run once the
+   target word exists; `--no-link` skips these phases). For dictionaries
+   whose articles have structure the heuristics mangle, add
+   `--profile=<slug>` (below). Re-runs upsert and text-dedupe — raw
+   article HTML never enters the database, so a better extractor just
+   re-imports the JSONL.
+
+   Optional **host-side JSONL pre-filter** (a plain jsonl text pass, no
+   container round-trip needed): dictionaries ship non-word records you
+   can drop before importing rather than prune from the DB afterwards —
+   Mostitsky eXtro's `[1]`-style citation stubs, `**`/`***` info cards
+   and `_`-prefixed navigation pages (73 records) were deleted, and DSL
+   syntax quotes stripped from headwords (`"ангелы"` → `ангелы`, 5
+   records, also fixing their `l_word`). Keep it conservative and
+   eyeball the drop list first: bare-number headwords there are real
+   entries (`1947` = Roswell year) and stay. The `.dsl`/`.mdx` source of
+   truth is untouched — reconvert regenerates an unfiltered JSONL.
 
 5. Verify in the Filament admin (`/admin`, group "Words") like the
    Wiktionary flow above.
+
+### Clean rebuild after import-rule changes (ADR 0078)
+
+When the import rules change in a way old data violates (stressed display
+twins, translation-created bare stubs, junk `phrase` rows), the fix is a
+wipe + re-import, not an in-place patch. Import order matters — base
+dictionaries before the bilingual runs, or the first bilingual run links
+almost nothing:
+
+1. `wiktionary:import-raw kaikki/raw-wiktextract-data.jsonl.gz
+   --langs=en,ru --fresh --force` — wipes all en+ru dictionary data (FK
+   cascades take the satellites, translation links and user familiarity
+   rows with them — accepted for a dev dataset) and imports kaikki words,
+   definitions, forms, transcriptions, then links translations.
+2. Restore the auxiliaries: `cmudict:import`,
+   `words:import-frequency` / the frequency-lists import per their
+   `--help` (ranks survive nothing — the wipe resets them).
+3. The bilingual GoldenDict runs (dry-run, then real, detached):
+   `goldendict:import … --lang=ru --target-lang=en
+   --profile=mostitsky-ru-en` and `goldendict:import … --lang=en
+   --target-lang=ru --profile=oxford-en-ru`. Their candidates now link
+   against the kaikki rows; the unmatched remainder stays staged in
+   `words.translations` and links on a later re-run if the base import
+   grows the target language.
+4. Re-run the entity linking pass (`crossword:link` per the `--fresh`
+   note above) — the wipe reset `entity_words.word_id`.
+5. Verify: no U+0301 in stored ru `words.word`/`forms.form`, no
+   translation-created bare ru stubs, `phrase` rows only under dictionary
+   headwords.
 
 ### Extraction profiles (--profile=<slug>)
 
@@ -217,8 +263,16 @@ dictionary — no code changes per dictionary. To author one:
 
 1. Convert a slice of the dictionary and smoke-run **without** the profile
    (`--dry-run --max-entries=500`) to get the baseline stat row.
-2. Copy the `example-classes` profile in `config/goldendict.php`, rename
-   the slug, and retarget the three selector keys at the dictionary's
+2. Copy a profile in `config/goldendict.php` — `oxford-en-ru` is the
+   working real-world example (Oxford Russian Dictionary En-Ru: IPA from
+   `phoneticText` divs/spans via their direct text nodes with a
+   `normalize-space(.) != ","` predicate dropping the separator node,
+   Russian equivalents from `targetLangTranslation` spans excluding
+   `exampleGroup` blocks, numbered sense units from `sense-1`/`sense-2`
+   divs, word classes from `partOfSpeech` divs, `exampleGroup` blocks
+   stripped), `mostitsky-ru-en` the DSL one (see the tip below) —
+   or the `example-classes` template, rename
+   the slug, and retarget the six selector keys at the dictionary's
    article structure:
    * `transcriptions` — each matched node's text becomes a transcription
      (enclosing `[brackets]`/`/slashes/` trimmed; **not** gated on the
@@ -230,6 +284,15 @@ dictionary — no code changes per dictionary. To author one:
      dropped). Bilingual mode only.
    * `definitions` — the matched nodes' texts are the definition
      segments instead of the heuristic nearest-block grouping.
+   * `forms` — each matched node's text splits on commas/semicolons/
+     slashes into individual forms ("am, is, are / was") that **merge**
+     with the entry's `alts` in the forms table (never replace them).
+   * `pos` — the matched nodes' texts are word-class candidates: the
+     first text the POS dictionary maps ("transitive verb" → `verb`)
+     overrides the heuristic pos hints; an unmappable text is a miss.
+   * `strip` — the matched nodes are removed from the article DOM
+     before any extraction (subtraction, not extraction: they vanish
+     from every other kind's input) and never count as a match/miss.
    Each value is an XPath 1.0 string or a list of them (queried in
    order). The `contains(concat(" ", normalize-space(@class), " "), "…")`
    idiom matches a class as a whole token.
@@ -240,7 +303,12 @@ dictionary — no code changes per dictionary. To author one:
    matched nodes hold only whitespace text (transcriptions also trim
    bracket/slash delimiters; a matched-but-empty
    kind is a miss, never a silently emptied extraction) — an entry is
-   never dropped. Every article where NO selector effectively matched is
+   never dropped. The one exception is **translations when the profile
+   configures a translations selector**: there the author vouches for
+   where the equivalents live, so a miss yields no candidates for that
+   article instead of mining the raw block text (which manufactured junk
+   target words out of example scaffolding). Every article where NO
+   selector effectively matched is
    counted in the
    "Profile no-match articles" stat row and sampled (capped) into one
    `Goldendict profile '…': no selector matched in N articles` notice in
@@ -248,6 +316,23 @@ dictionary — no code changes per dictionary. To author one:
 5. Known-slug safety: an unknown slug fails the command with the known
    list; unknown keys or syntactically broken XPath fail up front before
    anything is written.
+
+When the dictionary's markup gives no class to hook onto, a
+**content-language test** can still separate the kinds: pyglossary
+renders the Mostitsky DSL `[trn]` equivalents as plain
+`padding-left:1em` paragraphs — indistinguishable by shape from the
+`[com]` commentary paragraphs — but they are the only such paragraphs
+whose text carries no Cyrillic, so `mostitsky-ru-en` selects them with
+`translate()` stripping the Cyrillic alphabet and comparing:
+`//p[@style="padding-left:1em;margin:0"][normalize-space(translate(normalize-space(.), "абвгде…", "")) = normalize-space(.)]`.
+Configuring that selector also vouches translations (cross-reference
+articles yield no candidates instead of mined Russian commentary —
+translation candidates went 1154 → 209 on the first 500 entries). The
+same dictionary shows when NOT to strip: its bold `<b>` carries real
+content in other articles, so the headword echo stays in the
+definitions, and `span.sec` (► source links, «см. тж» blocks, GoldenDict
+artifacts) takes the noise. The `[p]` tags there are subject domains
+(`уфол.`, `астрон.`), not word classes — no `pos` selector.
 
 Format quirks to keep in mind (from the converter): DSL parenthesized
 title variants concatenate into the headword (`dog(n.)` → `dogn.`), DSL

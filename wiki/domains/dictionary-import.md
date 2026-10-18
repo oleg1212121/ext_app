@@ -1,13 +1,16 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059).
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; GoldenDict imports store plain (stress-free) words, keep the phrase class to dictionary headwords, and link translations without creating target words (ADR 0078); multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059).
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs]
 status: stable
-stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T19:45:00+03:00 }
+stale_after: 2027-01-17
+generated: { by: agent:zcode, at: 2026-10-17T19:53:08+03:00 }
+verified: { by: agent:zcode, at: 2026-10-17T19:53:08+03:00 }
 sources:
+  - id: adr-0078
+    resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
+    title: ADR 0078 — plain words, link-only translations
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
     title: Kaikki/Wiktionary JSONL parser
@@ -65,6 +68,11 @@ mirrored per-language tables, and a single `word_translations` pivot —
   `compress.zlib://` wrapper. Staging targets can be a single target code or
   a list (`new WiktionaryParser($lang, ['ru', 'de'])`) — see
   [ADR 0029](../../docs/adr/0029-import-raw-dump-via-per-language-extraction.md).
+  For ru/be/uk the stored inflected **forms** drop their combining stress
+  acutes (the raw dump carries the stressed variants — "до́ма" for "дом" —
+  in the form lists); display headwords stay as the dump's lemma field
+  delivers them (unstressed for ru). See
+  [ADR 0078](../../docs/adr/0078-goldendict-plain-words-link-only-translations.md).
 * `App\Classes\RawWiktextractExtractor` — streams a **Raw dump** (the
   monolithic kaikki `raw-wiktextract-data` file, every Wiktionary language
   interleaved) once and writes one **Language extract** per wanted code: raw
@@ -118,20 +126,32 @@ mirrored per-language tables, and a single `word_translations` pivot —
   pos-classed/`<i>`/`<abbr>` elements map to word-class slugs, and
   alternate headwords (`alts`, MDX `@@@LINK=` redirects) land as `forms`.
   Multi-word headwords go to the `phrase` class regardless of the POS hint
-  (ADR 0059). Raw HTML never enters the database — the JSONL stays on disk
-  and a better extractor can re-import it anytime. Flags: `--dry-run`
+  (ADR 0059) — but a multi-word headword that carries sentence punctuation
+  (`.,;:!?`) or more than 3 tokens is article junk the converter picked up
+  (a comma-split name list like "Кулешова, Роза Алексеевна", a clause like
+  "жировые складки на талии"): it is **rejected** (counted in the
+  `headwords_rejected` stat), not imported (ADR 0078). Raw HTML never
+  enters the database — the JSONL stays on disk and a better extractor can
+  re-import it anytime. Flags: `--dry-run`
   (parse and report, write nothing — not even auto-created lookups),
   `--max-entries` (smoke runs), `--batch-size`, `--profile` (below). New
   words get the `FREQUENCY_UNRANKED` sentinel; re-imports refresh `l_word`
-  only, so curated frequency ranks and staged translations survive. The
-  stats are new-only where writes are: `target_words_created` and
-  `translations_linked` count genuinely created/linked rows (diffed against
-  the DB), so an idempotent re-run reports zeros, while
+  only, so curated frequency ranks and staged translations survive.
+  **Stress marks store nowhere** (ADR 0078): for the
+  `App\Support\StressMarks` languages (ru/be/uk) the stored display
+  `word`/`form` and every staged translation candidate are stripped of
+  combining acutes at parse time, so a stressed dictionary variant
+  collapses into the same row as the plain word (the Wiktionary importer
+  keeps its display headwords — the kaikki lemma field is unstressed — but
+  strips its ru/be/uk inflected forms too); definition prose keeps its
+  marks. The stats are new-only
+  where writes are: `translations_linked` counts genuinely new pairs
+  (diffed against the DB), so an idempotent re-run reports zeros, while
   `translation_candidates` counts every candidate the articles yield in
   real runs exactly like the dry-run tally does.
 * `goldendict:import --profile=<slug>` — **extraction profiles**: a
   declarative XPath selector map per dictionary in
-  `config/goldendict.php` (`transcriptions`/`translations`/`definitions`
+  `config/goldendict.php` (`transcriptions`/`translations`/`definitions`/`forms`/`pos`/`strip`
   keys; a class matches as a whole token via the
   `contains(concat(" ", normalize-space(@class), " "), "…")` idiom)
   layered over the generic heuristics, so structured dictionaries extract
@@ -141,36 +161,99 @@ mirrored per-language tables, and a single `word_translations` pivot —
   bracket/slash delimiters, so a bracket-only node is a miss too) — falls
   back to the
   heuristic; an extraction kind is never silently emptied and an entry is
-  never dropped; profile-selected transcriptions skip the IPA-marker gate
+  never dropped — **except translations when the profile configures a
+  translations selector**: there the author vouches for where the
+  equivalents live, so a miss means the article has no headword
+  translations and no candidates are mined from the raw block text (the
+  raw-text fallback was what turned stripped-example scaffolding into
+  junk target words); without a configured selector the heuristic
+  segments stay the source as before. Profile-selected transcriptions
+  skip the IPA-marker gate
   (the profile author vouches for the nodes), profile-selected
-  translation cells still pass the noise filters. Articles where NO
+  translation cells still pass the noise filters. The `pos` kind feeds the
+  word class: its matched texts run through `posSlugFor` (the POS
+  abbreviation dictionary, length guard raised to 24 so spelled-out labels
+  like "transitive verb" map) and the first mappable text overrides the
+  heuristic pos hints for the article (still below the multi-word →
+  `phrase` precedence), an unmappable text being a miss for the kind. The
+  `strip` kind is subtraction, not extraction: its matched nodes are
+  removed from the article DOM before any extraction — they vanish from
+  the heuristic segments, IPA, pos hints, textContent and every other
+  selector's matches — and a strip match never counts as a profile match
+  (or miss). The `forms` kind (ADR 0078) treats its matched node texts as
+  inflected-form lists: each node text splits on commas/semicolons/slashes
+  into individual forms that **merge** with the entry's `alts` (never
+  replace them) in the forms table. Articles where NO
   selector matched are counted ("Profile no-match articles" stat row) and
   sampled (capped at 5) into one log notice so profile authors see what
   they are missing; an unknown slug fails with the known list, unknown
   keys or broken XPath fail up front. Tune profiles incrementally against
   real dictionaries (how-to: [Importing Dictionary Data](
   /playbooks/import-dictionary-data.md)) — no schema migrations, the
-  JSONL just re-imports.
-* `goldendict:import --target-lang=xx` — **bilingual mode**: the bulk
-  mirror of the `FetchWordTranslations` semantics. Translation candidates
-  come out of each article (comma/semicolon-delimited segments after
+  JSONL just re-imports. The first real profile is `oxford-en-ru` (the
+  Oxford Russian Dictionary En-Ru MDX): direct text nodes of
+  `phoneticText` divs/spans for the BrE/AmE IPA (the sound-play glyphs
+  live in `<a>` children, and a `normalize-space(.) != ","` predicate
+  drops the separator node), `targetLangTranslation` spans for the
+  Russian equivalents (excluding those inside `exampleGroup` blocks —
+  the phrase-book example translations, defense in depth beside the
+  `strip` selector that removes those blocks wholesale), `sense-1`/`sense-2`
+  divs as the numbered sense units, `partOfSpeech` divs as the word
+  class, and `exampleGroup` blocks stripped from the article before any
+  extraction (their English example text glued to the Russian translation
+  was the sentence junk that seeded the candidate guards below). The
+  second is `mostitsky-ru-en` (Mostitsky eXtro Ru-En DSL): pyglossary
+  renders the DSL `[trn]` equivalents as plain `padding-left:1em`
+  paragraphs, so the selector hooks the one property that still
+  distinguishes them from the Russian `[com]` commentary — the absence
+  of Cyrillic, via a `translate()`-strips-the-alphabet equality test on
+  the normalized text (the vouching-then applies: cross-reference
+  articles yield no candidates instead of mined commentary); `span.sec`
+  (► source links, «см. тж», GoldenDict artifacts) is stripped, the bold
+  headword echo deliberately stays (that dictionary's `<b>` carries real
+  content elsewhere), and its `[p]` tags are subject domains, not word
+  classes — no `pos` selector.
+* `goldendict:import --target-lang=xx` — **bilingual mode, link-only**
+  (ADR 0078). Translation candidates come out of each article
+  (comma/semicolon-delimited segments after
   stripping transcription runs, grammar tokens — POS abbreviations,
-  gender/number tags — and the leading headword; each piece must survive
-  the `usableCandidates` rule: no `[.,;:]`, ≤256 chars, and not the
+  gender/number tags — and the leading headword; each piece is end-trimmed
+  through a UTF-8-safe regex character class, not `trim()`: the quote-mark
+  trim set shares bytes with Cyrillic letters — "л" ends in the same 0xBB
+  as "»", "р" the same 0x80 as "…" — so a byte-wise trim would cut
+  characters in half and the batch upsert would die on invalid UTF-8;
+  each piece must also survive
+  the `usableCandidates` rule: no `[.,;:]`, ≤256 chars, no mixed
+  Latin+Cyrillic (a piece carrying both scripts is a glued example
+  sentence like "cars zoomed past маши́ны проноси́лись ми́мо"), at most
+  4 whitespace-separated tokens (clause-sized pieces are sentences;
+  4-token phrases stay), and not the
   article's own headword compared through the `WordLookupKey`
-  normalization, so "Katze, cat" never links cat to itself), the missing
-  target-language words are created (source class slug mapped into the
-  target language with the same unseen-lookup auto-creation; multi-word
-  candidates → `phrase`, ADR 0059; `l_word` through `WordLookupKey` so
-  Cyrillic stress marks live in the display form only; the stat counts
-  only rows that did not exist yet), the raw strings
-  are staged into `words.translations` JSON (flat deduped list, the
-  Wiktionary shape — merged on re-import, never clobbered), and canonical
-  `word_translations` links (`word_a_id < word_b_id`, ADR 0020) are
-  written directly via batched upserts — no separate
-  `wiktionary:link-translations` pass needed for this path. `--no-link`
-  skips all three phases (pure monolingual behavior); the target language
-  must be a registry code other than `--lang`.
+  normalization, so "Katze, cat" never links cat to itself; for ru/be/uk
+  targets the segment loses its stress marks first, so candidates stage
+  and match as plain letters and the leading headword echo strips
+  cleanly). The importer **never creates target-language rows**: the
+  target language's word list belongs to its own imports (kaikki,
+  frequency lists, cmudict). Every candidate resolves **by `l_word`**
+  against the target language's existing rows (a candidate whose
+  normalized key the target language carries under ANY class links that
+  row: "маши́ны" — stripped to "машины" — resolves to an existing
+  "машины"; the row with the candidate's expected class wins — a
+  single-word candidate prefers the source word's class in the target
+  language, a multi-word one the `phrase` class, ADR 0059 as a linking
+  preference — else the lowest id). Unresolved candidates stay **staged
+  only**: the raw strings land in `words.translations` JSON (flat deduped
+  list, the Wiktionary shape — merged on re-import, never clobbered) and
+  are counted in `translation_targets_unmatched`, waiting for a re-run
+  once the target word exists; resolved pairs write canonical
+  `word_translations` links (`word_a_id < word_b_id`, ADR 0020) via
+  batched upserts, `translations_linked` counting only genuinely new
+  pairs. `--no-link` skips the link and staging phases (pure monolingual
+  behavior); the target language must be a registry code other than
+  `--lang`. Because the target dictionary no longer grows, an effective
+  import order is base dictionaries first (kaikki, frequency, cmudict),
+  then the bilingual GoldenDict runs — or re-run them after the base
+  import to link the staged candidates.
 
 # GoldenDict vs Wiktionary imports
 
@@ -178,15 +261,20 @@ Both importers write the same unified tables with the same conventions
 (batched `Word::upsert` on `(word, language_id, word_class_id)`, lookup
 auto-creation, text-dedupe definitions, heartbeats) and share the `l_word`
 normalization through `App\Support\WordLookupKey` (lowercase + combining-
-mark strip via `App\Support\StressMarks` — the display `word` keeps the
-marks). The Wiktionary side reads kaikki JSONL with structured fields
+mark strip via `App\Support\StressMarks` — the GoldenDict importer strips
+its stored display forms for ru/be/uk too, and the Wiktionary importer
+strips its ru/be/uk inflected forms; only Wiktionary headwords keep
+stressed display, and the kaikki lemma field is unstressed anyway — ADR
+0078). The Wiktionary side reads kaikki
+JSONL with structured fields
 (`pos`, `senses`, `sounds`, `translations`); the GoldenDict side extracts
 everything heuristically from article HTML and tunes per dictionary with
 `--profile` extraction profiles (above). Translation linking
 differs: the Wiktionary path **stores** translations during import and a
 separate `wiktionary:link-translations` pass links them against
-already-existing words; the GoldenDict bilingual path creates its own
-target words and writes the links directly (`--no-link` to opt out).
+already-existing words; the GoldenDict bilingual path stages the raw
+candidates and links them directly against the target language's existing
+words (`--no-link` to opt out) — it never creates target rows.
 
 # Performance notes
 
@@ -234,7 +322,9 @@ lookup-auto-creation convention), and
 in the phrase class are skipped — the words table is unique per
 (word, language, class); resolve those by hand). Other languages are
 untouched — Russian multi-word verbs ("выдавать себя за") are legitimate
-verbs the English shape has no opinion about.
+verbs the English shape has no opinion about. ADR 0078 draws the
+GoldenDict boundary: `phrase` there is a headword-sourced class only (with
+a junk guard), and translation candidates determine no word class at all.
 
 # Where it surfaces
 
