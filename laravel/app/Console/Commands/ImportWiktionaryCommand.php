@@ -13,7 +13,7 @@ class ImportWiktionaryCommand extends Command
                             {--target-lang=ru : Comma-separated target language codes for staged translations}
                             {--batch-size=500 : Number of records per DB flush}';
 
-    protected $description = 'Import a Kaikki Wiktionary JSONL dump file into the database. Translations are stored for later linking via wiktionary:link-translations';
+    protected $description = 'Import a Kaikki Wiktionary JSONL dump file into the database. Translations are stored for later linking via dictionary:link-translations';
 
     public function handle(): int
     {

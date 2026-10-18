@@ -6,7 +6,8 @@ each) through a two-stage pipeline: `wiktionary:import-raw` first splits the
 raw dump into per-language extract files (`RawWiktextractExtractor`, streaming
 one line at a time with a substring pre-filter), then feeds each extract
 through the existing single-language `wiktionary:import` path
-(`WiktionaryParser`), and finally runs `wiktionary:link-translations`.
+(`WiktionaryParser`), and finally runs `dictionary:link-translations`
+(formerly `wiktionary:link-translations`, renamed 2026-10-18).
 
 The alternative — teaching `WiktionaryParser` multiple languages in a single
 pass — was rejected because the parser merges adjacent lines sharing a

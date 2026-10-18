@@ -5,8 +5,8 @@ description: One words table (+ satellites) keyed by language, per-language word
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2027-01-17
-generated: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T15:25:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T15:25:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -93,11 +93,14 @@ sources:
   `TranscriptionTypeResource`) and the import/link commands remain.
 * `wiktionary:import {file} --lang= --target-lang=` fills `words` and
   satellites for one language (any code in the languages registry),
-  storing staged translations as JSON; `wiktionary:link-translations` then
+  storing staged translations as JSON; `dictionary:link-translations` then
   resolves them into `word_translations` rows for **every language pair**
-  (one canonical row per pair; stress-mark stripping applied when the
-  target is one of the Cyrillic stress-mark languages ru/be/uk — the
-  shared `App\Support\StressMarks` list). The admin **Translations** tab
+  (one canonical row per pair; candidates resolve through the shared
+  `App\Support\TranslationTargets` resolver — same class, `phrase` for
+  multi-word, else lowest id — with stress-mark stripping at pairing time
+  per the `App\Support\StressMarks` list) and **prunes** every linked
+  candidate from the JSON, so unmatched candidates are all that stays
+  staged between runs. The admin **Translations** tab
   continues the linking
   by hand: attach an existing word, or **Create word & link** for words
   missing from the target language.

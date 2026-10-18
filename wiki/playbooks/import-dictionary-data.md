@@ -5,8 +5,8 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T19:20:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-18T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T22:30:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T22:30:00+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -16,7 +16,7 @@ sources:
     title: wiktionary:import-raw command
   - id: link-cmd
     resource: laravel/app/Console/Commands/LinkTranslationsCommand.php
-    title: wiktionary:link-translations command
+    title: dictionary:link-translations command
   - id: kaikki
     resource: laravel/app/Classes/WiktionaryParser.php
     title: Kaikki/Wiktionary JSONL parser
@@ -123,16 +123,25 @@ Two source shapes exist:
 4. Link words across languages through the staged translations:
 
    ```bash
-   docker exec ext_app_laravel php artisan wiktionary:link-translations
+   docker exec ext_app_laravel php artisan dictionary:link-translations
    ```
 
    The command links **every language pair** among languages that have
    imported words, writing one canonical `word_translations` row per pair
-   (`word_a_id < word_b_id`, ADR 0020). Matching strips the Cyrillic
-   stress marks (e.g. `приве́т` → `привет`) when pairing into the
-   stress-mark languages ru/be/uk (the shared `App\Support\StressMarks`).
-   Re-runs are
-   idempotent and never duplicate links created by hand in the admin.
+   (`word_a_id < word_b_id`, ADR 0020). Candidates resolve through the
+   shared `App\Support\TranslationTargets` resolver — same class as the
+   source word first, `phrase` for multi-word candidates, else any class
+   (lowest id) — and the Cyrillic stress marks strip at pairing time
+   (e.g. `приве́т` → `привет`, the shared `App\Support\StressMarks`).
+   **Prune-on-link**: every candidate it converts leaves the word's
+   `words.translations` JSON (an emptied JSON stores null), so re-runs are
+   idempotent and report fewer staged candidates; unmatched candidates
+   stay staged for a later pass once their target words exist, and are
+   reported as a per-direction count plus a capped sample in the summary
+   table (never per-candidate lines — the staged volume is in the
+   hundreds of thousands). Run it after populating all languages; a
+   re-import refreshes `l_word` only, so the staged JSON survives
+   unrelated imports and this pass is what finally shrinks it.
 5. Verify in the Filament admin (`/admin`, group "Words"): the `Word`
    resource with relation managers for definitions, forms, translations,
    etymologies, examples, transcriptions, pronunciations; the **Word

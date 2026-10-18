@@ -5,8 +5,8 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T15:25:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T15:25:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -25,7 +25,7 @@ sources:
     title: wiktionary:import-raw
   - id: link-cmd
     resource: laravel/app/Console/Commands/LinkTranslationsCommand.php
-    title: wiktionary:link-translations
+    title: dictionary:link-translations
   - id: goldendict-cmd
     resource: laravel/app/Console/Commands/ImportGoldenDictCommand.php
     title: goldendict:import
@@ -145,14 +145,19 @@ mirrored per-language tables, and a single `word_translations` pivot —
   runs). Extract files live next to the dump and are overwritten per run;
   re-imports upsert and text-dedupe, never delete — hence `--fresh` for a
   clean rebuild from a newer dump.
-* `php artisan wiktionary:link-translations` — links words across languages
-  through the stored translations into `word_translations` rows, covering
-  **every language pair** among languages that have imported words (one
-  canonical row per pair, `word_a_id < word_b_id`; stress-mark stripping
-  applied when pairing into the Cyrillic stress-mark languages ru/be/uk —
-  the shared `App\Support\StressMarks`). Re-runs are idempotent next to
-  manually created links. `wiktionary:import-raw` runs it automatically at
-  the end (unless `--no-link`).
+* `php artisan dictionary:link-translations` — the single staged-link
+  pass: links words across languages through the staged `words.translations`
+  JSON into `word_translations` rows, covering **every language pair**
+  among languages that have imported words (one canonical row per pair,
+  `word_a_id < word_b_id`). Candidates resolve through the shared
+  `App\Support\TranslationTargets` resolver (same class as the source word
+  → `phrase` for multi-word → any class, lowest id) with stress-mark
+  stripping at pairing time (`App\Support\StressMarks`); every candidate
+  it converts is **pruned** from the JSON (emptied JSON → null), so
+  re-runs are idempotent and shrink the staging; unmatched candidates
+  stay staged and are reported as a per-direction count plus a capped
+  sample in the summary table. `wiktionary:import-raw` runs it
+  automatically at the end (unless `--no-link`).
 * `php artisan goldendict:import {file} --lang= [--target-lang=]` — the
   GoldenDict entry point: imports a **converted** JSONL (one
   `{"word", "alts", "html"}` record per line, produced by the python
@@ -324,10 +329,15 @@ JSONL with structured fields
 everything heuristically from article HTML and tunes per dictionary with
 `--profile` extraction profiles (above). Translation linking
 differs: the Wiktionary path **stores** translations during import and a
-separate `wiktionary:link-translations` pass links them against
-already-existing words; the GoldenDict bilingual path stages the raw
+separate `dictionary:link-translations` pass links them against
+already-existing words — pruning what it linked; the GoldenDict bilingual
+path stages the raw
 candidates and links them directly against the target language's existing
-words (`--no-link` to opt out) — it never creates target rows.
+words (`--no-link` to opt out) — it never creates target rows. Both
+write the same staged-JSON contract (`App\Support\StagedTranslations`:
+exact stored strings, union-merge in, prune-on-link out) and resolve
+through the same `App\Support\TranslationTargets` semantics, as does the
+popup auto-fetch job.
 
 # Performance notes
 

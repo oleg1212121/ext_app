@@ -65,7 +65,8 @@ abstract class WordTranslationProvider
     /**
      * Normalize a raw candidate: trim, and for the Cyrillic target
      * languages strip the combining stress marks dictionary APIs return
-     * (the same convention as LinkTranslationsCommand::normalizeTargetWord).
+     * (the matching itself keys through App\Support\WordLookupKey::normalize,
+     * the same key the link pass resolves staged candidates by).
      * Null drops the candidate.
      */
     protected function normalizeCandidate(string $text, string $toCode): ?string
