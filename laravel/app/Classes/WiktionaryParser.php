@@ -284,19 +284,18 @@ class WiktionaryParser
 
         // The en edition carries one etymology string (`etymology_text`);
         // the ru edition an ARRAY of text blocks (`etymology_texts`) — one
-        // block per etymology hypothesis. The singular wins when both
-        // appear; the array's non-empty parts join with newlines, the same
-        // multi-line convention the en edition's strings already carry.
+        // block per etymology hypothesis. A populated singular wins when
+        // both appear; an empty/whitespace one (a dump artifact) falls
+        // through to the array. The array's non-empty parts join with
+        // newlines, the same multi-line convention the en edition's
+        // strings already carry.
         $etymology = $line->etymology_text ?? null;
-        if ($etymology === null) {
+        if ($etymology === null || trim((string) $etymology) === '') {
             $parts = array_values(array_filter(
                 (array) ($line->etymology_texts ?? []),
                 fn ($part) => is_string($part) && trim($part) !== '',
             ));
             $etymology = $parts === [] ? null : implode("\n", $parts);
-        }
-        if ($etymology !== null && trim($etymology) === '') {
-            $etymology = null;
         }
 
         return [

@@ -23,15 +23,24 @@ beforeEach(function () {
     TranscriptionType::create(['language_id' => $languages['en']->id, 'slug' => 'enpr', 'title' => 'English Pronunciation', 'description' => 'Test']);
 });
 
+// Writes the lines (already-encoded JSON strings) to a temp JSONL fixture
+// file and returns its path — the caller unlinks it when the test is done.
+// The prefix keeps a leaked temp file identifiable to its test.
+function writeJsonlFixture(array $lines, string $prefix = 'wiktionary'): string
+{
+    $tmpFile = tempnam(sys_get_temp_dir(), $prefix.'_');
+    file_put_contents($tmpFile, implode("\n", $lines)."\n");
+
+    return $tmpFile;
+}
+
 it('imports a file and creates database records', function () {
     $enLanguageId = createLanguages()['en']->id;
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_test_');
-    $lines = [
+    $tmpFile = writeJsonlFixture([
         json_encode(['word' => 'cat', 'pos' => 'noun', 'senses' => [['glosses' => ['A small domesticated feline']]], 'translations' => [['code' => 'ru', 'word' => 'кошка']]]),
         json_encode(['word' => 'cat', 'pos' => 'noun', 'forms' => [['form' => 'cats']]]),
         json_encode(['word' => 'dog', 'pos' => 'noun', 'senses' => [['glosses' => ['A domesticated canine']]], 'translations' => [['code' => 'ru', 'word' => 'собака']]]),
-    ];
-    file_put_contents($tmpFile, implode("\n", $lines)."\n");
+    ], 'wiktionary_test');
 
     $parser = new WiktionaryParser('en', 'ru', 100);
     $stats = $parser->import($tmpFile);
@@ -55,11 +64,9 @@ it('imports a file and creates database records', function () {
 
 it('creates a word class for an unseen pos and imports the word', function () {
     $enLanguageId = createLanguages()['en']->id;
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_test_');
-    $lines = [
+    $tmpFile = writeJsonlFixture([
         json_encode(['word' => 'test', 'pos' => 'unsupported_pos', 'senses' => [['glosses' => ['A test']]]]),
-    ];
-    file_put_contents($tmpFile, implode("\n", $lines)."\n");
+    ], 'wiktionary_test');
 
     $parser = new WiktionaryParser('en', 'ru', 100);
     $stats = $parser->import($tmpFile);
@@ -79,11 +86,9 @@ it('creates a word class for an unseen pos and imports the word', function () {
 
 it('bootstraps a fresh language with placeholder lookups', function () {
     $de = Language::create(['code' => 'de', 'name' => 'German', 'is_enabled' => false, 'sort_order' => 5]);
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_test_');
-    $lines = [
+    $tmpFile = writeJsonlFixture([
         json_encode(['word' => 'Hund', 'pos' => 'noun', 'sounds' => [['ipa' => '/hʊnt/']], 'senses' => [['glosses' => ['A dog']]]]),
-    ];
-    file_put_contents($tmpFile, implode("\n", $lines)."\n");
+    ], 'wiktionary_test');
 
     $parser = new WiktionaryParser('de', 'en', 100);
     $stats = $parser->import($tmpFile);
@@ -130,15 +135,13 @@ it('reads gzipped jsonl files transparently', function () {
 
 it('stages translations for multiple target languages', function () {
     $enLanguageId = createLanguages()['en']->id;
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_multi_');
-    $lines = [
+    $tmpFile = writeJsonlFixture([
         json_encode(['word' => 'cat', 'pos' => 'noun', 'translations' => [
             ['code' => 'ru', 'word' => 'кошка'],
             ['code' => 'de', 'word' => 'Katze'],
             ['code' => 'fr', 'word' => 'chat'],
         ]]),
-    ];
-    file_put_contents($tmpFile, implode("\n", $lines)."\n");
+    ], 'wiktionary_multi');
 
     $parser = new WiktionaryParser('en', ['ru', 'de'], 100);
     $stats = $parser->import($tmpFile);
@@ -158,11 +161,10 @@ it('stages translations for multiple target languages', function () {
 it('strips stress marks from ru display words and forms while keeping en forms verbatim', function () {
     $languages = createLanguages();
 
-    $ruFile = tempnam(sys_get_temp_dir(), 'wiktionary_ru_');
-    file_put_contents($ruFile, json_encode(['word' => 'дом', 'pos' => 'noun', 'forms' => [
+    $ruFile = writeJsonlFixture([json_encode(['word' => 'дом', 'pos' => 'noun', 'forms' => [
         ['form' => 'до́ма'],
         ['form' => 'доме́'],
-    ]])."\n");
+    ]])], 'wiktionary_ru');
     (new WiktionaryParser('ru', 'en', 100))->import($ruFile);
 
     // The marks leave the stored display words AND the headword (the ADR
@@ -174,10 +176,9 @@ it('strips stress marks from ru display words and forms while keeping en forms v
         ->and($dom->forms->pluck('l_word')->sort()->values()->all())->toBe(['дом', 'дома', 'доме']);
     unlink($ruFile);
 
-    $enFile = tempnam(sys_get_temp_dir(), 'wiktionary_en_');
-    file_put_contents($enFile, json_encode(['word' => 'кот', 'pos' => 'noun', 'forms' => [
+    $enFile = writeJsonlFixture([json_encode(['word' => 'кот', 'pos' => 'noun', 'forms' => [
         ['form' => 'cats'],
-    ]])."\n");
+    ]])], 'wiktionary_en');
     (new WiktionaryParser('en', 'ru', 100))->import($enFile);
 
     // Non-stress-mark languages keep their words and forms exactly as the
@@ -190,12 +191,11 @@ it('strips stress marks from ru display words and forms while keeping en forms v
 it('stores a stressed ru headword plain while its definition keeps its marks', function () {
     $languages = createLanguages();
 
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_ru_');
-    file_put_contents($tmpFile, json_encode([
+    $tmpFile = writeJsonlFixture([json_encode([
         'word' => 'свобо́дный',
         'pos' => 'adjective',
         'senses' => [['glosses' => ['свобо́дный человек — тот, кто не в неволе']]],
-    ])."\n");
+    ])], 'wiktionary_ru');
     (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
 
     $word = Word::where('l_word', 'свободный')->where('language_id', $languages['ru']->id)->firstOrFail();
@@ -212,11 +212,10 @@ it('stores a stressed ru headword plain while its definition keeps its marks', f
 it('maps raw kaikki pos through the shared alias map into canonical classes', function () {
     $enLanguageId = createLanguages()['en']->id;
 
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_adj_');
-    file_put_contents($tmpFile, implode("\n", [
+    $tmpFile = writeJsonlFixture([
         json_encode(['word' => 'quick', 'pos' => 'adj', 'senses' => [['glosses' => ['fast']]]]),
         json_encode(['word' => 'slow', 'pos' => 'adjective', 'senses' => [['glosses' => ['not fast']]]]),
-    ])."\n");
+    ], 'wiktionary_adj');
     (new WiktionaryParser('en', 'ru', 100))->import($tmpFile);
 
     // 'adj' canonicalizes into the same class slug 'adjective' carries: one
@@ -230,11 +229,10 @@ it('maps raw kaikki pos through the shared alias map into canonical classes', fu
 it('merges aliased pos lines of one word into a single row', function () {
     $enLanguageId = createLanguages()['en']->id;
 
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_alias_');
-    file_put_contents($tmpFile, implode("\n", [
+    $tmpFile = writeJsonlFixture([
         json_encode(['word' => 'quick', 'pos' => 'adj', 'senses' => [['glosses' => ['fast']]]]),
         json_encode(['word' => 'quick', 'pos' => 'adjective', 'senses' => [['glosses' => ['lively']]]]),
-    ])."\n");
+    ], 'wiktionary_alias');
     (new WiktionaryParser('en', 'ru', 100))->import($tmpFile);
 
     // The aliased slugs land on one class, so the two lines merge into one
@@ -250,11 +248,10 @@ it('merges aliased pos lines of one word into a single row', function () {
 it('skips romanization-tagged forms and keeps the lemma form', function () {
     $languages = createLanguages();
 
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_rom_');
-    file_put_contents($tmpFile, json_encode(['word' => 'четвереньках', 'pos' => 'noun', 'forms' => [
+    $tmpFile = writeJsonlFixture([json_encode(['word' => 'четвереньках', 'pos' => 'noun', 'forms' => [
         ['form' => 'četverénʹkax', 'tags' => ['romanization']],
         ['form' => 'четвереньки', 'tags' => ['genitive']],
-    ]])."\n");
+    ]])], 'wiktionary_rom');
     (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
 
     $word = Word::where('word', 'четвереньках')->where('language_id', $languages['ru']->id)->firstOrFail();
@@ -291,8 +288,7 @@ it('demotes a relay entry to a form of its base word', function () {
     $languages = createLanguages();
     $ruId = $languages['ru']->id;
 
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_relay_');
-    file_put_contents($tmpFile, implode("\n", relayFixtureLines())."\n");
+    $tmpFile = writeJsonlFixture(relayFixtureLines(), 'wiktionary_relay');
     $stats = (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
 
     // No word row for the relay — and none of its content anywhere.
@@ -328,8 +324,7 @@ it('creates a proxy headword for a relay base the dump never lists as a lemma', 
     $languages = createLanguages();
     $ruId = $languages['ru']->id;
 
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_relay_orphan_');
-    file_put_contents($tmpFile, implode("\n", [relayFixtureLines()[1]])."\n");
+    $tmpFile = writeJsonlFixture([relayFixtureLines()[1]], 'wiktionary_relay_orphan');
     $stats = (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
 
     // The base exists by proxy — a dictionary headword, not translation
@@ -356,14 +351,13 @@ it('imports a mixed entry as a word with its real definitions', function () {
     $languages = createLanguages();
     $ruId = $languages['ru']->id;
 
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_mixed_');
-    file_put_contents($tmpFile, implode("\n", [
+    $tmpFile = writeJsonlFixture([
         json_encode(['word' => 'бегом', 'pos' => 'adverb', 'senses' => [
             ['glosses' => ['running, at a run (of motion)']],
             ['glosses' => ['instrumental of бег'], 'tags' => ['form-of', 'instrumental'],
                 'form_of' => [['word' => 'бег']]],
         ]]),
-    ])."\n");
+    ], 'wiktionary_mixed');
     $stats = (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
 
     $word = Word::where('word', 'бегом')->where('language_id', $ruId)->firstOrFail();
@@ -390,8 +384,7 @@ it('resolves a relay base by class preference when several rows share the l_word
     $noun = Word::create(['word' => 'четвереньки', 'l_word' => 'четвереньки', 'language_id' => $ruId, 'word_class_id' => $nounClass->id]);
     expect($verb->id)->toBeLessThan($noun->id);
 
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_relay_pref_');
-    file_put_contents($tmpFile, implode("\n", [relayFixtureLines()[1]])."\n");
+    $tmpFile = writeJsonlFixture([relayFixtureLines()[1]], 'wiktionary_relay_pref');
     $stats = (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
 
     expect(Form::where('form', 'четвереньках')->where('word_id', $noun->id)->count())->toBe(1)
@@ -417,11 +410,10 @@ it('skips class preference for an unknown-pos relay and falls back to the lowest
     $unknown = Word::create(['word' => 'бег', 'l_word' => 'бег', 'language_id' => $ruId, 'word_class_id' => $unknownClass->id]);
     expect($noun->id)->toBeLessThan($unknown->id);
 
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_relay_unknown_');
-    file_put_contents($tmpFile, json_encode(['word' => 'бегом', 'pos' => 'unknown', 'senses' => [
+    $tmpFile = writeJsonlFixture([json_encode(['word' => 'бегом', 'pos' => 'unknown', 'senses' => [
         ['glosses' => ['instrumental of бег'], 'tags' => ['form-of', 'instrumental'],
             'form_of' => [['word' => 'бег']]],
-    ]])."\n");
+    ]])], 'wiktionary_relay_unknown');
     (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
 
     expect(Form::where('form', 'бегом')->where('word_id', $noun->id)->count())->toBe(1)
@@ -438,15 +430,24 @@ it('joins a ru-edition etymology_texts array and still reads the en edition sing
     // The ru.wiktionary edition carries etymologies as an ARRAY of text
     // blocks (`etymology_texts`); the singular `etymology_text` it never
     // emits must not gate them.
-    $ruFile = tempnam(sys_get_temp_dir(), 'wiktionary_ru_ety_');
-    file_put_contents($ruFile, json_encode([
-        'word' => 'майка', 'pos' => 'сущ',
-        'etymology_texts' => [
-            'От франц. maillot, переоформленного при помощи суффикса -к(а).',
-            'От майя — ‘лёгкая хлопчатобумажная ткань’, с помощью суффикса -к(а).',
-        ],
-        'senses' => [['glosses' => ['лёгкая приталенная футболка']]],
-    ])."\n");
+    $ruFile = writeJsonlFixture([
+        json_encode([
+            'word' => 'майка', 'pos' => 'сущ',
+            'etymology_texts' => [
+                'От франц. maillot, переоформленного при помощи суффикса -к(а).',
+                'От майя — ‘лёгкая хлопчатобумажная ткань’, с помощью суффикса -к(а).',
+            ],
+            'senses' => [['glosses' => ['лёгкая приталенная футболка']]],
+        ]),
+        // A dump artifact the plural fallback must survive: an empty-string
+        // singular gated the array — the word stored NO etymology at all.
+        json_encode([
+            'word' => 'рыба', 'pos' => 'сущ',
+            'etymology_text' => '',
+            'etymology_texts' => ['От общеслав. *ryba.'],
+            'senses' => [['glosses' => ['водное позвоночное']]],
+        ]),
+    ], 'wiktionary_ru_ety');
     (new WiktionaryParser('ru', 'en', 100))->import($ruFile);
 
     $maika = Word::where('word', 'майка')->where('language_id', $ruId)->firstOrFail();
@@ -454,19 +455,21 @@ it('joins a ru-edition etymology_texts array and still reads the en edition sing
         "От франц. maillot, переоформленного при помощи суффикса -к(а).\n"
             .'От майя — ‘лёгкая хлопчатобумажная ткань’, с помощью суффикса -к(а).',
     ]);
+
+    $ryba = Word::where('word', 'рыба')->where('language_id', $ruId)->firstOrFail();
+    expect($ryba->etymologies->pluck('etymology')->all())->toBe(['От общеслав. *ryba.']);
     unlink($ruFile);
 
     // En-edition regression guard: the singular string still lands, and it
     // wins on the (never-occurring-in-real-dumps) entry carrying both fields.
-    $enFile = tempnam(sys_get_temp_dir(), 'wiktionary_en_ety_');
-    file_put_contents($enFile, implode("\n", [
+    $enFile = writeJsonlFixture([
         json_encode(['word' => 'cat', 'pos' => 'noun', 'etymology_text' => 'From Middle English cat.',
             'senses' => [['glosses' => ['A small domesticated feline']]]]),
         json_encode(['word' => 'dog', 'pos' => 'noun',
             'etymology_text' => 'From Old English docga.',
             'etymology_texts' => ['would be a plural-field double import'],
             'senses' => [['glosses' => ['A domesticated canine']]]]),
-    ])."\n");
+    ], 'wiktionary_en_ety');
     (new WiktionaryParser('en', 'ru', 100))->import($enFile);
 
     $cat = Word::where('word', 'cat')->where('language_id', $enId)->firstOrFail();
@@ -480,8 +483,7 @@ it('stages translations from code-only, lang_code-only and both-fields objects',
     $languages = createLanguages();
     $ruId = $languages['ru']->id;
 
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_langcode_');
-    file_put_contents($tmpFile, implode("\n", [
+    $tmpFile = writeJsonlFixture([
         // ru edition shape: lang_code only, no code.
         json_encode(['word' => 'собака', 'pos' => 'сущ', 'translations' => [
             ['word' => 'dog', 'lang_code' => 'en', 'lang' => 'Английский'],
@@ -498,7 +500,7 @@ it('stages translations from code-only, lang_code-only and both-fields objects',
         json_encode(['word' => 'ёж', 'pos' => 'сущ', 'translations' => [
             ['word' => 'hedgehog', 'lang' => 'English'],
         ]]),
-    ])."\n");
+    ], 'wiktionary_langcode');
 
     (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
 
@@ -517,10 +519,9 @@ it('stresses a lang_code-only candidate of a stress-mark target language at stag
     // The ru edition's lang_code-only objects reach StressMarks targets
     // (be here) just like code-only ones did: the candidate strips at
     // staging time, per the ADR 0079 rule.
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_langcode_be_');
-    file_put_contents($tmpFile, json_encode(['word' => 'дом', 'pos' => 'сущ', 'translations' => [
+    $tmpFile = writeJsonlFixture([json_encode(['word' => 'дом', 'pos' => 'сущ', 'translations' => [
         ['word' => 'до'."\u{0301}".'м', 'lang_code' => 'be', 'lang' => 'Беларуская'],
-    ]])."\n");
+    ]])], 'wiktionary_langcode_be');
     (new WiktionaryParser('ru', ['en', 'be'], 100))->import($tmpFile);
 
     expect(Word::where('word', 'дом')->where('language_id', $ruId)->firstOrFail()->translations)->toBe(['дом']);
@@ -534,8 +535,7 @@ it('demotes a ru-edition form-of relay to a form of its base, landing none of it
 
     $base = 'кру'."\u{0301}".'глый'; // stressed, as the dump carries it
 
-    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_ru_relay_');
-    file_put_contents($tmpFile, implode("\n", [
+    $tmpFile = writeJsonlFixture([
         // The lemma entry in the ru edition's own dialect: Russian pos
         // abbreviation, plural-array etymology, lang_code-only translation.
         json_encode([
@@ -556,7 +556,7 @@ it('demotes a ru-edition form-of relay to a form of its base, landing none of it
             ]],
             'translations' => [['word' => 'relay must not stage', 'lang_code' => 'en']],
         ]),
-    ])."\n");
+    ], 'wiktionary_ru_relay');
 
     $stats = (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
 

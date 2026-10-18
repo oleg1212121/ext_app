@@ -5,8 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T22:15:00+03:00 }
-verified: { by: human:alex, at: 2026-10-18T19:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T22:30:00+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php

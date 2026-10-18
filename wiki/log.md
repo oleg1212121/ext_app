@@ -1,5 +1,22 @@
 # Directory Update Log
 
+## 2026-10-18 (code-review fixes — stale human-verified stamps removed — ru-edition-import ticket 04)
+
+Closing review pass over the ru-edition-import branch. Knowledge-base fix:
+`playbooks/import-dictionary-data.md` and `domains/dictionary-import.md`
+carried `verified: { by: human:alex, at: 2026-10-18T19:40:00+03:00 }` from
+before ticket 03 rewrote their content (the `generated.at` stamps already
+postdated the verification) — a stale human-verified stamp vouching for
+unreviewed content breaks the OKF trust-signal rule, so both `verified`
+entries were REMOVED, not re-stamped: re-verification is the human's call.
+`generated.at` bumped (22:30) on both — the concepts' body content is
+unchanged, they were just re-checked against ticket 04's parser
+precedence fix (which cleared the "source changed after generated.at"
+warnings that fix newly raised). No `wiki:sync` needed (no
+route/model/command changes). The code-review's code fixes
+(`WiktionaryParser` empty-singular etymology fall-through + the parser test
+fixture helper) live in the laravel tree — see the ticket-04 commit.
+
 ## 2026-10-18 (ru-edition knowledge closure — ADR 0080, per-edition playbook, CONTEXT.md glossary — ru-edition-import ticket 03)
 
 Closed the ru-edition-import spec out in the knowledge base (docs-only
