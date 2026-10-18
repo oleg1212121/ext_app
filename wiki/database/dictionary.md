@@ -5,8 +5,8 @@ description: One words table (+ satellites) keyed by language, per-language word
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2027-01-17
-generated: { by: agent:zcode, at: 2026-10-18T15:25:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-18T15:25:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T19:40:00+03:00 }
+verified: { by: human:alex, at: 2026-10-18T19:40:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -38,6 +38,9 @@ sources:
   - id: translation-targets
     resource: laravel/app/Support/TranslationTargets.php
     title: Shared link-only target-word resolver (matches candidates against existing rows)
+  - id: adr-0079
+    resource: docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md
+    title: ADR 0079 — relays demote to forms, lemma-as-form, stage → link → prune
 ---
 
 # Tables
@@ -75,14 +78,19 @@ sources:
 
 * The popup aggregates the **word family** per surface token
   (`WordFamily::resolve`, ADR 0045): the linked headword's group plus every
-  base headword's group from `forms`. Kaikki's "form-of" entries are stored
-  as ordinary words whose definitions relay to the base word ("simple past
-  and past participle of melt", sometimes merged into a real entry —
-  "saw/verb" carries real senses *and* "simple past of see"); at popup time
-  such **relay glosses** are recognized by an anchored pattern list in
-  `WordFamily` and hidden/filtered whenever a base group carries the real
-  content. Escape hatch if patterns misfire: an `is_form_of` column set at
-  import + backfill.
+  base headword's group from `forms`. **Relay entries** (form-of relays) —
+  Wiktionary's standalone inflected variants ("четвереньках — prepositional
+  of четвере́ньки", "simple past and past participle of melt") — are no
+  longer word rows: an entry whose every sense carries the dump's
+  sense-level `form_of`/`form-of` signal demotes to a **form of its base**
+  at import, and the pre-rule rows were demoted in place by
+  `wiktionary:demote-form-of` (ru 363,446 + en 500,776 rows deleted,
+  2026-10-18 — ADR 0079), so the base's group carries the real content and
+  the relay surface resolves to it through `forms`. Mixed entries (real
+  senses + relay senses) stay words; the anchored relay-gloss pattern list
+  in `WordFamily` stays as the read-layer filter for their relay senses
+  (harmless where no relay gloss exists). Escape hatch if patterns misfire:
+  an `is_form_of` column set at import + backfill.
 * Runtime consumers now exist: `WordController` serves the word popup
   (`GET /words/{word}`, definitions/transcriptions/native-first
   translations/examples) and reads/writes `user_word` progress on behalf of
@@ -166,8 +174,12 @@ sources:
   RNC lemmas for ru; authoritative overwrite) and clamped down by
   `words:import-frequency-lists` (curated band lists, `least(current,
   band)` through direct and form matches, frequency column only), then
-  nudged per entity by `WordFrequencyAccrual` — semantics, sources and the
-  correction math in ADR
+  nudged per entity by `WordFrequencyAccrual`. Ranks that move between
+  rows — a relay's rank folding into its base at demotion, a merged word's
+  rank folding into its survivor — fold as **LEAST** (lower = more
+  common, never a worse rank; the 1,100,000 unranked sentinel and the 0
+  column default on cmudict/adoption rows are guarded out of the fold) —
+  semantics, sources and the correction math in ADR
   [0041](../../docs/adr/0041-frequency-rank-semantics-and-entity-correction.md)
   and [0070](../../docs/adr/0070-frequency-lists-min-merge.md), the
   pipeline in [Crossword](/domains/crossword.md).

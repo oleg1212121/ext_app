@@ -5,8 +5,8 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-19T02:40:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-18T22:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T19:40:00+03:00 }
+verified: { by: human:alex, at: 2026-10-18T19:40:00+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -154,14 +154,18 @@ Two source shapes exist:
 
 # Cleaning imported relay rows (wiktionary:demote-form-of)
 
-Dumps imported before the form-of relay demotion (ticket-03 rule) left
-relay word rows in the data (~379k of 444k ru words, ~974k of 1.5M en —
-"четвереньках: prepositional of четвере́ньки" stored as a word). The
-cleanup streams the same kaikki dump for one language, rebuilds the exact
+Dumps imported before the form-of relay demotion (the ADR 0079 import
+rule) left relay word rows in the data — at the 2026-10-18 cleanup, ru
+363,446 and en 500,776 of them were deleted (~379k of 444k ru and ~974k
+of 1.5M en words had relay-style glosses; the dump signal, not the gloss
+pattern, is the cleanup's ground truth). The cleanup streams the same
+kaikki dump for one language, rebuilds the exact
 relay→base verdict through the shared `App\Classes\Wiktionary\FormOfClassifier`
 plus the pure `App\Classes\Wiktionary\RelayDemotionMap` unions, and applies
 it set-based in chunks — no re-import, no wipe: it deletes by explicit ids
-from the dump map.
+from the dump map. On the current dev DB a re-run matches nothing; this
+section applies when importing dumps that predate the rule or rebuilding
+from scratch.
 
 1. **Dry first** — read the counts before anything writes:
 
@@ -232,15 +236,14 @@ The importers enforce the purity rules for new rows; the damage already
 stored from before those rules is repaired in place by one idempotent
 command — no re-import, no wipe: every phase finds its rows by explicit
 mapping (strip diff, unknown-class twins, alias class rows, missing lemma
-forms) and a second run matches nothing. Dev-data scale as of 2026-10-18
-(what the counts in the summary should roughly land on): one stressed ru
-display word (the 13 en rows carry legitimate diacritics like "café" and
-are untouched — the strip applies to ru/be/uk only; forms were already
-stripped by the 2026-10-17 repair), 2,954 unknown-class twins
-(ru 1,536 / en 1,418, mostly cmudict transcriptions), 7,244 `adj`/
-`adjective` duplicate pairs (en), and ~1.54M missing lemma forms
-(en 1,507,795 / ru 29,171 — the long phase, a few minutes of chunked
-insert-or-ignore).
+forms) and a second run matches nothing. The dev DB ran it 2026-10-18
+(what the counts landed on): 11 stressed display words merged + 1 stripped
+in place, 2,954 unknown-class twins merged (ru 1,536 / en 1,418, mostly
+cmudict transcriptions), 7,514 alias duplicates merged (the
+`adj`/`adjective` fold) + 216,440 rows reclassed, and 1,018,396 lemma
+forms backfilled (en 1,507,795 / ru 29,171 had none — the long phase). After that run every phase reports
+zeros; a pre-rule database needs the baselines re-counted first (a `--dry`
+gives them all).
 
 1. **Dry first** — read every phase count before anything writes:
 
@@ -293,13 +296,17 @@ insert-or-ignore).
    and OOM at the 128M CLI default (verified 2026-10-18 in the phase-3
    alias fold on the dev DB).
 
-3. **Chain it in the ticket-11 pipeline** before/after the other repairs —
-   demote first (`wiktionary:demote-form-of`), then normalize, then
-   `dictionary:link-translations`, so staged JSON the merges moved onto
-   survivors links in the same pass. Re-run safe: every phase reports
-   zeros on a second run. Case-variant same-class duplicates are
-   deliberately NOT merged (March/march can be genuinely different words);
-   resolve genuine ones by hand.
+3. **Chain it in the repair pipeline** (the 2026-10-18 dev-DB order, all
+   `--dry` first) — `wiktionary:demote-form-of` per language, then
+   `words:normalize`, then `dictionary:link-translations` (so staged JSON
+   the repairs moved onto survivors links in the same pass), then
+   `words:import-frequency-lists` (band ranks land on bases through the
+   lemma-form join — 82,833 of the run's 160,753 matches) and
+   `crossword:link` (the repairs re-pointed `entity_words` onto bases;
+   `--retry-unmatched` re-attempts stale unmatchable stamps). Re-run safe:
+   every phase reports zeros on a second run. Case-variant same-class
+   duplicates are deliberately NOT merged (March/march can be genuinely
+   different words); resolve genuine ones by hand.
 
 # Steps — GoldenDict dictionary (goldendict:import)
 

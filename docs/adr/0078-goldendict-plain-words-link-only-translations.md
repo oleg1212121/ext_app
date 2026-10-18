@@ -103,3 +103,15 @@ taxonomy) and `App\Support\LemmaForms` (every imported word stores itself
 as its lemma form, plus the shared cap/strip/empty-guard/dedupe form-row
 hygiene). Latin `romanization`-tagged kaikki forms no longer land on
 Cyrillic words.
+
+The follow-up this ADR's Consequences flagged is resolved the same day
+(dictionary-word-purity spec): `FetchWordTranslations`, the popup's
+on-demand provider fetch, no longer creates target words either — its
+candidates normalize, resolve against the target language's EXISTING rows
+through the shared `App\Support\TranslationTargets` resolver, link what
+matches, and stage the rest in `words.translations` for the later link
+pass (`App\Support\StagedTranslations`; the fetch ledger records the
+outcome as `linked_count`/`staged_count`). Translation creation is now
+link-only on every writer; ADR
+[0079](0079-form-of-relays-demote-to-forms-stage-link-prune.md) records
+the lifecycle and the data repair that followed.

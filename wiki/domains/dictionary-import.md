@@ -5,12 +5,15 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-19T01:20:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T19:40:00+03:00 }
+verified: { by: human:alex, at: 2026-10-18T19:40:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
     title: ADR 0078 — plain words, link-only translations
+  - id: adr-0079
+    resource: docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md
+    title: ADR 0079 — relays demote to forms, lemma-as-form, stage → link → prune
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
     title: Kaikki/Wiktionary JSONL parser
@@ -44,6 +47,12 @@ sources:
   - id: lemma-forms
     resource: laravel/app/Support/LemmaForms.php
     title: shared lemma-form rule and form-row hygiene (cap/strip/empty-guard/dedupe)
+  - id: translation-targets
+    resource: laravel/app/Support/TranslationTargets.php
+    title: shared link-only target-word resolver (all translation writers + repair commands)
+  - id: staged-translations
+    resource: laravel/app/Support/StagedTranslations.php
+    title: shared staged-translations JSON semantics (union-merge in, prune-on-link out)
   - id: form-of-classifier
     resource: laravel/app/Classes/Wiktionary/FormOfClassifier.php
     title: parser-agnostic kaikki form-of relay verdict (entry-shape in → relay + base out)
@@ -148,10 +157,16 @@ mirrored per-language tables, and a single `word_translations` pivot —
   romanization-tagged junk forms collected from the same stream delete by
   exact (entry `l_word`, form `l_word`) pairs for the stress-mark
   languages. Bases missing from the database keep their relays as words —
-  counted, sampled. Re-run safe: demoted relays no longer exist as word
-  rows. The `WordFamily` read-layer relay-gloss defense stays (harmless
-  after demotion). See
-  [ADR 0078](../../docs/adr/0078-goldendict-plain-words-link-only-translations.md).
+  counted, sampled (ru 1,060 / en 646 in the first run). Re-run safe:
+  demoted relays no longer exist as word rows. The first real dev-DB run
+  (2026-10-18, dump-driven, both languages): ru deleted 363,446 relay rows
+  + 69,035 romanization junk forms (ru words 444,149 → 80,703), en deleted
+  500,776 (en 1,523,426 → 1,022,650) — every destructive count matched its
+  `--dry` exactly; the `--dry` child-move counts are documented
+  approximations. The `WordFamily` read-layer relay-gloss defense stays
+  (harmless after demotion). See
+  [ADR 0078](../../docs/adr/0078-goldendict-plain-words-link-only-translations.md)
+  and [ADR 0079](../../docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md).
 * `App\Classes\RawWiktextractExtractor` — streams a **Raw dump** (the
   monolithic kaikki `raw-wiktextract-data` file, every Wiktionary language
   interleaved) once and writes one **Language extract** per wanted code: raw
@@ -191,7 +206,12 @@ mirrored per-language tables, and a single `word_translations` pivot —
   it converts is **pruned** from the JSON (emptied JSON → null), so
   re-runs are idempotent and shrink the staging; unmatched candidates
   stay staged and are reported as a per-direction count plus a capped
-  sample in the summary table. `wiktionary:import-raw` runs it
+  sample in the summary table. The first real dev-DB run (2026-10-18)
+  converted 126,202 staged candidates into links and pruned the staging
+  from 91,552 to 52,472 rows — while raw `word_translations` went
+  112,585 → 111,556, because the repair commands' dedupe collapsed 5,927
+  redundant pairs as the pass added ~4,898 genuinely new (growth is
+  measured at the candidate→link level). `wiktionary:import-raw` runs it
   automatically at the end (unless `--no-link`).
 * `php artisan goldendict:import {file} --lang= [--target-lang=]` — the
   GoldenDict entry point: imports a **converted** JSONL (one
@@ -417,7 +437,7 @@ damage in already-stored rows is repaired in place by
 `php artisan words:normalize {--dry} {--chunk=20000}` — one idempotent,
 re-runnable command, four phases, every phase counted in a summary table,
 runbook in [Importing Dictionary Data](/playbooks/import-dictionary-data.md)
-(run `--dry` first; the real dev-DB run belongs to the ticket-11 pipeline):
+(run `--dry` first):
 
 1. **Stress marks out of the display text** (spec rule 1): ru/be/uk
    `words.word` and `forms.form` lose their combining marks. A stressed
@@ -469,6 +489,17 @@ indexes). `--dry` prints every phase count and writes nothing — the
 child-move counts are pre-database approximations where insert-time dedupe
 applies. Case-variant same-class duplicates are deliberately NOT merged
 anywhere: March/march can be genuinely different words.
+
+The first real dev-DB run (2026-10-18, in the pipeline order demote →
+normalize → link-translations): 11 stressed display words merged + 1
+stripped in place, 2,451 unknown-class twins merged, 7,514 alias
+duplicates merged, 216,440 rows reclassed in place, 12 orphan alias class
+rows deleted, 1,018,396 lemma forms backfilled, 9,976 absorbed rows
+deleted — every destructive count matched its `--dry` exactly. All gates
+passed after the pipeline (zero combining marks in ru words+forms, zero
+unknown twins, one adjective class per language, zero words missing their
+lemma form). See [ADR 0079](
+../../docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md).
 
 # Performance notes
 

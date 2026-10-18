@@ -6946,3 +6946,42 @@ unknown-class twins (baseline 2,954); zero `adj` class rows (adjective: en
 1,507,795 / ru 29,171); full `composer run test` green (1294 passed / 6644
 assertions, 544s). Wiki: `playbooks/import-dictionary-data.md` (memory-limit
 notes on both repair commands), `generated.at` bumped.
+
+## 2026-10-18 (dictionary-word-purity 12: knowledge-base closure — ADR 0079, ADR 0078 addendum, run numbers in the wiki)
+
+Closed the spec out in the knowledge base (docs-only change, no code):
+
+- **New ADR 0079** (`docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md`):
+  the dictionary-word-purity decisions beyond ADR 0078 — form-of relays
+  demote to forms of their base (dump-driven sense-level `form_of` signal
+  via the shared `FormOfClassifier`, in-place cleanup via
+  `wiktionary:demote-form-of` + `RelayDemotionMap`, ru 363,446 / en
+  500,776 relay rows deleted), every word carries itself as its lemma
+  form (`LemmaForms`, 1,018,396 backfilled), one stage → link → prune
+  lifecycle for translations (`StagedTranslations` union-merge in,
+  prune-on-link out; 126,202 candidates converted, staged JSON 91,552 →
+  52,472), one resolver/alias-table/lemma-rule toolkit
+  (`TranslationTargets`/`PosAliases`/`LemmaForms`) and the
+  attach-to-existing creator contract (`words:normalize` as the in-place
+  repair: 2,451 twins + 7,514 alias duplicates merged, 216,440 reclassed,
+  9,976 absorbed). Records the operational consequences: 2G memory
+  ceilings, LEAST rank folds, `word_translations` allowed to shrink
+  (net −1,029 from dedupe while ~4,898 genuinely new links appeared).
+- **ADR 0078 addendum extended**: the Consequences' flagged follow-up
+  (the popup auto-fetch still creating target words) is recorded as
+  resolved — link-only everywhere, candidates resolve through
+  `TranslationTargets`, leftovers stage.
+- **`domains/dictionary-import.md`**: run numbers added to the
+  demote/link/normalize sections, sources gained ADR 0079 +
+  `TranslationTargets` + `StagedTranslations`.
+- **`database/dictionary.md`**: the stale "form-of entries are stored as
+  ordinary words" note rewritten (relays demote to forms; the
+  `WordFamily` pattern list stays as the read-layer filter for mixed
+  entries), frequency note documents the LEAST fold between rows.
+- **`playbooks/import-dictionary-data.md`**: demote/normalize sections
+  moved to past tense with the landed numbers (a re-run matches nothing),
+  the repair pipeline order written out in full (demote → normalize →
+  link-translations → import-frequency-lists → crossword:link).
+
+All touched concepts reviewed against the code and the ticket-11 run;
+`verified: human:alex` stamps added, `generated.at` bumped.
