@@ -5,8 +5,8 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T22:40:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-18T22:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -368,16 +368,19 @@ The import stores multi-word headwords under whatever pos the dump claims,
 so junk lands under the verb class ("do it", "could have", "be there")
 beside idioms ("kick the bucket") — and the translation-fetch job used to
 store multi-word provider candidates under the provider pos, creating more
-of the same. Since ADR 0059 the multi-word-verb lexicon is gated by
-`App\Classes\MultiwordVerbShape` (2–4 tokens, every token after the verb a
-closed-class particle/preposition), so polluted rows can no longer produce
-false matches regardless; `FetchWordTranslations` now stores multi-word
-candidates under the `phrase` class (auto-created after the
-lookup-auto-creation convention), and
-`php artisan words:reclass-multiword {--dry-run}` reclasses the existing
-**English** junk verb rows to `phrase` (rows whose headword already exists
-in the phrase class are skipped — the words table is unique per
-(word, language, class); resolve those by hand). Other languages are
+of the same (it even auto-created the `phrase` class after the
+lookup-auto-creation convention). Since ADR 0059 the multi-word-verb lexicon
+is gated by `App\Classes\MultiwordVerbShape` (2–4 tokens, every token after
+the verb a closed-class particle/preposition), so polluted rows can no
+longer produce false matches regardless, and since the link-only rework
+(ADR 0078, 2026-10-18) the fetch job creates nothing at all: a multi-word
+candidate merely PREFERS the target's existing `phrase` class when matching
+(a single-word one the candidate/source pos class), links the row it finds,
+and stages when the target language carries no such `l_word`.
+`php artisan words:reclass-multiword {--dry-run}` reclasses the remaining
+historical **English** junk verb rows to `phrase` (rows whose headword
+already exists in the phrase class are skipped — the words table is unique
+per (word, language, class); resolve those by hand). Other languages are
 untouched — Russian multi-word verbs ("выдавать себя за") are legitimate
 verbs the English shape has no opinion about. ADR 0078 draws the
 GoldenDict boundary: `phrase` there is a headword-sourced class only (with

@@ -1,12 +1,12 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left, Anki send right, status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, ledger-deduped with a permanent exclusions list).
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left, Anki send right, status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
-verified: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
+generated: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -17,6 +17,12 @@ sources:
   - id: fetch-service
     resource: laravel/app/Classes/WordTranslationFetchService.php
     title: WordTranslationFetchService (dispatch gate + exclusions)
+  - id: translation-targets
+    resource: laravel/app/Support/TranslationTargets.php
+    title: Shared link-only target-word resolver (matches candidates against existing rows)
+  - id: staged-translations
+    resource: laravel/app/Support/StagedTranslations.php
+    title: Shared staged-translations JSON merge/prune helpers
   - id: resolver
     resource: laravel/app/Classes/WordTranslations/WordTranslationResolver.php
     title: WordTranslationResolver (Yandex → Google chain)
@@ -215,17 +221,28 @@ popup opens.
   changes anywhere). A failing provider is skipped — but if no provider
   produced a translation and one could not answer, the job fails and retries
   rather than excluding the word.
-* **What it writes.** The target-language `words` rows (class from the
-  candidate pos slug, else the source word's class slug mapped into the
-  target language, else the target's first class; ru stress marks stripped;
-  candidates with sentence punctuation or over 256 chars dropped) and the
-  `word_translations` links — all idempotent
-  (`firstOrCreate` + `WordTranslation::link`).
+* **What it writes.** Nothing on the target side — link-only (ADR 0078,
+  2026-10-18): candidates are normalized first (trimmed; combining stress
+  marks stripped for ru/be/uk targets at the JOB layer, not left to the
+  providers' own strip; candidates with sentence punctuation, over 256
+  chars, or empty after the strip dropped), then resolved against the
+  target language's EXISTING `words` rows through the shared
+  `App\Support\TranslationTargets` resolver (a multi-word candidate prefers
+  the target's `phrase` class, a single-word one the candidate pos class
+  else the source word's class — preference only, an `l_word` match under
+  any class links). Matches become `word_translations` pairs
+  (`WordTranslation::link`, idempotent); unmatched candidates stage into
+  the source word's `translations` JSON through the shared
+  `App\Support\StagedTranslations` merge for the later link pass. The
+  ledger row records the outcome: `linked_count`/`staged_count`.
 * **Ledger and exclusions.** One `word_translation_fetches` row per
   (word, target language) is the dedupe ledger: `status='empty'` — every
-  provider answered "no translation" — is the permanent **exclusions list**
-  (the pair is never looked up again), `failed` retries up to 6 attempts
-  behind a 24h cooldown (`WordTranslationFetchService::dispatchIfEligible`).
+  provider answered "no translation" (or nothing usable survived the
+  filters) — is the permanent **exclusions list** (the pair is never
+  looked up again), `succeeded` never re-fetches either (staged candidates
+  wait for the link pass, not a re-query), and `failed` retries up to 6
+  attempts behind a 24h cooldown
+  (`WordTranslationFetchService::dispatchIfEligible`).
 * **Entity-word adoption.** `EntityWordAdoption` — run by the 5-minute
   word-list refresh after its link pass (`RefreshEntityWords`), or by
   `words:adopt-from-entities {--entity=*} {--language=} {--to=}` — creates
@@ -235,8 +252,10 @@ popup opens.
   clickable and eventually translated; junk tokens land in the exclusions
   after one lookup. See [Crossword](/domains/crossword.md) and
   [Dictionary](/database/dictionary.md).
-* Tests: `tests/Feature/WordTranslationFetchTest.php` (trigger, job,
-  fallback, exclusion, cooldown), `tests/Feature/AdoptEntityWordsTest.php`,
+* Tests: `tests/Feature/WordTranslationFetchTest.php` (trigger, link-only
+  job — the no-creation invariant, defensive stress strip, staging,
+  counts — fallback, exclusion, cooldown),
+  `tests/Feature/AdoptEntityWordsTest.php`,
   `tests/Unit/WordTranslationProvidersTest.php` (parsing, caps, chain order).
 
 # Context explanation tab

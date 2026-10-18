@@ -6723,3 +6723,35 @@ table. Pre-existing relay word rows are ticket 10's demote command; the `WordFam
 relay-gloss defense stays until then. `wiki/domains/dictionary-import.md` updated (parser bullet +
 frontmatter description/tags/sources), `generated.at` bumped. No routes/models/commands added (the
 command's output table changed, not its signature) — `wiki:sync` run, no-op.
+
+## 2026-10-18 (dictionary-word-purity 06: popup auto-fetch is link-only — no word rows)
+
+`FetchWordTranslations` used to CREATE its target-language word rows — including `phrase`-class rows
+with no token cap (clause-length machine translations qualified) and a `mb_strtolower`-only l_word —
+the exact "phrases from translations" pattern ADR 0078 bans. The job is now link-only: candidates
+normalize at the JOB layer first (trim + `App\Support\StressMarks` strip for ru/be/uk targets — the
+providers strip too, but the job no longer depends on a future provider keeping that promise;
+empty-after-strip, overlong and sentence-punctuation candidates dropped), resolve against the target
+language's EXISTING words through the shared `App\Support\TranslationTargets` resolver with the
+parser's wanted-class rule (`App\Support\WordLookupKey::normalize` keys; multi-word candidate →
+`phrase` class, single-word → candidate pos class else the source word's class, missing class →
+null = match by l_word alone), and matching candidates become `WordTranslation::link` pairs.
+Unmatched candidates stage into the source word's `translations` JSON through the shared
+`App\Support\StagedTranslations` merge for the later link pass (ticket 07). The `phraseClassId`
+auto-creation and every `Word::firstOrCreate` are gone — `word_classes` and target-language `words`
+counts are untouched by the job (the invariant test asserts the ru count is unchanged).
+The `word_translation_fetches` ledger keeps its exclusion semantics (empty = never re-checked;
+succeeded also never re-fetches — staged candidates wait for the link pass, not a re-query; failed
+retries unchanged) and records the outcome in new `linked_count`/`staged_count` smallint columns
+(additive migration `2026_10_18_000002`, applied to the dev DB). Callers
+(`WordTranslationFetchService::dispatchIfEligible`, `EntityWordAdoption::dispatchFetches`,
+`WordController::maybeFetchTranslations`) needed no changes — their gates read links + ledger
+status only. `tests/Feature/WordTranslationFetchTest.php` rewritten for link-only semantics (17
+tests: no-creation invariant, defensive strip via a mocked resolver, staging merge/re-merge,
+phrase-class preference, google fallback under class mismatch, exclusion on unusable-only
+candidates, no-refetch-after-staging, cooldown), full `composer run test:tia` green (1257 passed).
+Wiki: `domains/interactive-words.md` ("What it writes" + ledger bullets, description, sources),
+`domains/dictionary-import.md` (ADR 0059 section no longer claims phrase auto-creation),
+`database/dictionary.md` (ledger row + words.translations staging note + auto-fetch note),
+`generated.at` bumped; `wiki:sync` regenerated `reference/models.md` (new fillable/casts);
+`wiki:validate` passes.

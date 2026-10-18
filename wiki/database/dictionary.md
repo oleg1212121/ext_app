@@ -1,12 +1,12 @@
 ---
 type: Database Schema
 title: Unified Dictionary Tables
-description: One words table (+ satellites) keyed by language, per-language word classes and transcription types, a symmetric word_translations pivot (one row per pair), and the word_translation_fetches ledger driving auto-fetched translations (Yandex→Google) that doubles as the exclusions list.
+description: One words table (+ satellites) keyed by language, per-language word classes and transcription types, a symmetric word_translations pivot (one row per pair), and the word_translation_fetches ledger driving auto-fetched translations (Yandex→Google, link-only since 2026-10-18 — unmatched candidates stage, no word rows) that doubles as the exclusions list.
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2027-01-17
-generated: { by: agent:zcode, at: 2026-10-18T13:45:28+03:00 }
-verified: { by: agent:zcode, at: 2026-10-18T13:45:28+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-19T00:10:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -29,9 +29,15 @@ sources:
    - id: pos-aliases
      resource: laravel/app/Support/PosAliases.php
      title: Shared pos alias table (dictionary abbreviations + kaikki slugs → canonical class slugs)
-   - id: word-id-indexes
-     resource: laravel/database/migrations/2026_10_18_000001_add_word_id_indexes_to_forms_transcriptions_and_word_children.php
-     title: word_id-leading indexes on forms/transcriptions/examples/pronunciations/user_word/user_word_event
+  - id: word-id-indexes
+    resource: laravel/database/migrations/2026_10_18_000001_add_word_id_indexes_to_forms_transcriptions_and_word_children.php
+    title: word_id-leading indexes on forms/transcriptions/examples/pronunciations/user_word/user_word_event
+  - id: fetch-counts-migration
+    resource: laravel/database/migrations/2026_10_18_000002_add_fetch_outcome_counts_to_word_translation_fetches.php
+    title: linked_count/staged_count outcome columns on word_translation_fetches
+  - id: translation-targets
+    resource: laravel/app/Support/TranslationTargets.php
+    title: Shared link-only target-word resolver (matches candidates against existing rows)
 ---
 
 # Tables
@@ -40,12 +46,12 @@ sources:
 |-------|------|
 | `word_classes` | Parts of speech **per language** (`language_id`, `slug`, `title`, unique `(language_id, slug)`); seeded for en/ru |
 | `transcription_types` | Transcription kinds per language (ipa, enpr for English; МФА for Russian) |
-| `words` | A base-form word in one language: `language_id`, `word`, `l_word` (lowercase), `frequency` (rank: lower = more common, `numeric(12,2)`; 1,100,000 = unranked, `Word::FREQUENCY_UNRANKED` — see ADR 0041), `word_class_id`, raw Wiktionary `translations` JSON. Unique `(word, language_id, word_class_id)`; index `(l_word, word_class_id)` |
+| `words` | A base-form word in one language: `language_id`, `word`, `l_word` (lowercase), `frequency` (rank: lower = more common, `numeric(12,2)`; 1,100,000 = unranked, `Word::FREQUENCY_UNRANKED` — see ADR 0041), `word_class_id`, staged translation candidates as a flat JSON string list (`translations` — imports stage them, and since 2026-10-18 the popup auto-fetch stages its unmatched candidates here too; the link pass converts them into `word_translations` rows and prunes what it linked). Unique `(word, language_id, word_class_id)`; index `(l_word, word_class_id)` |
 | `forms` / `definitions` / `etymologies` / `examples` | Per-word satellites (unique `(form, word_id)` / `(example, word_id)`); `forms` carries `l_word` (indexed, `idx_forms_l_word`) and is the runtime link target for inflected tokens — the linker's forms pass in [Crossword](/domains/crossword.md) — and the source of the Word popup's base-word groups ([Interactive words](/domains/interactive-words.md), ADR 0045). Every imported word also stores **itself** as its lemma form (shared `App\Support\LemmaForms` rule), so the forms table alone resolves lookups |
 | `transcriptions` | Written phonetic notations per word + `transcription_type_id` (ipa, enpr, …; unique triple) || `pronunciations` | Audio files with pronunciation examples per word (`path` on the public disk, unique `(path, word_id)`); uploaded via the admin |
 | `tags` / `tagged_words` | The **words tag pool** (ADR [0076](../../docs/adr/0076-per-type-tag-pools.md)): language-neutral `slug`+`name` labels curated in the admin (`TagResource`, nav group Words, `words_count` usage column, edit/delete + bulk delete) and attached to words via `Word::tags()` (`withTimestamps`) through the pivot — renamed from the dormant `word_tags` (migration `2026_10_11_000001`, index `uk_tagged_words_pair`). Attached through the Words form's searchable tag multi-select with inline create; shown as a badge column and a multi-select table filter on the Words list. The works/entities/alignments pools copy this shape (`work_tags`/`tagged_works`, `entity_tags`/`tagged_entities`, `alignment_tags`/`tagged_alignments`) |
 | `word_translations` | **One row per word pair** (symmetric, ADR 0020): `word_a_id`, `word_b_id` with canonical order `a < b` (entity-match convention), unique `(word_a_id, word_b_id)`, index on `word_b_id`. A link is usable from either word; links connect words of **different languages** only (enforced in the admin attach action). Supersedes the directed pivot of ADR 0018 |
-| `word_translation_fetches` | Auto-fetch ledger, one row per `(word_id, target_language_id)` (unique): `provider` (yandex/google), `status` (`pending`/`succeeded`/`empty`/`failed`), `attempts`, `last_attempted_at` (migration `2026_09_29_000001`). `status = 'empty'` is the **exclusions list** — every provider answered "no translation", so the pair is never looked up again |
+| `word_translation_fetches` | Auto-fetch ledger, one row per `(word_id, target_language_id)` (unique): `provider` (yandex/google), `status` (`pending`/`succeeded`/`empty`/`failed`), `linked_count`/`staged_count` (candidates the link-only fetch linked vs staged, migration `2026_10_18_000002`), `attempts`, `last_attempted_at` (migration `2026_09_29_000001`). `status = 'empty'` is the **exclusions list** — every provider answered "no translation", so the pair is never looked up again |
 
 # Notes
 
@@ -116,20 +122,26 @@ sources:
   views. Definition/example prose keeps its marks. Every imported word
   stores itself as its lemma form (`App\Support\LemmaForms`), and a
   headword/form that strips to the empty string stores nothing.
-* **Auto-fetched translations** (2026-09-29): when a popup word family has no
-  translation link at all, `WordController::show` quietly queues
-  `FetchWordTranslations` through the
+* **Auto-fetched translations** (2026-09-29, link-only since 2026-10-18):
+  when a popup word family has no translation link at all,
+  `WordController::show` quietly queues `FetchWordTranslations` through the
   `WordTranslationFetchService::dispatchIfEligible` gate; the job walks the
   `WordTranslationResolver` chain — Yandex Cloud Dictionary Lookup first
   (dictionary-grade candidates with parts of speech), Google Translate v2 as
   a single-candidate fallback (`config/services.php`
-  `yandex_translate`/`google_translate`, both optional) — then creates the
-  target-language `words` rows (class from the candidate pos slug, else the
-  source word's class slug mapped into the target language, else the target's
-  first class; stress marks stripped for the Cyrillic-list targets
-  ru/be/uk (`App\Support\StressMarks`); sentence-punctuation candidates
-  dropped) and the `word_translations` links. `failed` lookups retry up to
-  `MAX_ATTEMPTS` (6) behind a 24h cooldown; `empty` never re-checks. The
+  `yandex_translate`/`google_translate`, both optional) — and then **never
+  creates a word**: candidates normalize (trimmed, stress marks stripped for
+  the Cyrillic-list targets ru/be/uk at the job layer too,
+  `App\Support\StressMarks`; sentence-punctuation and overlong candidates
+  dropped), resolve against the target language's EXISTING words through
+  the shared `App\Support\TranslationTargets` resolver, and matching
+  candidates become `word_translations` links; unmatched candidates stage
+  into the source word's `translations` JSON through the shared
+  `App\Support\StagedTranslations` merge for the later link pass, and the
+  fetch ledger row records the outcome (`linked_count`/`staged_count`).
+  `failed` lookups retry up to `MAX_ATTEMPTS` (6) behind a 24h cooldown;
+  `empty` never re-checks; `succeeded` never re-fetches either — staged
+  candidates wait for the link pass, not a re-query. The
   `EntityWordAdoption` pass (the 5-minute word-list refresh, or
   `words:adopt-from-entities`) feeds the same pipeline with entity tokens —
   see [Interactive words](/domains/interactive-words.md) and
