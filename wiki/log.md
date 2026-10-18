@@ -1,5 +1,56 @@
 # Directory Update Log
 
+## 2026-10-18 (ru-edition knowledge closure — ADR 0080, per-edition playbook, CONTEXT.md glossary — ru-edition-import ticket 03)
+
+Closed the ru-edition-import spec out in the knowledge base (docs-only
+change, no code):
+
+- **New ADR 0080**
+  (`docs/adr/0080-per-edition-wiktionary-sourcing-merge-on-overlap.md`):
+  each language's dictionary sources from its own Wiktionary edition
+  dump — English words from the en-Wiktionary dump, Russian words from
+  the ru-Wiktionary edition (kaikki.org/ruwiktionary/rawdata.html; the
+  en-Wiktionary "Russian" files are a different, lemma-poor source) —
+  and editions **merge on overlap, never replace** (word rows upsert,
+  definitions/etymologies insert-new-only; the user's explicit call:
+  existing ru rows keep their English definitions and gain the ru
+  edition's Russian glosses). Records the two parser field-compat facts
+  (`etymology_texts` plural array; `lang_code`-only translation
+  objects), the `--target-langs` requirement for single-language runs,
+  and the real run's numbers — including the planning assumption the
+  data refuted (below).
+- **`playbooks/import-dictionary-data.md`**: the raw-dump source shape
+  generalized to per-edition downloads with both URLs (en and ru
+  editions); per-edition run commands (the en `--langs=en,ru` full
+  import, the ru `--langs=ru --target-langs=en` edition import) with
+  the `--target-langs` gotcha spelled out; the merge-not-replace
+  behavior + post-run repair chain documented on the raw-dump step;
+  the demote command's `--file=` note now names the ru-edition extract
+  cleanup candidate.
+- **`CONTEXT.md`**: the "Raw dump" glossary term generalized — one per
+  edition, both URLs, not only the English edition.
+- **`domains/dictionary-import.md`**: per-edition sourcing paragraph
+  with the run numbers, ADR 0080 in sources, description extended.
+
+**Ticket 02's run** (the 2026-10-18 dev-DB ru-edition import, ~29 min):
+extract read 2,729,136 lines, kept 489,522 (both exactly as
+classified); import 471,292 words / 6,963 relays demoted / 248 relay
+bases created; 6 placeholder word classes auto-created
+(abbrev/interjection/root/onomatopeia/gerund/circumfix — titles want
+`/admin` curation); link pass 109,689 staged→linked (EN→RU 29,709 /
+RU→EN 79,980), raw `word_translations` 111,556 → 186,353;
+`words:normalize` merged 1,167 unknown twins + 154 lemma forms
+backfilled; frequency re-clamp ranked 18,324 new rows; собака merge
+verified (same row id, 14 → 22 definitions, English verbatim + 8
+Russian added); en 1,013,927 unchanged. ru landed at **500,430**, not
+the planned 460–470k: "en-wiki ru words ⊆ ru-wiki" is false — 29,037
+pre-existing en-era rows the ru stream never touched (genuinely absent
+headwords; 5,742 same-`l_word` different-class pairs like Лета
+name-vs-noun; 14,899 relay-shaped rows whose surface the ru dump
+demotes — the `wiktionary:demote-form-of --file=…ru.jsonl` cleanup
+candidate). Residual 17,890 definition-less ru rows (the ru edition's
+own senseless entries, not en-era proxies).
+
 ## 2026-10-18 (parser ru-edition field compat — ru-edition-import ticket 01)
 
 `WiktionaryParser` now reads the Russian-Wiktionary edition dump (ru.wiktionary

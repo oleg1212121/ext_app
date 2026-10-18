@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T21:10:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T22:15:00+03:00 }
 verified: { by: human:alex, at: 2026-10-18T19:40:00+03:00 }
 sources:
   - id: import-cmd
@@ -50,17 +50,34 @@ replaced the old mirrored per-language tables.
 
 Two source shapes exist:
 
-* **Raw dump** — `raw-wiktextract-data.jsonl.gz`, the whole English
-  Wiktionary with every language interleaved (~2.7GB compressed, tens of
-  millions of lines). Use `wiktionary:import-raw` (below).
+* **Raw dump (per edition)** — `raw-wiktextract-data.jsonl.gz`, a whole
+  Wiktionary *edition* with every language it covers interleaved. Each
+  edition is its own kaikki.org download:
+  * English edition (en.wiktionary, glosses in English):
+    [kaikki.org/dictionary/rawdata.html](https://kaikki.org/dictionary/rawdata.html)
+    (~2.7GB compressed, tens of millions of lines).
+  * Russian edition (ru.wiktionary, glosses in Russian):
+    [kaikki.org/ruwiktionary/rawdata.html](https://kaikki.org/ruwiktionary/rawdata.html)
+    (~300MB compressed; the 2026-10-01 dump is 2,729,136 lines — ~1M
+    hard-redirects the parser skips, ~489k `lang_code=ru` entries).
+
+  Use `wiktionary:import-raw` (below). Each language's dictionary
+  sources from its own edition, and editions **merge** on overlap —
+  ADR
+  [0080](../../docs/adr/0080-per-edition-wiktionary-sourcing-merge-on-overlap.md).
+  (kaikki's pre-split "Russian" files are NOT the ru edition — also
+  en.wiktionary, just pre-split, and equally lemma-poor.)
 * **Per-language download** — kaikki.org's pre-split
   `kaikki.org-dictionary-<Language>.jsonl` files. Use
   `wiktionary:import` directly (bottom of this page).
 
 # Steps — raw dump (wiktionary:import-raw)
 
-1. Download the dump onto the host and put it under `laravel/` (e.g.
-   `laravel/kaikki/raw-wiktextract-data.jsonl.gz`) so the container sees it.
+1. Download the edition dump onto the host and put it under `laravel/`
+   (e.g. `laravel/kaikki/raw-wiktextract-data.jsonl.gz` for the en
+   edition, `laravel/kaikki/ru-raw-wiktextract-data.jsonl.gz` for the
+   ru edition — URLs above) so the container sees it. No decompression:
+   the parser reads `.jsonl.gz` transparently.
 2. Ensure the languages exist in the languages registry (seeded en/ru, or
    Filament `/admin` → Languages). `--langs` accepts any registry code.
 3. **Smoke-run first** — a capped extraction over the real gz validates
@@ -74,19 +91,40 @@ Two source shapes exist:
 4. Run the real import detached, redirecting output (multi-hour run):
 
    ```bash
-   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan wiktionary:import-raw kaikki/raw-wiktextract-data.jsonl.gz >> storage/logs/import-raw.log 2>&1'
+   # English edition — the historical full import, both languages, symmetric staging:
+   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan wiktionary:import-raw kaikki/raw-wiktextract-data.jsonl.gz --langs=en,ru >> storage/logs/import-raw.log 2>&1'
+   # Russian edition — single language; --target-langs is then REQUIRED (gotcha below):
+   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan wiktionary:import-raw kaikki/ru-raw-wiktextract-data.jsonl.gz --langs=ru --target-langs=en >> storage/logs/import-ru-edition.log 2>&1'
    ```
 
-   Phases: extract (writes `kaikki/raw-wiktextract-data.en.jsonl` and
-   `.ru.jsonl` next to the dump, overwriting) → import each `--langs`
-   language (symmetric translation staging by default) → link translations.
-   Heartbeats every 100k lines (lines, kept counts, RSS, elapsed) land in
+   **`--target-langs` gotcha**: with a single-language `--langs=ru` the
+   flag is not optional — the default staging targets are "every other
+   imported language", so `--langs=ru` alone leaves the set empty and
+   the parser refuses to start ("At least one target language is
+   required"). Name at least one other registry code
+   (`--target-langs=en` for the ru edition run).
+
+   Phases: extract (writes `kaikki/<base>.<code>.jsonl` next to the
+   dump, overwriting) → import each `--langs` language (symmetric
+   translation staging by default) → link translations. Heartbeats
+   every 100k lines (lines, kept counts, RSS, elapsed) land in
    `storage/logs/laravel.log`, so progress is observable even detached.
+
+   **Merge, not replace** (ADR 0080): without `--fresh` a second
+   edition's import into an existing dictionary is additive — word rows
+   upsert, definitions/etymologies insert-new-only text-deduped — so
+   the 2026-10-18 ru-edition run gave the pre-existing en-sourced ru
+   rows Russian glosses beside their English ones (собака: same row, 14
+   → 22 definitions) without touching the en side. Afterwards run the
+   repair chain (`words:normalize --dry` first; `words:import-frequency
+   ru-rnc` re-clamps ru ranks — the link pass already ran inside the
+   import).
 5. Useful flags: `--skip-extract` reuses existing extract files (e.g. rerun
    a failed import phase without a second decompression pass);
    `--extract-only` stops after the extract files; `--no-link` skips the
-   linking pass; `--target-langs=ru` restricts staging to one direction;
-   `--batch-size=500` tunes DB flush size.
+   linking pass; `--target-langs=ru` restricts staging to one direction —
+   and is **required** when `--langs` names a single language (gotcha
+   above); `--batch-size=500` tunes DB flush size.
 6. **Clean rebuild** from a newer dump: add `--fresh --force` (non-interactive
    runs require `--force`). `--fresh` wipes the selected languages' words —
    FK cascades take definitions, forms, etymologies, transcriptions,
@@ -195,7 +233,12 @@ from scratch.
 
    Flags: `--file=` overrides the default dump path
    (`kaikki/kaikki.org-dictionary-<Language name>.jsonl` under the app
-   root); `--chunk=N` (default 25000) sizes the set-based apply pass —
+   root — any dump works, e.g. the ru edition extract
+   `kaikki/ru-raw-wiktextract-data.ru.jsonl`: the noted cleanup for the
+   14,899 relay-shaped en-era ru leftovers whose surface the ru dump
+   carries only as another word's form, ADR
+   [0080](../../docs/adr/0080-per-edition-wiktionary-sourcing-merge-on-overlap.md));
+   `--chunk=N` (default 25000) sizes the set-based apply pass —
    the in-memory map holds every relay surface of the language (~1M en
    pairs fit comfortably; chunking bounds the DB statements, not the map).
    The command raises its own `memory_limit` to 2G (`ImportRawWiktextractCommand`

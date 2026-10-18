@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; both importers store plain (stress-free) display words and stage plain translation candidates for the stress-mark target languages, share one pos alias table and one lemma-form rule, kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, unknown-twin merges, alias-class fold, lemma-form backfill).
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; each language's dictionary sources from its own Wiktionary edition dump and editions merge on overlap — existing rows keep their definitions and gain the new edition's (ADR 0080); both importers store plain (stress-free) display words and stage plain translation candidates for the stress-mark target languages, share one pos alias table and one lemma-form rule, kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, unknown-twin merges, alias-class fold, lemma-form backfill).
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T21:15:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T22:15:00+03:00 }
 verified: { by: human:alex, at: 2026-10-18T19:40:00+03:00 }
 sources:
   - id: adr-0078
@@ -14,6 +14,9 @@ sources:
   - id: adr-0079
     resource: docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md
     title: ADR 0079 — relays demote to forms, lemma-as-form, stage → link → prune
+  - id: adr-0080
+    resource: docs/adr/0080-per-edition-wiktionary-sourcing-merge-on-overlap.md
+    title: ADR 0080 — per-edition sourcing, editions merge on overlap
   - id: wiktionary
     resource: laravel/app/Classes/WiktionaryParser.php
     title: Kaikki/Wiktionary JSONL parser
@@ -92,6 +95,39 @@ is one language-keyed `words` table (+ satellites) per language instead of
 mirrored per-language tables, and a single `word_translations` pivot —
 **one symmetric row per word pair** since ADR
 [0020](../../docs/adr/0020-symmetric-word-translations.md).
+
+**Per-edition sourcing** (ADR
+[0080](../../docs/adr/0080-per-edition-wiktionary-sourcing-merge-on-overlap.md),
+2026-10-18): each language's dictionary sources from that language's own
+Wiktionary **edition** dump — English words from the en-Wiktionary dump
+([kaikki.org/dictionary/rawdata.html](https://kaikki.org/dictionary/rawdata.html)),
+Russian words from the ru-Wiktionary edition
+([kaikki.org/ruwiktionary/rawdata.html](https://kaikki.org/ruwiktionary/rawdata.html);
+the en-Wiktionary "Russian" files, monolithic or pre-split, are a
+different, lemma-poor source). Editions **merge on overlap, never
+replace**: word rows upsert, definitions/etymologies insert-new-only —
+the pre-existing en-sourced ru rows kept their English definitions and
+gained the ru edition's Russian glosses, forms, IPA and etymologies
+(собака: same row, 14 → 22 definitions, English verbatim + 8 Russian
+added); en was untouched. The ru edition needed two parser field-compat
+fixes (etymology `etymology_texts` plural array; `lang_code`-only
+translation objects — both above), and a single-language import must
+pass `--target-langs` (runbook has the commands). First real run
+(2026-10-18, dev DB): extract 489,522 ru lines of 2,729,136; import
+471,292 words, 6,963 relays demoted, 248 relay bases created, 6
+placeholder word classes auto-created (abbrev/interjection/root/
+onomatopeia/gerund/circumfix — titles want `/admin` curation); links
+109,689 staged→linked (EN→RU 29,709 / RU→EN 79,980), raw
+`word_translations` 111,556 → 186,353; `words:normalize` merged 1,167
+unknown twins; frequency re-clamp ranked 18,324 new rows; residual
+17,890 definition-less ru rows (the ru edition's own senseless
+entries). ru ended at **500,430** — above the 460–470k plan because
+"en-wiki ru words ⊆ ru-wiki" is false: 29,037 pre-existing en-era rows
+the ru stream never touched (absent headwords; 5,742 different-class
+pairs like Лета name-vs-noun; 14,899 relay-shaped rows whose surface
+the ru dump demotes — the noted `wiktionary:demote-form-of
+--file=kaikki/ru-raw-wiktextract-data.ru.jsonl` cleanup candidate). en
+ended at 1,013,927 exactly.
 
 # Components
 
@@ -184,9 +220,10 @@ mirrored per-language tables, and a single `word_translations` pivot —
   (harmless after demotion). See
   [ADR 0078](../../docs/adr/0078-goldendict-plain-words-link-only-translations.md)
   and [ADR 0079](../../docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md).
-* `App\Classes\RawWiktextractExtractor` — streams a **Raw dump** (the
-  monolithic kaikki `raw-wiktextract-data` file, every Wiktionary language
-  interleaved) once and writes one **Language extract** per wanted code: raw
+* `App\Classes\RawWiktextractExtractor` — streams a **Raw dump** (a
+  monolithic per-edition kaikki `raw-wiktextract-data` file, every
+  Wiktionary language the edition covers interleaved) once and writes
+  one **Language extract** per wanted code: raw
   lines kept verbatim, next to the dump (`<base>.<code>.jsonl`). A substring
   pre-filter skips `json_decode` for lines that cannot match; the decoded
   top-level `lang_code` decides (nested `lang_code` occurrences inside
