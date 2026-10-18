@@ -120,6 +120,13 @@ class WordsNormalizeCommand extends Command
 
     public function handle(): int
     {
+        // The alias-fold group map holds every word row of the folded
+        // classes (~200k en adj/adjective rows on the dev DB) and the twin
+        // phases hold their merge maps — both blow past the 128M CLI
+        // default on real data. Same ceiling the demote command raises.
+        ini_set('memory_limit', '2G');
+        set_time_limit(0);
+
         $this->dry = (bool) $this->option('dry');
         foreach (['definitions', 'etymologies', 'forms', 'transcriptions', 'examples', 'pronunciations', 'entity_words', 'tagged_words', 'user_word', 'user_word_event', 'word_translation_fetches'] as $table) {
             $this->childTables[$table] = Schema::hasTable($table);

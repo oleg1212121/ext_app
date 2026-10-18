@@ -375,3 +375,21 @@ it('reports the phases dry without writing anything', function () {
         ->and(WordClass::query()->where('slug', 'adj')->exists())->toBeTrue()
         ->and(Form::query()->where('word_id', $this->fixture['march']->id)->count())->toBe(0);
 });
+
+it('raises the memory ceiling above the CLI default before any phase runs', function () {
+    // The alias-fold group map and the twin merge maps hold real-data sized
+    // row sets in memory, so the command must lift the 128M CLI default
+    // itself — the demote / raw-wiktextract importer precedent.
+    $original = ini_get('memory_limit');
+    ini_set('memory_limit', '128M');
+
+    try {
+        test()->artisan('words:normalize', ['--dry' => true])
+            ->expectsOutputToContain('DRY RUN')
+            ->assertSuccessful();
+
+        expect(ini_get('memory_limit'))->toBe('2G');
+    } finally {
+        ini_set('memory_limit', $original);
+    }
+});
