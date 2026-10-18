@@ -1,5 +1,46 @@
 # Directory Update Log
 
+## 2026-10-18 (kaikki import hygiene: plain display headwords, shared pos aliases, shared lemma-form rule, romanization skip — dictionary-word-purity ticket 02)
+
+The kaikki (Wiktionary) importer loses its three impurities, reversing the
+ADR 0078 display-headword carve-out (addendum added to the ADR):
+
+- **Plain display headwords for ru/be/uk** (`laravel/app/Classes/WiktionaryParser.php`):
+  the dump's stressed headword ("свобо́дный") now strips before storage
+  and before `l_word` computation, joining the forms rule ADR 0078 already
+  set; a headword that strips to the empty string (marks-only artifact)
+  stores nothing. Definition/example prose keeps its marks.
+- **One shared pos alias table** (`laravel/app/Support/PosAliases.php`,
+  extracted from GoldenDictParser's inline `POS_BY_ABBREVIATION`): the raw
+  kaikki pos canonicalizes through `PosAliases::canonical()` at parse time
+  ("adj" lands in "adjective", aliased lines of one word merge into a
+  single row), and GoldenDictParser::posSlugFor delegates to the same
+  table — no second inline alias dictionary.
+- **One shared lemma-form rule** (`laravel/app/Support/LemmaForms.php`):
+  both importers' `flushForms` now build their rows through
+  `LemmaForms::rows()` — the word's own (stripped) headword first as the
+  lemma form, then the inflected forms, column-capped, stress-stripped per
+  language flag, empty-after-strip guarded, `(form, word_id)`-deduped —
+  so the forms table alone resolves lookups and ticket 08's single-word
+  writers (cmudict, entity adoption, Filament) have one reusable entry
+  point.
+- **Romanization-tagged kaikki forms skip** the import (Latin
+  transliterations like "četverénʹkax" never attach to Cyrillic words).
+
+`dictionary-import.md` and `database/dictionary.md` rewritten where they
+documented the carve-out (WiktionaryParser bullet, stress-marks prose,
+"GoldenDict vs Wiktionary" paragraph, lookup auto-creation, `l_word` note,
+`forms` lemma-form mention); `playbooks/import-dictionary-data.md` got the
+pos-alias + lemma-form notes and the widened clean-rebuild/verify list
+(both cited parsers changed → content refreshed, re-stamped); ADR 0078 got
+the addendum.
+No routes/models/commands added → `wiki:sync` run anyway, `wiki:validate`
+0 warnings. Tests: new `tests/Unit/PosAliasesTest.php` (14 it-blocks with
+`LemmaFormsTest`), updated unit + feature `WiktionaryParserTest` (stressed
+headword plain + marked gloss, alias map, romanization skip, lemma form),
+`ImportWiktionaryCommandTest` and 6 GoldenDict exact-forms assertions
+moved for the lemma forms. All green via TIA replay.
+
 ## 2026-10-18 (goldendict parser correctness fixes: profile-forms strip, source-or-target segment gate, empty-after-strip guards — dictionary-word-purity ticket 01)
 
 Review follow-ups on the ADR 0078 rework (below): the parser's

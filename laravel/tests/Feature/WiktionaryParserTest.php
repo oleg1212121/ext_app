@@ -153,7 +153,7 @@ it('stages translations for multiple target languages', function () {
     unlink($tmpFile);
 });
 
-it('strips stress marks from ru display forms while keeping en forms verbatim', function () {
+it('strips stress marks from ru display words and forms while keeping en forms verbatim', function () {
     $languages = createLanguages();
 
     $ruFile = tempnam(sys_get_temp_dir(), 'wiktionary_ru_');
@@ -163,11 +163,13 @@ it('strips stress marks from ru display forms while keeping en forms verbatim', 
     ]])."\n");
     (new WiktionaryParser('ru', 'en', 100))->import($ruFile);
 
-    // The marks leave the stored display form: no stressed twin rows, the
-    // lookup keys were stripped all along.
+    // The marks leave the stored display words AND the headword (the ADR
+    // 0078 kaikki carve-out is reversed), which now also stores itself as
+    // the lemma form: no stressed twin rows, the lookup keys were stripped
+    // all along.
     $dom = Word::where('word', 'дом')->where('language_id', $languages['ru']->id)->firstOrFail();
-    expect($dom->forms->pluck('form')->sort()->values()->all())->toBe(['дома', 'доме'])
-        ->and($dom->forms->pluck('l_word')->sort()->values()->all())->toBe(['дома', 'доме']);
+    expect($dom->forms->pluck('form')->sort()->values()->all())->toBe(['дом', 'дома', 'доме'])
+        ->and($dom->forms->pluck('l_word')->sort()->values()->all())->toBe(['дом', 'дома', 'доме']);
     unlink($ruFile);
 
     $enFile = tempnam(sys_get_temp_dir(), 'wiktionary_en_');
@@ -176,8 +178,88 @@ it('strips stress marks from ru display forms while keeping en forms verbatim', 
     ]])."\n");
     (new WiktionaryParser('en', 'ru', 100))->import($enFile);
 
-    // Non-stress-mark languages keep their forms exactly as the dump has them.
+    // Non-stress-mark languages keep their words and forms exactly as the
+    // dump has them — plus the lemma form every word now carries.
     $kot = Word::where('word', 'кот')->where('language_id', $languages['en']->id)->firstOrFail();
-    expect($kot->forms->pluck('form')->all())->toBe(['cats']);
+    expect($kot->forms->pluck('form')->sort()->values()->all())->toBe(['cats', 'кот']);
     unlink($enFile);
+});
+
+it('stores a stressed ru headword plain while its definition keeps its marks', function () {
+    $languages = createLanguages();
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_ru_');
+    file_put_contents($tmpFile, json_encode([
+        'word' => 'свобо́дный',
+        'pos' => 'adjective',
+        'senses' => [['glosses' => ['свобо́дный человек — тот, кто не в неволе']]],
+    ])."\n");
+    (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+
+    $word = Word::where('l_word', 'свободный')->where('language_id', $languages['ru']->id)->firstOrFail();
+    expect($word->word)->toBe('свободный')
+        ->and($word->l_word)->toBe('свободный')
+        // Definition prose keeps its marks — only the headword string strips.
+        ->and($word->definitions->first()->definition)->toContain('свобо́дный')
+        // The stripped headword stores itself as the lemma form.
+        ->and($word->forms->pluck('form')->all())->toBe(['свободный']);
+
+    unlink($tmpFile);
+});
+
+it('maps raw kaikki pos through the shared alias map into canonical classes', function () {
+    $enLanguageId = createLanguages()['en']->id;
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_adj_');
+    file_put_contents($tmpFile, implode("\n", [
+        json_encode(['word' => 'quick', 'pos' => 'adj', 'senses' => [['glosses' => ['fast']]]]),
+        json_encode(['word' => 'slow', 'pos' => 'adjective', 'senses' => [['glosses' => ['not fast']]]]),
+    ])."\n");
+    (new WiktionaryParser('en', 'ru', 100))->import($tmpFile);
+
+    // 'adj' canonicalizes into the same class slug 'adjective' carries: one
+    // taxonomy, no parallel 'adj' class minted beside it.
+    expect(WordClass::where('language_id', $enLanguageId)->where('slug', 'adj')->exists())->toBeFalse()
+        ->and(Word::where('word', 'quick')->where('language_id', $enLanguageId)->firstOrFail()->wordClass->slug)->toBe('adjective');
+
+    unlink($tmpFile);
+});
+
+it('merges aliased pos lines of one word into a single row', function () {
+    $enLanguageId = createLanguages()['en']->id;
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_alias_');
+    file_put_contents($tmpFile, implode("\n", [
+        json_encode(['word' => 'quick', 'pos' => 'adj', 'senses' => [['glosses' => ['fast']]]]),
+        json_encode(['word' => 'quick', 'pos' => 'adjective', 'senses' => [['glosses' => ['lively']]]]),
+    ])."\n");
+    (new WiktionaryParser('en', 'ru', 100))->import($tmpFile);
+
+    // The aliased slugs land on one class, so the two lines merge into one
+    // word row carrying both senses.
+    $quick = Word::where('word', 'quick')->where('language_id', $enLanguageId)->firstOrFail();
+    expect(Word::where('word', 'quick')->where('language_id', $enLanguageId)->count())->toBe(1)
+        ->and($quick->wordClass->slug)->toBe('adjective')
+        ->and($quick->definitions->pluck('definition')->sort()->values()->all())->toBe(['fast', 'lively']);
+
+    unlink($tmpFile);
+});
+
+it('skips romanization-tagged forms and keeps the lemma form', function () {
+    $languages = createLanguages();
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_rom_');
+    file_put_contents($tmpFile, json_encode(['word' => 'четвереньках', 'pos' => 'noun', 'forms' => [
+        ['form' => 'četverénʹkax', 'tags' => ['romanization']],
+        ['form' => 'четвереньки', 'tags' => ['genitive']],
+    ]])."\n");
+    (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+
+    $word = Word::where('word', 'четвереньках')->where('language_id', $languages['ru']->id)->firstOrFail();
+    $forms = $word->forms->pluck('form')->all();
+    expect($forms)->toContain('четвереньках')
+        ->and($forms)->toContain('четвереньки')
+        ->and($forms)->not->toContain('četverénʹkax');
+
+    unlink($tmpFile);
 });

@@ -1,7 +1,7 @@
 # ADR 0078: GoldenDict imports store plain words, keep phrases out of translations, and never create target words
 
 Date: 2026-10-17
-Status: Accepted
+Status: Accepted (Decision 1 amended 2026-10-18 — see Addendum)
 
 Amends ADR 0059's multi-word handling on the GoldenDict import paths.
 
@@ -85,3 +85,21 @@ unified schema untouched:
   the reworked pipeline (kaikki en+ru with `--fresh`, cmudict, frequency,
   then both GoldenDict dictionaries) — see
   `wiki/playbooks/import-dictionary-data.md`.
+
+## Addendum (2026-10-18): the kaikki display-headword carve-out is reversed
+
+Decision 1 above deliberately kept the Wiktionary importer's stressed
+display headwords ("the kaikki `word` field for ru is the unstressed
+lemma") while stripping its inflected forms. That carve-out is **reversed**
+by the dictionary-word-purity spec: the purity rule is now "no stress
+marks in stored keys or display words" on **every** writer, so the kaikki
+import strips its ru/be/uk display headwords too — a stressed dump variant
+collapses into the same row as the plain word on that path as well.
+Definition and example prose keeps its marks; only headword and form
+strings strip. Two shared single sources back the rule on both importers:
+`App\Support\PosAliases` (the one pos alias table — raw kaikki slugs like
+`adj` canonicalize into `adjective` instead of minting a parallel
+taxonomy) and `App\Support\LemmaForms` (every imported word stores itself
+as its lemma form, plus the shared cap/strip/empty-guard/dedupe form-row
+hygiene). Latin `romanization`-tagged kaikki forms no longer land on
+Cyrillic words.

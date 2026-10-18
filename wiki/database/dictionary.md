@@ -5,8 +5,8 @@ description: One words table (+ satellites) keyed by language, per-language word
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2027-01-17
-generated: { by: agent:zcode, at: 2026-10-17T19:53:08+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T19:05:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T19:05:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -23,6 +23,12 @@ sources:
    - id: stress-marks
      resource: laravel/app/Support/StressMarks.php
      title: Shared Cyrillic stress-mark normalizer (ru/be/uk list + stripping)
+   - id: lemma-forms
+     resource: laravel/app/Support/LemmaForms.php
+     title: Shared lemma-form rule and form-row hygiene (cap/strip/empty-guard/dedupe)
+   - id: pos-aliases
+     resource: laravel/app/Support/PosAliases.php
+     title: Shared pos alias table (dictionary abbreviations + kaikki slugs → canonical class slugs)
 ---
 
 # Tables
@@ -32,7 +38,7 @@ sources:
 | `word_classes` | Parts of speech **per language** (`language_id`, `slug`, `title`, unique `(language_id, slug)`); seeded for en/ru |
 | `transcription_types` | Transcription kinds per language (ipa, enpr for English; МФА for Russian) |
 | `words` | A base-form word in one language: `language_id`, `word`, `l_word` (lowercase), `frequency` (rank: lower = more common, `numeric(12,2)`; 1,100,000 = unranked, `Word::FREQUENCY_UNRANKED` — see ADR 0041), `word_class_id`, raw Wiktionary `translations` JSON. Unique `(word, language_id, word_class_id)`; index `(l_word, word_class_id)` |
-| `forms` / `definitions` / `etymologies` / `examples` | Per-word satellites (unique `(form, word_id)` / `(example, word_id)`); `forms` carries `l_word` (indexed, `idx_forms_l_word`) and is the runtime link target for inflected tokens — the linker's forms pass in [Crossword](/domains/crossword.md) — and the source of the Word popup's base-word groups ([Interactive words](/domains/interactive-words.md), ADR 0045) |
+| `forms` / `definitions` / `etymologies` / `examples` | Per-word satellites (unique `(form, word_id)` / `(example, word_id)`); `forms` carries `l_word` (indexed, `idx_forms_l_word`) and is the runtime link target for inflected tokens — the linker's forms pass in [Crossword](/domains/crossword.md) — and the source of the Word popup's base-word groups ([Interactive words](/domains/interactive-words.md), ADR 0045). Every imported word also stores **itself** as its lemma form (shared `App\Support\LemmaForms` rule), so the forms table alone resolves lookups |
 | `transcriptions` | Written phonetic notations per word + `transcription_type_id` (ipa, enpr, …; unique triple) |
 | `pronunciations` | Audio files with pronunciation examples per word (`path` on the public disk, unique `(path, word_id)`); uploaded via the admin |
 | `tags` / `tagged_words` | The **words tag pool** (ADR [0076](../../docs/adr/0076-per-type-tag-pools.md)): language-neutral `slug`+`name` labels curated in the admin (`TagResource`, nav group Words, `words_count` usage column, edit/delete + bulk delete) and attached to words via `Word::tags()` (`withTimestamps`) through the pivot — renamed from the dormant `word_tags` (migration `2026_10_11_000001`, index `uk_tagged_words_pair`). Attached through the Words form's searchable tag multi-select with inline create; shown as a badge column and a multi-select table filter on the Words list. The works/entities/alignments pools copy this shape (`work_tags`/`tagged_works`, `entity_tags`/`tagged_entities`, `alignment_tags`/`tagged_alignments`) |
@@ -69,7 +75,11 @@ sources:
   continues the linking
   by hand: attach an existing word, or **Create word & link** for words
   missing from the target language.
-* The import auto-creates missing per-language lookups: an unseen dump
+* The import auto-creates missing per-language lookups: a dump `pos` first
+  canonicalizes through the shared `App\Support\PosAliases` alias table
+  (dictionary abbreviations and kaikki slugs → canonical class slugs —
+  "adj" joins "adjective" instead of minting a parallel taxonomy), then an
+  unseen dump
   `pos` becomes a `word_classes` row and an unseen sound type a
   `transcription_types` row, both with the slug as placeholder `title` —
   nothing is skipped for a missing lookup, so a new language needs no
@@ -77,12 +87,15 @@ sources:
 * `l_word` keys (words and forms) are lowercased **and stripped of
   combining marks** — Russian Wiktionary headwords carry stress marks
   (`свобо́дный`), and every matcher (the entity-word linker's exact pass,
-  `words:import-frequency`) compares against unstressed text. The display
-  `word` keeps its marks on the Wiktionary path (though the kaikki lemma
-  field is unstressed for ru); ru/be/uk inflected forms are stripped on
-  BOTH import paths, and the GoldenDict importer strips its headwords,
-  forms and staged candidates outright (ADR 0078) — so stressed variants
-  never sit beside their plain twins in the word-family views.
+  `words:import-frequency`) compares against unstressed text. Stored
+  display words are plain letters on BOTH import paths now (the ADR 0078
+  kaikki display carve-out is reversed, 2026-10-18): the kaikki importer
+  strips its ru/be/uk headwords and inflected forms, the GoldenDict
+  importer strips its headwords, forms and staged candidates outright — so
+  stressed variants never sit beside their plain twins in the word-family
+  views. Definition/example prose keeps its marks. Every imported word
+  stores itself as its lemma form (`App\Support\LemmaForms`), and a
+  headword/form that strips to the empty string stores nothing.
 * **Auto-fetched translations** (2026-09-29): when a popup word family has no
   translation link at all, `WordController::show` quietly queues
   `FetchWordTranslations` through the

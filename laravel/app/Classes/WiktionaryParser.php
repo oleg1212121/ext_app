@@ -10,6 +10,8 @@ use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\Word;
 use App\Models\WordClass;
+use App\Support\LemmaForms;
+use App\Support\PosAliases;
 use App\Support\StressMarks;
 use App\Support\WordLookupKey;
 use Illuminate\Support\Facades\DB;
@@ -27,8 +29,9 @@ class WiktionaryParser
 
     private int $languageId;
 
-    /** Display forms of this source language drop their stress marks (ru/be/uk). */
-    private bool $stripsFormMarks;
+    /** Display headwords and forms of this source language drop their
+     * stress marks (ru/be/uk). */
+    private bool $stripsDisplayMarks;
 
     private array $wordClassMap = [];
 
@@ -44,7 +47,7 @@ class WiktionaryParser
     public function __construct(string $lang, string|array $targetLang = 'ru', int $batchSize = 500)
     {
         $this->lang = $lang;
-        $this->stripsFormMarks = StressMarks::stripsFor($lang);
+        $this->stripsDisplayMarks = StressMarks::stripsFor($lang);
 
         $targets = is_string($targetLang) ? [$targetLang] : array_values($targetLang);
         if ($targets === []) {
@@ -186,10 +189,34 @@ class WiktionaryParser
             return null;
         }
 
-        $pos = $line->pos ?? 'unknown';
+        // ru/be/uk headwords store as plain letters: the combining stress
+        // acutes leave the stored display word too (the ADR 0078 kaikki
+        // carve-out is reversed — a stressed dump variant collapses into
+        // the same row as the plain word). Definition prose keeps its
+        // marks.
+        if ($this->stripsDisplayMarks) {
+            $word = StressMarks::strip($word);
+        }
+
+        // A headword that is nothing but combining marks (a marks-only dump
+        // artifact) strips to the empty string: store nothing.
+        if (trim($word) === '') {
+            return null;
+        }
+
+        // Raw kaikki pos slugs canonicalize through the shared alias table:
+        // 'adj' joins 'adjective' instead of minting a parallel taxonomy,
+        // and the aliased lines merge into one word row.
+        $rawPos = $line->pos ?? 'unknown';
+        $pos = PosAliases::canonical($rawPos) ?? $rawPos;
 
         $forms = [];
         foreach ($line->forms ?? [] as $form) {
+            // Latin transliterations ("četverénʹkax" on a ru word) are
+            // tagged romanization: junk for a script-keyed dictionary.
+            if (in_array('romanization', (array) ($form->tags ?? []), true)) {
+                continue;
+            }
             if (($form->form ?? null) !== null && trim($form->form) !== '') {
                 $forms[] = $form->form;
             }
@@ -378,21 +405,10 @@ class WiktionaryParser
             if ($wordId === null) {
                 continue;
             }
-            foreach ($record['forms'] as $form) {
-                $form = mb_substr($form, 0, 256);
-                // Wiktionary ru/be/uk inflected forms arrive stressed
-                // ("до́ма"): the marks leave the stored display form, so a
-                // stressed variant never sits beside its plain twin (ADR
-                // 0078); l_word was already stripped either way.
-                if ($this->stripsFormMarks) {
-                    $form = StressMarks::strip($form);
-                }
-                $rows[] = [
-                    'form' => $form,
-                    'l_word' => WordLookupKey::normalize($form),
-                    'word_id' => $wordId,
-                ];
-            }
+            // Every word stores itself as its lemma form first (the forms
+            // table alone must resolve lookups), then the dump's inflected
+            // forms: capped, stress-stripped, deduped — the shared helper.
+            array_push($rows, ...LemmaForms::rows($record['word'], $record['forms'], $wordId, $this->stripsDisplayMarks));
         }
         if (! empty($rows)) {
             $this->uniqueByCompound($rows, ['form', 'word_id']);

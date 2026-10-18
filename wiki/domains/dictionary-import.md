@@ -1,12 +1,12 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; GoldenDict imports store plain (stress-free) words, keep the phrase class to dictionary headwords, and link translations without creating target words (ADR 0078); multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059).
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; both importers store plain (stress-free) display words, share one pos alias table and one lemma-form rule, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059).
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T13:10:58+03:00 }
-verified: { by: agent:zcode, at: 2026-10-18T13:10:58+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T19:05:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T19:05:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -38,6 +38,12 @@ sources:
   - id: lookup-key
     resource: laravel/app/Support/WordLookupKey.php
     title: shared l_word normalization
+  - id: pos-aliases
+    resource: laravel/app/Support/PosAliases.php
+    title: shared pos alias table (dictionary abbreviations + kaikki slugs → canonical class slugs)
+  - id: lemma-forms
+    resource: laravel/app/Support/LemmaForms.php
+    title: shared lemma-form rule and form-row hygiene (cap/strip/empty-guard/dedupe)
   - id: reclass-cmd
     resource: laravel/app/Console/Commands/ReclassMultiwordWordsCommand.php
     title: words:reclass-multiword
@@ -68,10 +74,21 @@ mirrored per-language tables, and a single `word_translations` pivot —
   `compress.zlib://` wrapper. Staging targets can be a single target code or
   a list (`new WiktionaryParser($lang, ['ru', 'de'])`) — see
   [ADR 0029](../../docs/adr/0029-import-raw-dump-via-per-language-extraction.md).
-  For ru/be/uk the stored inflected **forms** drop their combining stress
-  acutes (the raw dump carries the stressed variants — "до́ма" for "дом" —
-  in the form lists); display headwords stay as the dump's lemma field
-  delivers them (unstressed for ru). See
+  For ru/be/uk the stored display **words and forms** drop their combining
+  stress acutes — the raw dump carries stressed variants ("до́ма" for
+  "дом") in both headword and form fields, and the ADR 0078
+  display-headword carve-out is reversed (2026-10-18 addendum): no stress
+  marks in stored keys or display words on any writer, definition/example
+  prose keeps its marks, and a headword that strips to the empty string
+  (a marks-only artifact) stores nothing. Raw `pos` slugs canonicalize
+  through the shared `App\Support\PosAliases` table before any word class
+  is minted ("adj" joins "adjective" — one taxonomy, aliased lines of one
+  word merge into a single row); `forms[]` entries tagged `romanization`
+  skip the import (Latin transliterations are junk on Cyrillic words); and
+  every imported word stores itself as its lemma form through the shared
+  `App\Support\LemmaForms` row builder (column cap, stress strip,
+  empty-after-strip guard, `(form, word_id)` dedupe, the word's own
+  headword first — the forms table alone resolves lookups). See
   [ADR 0078](../../docs/adr/0078-goldendict-plain-words-link-only-translations.md).
 * `App\Classes\RawWiktextractExtractor` — streams a **Raw dump** (the
   monolithic kaikki `raw-wiktextract-data` file, every Wiktionary language
@@ -141,10 +158,11 @@ mirrored per-language tables, and a single `word_translations` pivot —
   `App\Support\StressMarks` languages (ru/be/uk) the stored display
   `word`/`form` and every staged translation candidate are stripped of
   combining acutes at parse time, so a stressed dictionary variant
-  collapses into the same row as the plain word (the Wiktionary importer
-  keeps its display headwords — the kaikki lemma field is unstressed — but
-  strips its ru/be/uk inflected forms too); profile-selected forms strip
-  like the `alts`, and a headword or form that strips to the empty string
+  collapses into the same row as the plain word (the kaikki importer
+  strips its display headwords and inflected forms the same way — the ADR
+  0078 display-headword carve-out is reversed); profile-selected forms
+  strip like the `alts`, and a headword or form that strips to the empty
+  string
   (a marks-only converter artifact) stores nothing — the headword counts
   in `headwords_rejected`, a form is skipped; definition prose keeps its
   marks. The stats are new-only
@@ -174,8 +192,9 @@ mirrored per-language tables, and a single `word_translations` pivot —
   skip the IPA-marker gate
   (the profile author vouches for the nodes), profile-selected
   translation cells still pass the noise filters. The `pos` kind feeds the
-  word class: its matched texts run through `posSlugFor` (the POS
-  abbreviation dictionary, length guard raised to 24 so spelled-out labels
+  word class: its matched texts run through `posSlugFor` (the shared
+  `App\Support\PosAliases` table — the one alias dictionary both importers
+  read, same 24-char guard so spelled-out labels
   like "transitive verb" map) and the first mappable text overrides the
   heuristic pos hints for the article (still below the multi-word →
   `phrase` precedence), an unmappable text being a miss for the kind. The
@@ -266,11 +285,13 @@ Both importers write the same unified tables with the same conventions
 (batched `Word::upsert` on `(word, language_id, word_class_id)`, lookup
 auto-creation, text-dedupe definitions, heartbeats) and share the `l_word`
 normalization through `App\Support\WordLookupKey` (lowercase + combining-
-mark strip via `App\Support\StressMarks` — the GoldenDict importer strips
-its stored display forms for ru/be/uk too, and the Wiktionary importer
-strips its ru/be/uk inflected forms; only Wiktionary headwords keep
-stressed display, and the kaikki lemma field is unstressed anyway — ADR
-0078). The Wiktionary side reads kaikki
+mark strip via `App\Support\StressMarks`), the `App\Support\PosAliases`
+pos alias table (raw abbreviations and kaikki slugs canonicalize before
+any word class is minted) and the `App\Support\LemmaForms` lemma-form rule
+(every imported word carries itself as a form). Both store plain display
+words and forms for the ru/be/uk stress-mark languages — the ADR 0078
+kaikki display-headword carve-out is reversed (2026-10-18 addendum); only
+definition/example prose keeps its marks. The Wiktionary side reads kaikki
 JSONL with structured fields
 (`pos`, `senses`, `sounds`, `translations`); the GoldenDict side extracts
 everything heuristically from article HTML and tunes per dictionary with
@@ -302,9 +323,13 @@ words (`--no-link` to opt out) — it never creates target rows.
 # Lookup auto-creation
 
 The parser never dead-ends on missing per-language lookups and never drops
-data because of them: a dump `pos` with no matching **word class** (or a
-sound type with no matching **transcription type**) is auto-created with the
-slug as a placeholder `title`, and the word imports under it (the former
+data because of them: a dump `pos` first canonicalizes through the shared
+`App\Support\PosAliases` alias table (dictionary abbreviations, Cyrillic
+labels and kaikki slugs → canonical class slugs — "adj" never mints a
+parallel class beside "adjective"), and a pos with no matching **word
+class** after that (or a sound type with no matching **transcription
+type**) is auto-created with the slug as a placeholder `title`, and the
+word imports under it (the former
 `words_skipped_pos` skip is gone). A fresh language therefore needs no
 seeders — `INSERT` the language row, run the import, then curate the
 placeholder titles in `/admin`. Import stats report the created lookups

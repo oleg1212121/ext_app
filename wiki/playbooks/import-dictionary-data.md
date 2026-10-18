@@ -5,8 +5,8 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T13:13:07+03:00 }
-verified: { by: agent:zcode, at: 2026-10-18T13:13:07+03:00 }
+generated: { by: agent:zcode, at: 2026-10-18T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T19:20:00+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -111,10 +111,15 @@ Two source shapes exist:
    docker exec ext_app_laravel php artisan wiktionary:import storage/app/<file>.jsonl --lang=en --target-lang=ru
    ```
 
-   Missing per-language lookups are **auto-created** (unseen dump `pos` →
-   word class, unseen sound type → transcription type, slug as placeholder
+   Missing per-language lookups are **auto-created** (the dump `pos` first
+   canonicalizes through the shared `App\Support\PosAliases` alias table —
+   "adj" imports as "adjective" — then an unseen slug → word class, an
+   unseen sound type → transcription type, slug as placeholder
    title) — nothing is skipped, and a brand-new language needs no seeders;
-   curate the placeholder titles in `/admin` afterwards.
+   curate the placeholder titles in `/admin` afterwards. Every imported
+   word stores itself as its lemma form (`App\Support\LemmaForms`), and
+   `romanization`-tagged forms and stressed ru/be/uk headwords never
+   store.
 4. Link words across languages through the staged translations:
 
    ```bash
@@ -229,8 +234,12 @@ do not redistribute the extracted data.
 ### Clean rebuild after import-rule changes (ADR 0078)
 
 When the import rules change in a way old data violates (stressed display
-twins, translation-created bare stubs, junk `phrase` rows), the fix is a
-wipe + re-import, not an in-place patch. Import order matters — base
+twins — including the kaikki ru/be/uk headwords since the 2026-10-18
+carve-out reversal, `adj`/`adjective` alias twins, romanization-tagged
+forms, missing lemma forms, translation-created bare stubs, junk `phrase`
+rows), the fix is a wipe + re-import, not an in-place patch — unless a
+dedicated normalize/demote command covers the residual (see the
+dictionary-word-purity tickets). Import order matters — base
 dictionaries before the bilingual runs, or the first bilingual run links
 almost nothing:
 
@@ -251,9 +260,12 @@ almost nothing:
    grows the target language.
 4. Re-run the entity linking pass (`crossword:link` per the `--fresh`
    note above) — the wipe reset `entity_words.word_id`.
-5. Verify: no U+0301 in stored ru `words.word`/`forms.form`, no
-   translation-created bare ru stubs, `phrase` rows only under dictionary
-   headwords.
+5. Verify: no U+0301 in stored ru `words.word`/`forms.form` (headwords
+   included — the kaikki path strips them now too), no Latin
+   romanization-tagged forms on ru words, every imported word carries
+   itself among its forms (lemma form), no `adj` word class beside
+   `adjective`, no translation-created bare ru stubs, `phrase` rows only
+   under dictionary headwords.
 
 ### Extraction profiles (--profile=<slug>)
 

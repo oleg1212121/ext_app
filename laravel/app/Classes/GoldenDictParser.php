@@ -10,6 +10,8 @@ use App\Models\TranscriptionType;
 use App\Models\Word;
 use App\Models\WordClass;
 use App\Models\WordTranslation;
+use App\Support\LemmaForms;
+use App\Support\PosAliases;
 use App\Support\StressMarks;
 use App\Support\WordLookupKey;
 use Illuminate\Support\Facades\DB;
@@ -72,23 +74,6 @@ class GoldenDictParser
         'p', 'div', 'li', 'td', 'th', 'tr', 'table', 'thead', 'tbody', 'tfoot',
         'ul', 'ol', 'dl', 'dd', 'dt', 'section', 'article', 'header', 'footer',
         'blockquote', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'body',
-    ];
-
-    /** POS abbreviations dictionary articles use, mapped to class slugs. */
-    private const POS_BY_ABBREVIATION = [
-        'n' => 'noun', 'noun' => 'noun', 'сущ' => 'noun',
-        'v' => 'verb', 'vb' => 'verb', 'verb' => 'verb', 'гл' => 'verb',
-        'transitive verb' => 'verb', 'intransitive verb' => 'verb',
-        'modal verb' => 'verb', 'auxiliary verb' => 'verb',
-        'adj' => 'adjective', 'adjective' => 'adjective', 'прил' => 'adjective',
-        'adv' => 'adverb', 'adverb' => 'adverb', 'нареч' => 'adverb',
-        'prep' => 'preposition', 'preposition' => 'preposition', 'предл' => 'preposition',
-        'conj' => 'conjunction', 'conjunction' => 'conjunction', 'союз' => 'conjunction',
-        'pron' => 'pronoun', 'pronoun' => 'pronoun', 'мест' => 'pronoun',
-        'num' => 'numeral', 'numeral' => 'numeral', 'числ' => 'numeral',
-        'interj' => 'interjection', 'int' => 'interjection', 'interjection' => 'interjection', 'межд' => 'interjection',
-        'part' => 'particle', 'particle' => 'particle', 'част' => 'particle',
-        'art' => 'article', 'article' => 'article',
     ];
 
     /** One char from this set marks a delimited run as IPA, not prose. */
@@ -782,15 +767,9 @@ class GoldenDictParser
 
     private function posSlugFor(string $text): ?string
     {
-        $normalized = mb_strtolower(trim($text));
-        $normalized = trim($normalized, '.,;:()[]{}');
-        // 24 covers spelled-out labels like "transitive verb" (Oxford's
-        // partOfSpeech divs), not sentence text.
-        if ($normalized === '' || mb_strlen($normalized) > 24) {
-            return null;
-        }
-
-        return self::POS_BY_ABBREVIATION[$normalized] ?? null;
+        // The shared alias table (GoldenDict + kaikki one source): lowercases,
+        // trims label punctuation, applies the 24-char spelled-out-label guard.
+        return PosAliases::canonical($text);
     }
 
     /**
@@ -1398,21 +1377,15 @@ class GoldenDictParser
     {
         $rows = [];
         foreach ($batch as $record) {
-            if ($record['forms'] === []) {
-                continue;
-            }
             $wordId = $this->lookupWordId($record, $wordIds);
             if ($wordId === null) {
                 continue;
             }
-            foreach ($record['forms'] as $form) {
-                $form = mb_substr($form, 0, self::FORM_CAP);
-                $rows[] = [
-                    'form' => $form,
-                    'l_word' => WordLookupKey::normalize($form),
-                    'word_id' => $wordId,
-                ];
-            }
+            // Every word stores itself as its lemma form first (the forms
+            // table alone must resolve lookups), then the alts and
+            // profile-extracted forms — capped, deduped, the shared helper;
+            // the display strings arrive stress-stripped from parseEntry.
+            $rows = array_merge($rows, LemmaForms::rows($record['word'], $record['forms'], $wordId, false));
         }
         if ($rows !== []) {
             $this->uniqueByCompound($rows, ['form', 'word_id']);

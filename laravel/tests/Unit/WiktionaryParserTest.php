@@ -43,14 +43,54 @@ it('handles missing pos with unknown default', function () {
     expect($result['pos'])->toBe('unknown');
 });
 
-it('strips combining stress marks from the lookup key', function () {
+it('strips stress marks from the ru display word and the lookup key', function () {
     $parser = new WiktionaryParser('ru', 'en');
     $line = json_decode('{"word":"свобо́дный","pos":"adjective","senses":[{"glosses":["free"]}]}');
 
     $result = $parser->parseLine($line);
 
-    expect($result['word'])->toBe('свобо́дный');
+    expect($result['word'])->toBe('свободный');
     expect($result['l_word'])->toBe('свободный');
+});
+
+it('keeps non-stress-mark display words verbatim', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"café","pos":"noun"}');
+
+    $result = $parser->parseLine($line);
+
+    // Diacritics are legitimate spelling outside the stress-mark languages.
+    expect($result['word'])->toBe('café');
+});
+
+it('rejects a ru headword that strips to nothing', function () {
+    $parser = new WiktionaryParser('ru', 'en');
+    $line = json_decode('{"word":"'."\u{0301}".'","pos":"noun"}');
+
+    expect($parser->parseLine($line))->toBeNull();
+});
+
+it('maps the raw kaikki pos through the shared alias table', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $adj = $parser->parseLine(json_decode('{"word":"quick","pos":"adj"}'));
+
+    expect($adj['pos'])->toBe('adjective');
+    expect($parser->parseLine(json_decode('{"word":"murky","pos":"unknown"}'))['pos'])->toBe('unknown');
+    expect($parser->parseLine(json_decode('{"word":"quox","pos":"unsupported_pos"}'))['pos'])->toBe('unsupported_pos');
+});
+
+it('skips romanization-tagged forms', function () {
+    $parser = new WiktionaryParser('ru', 'en');
+    $line = json_decode('{"word":"четвереньках","pos":"noun","forms":['
+        .'{"form":"četverénʹkax","tags":["romanization"]},'
+        .'{"form":"четвереньки","tags":["genitive"]},'
+        .'{"form":"доме"}]}');
+
+    $result = $parser->parseLine($line);
+
+    // The Latin transliteration never lands; other-tagged and untagged
+    // forms pass through untouched.
+    expect($result['forms'])->toBe(['четвереньки', 'доме']);
 });
 
 it('merges records for same word and pos', function () {

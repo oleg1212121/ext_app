@@ -75,12 +75,13 @@ it('imports the fixture into a brand-new language with auto-created lookups', fu
     expect($cat->transcriptions->first()->transcription)->toBe('kæt');
     expect($cat->transcriptions->first()->transcriptionType->slug)->toBe('ipa');
 
-    // Slash IPA, several sense segments, and the alternate headword as a form.
+    // Slash IPA, several sense segments, and the alternate headword as a
+    // form beside the word's own lemma form.
     $hello = Word::query()->where('language_id', $be->id)->where('word', 'hello')->first();
     expect($hello->wordClass->slug)->toBe('interjection');
     expect($hello->definitions->count())->toBe(3);
     expect($hello->transcriptions->first()->transcription)->toBe('həˈləʊ');
-    expect(Form::query()->where('word_id', $hello->id)->pluck('form')->all())->toBe(['hi']);
+    expect(Form::query()->where('word_id', $hello->id)->pluck('form')->all())->toBe(['hello', 'hi']);
 
     // Multi-word headwords go to the phrase class despite the POS hint (ADR 0059).
     $giveUp = Word::query()->where('language_id', $be->id)->where('word', 'give up')->first();
@@ -137,7 +138,8 @@ it('is idempotent on re-runs and keeps curated frequency ranks', function () {
     expect(Word::count())->toBe(6);
     expect(Definition::count())->toBe(7);
     expect(Transcription::count())->toBe(2);
-    expect(Form::count())->toBe(1);
+    // Every word's lemma form (6) + the one alt form.
+    expect(Form::count())->toBe(7);
 
     // A frequency rank curated after the first import survives a re-import:
     // the upsert refreshes l_word only, never the sentinel onto ranked words.
@@ -965,7 +967,7 @@ it('stores ru headwords and forms as plain letters and collapses stressed varian
         ->and($privet->l_word)->toBe('привет')
         ->and($privet->definitions->pluck('definition')->all())->toBe(['greeting one', 'greeting two']);
 
-    expect(Form::query()->where('word_id', $privet->id)->pluck('form')->all())->toBe(['приветик']);
+    expect(Form::query()->where('word_id', $privet->id)->pluck('form')->all())->toBe(['привет', 'приветик']);
 });
 
 it('extracts forms from the profile forms selector and merges them with the alts', function () {
@@ -977,14 +979,15 @@ it('extracts forms from the profile forms selector and merges them with the alts
         '--profile' => 'test-forms',
     ])->assertSuccessful();
 
-    // The fms span splits on commas/semicolons/slashes into five forms.
+    // The fms span splits on commas/semicolons/slashes into five forms,
+    // beside each word's own lemma form.
     $be = Word::query()->where('word', 'be')->firstOrFail();
-    expect($be->forms->pluck('form')->all())->toBe(['am', 'is', 'are', 'was', 'were'])
+    expect($be->forms->pluck('form')->all())->toBe(['be', 'am', 'is', 'are', 'was', 'were'])
         ->and($be->definitions->pluck('definition')->all())->toBe(['to exist']);
 
     // The alts merge with the selector's forms instead of being replaced.
     $run = Word::query()->where('word', 'run')->firstOrFail();
-    expect($run->forms->pluck('form')->all())->toBe(['running', 'runs', 'ran']);
+    expect($run->forms->pluck('form')->all())->toBe(['run', 'running', 'runs', 'ran']);
 });
 
 /*
@@ -1014,7 +1017,7 @@ it('stress-strips the profile-extracted forms of a stress-mark source', function
     // and the marks-only selector piece (a bare combining acute) stores
     // nothing rather than an empty form.
     $house = Word::query()->where('language_id', $ru->id)->where('word', 'дом')->firstOrFail();
-    expect($house->forms->pluck('form')->all())->toBe(['домище', 'дома', 'домов'])
+    expect($house->forms->pluck('form')->all())->toBe(['дом', 'домище', 'дома', 'домов'])
         ->and(Form::query()->where('form', '')->count())->toBe(0);
 });
 
@@ -1070,5 +1073,5 @@ it('skips and counts a headword or alt that strips to the empty string', functio
         ->and(Form::query()->where('l_word', '')->count())->toBe(0);
 
     $house = Word::query()->where('language_id', $ru->id)->where('word', 'дом')->firstOrFail();
-    expect($house->forms->pluck('form')->all())->toBe(['домище']);
+    expect($house->forms->pluck('form')->all())->toBe(['дом', 'домище']);
 });

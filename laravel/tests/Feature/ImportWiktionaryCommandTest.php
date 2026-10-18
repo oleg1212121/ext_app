@@ -141,7 +141,8 @@ it('is idempotent on re-runs — definitions are not duplicated', function () {
     expect(Word::query()->where('language_id', $enLanguageId)->count())->toBe(2)
         ->and(Definition::query()->count())->toBe(4) // cat: 3 merged senses; dog: 1
         ->and(Etymology::query()->count())->toBe(2)
-        ->and(Form::query()->count())->toBe(1)
+        // cat: lemma + cats; dog: its lemma form — every word carries itself.
+        ->and(Form::query()->count())->toBe(3)
         ->and(Transcription::query()->count())->toBe(1);
 
     // The dedupe key is (word_id, lower(definition)) — no pair may repeat.
