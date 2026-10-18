@@ -986,3 +986,89 @@ it('extracts forms from the profile forms selector and merges them with the alts
     $run = Word::query()->where('word', 'run')->firstOrFail();
     expect($run->forms->pluck('form')->all())->toBe(['running', 'runs', 'ran']);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Correctness fixes: profile-forms strip, source-side segment strip,
+| empty-after-strip guards
+|--------------------------------------------------------------------------
+*/
+
+function goldendictProfileStressFormsFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-profile-stress-forms.jsonl';
+}
+
+it('stress-strips the profile-extracted forms of a stress-mark source', function () {
+    createLanguages(['ru']);
+    $ru = Language::query()->where('code', 'ru')->first();
+
+    test()->artisan('goldendict:import', [
+        'file' => goldendictProfileStressFormsFixturePath(),
+        '--lang' => 'ru',
+        '--profile' => 'test-forms',
+    ])->assertSuccessful();
+
+    // The alt and the selector's forms store as plain letters: the merge
+    // must not append the selector's forms raw beside the stripped alts,
+    // and the marks-only selector piece (a bare combining acute) stores
+    // nothing rather than an empty form.
+    $house = Word::query()->where('language_id', $ru->id)->where('word', 'дом')->firstOrFail();
+    expect($house->forms->pluck('form')->all())->toBe(['домище', 'дома', 'домов'])
+        ->and(Form::query()->where('form', '')->count())->toBe(0);
+});
+
+function goldendictSourceEchoFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-source-echo.jsonl';
+}
+
+it('removes a leading stressed headword echo with no profile (source-side segment strip)', function () {
+    createLanguages(['ru', 'en']);
+    $en = Language::query()->where('code', 'en')->first();
+
+    test()->artisan('goldendict:import', [
+        'file' => goldendictSourceEchoFixturePath(),
+        '--lang' => 'ru',
+        '--target-lang' => 'en',
+    ])->assertSuccessful();
+
+    // The article opens with its own stressed headword ("до́м n. house"):
+    // the segment strips first (the SOURCE is a stress-mark language), so
+    // the echo matches the already-stripped headword and the glued
+    // equivalent "house" is not lost to the mixed-script guard — while the
+    // plain echo article ("коза n. goat") behaves as before.
+    $home = Word::query()->where('word', 'дом')->firstOrFail();
+    $goat = Word::query()->where('word', 'коза')->firstOrFail();
+    expect($home->translations)->toBe(['house'])
+        ->and($goat->translations)->toBe(['goat'])
+        // Link-only: the empty en dictionary gains no rows or links.
+        ->and(Word::query()->where('language_id', $en->id)->count())->toBe(0)
+        ->and(WordTranslation::count())->toBe(0);
+});
+
+function goldendictEmptyStripFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-empty-strip.jsonl';
+}
+
+it('skips and counts a headword or alt that strips to the empty string', function () {
+    createLanguages(['ru']);
+    $ru = Language::query()->where('code', 'ru')->first();
+
+    $stats = (new GoldenDictParser('ru'))
+        ->import(goldendictEmptyStripFixturePath());
+
+    // The marks-only record (a bare combining acute as the headword) is
+    // rejected junk, counted before the article parses; the house record
+    // imports with its marks-only alt skipped, never stored as ''.
+    expect($stats['headwords_rejected'])->toBe(1)
+        ->and($stats['words_imported'])->toBe(1)
+        ->and(Word::query()->where('word', '')->count())->toBe(0)
+        ->and(Word::query()->where('l_word', '')->count())->toBe(0)
+        ->and(Form::query()->where('form', '')->count())->toBe(0)
+        ->and(Form::query()->where('l_word', '')->count())->toBe(0);
+
+    $house = Word::query()->where('language_id', $ru->id)->where('word', 'дом')->firstOrFail();
+    expect($house->forms->pluck('form')->all())->toBe(['домище']);
+});

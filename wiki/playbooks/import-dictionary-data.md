@@ -4,9 +4,9 @@ title: Importing Dictionary Data
 description: How to import Kaikki/Wiktionary dumps and GoldenDict-format dictionaries into the unified language-keyed dictionary tables and link translations.
 tags: [dictionary, import, wiktionary, kaikki, goldendict]
 status: stable
-stale_after: 2027-01-17
-generated: { by: agent:zcode, at: 2026-10-17T19:53:08+03:00 }
-verified: { by: agent:zcode, at: 2026-10-17T19:53:08+03:00 }
+stale_after: 2027-01-18
+generated: { by: agent:zcode, at: 2026-10-18T13:13:07+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T13:13:07+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php

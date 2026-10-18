@@ -122,8 +122,11 @@ class GoldenDictParser
 
     private ?int $targetLanguageId = null;
 
-    /** Staged translation candidates of this target language drop their stress marks. */
-    private bool $stripsCandidateMarks = false;
+    /** Article segments strip their stress marks when either side of the
+     * pair is a stress-mark language: the target's candidates store as
+     * plain letters, and a source-language headword echo only matches the
+     * already-stripped headword when the segment is stripped too. */
+    private bool $stripsSegmentMarks = false;
 
     private int $batchSize;
 
@@ -131,7 +134,7 @@ class GoldenDictParser
 
     /**
      * Active extraction profile: ['slug' => string] plus an XPath selector
-     * list per key (transcriptions/translations/definitions/pos/strip),
+     * list per key (transcriptions/translations/definitions/forms/pos/strip),
      * pre-validated by the command. Null = the generic heuristics alone.
      */
     private ?array $profile;
@@ -196,7 +199,7 @@ class GoldenDictParser
             }
 
             $this->targetLanguageId = $target->id;
-            $this->stripsCandidateMarks = StressMarks::stripsFor($targetLang);
+            $this->stripsSegmentMarks = $this->stripsHeadwordMarks || StressMarks::stripsFor($targetLang);
         }
 
         $this->batchSize = max(1, $batchSize);
@@ -205,7 +208,7 @@ class GoldenDictParser
     }
 
     /**
-     * @return array{entries_read: int, entries_skipped: int, words_imported: int, definitions_imported: int, transcriptions_imported: int, forms_imported: int, lookups_created: int, batches_flushed: int, translation_candidates: int, target_words_created: int, translations_linked: int, profile_no_match_articles: int}
+     * @return array{entries_read: int, entries_skipped: int, headwords_rejected: int, words_imported: int, definitions_imported: int, transcriptions_imported: int, forms_imported: int, lookups_created: int, batches_flushed: int, translation_candidates: int, translation_targets_unmatched: int, translations_linked: int, profile_no_match_articles: int}
      */
     public function import(string $path, ?OutputInterface $output = null, ?int $maxEntries = null): array
     {
@@ -326,7 +329,8 @@ class GoldenDictParser
     /**
      * @return array{word: string, l_word: string, pos: string, definitions: list<string>, transcriptions: list<string>, forms: list<string>, translations: list<string>}|null
      *                                                                                                                                                                         null when the headword is rejected junk (a multi-word headword
-     *                                                                                                                                                                         that is not a dictionary phrase)
+     *                                                                                                                                                                         that is not a dictionary phrase, or one that strips to the
+     *                                                                                                                                                                         empty string)
      */
     public function parseEntry(object $entry): ?array
     {
@@ -337,6 +341,12 @@ class GoldenDictParser
         // collapses into the same row as the plain word.
         if ($this->stripsHeadwordMarks) {
             $word = StressMarks::strip($word);
+        }
+
+        // A headword that is nothing but combining marks (a marks-only
+        // converter artifact) strips to the empty string: store nothing.
+        if ($word === '') {
+            return null;
         }
 
         // A multi-word headword must still look like a dictionary phrase:
@@ -350,7 +360,13 @@ class GoldenDictParser
         foreach ($entry->alts ?? [] as $alt) {
             if (is_string($alt) && trim($alt) !== '') {
                 $form = trim($alt);
-                $forms[] = $this->stripsHeadwordMarks ? StressMarks::strip($form) : $form;
+                if ($this->stripsHeadwordMarks) {
+                    $form = StressMarks::strip($form);
+                }
+                // Stripping can empty a marks-only alt: store nothing.
+                if ($form !== '') {
+                    $forms[] = $form;
+                }
             }
         }
 
@@ -424,11 +440,12 @@ class GoldenDictParser
      * usable-candidate rule (the FetchWordTranslations mirror: no sentence
      * punctuation, at most 256 chars, no mixed Latin+Cyrillic — glued example
      * sentences — and at most 4 tokens, so clause-sized pieces never pass
-     * while phrases stay). For ru/be/uk targets the segment loses its stress
-     * marks first: the candidates store as plain letters, and the leading
-     * headword echo ("маши́ны I, глагол") matches the already-stripped
-     * headword. A generic heuristic — per-dictionary extraction profiles
-     * tune it later.
+     * while phrases stay). When either side of the pair is a ru/be/uk
+     * stress-mark language the segment loses its stress marks first: the
+     * candidates store as plain letters, and a leading headword echo —
+     * stressed ("до́м n. house") or not ("маши́ны I, глагол") — matches the
+     * already-stripped headword. A generic heuristic — per-dictionary
+     * extraction profiles tune it later.
      *
      * @param  list<string>  $segments
      * @return list<string>
@@ -437,7 +454,7 @@ class GoldenDictParser
     {
         $candidates = [];
         foreach ($segments as $segment) {
-            $text = $this->stripsCandidateMarks ? StressMarks::strip($segment) : $segment;
+            $text = $this->stripsSegmentMarks ? StressMarks::strip($segment) : $segment;
             $text = $this->stripDelimitedRuns($text);
             $text = $this->stripGrammarTokens($text);
             $text = $this->stripLeadingHeadword($text, $headword);
@@ -908,8 +925,9 @@ class GoldenDictParser
     /**
      * Profile-selected form texts: each node text splits on commas,
      * semicolons and slashes into individual forms ("am, is, are / was"),
-     * trimmed, deduped, capped — parseEntry merges them with the entry's
-     * alts.
+     * trimmed, stress-stripped for the ru/be/uk sources like the entry's
+     * alts (a piece that strips to the empty string is dropped), deduped,
+     * capped — parseEntry merges them with the alts.
      *
      * @param  list<string>  $texts
      * @return list<string>
@@ -920,6 +938,9 @@ class GoldenDictParser
         foreach ($texts as $text) {
             foreach (preg_split('/[,;\/]/u', $text) ?: [] as $piece) {
                 $piece = trim($piece);
+                if ($this->stripsHeadwordMarks) {
+                    $piece = StressMarks::strip($piece);
+                }
                 if ($piece !== '') {
                     $values[] = mb_substr($piece, 0, self::FORM_CAP);
                 }
@@ -994,9 +1015,10 @@ class GoldenDictParser
             ->pluck('id', 'slug')
             ->toArray();
 
-        // Preloaded like the source-side maps, so the dry run hands out real
-        // ids for existing target classes (the existence checks key on them)
-        // and lookups_created only counts classes that are genuinely missing.
+        // Preloaded like the source-side maps: the ids only steer the
+        // resolution preference (an existing target row matching the
+        // candidate's expected class wins over the lowest id) — nothing
+        // target-side is ever created, so lookups_created stays source-only.
         if ($this->targetLanguageId !== null) {
             $this->targetWordClassMap = WordClass::query()
                 ->where('language_id', $this->targetLanguageId)
@@ -1062,7 +1084,7 @@ class GoldenDictParser
      *
      * @return array<string, int> resolved target-word ids keyed by l_word
      */
-    private function flushTargetWords(array $batch): array
+    private function resolveBatchTargetIds(array $batch): array
     {
         $wanted = [];
         foreach ($batch as $record) {
@@ -1127,7 +1149,7 @@ class GoldenDictParser
 
             if ($this->targetLanguageId !== null) {
                 $this->flushTranslationStaging($batch, $wordIds);
-                $targetIds = $this->flushTargetWords($batch);
+                $targetIds = $this->resolveBatchTargetIds($batch);
                 $this->flushTranslationLinks($batch, $wordIds, $targetIds);
             }
         });
@@ -1235,10 +1257,9 @@ class GoldenDictParser
     }
 
     /**
-     * Which of the given normalized keys the target language already carries
-     * — the l_word-based existence knowledge behind the new-only
-     * target_words_created counting, shared by the dry-run tally and the
-     * real flush's pre-insert split. Any class counts: "маши́ны" normalizes
+     * Which of the given normalized keys the target language already
+     * carries — the existence check behind the dry-run tally's
+     * linked-vs-unmatched split. Any class counts: "маши́ны" normalizes
      * to the same l_word as an existing unstressed "машины".
      *
      * @param  list<string>  $normals
@@ -1264,7 +1285,7 @@ class GoldenDictParser
      * Canonical word_translations links (word_a_id < word_b_id, ADR 0020)
      * via one batched upsert per flush — no per-row link() calls in the hot
      * loop (the LinkTranslationsCommand convention). Target ids come
-     * resolved by l_word from flushTargetWords: candidates sharing an
+     * resolved by l_word from resolveBatchTargetIds: candidates sharing an
      * l_word pair against the same reused row; candidates whose l_word the
      * target language does not carry stay staged only and count as
      * unmatched.

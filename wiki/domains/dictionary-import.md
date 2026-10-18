@@ -4,9 +4,9 @@ title: Dictionary Import
 description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; GoldenDict imports store plain (stress-free) words, keep the phrase class to dictionary headwords, and link translations without creating target words (ADR 0078); multi-word headwords are shape-curated so junk verb rows never reach the multi-word-verb lexicon (ADR 0059).
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs]
 status: stable
-stale_after: 2027-01-17
-generated: { by: agent:zcode, at: 2026-10-17T19:53:08+03:00 }
-verified: { by: agent:zcode, at: 2026-10-17T19:53:08+03:00 }
+stale_after: 2027-01-18
+generated: { by: agent:zcode, at: 2026-10-18T13:10:58+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T13:10:58+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -143,7 +143,10 @@ mirrored per-language tables, and a single `word_translations` pivot —
   combining acutes at parse time, so a stressed dictionary variant
   collapses into the same row as the plain word (the Wiktionary importer
   keeps its display headwords — the kaikki lemma field is unstressed — but
-  strips its ru/be/uk inflected forms too); definition prose keeps its
+  strips its ru/be/uk inflected forms too); profile-selected forms strip
+  like the `alts`, and a headword or form that strips to the empty string
+  (a marks-only converter artifact) stores nothing — the headword counts
+  in `headwords_rejected`, a form is skipped; definition prose keeps its
   marks. The stats are new-only
   where writes are: `translations_linked` counts genuinely new pairs
   (diffed against the DB), so an idempotent re-run reports zeros, while
@@ -182,8 +185,9 @@ mirrored per-language tables, and a single `word_translations` pivot —
   selector's matches — and a strip match never counts as a profile match
   (or miss). The `forms` kind (ADR 0078) treats its matched node texts as
   inflected-form lists: each node text splits on commas/semicolons/slashes
-  into individual forms that **merge** with the entry's `alts` (never
-  replace them) in the forms table. Articles where NO
+  into individual forms, stress-stripped for the ru/be/uk sources exactly
+  like the entry's `alts` (an empty-after-strip piece is dropped), that
+  **merge** with the `alts` (never replace them) in the forms table. Articles where NO
   selector matched are counted ("Profile no-match articles" stat row) and
   sampled (capped at 5) into one log notice so profile authors see what
   they are missing; an unknown slug fails with the known list, unknown
@@ -229,10 +233,11 @@ mirrored per-language tables, and a single `word_translations` pivot —
   4 whitespace-separated tokens (clause-sized pieces are sentences;
   4-token phrases stay), and not the
   article's own headword compared through the `WordLookupKey`
-  normalization, so "Katze, cat" never links cat to itself; for ru/be/uk
-  targets the segment loses its stress marks first, so candidates stage
-  and match as plain letters and the leading headword echo strips
-  cleanly). The importer **never creates target-language rows**: the
+  normalization, so "Katze, cat" never links cat to itself; when either
+  side of the pair is a ru/be/uk stress-mark language the segment loses
+  its stress marks first, so candidates stage and match as plain letters
+  and the leading headword echo — stressed ("до́м n. house") or not —
+  strips cleanly). The importer **never creates target-language rows**: the
   target language's word list belongs to its own imports (kaikki,
   frequency lists, cmudict). Every candidate resolves **by `l_word`**
   against the target language's existing rows (a candidate whose

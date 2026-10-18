@@ -1,5 +1,42 @@
 # Directory Update Log
 
+## 2026-10-18 (goldendict parser correctness fixes: profile-forms strip, source-or-target segment gate, empty-after-strip guards — dictionary-word-purity ticket 01)
+
+Review follow-ups on the ADR 0078 rework (below): the parser's
+stress-strip rule had gaps where extracted text bypassed it, found by the
+dictionary-word-purity review (`laravel/app/Classes/GoldenDictParser.php`):
+
+- **Profile-extracted forms now stress-strip** like the entry's `alts`:
+  the forms-selector merge appended its comma/semicolon/slash pieces raw,
+  so a ru source article with a forms selector ("дома́, до́мов") stored
+  stressed form twins beside the stripped alts. A form that strips to the
+  empty string (a marks-only piece) is skipped, never stored as `''` —
+  same guard as a headword that is nothing but combining acutes, which is
+  now rejected and counted in `headwords_rejected` instead of importing
+  an empty `words`/`forms` row.
+- **The candidate segment strip is gated on source OR target**: it keyed
+  on the target language only, so in an unprofiled ru→X article the
+  leading stressed headword echo ("до́м n. house") never matched the
+  already-stripped headword — the glued piece then died in the
+  mixed-script guard and the real equivalent ("house") was lost with it.
+  `stripsCandidateMarks` became `stripsSegmentMarks`.
+- Comment-level truth: `import()`'s return docblock lists the real 13
+  stats (`target_words_created` was still declared;
+  `headwords_rejected`/`translation_targets_unmatched` were missing), the
+  `$profile` property docblock lists the `forms` key, the
+  `loadLookupMaps`/`existingTargetWordLWords` docblocks no longer describe
+  the removed `target_words_created` counting, and `flushTargetWords` —
+  which only resolves ids since the link-only rework — is renamed
+  `resolveBatchTargetIds`.
+
+Wiki: `domains/dictionary-import.md` documents the either-side segment
+gate, the profile-forms strip and the empty-after-strip guards; ADR 0078's
+decision statements already cover the intent (plain stored forms,
+link-only), no ADR change. Tests: 3 new fixtures/cases in
+`ImportGoldenDictCommandTest.php` (profile-forms strip, stressed echo,
+marks-only headword/alt); full `--filter=ImportGoldenDict` suite 37 passed
+(255 assertions), `pint --dirty` clean, `wiki:validate` 0 warnings.
+
 ## 2026-10-17 (goldendict import rework: plain stress-free words, phrase only from headwords, link-only translations — ADR 0078)
 
 The first real bilingual imports left three junk classes in `words` —
