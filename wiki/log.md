@@ -6906,3 +6906,43 @@ runbook with the `--dry`-first guidance and expected dev-DB phase counts),
 `reference/commands.md` regenerated (`wiki:sync`), `generated.at` bumped;
 `wiki:validate` passes. The real dev-DB run is ticket 11 (never this
 ticket).
+
+## 2026-10-18 (dictionary-word-purity 11: the repair pipeline ran on the dev DB; both repair commands raise their own memory ceiling)
+
+Executed the ticket-11 pipeline on the dev DB in dependency order and
+verified the data gates (details in
+`.scratch/dictionary-word-purity/issues/11-run-pipeline-and-data-gates.md`).
+Two operational defects surfaced and are fixed here: `wiktionary:demote-form-of`
+and `words:normalize` both died with `Allowed memory size of 134217728 bytes
+exhausted` on real data — the demote scan at ~105k dump lines (the relay map
+holds the whole language's vocabulary until the stream ends) and normalize in
+the phase-3 alias fold (its group map holds every row of the folded classes,
+~210k en adj/adjective rows). Both commands now raise their own
+`memory_limit` to 2G + `set_time_limit(0)` at the top of `handle()` — the
+`ImportRawWiktextractCommand` precedent (1G there; 2G here because these
+commands hold full-language in-memory maps, not streaming batches), each with
+a regression test probing the bump through the fast failure path
+(`DemoteFormOfCommandTest`, `WordsNormalizeCommandTest`).
+
+Pipeline results (dry vs real within normal documented approximations; the
+destructive counts matched exactly everywhere): demote ru deleted 363,446
+relay rows + 69,035 romanization junk forms (ru words 444,149 → 80,703);
+demote en deleted 500,776 (en 1,523,426 → 1,022,650); normalize merged 11
+stressed display words, 2,451 unknown-class twins, 7,514 alias duplicates,
+reclassed 216,440, deleted 12 orphan alias class rows, backfilled 1,018,396
+lemma forms, absorbed 9,976 rows; `dictionary:link-translations` converted
+126,202 staged candidates into links and pruned the staged JSON from 91,552
+to 52,472 words (net `word_translations` 112,585 → 111,556 — the dedupe
+phases collapsed 5,927 redundant pairs while the pass added ~4,898 new);
+`words:import-frequency-lists` clamped ranks onto 77,920 words directly +
+82,833 via the lemma-form join; `crossword:link` found nothing unlinked after
+the re-pointing (a `--retry-unmatched` pass re-attempted 533 stale stamps, 0
+new — those tokens have no dictionary headword).
+
+Gates after the run: zero combining marks in ru `words.word`/`forms.form`
+(baseline 1/78); `четвереньках` only a form of `четвереньки`; zero
+unknown-class twins (baseline 2,954); zero `adj` class rows (adjective: en
+179,332 / ru 11,551); zero words missing their lemma form (baseline en
+1,507,795 / ru 29,171); full `composer run test` green (1294 passed / 6644
+assertions, 544s). Wiki: `playbooks/import-dictionary-data.md` (memory-limit
+notes on both repair commands), `generated.at` bumped.

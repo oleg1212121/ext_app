@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-19T01:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T02:40:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T22:30:00+03:00 }
 sources:
   - id: import-cmd
@@ -191,6 +191,10 @@ from the dump map.
    root); `--chunk=N` (default 25000) sizes the set-based apply pass —
    the in-memory map holds every relay surface of the language (~1M en
    pairs fit comfortably; chunking bounds the DB statements, not the map).
+   The command raises its own `memory_limit` to 2G (`ImportRawWiktextractCommand`
+   precedent) — the relay map OOMs at the 128M CLI default mid-scan
+   (verified 2026-10-18: the first dev-DB run died at ~105k dump lines
+   before the bump).
    Per chunk, in FK-safe order: translation links (both arms) re-point
    onto the base — canonical pairs, insert-or-ignore dedupes onto
    pre-existing pairs, self-pairs (relay→own base, two relays of one base)
@@ -283,6 +287,11 @@ insert-or-ignore).
    `--chunk=N` (default 20000) sizes the scan passes and the lemma
    backfill; the word merges are set-based through a temp mapping table —
    one statement per child table. Never run two normalize runs at once.
+   The command raises its own `memory_limit` to 2G (same
+   `ImportRawWiktextractCommand` precedent as the demote command) — the
+   alias-fold group map and the merge maps hold real-data-sized row sets
+   and OOM at the 128M CLI default (verified 2026-10-18 in the phase-3
+   alias fold on the dev DB).
 
 3. **Chain it in the ticket-11 pipeline** before/after the other repairs —
    demote first (`wiktionary:demote-form-of`), then normalize, then
