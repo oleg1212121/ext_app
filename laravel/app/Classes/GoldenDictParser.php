@@ -12,7 +12,9 @@ use App\Models\WordClass;
 use App\Models\WordTranslation;
 use App\Support\LemmaForms;
 use App\Support\PosAliases;
+use App\Support\StagedTranslations;
 use App\Support\StressMarks;
+use App\Support\TranslationTargets;
 use App\Support\WordLookupKey;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -1059,7 +1061,7 @@ class GoldenDictParser
      * exists. The same-class preference survives as a preference: a
      * single-word candidate prefers the source word's class in the target
      * language, a multi-word one the phrase class, else the lowest-id row
-     * with that l_word.
+     * with that l_word — the shared TranslationTargets semantics.
      *
      * @return array<string, int> resolved target-word ids keyed by l_word
      */
@@ -1077,7 +1079,7 @@ class GoldenDictParser
             }
         }
 
-        return $this->resolveTargetWordIds($wanted);
+        return TranslationTargets::forLanguage($this->targetLanguageId, $wanted);
     }
 
     public function flushBatch(array $batch): void
@@ -1136,9 +1138,10 @@ class GoldenDictParser
 
     /**
      * Union the staged raw translation strings into words.translations JSON
-     * (the flat, deduplicated Wiktionary shape). Rows the upsert just
-     * inserted already carry their candidates; pre-existing rows keep their
-     * JSON through the upsert, so it is merged here — never clobbered.
+     * (the flat, deduplicated Wiktionary shape) — the shared
+     * StagedTranslations merge. Rows the upsert just inserted already carry
+     * their candidates; pre-existing rows keep their JSON through the
+     * upsert, so it is merged here — never clobbered.
      */
     private function flushTranslationStaging(array $batch, object $wordIds): void
     {
@@ -1149,10 +1152,10 @@ class GoldenDictParser
             }
             $wordId = $this->lookupWordId($record, $wordIds);
             if ($wordId !== null) {
-                $byWordId[$wordId] = array_values(array_unique(array_merge(
-                    $byWordId[$wordId] ?? [],
+                $byWordId[$wordId] = StagedTranslations::merge(
+                    $byWordId[$wordId] ?? null,
                     $record['translations'],
-                )));
+                ) ?? [];
             }
         }
 
@@ -1162,53 +1165,11 @@ class GoldenDictParser
 
         foreach (Word::query()->whereKey(array_keys($byWordId))->get(['id', 'translations']) as $word) {
             $existing = $word->translations ?? [];
-            $merged = array_values(array_unique(array_merge($existing, $byWordId[$word->id])));
+            $merged = StagedTranslations::merge($existing, $byWordId[$word->id]);
             if ($merged !== $existing) {
                 $word->forceFill(['translations' => $merged])->save();
             }
         }
-    }
-
-    /**
-     * Batched l_word resolution of target-language word ids — one query per
-     * call, rows ordered by id; an existing row whose class equals the
-     * candidate's expected class wins, else the lowest-id row with that
-     * l_word. Normals with no row in the target language resolve to nothing.
-     *
-     * @param  array<string, int|null>  $wanted  l_word => expected word_class_id
-     * @return array<string, int> l_word => word id
-     */
-    private function resolveTargetWordIds(array $wanted): array
-    {
-        if ($wanted === []) {
-            return [];
-        }
-
-        $byLWord = [];
-        foreach (Word::query()
-            ->where('language_id', $this->targetLanguageId)
-            ->whereIn('l_word', array_keys($wanted))
-            ->orderBy('id')
-            ->get(['id', 'l_word', 'word_class_id']) as $row) {
-            $byLWord[$row->l_word][] = $row;
-        }
-
-        $ids = [];
-        foreach ($wanted as $normal => $classId) {
-            foreach ($byLWord[$normal] ?? [] as $row) {
-                if ($classId !== null && $row->word_class_id === $classId) {
-                    $ids[$normal] = $row->id;
-
-                    continue 2;
-                }
-            }
-
-            if (isset($byLWord[$normal])) {
-                $ids[$normal] = $byLWord[$normal][0]->id;
-            }
-        }
-
-        return $ids;
     }
 
     /**
