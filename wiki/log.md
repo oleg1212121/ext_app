@@ -6678,3 +6678,22 @@ documented in the spec, nothing to commit). Commits `7c085ce` / `1a09abc` / `1db
 `.scratch/retro-fixes/`. Carry-forward (operational, not a finding): bare `composer run test:tia`
 errors pre-run on the unauthenticated-`gh` remote-baseline fetch — run the documented `--fresh`
 invocation once locally or authenticate `gh`.
+
+## 2026-10-18 (dictionary-word-purity 04: word_id-leading indexes on every words child table)
+
+The per-word access path into the dictionary's child tables was unindexed: `forms` (3.02M rows) and
+`transcriptions` (922k) only had `word_id` *buried* behind a leading text column (`uk_forms_form_word_id
+(form, word_id)`, `uk_transcriptions_triple (transcription, word_id, transcription_type_id)`), so per-word
+joins, importer recount batches and FK cascade deletes seq-scanned — the root cause of the 17-minute wipe
+crawl. Migration `2026_10_18_000001_add_word_id_indexes_to_forms_transcriptions_and_word_children.php` adds
+`idx_<table>_word_id` btrees (naming mirrors `idx_definitions_word_id` from 2026-09-16) on the six audit
+hits: the ticket's `forms`/`transcriptions`/`user_word` plus the rest of the word-child audit surface —
+`examples`, `pronunciations`, `user_word_event` (all `ON DELETE CASCADE` off `words`); `definitions`,
+`etymologies`, `entity_words`, `tagged_words` `(word_id, tag_id)` and `word_translation_fetches`
+`(word_id, target_language_id)` already led with `word_id` and were left alone (`word_families` is a
+read-layer class, not a table). Dev-DB `EXPLAIN ANALYZE` of `SELECT * FROM forms WHERE word_id = 1993864`
+flipped from seq scan to `Index Scan using idx_forms_word_id`, 0.159 ms / 3+8 buffers. Coverage pinned by
+`tests/Feature/WordIdLeadingIndexesTest.php` (red → green: asserts via `Schema::getIndexes` that each
+index exists AND leads with `word_id`, so a future column reorder in the migration fails the suite).
+`database/dictionary.md` gained the indexes bullet + migration source, `generated.at` bumped;
+no routes/models/commands touched, no `wiki:sync` needed.
