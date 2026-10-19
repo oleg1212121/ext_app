@@ -116,7 +116,11 @@ class EntityWordAdoption
      * The dictionary has no row for the token's l_word: mint one. The raw
      * surface token keeps its casing but stores plain — the combining
      * stress marks leave the display word (ru/be/uk) — and the new word
-     * carries itself as its lemma form.
+     * carries itself as its lemma form. The mint is a firstOrCreate on the
+     * unique (l_word, language, class) triple: a row that raced in, or one
+     * the same normalized key reaches under a stale entity stamp (a
+     * pre-fold 'ёлка' stamp while the row keys 'елка'), is adopted, not
+     * duplicated.
      */
     private function createAdoptedWord(int $languageId, EntityWord $row, int $unknownClassId, bool $stripsMarks): ?Word
     {
@@ -125,17 +129,21 @@ class EntityWordAdoption
             return null;
         }
 
-        $word = Word::query()->create([
-            'word' => mb_substr($display, 0, 256),
-            'l_word' => WordLookupKey::normalize($display),
-            'language_id' => $languageId,
-            'word_class_id' => $unknownClassId,
-        ]);
-
-        Form::upsert(
-            LemmaForms::rows($word->word, [], $word->id, $stripsMarks),
-            ['form', 'word_id'],
+        $word = Word::query()->firstOrCreate(
+            [
+                'l_word' => WordLookupKey::normalize($display),
+                'language_id' => $languageId,
+                'word_class_id' => $unknownClassId,
+            ],
+            ['word' => mb_substr($display, 0, 256)],
         );
+
+        if ($word->wasRecentlyCreated) {
+            Form::upsert(
+                LemmaForms::rows($word->word, [], $word->id, $stripsMarks),
+                ['form', 'word_id'],
+            );
+        }
 
         return $word;
     }

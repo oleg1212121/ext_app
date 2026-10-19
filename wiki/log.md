@@ -1,5 +1,76 @@
 # Directory Update Log
 
+## 2026-10-19 (word uniqueness moves to (l_word, language, class) — word-import-contract ticket 04)
+
+The words unique key moved from the display word to the lookup key
+(migration `2026_10_19_000001`: `uk_words_word_language_class` and the
+superseded `idx_words_l_word_class` dropped,
+`uk_words_l_word_language_class` on `(l_word, language_id, word_class_id)`
+created): cross-source spellings of one word (до́м/дом, ёлка/елка,
+March/march) are now ONE row per class — the first source's display
+spelling stands, later sources attach to the stored row. NULL `l_word`
+rows stay unconstrained (NULLs never conflict in Postgres). The migration
+refuses a database still holding same-key duplicates — the l_word
+recompute and duplicate-merge repair ships with the normalize work and the
+dev-DB runbook sequences normalize → migrate; fresh databases are
+unaffected.
+
+- **Both parsers upsert on the new triple** (`app/Classes/`):
+  `WiktionaryParser` conflicts on `(l_word, language_id, word_class_id)`
+  refreshing `l_word` + the staged translations JSON (display word and
+  frequency never clobbered — the ADR 0080 merge rule), and its record
+  merge, in-batch dedupe, post-upsert id map, `lookupWordId` and
+  relay-base upsert all key the computed `l_word` — a second source whose
+  display differs (елка arriving when ёлка is stored) resolves to the one
+  row instead of silently skipping its children. `GoldenDictParser` keeps
+  its key-only update list (frequency + curated staged JSON survive) and
+  switched its dedupe, id map, `lookupWordId` and dry-run link key to
+  `l_word`.
+- **Every other creator keyed mechanically** where the new index would
+  otherwise throw: `dictionary:import-cmudict` upserts the missing-l_word
+  rows on the triple (entry keys now go through `WordLookupKey`),
+  `EntityWordAdoption::createAdoptedWord` mints through a `firstOrCreate`
+  on the triple (a row that raced in — or one a stale pre-fold entity
+  stamp lands beside — is adopted, not duplicated),
+  `TranslationsRelationManager::createWordAndLink` checks the typed word
+  by its lookup key (the case/ё variant of an existing row is reused, not
+  minted), the Word create page autofills a blank `l_word` through
+  `WordLookupKey` (the `FormsRelationManager` precedent), and
+  `words:reclass-multiword`'s collision guard checks `l_word` instead of
+  the display word.
+- **`words:normalize` phase 3 folds on the key**: the alias-class twin
+  join and the leftover grouping moved from display to `l_word` (lowest-id
+  canonical survivor) — a case-variant alias row (`Big` adj beside `big`
+  adjective, legal cross-class) would otherwise reclass straight into the
+  unique key's collision. Phases 1a/2 already merge on the key or display
+  safely; phase 1a's display-exact twin lookup stays (on a migrated
+  compliant DB the pair it merges cannot exist).
+- **`domains/dictionary-import.md`**: uniqueness formula and the
+  GoldenDict/kaikki upsert conventions, the creator-hygiene contract
+  (adoption `firstOrCreate`, Filament key checks + autofill), normalize
+  phase 3, the reclass guard, `generated.at` bumped.
+- **`database/dictionary.md`**: `words` row rewritten for the new unique
+  (first spelling stands), the `l_word` note carries the full
+  `WordLookupKey` pipeline, sources gained the migration,
+  `generated.at` bumped.
+- **Tests**: 12 new (schema: the March/march and ёлка/елка same-key
+  inserts throw, cross-class and NULL-l_word coexistence; kaikki:
+  second-source display collapses into one row keeping display + rank
+  while the staged JSON refreshes, adjacent ё/е lines union; GoldenDict:
+  a second-source spelling attaches to the one row with both form rows;
+  Filament: "create word & link" reuses the variant-spelled row, the
+  create page autofills the key; adoption: a stale ё-stamp attaches to the
+  folded-key row; reclass: a case-variant phrase collision is skipped).
+  The link pass's lowest-id test re-pointed at the legal cross-class
+  shape (same-class case pairs are impossible now); the normalize fixture
+  lost its same-key `дом` pair — the merge machinery it carried moved onto
+  the legal cross-class unknown-twin pair, and the stressed-twin merge
+  coverage moves to the upcoming normalize merge-phase tests.
+- **Known gap (tracked)**: the entity tokenizer's key
+  (`WordTokenizer::lookupKey`) still derives without the ё fold — the
+  tokenizer parity work owns it; adoption's `firstOrCreate` already
+  absorbs its crash mode.
+
 ## 2026-10-19 (link pass chains into goldendict:import — word-import-contract ticket 03)
 
 `goldendict:import` now ends a default run with the

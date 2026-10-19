@@ -72,11 +72,13 @@ class ReclassMultiwordWordsCommand extends Command
         $skipped = 0;
 
         foreach ($junk as $word) {
-            // The words table is unique per (word, language, class); a
-            // phrase-class row of the same headword already existing means
-            // the move would collide — skip and report instead of merging.
+            // The words table is unique per (l_word, language, class); a
+            // phrase-class row of the same lookup key already existing means
+            // the move would collide — skip and report instead of merging
+            // (a case-variant display does not hide the collision: the key
+            // is the identity, not the spelling).
             $taken = Word::query()
-                ->where('word', $word->word)
+                ->where('l_word', $word->l_word)
                 ->where('language_id', $word->language_id)
                 ->where('word_class_id', $phraseClassIds[$word->language_id])
                 ->exists();

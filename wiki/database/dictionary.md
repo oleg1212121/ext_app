@@ -5,11 +5,14 @@ description: One words table (+ satellites) keyed by language, per-language word
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T15:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T21:30:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
      title: Unified dictionary creation (squashed baseline)
+   - id: l-word-uniqueness
+     resource: laravel/database/migrations/2026_10_19_000001_move_word_uniqueness_to_l_word.php
+     title: Word uniqueness moved to (l_word, language_id, word_class_id)
    - id: tag-pivot-rename
      resource: laravel/database/migrations/2026_10_11_000001_rename_word_tags_to_tagged_words.php
      title: Words-tag pivot rename to tagged_words
@@ -48,7 +51,7 @@ sources:
 |-------|------|
 | `word_classes` | Parts of speech **per language** (`language_id`, `slug`, `title`, unique `(language_id, slug)`); seeded for en/ru |
 | `transcription_types` | Transcription kinds per language (ipa, enpr for English; МФА for Russian) |
-| `words` | A base-form word in one language: `language_id`, `word`, `l_word` (lowercase), `frequency` (rank: lower = more common, `numeric(12,2)`; 1,100,000 = unranked, `Word::FREQUENCY_UNRANKED` — see ADR 0041), `word_class_id`, staged translation candidates as a flat JSON string list (`translations` — imports stage them, and since 2026-10-18 the popup auto-fetch stages its unmatched candidates here too; the link pass converts them into `word_translations` rows and prunes what it linked). Unique `(word, language_id, word_class_id)`; index `(l_word, word_class_id)` |
+| `words` | A base-form word in one language: `language_id`, `word`, `l_word` (the `WordLookupKey` lookup key), `frequency` (rank: lower = more common, `numeric(12,2)`; 1,100,000 = unranked, `Word::FREQUENCY_UNRANKED` — see ADR 0041), `word_class_id`, staged translation candidates as a flat JSON string list (`translations` — imports stage them, and since 2026-10-18 the popup auto-fetch stages its unmatched candidates here too; the link pass converts them into `word_translations` rows and prunes what it linked). **Unique `(l_word, language_id, word_class_id)`** (2026-10-19, migration `2026_10_19_000001` — was `(word, language_id, word_class_id)`): cross-source spellings of one word (до́м/дом, ёлка/елка, March/march) are ONE row per class — the first source's display spelling stands, later sources attach to it and refresh only the key and the staged JSON |
 | `forms` / `definitions` / `etymologies` / `examples` | Per-word satellites (unique `(form, word_id)` / `(example, word_id)`); `forms` carries `l_word` (indexed, `idx_forms_l_word`) and is the runtime link target for inflected tokens — the linker's forms pass in [Crossword](/domains/crossword.md) — and the source of the Word popup's base-word groups ([Interactive words](/domains/interactive-words.md), ADR 0045). Every imported word also stores **itself** as its lemma form (shared `App\Support\LemmaForms` rule), so the forms table alone resolves lookups; every ё-form additionally carries its **е-folded alias row** (ёлка AND елка, both keyed `елка`, 2026-10-19) — display `form` keeps the source spelling, only `l_word` folds ё→е. **Definitions** import only when written in the word language's own script (the `DefinitionLanguage` majority-script guard, 2026-10-19 — import-time only, existing rows untouched); **etymologies** are never script-guarded |
 | `transcriptions` | Written phonetic notations per word + `transcription_type_id` (ipa, enpr, …; unique triple) || `pronunciations` | Audio files with pronunciation examples per word (`path` on the public disk, unique `(path, word_id)`); uploaded via the admin |
 | `tags` / `tagged_words` | The **words tag pool** (ADR [0076](../../docs/adr/0076-per-type-tag-pools.md)): language-neutral `slug`+`name` labels curated in the admin (`TagResource`, nav group Words, `words_count` usage column, edit/delete + bulk delete) and attached to words via `Word::tags()` (`withTimestamps`) through the pivot — renamed from the dormant `word_tags` (migration `2026_10_11_000001`, index `uk_tagged_words_pair`). Attached through the Words form's searchable tag multi-select with inline create; shown as a badge column and a multi-select table filter on the Words list. The works/entities/alignments pools copy this shape (`work_tags`/`tagged_works`, `entity_tags`/`tagged_entities`, `alignment_tags`/`tagged_alignments`) |
@@ -120,11 +123,16 @@ sources:
   `transcription_types` row, both with the slug as placeholder `title` —
   nothing is skipped for a missing lookup, so a new language needs no
   seeders. The seeders remain the source of curated en/ru titles.
-* `l_word` keys (words and forms) are lowercased **and stripped of
-  combining marks** — Russian Wiktionary headwords carry stress marks
-  (`свобо́дный`), and every matcher (the entity-word linker's exact pass,
-  `words:import-frequency`) compares against unstressed text. Stored
-  display words are plain letters on BOTH import paths now (the ADR 0078
+* `l_word` keys (words and forms) run the shared `App\Support\WordLookupKey`
+  pipeline — **trim → lowercase → strip combining marks → strip zero-width
+  format characters (`\p{Cf}`) → ё→е fold** — so Russian Wiktionary headwords
+  with stress marks (`свобо́дный`), zero-width artifacts and ё/е spellings
+  all share one key (`ёлка` and `елка` both key `елка`), and every matcher
+  (the entity-word linker's exact pass,
+  `words:import-frequency`) compares against the normalized key. The words
+  unique keys on this triple (see the table above), so a display spelling
+  never forks a word; display text **never folds and never loses ё**.
+  Stored display words are plain letters on BOTH import paths now (the ADR 0078
   kaikki display carve-out is reversed, 2026-10-18): the kaikki importer
   strips its ru/be/uk headwords and inflected forms, the GoldenDict
   importer strips its headwords, forms and staged candidates outright — so

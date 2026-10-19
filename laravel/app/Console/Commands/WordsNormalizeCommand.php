@@ -37,11 +37,11 @@ use Illuminate\Support\Facades\Schema;
  *    top (Kaikki wins where it has stress data).
  * 3. Fold alias word classes into their canonical class per language
  *    (PosAliases semantics, resolved by class-row slug — the dev data's
- *    `adj` beside `adjective`): a word whose display twin exists in the
- *    canonical class merges into it, the twinless leftovers reclass in
- *    place, and the orphan alias class rows delete last. Case-variant
- *    same-class duplicates are deliberately NOT merged — capitalized
- *    entries can be genuinely different words.
+ *    `adj` beside `adjective`): a word whose l_word exists in the
+ *    canonical class merges into the lowest-id canonical row (case/ё
+ *    variants included — one lookup key IS one word under the words
+ *    unique), the twinless leftovers reclass in place, and the orphan
+ *    alias class rows delete last.
  * 4. Backfill the lemma form: every word carries itself (its stripped
  *    display, LemmaForms conventions) as a form where missing
  *    (~1.5M rows in dev) — insert-new-only through the `(form, word_id)`
@@ -492,14 +492,23 @@ class WordsNormalizeCommand extends Command
                 }
                 $targetId = (int) $target->id;
 
-                // Twin merges: an alias word whose display twin exists in the
-                // canonical class (exact display — case variants never merge).
+                // Twin merges: an alias word whose lookup key exists in the
+                // canonical class merges into the lowest-id canonical row.
+                // The join keys on l_word — the identity under the
+                // (l_word, language, class) unique — so a case/ё variant
+                // twin folds too; a display-exact join would leave it
+                // twinless and the reclass below would collide with the
+                // unique key.
                 $this->beginMergeMap();
                 DB::statement(
                     'insert into merge_map (absorbed_id, survivor_id)'
-                    .' select a.id, t.id from words a'
-                    .' join words t on t.language_id = a.language_id and t.word = a.word and t.word_class_id = ?'
-                    .' where a.word_class_id in ('.implode(', ', array_fill(0, count($aliasIds), '?')).')',
+                    .' select a.id, s.sid from words a'
+                    .' join ('
+                    .'   select c.language_id, c.l_word, min(c.id) as sid from words c'
+                    .'   where c.word_class_id = ? and c.l_word is not null'
+                    .'   group by c.language_id, c.l_word'
+                    .' ) s on s.language_id = a.language_id and s.l_word = a.l_word'
+                    .' where a.l_word is not null and a.word_class_id in ('.implode(', ', array_fill(0, count($aliasIds), '?')).')',
                     [$targetId, ...$aliasIds],
                 );
                 $this->stats['alias_merged'] += $this->mergeMapCount();
@@ -532,7 +541,9 @@ class WordsNormalizeCommand extends Command
 
     /**
      * The alias-class words with no canonical twin: the lowest id of each
-     * display group survives (to reclass), the rest merge onto it.
+     * l_word group survives (to reclass), the rest merge onto it. NULL-l_word
+     * rows group by their display instead (NULLs never collide with the
+     * unique).
      *
      * @param  list<int>  $aliasIds
      * @return list<array{int, int}> merge pairs [absorbed, survivor]
@@ -551,7 +562,11 @@ class WordsNormalizeCommand extends Command
             $bounds,
             fn () => DB::table('words as w')->whereIn('w.word_class_id', $aliasIds),
             function (object $row) use (&$groups): void {
-                $groups[(int) $row->language_id.'|'.$row->word][] = (int) $row->id;
+                // Rows group by their lookup key (the identity the unique
+                // index and the reclass see). A NULL l_word never conflicts
+                // with the unique, so those rows group by display instead —
+                // different words must not collapse.
+                $groups[(int) $row->language_id.'|'.($row->l_word ?? 'w:'.$row->word)][] = (int) $row->id;
             },
         );
 

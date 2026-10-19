@@ -5,7 +5,7 @@ description: Local-only per-sentence enrichment — Russian/Belarusian/English s
 tags: [enrichment, stress-marks, multi-word-verbs, enrichers, annotations, python-service, spacy, reader, simulator, silero, belarusian]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T21:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: service
@@ -339,5 +339,8 @@ prod deploy the CMUdict file (`laravel/kaikki/cmudict.dict`) must be fetched
 once and `dictionary:import-cmudict` run (kaikki-sourced rows are preserved
 on re-import). After the ADR 0059 deploy: run
 `php artisan words:reclass-multiword` (dry-run first) to clean the English
-verb rows, then let the sweep grind the v2 `en_phrasal` backfill or
+verb rows — a row whose `l_word` the phrase class already carries is
+skipped, not reclassed (the words unique is `(l_word, language_id,
+word_class_id)`; a case-variant display hides nothing) —, then let the
+sweep grind the v2 `en_phrasal` backfill or
 accelerate it with `entities:enrich --enricher=en_phrasal --limit=N`.

@@ -178,7 +178,9 @@ class ImportCmudictCommand extends Command
 
         $headword = $parts[0];
         $headword = preg_replace('/\(\d+\)$/', '', $headword);
-        $word = mb_strtolower($headword);
+        // The entry key IS the lookup key (WordLookupKey), so the batch keys
+        // and the created rows' l_word can never disagree.
+        $word = WordLookupKey::normalize($headword);
 
         if (! preg_match("/^[a-z'’][a-z'’-]*$/", $word)) {
             return null;
@@ -287,7 +289,10 @@ class ImportCmudictCommand extends Command
             ], $missing);
 
             foreach (array_chunk($rows, 500) as $chunk) {
-                Word::upsert($chunk, ['word', 'language_id', 'word_class_id']);
+                // The conflict clause matches the real unique key (the
+                // l_word triple); today's safety comes from the pre-check
+                // above — only l_words no row carries reach the insert.
+                Word::upsert($chunk, ['l_word', 'language_id', 'word_class_id']);
             }
 
             $stats['words_created'] += count($missing);

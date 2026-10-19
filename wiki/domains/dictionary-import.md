@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T19:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T21:30:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -456,7 +456,11 @@ ended at 1,013,927 exactly.
 # GoldenDict vs Wiktionary imports
 
 Both importers write the same unified tables with the same conventions
-(batched `Word::upsert` on `(word, language_id, word_class_id)`, lookup
+(batched `Word::upsert` on `(l_word, language_id, word_class_id)` —
+kaikki refreshing the key and the staged JSON on conflict, GoldenDict the
+key only; the in-batch dedupe and the post-upsert id lookups key the same
+triple, since Postgres refuses an ON CONFLICT statement that would touch
+one row twice — lookup
 auto-creation, text-dedupe definitions, heartbeats) and share the `l_word`
 normalization through `App\Support\WordLookupKey` — since 2026-10-19
 **trim → lowercase → combining-mark strip → zero-width/format-character
@@ -499,12 +503,17 @@ strip, kaikki at candidate extraction).
 
 # Creator hygiene (no unknown-class twins)
 
-Word uniqueness is `(word, language_id, word_class_id)`, so a same-`l_word`
-row under a different class is a second row — an `unknown`-class twin of a
+Word uniqueness is `(l_word, language_id, word_class_id)` (2026-10-19 —
+before, it keyed on the display word): cross-source spellings of one word
+(до́м/дом, ёлка/елка, March/march) are ONE row per class — the first
+source's display spelling stands, a later source's import attaches to the
+stored row and refreshes only the key and the staged candidates, and a
+second row under the same key is impossible. A same-`l_word` row under a
+DIFFERENT class is still a second row — an `unknown`-class twin of a
 properly classed word (2,954 of them in the 2026-10-18 dev data, minted by
 the cmudict import running before kaikki and by entity adoption). Every
-remaining creator resolves against the language's existing `l_word`s and
-only mints a row when nothing matches:
+creator resolves against the language's existing `l_word`s and only mints
+a row when nothing matches:
 
 * `dictionary:import-cmudict` looks each batch headword up by `l_word`
   first: the transcription attaches to the row(s) already there (every
@@ -521,17 +530,20 @@ only mints a row when nothing matches:
   `unknown` twin. Only a genuinely new token creates a row: class
   `unknown`, a plain display word (the combining stress marks leave the
   raw surface token for ru/be/uk; casing stays) that carries itself as its
-  lemma form. A token that is nothing but combining marks stays stamped
-  instead of storing a junk row.
+  lemma form — and the mint is a `firstOrCreate` on the unique triple, so
+  a row that raced in (or one the same normalized key reaches under a
+  stale pre-fold entity stamp) is adopted, not duplicated. A token that is
+  nothing but combining marks stays stamped instead of storing a junk row.
 * Filament's manual creators join the same contract. The Word page's
   "Create word & link" (Translations relation manager) strips the display
   word for ru/be/uk (a stressed input reuses the existing plain row),
-  normalizes `l_word` through `WordLookupKey` instead of a bare
-  `mb_strtolower`, adds the lemma form on create, and its word search
-  matches the normalized key so a stressed query still finds the plain
-  row; the Forms relation manager strips the display form for the
-  stress-mark languages and autofills a blank `l_word` through the same
-  key.
+  checks the typed word by its `WordLookupKey` key — the case/ё variant of
+  an existing row is reused, not minted —, adds the lemma form on create,
+  and its word search matches the normalized key so a stressed query still
+  finds the plain row; the Forms relation manager strips the display form
+  for the stress-mark languages and autofills a blank `l_word` through the
+  same key, and the Word create page now autofills a blank `l_word` the
+  same way (a typed key stays the author's input).
 
 # Data repair (words:normalize)
 
@@ -563,11 +575,13 @@ runbook in [Importing Dictionary Data](/playbooks/import-dictionary-data.md)
    instead of stacking on top (Kaikki wins where it has stress data).
 3. **Alias word classes fold into their canonical class** per language
    (`App\Support\PosAliases` semantics resolved by class-row slug — the
-   dev data's `adj` beside `adjective`): a word whose exact display twin
-   exists in the canonical class merges into it, the twinless leftovers
-   reclass in place (case variants never merge — capitalized entries can
-   be genuinely different words), and the orphan alias class rows delete
-   last.
+   dev data's `adj` beside `adjective`): a word whose l_word exists in the
+   canonical class merges into the lowest-id canonical row (case/ё variant
+   twins fold too — one lookup key IS one word under the words unique, and
+   a display-exact join would leave them twinless for a colliding
+   reclass), the twinless leftovers reclass in place (NULL-l_word rows
+   group by display instead — NULLs never conflict with the unique), and
+   the orphan alias class rows delete last.
 4. **Lemma-form backfill**: every word carries itself (its stripped
    display, the `LemmaForms` conventions) as a form where missing
    (~1.5M rows in dev) — insert-new-only through the `(form, word_id)`
@@ -590,8 +604,12 @@ survivor; the ticket-10 fold with a zero guard those rows need). Absorbed
 word rows delete last (children cascade through the word_id-leading
 indexes). `--dry` prints every phase count and writes nothing — the
 child-move counts are pre-database approximations where insert-time dedupe
-applies. Case-variant same-class duplicates are deliberately NOT merged
-anywhere: March/march can be genuinely different words.
+applies. Same-class same-`l_word` duplicates can no longer be CREATED
+anywhere — the words unique forbids the pair — and the migration refuses a
+database that still holds pre-existing same-key duplicates: existing twins
+of pre-migrate databases are repaired by the upcoming l_word recompute and
+duplicate-merge phase before `migrate` runs (the dev-DB runbook's
+normalize → migrate sequencing).
 
 The first real dev-DB run (2026-10-18, in the pipeline order demote →
 normalize → link-translations): 11 stressed display words merged + 1
@@ -653,9 +671,10 @@ candidate merely PREFERS the target's existing `phrase` class when matching
 (a single-word one the candidate/source pos class), links the row it finds,
 and stages when the target language carries no such `l_word`.
 `php artisan words:reclass-multiword {--dry-run}` reclasses the remaining
-historical **English** junk verb rows to `phrase` (rows whose headword
+historical **English** junk verb rows to `phrase` (rows whose lookup key
 already exists in the phrase class are skipped — the words table is unique
-per (word, language, class); resolve those by hand). Other languages are
+per (l_word, language, class), so a case-variant display hides nothing;
+resolve those by hand). Other languages are
 untouched — Russian multi-word verbs ("выдавать себя за") are legitimate
 verbs the English shape has no opinion about. ADR 0078 draws the
 GoldenDict boundary: `phrase` there is a headword-sourced class only (with

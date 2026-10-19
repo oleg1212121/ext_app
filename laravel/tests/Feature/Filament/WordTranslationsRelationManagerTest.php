@@ -163,6 +163,30 @@ it('create word & link strips ru stress marks and reuses the existing plain row'
         ->and(WordTranslation::query()->first()->otherWord($owner->id)->id)->toBe($existing->id);
 });
 
+it('create word & link reuses the existing row for the case/ё variant of its word', function () {
+    $owner = createWord('en', 'cat');
+    // The stored row spells ёлка; the admin types the variant spelling —
+    // same lookup key, so the row is reused, not duplicated.
+    $existing = createWord('ru', 'ёлка', 'noun', ['l_word' => 'елка']);
+    $languageId = $existing->language_id;
+    $classId = $existing->word_class_id;
+
+    foreach (['елка', 'Ёлка'] as $typed) {
+        translationsManager($owner)
+            ->callAction('createWordAndLink', data: [
+                'word' => $typed,
+                'language_id' => $languageId,
+                'word_class_id' => $classId,
+            ])
+            ->assertHasNoActionErrors();
+    }
+
+    expect(Word::query()->where('language_id', $languageId)->count())->toBe(1)
+        ->and($existing->fresh()->word)->toBe('ёлка')
+        ->and(WordTranslation::count())->toBe(1)
+        ->and(WordTranslation::query()->first()->otherWord($owner->id)->id)->toBe($existing->id);
+});
+
 it('delete removes the single pivot row from either side', function () {
     $owner = createWord('en', 'cat');
     $target = createWord('ru', 'кошка');

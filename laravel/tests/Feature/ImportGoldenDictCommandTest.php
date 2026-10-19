@@ -970,6 +970,16 @@ function goldendictStressStripFixturePath(): string
     return __DIR__.'/../Fixtures/goldendict-stress-strip.jsonl';
 }
 
+function goldendictYolkaFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-yolka.jsonl';
+}
+
+function goldendictElkaFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-elka.jsonl';
+}
+
 function goldendictFormsFixturePath(): string
 {
     return __DIR__.'/../Fixtures/goldendict-forms.jsonl';
@@ -1015,6 +1025,39 @@ it('stores ru headwords and forms as plain letters and collapses stressed varian
         ->and($privet->definitions->pluck('definition')->all())->toBe(['приветствие одно', 'приветствие два']);
 
     expect(Form::query()->where('word_id', $privet->id)->pluck('form')->all())->toBe(['привет', 'приветик']);
+});
+
+it('attaches a second-source display spelling to the one l_word row, both form rows present', function () {
+    createLanguages(['ru']);
+    $ru = Language::query()->where('code', 'ru')->first();
+
+    // First run: the ё-display article lands as its own row.
+    test()->artisan('goldendict:import', [
+        'file' => goldendictYolkaFixturePath(),
+        '--lang' => 'ru',
+    ])->assertSuccessful();
+
+    $rows = Word::query()->where('language_id', $ru->id)->get();
+    expect($rows)->toHaveCount(1);
+    $elka = $rows->first();
+    expect($elka->word)->toBe('ёлка');
+
+    // Second source spells the same word елка — the article attaches to
+    // the one row instead of minting a twin.
+    test()->artisan('goldendict:import', [
+        'file' => goldendictElkaFixturePath(),
+        '--lang' => 'ru',
+    ])->assertSuccessful();
+
+    expect(Word::query()->where('language_id', $ru->id)->count())->toBe(1)
+        ->and($elka->fresh()->word)->toBe('ёлка')
+        ->and($elka->fresh()->l_word)->toBe('елка')
+        ->and($elka->fresh()->definitions->pluck('definition')->sort()->values()->all())
+        ->toBe(['ель', 'хвойное дерево с иглами вместо листьев'])
+        // Both spellings sit in forms under the one l_word (the е-alias of
+        // the first run plus the second run's own lemma form).
+        ->and(Form::query()->where('word_id', $elka->id)->pluck('form')->sort()->values()->all())
+        ->toBe(['елка', 'ёлка']);
 });
 
 it('extracts forms from the profile forms selector and merges them with the alts', function () {

@@ -183,13 +183,17 @@ class TranslationsRelationManager extends RelationManager
                 $stripsMarks = StressMarks::stripsFor((string) $language->code);
                 $display = $stripsMarks ? StressMarks::strip($data['word']) : $data['word'];
 
+                // Uniqueness keys on (l_word, language, class): the typed
+                // word is checked by its lookup key, so the case/ё variant
+                // of an existing row is reused, not minted. The typed
+                // display only fills a genuinely new row.
                 $target = Word::query()->firstOrCreate(
                     [
-                        'word' => $display,
+                        'l_word' => WordLookupKey::normalize($data['word']),
                         'language_id' => $data['language_id'],
                         'word_class_id' => $data['word_class_id'],
                     ],
-                    ['l_word' => WordLookupKey::normalize($data['word'])],
+                    ['word' => $display],
                 );
 
                 if ($target->wasRecentlyCreated) {

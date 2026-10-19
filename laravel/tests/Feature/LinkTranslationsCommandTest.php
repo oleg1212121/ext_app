@@ -99,15 +99,17 @@ it('links a multi-word candidate to the phrase-class row', function () {
         ->and($enWord->translationWords()->pluck('id'))->toContain($phrase->id);
 });
 
-it('links the lowest-id row when case-variant rows share the l_word', function () {
+it('links the lowest-id row when cross-class rows share the l_word', function () {
     $enWord = createWord('en', 'cat', 'noun', ['translations' => ['кошка']]);
     $ruLanguageId = Language::query()->where('code', 'ru')->value('id');
-    $nounId = WordClass::query()->where('language_id', $ruLanguageId)->where('slug', 'noun')->value('id');
+    $verbId = WordClass::query()->where('language_id', $ruLanguageId)->where('slug', 'verb')->value('id');
+    $phraseId = WordClass::query()->where('language_id', $ruLanguageId)->where('slug', 'phrase')->value('id');
 
-    // Two case-variant rows sharing one l_word (legitimate — March/march);
-    // creation order pins the ids.
-    $lower = Word::query()->create(['word' => 'Кошка', 'l_word' => 'кошка', 'language_id' => $ruLanguageId, 'word_class_id' => $nounId]);
-    $higher = createWord('ru', 'кошка', 'noun');
+    // Cross-class rows sharing one l_word are legal (die noun/verb) — and
+    // since the same-class preference has no match here, the lowest id must
+    // win. Creation order pins the ids.
+    $lower = Word::query()->create(['word' => 'Кошка', 'l_word' => 'кошка', 'language_id' => $ruLanguageId, 'word_class_id' => $verbId]);
+    $higher = Word::query()->create(['word' => 'кошка', 'l_word' => 'кошка', 'language_id' => $ruLanguageId, 'word_class_id' => $phraseId]);
     expect($lower->id)->toBeLessThan($higher->id);
 
     $this->artisan('dictionary:link-translations')

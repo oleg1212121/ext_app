@@ -74,6 +74,28 @@ it('adopts the existing row when the token’s l_word already exists, preferring
         ->and(Word::query()->where('l_word', 'run')->count())->toBe(2);
 });
 
+it('attaches to the folded-key row when a stale entity stamp misses it', function () {
+    $entity = createEntity('ru');
+
+    // The entity stamp predates the ё-fold in the key formula: the token
+    // keys 'ёлка' while the dictionary row keys 'елка'. The candidate
+    // lookup misses, and the mint must still attach to the row the
+    // normalized key lands on — the unique index allows exactly one.
+    $stamped = EntityWord::query()->create([
+        'entity_id' => $entity->id,
+        'l_word' => 'ёлка',
+        'token' => 'ёлка',
+        'count' => 1,
+        'unmatchable_at' => now(),
+    ]);
+    $existing = createWord('ru', 'ёлка', 'unknown', ['l_word' => 'елка']);
+
+    $this->artisan('words:adopt-from-entities')->assertSuccessful();
+
+    expect($stamped->refresh()->word_id)->toBe($existing->id)
+        ->and(Word::query()->where('language_id', $existing->language_id)->count())->toBe(1);
+});
+
 it('stores a genuinely new ru token as a plain display word with its lemma form', function () {
     $entity = createEntity('ru');
 

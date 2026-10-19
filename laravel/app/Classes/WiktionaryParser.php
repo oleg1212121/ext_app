@@ -98,9 +98,11 @@ class WiktionaryParser
         foreach ($this->parseFile($path) as $parsed) {
             $this->stats['lines_read']++;
 
-            $word = $parsed['word'];
             $pos = $parsed['pos'];
-            $key = mb_strtolower($word).'|'.$pos;
+            // Adjacent lines merge on the lookup key: two spellings of one
+            // word (ёлка/елка, until the case fold) union their senses and
+            // staged candidates, and the first display spelling stands.
+            $key = $parsed['l_word'].'|'.$pos;
 
             if (! isset($this->wordClassMap[$pos])) {
                 $this->ensureWordClass($pos);
@@ -488,20 +490,29 @@ class WiktionaryParser
                 ];
             }
 
-            $this->uniqueByCompound($wordUpserts, ['word', 'language_id', 'word_class_id']);
+            $this->uniqueByCompound($wordUpserts, ['l_word', 'language_id', 'word_class_id']);
             if ($wordUpserts !== []) {
-                Word::upsert($wordUpserts, ['word', 'language_id', 'word_class_id']);
+                // Uniqueness keys on (l_word, language_id, word_class_id): a
+                // second source's spelling of one word attaches to the first
+                // source's row. On conflict refresh the key and the staged
+                // candidates only — the stored display word and the frequency
+                // rank are never clobbered (the ADR 0080 merge: the first
+                // spelling stands, the staged JSON is the edition's refresh).
+                Word::upsert($wordUpserts, ['l_word', 'language_id', 'word_class_id'], ['l_word', 'translations']);
             }
 
             $this->stats['words_imported'] += count($wordUpserts);
 
             $this->demoteRelays($relayRecords, $defaultWordClassId);
 
+            // The id map keys on the lookup key: a record whose display
+            // spelling differs from the stored row's (елка arriving when ёлка
+            // is stored) must still resolve to that one row.
             $wordIds = Word::query()
                 ->where('language_id', $this->languageId)
-                ->whereIn('word', collect($wordRecords)->pluck('word')->unique()->toArray())
-                ->get(['id', 'word', 'word_class_id'])
-                ->keyBy(fn ($w) => mb_strtolower($w->word).'|'.$w->word_class_id);
+                ->whereIn('l_word', collect($wordRecords)->pluck('l_word')->unique()->toArray())
+                ->get(['id', 'l_word', 'word_class_id'])
+                ->keyBy(fn ($w) => $w->l_word.'|'.$w->word_class_id);
 
             $this->flushDefinitions($wordRecords, $wordIds, $defaultWordClassId);
             $this->flushForms($wordRecords, $wordIds, $defaultWordClassId);
@@ -558,7 +569,9 @@ class WiktionaryParser
                     'translations' => null,
                 ];
             }
-            Word::upsert($baseRows, ['word', 'language_id', 'word_class_id']);
+            // A base the dump never lists is keyed uniquely by its l_word —
+            // the same triple the word upserts conflict on.
+            Word::upsert($baseRows, ['l_word', 'language_id', 'word_class_id']);
             $this->stats['relay_bases_created'] += count($baseRows);
 
             $resolved += TranslationTargets::forLanguage($this->languageId, $missing);
@@ -685,7 +698,9 @@ class WiktionaryParser
     private function lookupWordId(array $record, object $wordIds, int $defaultWordClassId): ?int
     {
         $posId = $this->wordClassMap[$record['pos']] ?? $defaultWordClassId;
-        $lookupKey = mb_strtolower($record['word']).'|'.$posId;
+        // Same key the upsert conflicted on — the computed l_word, not the
+        // display word (which a second source may spell differently).
+        $lookupKey = $record['l_word'].'|'.$posId;
 
         return $wordIds[$lookupKey]->id ?? null;
     }

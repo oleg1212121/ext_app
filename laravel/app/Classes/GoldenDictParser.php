@@ -985,8 +985,9 @@ class GoldenDictParser
 
             // Candidates sharing an l_word resolve to the same target row,
             // so the link key is normalized like the real flush's pair
-            // dedupe.
-            $linkKey = mb_strtolower($record['word']).'|'.$record['pos'].'=>'.$normal;
+            // dedupe — the word side keys on the record's lookup key, so two
+            // display spellings of one row count as one dry pair.
+            $linkKey = $record['l_word'].'|'.$record['pos'].'=>'.$normal;
             if (isset($this->dryLinkKeys[$linkKey])) {
                 continue;
             }
@@ -1118,11 +1119,16 @@ class GoldenDictParser
                 ];
             }
 
-            $this->uniqueByCompound($wordUpserts, ['word', 'language_id', 'word_class_id']);
+            // Uniqueness keys on (l_word, language_id, word_class_id): a
+            // second source's spelling of one word (ёлка stored, елка
+            // arriving) lands as an UPDATE on the same row, and the in-batch
+            // dedupe must key the same triple (Postgres refuses an ON
+            // CONFLICT statement that would touch one row twice).
+            $this->uniqueByCompound($wordUpserts, ['l_word', 'language_id', 'word_class_id']);
             // On conflict refresh the lookup key only: a re-import must not
             // push the unranked sentinel onto words a frequency list ranked,
             // nor clobber translations staged for the bilingual mode.
-            Word::upsert($wordUpserts, ['word', 'language_id', 'word_class_id'], ['l_word']);
+            Word::upsert($wordUpserts, ['l_word', 'language_id', 'word_class_id'], ['l_word']);
 
             $this->stats['words_imported'] += count($wordUpserts);
             $this->stats['batches_flushed']++;
@@ -1133,11 +1139,14 @@ class GoldenDictParser
                 $this->stats['translation_candidates'] += count($record['translations']);
             }
 
+            // The id map keys on the lookup key: a record whose display
+            // spelling differs from the stored row's must still resolve to
+            // that one row, or its children and staging all skip.
             $wordIds = Word::query()
                 ->where('language_id', $this->languageId)
-                ->whereIn('word', collect($batch)->pluck('word')->unique()->toArray())
-                ->get(['id', 'word', 'word_class_id'])
-                ->keyBy(fn ($w) => mb_strtolower($w->word).'|'.$w->word_class_id);
+                ->whereIn('l_word', collect($batch)->pluck('l_word')->unique()->toArray())
+                ->get(['id', 'l_word', 'word_class_id'])
+                ->keyBy(fn ($w) => $w->l_word.'|'.$w->word_class_id);
 
             $this->flushDefinitions($batch, $wordIds);
             $this->flushTranscriptions($batch, $wordIds);
@@ -1372,7 +1381,9 @@ class GoldenDictParser
 
     private function lookupWordId(array $record, object $wordIds): ?int
     {
-        $key = mb_strtolower($record['word']).'|'.$this->wordClassMap[$record['pos']];
+        // Same key the upsert conflicted on — the computed l_word, not the
+        // display word (which a second source may spell differently).
+        $key = $record['l_word'].'|'.$this->wordClassMap[$record['pos']];
 
         return $wordIds[$key]->id ?? null;
     }

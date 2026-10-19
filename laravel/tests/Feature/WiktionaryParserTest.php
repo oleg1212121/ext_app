@@ -614,6 +614,82 @@ it('imports a ёлка entry as one word whose forms carry both spellings under 
     unlink($tmpFile);
 });
 
+it('imports a second-source display spelling into the same row, keeping display and frequency, refreshing the staged JSON', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+
+    $first = writeJsonlFixture([json_encode([
+        'word' => 'ёлка',
+        'pos' => 'сущ',
+        'senses' => [['glosses' => ['хвойное дерево с иглами вместо листьев']]],
+        'translations' => [['word' => ' fir ', 'lang_code' => 'en']],
+    ])], 'wiktionary_yo_source_one');
+    (new WiktionaryParser('ru', 'en', 100))->import($first);
+    unlink($first);
+
+    // A rank lands the way the frequency importers do — the second source
+    // must never clobber it (or the first source's spelling).
+    Word::where('l_word', 'елка')->where('language_id', $ruId)->firstOrFail()
+        ->forceFill(['frequency' => 4213])->save();
+
+    $second = writeJsonlFixture([json_encode([
+        'word' => 'елка',
+        'pos' => 'сущ',
+        'senses' => [['glosses' => ['ель']]],
+        'translations' => [['word' => ' spruce ', 'lang_code' => 'en']],
+    ])], 'wiktionary_yo_source_two');
+    (new WiktionaryParser('ru', 'en', 100))->import($second);
+    unlink($second);
+
+    // ONE row per word class: the second source attached to the first
+    // source's row — its display spelling and rank stand, the staged JSON
+    // carries the second source's candidates (the ADR 0080 refresh), and
+    // both sources' definitions sit on the one row.
+    expect(Word::where('language_id', $ruId)->count())->toBe(1);
+
+    $elka = Word::where('l_word', 'елка')->where('language_id', $ruId)->firstOrFail();
+    expect($elka->word)->toBe('ёлка')
+        ->and((float) $elka->frequency)->toBe(4213.0)
+        ->and($elka->translations)->toBe(['spruce'])
+        ->and($elka->definitions->pluck('definition')->sort()->values()->all())
+        ->toBe(['ель', 'хвойное дерево с иглами вместо листьев']);
+});
+
+it('merges adjacent same-key records under one l_word, unioning senses and keeping the first display', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+
+    // Two dump lines whose lowercased displays differ (ё vs е) but whose
+    // lookup key is one word: the record merge keys on l_word, so the
+    // senses and staged candidates union and the first spelling stands.
+    $tmpFile = writeJsonlFixture([
+        json_encode([
+            'word' => 'ёлка',
+            'pos' => 'сущ',
+            'senses' => [['glosses' => ['хвойное дерево']]],
+            'translations' => [['word' => ' fir ', 'lang_code' => 'en']],
+        ]),
+        json_encode([
+            'word' => 'елка',
+            'pos' => 'сущ',
+            'senses' => [['glosses' => ['ель']]],
+            'translations' => [['word' => ' spruce ', 'lang_code' => 'en']],
+        ]),
+    ], 'wiktionary_yo_adjacent');
+
+    (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+
+    expect(Word::where('language_id', $ruId)->count())->toBe(1);
+
+    $elka = Word::where('l_word', 'елка')->where('language_id', $ruId)->firstOrFail();
+    expect($elka->word)->toBe('ёлка')
+        ->and($elka->translations)->toBe(['fir', 'spruce'])
+        ->and($elka->definitions->pluck('definition')->sort()->values()->all())
+        ->toBe(['ель', 'хвойное дерево']);
+
+    unlink($tmpFile);
+});
+
 it('trims kaikki headwords and staged candidates at storage, en and ru alike', function () {
     $languages = createLanguages();
     $ruId = $languages['ru']->id;
