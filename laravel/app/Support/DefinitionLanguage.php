@@ -46,7 +46,7 @@ final class DefinitionLanguage
      */
     public static function keeps(string $code, string $text): bool
     {
-        $script = self::SCRIPTS[$code] ?? null;
+        $script = self::scriptFor($code);
         if ($script === null) {
             return true;
         }

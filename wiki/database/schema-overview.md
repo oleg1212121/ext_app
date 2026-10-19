@@ -4,8 +4,8 @@ title: Schema Overview
 description: The table domains — works/entities/alignment, unified dictionary, AI catalog, user settings — and how they relate.
 tags: [database, schema, postgres, users, settings]
 status: stable
-stale_after: 2026-12-14
-generated: { by: agent:zcode, at: 2026-09-14T12:00:00Z }
+stale_after: 2027-01-19
+generated: { by: agent:zcode, at: 2026-10-20T02:30:00+03:00 }
 sources:
   - id: migrations
     resource: laravel/database/migrations
@@ -29,7 +29,7 @@ is an `INSERT` into `languages` — never DDL (ADR
 | Domain | Detail |
 |--------|--------|
 | [Entities & alignment](entities-alignment.md) | `works`, `entities` (+ `language_id`), `entity_sentences`, `entity_matches` (a/b sides), `meaning_matches`, `sentence_meaning_matches` (side column), `entity_user` grants. Filled by the [alignment pipeline](/domains/sentence-alignment.md) |
-| [Dictionary](dictionary.md) | Unified `words` (+ `language_id`) with satellites, `word_classes`/`transcription_types` per language, one directed `word_translations` pivot. Filled by [Dictionary Import](/domains/dictionary-import.md) |
+| [Dictionary](dictionary.md) | Unified `words` (+ `language_id`, unique per `(l_word, language_id, word_class_id)` — ADR [0081](../../docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md)) with satellites, `word_classes`/`transcription_types` per language, one symmetric canonical-pair `word_translations` pivot (ADR [0020](../../docs/adr/0020-symmetric-word-translations.md)). Filled by [Dictionary Import](/domains/dictionary-import.md) |
 | [Crossword](../domains/crossword.md) | `entity_words` (token-first per-entity word list, nullable `word_id` link), `user_word` (per-user `familiarity` 0–100 exposure score), `user_word_event` (read/lookup idempotency ledger: user × word × row_key × kind unique; ADR [0028](../../docs/adr/0028-numeric-word-familiarity.md)), `entities.words_indexed_at` staleness marker, `words.frequency` ranks. See ADR [0025](../../docs/adr/0025-crossword-word-index-and-progress.md). The same tables power [Interactive words](../domains/interactive-words.md) — no position/occurrence tables exist (ADR [0027](../../docs/adr/0027-render-time-word-segmentation.md)); `forms` carries the runtime-read `l_word` index |
 | AI catalog | `ai_providers`, `ai_models`, `user_api_keys` (2026_09_10_000002) |
 | Prompt templates | `prompt_templates` (2026_09_24_000001): seeded admin-editable AI prompt texts keyed `simulator.question.format` / `simulator.question.tasks` (`:base`/`:learning` — assessment question) and `word.explanation` (`:word`/`:native` — Context explanation); placeholders substituted server-side (ADR [0040](../../docs/adr/0040-server-assembled-assessment-question.md)) |

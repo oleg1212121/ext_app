@@ -5,12 +5,13 @@
 const TOKEN_PATTERN = /[\p{L}\p{M}]+(?:['’-][\p{L}\p{M}]+)*/gu;
 
 // Keys run the same pipeline as App\Support\WordLookupKey::normalize — trim,
-// lowercase, strip combining marks (stress marks, U+0301), strip zero-width
-// format characters (\p{Cf}: ZWSP, ZWJ, BOM, soft hyphen), then fold ё→е —
-// because the dictionary's l_word keys carry exactly that normalization
-// (WiktionaryParser::normalizeLookupKey): a stressed or ё-spelled token must
-// lose the marks and fold the ё to resolve — and stressed_content is rendered
-// through this same key when the reader's stress toggle is on (ADR 0052).
+// lowercase, strip combining marks (\p{M}: the stress acutes and any other
+// mark), strip zero-width format characters (\p{Cf}: ZWSP, ZWJ, BOM, soft
+// hyphen), then fold ё→е — because the dictionary's l_word keys carry exactly
+// that normalization (WordLookupKey::normalize): a stressed or ё-spelled
+// token must lose the marks and fold the ё to resolve — and stressed_content
+// is rendered through this same key when the reader's stress toggle is on
+// (ADR 0052).
 // Lowercasing first puts Ё into the plain-ё fold's reach.
 const MARK_PATTERN = /\p{M}/gu;
 const FORMAT_PATTERN = /\p{Cf}/gu;

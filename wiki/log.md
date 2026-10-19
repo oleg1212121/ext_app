@@ -1,5 +1,38 @@
 # Directory Update Log
 
+## 2026-10-19 (code-review fixes — word-import-contract ticket 08)
+
+The closing review pass over the whole `word-import-contract` branch
+(diff `26f0fab..word-import-contract`, both axes: standards + spec).
+Four fixes, two dispositions, no behavior change beyond a one-line
+guard internal:
+
+- **`resources/js/lib/wordTokenizer.mjs`**: the key-pipeline comment
+  still cited the retired `WiktionaryParser::normalizeLookupKey` name
+  (ticket 09 fixed the PHP docblock only) and narrowed the mark strip
+  to "stress marks, U+0301" — reworded to the shipped truth
+  (`WordLookupKey::normalize`, the strip covers all `\p{M}`).
+- **`app/Support/DefinitionLanguage.php`**: `keeps()` read the
+  `SCRIPTS` map directly instead of through `scriptFor()` — one
+  lookup, not two (identical behavior).
+- **`database/schema-overview.md`** (pre-existing staleness, in scope
+  per the ticket): the Dictionary row still called `word_translations`
+  a "directed" pivot — symmetric canonical pairs since ADR 0020 — and
+  predated the words uniqueness move; now names the
+  `(l_word, language_id, word_class_id)` unique (ADR 0081) and the
+  symmetric pivot (ADR 0020). `generated.at` bumped.
+- **Review dispositions (no change):** the `CreateWord`
+  `mutateFormDataBeforeCreate` autofill (ticket 04) stays — strictly
+  beyond the "leave the admin page alone" letter (a blank `l_word`
+  stores NULL, which the NULLS DISTINCT index permits), but it is the
+  FormsRelationManager precedent applied to the one case where the
+  admin form would mint a permanently-unresolvable NULL-key row;
+  fires only when blank, typed keys untouched. The
+  `WordsNormalizeCommand` phase-3 rework (ticket 04) stays — the
+  unknown-twin survivor resolution participates in satisfying the new
+  unique, inside the ticket's "switch mechanically where the index
+  would otherwise throw" clause.
+
 ## 2026-10-19 (knowledge-base closure — ADR 0081, the word-import-contract record — word-import-contract ticket 07)
 
 The documentation record of the whole shipped contract (docs-only change,
