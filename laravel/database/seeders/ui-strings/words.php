@@ -3,6 +3,11 @@
 // UI strings: interactive word popups (Components/WordText.jsx, Components/WordPopup.jsx).
 return [
     'word.loading' => ['en' => 'Loading…', 'ru' => 'Загрузка…', 'be' => 'Загрузка…'],
+    // The missing-word card (popup-ai-enrich ticket 03): an unmapped token's
+    // popup says honestly that the word is not in the dictionary — nothing is
+    // fetched, so the copy must never claim anything is loading or being
+    // fetched.
+    'word.not_in_dictionary' => ['en' => 'This word isn\'t in the dictionary yet.', 'ru' => 'Этого слова пока нет в словаре.', 'be' => 'Гэтага слова пакуль няма ў слоўніку.'],
     'word.load_failed' => ['en' => 'Couldn\'t load the word (:status)', 'ru' => 'Не удалось загрузить слово (:status)', 'be' => 'Не ўдалося загрузіць слова (:status)'],
     'word.form_of' => ['en' => 'form of', 'ru' => 'форма слова', 'be' => 'форма слова'],
     'word.no_definitions' => ['en' => 'No definitions yet.', 'ru' => 'Определений пока нет.', 'be' => 'Вызначэнняў пакуль няма.'],

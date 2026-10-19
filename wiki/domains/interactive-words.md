@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; entries stable-sort completeness-descending over that assembly order — stored words.completeness 0-7, recalculated lazily when stale), per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon, the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
+description: Interactive words on the reader and bilinguals simulator — EVERY tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (popup-ai-enrich ticket 03): dictionary-linked tokens open word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; entries stable-sort completeness-descending over that assembly order — stored words.completeness 0-7, recalculated lazily when stale), unmapped tokens open a missing-word card (raw surface title + honest not-in-the-dictionary note, nothing fetched, no lookup events, Ask-AI placeholder only until adopt-on-ask), per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon, the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-19T18:55:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T19:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: word-controller
@@ -87,8 +87,11 @@ sources:
 
 # What it does
 
-Makes words in a text interactive on both reading surfaces: tokens that link
-to a dictionary **Word** open the **Word popup** on **Ctrl+click** — one
+Makes words in a text interactive on both reading surfaces: **every
+tokenizer word token** (≥2 letters, hyphens/apostrophes intra-word —
+`bomb-hit` is one token) opens a popup on **Ctrl+click**
+(popup-ai-enrich ticket 03). Tokens linked to a dictionary **Word** open the
+**Word popup** — one
 section per part of speech recorded under the headword (language + `l_word`),
 each with its definitions, transcriptions, translations (native language
 first), examples and etymology, plus an **action toolbar as the popup's
@@ -103,7 +106,8 @@ toolbar icons disable rather than disappear, and the Explanation toggle +
 robot additionally require an explain payload and answer to the ADR 0046
 `explanation` key). There is **no tab strip**: the dictionary content always
 renders, and a hairline closes the header block (word / familiarity /
-frequency / form-of). A plain click does
+frequency / form-of). Unmapped tokens open the **missing-word card**
+(below) instead. A plain click does
 nothing (ADR 0030), and a plain
 double-click natively selects the word so browser extensions (translators,
 dictionaries) can act on it. Their text is
@@ -120,11 +124,13 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    strings; the page payload carries a compact per-entity map
    `{l_word: {w: word id, s: familiarity 0-100|null}}` built by
    `EntityWordMap` (dictionary-linked `entity_words` left-joined to the
-   user's `user_word` rows). Unlinked tokens are absent → plain text.
+   user's `user_word` rows). Unlinked tokens are absent from the map → the
+   missing-word card.
 2. **The browser segments the text.** `WordText` runs
    `lib/wordTokenizer.mjs` — a JS port of the PHP `WordTokenizer` regex —
-   over each row and renders tokens found in the map as **`role="button"`
-   spans**, not real `<button>` elements: Chromium treats button labels as
+   over each row and renders EVERY word token as an interactive
+   **`role="button"` span**, mapped or not (popup-ai-enrich ticket 03) —
+   not real `<button>` elements: Chromium treats button labels as
    widget chrome, so a double-click on a real button never produces the
    native text selection that browser extensions need. The spans keep the
    button keyboard contract (focusable; Ctrl+Enter / Ctrl+Space open the
@@ -203,6 +209,7 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    `-progress-reset`, `-anki-send` (the Anki icon button — add or update
    glyph) with its `-anki-added` / `-anki-updated` / `-anki-duplicate` /
    `-anki-error` status lines,
+   `-missing` (the missing-word card's not-in-dictionary note),
    `-explain` (the Explanation pane) with
    `-explain-guidance`, `-explain-loading`, `-explain-error` (its retry
    button `-explain-retry`), `-explain-answer` (empty-answer note
@@ -235,6 +242,32 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    know this word" / "Remove mark" (deletes the row). The popup
    reports the change up to the page, which recolors the word in every
    rendered row, and shows the current score ("Familiarity: 12/100").
+
+# Missing-word card (unmapped tokens)
+
+Since popup-ai-enrich ticket 03 every tokenizer word token is interactive,
+mapped or not. A token with no word-map entry opens the popup in **missing
+mode** (`Components/WordPopup.jsx`'s exported `MissingPopupContent`, rendered
+when `wordId` is null): the **raw clicked surface** as the title — the
+folded `l_word` key would show ё-folded, mark-stripped text — and one honest
+note, `word.not_in_dictionary` ("This word isn't in the dictionary yet.").
+**Nothing runs**: no `GET /words/` (the detail-fetch effect returns before
+its fetch when `wordId` is null), no `/word-events` lookup (there is no word
+id to ledger), and no familiarity / frequency / form-of lines. The toolbar
+shows only what applies — the Ask-AI placeholder, disabled until
+**adopt-on-ask** (ticket 05) goes live; know / remove / Anki / the
+Explanation toggle / the robot are inapplicable there, and ask-AI is the
+only path from missing to populated (create the word first, then enrich,
+then transition to the dictionary view). Each column's language
+(`{code, name}|null` — the reader's display-column descriptors carry it as
+`language`, the simulator's too) is plumbed `WordText` → `WordPopup` as the
+new `language` prop for exactly that adoption. The structure mirrors the
+real card (same toolbar / header / dictionary blocks, hairlines and stable
+`word-popup-*` hooks, `-title` on the surface, `-missing` on the note). The
+old unclickable phrasal-hit span branch merged into the interactive path: an
+unmapped phrasal-verb hit keeps its dotted underline + headword tooltip and
+now also opens the missing card on Ctrl+click. Mapped-token behavior is
+unchanged end to end.
 
 # Auto-fetched translations
 
@@ -517,7 +550,9 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   background) via `--word-*` tokens with day/night variants, all in
   `resources/css/app.css`. The hover affordance is an **underline** (no color
   change), so the tint stays legible; tier colors win on hover over tinted
-  words (ADR 0030).
+  words (ADR 0030). Unmapped tokens never tint (plain `.word-token` —
+  hover-underline and pointer only, no tier class), even with the highlight
+  toggle on (popup-ai-enrich ticket 03).
 * **Word-map state is pure `{a, b}`.** Eligibility rides its own prop/state,
   never inside `wordMaps`, so familiarity patches (`setWordMaps` spreads +
   `patchWordMap`) cannot clobber it — the pre-amendment simulator kept

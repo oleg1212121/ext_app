@@ -1,5 +1,49 @@
 # Directory Update Log
 
+## 2026-10-19 (popup-ai-enrich 03: unknown tokens clickable + missing-word popup)
+
+Every tokenizer word token is now interactive (ticket 03 of the
+`popup-ai-enrich` spec; JS-only plus one ui-string):
+
+- **`WordText`**: the key-segment branch no longer gates on the word map —
+  every key segment renders as a `role="button"` span. Mapped tokens keep
+  tint + fetch + events unchanged; an unmapped token is a bare
+  `.word-token` (hover-underline + pointer, NO familiarity tier) whose
+  Ctrl+click / Ctrl+Enter opens the popup in **missing mode** with
+  `wordId: null` and the RAW surface (`segment.text`, not the folded key)
+  as the title. The branch returns before `recordWordEvents`, so no
+  `/word-events` lookup can fire for a missing token. The old unclickable
+  phrasal-hit span branch (`word-token phrasal-hit` tooltip-only span) is
+  gone — the mark rides `markClass` onto the interactive span, so an
+  unmapped phrasal-verb hit opens the missing card too.
+- **`WordPopup`**: a null `wordId` renders the new exported
+  `MissingPopupContent` — surface title (`word-popup-title`), honest
+  `word.not_in_dictionary` note (`word-popup-missing`; "This word isn't in
+  the dictionary yet." / ru / be, never any loading/fetching claim), and a
+  toolbar holding only the disabled Ask-AI placeholder (ticket 05 wires
+  adopt-on-ask there). No `GET /words/` (the fetch effect guards
+  `wordId == null` before its fetch), no familiarity/frequency/form-of, no
+  progress/Anki/explain. Escape / outside-click closing works as before;
+  the profile's Popups-tab preview is untouched (it renders
+  `PopupContent` directly).
+- **Language plumbing**: `WordText`/`WordPopup` grew a `language` prop —
+  the column's descriptor language (`{code, name}|null`) — passed by
+  `ReaderRow` (`first.language`/`second.language`) and the simulator's
+  `TextContent` (`props.first.language`/`props.second.language`). Unused
+  in this ticket; ticket 05's adoption resolves the new word's language
+  from it.
+- **`database/seeders/ui-strings/words.php`**: `word.not_in_dictionary`
+  (en/ru/be), re-seeded into the dev DB via `db:seed --class=UiStringSeeder`.
+- Tests: new `WordText.missing.test.js` (15 source pins following the
+  ADR 0066 pattern — all-tokens-interactive, no tint without an entry,
+  missing payload + zero-network guards, missing-card contents, language
+  plumbing on both surfaces, honest seeder copy); tokenizer parity tests
+  untouched and green; vitest 223 passed, `test:tia` 1378 passed,
+  `UiStringSeederTest` + `TokenizerParityTest` green, `pint --dirty` clean.
+- **`domains/interactive-words.md`**: "every token interactive" + the
+  missing-word card documented (new section, class list, highlighting
+  rule, step 1/2 wording); `generated.at` bumped.
+
 ## 2026-10-19 (popup-ai-enrich 02: word completeness 0-7 — lazy recalc, popup ordering, backfill)
 
 Stored word-completeness score (ticket 02 of the `popup-ai-enrich` spec;

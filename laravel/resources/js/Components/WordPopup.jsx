@@ -363,6 +363,59 @@ function ExplainPane({explain, explainKey, preview = false}) {
 }
 
 /**
+ * The missing-word card (popup-ai-enrich ticket 03): what an unmapped token
+ * opens — the raw clicked surface as the title and an honest
+ * "not in the dictionary yet" note. There is no word id behind it: nothing
+ * is fetched, no lookup event fires, and no familiarity / frequency /
+ * form-of lines exist. The toolbar shows only what applies — the Ask-AI
+ * placeholder, disabled until ticket 05 wires adopt-on-ask (its ask creates
+ * the word first, then enriches, and the popup transitions to the dictionary
+ * view; the popup's `language` prop is plumbed for exactly that). The
+ * structure mirrors the real card (toolbar / header / dictionary, same
+ * hairlines and stable `word-popup-*` hooks) so the card stays addressable
+ * from outside styles the same way.
+ */
+export function MissingPopupContent({surface}) {
+    const {t} = useI18n();
+
+    return (
+        <>
+            <div className="word-popup-actions shrink-0 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]">
+                <div className="flex items-center gap-1 py-1.5">
+                    {/* The Ask-AI placeholder: ticket 05's adopt-on-ask goes
+                        live here; until then the icon only renders,
+                        disabled. */}
+                    <button
+                        type="button"
+                        title={t('word.ask_ai')}
+                        aria-label={t('word.ask_ai')}
+                        disabled
+                        className={`word-popup-ask-ai ${toolbarButtonClass(false)} ml-auto`}
+                    >
+                        <Icon name="sparkles" className="h-[1.25em] w-[1.25em]"/>
+                    </button>
+                </div>
+            </div>
+
+            {/* The header carries the raw clicked surface only — no
+                familiarity / frequency / form-of lines (there is no word
+                behind the card). */}
+            <div className="word-popup-header shrink-0 border-b border-[var(--color-hairline)] px-3.5 pb-2.5 pt-3 dark:border-[var(--color-hairline-night)]">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="word-popup-title font-reading text-[1.286em] leading-tight">{surface}</span>
+                </div>
+            </div>
+
+            <div className="word-popup-dictionary min-h-0 flex-1 overflow-y-auto px-3.5 pb-2.5">
+                <p className="word-popup-missing mt-1 text-[0.929em] leading-snug opacity-70">
+                    {t('word.not_in_dictionary')}
+                </p>
+            </div>
+        </>
+    );
+}
+
+/**
  * The word popup's body — everything inside the box, minus the box itself:
  * the action toolbar (the card's first row, above the headword), the
  * headword header (familiarity, frequency, form-of lines) closed by a
@@ -779,6 +832,14 @@ export function PopupContent({
  * the host page from its reading font size (popupFontSizeFor); every inner
  * text size is em-relative to it, and the width scales with it.
  *
+ * A `wordId` of null is MISSING mode (popup-ai-enrich ticket 03): the token
+ * had no word-map entry, so nothing is fetched and no word-events fire — the
+ * card renders from the raw `surface` alone via MissingPopupContent (honest
+ * not-in-the-dictionary note, Ask-AI placeholder only). `language` — the
+ * clicked column's descriptor language ({code, name}|null) — rides along
+ * unused until ticket 05's adopt-on-ask resolves the new word's language
+ * from it.
+ *
  * With an `explain` payload ({rowKind, rowId, side, sentenceIndex, modelKey,
  * enabled, modelLabel, followsAnswer, answerLabel}) the popup grows the
  * toolbar's Explanation toggle: the first click mounts the AI context
@@ -805,7 +866,11 @@ export function PopupContent({
  * The body itself lives in the exported PopupContent, which the profile's
  * Popups tab reuses for its live preview.
  */
-export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain, sections}) {
+// `language` is plumbed from both surfaces for ticket 05's adopt-on-ask
+// (the missing card resolves the new word's language from it) — unused until
+// then.
+// eslint-disable-next-line no-unused-vars
+export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain, sections, language = null}) {
     const {t} = useI18n();
     const {props} = usePage();
     const effectiveSections = sections ?? props.popupVisibility ?? {};
@@ -848,6 +913,12 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     }, [wordId, explainKey]);
 
     useEffect(() => {
+        // Missing mode (popup-ai-enrich ticket 03): no word id — nothing to
+        // fetch and no payload state to reset; the card renders from the
+        // surface alone. No GET /words/ may fire for a missing token.
+        if (wordId == null) {
+            return;
+        }
         let cancelled = false;
         setLoading(true);
         setError(null);
@@ -1034,33 +1105,43 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         <div
             ref={ref}
             role="dialog"
-            aria-label={data?.word ?? surface}
+            aria-label={wordId == null ? surface : (data?.word ?? surface)}
             style={{...popupStyle(rect, fontSize), fontSize: `${fontSize}px`}}
             className={`word-popup absolute z-50 ${popupContainerClass}`}
         >
-            {(loading || error) && (
-                <div className="p-3.5">
-                    {loading && <p className="word-popup-loading text-[0.857em] opacity-60">{t('word.loading')}</p>}
-                    {error && <p className="word-popup-error text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{error}</p>}
-                </div>
-            )}
+            {wordId == null ? (
+                // Missing mode (popup-ai-enrich ticket 03): the unmapped
+                // token's card — raw surface, honest not-in-dictionary note,
+                // Ask-AI placeholder only. No fetch, no word-events, no
+                // familiarity/frequency/form-of, no progress/Anki actions.
+                <MissingPopupContent surface={surface}/>
+            ) : (
+                <>
+                    {(loading || error) && (
+                        <div className="p-3.5">
+                            {loading && <p className="word-popup-loading text-[0.857em] opacity-60">{t('word.loading')}</p>}
+                            {error && <p className="word-popup-error text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{error}</p>}
+                        </div>
+                    )}
 
-            {!loading && data && (
-                <PopupContent
-                    surface={surface}
-                    familiarity={familiarity}
-                    data={data}
-                    explainProps={explainProps}
-                    explainKey={explainKey}
-                    sections={effectiveSections}
-                    modelsOpen={modelsOpen}
-                    onModelsOpenChange={setModelsOpen}
-                    onProgressAction={changeProgress}
-                    progressBusy={busy}
-                    onAnkiSend={sendToAnki}
-                    ankiSend={ankiSend}
-                    ankiExisting={ankiExisting}
-                />
+                    {!loading && data && (
+                        <PopupContent
+                            surface={surface}
+                            familiarity={familiarity}
+                            data={data}
+                            explainProps={explainProps}
+                            explainKey={explainKey}
+                            sections={effectiveSections}
+                            modelsOpen={modelsOpen}
+                            onModelsOpenChange={setModelsOpen}
+                            onProgressAction={changeProgress}
+                            progressBusy={busy}
+                            onAnkiSend={sendToAnki}
+                            ankiSend={ankiSend}
+                            ankiExisting={ankiExisting}
+                        />
+                    )}
+                </>
             )}
         </div>,
         document.body,
