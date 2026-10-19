@@ -1,16 +1,34 @@
 ---
 type: Feature
 title: Interactive Words
-description: Interactive words on the reader and bilinguals simulator — EVERY tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (popup-ai-enrich ticket 03): dictionary-linked tokens open word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; entries stable-sort completeness-descending over that assembly order — stored words.completeness 0-7, recalculated lazily when stale), unmapped tokens open a missing-word card (raw surface title + honest not-in-the-dictionary note, nothing fetched, no lookup events, Ask-AI placeholder only until adopt-on-ask), per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon, the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
+description: Interactive words on the reader and bilinguals simulator — EVERY tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (popup-ai-enrich ticket 03): dictionary-linked tokens open word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; entries stable-sort completeness-descending over that assembly order — stored words.completeness 0-7, recalculated lazily when stale), unmapped tokens open a missing-word card (raw surface title + honest not-in-the-dictionary note, nothing fetched, no lookup events, Ask-AI placeholder only until adopt-on-ask), per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon (one ledger-locked BYO-key enrichment per word, merged inline under per-row source='ai' provenance, ADR 0082), the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-19T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T21:05:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
     title: WordController (word details + familiarity + events)
+  - id: popup-payload
+    resource: laravel/app/Classes/WordPopupPayload.php
+    title: WordPopupPayload (the one payload assembler both popup endpoints share)
+  - id: enrich-controller
+    resource: laravel/app/Http/Controllers/ReadingAiController.php
+    title: ReadingAiController::enrichWord (ask-AI word enrichment) + explainWord
+  - id: enrich-request
+    resource: laravel/app/Http/Requests/AiWordEnrichRequest.php
+    title: AiWordEnrichRequest ({word_id} validation)
+  - id: enrich-service
+    resource: laravel/app/Classes/WordAiEnrichmentService.php
+    title: WordAiEnrichmentService (transactional merge: content rows + link-only translations)
+  - id: enrich-reply
+    resource: laravel/app/Support/EnrichmentReply.php
+    title: EnrichmentReply (lenient strict-JSON parser — fences, coercion, caps, truncation)
+  - id: word-ai-fetch
+    resource: laravel/app/Models/WordAiFetch.php
+    title: WordAiFetch (the ask-AI ledger — succeeded = the lock)
   - id: word-completeness
     resource: laravel/app/Classes/WordCompleteness.php
     title: WordCompleteness (the 0-7 completeness matrix + lazy staleness recalc)
@@ -80,6 +98,9 @@ sources:
   - id: adr-anki
     resource: docs/adr/0077-browser-side-ankiconnect.md
     title: ADR 0077 (Anki export is browser-side; values-always-sent + hide-class template semantics; addendum v3 — re-sends update own notes in place)
+  - id: adr-enrich
+    resource: docs/adr/0082-ask-ai-enrichment-merge-inline-lock-on-success.md
+    title: ADR 0082 (ask-AI enrichment merges inline with per-row provenance, locks on success, translations link-only)
   - id: anki-word-config
     resource: laravel/resources/js/lib/ankiWordConfig.js
     title: ankiWordConfig.js (the popup's per-word Anki sync config — deck/fields from the word's resolved language entry, note type follows it)
@@ -97,8 +118,9 @@ each with its definitions, transcriptions, translations (native language
 first), examples and etymology, plus an **action toolbar as the popup's
 first row** — "I know this word" and "Remove mark" icons on the left;
 pushed right, in order: the always-visible Anki send icon, the on-demand
-Explanation toggle, the Ask-AI icon (disabled placeholder until the
-enrichment ticket wires it), and the robot (Models-used) icon rightmost —
+Explanation toggle, the Ask-AI icon (one ledger-locked BYO-key
+enrichment per word, merged inline — below), and the robot (Models-used)
+icon rightmost —
 with the Anki status lines directly beneath (the two progress icons are the
 only toolbar elements
 the `progress_actions` visibility opt-out still hides; inapplicable
@@ -420,6 +442,83 @@ outside-click closing — the word popup underneath stays put.
   provider-error mapping, throttle; `AIModelResolver` mocked at the
   container — provider calls are raw cURL and invisible to `Http::fake`).
 
+# Ask-AI enrichment (one ledger-locked ask per word)
+
+The toolbar's **Ask-AI icon** (sparkles, after the Explanation toggle) is
+the sparse word's on-demand fill (popup-ai-enrich ticket 04, ADR 0082): a
+Ctrl+click asks the user's **explanation model** (the same BYO-key seam as
+the Context explanation — `AIModelResolver::resolveExplanationModel` +
+`ask`, no client-sent model) to enrich the dictionary entry, and the reply
+merges **straight into the dictionary tables** — no AI block, no popup
+marker.
+
+* **The contract.** `POST /ai/word-enrich` takes `{word_id}` (the popup's
+  bound word; the missing-word adoption of ticket 05 extends the
+  contract), auth+approved, CSRF, throttled 20/min like the other AI
+  routes. The response is the **word-show payload itself** — both
+  endpoints assemble it through the one `WordPopupPayload` presenter, so
+  the popup swaps it in with a plain `setData` and the shapes can never
+  drift — with `ai_asked: true` riding along once the ledger locked. The
+  word is touched on success, so the stored completeness goes stale and
+  the swap-in payload (built through `WordFamily::resolve`) recalculates
+  and re-orders by it in the same request.
+* **The ledger lock.** One `word_ai_fetches` row per word: provider,
+  model, status pending/succeeded/failed, attempts, error, `asked_at`,
+  `succeeded_at`. A **succeeded row is the forever lock** — the endpoint
+  rejects further asks (409 "AI enrichment has already been completed for
+  this word.") and the payload's `ai_asked` greys the icon ("AI already
+  asked" tooltip, the click a no-op). **Failed attempts stay retryable**
+  at any count (each retry bumps `attempts`; the row materializes only
+  when an ask is actually attempted — a no-model request records
+  nothing): no chosen model → 400 "Choose an AI model in your profile
+  settings."; no usable key → the resolver's 403; provider errors map
+  through with their own status; an unparseable reply (502 "The AI reply
+  could not be parsed as strict JSON.") and a fully-duplicate one (502
+  "The AI reply contained no new dictionary content.") finalize failed
+  too. Errors land verbatim beneath the toolbar
+  (`word-popup-ask-ai-error`); the ui-strings are `word.ask_ai` /
+  `word.ask_ai_already` / `word.ask_ai_sending` / `word.ask_ai_failed`
+  (en/ru/be).
+* **The prompt.** `PromptTemplates::enrichment` — admin-editable
+  `prompt_templates` key `word.enrichment` with a code fallback — demands
+  **strict JSON**: translations / definitions / transcriptions / examples
+  / etymologies as string arrays, translations and definitions in the
+  user's native language, examples in the word's own language.
+* **Lenient parsing.** `App\Support\EnrichmentReply` strips code fences
+  and prose around the outermost `{...}`, coerces (a bare string becomes
+  a one-element list, numbers stringify, booleans/nulls/nested
+  arrays/empties drop, duplicates collapse), caps the counts (12
+  translations / 8 definitions / 4 each of the rest) and truncates to the
+  column limits (definitions 500, transcriptions 100, examples 500,
+  etymologies 1000) — except translations, lookup candidates that must
+  stay whole words, which are dropped past 256 chars.
+* **The merge.** In one transaction (`WordAiEnrichmentService`): each
+  section merges into its table exact-text deduped — **new rows carry
+  `source = 'ai'`**, null stays imported, and the popup renders no visual
+  marker (provenance is DB-only, ADR 0082). AI transcriptions reuse the
+  word language's seeded transcription types (IPA first); a language with
+  none simply gets no AI transcriptions. **Translations are link-only**
+  (ADR 0078 holds for AI): candidates normalize (trim, stress marks
+  stripped for the target language's rule, over-long and
+  sentence-punctuated dropped), resolve against the native language's
+  EXISTING words through the shared `TranslationTargets` resolver, link
+  as `word_translations` pairs, and the unmatched stage into the word's
+  `translations` JSON — **zero word rows are ever created**.
+* **Client wiring.** The ask callback (the outer `WordPopup`) posts the
+  bound `data.id` with the CSRF header, guards both completion paths with
+  the mirrored data ref (a late response for a moved popup is dropped),
+  resets the in-flight/error state on word change, and disables the icon
+  while in flight. The profile's Popups-tab preview keeps the icon inert
+  (no handler reaches it).
+* Tests: `tests/Feature/AiWordEnrichEndpointTest.php` (end-to-end
+  enrichment with the resolver mocked at the container — content rows +
+  provenance, link + stage + zero word rows, ledger lock/retry/403/400,
+  dedup, caps/truncation, template + fallback, validation, throttle),
+  `tests/Unit/EnrichmentReplyTest.php` (parser: fences, coercion, caps,
+  truncation, null), `tests/Feature/WordEndpointTest.php` (`ai_asked`
+  true only for a succeeded row), and the vitest source pins in
+  `resources/js/Components/WordPopup.toolbar.test.js`.
+
 # Anki send from the popup toolbar (per-word send)
 
 The popup toolbar's **Anki icon** (`word-popup-anki-send`, right end of
@@ -563,7 +662,8 @@ see [Profile](/domains/profile.md) for the Anki tab side):
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `GET /words/{word}` | `WordController::show` | Word popup payload: the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) stable-sorted completeness-descending (stored `words.completeness`, lazily recalculated when stale during the resolve) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked), `tags` (the linked word's tag names — for the Anki card; eager-loaded with the family via `WordFamily::EAGER_LOAD`, no per-open lazy query) |
+| `GET /words/{word}` | `WordController::show` | Word popup payload (assembled by the shared `WordPopupPayload`): the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) stable-sorted completeness-descending (stored `words.completeness`, lazily recalculated when stale during the resolve) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked), `tags` (the linked word's tag names — for the Anki card; eager-loaded with the family via `WordFamily::EAGER_LOAD`, no per-open lazy query), `ai_asked` (a succeeded ask-AI ledger row exists — the toolbar's grey-icon flag) |
+| `POST /ai/word-enrich` | `ReadingAiController::enrichWord` | Ask-AI enrichment for a known word ({word_id}, `AiWordEnrichRequest`, throttle 20/min): explanation-model strict-JSON ask through `AIModelResolver::ask`, lenient parse (`EnrichmentReply`), transactional merge with per-row `source='ai'` provenance and link-only translations (`WordAiEnrichmentService`), `word_ai_fetches` ledger locking on success; responds the word-show payload so the popup swaps it live (ADR 0082) |
 | `POST /ai/word-explain` | `ReadingAiController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |
 | `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |
 | `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to untouched) |

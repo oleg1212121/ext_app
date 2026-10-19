@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T21:05:00+03:00 }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base
@@ -13,6 +13,9 @@ sources:
   - id: resolver
     resource: laravel/app/Classes/AIModelResolver.php
     title: Provider registry and entry point
+  - id: enrich-service
+    resource: laravel/app/Classes/WordAiEnrichmentService.php
+    title: WordAiEnrichmentService (the ask-AI enrichment consumer, ADR 0082)
   - id: adr-preferences
     resource: docs/adr/0035-per-user-ai-model-preferences.md
     title: ADR 0035 — Per-user AI model preferences, resolved server-side
@@ -246,6 +249,13 @@ baseline migration creates the column NOT NULL with cascade delete
 * [Bilinguals Simulator](/domains/bilinguals-simulator.md) — translation
   assessment (`/ai/question`).
 * `Test::askAI` (`/word/ask-ai`) — word-level AI questions.
+* [Interactive Words](/domains/interactive-words.md) — the word popup's
+  Context explanation (`/ai/word-explain`) and its ask-AI enrichment
+  (`/ai/word-enrich`, one ledger-locked ask per word, merged inline under
+  per-row `source='ai'` provenance, ADR 0082) — both resolve the
+  **explanation model**. The enrichment prompt is the admin-editable
+  `word.enrichment` template (`:word`/`:language`/`:native`,
+  `PromptTemplates::enrichment`, code fallback) demanding strict JSON.
 
 # Extending
 

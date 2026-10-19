@@ -1,5 +1,64 @@
 # Directory Update Log
 
+## 2026-10-19 (popup-ai-enrich 04: ask-AI enrichment — sync, ledger-locked, merged inline)
+
+The word popup's Ask-AI icon went live (ticket 04 of the `popup-ai-enrich`
+spec; ADR 0082):
+
+- **`POST /ai/word-enrich`** (`ReadingAiController::enrichWord`, throttle
+  20/min, auth+approved, beside `/ai/word-explain`): takes `{word_id}`, asks
+  the user's **explanation model** through the same BYO-key seam
+  (`AIModelResolver::resolveExplanationModel` + `ask`; null model → 400
+  guidance, no ledger row), and merges the reply inline. The response is the
+  **word-show payload itself** — both endpoints now assemble through the new
+  `App\Classes\WordPopupPayload` presenter (extracted from
+  `WordController::show`, which also gained `ai_asked`) — so the popup swaps
+  it in live; the word is touched on success, making ticket 02's stored
+  completeness stale before the payload build recalculates it.
+- **`word_ai_fetches` ledger** (migration `2026_10_19_000003`, unique per
+  word): provider/model, status pending/succeeded/failed, attempts, error,
+  asked_at, succeeded_at. A **succeeded row is the forever lock** (409 + the
+  payload's `ai_asked` greying the icon); failed attempts stay retryable at
+  any count (no-model requests record nothing).
+- **Lenient parsing + capped merge**: new
+  `App\Support\EnrichmentReply` (fences/prose stripped, shapes coerced,
+  counts capped 12/8/4/4/4, lengths truncated to the column limits —
+  translations dropped past 256 instead) and
+  `App\Classes\WordAiEnrichmentService` (one transaction: content sections
+  exact-text deduped, new rows `source = 'ai'`; translations link-only per
+  ADR 0078 through the shared `TranslationTargets`/`StagedTranslations`
+  toolkit — ZERO word rows). Prompt: admin-editable `word.enrichment`
+  template with a code fallback (`PromptTemplates::enrichment`).
+- **Per-row provenance**: nullable `source` columns on
+  definitions/transcriptions/examples/etymologies (migration
+  `2026_10_19_000004`; `'ai'` vs null imported; DB-only — the popup renders
+  no marker). Content models' `$fillable` grew `source`.
+- **Frontend** (`WordPopup.jsx`): the ask icon reads the payload's
+  `ai_asked` (grey + "AI already asked" tooltip + no-op click), disables
+  while the POST is in flight, and swaps `setData(json.data)` on success;
+  failures land verbatim beneath the toolbar (`word-popup-ask-ai-error`).
+  The ask callback guards both completion paths with the mirrored data ref
+  and resets on word change. New ui-strings `word.ask_ai_already` /
+  `word.ask_ai_sending` / `word.ask_ai_failed` (en/ru/be), re-seeded into
+  the dev DB via `db:seed --class=UiStringSeeder`.
+- **Schema**: both migrations are additive; plain `php artisan migrate` ran
+  on the dev DB (`ext_app`) as expected.
+- Tests: new `tests/Feature/AiWordEnrichEndpointTest.php` (13 tests —
+  end-to-end enrichment with `AIModelResolver` mocked at the container per
+  the explain endpoint's rule, lock/retry/403/400, dedup + provenance,
+  link + stage + zero word rows, caps/truncation, template + fallback,
+  validation, throttle) and `tests/Unit/EnrichmentReplyTest.php` (7 parser
+  tests); `WordEndpointTest` pins `ai_asked`; vitest source pins updated in
+  `WordPopup.toolbar.test.js` (live icon, label states, error line,
+  request/swap/guards) and `WordPopup.ankiSend.test.js`'s send-source slice
+  scoped to `sendToAnki` (the new ask callback carries its own dataRef
+  guards). Full suite green (test:tia), vitest 229 passing, pint clean.
+- Wiki: this entry; `interactive-words.md` (new Ask-AI enrichment section +
+  routes table + sources), `ai-providers.md` (consumer + template),
+  `database/dictionary.md` (+ `word_ai_fetches`, source columns),
+  `database/schema-overview.md` (domains row + template key);
+  `docs/adr/0082-ask-ai-enrichment-merge-inline-lock-on-success.md`.
+
 ## 2026-10-19 (popup-ai-enrich 03: unknown tokens clickable + missing-word popup)
 
 Every tokenizer word token is now interactive (ticket 03 of the

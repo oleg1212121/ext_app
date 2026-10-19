@@ -9,6 +9,7 @@ use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\User;
 use App\Models\Word;
+use App\Models\WordAiFetch;
 use App\Models\WordClass;
 use App\Models\WordTranslation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -359,6 +360,43 @@ it('returns an empty tag list for untagged words', function () {
         ->getJson(route('words.show', ['word' => $word->id]))
         ->assertOk()
         ->assertJsonPath('data.tags', []);
+});
+
+it('flags ai_asked only when a succeeded AI enrichment ledger row exists', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $asked = createWord('en', 'melt', 'verb');
+    $failed = createWord('en', 'boil', 'verb');
+
+    WordAiFetch::query()->create([
+        'word_id' => $asked->id,
+        'status' => WordAiFetch::STATUS_SUCCEEDED,
+        'attempts' => 1,
+        'asked_at' => now(),
+        'succeeded_at' => now(),
+    ]);
+    WordAiFetch::query()->create([
+        'word_id' => $failed->id,
+        'status' => WordAiFetch::STATUS_FAILED,
+        'attempts' => 2,
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $asked->id]))
+        ->assertOk()
+        ->assertJsonPath('data.ai_asked', true);
+
+    // A failed ask stays retryable — the icon must not grey out for it.
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $failed->id]))
+        ->assertOk()
+        ->assertJsonPath('data.ai_asked', false);
+
+    $never = createWord('en', 'freeze', 'verb');
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $never->id]))
+        ->assertOk()
+        ->assertJsonPath('data.ai_asked', false);
 });
 
 it('sorts translations native language first', function () {

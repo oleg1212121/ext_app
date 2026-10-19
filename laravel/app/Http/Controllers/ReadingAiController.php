@@ -4,11 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Classes\AIModelResolver;
 use App\Classes\EntityAccessService;
+use App\Classes\WordAiEnrichmentService;
+use App\Classes\WordPopupPayload;
 use App\Exceptions\AiProviderException;
 use App\Http\Requests\AiQuestionRequest;
+use App\Http\Requests\AiWordEnrichRequest;
 use App\Http\Requests\AiWordExplainRequest;
 use App\Models\EntitySentence;
 use App\Models\Word;
+use App\Models\WordAiFetch;
+use App\Support\EnrichmentReply;
 use App\Support\PromptTemplates;
 use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
@@ -16,16 +21,18 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * The reading surfaces' AI answers: the simulator's assessment gloss
- * (question + streamed answer) and the word popup's Context explanation —
- * shared by the reader and the simulator. The routes keep their paths,
- * names and throttle; only the controller moved out of SimulatorController,
- * which keeps the page props and the POST /text payload.
+ * (question + streamed answer), the word popup's Context explanation and the
+ * word popup's ask-AI enrichment — shared by the reader and the simulator.
+ * The routes keep their paths, names and throttle; only the controller moved
+ * out of SimulatorController, which keeps the page props and the POST /text
+ * payload.
  */
 class ReadingAiController extends Controller
 {
     public function __construct(
         protected AIModelResolver $modelResolver,
         protected EntityAccessService $access,
+        protected WordAiEnrichmentService $enrichment,
     ) {}
 
     public function askAi(AiQuestionRequest $request): JsonResponse
@@ -181,6 +188,111 @@ class ReadingAiController extends Controller
         }
 
         return response()->json(['data' => ['answer' => $answer]], 200);
+    }
+
+    /**
+     * Ask-AI enrichment for a known word (popup-ai-enrich ticket 04): the
+     * user's explanation model answers a strict-JSON prompt through the same
+     * BYO-key seam as explainWord, and the leniently-parsed reply merges
+     * straight into the word's dictionary content — definitions,
+     * transcriptions, examples, etymologies (new rows `source = 'ai'`),
+     * translations link-only per ADR 0078. The word_ai_fetches ledger locks
+     * the word on the first success; failed attempts stay retryable. The
+     * response is the word-show payload (assembled by the same
+     * WordPopupPayload presenter), so the popup swaps it in live.
+     */
+    public function enrichWord(AiWordEnrichRequest $request): JsonResponse
+    {
+        /** @var Word $word */
+        $word = Word::query()->findOrFail($request->validated('word_id'));
+
+        // The ledger gate: a succeeded row is the forever lock (the toolbar's
+        // icon is grey for it); failed and pending attempts stay retryable.
+        // The row materializes only when an ask is actually attempted — a
+        // no-model request records nothing.
+        $ledger = WordAiFetch::query()->firstOrNew(['word_id' => $word->id]);
+
+        if ($ledger->exists && $ledger->status === WordAiFetch::STATUS_SUCCEEDED) {
+            return $this->aiError('AI enrichment has already been completed for this word.', 409);
+        }
+
+        $model = $this->modelResolver->resolveExplanationModel();
+
+        if ($model === null) {
+            return $this->aiError('Choose an AI model in your profile settings.', 400);
+        }
+
+        // The ledger carries the resolved model's own two halves — the
+        // resolver-provided key is always 'provider:model' (split on the
+        // FIRST colon, so OpenRouter ids with '/' stay intact).
+        $colon = strpos($model['key'], ':');
+        $provider = $colon === false ? null : substr($model['key'], 0, $colon);
+        $modelName = $colon === false ? null : substr($model['key'], $colon + 1);
+
+        $ledger->forceFill([
+            'status' => WordAiFetch::STATUS_PENDING,
+            'provider' => $provider,
+            'model' => $modelName,
+            'attempts' => (int) $ledger->attempts + 1,
+            'asked_at' => now(),
+            'error' => null,
+        ])->save();
+
+        $nativeLanguage = $request->user()->nativeLanguage();
+        $instruction = PromptTemplates::enrichment(
+            $word->word,
+            $word->language?->name ?? 'the word\'s language',
+            $nativeLanguage?->name ?? 'English',
+        );
+        $question = 'Word to enrich: «'.$word->word.'»'
+            .($word->wordClass?->title !== null ? ' — '.$word->wordClass->title : '');
+
+        try {
+            $answer = $this->modelResolver->ask($model['key'], $instruction, $question);
+        } catch (InvalidArgumentException) {
+            return $this->failLedger($ledger, 'Invalid model selection.', 400);
+        } catch (AiProviderException $e) {
+            return $this->failLedger($ledger, $e->getMessage(), $e->getStatusCode());
+        }
+
+        $parsed = EnrichmentReply::parse((string) $answer);
+
+        if ($parsed === null) {
+            return $this->failLedger($ledger, 'The AI reply could not be parsed as strict JSON.', 502);
+        }
+
+        if (! $this->enrichment->applyParsed($word, $parsed, $nativeLanguage)) {
+            return $this->failLedger($ledger, 'The AI reply contained no new dictionary content.', 502);
+        }
+
+        $ledger->forceFill([
+            'status' => WordAiFetch::STATUS_SUCCEEDED,
+            'succeeded_at' => now(),
+            'error' => null,
+        ])->save();
+
+        // The word's content changed: touch it so ticket 02's lazy
+        // completeness recalc sees a stale score (the payload build below
+        // then recalculates over the new content).
+        $word->touch();
+
+        return response()->json([
+            'data' => WordPopupPayload::build($word, $word->l_word ?: $word->word, $request->user()),
+        ], 200);
+    }
+
+    /**
+     * Finalize a failed attempt (the lock never engages) and surface the
+     * error in the reading-surface JSON shape.
+     */
+    private function failLedger(WordAiFetch $ledger, string $message, int $status): JsonResponse
+    {
+        $ledger->forceFill([
+            'status' => WordAiFetch::STATUS_FAILED,
+            'error' => mb_substr($message, 0, 500),
+        ])->save();
+
+        return $this->aiError($message, $status);
     }
 
     /**

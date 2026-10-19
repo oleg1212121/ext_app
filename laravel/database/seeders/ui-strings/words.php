@@ -22,9 +22,15 @@ return [
     // the old "Dictionary"/"Explanation" tab titles are retired with the tab
     // strip — the dictionary content always renders now.
     'word.explain_toggle' => ['en' => 'Explanation', 'ru' => 'Разбор', 'be' => 'Разбор'],
-    // The Ask-AI toolbar icon (a disabled placeholder in ticket 01; live
-    // enrichment arrives in ticket 04).
+    // The Ask-AI toolbar icon (popup-ai-enrich ticket 04): the live
+    // enrichment's three label states plus the failed-attempt copy — the
+    // succeeded ledger lock greys the icon, a request in flight reads
+    // "sending", failures show beneath the toolbar with the server's
+    // guidance verbatim.
     'word.ask_ai' => ['en' => 'Ask AI', 'ru' => 'Спросить ИИ', 'be' => 'Спытаць ШІ'],
+    'word.ask_ai_already' => ['en' => 'AI already asked', 'ru' => 'ИИ уже спрошен', 'be' => 'ШІ ужо спытаны'],
+    'word.ask_ai_sending' => ['en' => 'Asking AI…', 'ru' => 'Спрашиваем ИИ…', 'be' => 'Спытваем ШІ…'],
+    'word.ask_ai_failed' => ['en' => 'Ask AI failed (:status)', 'ru' => 'Не удалось спросить ИИ (:status)', 'be' => 'Не ўдалося спытаць ШІ (:status)'],
     'word.explain_loading' => ['en' => 'Explaining…', 'ru' => 'Объясняю…', 'be' => 'Тлумачу…'],
     'word.explain_failed' => ['en' => 'Explanation failed (:status)', 'ru' => 'Не удалось объяснить (:status)', 'be' => 'Не ўдалося патлумачыць (:status)'],
     'word.explain_retry' => ['en' => 'Retry', 'ru' => 'Повторить', 'be' => 'Паўтарыць'],

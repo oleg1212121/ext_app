@@ -426,12 +426,15 @@ export function MissingPopupContent({surface}) {
  *
  * The toolbar hosts the actions as line-art icons — "I know this word" /
  * "Remove mark" on the left; pushed right, in order: "Save to Anki", the
- * on-demand Explanation toggle, the Ask-AI placeholder (disabled until
- * ticket 04 wires the live enrichment), and the robot (Models used popup)
- * rightmost — with the transient Anki status lines directly beneath. All
+ * on-demand Explanation toggle, the live Ask-AI icon (popup-ai-enrich
+ * ticket 04 — one ask per word, ledger-locked on the server), and the robot
+ * (Models used popup)
+ * rightmost — with the transient Anki status lines and the ask-AI error
+ * line directly beneath. All
  * icons always render: an inapplicable icon is disabled, not hidden (know:
  * familiarity already max or busy; remove mark: no mark or busy; anki: no
- * handler or a send in flight) — except the Explanation toggle and the
+ * handler or a send in flight; ask-ai: no handler, a request in flight, or
+ * the word already asked) — except the Explanation toggle and the
  * robot, which only exist for popups with an explain payload (and vanish
  * with the ADR 0046 `explanation: false` key, as the old tab strip did).
  * Tooltips and aria-labels come from the existing word/ai ui-strings. The
@@ -491,6 +494,9 @@ export function PopupContent({
     onAnkiSend = null,
     ankiSend = null,
     ankiExisting = 'absent',
+    onAskAi = null,
+    aiBusy = false,
+    aiError = null,
     preview = false,
 }) {
     const {t} = useI18n();
@@ -521,20 +527,27 @@ export function PopupContent({
         ? t('word.anki_sending')
         : (ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send'));
 
+    // The Ask-AI icon's label, shared by its title and aria-label: the
+    // succeeded ledger lock (the grey icon) reads "already asked", a request
+    // in flight reads "sending", the default is the plain Ask AI.
+    const askAiLabel = data.ai_asked
+        ? t('word.ask_ai_already')
+        : (aiBusy ? t('word.ask_ai_sending') : t('word.ask_ai'));
+
     return (
         <>
             {/* The action toolbar — the popup's first row, above the word.
                 "I know this word" / "Remove mark" on the left; pushed right,
-                in order: "Save to Anki", the Explanation toggle, the Ask-AI
-                placeholder, the robot (Models used popup) rightmost. Icons
+                in order: "Save to Anki", the Explanation toggle, the live
+                Ask-AI icon, the robot (Models used popup) rightmost. Icons
                 always render: an inapplicable icon is disabled, not hidden
                 (know: familiarity already max or busy; remove mark: no mark
-                or busy; anki: no handler or a send in flight; ask-ai:
-                disabled until ticket 04 wires the enrichment). The
+                or busy; anki: no handler or a send in flight; ask-ai: no
+                handler, a request in flight, or the word already asked). The
                 `progress_actions` visibility gate hides only the two
                 progress icons — the right-hand icons ignore the
-                popup-visibility toggles (spec). The Anki status lines render
-                directly beneath the icon row. */}
+                popup-visibility toggles (spec). The Anki status lines and
+                the ask-AI error line render directly beneath the icon row. */}
             <div className="word-popup-actions shrink-0 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]">
                 <div className="flex items-center gap-1 py-1.5">
                     {sections.progress_actions !== false && (
@@ -599,15 +612,20 @@ export function PopupContent({
                             <Icon name="chatBubble" className="h-[1.25em] w-[1.25em]"/>
                         </button>
                     )}
-                    {/* Ask-AI placeholder: the toolbar shape is final now,
-                        the live enrichment (BYO-key, ledger-locked, merged
-                        inline) arrives in ticket 04 — until then the icon
-                        only renders, disabled. */}
+                    {/* The live Ask-AI icon (popup-ai-enrich ticket 04):
+                        one ask per word, ledger-locked on the server — the
+                        payload's `ai_asked` (a succeeded word_ai_fetches
+                        row) greys the icon with an "already asked"
+                        tooltip and makes the click a no-op; a request in
+                        flight disables it too; failed attempts stay
+                        retryable (the icon re-enables, the error shows
+                        beneath). */}
                     <button
                         type="button"
-                        title={t('word.ask_ai')}
-                        aria-label={t('word.ask_ai')}
-                        disabled
+                        title={askAiLabel}
+                        aria-label={askAiLabel}
+                        disabled={onAskAi == null || aiBusy || data.ai_asked}
+                        onClick={onAskAi}
                         className={`word-popup-ask-ai ${toolbarButtonClass(false)}`}
                     >
                         <Icon name="sparkles" className="h-[1.25em] w-[1.25em]"/>
@@ -664,6 +682,14 @@ export function PopupContent({
                             {t('word.anki_go_to_settings')}
                         </Link>
                     </div>
+                )}
+                {/* A failed Ask-AI attempt: the server's guidance (no key,
+                    no model, already asked, throttled, provider error) lands
+                    verbatim; the icon stays retryable. */}
+                {aiError && (
+                    <p className="word-popup-ask-ai-error pb-2 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
+                        {aiError}
+                    </p>
                 )}
             </div>
 
@@ -881,6 +907,12 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [ankiSend, setAnkiSend] = useState(null);
+    // The ask-AI request state for the current word: `aiBusy` while the
+    // enrichment POST is in flight (the icon disables), `aiError` the latest
+    // failure's message (shown beneath the toolbar, the icon stays
+    // retryable). A success swaps the whole `data` payload in place.
+    const [aiBusy, setAiBusy] = useState(false);
+    const [aiError, setAiError] = useState(null);
     // The on-open duplicate check's outcome for the current word:
     // 'checking' while the findNotes round-trip is in flight (the icon
     // stays in add form — no spinner), 'found' once the word sits in its
@@ -928,6 +960,11 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         // never paint onto it (the detection effect below re-asserts
         // 'checking' when it runs for the loaded data).
         setAnkiExisting('checking');
+        // A fresh word also clears the previous word's ask state — an
+        // in-flight enrichment for the old word is dropped by its
+        // dataRef guard below, so the flag never sticks.
+        setAiBusy(false);
+        setAiError(null);
 
         fetch(`/words/${wordId}?surface=${encodeURIComponent(surface)}`, {
             headers: {Accept: 'application/json'},
@@ -1097,6 +1134,63 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         );
     };
 
+    // The per-word Ask-AI send (popup-ai-enrich ticket 04): one POST to
+    // /ai/word-enrich with the BOUND word id (data.id — the same id the
+    // server's ledger locks and the payload's ai_asked reports). The
+    // response is the word-show payload for the same word (the same
+    // WordPopupPayload assembler), so the swap is a plain setData — the
+    // enriched dictionary renders without a reopen. Both completion paths
+    // check the mirrored data ref first: a late result for a popup that has
+    // moved to another word is dropped (the explainKey precedent), and the
+    // fetch effect's reset clears the in-flight flag for the new word.
+    // Failures land in `aiError` beneath the toolbar — the server's
+    // guidance verbatim (no key, no model, already asked, throttled) — and
+    // the icon stays retryable, because only a succeeded ask locks.
+    const askAi = () => {
+        if (!data || aiBusy || data.ai_asked) {
+            return;
+        }
+        setAiBusy(true);
+        setAiError(null);
+        fetch('/ai/word-enrich', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                ...(getCsrfToken() ? {'X-CSRF-TOKEN': getCsrfToken()} : {}),
+            },
+            body: JSON.stringify({word_id: data.id}),
+        })
+            .then(async (res) => {
+                const json = await res.json().catch(() => null);
+                if (!res.ok) {
+                    throw new Error(
+                        json?.error
+                            ?? json?.message
+                            ?? t('word.ask_ai_failed', {status: res.status}),
+                    );
+                }
+
+                return json;
+            })
+            .then((json) => {
+                if (dataRef.current !== data) {
+                    return;
+                }
+                setAiBusy(false);
+                setData(json.data);
+            })
+            .catch((e) => {
+                if (dataRef.current !== data) {
+                    return;
+                }
+                setAiBusy(false);
+                setAiError(e instanceof Error && e.message
+                    ? e.message
+                    : t('word.ask_ai_failed', {status: '?'}));
+            });
+    };
+
     const explainProps = explain && explainKey
         ? {...explain, wordId, surface}
         : null;
@@ -1139,6 +1233,9 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                             onAnkiSend={sendToAnki}
                             ankiSend={ankiSend}
                             ankiExisting={ankiExisting}
+                            onAskAi={askAi}
+                            aiBusy={aiBusy}
+                            aiError={aiError}
                         />
                     )}
                 </>

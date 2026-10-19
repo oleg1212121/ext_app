@@ -234,4 +234,8 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::post('/ai/question', [ReadingAiController::class, 'askAi'])->name('ai.question')->middleware('throttle:20,1');
     Route::post('/ai/question/stream', [ReadingAiController::class, 'askAiStreamed'])->name('ai.question.stream')->middleware('throttle:20,1');
     Route::post('/ai/word-explain', [ReadingAiController::class, 'explainWord'])->name('ai.word-explain')->middleware('throttle:20,1');
+    // The word popup's ask-AI enrichment (popup-ai-enrich ticket 04): the
+    // known-word path — the missing-word adoption extends the contract in
+    // ticket 05.
+    Route::post('/ai/word-enrich', [ReadingAiController::class, 'enrichWord'])->name('ai.word-enrich')->middleware('throttle:20,1');
 });

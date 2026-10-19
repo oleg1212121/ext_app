@@ -20,6 +20,8 @@ class PromptTemplates
 
     public const EXPLANATION_KEY = 'word.explanation';
 
+    public const ENRICHMENT_KEY = 'word.enrichment';
+
     public const FORMAT_FALLBACK = 'Compare :base original vs. my :learning translation. '
         .'Format rules: use ## headings for each numbered task; quote every exact word or phrase you discuss '
         .'in straight double quotes; in corrections mark removed words as ~~removed~~ and added words as **added**; '
@@ -34,6 +36,17 @@ class PromptTemplates
         .'using the neighbouring sentences only as context. Reply in :native. '
         .'Be concise: 2 to 4 sentences. Name the sense that applies here and, when natural, give the closest '
         .':native equivalent word or phrase. Markdown formatting is allowed. Do not repeat the sentences back.';
+
+    public const ENRICHMENT_FALLBACK = 'You are a dictionary assistant for a language learner. '
+        .'Enrich the dictionary entry for the :language word «:word». Reply in :native. '
+        .'Answer with ONLY a JSON object — no prose, no markdown, no code fences — with exactly these keys, '
+        .'each a JSON array of plain strings: translations (the closest :native equivalent words, 3 to 12), '
+        .'definitions (short :native definitions of the word\'s main senses, up to 8), '
+        .'transcriptions (the word\'s pronunciations, up to 4), '
+        .'examples (short example sentences in :language, up to 4), '
+        .'etymologies (short :native etymology notes, up to 4). '
+        .'Every string must be plain text with no numbering and no markdown. '
+        .'Use an empty array for a key you cannot fill.';
 
     public static function format(): string
     {
@@ -69,6 +82,20 @@ class PromptTemplates
         $template = static::row(static::EXPLANATION_KEY, static::EXPLANATION_FALLBACK);
 
         return str_replace([':word', ':native'], [$word, $nativeName], $template);
+    }
+
+    /**
+     * The ask-AI enrichment's system message: the admin's template with the
+     * target word, its language's name and the user's native language name
+     * substituted. The fallback (and the edit guidance) demands strict JSON —
+     * the reply parsing is lenient, but the stricter the answer the more of
+     * it survives the caps.
+     */
+    public static function enrichment(string $word, string $languageName, string $nativeName): string
+    {
+        $template = static::row(static::ENRICHMENT_KEY, static::ENRICHMENT_FALLBACK);
+
+        return str_replace([':word', ':language', ':native'], [$word, $languageName, $nativeName], $template);
     }
 
     private static function row(string $key, string $fallback): string

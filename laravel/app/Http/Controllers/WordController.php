@@ -4,11 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Classes\WordFamiliarityService;
 use App\Classes\WordFamily;
+use App\Classes\WordPopupPayload;
 use App\Classes\WordTranslationFetchService;
 use App\Classes\WordTranslations\WordTranslationResolver;
 use App\Http\Requests\RecordWordEventsRequest;
 use App\Http\Requests\UpdateWordProgressRequest;
-use App\Models\Transcription;
 use App\Models\UserWord;
 use App\Models\Word;
 use App\Models\WordTranslation;
@@ -19,8 +19,6 @@ use Illuminate\Support\Collection;
 
 class WordController extends Controller
 {
-    private const TRANSLATION_LIMIT = 100;
-
     public function __construct(private readonly WordFamiliarityService $familiarity) {}
 
     /**
@@ -30,7 +28,10 @@ class WordController extends Controller
      * surface token to, ordered most common headword first. Relay entries
      * ("past participle of the verb melt") are hidden when a base group
      * carries the real content. `tags` (the linked word's tag names) ride
-     * along for the popup's "Save to Anki" card (additive).
+     * along for the popup's "Save to Anki" card (additive). The payload
+     * assembles in WordPopupPayload — the one shape the ask-AI enrich
+     * response swaps in live must never drift from (shared with
+     * POST /ai/word-enrich, popup-ai-enrich ticket 04).
      */
     public function show(Request $request, Word $word): JsonResponse
     {
@@ -40,29 +41,11 @@ class WordController extends Controller
         $surface = preg_replace('/\p{M}/u', '', mb_strtolower((string) $request->query('surface', ''))) ?? '';
 
         $family = WordFamily::resolve($word, $surface);
-        $headwords = $family->entries();
 
-        $bound = $headwords->firstWhere('id', $word->id) ?? $word;
-        $isForm = $surface !== '' && $surface !== $bound->l_word;
-
-        $entries = $headwords
-            ->map(fn (Word $entry): array => $this->entry($entry, $request->user()))
-            ->all();
-
-        $this->maybeFetchTranslations($word, $headwords, $request->user());
+        $this->maybeFetchTranslations($word, $family->entries(), $request->user());
 
         return response()->json([
-            'data' => [
-                'id' => $bound->id,
-                'word' => $bound->word,
-                'language_code' => $bound->language?->code,
-                'word_class' => $bound->wordClass?->title,
-                'is_form' => $isForm,
-                'form_of' => $family->formOf(),
-                'frequency' => $this->frequencyRank($bound),
-                'tags' => $bound->tags->pluck('name')->all(),
-                'entries' => $entries,
-            ],
+            'data' => WordPopupPayload::fromFamily($word, $family, $surface, $request->user()),
         ]);
     }
 
@@ -94,22 +77,6 @@ class WordController extends Controller
         if (! $hasTranslations) {
             app(WordTranslationFetchService::class)->dispatchIfEligible($word, $nativeLanguage);
         }
-    }
-
-    /**
-     * The headword's frequency rank for the popup's frequency line (lower =
-     * more common). Null when no frequency list carries the word — the line
-     * hides for it.
-     */
-    private function frequencyRank(Word $word): ?int
-    {
-        if ($word->frequency === null) {
-            return null;
-        }
-
-        $rank = (int) round((float) $word->frequency);
-
-        return $rank >= Word::FREQUENCY_UNRANKED ? null : $rank;
     }
 
     /**
@@ -150,53 +117,5 @@ class WordController extends Controller
         );
 
         return response()->json(['data' => ['familiarity' => $familiarity]]);
-    }
-
-    /**
-     * One popup section: a single part of speech with all of its satellites.
-     * The headword travels along so the UI can label sections that belong to
-     * a base word of the family rather than the popup's own headword.
-     *
-     * @return array{id: int, word: string, word_class: string|null, transcriptions: list<array{value: string, type: string|null}>, definitions: list<string>, translations: array, examples: list<string>, etymologies: list<string>}
-     */
-    private function entry(Word $word, Authenticatable $user): array
-    {
-        return [
-            'id' => $word->id,
-            'word' => $word->word,
-            'word_class' => $word->wordClass?->title,
-            'transcriptions' => $word->transcriptions
-                ->map(fn (Transcription $transcription): array => [
-                    'value' => $transcription->transcription,
-                    'type' => $transcription->transcriptionType?->title,
-                ])
-                ->values()
-                ->all(),
-            'definitions' => $word->definitions->pluck('definition')->all(),
-            'translations' => $this->translations($word, $user)->all(),
-            'examples' => $word->examples->pluck('example')->all(),
-            'etymologies' => $word->etymologies->pluck('etymology')->all(),
-        ];
-    }
-
-    /**
-     * Native language first, then the rest by language and word.
-     *
-     * @return Collection<int, array{id: int, word: string, language_code: string|null}>
-     */
-    private function translations(Word $word, Authenticatable $user): Collection
-    {
-        $nativeLanguageId = $user->nativeLanguage()?->id;
-
-        return $word->translationWords()
-            ->load('language:id,code')
-            ->sortByDesc(fn (Word $translation): int => (int) $nativeLanguageId !== null && (int) $translation->language_id === $nativeLanguageId)
-            ->values()
-            ->take(self::TRANSLATION_LIMIT)
-            ->map(fn (Word $translation): array => [
-                'id' => $translation->id,
-                'word' => $translation->word,
-                'language_code' => $translation->language?->code,
-            ]);
     }
 }

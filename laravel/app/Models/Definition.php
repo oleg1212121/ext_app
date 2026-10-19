@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Definition extends Model
 {
-    protected $fillable = ['word_id', 'definition'];
+    protected $fillable = ['word_id', 'definition', 'source'];
 
     public function word(): BelongsTo
     {

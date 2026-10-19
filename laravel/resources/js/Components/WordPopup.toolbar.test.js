@@ -148,9 +148,10 @@ describe('WordPopup action toolbar', () => {
         expect(label).toHaveLength(1);
         expect(label[0]).toContain("t('word.anki_sending')");
         // The new right-hand icons: the Explanation toggle, the Ask-AI
-        // placeholder, and the robot keep the ai.* model-picker label.
+        // icon, and the robot keep the ai.* model-picker label.
         expect(buttonIn('word-popup-explain-toggle')).toContain("t('word.explain_toggle')");
-        expect(buttonIn('word-popup-ask-ai')).toContain("t('word.ask_ai')");
+        expect(buttonIn('word-popup-ask-ai')).toContain('title={askAiLabel}');
+        expect(buttonIn('word-popup-ask-ai')).toContain('aria-label={askAiLabel}');
         expect(buttonIn('word-popup-models-button')).toContain("t('ai.models_icon')");
         expect(toolbar.match(/title=/g)).toHaveLength(6);
         expect(toolbar.match(/aria-label=/g)).toHaveLength(6);
@@ -176,14 +177,40 @@ describe('WordPopup action toolbar', () => {
         expect(labelConstSource()).toContain("ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send')");
     });
 
-    it('renders the Ask-AI icon as a disabled placeholder — no handler yet', () => {
-        // popup-ai-enrich ticket 04 wires the live enrichment; the toolbar
-        // shape is final now, so the icon renders always and only disables.
+    it('asks live — the ticket 04 icon never hides and only disables, per state', () => {
+        // The live enrichment (popup-ai-enrich ticket 04): the icon renders
+        // always and disables when inapplicable — no handler (the profile
+        // preview's inertness), a send in flight, or the word already asked
+        // (the succeeded ledger lock — the grey icon's click is a no-op).
         const askAi = buttonIn('word-popup-ask-ai');
-        expect(askAi).toMatch(/\n\s+disabled\n/);
-        expect(askAi).not.toContain('onClick');
+        expect(askAi).toContain('onClick={onAskAi}');
+        expect(askAi).toMatch(/disabled=\{[^}]*onAskAi == null/);
+        expect(askAi).toMatch(/disabled=\{[^}]*aiBusy/);
+        expect(askAi).toMatch(/disabled=\{[^}]*data\.ai_asked/);
+        expect(askAi).not.toMatch(/\n\s+disabled\n/);
     });
 
+    it('swaps the ask icon label between ask / sending / already asked', () => {
+        // One hoisted label const drives tooltip + aria (the Anki pattern):
+        // the succeeded lock reads "already asked", a send in flight reads
+        // "sending", the default is the plain Ask AI.
+        const askAi = buttonIn('word-popup-ask-ai');
+        expect(askAi).toContain('title={askAiLabel}');
+        expect(askAi).toContain('aria-label={askAiLabel}');
+        const label = popupSource.match(/const askAiLabel =[\s\S]*?data\.ai_asked\s*\?\s*t\('word\.ask_ai_already'\)\s*:\s*\(aiBusy \? t\('word\.ask_ai_sending'\) : t\('word\.ask_ai'\)\)/);
+        expect(label).toHaveLength(1);
+    });
+
+    it('shows a failed ask beneath the toolbar — never silently', () => {
+        // The stable hook beside the Anki status lines; the line carries the
+        // server's guidance verbatim ({aiError} — no key / no model /
+        // already asked / throttled), and the network-level fallback copy
+        // lives in the ask callback.
+        expect(toolbar).toContain('word-popup-ask-ai-error');
+        expect(toolbar).toContain('{aiError}');
+        const askCallback = popupSource.slice(popupSource.indexOf('const askAi = () => {'));
+        expect(askCallback).toContain("t('word.ask_ai_failed'");
+    });
     it('gates the Explanation toggle and the robot on the explain payload and ADR 0046 key', () => {
         // One shared gate: a popup without an explain payload renders without
         // both icons (as before), and `explanation: false` — the ADR 0046
@@ -242,6 +269,44 @@ describe('WordPopup header hairline', () => {
         expect(popupSource).toContain(
             'mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]',
         );
+    });
+});
+
+describe('The live ask-AI request (popup-ai-enrich ticket 04)', () => {
+    // The outer WordPopup owns `data`; the ask callback posts the BOUND word
+    // id and swaps the whole payload in — the enriched card renders without
+    // a reopen.
+    const popupBody = popupSource.slice(popupSource.indexOf('export default function WordPopup'));
+
+    it('POSTs /ai/word-enrich with the bound word id', () => {
+        const ask = popupBody.slice(popupBody.indexOf('const askAi = () => {'));
+        expect(ask).toContain("fetch('/ai/word-enrich'");
+        expect(ask).toContain('word_id: data.id');
+        // The click path carries CSRF exactly like the progress actions.
+        expect(ask).toContain('X-CSRF-TOKEN');
+    });
+
+    it('swaps the response payload in like the initial fetch does — no reopen', () => {
+        const ask = popupBody.slice(popupBody.indexOf('const askAi = () => {'));
+        expect(ask).toContain('setData(json.data)');
+    });
+
+    it('guards against stale responses landing on a moved popup', () => {
+        const ask = popupBody.slice(popupBody.indexOf('const askAi = () => {'));
+        // Both completion paths check the mirrored data ref — a late result
+        // for a popup that has moved to another word is dropped.
+        expect(ask.match(/dataRef\.current !== data/g)).toHaveLength(2);
+    });
+
+    it('resets the ask state when the popup moves to another word', () => {
+        // The fetch effect's reset block clears the in-flight flag and the
+        // error line for the new word.
+        const reset = popupBody.slice(
+            popupBody.indexOf('setAnkiExisting(\'checking\');'),
+            popupBody.indexOf("fetch(`/words/${wordId}"),
+        );
+        expect(reset).toContain('setAiBusy(false)');
+        expect(reset).toContain('setAiError(null)');
     });
 });
 

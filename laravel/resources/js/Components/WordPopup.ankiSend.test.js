@@ -17,7 +17,10 @@ import {describe, expect, it} from 'vitest';
 
 const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
 
-const sendSource = () => popupSource.slice(popupSource.indexOf('const sendToAnki'));
+// Scoped to the send callback itself — the ask-AI callback below it carries
+// its own two dataRef guards (popup-ai-enrich ticket 04) that must not
+// inflate the send's stale-response count.
+const sendSource = () => popupSource.slice(popupSource.indexOf('const sendToAnki'), popupSource.indexOf('const askAi = () =>'));
 const detectionSource = () => popupSource.slice(popupSource.indexOf('On-open duplicate detection'));
 
 describe('WordPopup sendToAnki', () => {
