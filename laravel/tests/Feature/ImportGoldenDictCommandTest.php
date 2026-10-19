@@ -70,16 +70,19 @@ it('imports the fixture into a brand-new language with auto-created lookups', fu
     $cat = Word::query()->where('language_id', $be->id)->where('word', 'cat')->first();
     expect($cat)->not->toBeNull();
     expect($cat->wordClass->slug)->toBe('noun');
-    expect($cat->definitions->pluck('definition')->implode(' '))->toContain('feline');
+    // The fixture's English article prose is not a be definition — the
+    // majority-script guard drops it (and counts it) at import.
+    expect($cat->definitions)->toHaveCount(0);
     expect($cat->transcriptions->count())->toBe(1);
     expect($cat->transcriptions->first()->transcription)->toBe('kæt');
     expect($cat->transcriptions->first()->transcriptionType->slug)->toBe('ipa');
 
-    // Slash IPA, several sense segments, and the alternate headword as a
-    // form beside the word's own lemma form.
+    // Slash IPA, several sense segments — all Latin, all guarded away on a
+    // be word — and the alternate headword as a form beside the word's own
+    // lemma form.
     $hello = Word::query()->where('language_id', $be->id)->where('word', 'hello')->first();
     expect($hello->wordClass->slug)->toBe('interjection');
-    expect($hello->definitions->count())->toBe(3);
+    expect($hello->definitions->count())->toBe(0);
     expect($hello->transcriptions->first()->transcription)->toBe('həˈləʊ');
     expect(Form::query()->where('word_id', $hello->id)->pluck('form')->all())->toBe(['hello', 'hi']);
 
@@ -89,16 +92,18 @@ it('imports the fixture into a brand-new language with auto-created lookups', fu
 
     // Cyrillic stress marks: be display words store plain letters — the
     // combining acute leaves the word entirely (the StressMarks rule), so
-    // the stressed headword lands as "привет".
+    // the stressed headword lands as "привет". Its own-language definition
+    // passes the guard.
     $privet = Word::query()->where('language_id', $be->id)->where('word', 'привет')->first();
     expect($privet)->not->toBeNull();
     expect($privet->l_word)->toBe('привет');
     expect($privet->wordClass->slug)->toBe('unknown');
     expect($privet->definitions->first()->definition)->toContain('здравствуйте');
 
-    // Definitions truncate to the 500-char column cap.
+    // The 300-"word" Latin segment is guarded away like any other foreign
+    // article prose (the 500-char cap is pinned by the guard test below).
     $long = Word::query()->where('language_id', $be->id)->where('word', 'long')->first();
-    expect(mb_strlen($long->definitions->first()->definition))->toBe(500);
+    expect($long->definitions)->toHaveCount(0);
 
     // An empty article still imports the headword.
     $blank = Word::query()->where('language_id', $be->id)->where('word', 'blank')->first();
@@ -136,7 +141,9 @@ it('is idempotent on re-runs and keeps curated frequency ranks', function () {
     $import();
 
     expect(Word::count())->toBe(6);
-    expect(Definition::count())->toBe(7);
+    // Only привет's own-language definition survives the majority-script
+    // guard; the fixture's six English article segments are counted skipped.
+    expect(Definition::count())->toBe(1);
     expect(Transcription::count())->toBe(2);
     // Every word's lemma form (6) + the one alt form.
     expect(Form::count())->toBe(7);
@@ -151,11 +158,14 @@ it('is idempotent on re-runs and keeps curated frequency ranks', function () {
 });
 
 it('imports monolingually with an extraction profile and writes no links', function () {
+    createLanguages(['en']);
+
     // A profile without --target-lang tunes definitions/transcriptions only;
-    // the bilingual machinery stays dormant.
+    // the bilingual machinery stays dormant. (The source is en, whose
+    // English article text passes the majority-script guard.)
     $this->artisan('goldendict:import', [
         'file' => goldendictProfileFixturePath(),
-        '--lang' => 'be',
+        '--lang' => 'en',
         '--profile' => 'example-classes',
     ])
         ->expectsOutputToContain('Extraction profile: example-classes')
@@ -802,7 +812,7 @@ it('removes strip-selector nodes from every extraction before matching', functio
     // while the content outside the block extracts normally.
     $glued = Word::query()->where('language_id', $en->id)->where('word', 'glued')->firstOrFail();
     expect($glued->translations)->toBe(['пронестись'])
-        ->and($glued->definitions->pluck('definition')->all())->toBe(['настоящее определение']);
+        ->and($glued->definitions->pluck('definition')->all())->toBe(['a real definition']);
     expect(Word::query()->where('word', 'машины проносились мимо')->exists())->toBeFalse();
 
     // The headword of an article whose ONLY content was inside the stripped
@@ -965,7 +975,9 @@ it('stores ru headwords and forms as plain letters and collapses stressed varian
     $privet = Word::query()->where('language_id', $ru->id)->firstOrFail();
     expect($privet->word)->toBe('привет')
         ->and($privet->l_word)->toBe('привет')
-        ->and($privet->definitions->pluck('definition')->all())->toBe(['greeting one', 'greeting two']);
+        // Both collapsed articles' own-language definitions survive the
+        // majority-script guard on the one plain row.
+        ->and($privet->definitions->pluck('definition')->all())->toBe(['приветствие одно', 'приветствие два']);
 
     expect(Form::query()->where('word_id', $privet->id)->pluck('form')->all())->toBe(['привет', 'приветик']);
 });
@@ -1074,4 +1086,48 @@ it('skips and counts a headword or alt that strips to the empty string', functio
 
     $house = Word::query()->where('language_id', $ru->id)->where('word', 'дом')->firstOrFail();
     expect($house->forms->pluck('form')->all())->toBe(['дом', 'домище']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Majority-script definition guard
+|--------------------------------------------------------------------------
+*/
+
+function goldendictDefLangRuFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-deflang-ru.jsonl';
+}
+
+function goldendictDefLangEnFixturePath(): string
+{
+    return __DIR__.'/../Fixtures/goldendict-deflang-en.jsonl';
+}
+
+it('drops other-language definition segments by the majority-script guard with the stat', function () {
+    createLanguages(['en', 'ru']);
+    $ru = Language::query()->where('code', 'ru')->first();
+    $en = Language::query()->where('code', 'en')->first();
+
+    // The Mostitsky ru-en shape: a ru article whose English prose segments
+    // are the other language's article text, not ru definitions — dropped;
+    // the word's own language segment stores.
+    $ruStats = (new GoldenDictParser('ru'))->import(goldendictDefLangRuFixturePath());
+
+    $home = Word::query()->where('language_id', $ru->id)->where('word', 'дом')->firstOrFail();
+    expect($home->definitions->pluck('definition')->all())->toBe(['жилое здание'])
+        ->and($ruStats['definitions_skipped_foreign'])->toBe(1);
+
+    // The surviving segments still truncate to the 500-char column cap.
+    $long = Word::query()->where('language_id', $ru->id)->where('word', 'длинный')->firstOrFail();
+    expect($long->definitions)->toHaveCount(1)
+        ->and(mb_strlen($long->definitions->first()->definition))->toBe(500);
+
+    // The Oxford en-ru shape, symmetric: a Cyrillic prose segment on an en
+    // word drops, the English one stays.
+    $enStats = (new GoldenDictParser('en'))->import(goldendictDefLangEnFixturePath());
+
+    $dog = Word::query()->where('language_id', $en->id)->where('word', 'dog')->firstOrFail();
+    expect($dog->definitions->pluck('definition')->all())->toBe(['a domesticated canid'])
+        ->and($enStats['definitions_skipped_foreign'])->toBe(1);
 });

@@ -133,6 +133,7 @@ class ImportGoldenDictCommand extends Command
             ['Headwords rejected', $stats['headwords_rejected']],
             ['Words imported', $stats['words_imported']],
             ['Definitions imported', $stats['definitions_imported']],
+            ['Definitions skipped (foreign language)', $stats['definitions_skipped_foreign']],
             ['Transcriptions imported', $stats['transcriptions_imported']],
             ['Forms imported', $stats['forms_imported']],
             ['Translation candidates', $stats['translation_candidates']],

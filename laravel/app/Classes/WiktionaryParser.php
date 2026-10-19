@@ -11,6 +11,7 @@ use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\Word;
 use App\Models\WordClass;
+use App\Support\DefinitionLanguage;
 use App\Support\LemmaForms;
 use App\Support\PosAliases;
 use App\Support\StressMarks;
@@ -46,6 +47,7 @@ class WiktionaryParser
         'relay_bases_created' => 0,
         'lookups_created' => 0,
         'batches_flushed' => 0,
+        'definitions_skipped_foreign' => 0,
     ];
 
     public function __construct(string $lang, string|array $targetLang = 'ru', int $batchSize = 500)
@@ -597,6 +599,16 @@ class WiktionaryParser
                 continue;
             }
             foreach ($record['definitions'] as $definition) {
+                // The majority-script guard: a definition is only imported
+                // when it is written in the word language's own script —
+                // the en edition's English glosses on ru words (and vice
+                // versa) are the other language's prose, not definitions.
+                // Import-time only: stored definitions are never touched.
+                if (! DefinitionLanguage::keeps($this->lang, $definition)) {
+                    $this->stats['definitions_skipped_foreign']++;
+
+                    continue;
+                }
                 $rows[] = [
                     'definition' => mb_substr($definition, 0, 500),
                     'word_id' => $wordId,

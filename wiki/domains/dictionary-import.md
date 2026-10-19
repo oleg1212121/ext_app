@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; each language's dictionary sources from its own Wiktionary edition dump and editions merge on overlap — existing rows keep their definitions and gain the new edition's (ADR 0080); both importers store plain (stress-free) display words and stage plain translation candidates for the stress-mark target languages, trimmed at storage; share one pos alias table, one lemma-form rule (ё-forms also emit an е-folded alias row), and one ё-aware l_word key (trim → lowercase → combining-mark strip → zero-width/format-character strip → ё→е fold; display text never folds and keeps ё) (ADR 0078, addendum 2026-10-18); kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, unknown-twin merges, alias-class fold, lemma-form backfill).
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; each language's dictionary sources from its own Wiktionary edition dump and editions merge on overlap — existing rows keep their definitions and gain the new edition's (ADR 0080); both importers store plain (stress-free) display words and stage plain translation candidates for the stress-mark target languages, trimmed at storage; share one pos alias table, one lemma-form rule (ё-forms also emit an е-folded alias row), one ё-aware l_word key (trim → lowercase → combining-mark strip → zero-width/format-character strip → ё→е fold; display text never folds and keeps ё) (ADR 0078, addendum 2026-10-18), and one majority-script definition guard (`DefinitionLanguage`: a definition imports only in the word language's own script — en Latin, ru/be/uk Cyrillic — kept on a strict majority of its letters, dropped on a tie, letterless strings pass, unmapped languages unguarded; import-time only, etymologies never guarded) (ADR 0078, addendum 2026-10-18); kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, unknown-twin merges, alias-class fold, lemma-form backfill).
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
-stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-19T11:10:00+03:00 }
+stale_after: 2027-01-19
+generated: { by: agent:zcode, at: 2026-10-19T15:30:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -49,6 +49,9 @@ sources:
   - id: lemma-forms
     resource: laravel/app/Support/LemmaForms.php
     title: shared lemma-form rule and form-row hygiene (cap/strip/empty-guard/dedupe + ё-form е-alias rows)
+  - id: definition-language
+    resource: laravel/app/Support/DefinitionLanguage.php
+    title: shared majority-script definition guard (en Latin, ru/be/uk Cyrillic; strict majority keeps, tie drops, letterless passes, unmapped languages unguarded)
   - id: translation-targets
     resource: laravel/app/Support/TranslationTargets.php
     title: shared link-only target-word resolver (all translation writers + repair commands)
@@ -146,8 +149,7 @@ ended at 1,013,927 exactly.
   translation candidates trim at storage** (2026-10-19): only checking
   emptiness let padded dump strings ("␣ёлка␣") store verbatim and fragment
   lookups, so the headword, the relay base (a proxy headword's display)
-  and every staged candidate trim before the store — en and ru alike. **Staged translation candidates
-  strip per target language** (2026-10-18 code review): a candidate whose
+  and every staged candidate trim before the store — en and ru alike. **Definitions import only in the word language's own script** (2026-10-19, word-import-contract): the definition flush runs every gloss through the shared `App\Support\DefinitionLanguage` majority-script guard before the insert — the user's "definitions in the word's language" rule (en-en, ru-ru) enforced at import time, so the en-Wiktionary edition's English glosses on ru words (and any future mirror case) store nothing. A definition survives when the language's own script holds a **strict majority** of its letters; an exact tie drops; a letterless string (digits/symbols only) has no script to contradict and keeps; a language absent from the guard's map (`en` Latin; `ru`/`be`/`uk` Cyrillic — `de`, `fr`, … unmapped) is **unguarded** and passes everything. Each dropped gloss counts in the import stat `definitions_skipped_foreign` (the summary table's "Definitions skipped (foreign language)"). Enforcement is **import-time only**: no command touches stored definitions, and the guard never sees etymologies (they cite source-language material in its own script by nature). **Staged translation candidates strip per target language** (2026-10-18 code review): a candidate whose
   `code` is a stress-mark language stores plain — unmatched candidates sit
   in the staged `words.translations` JSON verbatim until a link pass
   converts them, so the strip happens at staging time (a marks-only
@@ -317,7 +319,19 @@ ended at 1,013,927 exactly.
   string
   (a marks-only converter artifact) stores nothing — the headword counts
   in `headwords_rejected`, a form is skipped; definition prose keeps its
-  marks. The stats are new-only
+  marks. **Definition segments import only in the word language's own
+  script** (2026-10-19, word-import-contract): the segment→definition path
+  runs each segment through the shared `App\Support\DefinitionLanguage`
+  majority-script guard before the cap and dedupe — the rule that keeps
+  the bilingual GoldenDict dictionaries (Oxford en-ru, Mostitsky ru-en)
+  from storing the other language's article prose as definitions. Own-script
+  strict majority of letters keeps, an exact tie drops, a letterless
+  segment (digits/symbols only) passes, an unmapped source language
+  (anything outside en/ru/be/uk) is unguarded; each dropped segment counts
+  in `definitions_skipped_foreign` (the summary table's "Definitions
+  skipped (foreign language)"). The guard sits on the segment path, so a
+  `--dry-run` tally reports the same record the real flush stores.
+  Import-time only — stored definitions are never touched. The stats are new-only
   where writes are: `translations_linked` counts genuinely new pairs
   (diffed against the DB), so an idempotent re-run reports zeros, while
   `translation_candidates` counts every candidate the articles yield in
@@ -446,7 +460,13 @@ rule only), and the `App\Support\PosAliases`
 pos alias table (raw abbreviations and kaikki slugs canonicalize before
 any word class is minted) and the `App\Support\LemmaForms` lemma-form rule
 (every imported word carries itself as a form; ё-forms carry their
-е-folded alias too). Both store plain display
+е-folded alias too) and — since 2026-10-19 — the
+`App\Support\DefinitionLanguage` majority-script definition guard
+(a definition imports only when the word language's own script holds a
+strict majority of its letters; en-en, ru-ru; tie drops, letterless
+passes, unmapped languages unguarded, etymologies never guarded — the
+kaikki flush and the GoldenDict segment path both count their drops in
+`definitions_skipped_foreign`). Both store plain display
 words and forms for the ru/be/uk stress-mark languages — the ADR 0078
 kaikki display-headword carve-out is reversed (2026-10-18 addendum); only
 definition/example prose keeps its marks. The Wiktionary side reads kaikki

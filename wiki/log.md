@@ -1,5 +1,47 @@
 # Directory Update Log
 
+## 2026-10-19 (majority-script definition guard — word-import-contract ticket 02)
+
+Definitions now import only when they are written in the word language's
+own script (the user's "definitions in the word's language" rule — en-en,
+ru-ru), enforced at import time on BOTH importers:
+
+- **`App\Support\DefinitionLanguage`** — the shared guard: language code →
+  Unicode script (`en` Latin; `ru`/`be`/`uk` Cyrillic; any other code
+  unmapped = no guard, pass-through). A definition keeps when the
+  language's own script holds a **strict majority** of its `\p{L}` letters,
+  an **exact tie drops**, a **letterless** string (digits/symbols only)
+  keeps. Etymologies are deliberately never guarded.
+- **`WiktionaryParser::flushDefinitions`** runs every gloss through the
+  guard before the insert — the en-Wiktionary edition's English glosses on
+  ru words store nothing. Each drop counts in the new import stat
+  `definitions_skipped_foreign`, surfaced as "Definitions skipped (foreign
+  language)" in the `wiktionary:import` summary table and carried through
+  `wiktionary:import-raw`'s per-language stat table generically.
+- **`GoldenDictParser::parseEntry`** guards the segment→definition path
+  (before the 500-char cap and dedupe), so the bilingual GoldenDict
+  dictionaries (Oxford en-ru, Mostitsky ru-en) no longer store the other
+  language's article prose as definitions; the `--dry-run` tally sees the
+  same filtered record. Same stat key, same summary-table row.
+- **Import-time only** — no code path mutates existing definitions; the
+  en-sourced English definitions already stored on ru rows are untouched
+  (the user explicitly scoped enforcement to new imports).
+- **Tests**: `DefinitionLanguageTest` (7 unit: script map, both drop
+  directions, strict-majority keeps, tie drops, letterless keeps,
+  unmapped pass-through); kaikki feature test (ru entry with only English
+  glosses stores zero definitions + bumps the stat, Russian glosses keep,
+  en symmetric, etymology unguarded); GoldenDict feature test
+  (`goldendict-deflang-ru/en.jsonl` fixtures: other-language segments
+  drop with the stat, own-language segments store, 500-char cap pinned).
+  Seven existing tests encoding the old store-anything behavior updated
+  to the new contract (fixture glosses moved to the word language's own
+  script where the test's intent needed a stored definition).
+- **Wiki**: `domains/dictionary-import.md` (description, sources, the
+  WiktionaryParser/GoldenDictParser bullets, the shared-conventions
+  section), `database/dictionary.md` (definitions satellite note),
+  `playbooks/import-dictionary-data.md` (import step + source);
+  `generated.at` bumped on all three. `wiki:validate` conformant.
+
 ## 2026-10-19 (ё-aware lookup key, е-alias form rows, storage trims — word-import-contract ticket 01)
 
 Implemented word-import-contract ticket 01 (the foundation ticket 04's

@@ -10,6 +10,7 @@ use App\Models\TranscriptionType;
 use App\Models\Word;
 use App\Models\WordClass;
 use App\Models\WordTranslation;
+use App\Support\DefinitionLanguage;
 use App\Support\LemmaForms;
 use App\Support\PosAliases;
 use App\Support\StagedTranslations;
@@ -155,6 +156,7 @@ class GoldenDictParser
         'headwords_rejected' => 0,
         'words_imported' => 0,
         'definitions_imported' => 0,
+        'definitions_skipped_foreign' => 0,
         'transcriptions_imported' => 0,
         'forms_imported' => 0,
         'lookups_created' => 0,
@@ -195,7 +197,7 @@ class GoldenDictParser
     }
 
     /**
-     * @return array{entries_read: int, entries_skipped: int, headwords_rejected: int, words_imported: int, definitions_imported: int, transcriptions_imported: int, forms_imported: int, lookups_created: int, batches_flushed: int, translation_candidates: int, translation_targets_unmatched: int, translations_linked: int, profile_no_match_articles: int}
+     * @return array{entries_read: int, entries_skipped: int, headwords_rejected: int, words_imported: int, definitions_imported: int, definitions_skipped_foreign: int, transcriptions_imported: int, forms_imported: int, lookups_created: int, batches_flushed: int, translation_candidates: int, translation_targets_unmatched: int, translations_linked: int, profile_no_match_articles: int}
      */
     public function import(string $path, ?OutputInterface $output = null, ?int $maxEntries = null): array
     {
@@ -387,14 +389,27 @@ class GoldenDictParser
             ? 'phrase'
             : ($override['pos'] ?? $article['posHints'][0] ?? 'unknown');
 
+        // The majority-script definition guard, on the segment path so both
+        // the real flush and the dry-run tally see the same record: a
+        // segment written in another language's script is that other
+        // language's article prose (the bilingual dictionaries' other side),
+        // not this word's definition — dropped and counted. Import-time
+        // only: stored definitions are never touched.
+        $definitions = [];
+        foreach ($segments as $segment) {
+            if (! DefinitionLanguage::keeps($this->languageCode, $segment)) {
+                $this->stats['definitions_skipped_foreign']++;
+
+                continue;
+            }
+            $definitions[] = mb_substr($segment, 0, self::DEFINITION_CAP);
+        }
+
         return [
             'word' => $word,
             'l_word' => WordLookupKey::normalize($word),
             'pos' => $classSlug,
-            'definitions' => array_values(array_unique(array_map(
-                fn (string $segment) => mb_substr($segment, 0, self::DEFINITION_CAP),
-                $segments,
-            ))),
+            'definitions' => array_values(array_unique($definitions)),
             'transcriptions' => $ipa,
             'forms' => array_values(array_unique([
                 ...$forms,

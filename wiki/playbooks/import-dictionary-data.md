@@ -4,8 +4,8 @@ title: Importing Dictionary Data
 description: How to import Kaikki/Wiktionary dumps and GoldenDict-format dictionaries into the unified language-keyed dictionary tables, link translations, and repair the already-stored rows in place (words:normalize, wiktionary:demote-form-of).
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
-stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-19T11:15:00+03:00 }
+stale_after: 2027-01-19
+generated: { by: agent:zcode, at: 2026-10-19T15:30:00+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -34,6 +34,9 @@ sources:
   - id: goldendict-convert
     resource: docker-compose/python/ai/goldendict_convert.py
     title: goldendict_convert.py (MDX/DSL/StarDict → JSONL)
+  - id: definition-language
+    resource: laravel/app/Support/DefinitionLanguage.php
+    title: Majority-script definition guard (definitions import only in the word language's own script)
 ---
 
 # Overview
@@ -159,7 +162,15 @@ Two source shapes exist:
    `елка`), and `romanization`-tagged forms and stressed ru/be/uk
    headwords never store — nor do marks in the staged translation
    candidates for ru/be/uk targets (they strip at staging time); headwords
-   and staged candidates trim at storage, en and ru alike.
+   and staged candidates trim at storage, en and ru alike. A definition
+   stores only when it is written in the word language's own script —
+   the `DefinitionLanguage` majority-script guard (en Latin, ru/be/uk
+   Cyrillic; strict majority keeps, tie drops, letterless passes,
+   unmapped languages unguarded; etymologies unguarded) — and every
+   dropped gloss counts in the summary table's "Definitions skipped
+   (foreign language)" row. Import-time only: already-stored definitions
+   are never touched (re-runs of an older dump re-insert nothing the
+   guard now drops — the merge stays insert-new-only).
 4. Link words across languages through the staged translations:
 
    ```bash

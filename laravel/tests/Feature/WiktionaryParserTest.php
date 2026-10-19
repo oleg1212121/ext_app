@@ -269,7 +269,7 @@ function relayFixtureLines(): array
 
     return [
         // The base lemma entry: a real word with a real gloss.
-        json_encode(['word' => 'четвереньки', 'pos' => 'noun', 'senses' => [['glosses' => ['on all fours']]]]),
+        json_encode(['word' => 'четвереньки', 'pos' => 'noun', 'senses' => [['glosses' => ['передвижение на четвереньках']]]]),
         // The relay entry, in the dump's own shape: stressed form_of base,
         // form-of tag, plus content a relay must not import.
         json_encode(['word' => 'четвереньках', 'pos' => 'noun',
@@ -298,7 +298,7 @@ it('demotes a relay entry to a form of its base word', function () {
 
     // The base imports as a word; the relay headword is its form.
     $base = Word::where('word', 'четвереньки')->where('language_id', $ruId)->firstOrFail();
-    expect($base->definitions->pluck('definition')->all())->toBe(['on all fours'])
+    expect($base->definitions->pluck('definition')->all())->toBe(['передвижение на четвереньках'])
         ->and($base->forms->pluck('form')->sort()->values()->all())->toBe(['четвереньках', 'четвереньки'])
         ->and(Form::where('form', 'четвереньках')->where('word_id', $base->id)->count())->toBe(1);
 
@@ -353,7 +353,7 @@ it('imports a mixed entry as a word with its real definitions', function () {
 
     $tmpFile = writeJsonlFixture([
         json_encode(['word' => 'бегом', 'pos' => 'adverb', 'senses' => [
-            ['glosses' => ['running, at a run (of motion)']],
+            ['glosses' => ['быстрым бегом, не переходя на шаг']],
             ['glosses' => ['instrumental of бег'], 'tags' => ['form-of', 'instrumental'],
                 'form_of' => [['word' => 'бег']]],
         ]]),
@@ -362,12 +362,14 @@ it('imports a mixed entry as a word with its real definitions', function () {
 
     $word = Word::where('word', 'бегом')->where('language_id', $ruId)->firstOrFail();
     // A mixed entry stays a word and keeps the definitions extraction it
-    // always had — real gloss AND the relay-sense gloss (definitions were
-    // explicitly left alone by the spec); only pure relays demote.
-    expect($word->definitions->pluck('definition')->all())->toBe(['running, at a run (of motion)', 'instrumental of бег'])
+    // always had — only pure relays demote. The guard then independently
+    // drops the relay sense's Latin-majority gloss at the flush; the
+    // Russian real gloss survives it.
+    expect($word->definitions->pluck('definition')->all())->toBe(['быстрым бегом, не переходя на шаг'])
         ->and(Word::where('language_id', $ruId)->count())->toBe(1)
         ->and($stats['relays_demoted'])->toBe(0)
-        ->and($stats['relay_bases_created'])->toBe(0);
+        ->and($stats['relay_bases_created'])->toBe(0)
+        ->and($stats['definitions_skipped_foreign'])->toBe(1);
 
     unlink($tmpFile);
 });
@@ -647,6 +649,59 @@ it('trims kaikki headwords and staged candidates at storage, en and ru alike', f
     $cat = Word::where('l_word', 'cat')->where('language_id', $languages['en']->id)->firstOrFail();
     expect($cat->word)->toBe('cat')
         ->and(Word::where('word', ' cat ')->exists())->toBeFalse();
+
+    unlink($enFile);
+});
+
+it('drops foreign-script glosses at the definition flush and counts them skipped', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+    $enId = $languages['en']->id;
+
+    // The en-Wiktionary edition's ru sections gloss in English: those
+    // glosses are the other language's prose, not ru definitions. The
+    // etymology is deliberately NOT guarded.
+    $ruFile = writeJsonlFixture([
+        json_encode([
+            'word' => 'собака', 'pos' => 'сущ',
+            'senses' => [
+                ['glosses' => ['a domesticated canid']],
+                ['glosses' => ['another English gloss']],
+            ],
+            'etymology_text' => 'From Proto-Slavic *sъbaka.',
+        ]),
+        json_encode([
+            'word' => 'кот', 'pos' => 'сущ',
+            'senses' => [['glosses' => ['домашнее животное семейства кошачьих']]],
+        ]),
+    ], 'wiktionary_deflang_ru');
+    $stats = (new WiktionaryParser('ru', 'en', 100))->import($ruFile);
+
+    $sobaka = Word::where('word', 'собака')->where('language_id', $ruId)->firstOrFail();
+    $kot = Word::where('word', 'кот')->where('language_id', $ruId)->firstOrFail();
+    expect($sobaka->definitions)->toHaveCount(0)
+        ->and($stats['definitions_skipped_foreign'])->toBe(2)
+        ->and($kot->definitions->pluck('definition')->all())->toBe(['домашнее животное семейства кошачьих'])
+        ->and($sobaka->etymologies->pluck('etymology')->all())->toBe(['From Proto-Slavic *sъbaka.']);
+
+    unlink($ruFile);
+
+    // En behaves symmetrically: a Cyrillic gloss on an en word drops, the
+    // English one stays.
+    $enFile = writeJsonlFixture([
+        json_encode([
+            'word' => 'dog', 'pos' => 'noun',
+            'senses' => [
+                ['glosses' => ['домашнее животное']],
+                ['glosses' => ['A domesticated canid']],
+            ],
+        ]),
+    ], 'wiktionary_deflang_en');
+    $stats = (new WiktionaryParser('en', 'ru', 100))->import($enFile);
+
+    $dog = Word::where('word', 'dog')->where('language_id', $enId)->firstOrFail();
+    expect($dog->definitions->pluck('definition')->all())->toBe(['A domesticated canid'])
+        ->and($stats['definitions_skipped_foreign'])->toBe(1);
 
     unlink($enFile);
 });
