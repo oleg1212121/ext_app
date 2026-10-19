@@ -1,5 +1,29 @@
 # Directory Update Log
 
+## 2026-10-19 (popup-ai-enrich 01: word popup loses its tab strip — toolbar icons, header hairline, on-demand Explanation)
+
+Popup layout rework (ticket 01 of the `popup-ai-enrich` spec; reader and
+simulator render the shared component, so both surfaces change at once):
+
+- **`domains/interactive-words.md`**: the popup's structure rewritten —
+  no tab strip any more (the dictionary content always renders, a hairline
+  closes the header block); the first-row toolbar now reads know / remove
+  left, then pushed right Anki → the on-demand **Explanation toggle** → the
+  **Ask-AI icon** (disabled placeholder until ticket 04 wires the
+  enrichment) → the robot (Models-used) icon rightmost; the Context
+  explanation section retitled and rewritten around the toggle (first
+  click mounts the pane as the dictionary view's first row behind the POS
+  hairline and fires the request; hide keeps the page-lifetime cache;
+  `aria-pressed` + verdigris tint while shown; toggle + robot gated on the
+  explain payload and the ADR 0046 `explanation` key); the stable-class
+  list updated (`-tabs`/`-tab` gone; `-actions`, `-explain-toggle`,
+  `-ask-ai`, `-explain-row` in). `generated.at` bumped.
+
+Known stale spots left for ticket 06's closure sweep (outside this
+ticket's concept scope): `domains/reader.md` ("explanation tab"),
+`domains/profile.md` (Popups-tab copy), `domains/bilinguals-simulator.md`
+("second tab", "explanation tab") still speak the tab wording.
+
 ## 2026-10-19 (code-review fixes — word-import-contract ticket 08)
 
 The closing review pass over the whole `word-import-contract` branch

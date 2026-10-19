@@ -44,23 +44,18 @@ const explainButtonClass = 'rounded-sm border border-[var(--color-verdigris)] px
 // the portal wrapper.
 export const popupContainerClass = 'flex flex-col overflow-hidden rounded-md border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[#FDFBF5] dark:bg-[#1C1915] shadow-lg shadow-black/20 font-sans text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]';
 
-const tabButtonClass = (active) => [
-    'word-popup-tab',
-    '-mb-px border-b-2 py-1.5 text-[0.786em] uppercase tracking-wider transition-colors',
-    active
-        ? 'border-[var(--color-verdigris)] opacity-100 dark:border-[var(--color-verdigris-night)]'
-        : 'border-transparent opacity-60 hover:opacity-100',
-].join(' ');
-
 // Action-toolbar icon buttons (the popup's first row). The glyphs carry no
 // color of their own — these text classes drive the resting and hover states:
 // "I know this word" keeps the verdigris accent the old footer button's
-// border gave it, the other two rest at the tab strip's reduced opacity.
-const toolbarButtonClass = (accent) => [
+// border gave it, the others rest at the old tab strip's reduced opacity.
+// `pressed` is the Explanation toggle's shown state: verdigris text plus a
+// persistent tint, so the icon reads as active while its pane is mounted.
+const toolbarButtonClass = (accent, pressed = false) => [
     'rounded-sm p-1 transition-[opacity,background-color]',
-    accent
+    accent || pressed
         ? 'text-[var(--color-verdigris)] hover:bg-[var(--color-verdigris)]/10 dark:text-[var(--color-verdigris-night)] dark:hover:bg-[var(--color-verdigris-night)]/10'
         : 'opacity-80 hover:opacity-100',
+    ...(pressed ? ['bg-[var(--color-verdigris)]/10 dark:bg-[var(--color-verdigris-night)]/10'] : []),
     'disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
 ].join(' ');
 
@@ -199,18 +194,20 @@ function ExplainGuidance({messageKey}) {
 }
 
 /**
- * The Word popup's second tab: asks the AI what the word means in its
- * sentence context (POST /ai/word-explain) the moment the tab activates —
- * activation mounts this pane, so a []-deps effect fires the request once
- * per activation and never on re-renders. Keyless users (enabled false) and
- * users without a chosen explanation model (modelKey null) see guidance
- * instead of a request; a hit in the page-lifetime explain cache renders
- * the memoized state instantly and skips the fire — a pending or errored
- * entry suppresses it exactly like an answer does, so re-activating the tab
- * never re-spends tokens or double-POSTs without a click. The model is the
- * user's stored explanation preference — the server resolves it; the popup
- * only carries `modelKey` to discriminate the client cache. `explainKey`
- * also guards against stale responses landing after the popup has moved to
+ * The word popup's Context explanation pane, mounted on demand: asks the AI
+ * what the word means in its sentence context (POST /ai/word-explain) the
+ * moment the toolbar's Explanation icon first shows it — PopupContent mounts
+ * this pane only while the toggle is on, so a []-deps effect fires the
+ * request once per activation and never on re-renders. Keyless users
+ * (enabled false) and users without a chosen explanation model (modelKey
+ * null) see guidance instead of a request; a hit in the page-lifetime
+ * explain cache renders the memoized state instantly and skips the fire — a
+ * pending or errored entry suppresses it exactly like an answer does, so
+ * re-showing the pane (after hiding it, or re-opening the same word) never
+ * re-spends tokens or double-POSTs without a click. The model is the user's
+ * stored explanation preference — the server resolves it; the popup only
+ * carries `modelKey` to discriminate the client cache. `explainKey` also
+ * guards against stale responses landing after the popup has moved to
  * another word.
  *
  * `preview` (the profile's Popups tab) skips the network entirely: it opens
@@ -249,8 +246,8 @@ function ExplainPane({explain, explainKey, preview = false}) {
 
     const firedRef = useRef(false);
 
-    // Tab activation == this pane mounting (PopupContent mounts ExplainPane
-    // only while the Explanation tab is active), so this []-deps effect runs
+    // Toggle-on == this pane mounting (PopupContent mounts ExplainPane only
+    // while the Explanation icon shows it), so this []-deps effect runs
     // exactly once per activation and never on re-renders. The guards make
     // the fire a no-op when there is nothing to ask — preview, no key or
     // model, no sentence to ask about — or when the cache already holds this
@@ -317,7 +314,7 @@ function ExplainPane({explain, explainKey, preview = false}) {
     };
 
     return (
-        <div className="word-popup-explain px-3.5 pb-1">
+        <div className="word-popup-explain pb-1">
             {!canAsk && (
                 <ExplainGuidance
                     messageKey={explain.enabled === false ? 'word.explain_no_key' : 'word.explain_choose_model'}
@@ -368,20 +365,25 @@ function ExplainPane({explain, explainKey, preview = false}) {
 /**
  * The word popup's body — everything inside the box, minus the box itself:
  * the action toolbar (the card's first row, above the headword), the
- * headword header (familiarity, frequency, form-of lines), the tab strip
- * with the Models-used icon, the dictionary sections of the word family and
- * the Explanation tab. Shared verbatim by the real portal popup and the
- * profile's Popups-tab preview, so the preview can never drift from the
- * real thing.
+ * headword header (familiarity, frequency, form-of lines) closed by a
+ * hairline, and the dictionary sections of the word family — always
+ * rendered, with no tab strip (popup-ai-enrich ticket 01). Shared verbatim
+ * by the real portal popup and the profile's Popups-tab preview, so the
+ * preview can never drift from the real thing.
  *
- * The toolbar hosts the three actions as line-art icons — "I know this
- * word" / "Remove mark" on the left, "Save to Anki" on the right — with the
- * transient Anki status lines directly beneath. All three always render: an
- * inapplicable icon is disabled, not hidden (know: familiarity already max
- * or busy; remove mark: no mark or busy; anki: no handler or a send in
- * flight). Tooltips and aria-labels come from the existing word ui-strings.
- * The title shows the clicked word only — each section carries the POS in
- * its "WORD — pos" heading. Per section, top to bottom: translations as the
+ * The toolbar hosts the actions as line-art icons — "I know this word" /
+ * "Remove mark" on the left; pushed right, in order: "Save to Anki", the
+ * on-demand Explanation toggle, the Ask-AI placeholder (disabled until
+ * ticket 04 wires the live enrichment), and the robot (Models used popup)
+ * rightmost — with the transient Anki status lines directly beneath. All
+ * icons always render: an inapplicable icon is disabled, not hidden (know:
+ * familiarity already max or busy; remove mark: no mark or busy; anki: no
+ * handler or a send in flight) — except the Explanation toggle and the
+ * robot, which only exist for popups with an explain payload (and vanish
+ * with the ADR 0046 `explanation: false` key, as the old tab strip did).
+ * Tooltips and aria-labels come from the existing word/ai ui-strings. The
+ * title shows the clicked word only — each section carries the POS in its
+ * "WORD — pos" heading. Per section, top to bottom: translations as the
  * primary line (a calm no-translations placeholder when a section has none —
  * the background auto-fetch may still be pending), transcriptions (main
  * value, "+N more" expander for the rest), then three counted collapses —
@@ -392,15 +394,22 @@ function ExplainPane({explain, explainKey, preview = false}) {
  *
  * `sections` (the user's Popup preferences, ADR 0046) hides blocks: a key
  * set to false drops that block, anything else renders. `explanation` false
- * removes the whole tab strip — the popup renders as it does for words
- * without an explain payload. `word_family` false filters the dictionary
- * sections down to the headword's own, dropping base-word sections. In the
- * toolbar, only the two progress icons answer to `progress_actions` — the
- * Anki icon ignores the popup-visibility toggles.
+ * removes the Explanation toggle, the robot and the Models-used popup —
+ * the popup renders as it does for words without an explain payload.
+ * `word_family` false filters the dictionary sections down to the
+ * headword's own, dropping base-word sections. In the toolbar, only the two
+ * progress icons answer to `progress_actions` — the right-hand icons ignore
+ * the popup-visibility toggles.
+ *
+ * The Explanation toggle mounts the ExplainPane as the FIRST row of the
+ * dictionary view (above all POS sections, behind the same hairline):
+ * nothing loads until the icon's first click — pane mount is the auto-ask
+ * effect's fire — and hiding keeps the page-lifetime cache, so re-showing
+ * never refetches. While shown, the icon carries its pressed state.
  *
  * `onProgressAction` (null in the preview) drives the progress icons; they
  * render disabled without it. `preview` additionally swaps the Explanation
- * tab's auto-request for a canned answer (no network).
+ * pane's auto-request for a canned answer (no network).
  *
  * The toolbar also carries the "Save to Anki" icon (`onAnkiSend` /
  * `ankiSend`, both null in the preview — the icon renders disabled there):
@@ -432,16 +441,22 @@ export function PopupContent({
     preview = false,
 }) {
     const {t} = useI18n();
-    const [tab, setTab] = useState('dictionary');
+    // The Explanation pane starts hidden — nothing loads until the toolbar
+    // icon's first click (pane mount == the auto-ask effect's fire).
+    const [explainShown, setExplainShown] = useState(false);
 
-    // A fresh payload (the popup moved to another word) goes back to the
-    // first tab, exactly like the portal popup used to reset on wordId.
+    // A fresh payload (the popup moved to another word) hides the pane
+    // again — the page-lifetime explain cache keeps its answer, so
+    // re-opening the word and re-toggling never refetches.
     useEffect(() => {
-        setTab('dictionary');
+        setExplainShown(false);
     }, [data]);
 
-    const showTabs = explainProps != null && sections.explanation !== false;
-    const showDictionary = !showTabs || tab === 'dictionary';
+    // The Explanation toggle and the robot exist only for popups with an
+    // explain payload, and the ADR 0046 `explanation: false` key removes
+    // both (exactly as it once dropped the whole tab strip, Models-used
+    // icon included).
+    const showExplain = explainProps != null && sections.explanation !== false;
     const entries = sections.word_family === false
         ? (data.entries ?? []).filter((entry) => entryMatchesHeadword(entry, data.word))
         : data.entries;
@@ -456,12 +471,15 @@ export function PopupContent({
     return (
         <>
             {/* The action toolbar — the popup's first row, above the word.
-                "I know this word" / "Remove mark" on the left, "Save to
-                Anki" pushed right. All three always render: an inapplicable
-                icon is disabled, not hidden (know: familiarity already max
-                or busy; remove mark: no mark or busy; anki: no handler or a
-                send in flight). The `progress_actions` visibility gate hides
-                only the two progress icons — the Anki icon ignores the
+                "I know this word" / "Remove mark" on the left; pushed right,
+                in order: "Save to Anki", the Explanation toggle, the Ask-AI
+                placeholder, the robot (Models used popup) rightmost. Icons
+                always render: an inapplicable icon is disabled, not hidden
+                (know: familiarity already max or busy; remove mark: no mark
+                or busy; anki: no handler or a send in flight; ask-ai:
+                disabled until ticket 04 wires the enrichment). The
+                `progress_actions` visibility gate hides only the two
+                progress icons — the right-hand icons ignore the
                 popup-visibility toggles (spec). The Anki status lines render
                 directly beneath the icon row. */}
             <div className="word-popup-actions shrink-0 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]">
@@ -495,7 +513,9 @@ export function PopupContent({
                         the update glyph + "Update in Anki"; checking,
                         absent and a silent failure all keep the add form —
                         the send still runs find-before-add, so a misjudged
-                        icon can never create a second card. */}
+                        icon can never create a second card. The margin-auto
+                        push on this first right-hand icon shoves it and the
+                        icons after it to the row's right end. */}
                     <button
                         type="button"
                         title={ankiActionLabel}
@@ -506,6 +526,55 @@ export function PopupContent({
                     >
                         <Icon name={ankiExisting === 'found' ? 'ankiUpdate' : 'ankiAdd'} className="h-[1.25em] w-[1.25em]"/>
                     </button>
+                    {/* The Explanation toggle (popup-ai-enrich ticket 01):
+                        on demand — the first click mounts the ExplainPane as
+                        the dictionary view's first row, a second click hides
+                        it (the page-lifetime cache survives, so re-showing
+                        never refetches). While shown, the icon reads as
+                        pressed. Exists only with an explain payload and
+                        vanishes with the ADR 0046 `explanation: false` key,
+                        like the old tab strip. */}
+                    {showExplain && (
+                        <button
+                            type="button"
+                            title={t('word.explain_toggle')}
+                            aria-label={t('word.explain_toggle')}
+                            aria-pressed={explainShown}
+                            onClick={() => setExplainShown((shown) => !shown)}
+                            className={`word-popup-explain-toggle ${toolbarButtonClass(false, explainShown)}`}
+                        >
+                            <Icon name="chatBubble" className="h-[1.25em] w-[1.25em]"/>
+                        </button>
+                    )}
+                    {/* Ask-AI placeholder: the toolbar shape is final now,
+                        the live enrichment (BYO-key, ledger-locked, merged
+                        inline) arrives in ticket 04 — until then the icon
+                        only renders, disabled. */}
+                    <button
+                        type="button"
+                        title={t('word.ask_ai')}
+                        aria-label={t('word.ask_ai')}
+                        disabled
+                        className={`word-popup-ask-ai ${toolbarButtonClass(false)}`}
+                    >
+                        <Icon name="sparkles" className="h-[1.25em] w-[1.25em]"/>
+                    </button>
+                    {/* Not a toggle: opens the Models used popup. Rightmost
+                        on the row, behind the same gate as the Explanation
+                        toggle (ADR 0046 `explanation: false` removes it,
+                        exactly as it once dropped the tab strip's robot). */}
+                    {showExplain && (
+                        <button
+                            type="button"
+                            onClick={() => onModelsOpenChange?.(true)}
+                            title={t('ai.models_icon')}
+                            aria-label={t('ai.models_icon')}
+                            aria-haspopup="dialog"
+                            className={`word-popup-models-button ${toolbarButtonClass(false)}`}
+                        >
+                            <RobotHelpIcon className="h-[1.25em] w-[1.25em]"/>
+                        </button>
+                    )}
                 </div>
 
                 {ankiSend?.status === 'added' && (
@@ -545,7 +614,11 @@ export function PopupContent({
                 )}
             </div>
 
-            <div className="word-popup-header shrink-0 px-3.5 pb-1 pt-3">
+            {/* The header block (word / familiarity / frequency / form-of),
+                closed by the hairline the POS sections separate themselves
+                with — the old tab strip's rule now belongs to the header
+                (popup-ai-enrich ticket 01). */}
+            <div className="word-popup-header shrink-0 border-b border-[var(--color-hairline)] px-3.5 pb-2.5 pt-3 dark:border-[var(--color-hairline-night)]">
                 <div className="flex items-baseline gap-2 flex-wrap">
                     {/* Reading font: RU headwords carry U+0301, which gaps when
                         base and mark come from different fonts (see --font-reading). */}
@@ -577,145 +650,113 @@ export function PopupContent({
                 )}
             </div>
 
-            {showTabs && (
-                <div
-                    role="tablist"
-                    className="word-popup-tabs flex shrink-0 gap-3 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]"
-                >
-                    <button
-                        type="button"
-                        role="tab"
-                        aria-selected={tab === 'dictionary'}
-                        onClick={() => setTab('dictionary')}
-                        className={tabButtonClass(tab === 'dictionary')}
+            {/* The dictionary view — always rendered (no tab strip): the
+                Explanation pane, when toggled on, mounts as its first row
+                behind the POS sections' hairline, then the word family's
+                sections. */}
+            <div className="word-popup-dictionary min-h-0 flex-1 overflow-y-auto px-3.5 pb-2.5">
+                {showExplain && explainShown && (
+                    <div className="word-popup-explain-row mb-2.5 border-b border-[var(--color-hairline)] pb-2.5 dark:border-[var(--color-hairline-night)]">
+                        <ExplainPane explain={explainProps} explainKey={explainKey} preview={preview}/>
+                    </div>
+                )}
+                {entries?.map((entry, index) => (
+                    <section
+                        key={entry.id}
+                        className={`word-popup-section${index > 0
+                            ? ' mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
+                            : ''}`}
                     >
-                        {t('word.tab_dictionary')}
-                    </button>
-                    <button
-                        type="button"
-                        role="tab"
-                        aria-selected={tab === 'explanation'}
-                        onClick={() => setTab('explanation')}
-                        className={tabButtonClass(tab === 'explanation')}
-                    >
-                        {t('word.tab_explanation')}
-                    </button>
-                    {/* Not a tab: opens the Models used popup. Kept out of the tab buttons so clicking it never switches tabs. */}
-                    <button
-                        type="button"
-                        onClick={() => onModelsOpenChange?.(true)}
-                        title={t('ai.models_icon')}
-                        aria-label={t('ai.models_icon')}
-                        aria-haspopup="dialog"
-                        className="word-popup-models-button -mb-px ml-1 inline-flex items-center rounded-sm border-b-2 border-transparent py-1.5 opacity-60 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]"
-                    >
-                        <RobotHelpIcon className="h-[1.1em] w-[1.1em]"/>
-                    </button>
-                </div>
-            )}
+                        {sectionLabel(entry, data.word) && (
+                            <h3 className="word-popup-section-label text-[0.786em] tracking-wider opacity-60">
+                                {sectionLabel(entry, data.word)}
+                            </h3>
+                        )}
 
-            {showDictionary && (
-                <div className="word-popup-dictionary min-h-0 flex-1 overflow-y-auto px-3.5 pb-2.5">
-                    {entries?.map((entry, index) => (
-                        <section
-                            key={entry.id}
-                            className={`word-popup-section${index > 0
-                                ? ' mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
-                                : ''}`}
-                        >
-                            {sectionLabel(entry, data.word) && (
-                                <h3 className="word-popup-section-label text-[0.786em] tracking-wider opacity-60">
-                                    {sectionLabel(entry, data.word)}
-                                </h3>
-                            )}
+                        {sections.translations !== false && (
+                            // Empty is normal here: the background
+                            // auto-fetch (Yandex → Google) queues silently
+                            // and only lands on the next open, so the card
+                            // says so calmly instead of showing an error.
+                            <CollapsibleLine
+                                items={entry.translations ?? []}
+                                previewCount={TRANSLATIONS_PREVIEW}
+                                separator=", "
+                                label="translations"
+                                renderItem={(translation) => translation.word}
+                                className="mt-2 text-[0.929em] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
+                                empty={(
+                                    <p className="word-popup-translations-placeholder mt-2 text-[0.857em] opacity-60">
+                                        {t('word.no_translations')}
+                                    </p>
+                                )}
+                            />
+                        )}
 
-                            {sections.translations !== false && (
-                                // Empty is normal here: the background
-                                // auto-fetch (Yandex → Google) queues silently
-                                // and only lands on the next open, so the card
-                                // says so calmly instead of showing an error.
-                                <CollapsibleLine
-                                    items={entry.translations ?? []}
-                                    previewCount={TRANSLATIONS_PREVIEW}
-                                    separator=", "
-                                    label="translations"
-                                    renderItem={(translation) => translation.word}
-                                    className="mt-2 text-[0.929em] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
-                                    empty={(
-                                        <p className="word-popup-translations-placeholder mt-2 text-[0.857em] opacity-60">
-                                            {t('word.no_translations')}
-                                        </p>
-                                    )}
-                                />
-                            )}
+                        {sections.transcriptions !== false && entry.transcriptions?.length > 0 && (
+                            <CollapsibleLine
+                                items={entry.transcriptions}
+                                previewCount={TRANSCRIPTIONS_PREVIEW}
+                                separator=" · "
+                                label="transcriptions"
+                                renderItem={(item) => item.value}
+                                decorate={(text) => `[${text}]`}
+                                className="mt-1 opacity-80"
+                            />
+                        )}
 
-                            {sections.transcriptions !== false && entry.transcriptions?.length > 0 && (
-                                <CollapsibleLine
-                                    items={entry.transcriptions}
-                                    previewCount={TRANSCRIPTIONS_PREVIEW}
-                                    separator=" · "
-                                    label="transcriptions"
-                                    renderItem={(item) => item.value}
-                                    decorate={(text) => `[${text}]`}
-                                    className="mt-1 opacity-80"
-                                />
-                            )}
-
-                            {sections.definitions !== false && (entry.definitions?.length > 0 ? (
-                                <details className="word-popup-definitions mt-2 text-[0.857em]">
-                                    <summary className="word-popup-summary cursor-pointer opacity-70">
-                                        {t('word.definitions', {count: entry.definitions.length})}
-                                    </summary>
-                                    {/* list-inside keeps the markers in the card's
-                                        inline box — `ml-4` + outside markers push
-                                        wide ("100.") numbers past the card edge. */}
-                                    <ol className="word-popup-definitions-list mt-1.5 list-decimal list-inside space-y-1 text-[0.929em] leading-snug">
-                                        {entry.definitions.map((definition, definitionIndex) => (
-                                            <li key={definitionIndex}>{definition}</li>
-                                        ))}
-                                    </ol>
-                                </details>
-                            ) : (
-                                <p className="word-popup-no-definitions mt-1.5 text-[0.857em] opacity-60">{t('word.no_definitions')}</p>
-                            ))}
-
-                            {sections.examples !== false && entry.examples?.length > 0 && (
-                                <details className="word-popup-examples mt-2 text-[0.857em]">
-                                    <summary className="word-popup-summary cursor-pointer opacity-70">
-                                        {t('word.examples', {count: entry.examples.length})}
-                                    </summary>
-                                    <ul className="word-popup-examples-list ml-4 mt-1 list-disc space-y-0.5 italic opacity-80">
-                                        {entry.examples.map((example, exampleIndex) => (
-                                            <li key={exampleIndex}>{example}</li>
-                                        ))}
-                                    </ul>
-                                </details>
-                            )}
-
-                            {sections.etymologies !== false && entry.etymologies?.length > 0 && (
-                                <details className="word-popup-etymologies mt-2 text-[0.857em]">
-                                    <summary className="word-popup-summary cursor-pointer opacity-70">
-                                        {t('word.etymology', {count: entry.etymologies.length})}
-                                    </summary>
-                                    {entry.etymologies.map((etymology, etymologyIndex) => (
-                                        <p key={etymologyIndex} className="mt-1 text-[0.857em] italic leading-snug opacity-75">
-                                            {etymology}
-                                        </p>
+                        {sections.definitions !== false && (entry.definitions?.length > 0 ? (
+                            <details className="word-popup-definitions mt-2 text-[0.857em]">
+                                <summary className="word-popup-summary cursor-pointer opacity-70">
+                                    {t('word.definitions', {count: entry.definitions.length})}
+                                </summary>
+                                {/* list-inside keeps the markers in the card's
+                                    inline box — `ml-4` + outside markers push
+                                    wide ("100.") numbers past the card edge. */}
+                                <ol className="word-popup-definitions-list mt-1.5 list-decimal list-inside space-y-1 text-[0.929em] leading-snug">
+                                    {entry.definitions.map((definition, definitionIndex) => (
+                                        <li key={definitionIndex}>{definition}</li>
                                     ))}
-                                </details>
-                            )}
-                        </section>
-                    ))}
-                </div>
-            )}
+                                </ol>
+                            </details>
+                        ) : (
+                            <p className="word-popup-no-definitions mt-1.5 text-[0.857em] opacity-60">{t('word.no_definitions')}</p>
+                        ))}
 
-            {showTabs && tab === 'explanation' && (
-                <div className="min-h-0 flex-1 overflow-y-auto pt-1">
-                    <ExplainPane explain={explainProps} explainKey={explainKey} preview={preview}/>
-                </div>
-            )}
+                        {sections.examples !== false && entry.examples?.length > 0 && (
+                            <details className="word-popup-examples mt-2 text-[0.857em]">
+                                <summary className="word-popup-summary cursor-pointer opacity-70">
+                                    {t('word.examples', {count: entry.examples.length})}
+                                </summary>
+                                <ul className="word-popup-examples-list ml-4 mt-1 list-disc space-y-0.5 italic opacity-80">
+                                    {entry.examples.map((example, exampleIndex) => (
+                                        <li key={exampleIndex}>{example}</li>
+                                    ))}
+                                </ul>
+                            </details>
+                        )}
 
-            {showTabs && (
+                        {sections.etymologies !== false && entry.etymologies?.length > 0 && (
+                            <details className="word-popup-etymologies mt-2 text-[0.857em]">
+                                <summary className="word-popup-summary cursor-pointer opacity-70">
+                                    {t('word.etymology', {count: entry.etymologies.length})}
+                                </summary>
+                                {entry.etymologies.map((etymology, etymologyIndex) => (
+                                    <p key={etymologyIndex} className="mt-1 text-[0.857em] italic leading-snug opacity-75">
+                                        {etymology}
+                                    </p>
+                                ))}
+                            </details>
+                        )}
+                    </section>
+                ))}
+            </div>
+
+            {/* The Models used popup — the robot's target, mounted behind the
+                same gate as the robot itself. While it is open it owns Escape
+                and outside-click closing; the word popup underneath stays
+                put. */}
+            {showExplain && (
                 <ModelsUsedPopup
                     open={modelsOpen}
                     onClose={() => onModelsOpenChange?.(false)}
@@ -739,17 +780,17 @@ export function PopupContent({
  * text size is em-relative to it, and the width scales with it.
  *
  * With an `explain` payload ({rowKind, rowId, side, sentenceIndex, modelKey,
- * enabled, modelLabel, followsAnswer, answerLabel}) the popup grows a tab
- * strip: the dictionary content stays on the first tab, and opening the
- * second tab immediately requests the AI context explanation. Without it
- * the popup renders exactly as before. `modelKey` (the user's explanation
- * model id) only discriminates the client cache and decides between the
- * auto-request and choose-a-model guidance — the server resolves the
- * actual model per user preference. The label fields (`modelLabel`,
- * `followsAnswer`, and the simulator-only `answerLabel`) exist for the tab
- * strip's robot icon, which opens the Models used popup; `enabled` false
- * (no API key) keeps the strip and shows add-key guidance instead of a
- * request.
+ * enabled, modelLabel, followsAnswer, answerLabel}) the popup grows the
+ * toolbar's Explanation toggle: the first click mounts the AI context
+ * explanation pane as the dictionary view's first row and immediately
+ * requests it; without the payload the toggle (and the robot) do not render.
+ * `modelKey` (the user's explanation model id) only discriminates the client
+ * cache and decides between the auto-request and choose-a-model guidance —
+ * the server resolves the actual model per user preference. The label fields
+ * (`modelLabel`, `followsAnswer`, and the simulator-only `answerLabel`)
+ * exist for the toolbar's robot icon, which opens the Models used popup;
+ * `enabled` false (no API key) keeps the toggle and shows add-key guidance
+ * instead of a request.
  *
  * `sections` (the user's Popup preferences, ADR 0046) hides individual
  * blocks; it defaults to the popupVisibility prop shared to every page,

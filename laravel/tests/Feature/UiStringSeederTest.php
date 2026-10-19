@@ -110,7 +110,7 @@ it('seeds be texts for sampled keys across every group', function () {
         'recommendations.apply' => 'Ужыць',
         'sounds.group_vowels' => 'Галосныя',
         'welcome.about' => 'Пра праект',
-        'word.tab_dictionary' => 'Слоўнік',
+        'word.ask_ai' => 'Спытаць ШІ',
         'wordtest.submit' => 'Адправіць',
     ];
 

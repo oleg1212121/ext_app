@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left, Anki send right, status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an optional second tab with the AI Context explanation of the word in its sentence, render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon, the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-19T22:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T17:22:14+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: word-controller
@@ -49,7 +49,7 @@ sources:
     title: WordText (segmenting renderer)
   - id: word-popup
     resource: laravel/resources/js/Components/WordPopup.jsx
-    title: WordPopup (tabbed lazy detail popup)
+    title: WordPopup (lazy detail popup — toolbar + always-rendered dictionary, no tab strip)
   - id: familiarity-lib
     resource: laravel/resources/js/lib/wordFamiliarity.js
     title: Browser familiarity helpers (event POST, word ids, map patching)
@@ -86,11 +86,18 @@ to a dictionary **Word** open the **Word popup** on **Ctrl+click** — one
 section per part of speech recorded under the headword (language + `l_word`),
 each with its definitions, transcriptions, translations (native language
 first), examples and etymology, plus an **action toolbar as the popup's
-first row** — "I know this word" and "Remove mark" icons on the left, the
-always-visible Anki send icon on the right with the Anki status lines
-directly beneath (the two progress icons are the only toolbar elements
+first row** — "I know this word" and "Remove mark" icons on the left;
+pushed right, in order: the always-visible Anki send icon, the on-demand
+Explanation toggle, the Ask-AI icon (disabled placeholder until the
+enrichment ticket wires it), and the robot (Models-used) icon rightmost —
+with the Anki status lines directly beneath (the two progress icons are the
+only toolbar elements
 the `progress_actions` visibility opt-out still hides; inapplicable
-toolbar icons disable rather than disappear). A plain click does
+toolbar icons disable rather than disappear, and the Explanation toggle +
+robot additionally require an explain payload and answer to the ADR 0046
+`explanation` key). There is **no tab strip**: the dictionary content always
+renders, and a hairline closes the header block (word / familiarity /
+frequency / form-of). A plain click does
 nothing (ADR 0030), and a plain
 double-click natively selects the word so browser extensions (translators,
 dictionaries) can act on it. Their text is
@@ -164,14 +171,16 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    past the card edge.
    **Every element inside the card carries a stable `word-popup-*` class**
    (the portal/preview wrapper keeps `word-popup`): `word-popup-loading`,
-   `-error`, `-header`, `-title`, `-familiarity`, `-frequency`, `-form-of`,
-   `-tabs`, `-tab`, `-models-button`, `-dictionary`, `-section`,
+   `-error`, `-actions` (the first-row toolbar strip), `-header`, `-title`,
+   `-familiarity`, `-frequency`, `-form-of`, `-models-button`,
+   `-explain-toggle` (with `aria-pressed` while shown), `-ask-ai`,
+   `-dictionary`, `-explain-row` (the mounted pane's first-row wrapper),
+   `-section`,
    `-section-label`, `-translations`, `-translations-more`,
    `-translations-placeholder`, `-transcriptions`, `-transcriptions-more`,
    `-no-definitions`, `-definitions` (with `-definitions-list` on its `ol`),
    `-examples` (with `-examples-list` on its `ul`), `-etymologies`,
-   `-summary` on every collapse summary, `-actions` (the first-row toolbar
-   strip), `-progress-known`,
+   `-summary` on every collapse summary, `-progress-known`,
    `-progress-reset`, `-anki-send` (the Anki icon button — add or update
    glyph) with its `-anki-added` / `-anki-updated` / `-anki-duplicate` /
    `-anki-error` status lines,
@@ -189,7 +198,8 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    Popups tab) drops the familiarity/frequency/form-of lines, the family's
    base-word sections (`word_family`), each satellite, the progress
    actions (the `progress_actions` opt-out hides the toolbar's two
-   progress icons entirely), or the whole Explanation tab strip; the popup
+   progress icons entirely), or the Explanation toggle together with the
+   robot and the Models-used popup (`explanation`); the popup
    body lives in the exported
    `PopupContent`, which the profile tab reuses for a live preview.
    It always fits the viewport: it opens below the word, flips above it when
@@ -272,42 +282,50 @@ popup opens.
   `tests/Feature/AdoptEntityWordsTest.php`,
   `tests/Unit/WordTranslationProvidersTest.php` (parsing, caps, chain order).
 
-# Context explanation tab
+# Context explanation (on-demand toolbar toggle)
 
 When the surrounding `WordText` receives a `rowKey` and an `explain`
 payload (`{enabled, modelKey, modelLabel, followsAnswer, answerLabel}` —
-eligibility per column, carried enabled or not), the popup
-grows a tab strip: the dictionary content above stays on the first tab and a
-second tab ("Explanation") offers the **Context explanation** — an AI answer
-to "what does this word mean in this sentence?". Eligibility follows the
+eligibility per column, carried enabled or not), the toolbar grows the
+**Explanation toggle** (chat-bubble icon, first right-hand slot after the
+Anki send): nothing loads until its first click — then the **Context
+explanation** (an AI answer to "what does this word mean in this
+sentence?") mounts as the FIRST row of the dictionary view, above all POS
+sections, behind the same hairline, and requests immediately; a second
+click hides the pane (the cache below survives, so re-showing never
+refetches), and the icon carries its pressed state (`aria-pressed` +
+verdigris tint) while shown. No tab strip exists — the dictionary content
+always renders (popup-ai-enrich ticket 01). Eligibility follows the
 same rule everywhere: a column is explainable when its language ≠ the user's
 native language (the sibling `highlightable` / `explainable` maps both
 surfaces ship — ADR 0060 amendment), so the
-Reader now has the tab too — the simulator on both surfaces since the model
-no longer needs page state (ADR 0035). Right of the Explanation tab sits a
-**robot-with-question-mark icon** (not a tab — its click never switches
-tabs) opening the **Models used popup**
+Reader has the toggle too — the simulator on both surfaces since the model
+no longer needs page state (ADR 0035). Rightmost on the toolbar sits a
+**robot-with-question-mark icon** (its click never touches the toggle)
+opening the **Models used popup**
 (`Components/ModelsUsedPopup.jsx`): the models currently serving the
 surface, each label a link to `/profile?tab=ai` — on the simulator both the
 AI questions (answer) model and the explanation model (with a muted
 "follows answer model" hint while no separate explanation pick exists,
 `AIModelResolver::explanationModelFollowsAnswer()`), on the reader just the
-explanation model. While the modal is open it owns Escape and
+explanation model. Toggle and robot exist only with an explain payload and
+answer to the ADR 0046 `explanation` key (`explanation: false` removes
+both, exactly as it once dropped the whole tab strip). While the modal is
+open it owns Escape and
 outside-click closing — the word popup underneath stays put.
 
-* **The request fires on tab activation.** Opening the Explanation tab
-  POSTs `/ai/word-explain` immediately (sync JSON, no streaming) — the tab
-  button is gone (removed in popup-card-redesign ticket 04); activation
-  mounts the pane and a mount-only effect fires once per activation, never
+* **The request fires on toggle-on.** The first click that shows the pane
+  POSTs `/ai/word-explain` immediately (sync JSON, no streaming) — pane
+  mount is the fire: a mount-only effect fires once per activation, never
   on re-renders. A hit in the client memo renders the memoized state
   instantly and skips the request — of any kind: a pending entry keeps the
-  loading line (no duplicate POST on re-activation mid-flight), an errored
+  loading line (no duplicate POST on re-show mid-flight), an errored
   one keeps the failure and its "Retry" button (no auto-refire without a
   click) — and the manual "Ask again" refetches. Keyless users (`enabled`
-  false — the strip still
+  false — the toggle still
   renders for them) see add-an-API-key guidance with a link to
   `/profile?tab=ai` and no request; when the user has no resolved
-  explanation model, the tab shows choose-a-model guidance instead. The
+  explanation model, the pane shows choose-a-model guidance instead. The
   profile preview keeps its canned `word.explain_preview` answer with zero
   network.
 * **Sentence identity travels as an id.** Every Reading row sentence object
@@ -339,10 +357,12 @@ outside-click closing — the word popup underneath stays put.
   and "Ask again" refetches (overwriting the memo). Every state is
   memoized, not just answers: `loading` and `{status: 'error', message}`
   entries suppress the auto-fire the same way a `done` answer does, so
-  re-activating the tab mid-request never double-POSTs and an error never
+  re-showing the pane mid-request never double-POSTs and an error never
   silently refires — the pane owns its Retry. Cache writes notify
   subscribers, so a pane remounted while its request is still in flight
-  adopts the outcome.
+  adopts the outcome. Hiding the pane discards nothing — re-toggling the
+  same word renders the memoized state, and a fresh word (a new `data`
+  payload) flips the toggle back off while the cache entry waits.
 * Tests: `tests/Feature/AiWordExplainEndpointTest.php` (context assembly,
   multi-sentence rows, entity-sentence rows, access, validation,
   provider-error mapping, throttle; `AIModelResolver` mocked at the
@@ -518,4 +538,4 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   canUseAi, modelKey, modelLabel, followsAnswer, answerLabel}` gated per
   side by `explainable`), fires read
   events from the row/column checkboxes, and enables the popup's Context
-  explanation tab.
+  explanation toggle.

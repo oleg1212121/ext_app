@@ -143,7 +143,8 @@ const TEMPLATE_CSS = `.card {
 }
 
 /* The popup's sections — header, dictionary body, muted footer — separated
-   by the popup's hairline rules (its tab strip above, its footer below). */
+   by the popup's hairline rules (its toolbar/header hairlines above, its
+   footer below). */
 .ef-header {
     padding: 14px 14px 10px;
     border-bottom: 1px solid var(--ef-hairline);

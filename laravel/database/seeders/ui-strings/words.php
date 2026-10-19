@@ -13,8 +13,13 @@ return [
     'word.frequency' => ['en' => 'Frequency: #:rank', 'ru' => 'Частотность: №:rank', 'be' => 'Частотнасць: №:rank'],
     'word.etymology' => ['en' => 'Etymology (:count)', 'ru' => 'Этимология (:count)', 'be' => 'Этымалогія (:count)'],
     'word.more' => ['en' => '+:count more…', 'ru' => 'ещё :count…', 'be' => 'яшчэ :count…'],
-    'word.tab_dictionary' => ['en' => 'Dictionary', 'ru' => 'Словарь', 'be' => 'Слоўнік'],
-    'word.tab_explanation' => ['en' => 'Explanation', 'ru' => 'Разбор', 'be' => 'Разбор'],
+    // The toolbar's on-demand Explanation toggle (popup-ai-enrich ticket 01):
+    // the old "Dictionary"/"Explanation" tab titles are retired with the tab
+    // strip — the dictionary content always renders now.
+    'word.explain_toggle' => ['en' => 'Explanation', 'ru' => 'Разбор', 'be' => 'Разбор'],
+    // The Ask-AI toolbar icon (a disabled placeholder in ticket 01; live
+    // enrichment arrives in ticket 04).
+    'word.ask_ai' => ['en' => 'Ask AI', 'ru' => 'Спросить ИИ', 'be' => 'Спытаць ШІ'],
     'word.explain_loading' => ['en' => 'Explaining…', 'ru' => 'Объясняю…', 'be' => 'Тлумачу…'],
     'word.explain_failed' => ['en' => 'Explanation failed (:status)', 'ru' => 'Не удалось объяснить (:status)', 'be' => 'Не ўдалося патлумачыць (:status)'],
     'word.explain_retry' => ['en' => 'Retry', 'ru' => 'Повторить', 'be' => 'Паўтарыць'],
