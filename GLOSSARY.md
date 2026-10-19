@@ -98,3 +98,26 @@ the word as already sent.
 The fixture-built note the Anki tab sends as an end-to-end proof that
 connection, the selected language's note type and deck, template, and
 send all work with the user's real Anki.
+
+## Interactive words
+
+**Word completeness**:
+How much is known about a dictionary word, scored 0–7: linked
+translations weigh most, and having any definitions, transcriptions,
+examples, etymology, and a real frequency rank each add a point. The
+word popup uses the score to show a word's fullest entries first.
+_Avoid_: quality score, richness
+
+**AI word enrichment (ask AI)**:
+Filling a sparse word's entry on demand by asking the user's own AI
+model (the explanation model). The reply lands as ordinary dictionary
+content with no visual marker, and one successful ask per word locks it
+against further asks; failed asks can be retried.
+_Avoid_: AI import, auto-enrichment
+
+**Missing word**:
+A word clicked in a text that the dictionary holds no entry for. It
+opens a placeholder card — the clicked spelling plus a plain
+"not in the dictionary yet" note — and asking AI is the only way that
+card becomes a real dictionary entry.
+_Avoid_: unknown word, out-of-dictionary word

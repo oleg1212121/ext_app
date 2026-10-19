@@ -4,9 +4,9 @@ title: Bilinguals Simulator
 description: Side-by-side bilingual reading trainer where users translate and get AI assessment of their translation, with a native-language default learning side, a per-device language swap, and inline illustrations per column (ADR 0050).
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
-stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+stale_after: 2027-01-19
+generated: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -56,6 +56,7 @@ variants.
 | `/ai/question` | POST | `ReadingAiController::askAi` | Ask an AI model about the text (JSON), named `ai.question` — the reading surfaces' shared AI-answer controller (ADR 0069) |
 | `/ai/question/stream` | POST | `ReadingAiController::askAiStreamed` | SSE-streamed variant, named `ai.question.stream` |
 | `/ai/word-explain` | POST | `ReadingAiController::explainWord` | AI Context explanation of a Ctrl-clicked word in its sentence (JSON), named `ai.word-explain` — shared with the reader's word popup |
+| `/ai/word-enrich` | POST | `ReadingAiController::enrichWord` | Ask-AI word enrichment for the word popup (JSON), named `ai.word-enrich` — shared by both surfaces; see [Interactive words](/domains/interactive-words.md) |
 | `/ui-settings` | PATCH | `UiSettingsController::update` | Debounced autosave of UI settings sections (`simulator` / `reader`), named `ui-settings.update` |
 
 # Key behavior
@@ -66,7 +67,7 @@ variants.
   `AIModelResolver::resolveAnswerModel()`). The AI Response panel header
   shows a **robot-with-question-mark icon** right of its title that opens
   the **Models used popup** (`Components/ModelsUsedPopup.jsx`, the same
-  modal the word popup's Explanation tab opens): the effective answer and
+  modal the word popup's toolbar robot opens): the effective answer and
   explanation model labels, each a link to `/profile?tab=ai` (tooltip
   "Change the model in your Profile"); the explanation row adds a muted
   "(follows answer model)" hint while the user has no separate explanation
@@ -188,13 +189,14 @@ variants.
   instruction is an admin-editable prompt template
   (`word.explanation`, `:word`/`:native` placeholders, fallback constant in
   `PromptTemplates` — ADR 0040). Manual fire
-  only (button on the popup's second tab) — see
+  only (the popup toolbar's Explanation toggle — the dictionary is always
+  visible, no tab strip) — see
   [interactive words](/domains/interactive-words.md).
 * Answers are rendered from markdown with the shared
   `AiProvider::markdownToHtml()`.
 * On the React page the streamed answer is rendered client-side by
   `renderMarkdown()` — extracted to the shared `resources/js/lib/markdown.js`
-  module (also used by the word popup's Context explanation tab): arrow
+  module (also used by the word popup's Explanation pane): arrow
   normalization (all `→`/LaTeX
   arrow forms → `=>`) → `==highlight==` phrases swapped for `\u0001` sentinels
   (fenced/inline code slot-protected first) → `marked.parse` → four HTML

@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-19T23:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base
@@ -138,9 +138,9 @@ OpenRouter model ids containing `/` are fine), e.g.
 
 User-facing request endpoints do **not** accept a model from the client
 (ADR 0035): `/ai/question` and `/ai/question/stream` resolve the answer model
-and `/ai/word-explain` the explanation model via the methods above, answering
-with "Choose an AI model in your profile settings." when the resolution is
-null. The Profile persists both ids via `PATCH /profile/ai-models`
+and `/ai/word-explain` and `/ai/word-enrich` the explanation model via the
+methods above, answering with "Choose an AI model in your profile settings."
+when the resolution is null. The Profile persists both ids via `PATCH /profile/ai-models`
 (`UpdateAiModelPreferencesRequest`, `Rule::exists('ai_models')->where('is_enabled')`).
 
 `App\Classes\AiProvider` (abstract, implements

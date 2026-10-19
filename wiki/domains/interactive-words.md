@@ -5,8 +5,8 @@ description: Interactive words on the reader and bilinguals simulator — EVERY 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-19T23:30:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -453,9 +453,9 @@ outside-click closing — the word popup underneath stays put.
   model** (`AIModelResolver::resolveExplanationModel()` — unset follows the
   answer model; a null resolution answers with choose-a-model guidance);
   access is `EntityAccessService::canRead` on the clicked sentence's
-  entity. Errors reuse the
-  envelope `{data: {data: {error}, code}}`; the endpoint is throttled
-  20/min like the other AI routes.
+  entity. Errors use the reading surfaces' one JSON envelope (ADR 0069) —
+  a top-level `error` plus the HTTP status, no double envelope; the
+  endpoint is throttled 20/min like the other AI routes.
 * **Client memo.** Pane states are cached per popup instance in a
   page-lifetime `Map` keyed by `sentenceId|surface|modelKey` — no
   server-side cache, so re-opening the same word in the same sentence is

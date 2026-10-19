@@ -1,5 +1,57 @@
 # Directory Update Log
 
+## 2026-10-19 (popup-ai-enrich 06: verification + knowledge-base closure — the whole surface reviewed against the merged code)
+
+Closure ticket of the `popup-ai-enrich` spec — docs + verification only,
+no code changed. Every concept on the feature's surface read end to end
+against the five merged commits (01 layout `b9263c3`, 02 completeness
+`502fd35`, 03 all-tokens-clickable `d7175a4`, 04 ask-AI `f427db1`,
+05 adopt-on-ask `63efac8`):
+
+- **`domains/interactive-words.md`** (tickets 01–05 rewrote it in place):
+  reviewed against the merged controllers/services/JS; the one stale
+  claim found — the Context explanation's error shape, still describing
+  the retired `{data: {data: {error}, code}}` envelope — corrected to
+  the reading surfaces' one JSON envelope (top-level `error` + HTTP
+  status, ADR 0069), matching `ReadingAiController::aiError`.
+- **Tab-strip leftovers removed** (ticket 01's flagged wording):
+  `domains/reader.md` ("AI Context explanation tab" → toggle),
+  `domains/profile.md` (the preview's "Explanation tab" → the toggle's
+  pane; the Popups-tab entry now notes the `explanation` checkbox label
+  still literally reads "Explanation tab" — the ui-string was not
+  renamed), `domains/bilinguals-simulator.md` (the Models-used popup's
+  "the word popup's Explanation tab opens" → toolbar robot; the
+  explanation bullet's "button on the popup's second tab" → the toolbar
+  toggle; renderMarkdown's "Context explanation tab" → pane). The
+  simulator's routes table gained the shared `/ai/word-enrich` row.
+- **`domains/ai-providers.md`**: the no-client-model endpoint list now
+  includes `/ai/word-enrich` (explanation model) beside
+  `/ai/word-explain`; the ticket-05 consumer note already covered the
+  enrichment flow.
+- **`database/dictionary.md` + `database/schema-overview.md`**: reviewed,
+  no changes needed — tickets 02/04/05 already wrote the completeness
+  columns, the `word_ai_fetches` ledger, the `source` provenance columns
+  and the `word.enrichment` template row.
+- **GLOSSARY.md**: three new terms under a new "Interactive words"
+  section — word completeness, AI word enrichment (ask AI), missing word
+  (definitions only, no implementation detail).
+- Staleness warnings: `wiki:validate` reports the same 32 warnings as
+  before the feature (pre-existing on unrelated concepts — Anki tab
+  sources, AGENTS.md, package.json, route-file churn on concepts that
+  make no route claims: architecture/overview, entities,
+  recommendations). Of the warnings touching this feature's files,
+  everything with a real stale claim is fixed above; `domains/
+  anki-export.md` (flagged on `WordPopup.jsx`) makes no popup-structure
+  claims beyond the action toolbar and stays accurate.
+
+`generated.at` bumped on the five touched concepts (interactive-words
+re-stamped `verified` after the review); `wiki:sync` regenerated the
+machine references (`web-routes.md` picks up `ai.word-enrich`,
+`commands.md` `words:recalc-completeness`, `models.md` `WordAiFetch` —
+all already present from the code tickets); `wiki:validate` conformant.
+Verification battery on the integration branch: full `composer run test`,
+`npm run test`, `pint --dirty` — numbers in the ticket file.
+
 ## 2026-10-19 (popup-ai-enrich 05: adopt-on-ask — the missing popup's path into the dictionary)
 
 The missing-word card's Ask-AI icon went live (ticket 05 of the

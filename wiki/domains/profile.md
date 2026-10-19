@@ -4,8 +4,8 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, per-language Anki settings (a language selector over deck + card content) with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
-verified: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
+generated: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
@@ -101,7 +101,8 @@ tab.
 Per-user **Popup preferences** (ADR 0046): which blocks the Word popup
 renders — familiarity line, progress actions, form-of line, word family
 sections, frequency line, transcriptions, definitions, translations,
-examples, etymology, Explanation tab. Eleven checkboxes in display groups
+examples, etymology, the Explanation toggle (the `explanation` section —
+its checkbox label still reads "Explanation tab"). Eleven checkboxes in display groups
 (Knowledge / Word family / Dictionary details / Tabs & info), each bound to
 one key of `ui_settings.popup`; an absent key means visible, so a fresh user
 matches the classic popup exactly. Saving is automatic per flick through
@@ -121,8 +122,8 @@ screens), a **live preview** renders the popup's real body — the exported
 `PopupContent` from `Components/WordPopup.jsx` with a fixture-style
 "melted → melt" sample family — bound to the current checkbox state, so the
 preview cannot drift from the real popup; in preview mode the action
-toolbar's icons render disabled (no handlers) and the Explanation tab
-shows a canned answer (the activation
+toolbar's icons render disabled (no handlers) and the Explanation
+toggle's pane shows a canned answer when toggled on (the activation
 auto-request is suppressed — no tokens spent).
 The preview wrapper keeps a realistic inline `width: min(560px, 100%)` at
 the default popup font size and carries the same `word-popup` structural
