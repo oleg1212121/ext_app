@@ -1,5 +1,42 @@
 # Directory Update Log
 
+## 2026-10-19 (dev-DB contract switchover run — word-import-contract ticket 06)
+
+The operational switchover of the dev database `ext_app` to the
+word-import-contract (no code changed): extended `words:normalize` FIRST,
+gate on zero duplicate groups, then the uniqueness migration. Baseline
+`--dry` (102s): 19,986 would-be duplicate-row merges, 18,277 word + 131,220
+form key recomputes, all other phases 0. The real run (184s, detached to
+`storage/logs/words-normalize.log`): merged the same 19,986 duplicate
+`(l_word, language_id, word_class_id)` rows plus 14 unknown-class twins
+that only the real (post-merge) row state exposed — 20,000 absorbed rows
+deleted in total, exactly the dry's child-move predictions at the summary
+level — recomputed 18,277 word keys and 131,147 form keys (73 fewer than
+dry: absorbed rows' forms were already gone), moved 28,501
+definitions/etymologies, 38,035 forms, 1,248 transcriptions (9,525 dropped
+where the survivor holds stressed IPA), 185 entity_words, 9 user_word +
+16 event rows, re-pointed 1,941 translation links with 1,992 collapsing
+onto existing pairs, union-merged 260 staged-JSON rows, LEAST-folded 914
+survivors. Word counts: en 1,013,927 → 999,884 (−14,043), ru 500,430 →
+494,473 (−5,957) — the 20,000-row drop is exactly the merge count; forms
+5,579,192 → 5,568,861; NULL-key words 0 after the backfill.
+
+Gate before migrate: the second `--dry` reported all zeros and the SQL
+duplicate-group count was 0. `php artisan migrate` built
+`uk_words_l_word_language_class` in 1s (the display-word unique and the
+superseded `idx_words_l_word_class` gone); post-migrate `--dry`: all
+zeros. Spot gates: ёлка/елка are ONE row (display `ёлка` kept, key
+`елка`, frequency 4753 LEAST-folded from the unranked 1,100,000 sentinel)
+carrying BOTH form rows (ёлка + елка, both keyed `елка`); собака one row
+with 24 definitions intact (22 + 2 moved from the absorbed `Собака`
+case twin — "dog"/"hound" English glosses + 17 Cyrillic ones); staged-JSON
+trim sample: 0 padded candidates of 7,931 strings across 5,000 staged
+rows; combining marks: ru `words.word`/`forms.form` 0 (en legitimately
+keeps 100 words + 234 forms — Latin-script linguistic entries like
+Pe̍h-ōe-jī / Sḵwx̱wú7mesh / K̂äxk̂är where the marks are spelling; the
+strip contract covers the stress-mark languages only). Ticket 07 turns
+these numbers into the ADR 0081 / knowledge-base record.
+
 ## 2026-10-19 (words:normalize l_word recompute + duplicate merge — word-import-contract ticket 05)
 
 `words:normalize` grew the one-time data path for existing databases: six
