@@ -249,6 +249,47 @@ it('does not duplicate the own headword when the forms table lists it as a form'
         ->assertJsonPath('data.is_form', true);
 });
 
+it('sorts the family by completeness, richest entry first', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    // The linked row knows nothing; the base word carries the content.
+    $melted = createWord('en', 'melted', 'unknown');
+    $meltVerb = createWord('en', 'melt', 'verb', ['frequency' => 900]);
+    Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid.']);
+    Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melted', 'l_word' => 'melted']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $melted->id, 'surface' => 'melted']))
+        ->assertOk()
+        // The popup header still binds the linked word even though its entry
+        // sinks below the richer base entry.
+        ->assertJsonPath('data.id', $melted->id)
+        ->assertJsonCount(2, 'data.entries')
+        ->assertJsonPath('data.entries.0.id', $meltVerb->id)
+        ->assertJsonPath('data.entries.1.id', $melted->id);
+});
+
+it('keeps the linked entry first when completeness ties', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    $melted = createWord('en', 'melted', 'unknown');
+    Definition::query()->create(['word_id' => $melted->id, 'definition' => 'Converted to a liquid state.']);
+    // One definition each, neither ranked: both score 1 — today's order
+    // (own group, linked word first) stands as the tiebreak.
+    $meltVerb = createWord('en', 'melt', 'verb');
+    Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid.']);
+    Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melted', 'l_word' => 'melted']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $melted->id, 'surface' => 'melted']))
+        ->assertOk()
+        ->assertJsonCount(2, 'data.entries')
+        ->assertJsonPath('data.entries.0.id', $melted->id)
+        ->assertJsonPath('data.entries.1.id', $meltVerb->id);
+});
+
 it('orders base-word groups by frequency without a cap', function () {
     $user = User::factory()->create();
     createWordClasses();

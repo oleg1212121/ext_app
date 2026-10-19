@@ -31,6 +31,7 @@ class Word extends Model
         return [
             'frequency' => 'decimal:2',
             'translations' => 'array',
+            'completeness_at' => 'datetime',
         ];
     }
 

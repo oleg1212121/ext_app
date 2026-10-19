@@ -5,7 +5,7 @@ description: One words table (+ satellites) keyed by language and unique per (l_
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-20T01:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T18:55:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -49,6 +49,15 @@ sources:
   - id: adr-0079
     resource: docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md
     title: ADR 0079 — relays demote to forms, lemma-as-form, stage → link → prune
+  - id: completeness-migration
+    resource: laravel/database/migrations/2026_10_19_000002_add_word_completeness_to_words_table.php
+    title: words.completeness + words.completeness_at (popup-ai-enrich ticket 02)
+  - id: word-completeness
+    resource: laravel/app/Classes/WordCompleteness.php
+    title: WordCompleteness (the 0-7 matrix + lazy staleness recalc)
+  - id: recalc-command
+    resource: laravel/app/Console/Commands/WordsRecalcCompletenessCommand.php
+    title: words:recalc-completeness (chunked set-based backfill, --stale-only)
 ---
 
 # Tables
@@ -57,7 +66,7 @@ sources:
 |-------|------|
 | `word_classes` | Parts of speech **per language** (`language_id`, `slug`, `title`, unique `(language_id, slug)`); seeded for en/ru |
 | `transcription_types` | Transcription kinds per language (ipa, enpr for English; МФА for Russian) |
-| `words` | A base-form word in one language: `language_id`, `word`, `l_word` (the `WordLookupKey` lookup key), `frequency` (rank: lower = more common, `numeric(12,2)`; 1,100,000 = unranked, `Word::FREQUENCY_UNRANKED` — see ADR 0041), `word_class_id`, staged translation candidates as a flat JSON string list (`translations` — imports stage them, and since 2026-10-18 the popup auto-fetch stages its unmatched candidates here too; the link pass converts them into `word_translations` rows and prunes what it linked). **Unique `(l_word, language_id, word_class_id)`** (2026-10-19, migration `2026_10_19_000001` — was `(word, language_id, word_class_id)`): cross-source spellings of one word (до́м/дом, ёлка/елка, March/march) are ONE row per class — the first source's display spelling stands, later sources attach to it and refresh only the key and the staged JSON |
+| `words` | A base-form word in one language: `language_id`, `word`, `l_word` (the `WordLookupKey` lookup key), `frequency` (rank: lower = more common, `numeric(12,2)`; 1,100,000 = unranked, `Word::FREQUENCY_UNRANKED` — see ADR 0041), `word_class_id`, staged translation candidates as a flat JSON string list (`translations` — imports stage them, and since 2026-10-18 the popup auto-fetch stages its unmatched candidates here too; the link pass converts them into `word_translations` rows and prunes what it linked), **`completeness`** (0–7: linked translations 2, definitions/transcriptions/examples/etymologies 1 each, a real frequency rank 1 — `WordCompleteness`, recalculated lazily on popup open and swept by `words:recalc-completeness`; drives the popup's entry ordering) with **`completeness_at`** (the recalc stamp — missing or older than the word row or any content child ⇒ stale). **Unique `(l_word, language_id, word_class_id)`** (2026-10-19, migration `2026_10_19_000001` — was `(word, language_id, word_class_id)`): cross-source spellings of one word (до́м/дом, ёлка/елка, March/march) are ONE row per class — the first source's display spelling stands, later sources attach to it and refresh only the key and the staged JSON |
 | `forms` / `definitions` / `etymologies` / `examples` | Per-word satellites (unique `(form, word_id)` / `(example, word_id)`); `forms` carries `l_word` (indexed, `idx_forms_l_word`) and is the runtime link target for inflected tokens — the linker's forms pass in [Crossword](/domains/crossword.md) — and the source of the Word popup's base-word groups ([Interactive words](/domains/interactive-words.md), ADR 0045). Every imported word also stores **itself** as its lemma form (shared `App\Support\LemmaForms` rule), so the forms table alone resolves lookups; every ё-form additionally carries its **е-folded alias row** (ёлка AND елка, both keyed `елка`, 2026-10-19) — display `form` keeps the source spelling, only `l_word` folds ё→е. **Definitions** import only when written in the word language's own script (the `DefinitionLanguage` majority-script guard, 2026-10-19 — import-time only, existing rows untouched); **etymologies** are never script-guarded |
 | `transcriptions` | Written phonetic notations per word + `transcription_type_id` (ipa, enpr, …; unique triple) || `pronunciations` | Audio files with pronunciation examples per word (`path` on the public disk, unique `(path, word_id)`); uploaded via the admin |
 | `tags` / `tagged_words` | The **words tag pool** (ADR [0076](../../docs/adr/0076-per-type-tag-pools.md)): language-neutral `slug`+`name` labels curated in the admin (`TagResource`, nav group Words, `words_count` usage column, edit/delete + bulk delete) and attached to words via `Word::tags()` (`withTimestamps`) through the pivot — renamed from the dormant `word_tags` (migration `2026_10_11_000001`, index `uk_tagged_words_pair`). Attached through the Words form's searchable tag multi-select with inline create; shown as a badge column and a multi-select table filter on the Words list. The works/entities/alignments pools copy this shape (`work_tags`/`tagged_works`, `entity_tags`/`tagged_entities`, `alignment_tags`/`tagged_alignments`) |
@@ -65,6 +74,28 @@ sources:
 | `word_translation_fetches` | Auto-fetch ledger, one row per `(word_id, target_language_id)` (unique): `provider` (yandex/google), `status` (`pending`/`succeeded`/`empty`/`failed`), `linked_count`/`staged_count` (candidates the link-only fetch linked vs staged, migration `2026_10_18_000002`), `attempts`, `last_attempted_at` (migration `2026_09_29_000001`). `status = 'empty'` is the **exclusions list** — every provider answered "no translation", so the pair is never looked up again |
 
 # Notes
+
+* **Word completeness** (2026-10-19, popup-ai-enrich ticket 02): a stored
+  0–7 score of how much is known about a word — ≥ 1 linked translation 2;
+  definitions, transcriptions, examples, etymologies 1 each (existence,
+  never row counts); a real frequency rank 1 (0 < rank < the sentinel — 0
+  is the never-ranked column default, `Word::FREQUENCY_UNRANKED` the
+  explicit unranked stamp). `WordCompleteness::score` is the matrix,
+  `WordCompleteness::recalcFamily` the lazy recompute: when the popup
+  family resolves (`WordFamily::resolve`), a word whose `completeness_at`
+  is missing or older than its own `updated_at` or the newest stamp of its
+  content children (definitions/transcriptions/examples/etymologies/forms
+  — all carry `created_at`+`updated_at` — plus the `word_translations`
+  pivot, which carries 2 of the 7 points) is recomputed and re-stamped;
+  fresh words are never rewritten. `words:recalc-completeness
+  {--stale-only} {--chunk=}` sweeps the same matrix set-based in SQL —
+  authoritative full sweep by default (writes only changed values, so a
+  re-run is a no-op), `--stale-only` rewrites just what the staleness
+  predicate flags (the mode for scheduled sweeps). The dev DB backfill ran
+  2026-10-19: 1,494,357 words scanned and stamped in 3m50s, a second
+  --stale-only pass rewrote nothing (numbers in `wiki/log.md`). The score
+  feeds only the popup's entry ordering — see
+  [Interactive words](/domains/interactive-words.md).
 
 * **word_id-leading indexes** (2026-10-18, migration
   `2026_10_18_000001`): every child table carrying a `word_id` FK (`ON DELETE

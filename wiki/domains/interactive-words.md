@@ -1,16 +1,22 @@
 ---
 type: Feature
 title: Interactive Words
-description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon, the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
+description: Dictionary-linked clickable words with familiarity text-color tinting on the reader and bilinguals simulator — Ctrl+click word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; entries stable-sort completeness-descending over that assembly order — stored words.completeness 0-7, recalculated lazily when stale), per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon, the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-19T17:22:14+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T18:55:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
     title: WordController (word details + familiarity + events)
+  - id: word-completeness
+    resource: laravel/app/Classes/WordCompleteness.php
+    title: WordCompleteness (the 0-7 completeness matrix + lazy staleness recalc)
+  - id: recalc-command
+    resource: laravel/app/Console/Commands/WordsRecalcCompletenessCommand.php
+    title: words:recalc-completeness (chunked set-based backfill, --stale-only)
   - id: fetch-job
     resource: laravel/app/Jobs/FetchWordTranslations.php
     title: FetchWordTranslations (provider-chain translation job)
@@ -147,7 +153,20 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    boilerplate like "past participle of the verb melt") are hidden when a
    base group carries the real content, and stray relay glosses are filtered
    out of partially-relay entries ("saw/verb" mixes real senses with "simple
-   past of see"); the payload then carries `form_of: [base headwords]`,
+   past of see"). The assembled list then **stable-sorts
+   completeness-descending** (popup-ai-enrich ticket 02): every entry's
+   stored `words.completeness` (0–7, see
+   [Dictionary](/database/dictionary.md)) is refreshed first — lazily: a
+   word whose `completeness_at` is missing or older than the word row or
+   any content child (definitions/transcriptions/examples/etymologies/
+   forms, translation links included) is recomputed and re-stamped during
+   the resolve (`WordCompleteness::recalcFamily`), fresh words are left
+   untouched — and the richest entry then leads, with the assembly order
+   (linked word first, class priority, base-group frequency) preserved as
+   the tiebreak for equal scores (a sparse linked entry can sink below a
+   rich base entry; the popup header still binds the linked word —
+   `data.id`/`data.word` ride independently of position). The payload then
+   carries `form_of: [base headwords]`,
    rendered as "«surface» — form of «…»" — as is `is_form`, true when the
    surface differs from the word's `l_word` (an inflected form resolved by
    the linker's forms pass) — and `frequency`, the bound headword's integer
@@ -509,7 +528,7 @@ see [Profile](/domains/profile.md) for the Anki tab side):
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `GET /words/{word}` | `WordController::show` | Word popup payload: the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked), `tags` (the linked word's tag names — for the Anki card; eager-loaded with the family via `WordFamily::EAGER_LOAD`, no per-open lazy query) |
+| `GET /words/{word}` | `WordController::show` | Word popup payload: the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) stable-sorted completeness-descending (stored `words.completeness`, lazily recalculated when stale during the resolve) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked), `tags` (the linked word's tag names — for the Anki card; eager-loaded with the family via `WordFamily::EAGER_LOAD`, no per-open lazy query) |
 | `POST /ai/word-explain` | `ReadingAiController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |
 | `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |
 | `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to untouched) |

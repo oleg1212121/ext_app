@@ -19,6 +19,11 @@ use Illuminate\Support\Collection;
  * are filtered out of partially-relay entries — kaikki merges form-of lines
  * into real entries, so e.g. "saw/verb" carries real saw senses AND
  * "simple past of see".
+ *
+ * The assembled entries then stable-sort completeness-descending (stored
+ * `words.completeness`, recalculated lazily on the way out — see
+ * WordCompleteness): the richest entry leads, and the assembly order
+ * (linked word first, class priority, base-group frequency) is the tiebreak.
  */
 class WordFamily
 {
@@ -46,11 +51,14 @@ class WordFamily
     private const EAGER_LOAD = [
         'wordClass:id,slug,title',
         'language:id,code',
-        'definitions:id,word_id,definition',
-        'transcriptions:id,word_id,transcription,transcription_type_id',
+        // created_at/updated_at ride along: WordCompleteness's staleness
+        // threshold reads the children's newest stamps off the loaded
+        // relations (no per-child re-query).
+        'definitions:id,word_id,definition,created_at,updated_at',
+        'transcriptions:id,word_id,transcription,transcription_type_id,created_at,updated_at',
         'transcriptions.transcriptionType:id,slug,title',
-        'examples:id,word_id,example',
-        'etymologies:id,word_id,etymology',
+        'examples:id,word_id,example,created_at,updated_at',
+        'etymologies:id,word_id,etymology,created_at,updated_at',
         // Plain relation (no column list): the tagged_words pivot columns must
         // ride along. WordController::show plucks tag names off the bound word
         // for the popup's "Save to Anki" card.
@@ -101,6 +109,17 @@ class WordFamily
                     ->values(),
             ));
         }
+
+        // The lazy completeness recalc (both columns persisted when stale,
+        // in-memory scores refreshed either way), then the popup ordering:
+        // completeness-descending over the assembled order — linked word
+        // first, class priority, base groups ranked by frequency — which
+        // remains the tiebreak for equal scores. PHP 8 sorts are stable, so
+        // uasort preserves the assembled order within a score.
+        WordCompleteness::recalcFamily($entries);
+        $entries = $entries->sort(
+            fn (Word $a, Word $b): int => ($b->completeness ?? 0) <=> ($a->completeness ?? 0),
+        )->values();
 
         return new self($entries, self::baseGroupHeadwords($baseGroups));
     }

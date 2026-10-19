@@ -1,5 +1,51 @@
 # Directory Update Log
 
+## 2026-10-19 (popup-ai-enrich 02: word completeness 0-7 — lazy recalc, popup ordering, backfill)
+
+Stored word-completeness score (ticket 02 of the `popup-ai-enrich` spec;
+backend only — the popup payload's entry order changes, ticket 01's layout
+renders it unchanged):
+
+- **`words.completeness`** (unsigned tinyint, nullable) +
+  **`words.completeness_at`** added (migration
+  `2026_10_19_000002`). The matrix (`WordCompleteness::score`): >= 1
+  linked translation 2; definitions/transcriptions/examples/etymologies
+  exist 1 each (existence, never row counts); a real frequency rank 1
+  (0 < rank < the 1,100,000 sentinel — 0 is the never-ranked column
+  default, the same window ADR 0041's LEAST fold guards).
+- **Lazy staleness recalc**: `WordCompleteness::recalcFamily` runs inside
+  `WordFamily::resolve` — a word whose `completeness_at` is missing or
+  older than its own `updated_at` or the newest stamp of its content
+  children (definitions/transcriptions/examples/etymologies/forms — all
+  five carry created_at+updated_at — plus the `word_translations` pivot,
+  which carries 2 of the 7 points) is recomputed and re-stamped; fresh
+  words are never rewritten. The family's eager load grew the child
+  timestamp columns so the threshold reads off the loaded relations; forms
+  and the pivot aggregate with one query each per family.
+- **Popup ordering**: the assembled entry list (linked word first, class
+  priority, base-group frequency) now stable-sorts
+  completeness-descending — the assembly order is the tiebreak, so a
+  sparse linked entry can sink below a rich base entry while
+  `data.id`/`data.word` still bind the linked word. ADR 0045/0047 family
+  semantics untouched.
+- **`words:recalc-completeness` {--stale-only} {--chunk=}`**: chunked
+  set-based sweep of the same matrix in SQL (command test pins the mirror).
+  Full run = authoritative re-score writing only changed values (re-run is
+  a no-op); `--stale-only` rewrites only what the staleness predicate
+  flags. Dev DB (ticket-02 run, 2026-10-19): 1,494,357 words scanned,
+  1,494,357 rewritten (first backfill — every stamp was null), 3m50s;
+  histogram: 0 -> 1,200 / 1 -> 377,307 / 2 -> 468,420 / 3 -> 422,612 /
+  4 -> 97,459 / 5 -> 48,809 / 6 -> 78,550 (no 7s); a second --stale-only
+  pass right after rewrote nothing.
+- **`database/dictionary.md`**: `words` table row carries the two new
+  columns; a completeness note (matrix, triggers, command, run numbers)
+  added; sources gained the migration, `WordCompleteness` and the command.
+- **`domains/interactive-words.md`**: step 3 (popup details per word
+  family) documents the lazy recalc + stable completeness-descending sort
+  (header binds the linked word independently of entry position); the
+  `GET /words/{word}` route row names the ordering. `generated.at` bumped
+  on both concepts.
+
 ## 2026-10-19 (popup-ai-enrich 01: word popup loses its tab strip — toolbar icons, header hairline, on-demand Explanation)
 
 Popup layout rework (ticket 01 of the `popup-ai-enrich` spec; reader and
