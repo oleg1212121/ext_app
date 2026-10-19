@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; each language's dictionary sources from its own Wiktionary edition dump and editions merge on overlap — existing rows keep their definitions and gain the new edition's (ADR 0080); both importers store plain (stress-free) display words and stage plain translation candidates for the stress-mark target languages, trimmed at storage; share one pos alias table, one lemma-form rule (ё-forms also emit an е-folded alias row), one ё-aware l_word key (trim → lowercase → combining-mark strip → zero-width/format-character strip → ё→е fold; display text never folds and keeps ё) (ADR 0078, addendum 2026-10-18), and one majority-script definition guard (`DefinitionLanguage`: a definition imports only in the word language's own script — en Latin, ru/be/uk Cyrillic — kept on a strict majority of its letters, dropped on a tie, letterless strings pass, unmapped languages unguarded; import-time only, etymologies never guarded) (ADR 0078, addendum 2026-10-18); kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, unknown-twin merges, alias-class fold, lemma-form backfill).
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; each language's dictionary sources from its own Wiktionary edition dump and editions merge on overlap — existing rows keep their definitions and gain the new edition's (ADR 0080); both importers store plain (stress-free) display words and stage plain translation candidates for the stress-mark target languages, trimmed at storage; share one pos alias table, one lemma-form rule (ё-forms also emit an е-folded alias row), one ё-aware l_word key (trim → lowercase → combining-mark strip → zero-width/format-character strip → ё→е fold; display text never folds and keeps ё) (ADR 0078, addendum 2026-10-18), and one majority-script definition guard (`DefinitionLanguage`: a definition imports only in the word language's own script — en Latin, ru/be/uk Cyrillic — kept on a strict majority of its letters, dropped on a tie, letterless strings pass, unmapped languages unguarded; import-time only, etymologies never guarded) (ADR 0078, addendum 2026-10-18); kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, l_word recompute with same-key duplicate merge onto the fullest survivor — ё-display first — under either schema, before migrate builds the unique, unknown-twin merges, alias-class fold, entity stamp key recompute, lemma-form backfill).
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T21:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T23:59:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -550,7 +550,7 @@ a row when nothing matches:
 The importers enforce the purity rules for NEW rows (above); the residual
 damage in already-stored rows is repaired in place by
 `php artisan words:normalize {--dry} {--chunk=20000}` — one idempotent,
-re-runnable command, four phases, every phase counted in a summary table,
+re-runnable command, six phases, every phase counted in a summary table,
 runbook in [Importing Dictionary Data](/playbooks/import-dictionary-data.md)
 (run `--dry` first):
 
@@ -566,14 +566,39 @@ runbook in [Importing Dictionary Data](/playbooks/import-dictionary-data.md)
    collision gotcha). en diacritics ("café") are legitimate spelling and
    untouched — the strip applies to the `App\Support\StressMarks` languages
    only. A display that is nothing but combining marks is counted and left
-   alone (never deleted without a mandate).
-2. **Unknown-class twins merge** into the properly-classed same-`l_word`
+   alone (never deleted without a mandate). The twin lookup is
+   display-exact, so a case variant (До́м strips to `Дом`, not `дом`)
+   strips without merging — that residue is exactly what phase 2's
+   duplicate merge absorbs.
+2. **l_word keys recompute, duplicates merge**: every `words.l_word` and
+   `forms.l_word` recomputes to the current `WordLookupKey` formula —
+   chunked, updating only rows whose value actually changes (stale
+   old-formula keys like ёлка, en diacritic keys café → `cafe`, NULL keys
+   backfilled; a display that computes to the empty key stays unkeyed).
+   The words pass then merges duplicate `(l_word, language_id,
+   word_class_id)` rows — the residue pre-migrate databases hold
+   (cross-source ёлка/елка spellings, case twins), which the words unique
+   refuses to build over: the survivor preference is a **display
+   containing ё first** (the fullest spelling survives — the user edits
+   the display later), then **most definitions**, then the **lowest id**.
+   Detection runs on the effective (post-recompute) keys — a stale-key row
+   folding onto an existing key is a duplicate pair the stored keys alone
+   cannot show — and the key updates apply only after the merge, so an
+   update never collides with the unique it is meant to satisfy. The
+   merged children, link arms, ledger rows and staged candidates move
+   through the shared machinery below. The phase works under the OLD
+   schema too — it must not need the unique index to exist: zero duplicate
+   groups afterwards is the gate that lets `migrate` build it (the
+   dev-DB normalize → migrate sequencing, 2026-10-19), and on an already
+   migrated database both steps are no-ops.
+3. **Unknown-class twins merge** into the properly-classed same-`l_word`
    row (lowest-id non-unknown survivor; the twins cmudict and entity
    adoption minted before the ticket-08 attach rules). The cmudict
    convention holds in the merge: a survivor already carrying a ˈ-marked
    IPA transcription is final — the twin's transcriptions die with it
    instead of stacking on top (Kaikki wins where it has stress data).
-3. **Alias word classes fold into their canonical class** per language
+   Running after the recompute, its l_word join sees the folded keys.
+4. **Alias word classes fold into their canonical class** per language
    (`App\Support\PosAliases` semantics resolved by class-row slug — the
    dev data's `adj` beside `adjective`): a word whose l_word exists in the
    canonical class merges into the lowest-id canonical row (case/ё variant
@@ -582,7 +607,14 @@ runbook in [Importing Dictionary Data](/playbooks/import-dictionary-data.md)
    reclass), the twinless leftovers reclass in place (NULL-l_word rows
    group by display instead — NULLs never conflict with the unique), and
    the orphan alias class rows delete last.
-4. **Lemma-form backfill**: every word carries itself (its stripped
+5. **Entity stamp keys recompute**: the entity tokenizer's
+   `entity_words.l_word` stamps recompute from the token (the old
+   tokenizer never folded ё). Stamps are unique per `(entity_id, l_word)`,
+   so a recomputed key can only collide with another stamp of the same
+   entity — two pre-fold spellings of one word: the counts fold into the
+   already-correct stamp (or the lowest id), adopting a linked word when
+   the survivor has none, and the loser deletes.
+6. **Lemma-form backfill**: every word carries itself (its stripped
    display, the `LemmaForms` conventions) as a form where missing
    (~1.5M rows in dev) — insert-new-only through the `(form, word_id)`
    unique, chunked by word-id ranges with a progress bar.
@@ -607,9 +639,9 @@ child-move counts are pre-database approximations where insert-time dedupe
 applies. Same-class same-`l_word` duplicates can no longer be CREATED
 anywhere — the words unique forbids the pair — and the migration refuses a
 database that still holds pre-existing same-key duplicates: existing twins
-of pre-migrate databases are repaired by the upcoming l_word recompute and
-duplicate-merge phase before `migrate` runs (the dev-DB runbook's
-normalize → migrate sequencing).
+of pre-migrate databases are repaired by the normalize l_word recompute
+and duplicate merge (phase 2) before `migrate` runs — the dev-DB runbook
+sequences normalize → gate (zero duplicate groups) → migrate.
 
 The first real dev-DB run (2026-10-18, in the pipeline order demote →
 normalize → link-translations): 11 stressed display words merged + 1

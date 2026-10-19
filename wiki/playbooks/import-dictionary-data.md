@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T19:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T23:59:00+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -293,15 +293,22 @@ from scratch.
 The importers enforce the purity rules for new rows; the damage already
 stored from before those rules is repaired in place by one idempotent
 command — no re-import, no wipe: every phase finds its rows by explicit
-mapping (strip diff, unknown-class twins, alias class rows, missing lemma
-forms) and a second run matches nothing. The dev DB ran it 2026-10-18
+mapping (strip diff, stale lookup keys and duplicate
+`(l_word, language_id, word_class_id)` rows, unknown-class twins, alias
+class rows, stale entity stamps, missing lemma forms) and a second run
+matches nothing. The dev DB ran it 2026-10-18
 (what the counts landed on): 11 stressed display words merged + 1 stripped
 in place, 2,954 unknown-class twins merged (ru 1,536 / en 1,418, mostly
 cmudict transcriptions), 7,514 alias duplicates merged (the
 `adj`/`adjective` fold) + 216,440 rows reclassed, and 1,018,396 lemma
 forms backfilled (en 1,507,795 / ru 29,171 had none — the long phase). After that run every phase reports
 zeros; a pre-rule database needs the baselines re-counted first (a `--dry`
-gives them all).
+gives them all). The 2026-10-19 l_word recompute + duplicate-merge phase
+(phase 2) is the pre-migrate data path: a database still holding
+same-key duplicate rows (cross-source ёлка/елка spellings, case twins)
+must run it BEFORE `php artisan migrate` — the unique index refuses to
+build over the duplicates — and gate on zero duplicate groups in between
+(a second `--dry` reporting a 0 duplicate-merge count is that gate).
 
 1. **Dry first** — read every phase count before anything writes:
 
@@ -311,15 +318,18 @@ gives them all).
 
    Prints all phase rows without writing: stressed words merged into plain
    twins / stripped in place, stressed forms collapsed / stripped /
-   deduped, unknown twins merged, alias-class words merged vs reclassed and
-   alias classes deleted, lemma forms backfilled, plus the merge-machinery
-   children (definitions/etymologies, forms, transcriptions incl. the
-   ˈ-IPA gate drops, examples, pronunciations, entity_words, tagged_words,
-   user_word(+event), fetch ledger, both-arm link re-points with self-pair
-   and dedupe counts, staged-JSON merges, LEAST rank folds, absorbed rows
-   deleted). The child-move counts are pre-database approximations where
-   insert-time dedupe applies; phase-3 reclass counts include rows a real
-   run would merge. Nothing else is approximate.
+   deduped, words/forms l_word keys recomputed, duplicate rows merged per
+   `(l_word, language, class)`, unknown twins merged, alias-class words
+   merged vs reclassed and alias classes deleted, entity stamp keys
+   recomputed and stamp duplicates collapsed, lemma forms backfilled, plus
+   the merge-machinery children (definitions/etymologies, forms,
+   transcriptions incl. the ˈ-IPA gate drops, examples, pronunciations,
+   entity_words, tagged_words, user_word(+event), fetch ledger, both-arm
+   link re-points with self-pair and dedupe counts, staged-JSON merges,
+   LEAST rank folds, absorbed rows deleted). The child-move counts are
+   pre-database approximations where insert-time dedupe applies; phase-4
+   reclass counts include rows a real run would merge. Nothing else is
+   approximate — the dry counts match the real run's.
 
 2. **Real run, detached** (the lemma backfill dominates — tens of minutes
    at en scale; the progress bar lands in the redirected log):
@@ -335,15 +345,27 @@ gives them all).
    stressed forms group per (word, stripped form) — a group whose plain
    twin already exists collapses, otherwise the lowest form id survives
    and the other variants dedupe (two stressed variants can strip to one
-   plain string). (2) `unknown`-class twins merge into the lowest-id
-   non-unknown same-`l_word` row; when the survivor already carries a
-   ˈ-marked IPA transcription the twin's transcriptions die with the merge
-   (the cmudict convention — Kaikki wins where it has stress data).
-   (3) Alias word classes fold into their canonical class per language
-   (PosAliases semantics, resolved by class-row slug): display twins merge,
-   twinless leftovers reclass in place, orphan alias class rows delete
-   last. (4) Every word gains itself as its lemma form where missing
-   (insert-new-only on the `(form, word_id)` unique, chunked).
+   plain string). (2) every `words.l_word`/`forms.l_word` recomputes to
+   the current `WordLookupKey` formula (only rows whose value changes:
+   stale old-formula keys, en diacritics, NULL backfills), then duplicate
+   `(l_word, language_id, word_class_id)` rows merge — the survivor is
+   the ё-display row first, then most definitions, then the lowest id;
+   detection keys on the effective post-recompute keys and the key updates
+   apply after the merge, so no update collides — and this is the phase
+   that unblocks `migrate` on a pre-migrate database. (3) `unknown`-class
+   twins merge into the lowest-id non-unknown same-`l_word` row; when the
+   survivor already carries a ˈ-marked IPA transcription the twin's
+   transcriptions die with the merge (the cmudict convention — Kaikki
+   wins where it has stress data). (4) Alias word classes fold into their
+   canonical class per language (PosAliases semantics, resolved by
+   class-row slug): l_word-keyed twins merge, twinless leftovers reclass
+   in place, orphan alias class rows delete last. (5) the entity
+   tokenizer's `entity_words.l_word` stamps recompute from the token
+   (the old formula never folded ё); a recomputed key colliding with
+   another stamp of the same entity folds the counts into the
+   already-correct stamp. (6) Every word gains itself as its lemma form
+   where missing (insert-new-only on the `(form, word_id)` unique,
+   chunked).
 
    `--chunk=N` (default 20000) sizes the scan passes and the lemma
    backfill; the word merges are set-based through a temp mapping table —

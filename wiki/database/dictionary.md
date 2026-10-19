@@ -5,7 +5,7 @@ description: One words table (+ satellites) keyed by language, per-language word
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T21:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T23:59:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -137,7 +137,14 @@ sources:
   strips its ru/be/uk headwords and inflected forms, the GoldenDict
   importer strips its headwords, forms and staged candidates outright — so
   stressed variants never sit beside their plain twins in the word-family
-  views. Definition/example prose keeps its marks. Every imported word
+  views. Definition/example prose keeps its marks. Rows stored before the
+  formula reached its current shape are recomputed in place by
+  `words:normalize` phase 2 — `words.l_word`, `forms.l_word` and the
+  entity tokenizer's `entity_words.l_word` stamps, only rows whose value
+  changes — and the duplicate `(l_word, language_id, word_class_id)` rows
+  the recompute exposes merge onto one survivor (ё-display first, then
+  most definitions, then lowest id) under either schema, which is what
+  lets `migrate` build the unique on a pre-migrate database. Every imported word
   stores itself as its lemma form (`App\Support\LemmaForms`), a
   headword/form that strips to the empty string stores nothing, and every
   ё-form additionally carries its е-folded alias form row (2026-10-19).

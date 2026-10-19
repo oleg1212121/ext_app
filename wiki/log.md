@@ -1,5 +1,48 @@
 # Directory Update Log
 
+## 2026-10-19 (words:normalize l_word recompute + duplicate merge — word-import-contract ticket 05)
+
+`words:normalize` grew the one-time data path for existing databases: six
+phases now — the four established ones stay, and phase 2 recomputes every
+`words.l_word` and `forms.l_word` to the current `WordLookupKey` formula
+(stale old-formula keys like ёлка, en diacritic keys, NULL backfills —
+only rows whose value changes, chunked) then merges duplicate
+`(l_word, language_id, word_class_id)` rows; phase 5 recomputes the entity
+tokenizer's `entity_words.l_word` stamps from the token, folding
+same-key stamp collisions (counts sum, linked word adopted). The merge
+survivor preference is a display containing ё first (the fullest spelling
+survives — the user edits the display later), then most definitions, then
+the lowest id; detection runs on the effective post-recompute keys and the
+key updates apply only after the merge, so no update collides with the
+words unique. The phase runs green under the OLD schema — the unique index
+need not exist — and leaving zero duplicate groups is the gate that lets
+`migrate` build it (the dev-DB normalize → migrate sequencing; ticket 06).
+
+- **Command (`app/Console/Commands/WordsNormalizeCommand.php`)**: phase
+  order is now strip (1) → rekey+merge (2) → unknown twins (3) → alias
+  fold (4) → entity stamps (5) → lemma backfill (6) — the rekey runs
+  before the twin/alias phases so their l_word joins see the folded keys,
+  and the duplicate merge runs after the stress strip so the case-twin
+  residue it creates is absorbed in the same run. Summary-table rows
+  renumbered to match; dry counts match the real run's exactly (a
+  `absorbed_earlier` snapshot keeps phase 1's not-yet-applied dry merges
+  out of the later phases' counts). In-process re-invocation no longer
+  accumulates summary counts (the stats reset per run — the command
+  instance is cached by the console kernel).
+- **Merge machinery unchanged**: the duplicate merge reuses the shared
+  set-based moves (children, both link arms, ledger, staged JSON union,
+  LEAST rank fold with the zero guard) — `word_translations` land as
+  canonical pairs without duplicates.
+- **`domains/dictionary-import.md`**: Data repair section rewritten for
+  the six-phase pipeline (survivor preference, effective-key detection,
+  old-schema sequencing), description updated, `generated.at` bumped.
+- **`playbooks/import-dictionary-data.md`**: normalize runbook rewritten
+  (six phases, the dry-row list, the normalize → gate → migrate
+  pre-migrate note), `generated.at` bumped.
+- **`database/dictionary.md`**: the l_word note documents the phase-2
+  recompute + survivor merge as the stored-data repair, `generated.at`
+  bumped.
+
 ## 2026-10-19 (word uniqueness moves to (l_word, language, class) — word-import-contract ticket 04)
 
 The words unique key moved from the display word to the lookup key

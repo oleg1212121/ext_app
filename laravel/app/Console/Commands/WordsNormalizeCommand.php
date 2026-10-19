@@ -13,10 +13,11 @@ use App\Support\WordLookupKey;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\Console\Helper\ProgressBar;
 
 /**
  * The in-place repair of EXISTING dictionary rows to the purity rules, in
- * four idempotent phases (the residual the importers cannot fix themselves):
+ * idempotent phases (the residual the importers cannot fix themselves):
  *
  * 1. Strip the combining stress marks from ru/be/uk display `words.word` and
  *    `forms.form` (spec rule 1 — the ADR 0078 display carve-out reversal).
@@ -28,21 +29,48 @@ use Illuminate\Support\Facades\Schema;
  *    strip and the other variants in the group dedupe away (two stressed
  *    variants can strip to the same plain string). en rows are legitimate
  *    spelling ("café") and untouched — the strip applies to the
- *    App\Support\StressMarks languages only.
- * 2. Merge `unknown`-class twins into the properly-classed same-l_word row
+ *    App\Support\StressMarks languages only. A display-exact twin lookup
+ *    cannot see case variants (До́м strips to Дом, not дом) — the residue
+ *    those leave behind is exactly what phase 2's duplicate merge absorbs.
+ * 2. Recompute the l_word lookup keys to the current WordLookupKey formula
+ *    (trim → lowercase → combining-mark strip → zero-width strip → ё→е
+ *    fold) across words and forms — chunked, updating only rows whose value
+ *    actually changes: stale old-formula keys (ёлка, до́м with its mark
+ *    intact), en diacritic keys (café → cafe), NULL keys backfilled; a
+ *    display that computes to the empty key stays unkeyed, like phase 1
+ *    leaves it. The words pass then merges duplicate
+ *    (l_word, language_id, word_class_id) rows — the residue pre-migrate
+ *    databases still hold (cross-source ёлка/елка spellings, case twins),
+ *    since same-key rows can no longer be created and the unique index
+ *    refuses to build over them. The survivor preference is a display
+ *    containing ё first (the fullest spelling survives — the user edits the
+ *    display later), then most definitions, then the lowest id; detection
+ *    runs on the effective (post-recompute) keys, and the key updates apply
+ *    only after the merge, so a row is never updated into a collision. This
+ *    phase works under the OLD schema too — the unique index must not need
+ *    to exist: zero duplicate groups afterwards is what lets `migrate`
+ *    build it (the dev-DB normalize → migrate sequencing).
+ * 3. Merge `unknown`-class twins into the properly-classed same-l_word row
  *    (cmudict and entity adoption minted them before ticket 08). The
  *    survivor is the lowest-id non-unknown row; the cmudict convention
  *    holds — when the survivor already carries a ˈ-marked IPA transcription
  *    the twin's transcriptions die with the merge instead of stacking on
  *    top (Kaikki wins where it has stress data).
- * 3. Fold alias word classes into their canonical class per language
+ * 4. Fold alias word classes into their canonical class per language
  *    (PosAliases semantics, resolved by class-row slug — the dev data's
  *    `adj` beside `adjective`): a word whose l_word exists in the
  *    canonical class merges into the lowest-id canonical row (case/ё
  *    variants included — one lookup key IS one word under the words
  *    unique), the twinless leftovers reclass in place, and the orphan
  *    alias class rows delete last.
- * 4. Backfill the lemma form: every word carries itself (its stripped
+ * 5. Recompute the entity tokenizer's `entity_words.l_word` stamps to the
+ *    same formula (the stamp source is the token; the old tokenizer never
+ *    folded ё). Stamps are unique per (entity_id, l_word), so a recomputed
+ *    key can only collide with another stamp of the same entity — two
+ *    pre-fold spellings of one word: the counts fold into the
+ *    already-correct stamp (or the lowest id), adopting a linked word when
+ *    the survivor has none, and the loser deletes.
+ * 6. Backfill the lemma form: every word carries itself (its stripped
  *    display, LemmaForms conventions) as a form where missing
  *    (~1.5M rows in dev) — insert-new-only through the `(form, word_id)`
  *    unique, chunked.
@@ -65,7 +93,7 @@ use Illuminate\Support\Facades\Schema;
  * Re-runnable by construction: every phase finds nothing on a second run.
  * Run --dry first — it prints every phase count without writing (child-move
  * counts are pre-database approximations where insert-time dedupe applies,
- * and phase-3 reclass counts include rows a real run would merge).
+ * and phase-4 reclass counts include rows a real run would merge).
  */
 class WordsNormalizeCommand extends Command
 {
@@ -73,7 +101,7 @@ class WordsNormalizeCommand extends Command
         {--dry : Report every phase count without writing anything}
         {--chunk=20000 : Rows per scan pass (the display scans and the lemma-form backfill)}';
 
-    protected $description = 'Repair existing dictionary rows to the purity rules in idempotent phases: strip stress marks from ru/be/uk display words and forms (merging plain twins), merge unknown-class twins, fold the adj class into adjective, backfill lemma forms';
+    protected $description = 'Repair existing dictionary rows to the purity rules in idempotent phases: strip stress marks from ru/be/uk display words and forms (merging plain twins), recompute l_word keys and merge duplicate (l_word, language, class) rows onto the fullest survivor, merge unknown-class twins, fold the adj class into adjective, recompute entity stamp keys, backfill lemma forms';
 
     private const STATEMENT_CHUNK = 1000;
 
@@ -93,10 +121,15 @@ class WordsNormalizeCommand extends Command
         'f_stripped' => 0,
         'f_deduped' => 0,
         'f_marks_only' => 0,
+        'kw_rekeyed' => 0,
+        'kf_rekeyed' => 0,
+        'dup_merged' => 0,
         'twins' => 0,
         'alias_merged' => 0,
         'alias_reclassed' => 0,
         'alias_classes_deleted' => 0,
+        'ew_rekeyed' => 0,
+        'ew_folded' => 0,
         'lemmas' => 0,
         'definitions' => 0,
         'etymologies' => 0,
@@ -128,6 +161,10 @@ class WordsNormalizeCommand extends Command
         set_time_limit(0);
 
         $this->dry = (bool) $this->option('dry');
+        // The command instance is cached by the console kernel — a second
+        // invocation in one process (tests, tinker) must not accumulate the
+        // previous run's counts.
+        $this->stats = array_fill_keys(array_keys($this->stats), 0);
         foreach (['definitions', 'etymologies', 'forms', 'transcriptions', 'examples', 'pronunciations', 'entity_words', 'tagged_words', 'user_word', 'user_word_event', 'word_translation_fetches'] as $table) {
             $this->childTables[$table] = Schema::hasTable($table);
         }
@@ -142,8 +179,11 @@ class WordsNormalizeCommand extends Command
 
             $this->stripStressedWords($strippingLangIds);
             $this->stripStressedForms($strippingLangIds);
+            $this->rekeyAndMergeWords();
+            $this->recomputeFormKeys();
             $this->mergeUnknownTwins();
             $this->mergeAliasClasses();
+            $this->recomputeEntityStamps();
             $this->backfillLemmaForms();
         } finally {
             // Never let the timeout reset mask a real failure (a statement
@@ -166,11 +206,16 @@ class WordsNormalizeCommand extends Command
             ['1. stressed forms stripped in place', $this->stats['f_stripped']],
             ['1. stressed form variants deduped', $this->stats['f_deduped']],
             ['1. marks-only form rows dropped', $this->stats['f_marks_only']],
-            ['2. unknown-class twins merged', $this->stats['twins']],
-            ['3. alias-class words merged into canonical twins', $this->stats['alias_merged']],
-            ['3. alias-class words reclassed in place', $this->stats['alias_reclassed']],
-            ['3. alias word classes deleted', $this->stats['alias_classes_deleted']],
-            ['4. lemma forms backfilled', $this->stats['lemmas']],
+            ['2. words.l_word keys recomputed', $this->stats['kw_rekeyed']],
+            ['2. forms.l_word keys recomputed', $this->stats['kf_rekeyed']],
+            ['2. duplicate rows merged per (l_word, language, class)', $this->stats['dup_merged']],
+            ['3. unknown-class twins merged', $this->stats['twins']],
+            ['4. alias-class words merged into canonical twins', $this->stats['alias_merged']],
+            ['4. alias-class words reclassed in place', $this->stats['alias_reclassed']],
+            ['4. alias word classes deleted', $this->stats['alias_classes_deleted']],
+            ['5. entity_words.l_word stamps recomputed', $this->stats['ew_rekeyed']],
+            ['5. entity stamp duplicates collapsed', $this->stats['ew_folded']],
+            ['6. lemma forms backfilled', $this->stats['lemmas']],
             ['Merge children — definitions/etymologies moved', $this->stats['definitions'] + $this->stats['etymologies']],
             ['Merge children — forms moved', $this->stats['forms']],
             ['Merge children — transcriptions moved', $this->stats['transcriptions']],
@@ -419,12 +464,256 @@ class WordsNormalizeCommand extends Command
     }
 
     // ------------------------------------------------------------------
-    // Phase 2 — unknown-class twins
+    // Phase 2 — l_word recompute + duplicate merge
+    // ------------------------------------------------------------------
+
+    /**
+     * Recompute every `words.l_word` to the current WordLookupKey formula,
+     * then merge the duplicate (l_word, language_id, word_class_id) rows the
+     * recompute exposes. Detection runs on the effective (post-recompute)
+     * keys — a stale-key row folding onto an existing key is a duplicate
+     * pair the stored keys alone cannot show — and the key updates apply
+     * only after the merge, so under either schema an update never collides
+     * with the words unique it is meant to satisfy.
+     */
+    private function rekeyAndMergeWords(): void
+    {
+        $this->info('Phase 2 — words.l_word recompute + duplicate merge...');
+        $bounds = $this->idBounds('words');
+        if ($bounds === null) {
+            return;
+        }
+
+        DB::statement('drop table if exists rekey_map');
+        DB::statement('create temp table rekey_map (word_id bigint primary key, new_key varchar)');
+
+        // Phase 1's merges have not applied in a dry run — their absorbed
+        // rows are still stored. A real run never sees them here, so the
+        // detection must skip them too, or the dry counts would drift from
+        // the real run's. The snapshot lives until the forms recompute.
+        $this->snapshotAbsorbedWords();
+
+        $found = $this->scanKeySlices('words', 'word', $bounds, function (array $tuples): void {
+            $this->insertTempTuples('rekey_map', 'word_id, new_key', $tuples);
+        });
+        if ($found === 0) {
+            DB::statement('drop table if exists rekey_map');
+
+            return;
+        }
+        DB::statement('delete from rekey_map r using absorbed_earlier a where r.word_id = a.absorbed_id');
+
+        // The key each row carries after the recompute: changed rows carry
+        // their target, the rest their stored key.
+        DB::statement('drop table if exists eff_keys');
+        DB::statement(
+            'create temp table eff_keys as'
+            .' select w.id, w.language_id, w.word_class_id, coalesce(r.new_key, w.l_word) as eff_key'
+            .' from words w left join rekey_map r on r.word_id = w.id'
+            .' where (w.l_word is not null or r.word_id is not null)'
+            .'   and not exists (select 1 from absorbed_earlier a where a.absorbed_id = w.id)',
+        );
+        DB::statement('drop table if exists dup_groups');
+        DB::statement(
+            'create temp table dup_groups as'
+            .' select eff_key, language_id, word_class_id from eff_keys'
+            .' group by eff_key, language_id, word_class_id having count(*) > 1',
+        );
+
+        // Survivor preference: a display containing ё first (the fullest
+        // spelling survives — the user edits the display later), then most
+        // definitions, then the lowest id.
+        DB::statement('drop table if exists dup_survivors');
+        DB::statement(
+            'create temp table dup_survivors as'
+            .' select distinct on (k.eff_key, k.language_id, k.word_class_id)'
+            .'   k.eff_key, k.language_id, k.word_class_id, k.id as survivor_id'
+            .' from eff_keys k'
+            .' join dup_groups d on d.eff_key = k.eff_key'
+            .'   and d.language_id = k.language_id and d.word_class_id = k.word_class_id'
+            .' join words w on w.id = k.id'
+            .' order by k.eff_key, k.language_id, k.word_class_id,'
+            .'   (case when position(? in w.word) + position(? in w.word) > 0 then 0 else 1 end),'
+            .'   (select count(*) from definitions df where df.word_id = w.id) desc,'
+            .'   k.id',
+            ['ё', 'Ё'],
+        );
+
+        $this->beginMergeMap();
+        DB::statement(
+            'insert into merge_map (absorbed_id, survivor_id)'
+            .' select k.id, s.survivor_id from eff_keys k'
+            .' join dup_groups d on d.eff_key = k.eff_key'
+            .'   and d.language_id = k.language_id and d.word_class_id = k.word_class_id'
+            .' join dup_survivors s on s.eff_key = k.eff_key'
+            .'   and s.language_id = k.language_id and s.word_class_id = k.word_class_id'
+            .' where k.id <> s.survivor_id',
+        );
+        $this->stats['dup_merged'] += $this->mergeMapCount();
+        $this->applyMerge();
+
+        // The absorbed rows' updates die with them; every remaining target
+        // key is now held by exactly one row (its group was merged away or
+        // was never a group), so the updates are collision-free.
+        DB::statement('delete from rekey_map r using merge_map m where r.word_id = m.absorbed_id');
+        $this->stats['kw_rekeyed'] += (int) DB::selectOne('select count(*) as n from rekey_map')->n;
+        if (! $this->dry) {
+            $this->applyRekeyMap('rekey_map', 'word_id', 'words');
+        }
+
+        foreach (['rekey_map', 'eff_keys', 'dup_groups', 'dup_survivors'] as $table) {
+            DB::statement('drop table if exists '.$table);
+        }
+    }
+
+    /**
+     * The forms side of the recompute: forms carry no unique on l_word, so
+     * the recomputed keys apply directly.
+     */
+    private function recomputeFormKeys(): void
+    {
+        $this->info('Phase 2 — forms.l_word recompute...');
+        $bounds = $this->idBounds('forms');
+        if ($bounds === null) {
+            return;
+        }
+
+        // The forms of rows phase 1 has already absorbed take no part: a
+        // real run moved or deduped them before this phase reads.
+        $this->stats['kf_rekeyed'] += $this->scanKeySlices('forms', 'form', $bounds, function (array $tuples): void {
+            if ($this->dry) {
+                return;
+            }
+            foreach (array_chunk($tuples, self::STATEMENT_CHUNK) as $batch) {
+                [$placeholders, $bindings] = $this->valuesPlaceholders($batch);
+                DB::affectingStatement(
+                    'update forms as f set l_word = v.lw::varchar'
+                    .' from (values '.$placeholders.') as v(row_id, lw)'
+                    .' where f.id = v.row_id::bigint',
+                    $bindings,
+                );
+            }
+        }, '(select 1 from absorbed_earlier a where a.absorbed_id = t.word_id)');
+        DB::statement('drop table if exists absorbed_earlier');
+    }
+
+    /**
+     * Chunked id-range scan over a table's rekey candidates — rows whose
+     * WordLookupKey differs from the stored l_word — feeding each slice's
+     * tuples to the handler, so memory stays at one slice. A computed key of
+     * '' (a marks-only or format-only display) is skipped: those rows stay
+     * unkeyed, like phase 1 leaves them. $excludeSql, when given, is a
+     * NOT EXISTS subquery over the row alias "t" naming rows to leave alone.
+     *
+     * @param  array{0: int, 1: int}  $bounds
+     * @param  callable(list<array{int, string}>): void  $each
+     */
+    private function scanKeySlices(string $table, string $sourceColumn, array $bounds, callable $each, ?string $excludeSql = null): int
+    {
+        $chunk = max(1, (int) $this->option('chunk'));
+        $batches = (int) ceil(($bounds[1] - $bounds[0] + 1) / $chunk);
+        $bar = $this->scanBar($batches);
+
+        $found = 0;
+        for ($start = $bounds[0]; $start <= $bounds[1]; $start += $chunk) {
+            $tuples = $this->rekeyTuples($table, $sourceColumn, $start, min($start + $chunk - 1, $bounds[1]), $excludeSql);
+            $found += count($tuples);
+            if ($tuples !== []) {
+                $each($tuples);
+            }
+            $bar->advance();
+        }
+        $bar->finish();
+        $this->newLine();
+
+        return $found;
+    }
+
+    /**
+     * The rekey candidates of one id-range slice: [id, new_key] tuples.
+     *
+     * @return list<array{int, string}>
+     */
+    private function rekeyTuples(string $table, string $sourceColumn, int $start, int $end, ?string $excludeSql = null): array
+    {
+        $tuples = [];
+        $rows = DB::table($table.' as t')
+            ->whereBetween('t.id', [$start, $end])
+            ->when($excludeSql !== null, fn ($query) => $query->whereRaw('not exists '.$excludeSql))
+            ->get(['t.id', 't.'.$sourceColumn, 't.l_word']);
+        foreach ($rows as $row) {
+            $key = WordLookupKey::normalize((string) $row->{$sourceColumn});
+            if ($key === '' || $key === $row->l_word) {
+                continue;
+            }
+            $tuples[] = [(int) $row->id, $key];
+        }
+
+        return $tuples;
+    }
+
+    /**
+     * The rows the earlier phases' merges have absorbed. A real run deletes
+     * them before the later phases read; a dry run keeps them stored — the
+     * snapshot is what keeps the dry counts identical to the real run's.
+     * The current merge_map may not exist (phase 1 early-returns before
+     * creating it when it finds nothing), and Schema::hasTable cannot see
+     * temp tables — to_regclass resolves the session's temp schema first.
+     */
+    private function snapshotAbsorbedWords(): void
+    {
+        DB::statement('drop table if exists absorbed_earlier');
+        $mergeMapExists = (bool) DB::selectOne("select to_regclass('merge_map') is not null as e")->e;
+        DB::statement($mergeMapExists
+            ? 'create temp table absorbed_earlier as select absorbed_id from merge_map'
+            : 'create temp table absorbed_earlier as select 0::bigint as absorbed_id where false');
+    }
+
+    /**
+     * Apply a temp rekey map to its table in statement-sized keyset chunks.
+     */
+    private function applyRekeyMap(string $map, string $mapIdColumn, string $table): void
+    {
+        $lastId = 0;
+        do {
+            $pairs = DB::table($map)
+                ->where($mapIdColumn, '>', $lastId)
+                ->orderBy($mapIdColumn)
+                ->limit(self::STATEMENT_CHUNK)
+                ->get();
+            if ($pairs->isEmpty()) {
+                break;
+            }
+            [$placeholders, $bindings] = $this->valuesPlaceholders($pairs->map(
+                fn (object $row): array => [(int) $row->{$mapIdColumn}, $row->new_key],
+            )->all());
+            DB::affectingStatement(
+                "update {$table} as t set l_word = v.lw::varchar"
+                .' from (values '.$placeholders.') as v(row_id, lw)'
+                .' where t.id = v.row_id::bigint',
+                $bindings,
+            );
+            $lastId = (int) $pairs->last()->{$mapIdColumn};
+        } while ($pairs->count() === self::STATEMENT_CHUNK);
+    }
+
+    private function scanBar(int $batches, string $message = 'Scanning...'): ProgressBar
+    {
+        $bar = $this->output->createProgressBar($batches);
+        $bar->setFormat('[%current%/%max% passes] [%elapsed%] %message%');
+        $bar->setMessage($message);
+        $bar->start();
+
+        return $bar;
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 3 — unknown-class twins
     // ------------------------------------------------------------------
 
     private function mergeUnknownTwins(): void
     {
-        $this->info('Phase 2 — unknown-class twins...');
+        $this->info('Phase 3 — unknown-class twins...');
         $this->beginMergeMap();
         DB::statement(
             'insert into merge_map (absorbed_id, survivor_id)'
@@ -444,12 +733,12 @@ class WordsNormalizeCommand extends Command
     }
 
     // ------------------------------------------------------------------
-    // Phase 3 — alias word classes (adj → adjective)
+    // Phase 4 — alias word classes (adj → adjective)
     // ------------------------------------------------------------------
 
     private function mergeAliasClasses(): void
     {
-        $this->info('Phase 3 — alias word classes...');
+        $this->info('Phase 4 — alias word classes...');
         $aliases = WordClass::query()
             ->get()
             ->filter(fn (WordClass $class): bool => ($canonical = PosAliases::canonical($class->slug)) !== null
@@ -583,12 +872,125 @@ class WordsNormalizeCommand extends Command
     }
 
     // ------------------------------------------------------------------
-    // Phase 4 — lemma-form backfill
+    // Phase 5 — entity stamp recompute
+    // ------------------------------------------------------------------
+
+    /**
+     * Recompute the entity tokenizer's `entity_words.l_word` stamps to the
+     * current WordLookupKey formula (the stamp source is the token; the old
+     * tokenizer never folded ё). Stamps are unique per (entity_id, l_word),
+     * so a recomputed key can only collide with another stamp of the same
+     * entity — two pre-fold spellings of one word: the counts fold into the
+     * already-correct stamp (or the lowest id), adopting a linked word when
+     * the survivor has none, and the loser deletes.
+     */
+    private function recomputeEntityStamps(): void
+    {
+        if (! $this->hasChild('entity_words')) {
+            return;
+        }
+        $this->info('Phase 5 — entity_words.l_word recompute...');
+        $bounds = $this->idBounds('entity_words');
+        if ($bounds === null) {
+            return;
+        }
+
+        DB::statement('drop table if exists rekey_ew');
+        DB::statement('create temp table rekey_ew (entity_word_id bigint primary key, new_key varchar)');
+        $found = $this->scanKeySlices('entity_words', 'token', $bounds, function (array $tuples): void {
+            $this->insertTempTuples('rekey_ew', 'entity_word_id, new_key', $tuples);
+        });
+        if ($found === 0) {
+            DB::statement('drop table if exists rekey_ew');
+
+            return;
+        }
+
+        // The effective keys of the changed rows plus any stamp already
+        // holding a targeted key. Stored keys alone are unique — the
+        // (entity_id, l_word) unique guarantees that — so only recomputed
+        // keys can collide, and only within one entity.
+        DB::statement('drop table if exists ew_eff');
+        DB::statement(
+            'create temp table ew_eff as'
+            .' select e.id, e.entity_id, r.new_key as eff_key, false as is_holder'
+            .' from entity_words e join rekey_ew r on r.entity_word_id = e.id'
+            .' union all'
+            .' select e.id, e.entity_id, e.l_word, true'
+            .' from entity_words e'
+            .' where not exists (select 1 from rekey_ew r where r.entity_word_id = e.id)'
+            .'   and e.l_word in (select new_key from rekey_ew)',
+        );
+        DB::statement('drop table if exists ew_groups');
+        DB::statement(
+            'create temp table ew_groups as'
+            .' select entity_id, eff_key from ew_eff'
+            .' group by entity_id, eff_key having count(*) > 1',
+        );
+        DB::statement('drop table if exists ew_survivors');
+        DB::statement(
+            'create temp table ew_survivors as'
+            .' select distinct on (k.entity_id, k.eff_key) k.entity_id, k.eff_key, k.id as survivor_id'
+            .' from ew_eff k'
+            .' join ew_groups g on g.entity_id = k.entity_id and g.eff_key = k.eff_key'
+            .' order by k.entity_id, k.eff_key, k.is_holder desc, k.id',
+        );
+
+        $absorbed = 'from ew_eff k'
+            .' join ew_groups g on g.entity_id = k.entity_id and g.eff_key = k.eff_key'
+            .' join ew_survivors m on m.entity_id = k.entity_id and m.eff_key = k.eff_key'
+            .' where k.id <> m.survivor_id';
+        $this->stats['ew_folded'] += (int) DB::selectOne('select count(*) as n '.$absorbed)->n;
+        if (! $this->dry) {
+            DB::affectingStatement(
+                'update entity_words s'
+                .' set count = s.count + f.folded, word_id = coalesce(s.word_id, f.word_id), updated_at = now()'
+                .' from ('
+                .'   select m.survivor_id, sum(e.count)::int as folded, min(e.word_id) as word_id'
+                .'   from entity_words e'
+                .'   join ew_eff k on k.id = e.id'
+                .'   join ew_groups g on g.entity_id = k.entity_id and g.eff_key = k.eff_key'
+                .'   join ew_survivors m on m.entity_id = k.entity_id and m.eff_key = k.eff_key'
+                .'   where k.id <> m.survivor_id'
+                .'   group by m.survivor_id'
+                .' ) f'
+                .' where s.id = f.survivor_id',
+            );
+            DB::affectingStatement(
+                'delete from entity_words e'
+                .' using ew_eff k'
+                .' join ew_groups g on g.entity_id = k.entity_id and g.eff_key = k.eff_key'
+                .' join ew_survivors m on m.entity_id = k.entity_id and m.eff_key = k.eff_key'
+                .' where e.id = k.id and k.id <> m.survivor_id',
+            );
+        }
+
+        // The absorbed stamps' updates die with them; every remaining target
+        // key is now held by exactly one stamp of its entity.
+        DB::statement(
+            'delete from rekey_ew r'
+            .' using ew_eff k'
+            .' join ew_groups g on g.entity_id = k.entity_id and g.eff_key = k.eff_key'
+            .' join ew_survivors m on m.entity_id = k.entity_id and m.eff_key = k.eff_key'
+            .' where r.entity_word_id = k.id and k.id <> m.survivor_id',
+        );
+        $this->stats['ew_rekeyed'] += (int) DB::selectOne('select count(*) as n from rekey_ew')->n;
+        if (! $this->dry) {
+            $this->applyRekeyMap('rekey_ew', 'entity_word_id', 'entity_words');
+        }
+
+        foreach (['rekey_ew', 'ew_eff', 'ew_groups', 'ew_survivors'] as $table) {
+            DB::statement('drop table if exists '.$table);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 6 — lemma-form backfill
     // ------------------------------------------------------------------
 
     private function backfillLemmaForms(): void
     {
-        $this->info('Phase 4 — lemma forms...');
+        $this->info('Phase 6 — lemma forms...');
         $strips = Language::query()->get(['id', 'code'])
             ->mapWithKeys(fn (Language $language): array => [(int) $language->id => StressMarks::stripsFor($language->code)]);
         $bounds = $this->idBounds('words');
@@ -1050,6 +1452,22 @@ class WordsNormalizeCommand extends Command
         }
         $bar->finish();
         $this->newLine();
+    }
+
+    /**
+     * Chunked insert of tuple rows into a temp table.
+     *
+     * @param  list<list<mixed>>  $tuples
+     */
+    private function insertTempTuples(string $table, string $columns, array $tuples): void
+    {
+        foreach (array_chunk($tuples, self::STATEMENT_CHUNK) as $chunk) {
+            [$placeholders, $bindings] = $this->valuesPlaceholders($chunk);
+            DB::statement(
+                'insert into '.$table.' ('.$columns.') values '.$placeholders,
+                $bindings,
+            );
+        }
     }
 
     /**
