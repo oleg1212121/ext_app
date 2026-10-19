@@ -5,7 +5,7 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T22:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: controller
@@ -113,8 +113,12 @@ in id order, bounded by `--limit` (200). Dev:
 # Pipeline
 
 1. **Index** — `EntityWordIndexer` tokenizes `entity_sentences` (PHP
-   `WordTokenizer`, Unicode regex) into `entity_words` (token, lowercase
-   key, count) with `entities.words_indexed_at` staleness tracking.
+   `WordTokenizer`, Unicode regex) into `entity_words` (token,
+   `WordLookupKey` key, count) — the key is the dictionary's own
+   normalization (lowercase, combining marks and zero-width format
+   characters stripped, ё→е folded), so a ёлка token stamps `елка` and
+   resolves against е-keyed word rows directly — with
+   `entities.words_indexed_at` staleness tracking.
    Rebuilt by the background refresh (or manually via `crossword:index`);
    generate no longer rebuilds inline.
 2. **Link** — `EntityWordLinker` (shared by the background refresh and

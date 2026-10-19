@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T23:59:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T00:30:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -532,7 +532,10 @@ a row when nothing matches:
   raw surface token for ru/be/uk; casing stays) that carries itself as its
   lemma form — and the mint is a `firstOrCreate` on the unique triple, so
   a row that raced in (or one the same normalized key reaches under a
-  stale pre-fold entity stamp) is adopted, not duplicated. A token that is
+  stale pre-fold entity stamp — legacy data only: the tokenizer keys
+  entity stamps through `WordLookupKey` too, ё-fold included, so a ёлка
+  token stamps `елка` and the ordinary link pass hits the е-keyed row
+  directly) is adopted, not duplicated. A token that is
   nothing but combining marks stays stamped instead of storing a junk row.
 * Filament's manual creators join the same contract. The Word page's
   "Create word & link" (Translations relation manager) strips the display

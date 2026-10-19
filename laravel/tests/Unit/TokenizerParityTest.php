@@ -24,6 +24,16 @@ it('produces the same tokens as the browser tokenizer', function () {
         // display but keys must strip them so the word map still resolves.
         'Она́ произно́сит э́то краси́во, ещё не всё.',
         'She pronóunces it béautifully, gáve úp — свобо́дный.',
+        // ё parity (ticket 09): keys fold ё→е after lowercasing, Ё and ё
+        // alike — the same fold words.l_word carries — so Ёлка and елка
+        // resolve to one map entry.
+        'Ёлка ёлка ЁЛКА ещё поёт.',
+        // ё plus a combining acute: the key loses both the mark and the ё.
+        'ещё́ и ещё.',
+        // Zero-width format characters (\p{Cf}: ZWSP, soft hyphen) are not
+        // \p{L}/\p{M} — they split the token, and the halves key through the
+        // same strip-and-fold pipeline.
+        "Ёл\u{200B}ка и ел\u{AD}ка ещё.",
     ];
 
     $cli = base_path('resources/js/lib/wordTokenizer.cli.mjs');

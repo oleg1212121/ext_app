@@ -344,6 +344,31 @@ class TestBeStressModel:
         assert " ў " in marked
 
 
+# --- tokenizer key parity (ё-fold, ticket 09) ----------------------------------
+# The shared lookup key must mirror Laravel's WordLookupKey::normalize (trim →
+# lowercase → \p{M} strip → \p{Cf} strip → ё→е fold) so a ё token compares equal
+# to its е-folded dictionary form — the same pipeline PHP's WordTokenizer and
+# the browser wordTokenizer.mjs carry (TokenizerParityTest on the Laravel side).
+
+
+def test_lookup_key_folds_yo_case_insensitively():
+    from ai.enrichment.cyrillic_stress import lookup_key
+
+    assert lookup_key("Ёлка") == "елка"
+    assert lookup_key("ёлка") == "елка"
+    assert lookup_key("ЁЛКА") == "елка"
+
+
+def test_lookup_key_strips_marks_and_format_characters_and_trims():
+    from ai.enrichment.cyrillic_stress import lookup_key
+
+    assert lookup_key(" до́м ") == "дом"
+    assert lookup_key("до\u200bм") == "дом"  # ZWSP
+    assert lookup_key(" ел\u00adка ") == "елка"  # soft hyphen
+    assert lookup_key("поёт") == "поет"
+    assert lookup_key("don’t") == "don’t"  # non-ё text: lowercase only
+
+
 # --- algorithm versions (ADR 0067) ---------------------------------------------
 # Each module reports its version on every /enrich response; Laravel stamps
 # the reported value and re-stales when it disagrees with the enricher's

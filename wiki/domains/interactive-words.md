@@ -5,7 +5,7 @@ description: Dictionary-linked clickable words with familiarity text-color tinti
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T22:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: word-controller
@@ -115,8 +115,13 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    widget chrome, so a double-click on a real button never produces the
    native text selection that browser extensions need. The spans keep the
    button keyboard contract (focusable; Ctrl+Enter / Ctrl+Space open the
-   popup). Parity is enforced by `tests/Unit/TokenizerParityTest.php`
-   (PHP vs node CLI on shared fixtures); a mismatch breaks coloring, not
+   popup). Keys carry the shared `WordLookupKey` pipeline — lowercase,
+   combining marks and zero-width format characters stripped, ё→е folded —
+   so a stressed or ё-spelled token looks up the plain/folded entry
+   (ёлка → `елка`). Parity is enforced by
+   `tests/Unit/TokenizerParityTest.php`
+   (PHP vs node CLI on shared fixtures, ё/mark/zero-width samples
+   included); a mismatch breaks coloring, not
    text.
 3. **Popup details are lazy, per word family.** Ctrl-clicking a word fetches
    `GET /words/{word}?surface={l_word}`. `WordFamily::resolve` (ADR 0045)
@@ -253,7 +258,12 @@ popup opens.
   the combining stress marks leave the raw surface for ru/be/uk — that
   carries itself as its lemma form), points `entity_words.word_id` at it,
   and queues the same fetch for every entity word still lacking
-  translations. Every entity token ends up clickable and eventually
+  translations. The indexer stamps `entity_words.l_word` through the same
+  `WordLookupKey` pipeline the dictionary rows carry (ё-fold included), so
+  a ёлка token keys `елка` and hits the е-keyed row in the ordinary link
+  pass — the adoption mint's `firstOrCreate` on the unique triple stays as
+  race protection for stamps that predate the fold. Every entity token ends
+  up clickable and eventually
   translated; junk tokens land in the exclusions after one lookup. See
   [Crossword](/domains/crossword.md) and [Dictionary](/database/dictionary.md).
 * Tests: `tests/Feature/WordTranslationFetchTest.php` (trigger, link-only

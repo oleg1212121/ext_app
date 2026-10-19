@@ -1,5 +1,35 @@
 # Directory Update Log
 
+## 2026-10-19 (entity tokenizer folds ё in parity with the dictionary key — word-import-contract ticket 09)
+
+The last code gap ticket 04's audit flagged ("biggest hidden dependency"):
+`WordTokenizer::lookupKey` still carried the pre-ticket-01 formula
+(lowercase + mark strip only), so `EntityWordIndexer` stamped
+`entity_words.l_word` with ё-unfolded keys — a ёлка token keyed `ёлка`
+while the post-ticket-05 dictionary keys `елка`: the linker missed, and
+`EntityWordAdoption`'s mint had to fall back to its `firstOrCreate`
+hardening on every ё word. The tokenizer now delegates to
+`App\Support\WordLookupKey::normalize` (trim → lowercase → mark strip →
+zero-width/format-character strip → trim → ё→е fold), and the two parity
+twins carry the same pipeline: `resources/js/lib/wordTokenizer.mjs` (new
+`lookupKey()`, pinned by a new vitest suite `wordTokenizer.test.mjs` on
+the JS side and the extended `TokenizerParityTest` samples — ё/Ё, ё+acute,
+ZWSP/soft-hyphen splits — on the PHP↔node pair) and the python tokenizer
+(`ai/enrichment/cyrillic_stress.py` gains the public `lookup_key`, which
+replaces the `_normalize_yo(strip_marks(...))` Silero comparison; pinned
+by two new pytest tests). Result-neutral for enrichment — token surfaces
+cannot carry whitespace or `\p{Cf}` characters, so the python comparison
+key only gained strips that cannot fire and `ALGORITHM_VERSION` stays 1
+on both sides (no re-enrichment sweep owed). Entity pipeline covered
+end-to-end by a new `EntityWordIndexerTest` case: a ёлка sentence stamps
+`елка`, the linker stamps it unmatchable until the е-keyed row arrives,
+and adoption attaches to it instead of minting. Concepts touched:
+`domains/interactive-words.md`, `domains/crossword.md`,
+`domains/sentence-enrichment.md`, `domains/dictionary-import.md`
+(adoption bullet — stamps are born folded, the stale-stamp path is
+legacy-only), `generated.at` bumped. No routes/models/commands added —
+no `wiki:sync` needed.
+
 ## 2026-10-19 (dev-DB contract switchover run — word-import-contract ticket 06)
 
 The operational switchover of the dev database `ext_app` to the

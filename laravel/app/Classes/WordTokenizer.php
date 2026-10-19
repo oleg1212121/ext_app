@@ -2,6 +2,8 @@
 
 namespace App\Classes;
 
+use App\Support\WordLookupKey;
+
 class WordTokenizer
 {
     private const TOKEN_PATTERN = "/[\p{L}\p{M}]+(?:['’\-][\p{L}\p{M}]+)*/u";
@@ -10,9 +12,10 @@ class WordTokenizer
 
     /**
      * Split text into unique tokens keyed by the dictionary lookup form:
-     * lowercased and stripped of combining marks (U+0301 stress marks) —
-     * the same normalization as WiktionaryParser::normalizeLookupKey, so
-     * tokens from stressed text resolve against l_word keys (ADR 0052).
+     * WordLookupKey::normalize (lowercase, combining marks and zero-width
+     * format characters stripped, ё→е folded) — the same key `words.l_word`
+     * and `entity_words.l_word` carry, so tokens from stressed or ё-spelled
+     * text resolve against the dictionary (ADR 0052).
      *
      * @return array<string, array{token: string, count: int}>
      */
@@ -44,13 +47,16 @@ class WordTokenizer
     }
 
     /**
-     * The dictionary lookup key of a surface form: lowercase + no combining
-     * marks. Kept in lockstep with the browser tokenizer (wordTokenizer.mjs)
-     * via TokenizerParityTest.
+     * The dictionary lookup key of a surface form: WordLookupKey::normalize —
+     * trim, lowercase, no combining marks, no zero-width format characters,
+     * ё→е folded. Kept in lockstep with the browser tokenizer
+     * (wordTokenizer.mjs) via TokenizerParityTest and with the python
+     * tokenizer's lookup_key (ai.enrichment.cyrillic_stress) by its own
+     * pytest pins — the three carry one formula.
      */
     public function lookupKey(string $surface): string
     {
-        return preg_replace('/\p{M}/u', '', mb_strtolower($surface)) ?? mb_strtolower($surface);
+        return WordLookupKey::normalize($surface);
     }
 
     /**
