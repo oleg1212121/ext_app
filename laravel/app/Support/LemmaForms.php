@@ -12,6 +12,11 @@ namespace App\Support;
  * through WordLookupKey and deduped on the (form, word_id) identity the
  * forms table enforces — so batch upserts stay idempotent and a stressed
  * dump variant never sits beside its plain twin.
+ *
+ * Every lemma/form containing ё additionally emits its е-folded ALIAS row
+ * (ёлка carries ёлка AND елка, both keyed `елка`): texts and dictionaries
+ * that drop ё still resolve. The alias dedupes through the same seen-map,
+ * so a source already listing both spellings stores two rows, not three.
  */
 final class LemmaForms
 {
@@ -39,18 +44,37 @@ final class LemmaForms
             if ($form === '') {
                 continue;
             }
-            $key = $form.'|'.$wordId;
-            if (isset($seen[$key])) {
-                continue;
+            self::collectRow($rows, $seen, $form, $wordId);
+
+            // The е-folded alias of a ё-form (display folded too, ё→е);
+            // already listed spellings dedupe through the same seen-map.
+            $alias = WordLookupKey::foldYo($form);
+            if ($alias !== $form) {
+                self::collectRow($rows, $seen, $alias, $wordId);
             }
-            $seen[$key] = true;
-            $rows[] = [
-                'form' => $form,
-                'l_word' => WordLookupKey::normalize($form),
-                'word_id' => $wordId,
-            ];
         }
 
         return $rows;
+    }
+
+    /**
+     * Appends one form row unless this word already claims the exact
+     * display string.
+     *
+     * @param  list<array{form: string, l_word: string, word_id: int}>  $rows
+     * @param  array<string, true>  $seen
+     */
+    private static function collectRow(array &$rows, array &$seen, string $form, int $wordId): void
+    {
+        $key = $form.'|'.$wordId;
+        if (isset($seen[$key])) {
+            return;
+        }
+        $seen[$key] = true;
+        $rows[] = [
+            'form' => $form,
+            'l_word' => WordLookupKey::normalize($form),
+            'word_id' => $wordId,
+        ];
     }
 }

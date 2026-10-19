@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T22:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T11:15:00+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -154,10 +154,12 @@ Two source shapes exist:
    unseen sound type → transcription type, slug as placeholder
    title) — nothing is skipped, and a brand-new language needs no seeders;
    curate the placeholder titles in `/admin` afterwards. Every imported
-   word stores itself as its lemma form (`App\Support\LemmaForms`), and
-   `romanization`-tagged forms and stressed ru/be/uk headwords never
-   store — nor do marks in the staged translation candidates for
-   ru/be/uk targets (they strip at staging time).
+   word stores itself as its lemma form (`App\Support\LemmaForms`; a
+   ё-form also carries its е-folded alias row — ёлка AND елка, both keyed
+   `елка`), and `romanization`-tagged forms and stressed ru/be/uk
+   headwords never store — nor do marks in the staged translation
+   candidates for ru/be/uk targets (they strip at staging time); headwords
+   and staged candidates trim at storage, en and ru alike.
 4. Link words across languages through the staged translations:
 
    ```bash

@@ -189,7 +189,14 @@ class WiktionaryParser
     public function parseLine(object $line): ?array
     {
         $word = $line->word ?? null;
-        if ($word === null || trim($word) === '') {
+        if ($word === null) {
+            return null;
+        }
+
+        // Headwords trim at storage: only checking emptiness left padded
+        // dump artifacts (" ёлка ") storing verbatim, fragmenting lookups.
+        $word = trim((string) $word);
+        if ($word === '') {
             return null;
         }
 
@@ -204,7 +211,7 @@ class WiktionaryParser
 
         // A headword that is nothing but combining marks (a marks-only dump
         // artifact) strips to the empty string: store nothing.
-        if (trim($word) === '') {
+        if ($word === '') {
             return null;
         }
 
@@ -224,9 +231,12 @@ class WiktionaryParser
         $relayBase = null;
         if ($relay['relay']) {
             $base = $this->stripsDisplayMarks ? StressMarks::strip((string) $relay['base']) : (string) $relay['base'];
-            // A base that strips to nothing (a marks-only artifact) demotes
-            // to nothing: keep the entry a word instead of dropping it.
-            if (trim($base) !== '') {
+            // The base stores as a proxy headword's display word: trimmed
+            // like every headword. A base that strips to nothing (a
+            // marks-only artifact) demotes to nothing: keep the entry a
+            // word instead of dropping it.
+            $base = trim($base);
+            if ($base !== '') {
                 $relayBase = $base;
             }
         }
@@ -334,13 +344,14 @@ class WiktionaryParser
 
     /**
      * One staged translation candidate: kept only for this parser's target
-     * languages, and stored plain — a candidate whose target language is a
-     * StressMarks one (ru/be/uk) loses its combining marks HERE, at staging
-     * time (spec rule 1). The link pass strips at pairing time too and the
-     * auto-fetch strips before staging, but an unmatched candidate sits in
-     * the staged JSON verbatim until some pass converts it, so the stored
-     * string itself must never carry the marks. A candidate that is nothing
-     * but combining marks (a marks-only dump artifact) stages nothing.
+     * languages, trimmed at storage (only checking emptiness padded the
+     * stored string), and stored plain — a candidate whose target language
+     * is a StressMarks one (ru/be/uk) loses its combining marks HERE, at
+     * staging time (spec rule 1). The link pass strips at pairing time too
+     * and the auto-fetch strips before staging, but an unmatched candidate
+     * sits in the staged JSON verbatim until some pass converts it, so the
+     * stored string itself must never carry the marks. A candidate that is
+     * nothing but whitespace or combining marks stages nothing.
      *
      * The target language reads `code`, falling back to `lang_code`: en-edition
      * translation objects carry both (equal values); the ru edition's carry
@@ -354,13 +365,18 @@ class WiktionaryParser
         }
 
         $word = $translation->word ?? null;
-        if ($word === null || trim($word) === '') {
+        if ($word === null) {
+            return null;
+        }
+
+        $word = trim((string) $word);
+        if ($word === '') {
             return null;
         }
 
         if (StressMarks::stripsFor((string) $code)) {
             $word = StressMarks::strip($word);
-            if (trim($word) === '') {
+            if ($word === '') {
                 return null;
             }
         }

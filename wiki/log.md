@@ -1,5 +1,40 @@
 # Directory Update Log
 
+## 2026-10-19 (ё-aware lookup key, е-alias form rows, storage trims — word-import-contract ticket 01)
+
+Implemented word-import-contract ticket 01 (the foundation ticket 04's
+l_word uniqueness move keys on):
+
+- **`App\Support\WordLookupKey`** — the shared `l_word` formula becomes
+  trim → lowercase → combining-mark strip (unconditional, en included,
+  via `StressMarks`) → zero-width/format-character strip (`\p{Cf}`: ZWSP,
+  ZWJ, BOM, soft hyphen — they survived verbatim and fragmented lookups)
+  → ё→е fold (ёлка and елка share the key `елка`; the case-preserving
+  fold lives in the new public `WordLookupKey::foldYo`). A strip can bare
+  a whitespace edge that sat beside a stripped character, so the key
+  trims again after the strips. Display text never folds and never loses
+  ё: `words.word`/`forms.form` keep the source spelling under the
+  unchanged StressMarks rule.
+- **`App\Support\LemmaForms`** — every lemma/form containing ё now also
+  emits its е-folded alias row (ёлка carries form rows ёлка AND елка,
+  both keyed `елка`), so texts and dictionaries that drop ё still
+  resolve; the alias dedupes through the same seen-map, so a source
+  already listing both spellings stores two rows, not three.
+- **`App\Classes\WiktionaryParser`** — kaikki headwords and staged
+  translation candidates **trim at storage** (only emptiness was checked;
+  the padded string stored verbatim), en and ru alike; the relay base —
+  a proxy headword's display word — trims the same way.
+- No migration: existing rows untouched (the recompute is ticket 05).
+- Concepts updated: `domains/dictionary-import.md` (description,
+  WiktionaryParser bullet, the shared-normalization section, LemmaForms
+  passage, source titles, `generated.at` bumped),
+  `database/dictionary.md` (`forms` row + purity note extended;
+  `generated.at` bumped and the stale `verified: human` stamp REMOVED —
+  re-verification is the human's call) and
+  `playbooks/import-dictionary-data.md` (import-conventions step covers
+  the alias rows and the storage trims; `generated.at` bumped). No
+  route/model/command changes, so no `wiki:sync` needed.
+
 ## 2026-10-18 (code-review fixes — stale human-verified stamps removed — ru-edition-import ticket 04)
 
 Closing review pass over the ru-edition-import branch. Knowledge-base fix:

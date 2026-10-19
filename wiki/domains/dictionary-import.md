@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; each language's dictionary sources from its own Wiktionary edition dump and editions merge on overlap — existing rows keep their definitions and gain the new edition's (ADR 0080); both importers store plain (stress-free) display words and stage plain translation candidates for the stress-mark target languages, share one pos alias table and one lemma-form rule, kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, unknown-twin merges, alias-class fold, lemma-form backfill).
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair; each language's dictionary sources from its own Wiktionary edition dump and editions merge on overlap — existing rows keep their definitions and gain the new edition's (ADR 0080); both importers store plain (stress-free) display words and stage plain translation candidates for the stress-mark target languages, trimmed at storage; share one pos alias table, one lemma-form rule (ё-forms also emit an е-folded alias row), and one ё-aware l_word key (trim → lowercase → combining-mark strip → zero-width/format-character strip → ё→е fold; display text never folds and keeps ё) (ADR 0078, addendum 2026-10-18); kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, unknown-twin merges, alias-class fold, lemma-form backfill).
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-18
-generated: { by: agent:zcode, at: 2026-10-18T22:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T11:10:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -42,13 +42,13 @@ sources:
     title: Extraction profiles (config/goldendict.php)
   - id: lookup-key
     resource: laravel/app/Support/WordLookupKey.php
-    title: shared l_word normalization
+    title: shared ё-aware l_word normalization (trim → lowercase → mark strip → zero-width/format strip → ё→е fold)
   - id: pos-aliases
     resource: laravel/app/Support/PosAliases.php
     title: shared pos alias table (dictionary abbreviations + kaikki slugs → canonical class slugs)
   - id: lemma-forms
     resource: laravel/app/Support/LemmaForms.php
-    title: shared lemma-form rule and form-row hygiene (cap/strip/empty-guard/dedupe)
+    title: shared lemma-form rule and form-row hygiene (cap/strip/empty-guard/dedupe + ё-form е-alias rows)
   - id: translation-targets
     resource: laravel/app/Support/TranslationTargets.php
     title: shared link-only target-word resolver (all translation writers + repair commands)
@@ -142,7 +142,11 @@ ended at 1,013,927 exactly.
   display-headword carve-out is reversed (2026-10-18 addendum): no stress
   marks in stored keys or display words on any writer, definition/example
   prose keeps its marks, and a headword that strips to the empty string
-  (a marks-only artifact) stores nothing. **Staged translation candidates
+  (a marks-only artifact) stores nothing. **Headwords and staged
+  translation candidates trim at storage** (2026-10-19): only checking
+  emptiness let padded dump strings ("␣ёлка␣") store verbatim and fragment
+  lookups, so the headword, the relay base (a proxy headword's display)
+  and every staged candidate trim before the store — en and ru alike. **Staged translation candidates
   strip per target language** (2026-10-18 code review): a candidate whose
   `code` is a stress-mark language stores plain — unmatched candidates sit
   in the staged `words.translations` JSON verbatim until a link pass
@@ -167,7 +171,12 @@ ended at 1,013,927 exactly.
   every imported word stores itself as its lemma form through the shared
   `App\Support\LemmaForms` row builder (column cap, stress strip,
   empty-after-strip guard, `(form, word_id)` dedupe, the word's own
-  headword first — the forms table alone resolves lookups). **Form-of
+  headword first — the forms table alone resolves lookups). Every
+  lemma/form containing ё additionally emits its **е-folded alias row**
+  (2026-10-19): ёлка carries the form rows ёлка AND елка, both keyed
+  `елка` — texts and dictionaries that drop ё still resolve — while a
+  source already listing both spellings dedupes through the same seen-map
+  (two rows, not three). **Form-of
   relays demote to forms, not words** (2026-10-18): a kaikki entry whose
   EVERY sense carries the sense-level `form_of` list (+ the `form-of` tag)
   is an inflected variant standing alone ("четвереньках — prepositional of
@@ -427,11 +436,17 @@ ended at 1,013,927 exactly.
 Both importers write the same unified tables with the same conventions
 (batched `Word::upsert` on `(word, language_id, word_class_id)`, lookup
 auto-creation, text-dedupe definitions, heartbeats) and share the `l_word`
-normalization through `App\Support\WordLookupKey` (lowercase + combining-
-mark strip via `App\Support\StressMarks`), the `App\Support\PosAliases`
+normalization through `App\Support\WordLookupKey` — since 2026-10-19
+**trim → lowercase → combining-mark strip → zero-width/format-character
+strip (`\p{Cf}`: ZWSP, ZWJ, BOM, soft hyphen) → ё→е fold** (ёлка and елка
+share the key `елка`; the combining marks strip unconditionally, en
+included, via `App\Support\StressMarks`) — while the stored display words
+and forms never fold and keep the source ё (the StressMarks stress-strip
+rule only), and the `App\Support\PosAliases`
 pos alias table (raw abbreviations and kaikki slugs canonicalize before
 any word class is minted) and the `App\Support\LemmaForms` lemma-form rule
-(every imported word carries itself as a form). Both store plain display
+(every imported word carries itself as a form; ё-forms carry their
+е-folded alias too). Both store plain display
 words and forms for the ru/be/uk stress-mark languages — the ADR 0078
 kaikki display-headword carve-out is reversed (2026-10-18 addendum); only
 definition/example prose keeps its marks. The Wiktionary side reads kaikki

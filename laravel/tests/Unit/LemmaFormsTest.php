@@ -71,3 +71,51 @@ it('dedupes repeated identical forms', function () {
     expect($rows)->toHaveCount(2)
         ->and(collect($rows)->pluck('form')->all())->toBe(['cat', 'cats']);
 });
+
+it('emits an е-folded alias row for every ё-form, sharing one l_word', function () {
+    // ёлка carries both spellings with the identical folded key, so texts
+    // and dictionaries that drop ё still resolve through the forms table.
+    $rows = LemmaForms::rows('ёлка', ['ёлки'], 16, false);
+
+    expect($rows)->toBe([
+        ['form' => 'ёлка', 'l_word' => 'елка', 'word_id' => 16],
+        ['form' => 'елка', 'l_word' => 'елка', 'word_id' => 16],
+        ['form' => 'ёлки', 'l_word' => 'елки', 'word_id' => 16],
+        ['form' => 'елки', 'l_word' => 'елки', 'word_id' => 16],
+    ]);
+});
+
+it('folds the alias display case-preserving', function () {
+    $rows = LemmaForms::rows('Ёлка', [], 17, false);
+
+    expect($rows)->toBe([
+        ['form' => 'Ёлка', 'l_word' => 'елка', 'word_id' => 17],
+        ['form' => 'Елка', 'l_word' => 'елка', 'word_id' => 17],
+    ]);
+});
+
+it('adds no extra rows for forms without ё', function () {
+    $rows = LemmaForms::rows('дом', ['дома'], 18, true);
+
+    expect($rows)->toBe([
+        ['form' => 'дом', 'l_word' => 'дом', 'word_id' => 18],
+        ['form' => 'дома', 'l_word' => 'дома', 'word_id' => 18],
+    ]);
+});
+
+it('dedupes a source already listing both spellings to two rows, not three', function () {
+    $rows = LemmaForms::rows('ёлка', ['елка'], 19, false);
+
+    expect($rows)->toBe([
+        ['form' => 'ёлка', 'l_word' => 'елка', 'word_id' => 19],
+        ['form' => 'елка', 'l_word' => 'елка', 'word_id' => 19],
+    ]);
+
+    // The reverse listing order dedupes the same way.
+    $reversed = LemmaForms::rows('елка', ['ёлка'], 20, false);
+
+    expect($reversed)->toBe([
+        ['form' => 'елка', 'l_word' => 'елка', 'word_id' => 20],
+        ['form' => 'ёлка', 'l_word' => 'елка', 'word_id' => 20],
+    ]);
+});

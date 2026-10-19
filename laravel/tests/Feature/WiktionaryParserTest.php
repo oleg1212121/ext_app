@@ -579,3 +579,74 @@ it('demotes a ru-edition form-of relay to a form of its base, landing none of it
 
     unlink($tmpFile);
 });
+
+it('imports a ёлка entry as one word whose forms carry both spellings under one l_word', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+
+    $tmpFile = writeJsonlFixture([json_encode([
+        'word' => 'ёлка',
+        'pos' => 'сущ',
+        'senses' => [['glosses' => ['хвойное дерево с иглами вместо листьев']]],
+    ])], 'wiktionary_yo');
+    (new WiktionaryParser('ru', 'en', 100))->import($tmpFile);
+
+    // ONE word row: the display keeps the source ё, the key folds to е —
+    // and the folded key never exists as a second word row.
+    $elka = Word::where('l_word', 'елка')->where('language_id', $ruId)->firstOrFail();
+    expect($elka->word)->toBe('ёлка')
+        ->and($elka->l_word)->toBe('елка')
+        ->and(Word::where('language_id', $ruId)->count())->toBe(1)
+        ->and(Word::where('word', 'елка')->where('language_id', $ruId)->count())->toBe(0);
+
+    // The forms table holds ёлка AND its е-folded alias, both keyed елка —
+    // the same key the words table row carries.
+    $forms = $elka->forms->map(fn ($form) => ['form' => $form->form, 'l_word' => $form->l_word])
+        ->sortBy('form')->values()->all();
+    expect($forms)->toBe([
+        ['form' => 'елка', 'l_word' => 'елка'],
+        ['form' => 'ёлка', 'l_word' => 'елка'],
+    ])
+        ->and(Form::count())->toBe(2);
+
+    unlink($tmpFile);
+});
+
+it('trims kaikki headwords and staged candidates at storage, en and ru alike', function () {
+    $languages = createLanguages();
+    $ruId = $languages['ru']->id;
+
+    // The ru headword carries surrounding whitespace and stages candidates
+    // into BOTH target languages, each candidate whitespace-padded.
+    $ruFile = writeJsonlFixture([json_encode([
+        'word' => ' ёлка ',
+        'pos' => 'сущ',
+        'senses' => [['glosses' => ['хвойное дерево']]],
+        'translations' => [
+            ['word' => ' dog ', 'lang_code' => 'en'],
+            ['word' => ' до'."\u{0301}".'м ', 'lang_code' => 'be'],
+        ],
+    ])], 'wiktionary_trim_ru');
+    (new WiktionaryParser('ru', ['en', 'be'], 100))->import($ruFile);
+
+    // The headword stores trimmed (only emptiness was checked before) —
+    // and the staged candidates store trimmed too, stress-mark target or not.
+    $elka = Word::where('l_word', 'елка')->where('language_id', $ruId)->firstOrFail();
+    expect($elka->word)->toBe('ёлка')
+        ->and(Word::where('word', ' ёлка ')->exists())->toBeFalse()
+        ->and($elka->translations)->toBe(['dog', 'дом']);
+
+    unlink($ruFile);
+
+    // The same trim on an en headword — en and ru alike.
+    $enFile = writeJsonlFixture([
+        json_encode(['word' => ' cat ', 'pos' => 'noun', 'senses' => [['glosses' => ['feline']]]]),
+    ], 'wiktionary_trim_en');
+    (new WiktionaryParser('en', 'ru', 100))->import($enFile);
+
+    $cat = Word::where('l_word', 'cat')->where('language_id', $languages['en']->id)->firstOrFail();
+    expect($cat->word)->toBe('cat')
+        ->and(Word::where('word', ' cat ')->exists())->toBeFalse();
+
+    unlink($enFile);
+});
