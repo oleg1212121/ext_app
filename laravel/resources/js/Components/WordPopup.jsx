@@ -363,6 +363,46 @@ function ExplainPane({explain, explainKey, preview = false}) {
 }
 
 /**
+ * The ask-AI error state shared by both popup bodies — the dictionary card
+ * and the missing card run the same runEnrich, so one render carries the
+ * failure for both: the server's guidance verbatim, the explain pane's
+ * go-to-settings link for the no-model (400) / no-key (403) answers, and
+ * the Retry control the four-state contract requires of an error state —
+ * it re-sends the ask through the same guarded callback the toolbar icon
+ * uses.
+ */
+function AskAiError({message, status, onRetry = null}) {
+    const {t} = useI18n();
+
+    if (!message) {
+        return null;
+    }
+
+    return (
+        <div className="word-popup-ask-ai-error pb-2 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
+            <p>{message}</p>
+            {(status === 400 || status === 403) && (
+                <Link
+                    href="/profile?tab=ai"
+                    className="mt-1 inline-block underline underline-offset-2 hover:opacity-80"
+                >
+                    {t('word.explain_go_to_settings')}
+                </Link>
+            )}
+            {onRetry != null && (
+                <button
+                    type="button"
+                    onClick={onRetry}
+                    className={`word-popup-ask-ai-retry ${explainButtonClass} mt-1`}
+                >
+                    {t('word.ask_ai_retry')}
+                </button>
+            )}
+        </div>
+    );
+}
+
+/**
  * The missing-word card (popup-ai-enrich tickets 03 + 05): what an unmapped
  * token opens — the raw clicked surface as the title and an honest
  * "not in the dictionary yet" note. There is no word id behind it: nothing
@@ -375,7 +415,8 @@ function ExplainPane({explain, explainKey, preview = false}) {
  * Inapplicable states disable, never hide: no handler (the profile preview)
  * or no column language to ask with, a request in flight. A failed ask
  * shows the server's guidance verbatim beneath the toolbar — the no-model
- * and no-key cases carry the explain pane's go-to-settings link. The
+ * and no-key cases carry the explain pane's go-to-settings link, and the
+ * Retry control re-sends the ask (the shared AskAiError render). The
  * structure mirrors the real card (toolbar / header / dictionary, same
  * hairlines and stable `word-popup-*` hooks) so the card stays addressable
  * from outside styles the same way.
@@ -401,19 +442,7 @@ export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, ai
                     </button>
                 </div>
 
-                {aiError && (
-                    <div className="word-popup-ask-ai-error pb-2 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
-                        <p>{aiError}</p>
-                        {(aiErrorStatus === 400 || aiErrorStatus === 403) && (
-                            <Link
-                                href="/profile?tab=ai"
-                                className="mt-1 inline-block underline underline-offset-2 hover:opacity-80"
-                            >
-                                {t('word.explain_go_to_settings')}
-                            </Link>
-                        )}
-                    </div>
-                )}
+                <AskAiError message={aiError} status={aiErrorStatus} onRetry={onAskAi}/>
             </div>
 
             {/* The header carries the raw clicked surface only — no
@@ -449,7 +478,8 @@ export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, ai
  * ticket 04 — one ask per word, ledger-locked on the server), and the robot
  * (Models used popup)
  * rightmost — with the transient Anki status lines and the ask-AI error
- * line directly beneath. All
+ * line (verbatim guidance + go-to-settings for 400/403 + the Retry
+ * control, the shared AskAiError render) directly beneath. All
  * icons always render: an inapplicable icon is disabled, not hidden (know:
  * familiarity already max or busy; remove mark: no mark or busy; anki: no
  * handler or a send in flight; ask-ai: no handler, a request in flight, or
@@ -516,6 +546,7 @@ export function PopupContent({
     onAskAi = null,
     aiBusy = false,
     aiError = null,
+    aiErrorStatus = null,
     preview = false,
 }) {
     const {t} = useI18n();
@@ -704,12 +735,11 @@ export function PopupContent({
                 )}
                 {/* A failed Ask-AI attempt: the server's guidance (no key,
                     no model, already asked, throttled, provider error) lands
-                    verbatim; the icon stays retryable. */}
-                {aiError && (
-                    <p className="word-popup-ask-ai-error pb-2 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
-                        {aiError}
-                    </p>
-                )}
+                    verbatim — with the go-to-settings link for 400/403 and
+                    the four-state contract's Retry control re-sending the
+                    ask (the shared AskAiError render, the missing card's
+                    error state included); the icon stays retryable. */}
+                <AskAiError message={aiError} status={aiErrorStatus} onRetry={onAskAi}/>
             </div>
 
             {/* The header block (word / familiarity / frequency / form-of),
@@ -1238,12 +1268,15 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     };
 
     // The known-word ask (ticket 04): the BOUND word id (data.id — the same
-    // id the server's ledger locks and the payload's ai_asked reports).
+    // id the server's ledger locks and the payload's ai_asked reports) plus
+    // the popup's current surface — the response payload resolves from the
+    // same surface the initial GET did, so an inflected surface keeps its
+    // form-of line on the live swap.
     const askAi = () => {
         if (!data || aiBusy || data.ai_asked) {
             return;
         }
-        runEnrich({word_id: data.id}, {data, wordId, surface, languageCode: language?.code ?? null});
+        runEnrich({word_id: data.id, surface}, {data, wordId, surface, languageCode: language?.code ?? null});
     };
 
     // The missing card's adopt-on-ask (ticket 05): the RAW clicked surface
@@ -1314,6 +1347,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                             onAskAi={askAi}
                             aiBusy={aiBusy}
                             aiError={aiError}
+                            aiErrorStatus={aiErrorStatus}
                         />
                     )}
                 </>

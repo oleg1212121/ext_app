@@ -31,6 +31,10 @@ return [
     'word.ask_ai_already' => ['en' => 'AI already asked', 'ru' => 'ИИ уже спрошен', 'be' => 'ШІ ужо спытаны'],
     'word.ask_ai_sending' => ['en' => 'Asking AI…', 'ru' => 'Спрашиваем ИИ…', 'be' => 'Спытваем ШІ…'],
     'word.ask_ai_failed' => ['en' => 'Ask AI failed (:status)', 'ru' => 'Не удалось спросить ИИ (:status)', 'be' => 'Не ўдалося спытаць ШІ (:status)'],
+    // The ask error state's Retry control (the explain pane's error state
+    // has one — the four-state contract words the error treatment
+    // strictly): re-sends the ask through the same guarded callback.
+    'word.ask_ai_retry' => ['en' => 'Retry', 'ru' => 'Повторить', 'be' => 'Паўтарыць'],
     'word.explain_loading' => ['en' => 'Explaining…', 'ru' => 'Объясняю…', 'be' => 'Тлумачу…'],
     'word.explain_failed' => ['en' => 'Explanation failed (:status)', 'ru' => 'Не удалось объяснить (:status)', 'be' => 'Не ўдалося патлумачыць (:status)'],
     'word.explain_retry' => ['en' => 'Retry', 'ru' => 'Повторить', 'be' => 'Паўтарыць'],

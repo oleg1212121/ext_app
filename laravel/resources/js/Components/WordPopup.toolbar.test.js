@@ -201,13 +201,23 @@ describe('WordPopup action toolbar', () => {
         expect(label).toHaveLength(1);
     });
 
-    it('shows a failed ask beneath the toolbar — never silently', () => {
-        // The stable hook beside the Anki status lines; the line carries the
-        // server's guidance verbatim ({aiError} — no key / no model /
-        // already asked / in progress / throttled), and the network-level
-        // fallback copy lives in the shared runEnrich.
-        expect(toolbar).toContain('word-popup-ask-ai-error');
-        expect(toolbar).toContain('{aiError}');
+    it('shows a failed ask beneath the toolbar — never silently, with the Retry control', () => {
+        // The toolbar mounts the shared AskAiError render (the stable
+        // word-popup-ask-ai-error hook lives on the component itself,
+        // pinned below): the line carries the server's guidance verbatim
+        // (no key / no model / already asked / in progress / throttled)
+        // plus the four-state contract's Retry control, in both popup
+        // bodies.
+        expect(toolbar).toContain('<AskAiError');
+        expect(toolbar).toContain('onRetry={onAskAi}');
+        const errorComponent = popupSource.slice(
+            popupSource.indexOf('function AskAiError'),
+            popupSource.indexOf('export function MissingPopupContent'),
+        );
+        expect(errorComponent).toContain('word-popup-ask-ai-retry');
+        expect(errorComponent).toContain("t('word.ask_ai_retry')");
+        expect(errorComponent).toContain('onClick={onRetry}');
+        // The network-level fallback copy lives in the shared runEnrich.
         const askCallback = popupSource.slice(popupSource.indexOf('const runEnrich = (body, origin) => {'));
         expect(askCallback).toContain("t('word.ask_ai_failed'");
     });
@@ -290,8 +300,12 @@ describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
         expect(runEnrich).toContain('X-CSRF-TOKEN');
     });
 
-    it('the known-word ask posts the bound word id (ticket 04)', () => {
+    it('the known-word ask posts the bound word id and the popup’s current surface (ticket 04)', () => {
         expect(askKnown).toContain('word_id: data.id');
+        // The surface rides along: the enrich response's payload resolves
+        // from the same clicked surface the initial GET did, so is_form /
+        // form_of survive the live swap.
+        expect(askKnown).toMatch(/\{word_id: data\.id, surface\}/);
         // The succeeded lock's grey icon makes the click a no-op client-side.
         expect(askKnown).toMatch(/if \(!data \|\| aiBusy \|\| data\.ai_asked\)/);
     });

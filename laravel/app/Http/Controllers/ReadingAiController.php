@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Classes\AIModelResolver;
 use App\Classes\EntityAccessService;
 use App\Classes\WordAiEnrichmentService;
+use App\Classes\WordFamily;
 use App\Classes\WordPopupPayload;
 use App\Exceptions\AiProviderException;
 use App\Http\Requests\AiQuestionRequest;
@@ -31,6 +32,14 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class ReadingAiController extends Controller
 {
+    /**
+     * How long a pending ledger row stays "another ask in flight" before a
+     * retry may take it over. The provider layer's own cURL timeouts cap at
+     * 120s, so a genuinely live ask finishes (or dies) far inside the
+     * window — only a crashed worker's orphan crosses it.
+     */
+    public const PENDING_STALE_AFTER_MINUTES = 15;
+
     public function __construct(
         protected AIModelResolver $modelResolver,
         protected EntityAccessService $access,
@@ -203,15 +212,22 @@ class ReadingAiController extends Controller
      * response is the word-show payload (assembled by the same
      * WordPopupPayload presenter), so the popup swaps it in live.
      *
-     * Two exclusive request modes: the known-word path binds the word by id
-     * (ticket 04); the missing-word adoption path (ticket 05) resolves it
-     * from the RAW clicked surface through the ADR 0081 lookup key — a hit
-     * adopts onto the existing row, a miss mints one unknown-class word
+     * Two request modes: the known-word path binds the word by id (ticket
+     * 04); the missing-word adoption path (ticket 05) resolves it from the
+     * RAW clicked surface through the ADR 0081 lookup key — a hit adopts
+     * onto the existing row, a miss mints one unknown-class word
      * (WordAiEnrichmentService::resolveOrAdopt) — then runs the identical
      * flow. The model gate precedes the adoption mint, so a no-model user
      * mints nothing; the ledger gate runs once per path after the word is
      * known (409 precedence over the model 400 is ticket 04's documented
      * order on the known path).
+     *
+     * The optional `surface` (legal on both paths) is the clicked surface
+     * the popup resolves its payload from: it normalizes exactly like the
+     * word-show endpoint's (lowercase + combining marks stripped) and
+     * defaults to the word's own key when absent — so `is_form` /
+     * `form_of` survive the live swap on an inflected surface instead of
+     * vanishing because the payload rebuilt itself from `l_word`.
      */
     public function enrichWord(AiWordEnrichRequest $request): JsonResponse
     {
@@ -232,6 +248,16 @@ class ReadingAiController extends Controller
             return $this->aiError('Choose an AI model in your profile settings.', 400);
         }
 
+        // The ledger carries the resolved model's own two halves, split by
+        // the resolver's parser (first colon, so OpenRouter ids with '/'
+        // stay intact). A key without one is dead in the water — the same
+        // 400 the ask would raise, before any ledger row or mint exists.
+        try {
+            $modelParts = $this->modelResolver->parseModelString($model['key']);
+        } catch (InvalidArgumentException) {
+            return $this->aiError('Invalid model selection.', 400);
+        }
+
         if ($word === null) {
             $language = Language::query()
                 ->where('code', (string) $validated['language_code'])
@@ -247,19 +273,12 @@ class ReadingAiController extends Controller
             }
         }
 
-        // The ledger carries the resolved model's own two halves — the
-        // resolver-provided key is always 'provider:model' (split on the
-        // FIRST colon, so OpenRouter ids with '/' stay intact).
-        $colon = strpos($model['key'], ':');
-        $provider = $colon === false ? null : substr($model['key'], 0, $colon);
-        $modelName = $colon === false ? null : substr($model['key'], $colon + 1);
-
         try {
             $ledger = WordAiFetch::query()->firstOrNew(['word_id' => $word->id]);
             $ledger->forceFill([
                 'status' => WordAiFetch::STATUS_PENDING,
-                'provider' => $provider,
-                'model' => $modelName,
+                'provider' => $modelParts['provider'],
+                'model' => $modelParts['model'],
                 'attempts' => (int) $ledger->attempts + 1,
                 'asked_at' => now(),
                 'error' => null,
@@ -304,9 +323,12 @@ class ReadingAiController extends Controller
             return $this->failLedger($ledger, 'The AI reply could not be parsed as strict JSON.', 502);
         }
 
-        if (! $this->enrichment->applyParsed($word, $parsed, $nativeLanguage)) {
-            return $this->failLedger($ledger, 'The AI reply contained no new dictionary content.', 502);
-        }
+        // A successfully parsed reply locks the word even when the merge
+        // dedupes to nothing new: the ask itself succeeded and the content
+        // is already present. Leaving the word retryable would let an
+        // already-rich word be re-asked endlessly, each pass spending
+        // tokens (spec decision 4: one ask per word, locked by success).
+        $this->enrichment->applyParsed($word, $parsed, $nativeLanguage);
 
         $ledger->forceFill([
             'status' => WordAiFetch::STATUS_SUCCEEDED,
@@ -314,23 +336,34 @@ class ReadingAiController extends Controller
             'error' => null,
         ])->save();
 
-        // The word's content changed: touch it so ticket 02's lazy
-        // completeness recalc sees a stale score (the payload build below
-        // then recalculates over the new content).
+        // The word is touched so ticket 02's lazy completeness recalc sees
+        // a stale score (the payload build below then recalculates over the
+        // merged content — a no-op refresh when nothing new landed).
         $word->touch();
 
+        $surface = array_key_exists('surface', $validated)
+            ? WordFamily::lookupKey((string) $validated['surface'])
+            : ($word->l_word ?: $word->word);
+
         return response()->json([
-            'data' => WordPopupPayload::build($word, $word->l_word ?: $word->word, $request->user()),
+            'data' => WordPopupPayload::build($word, $surface, $request->user()),
         ], 200);
     }
 
     /**
      * The ledger gate both enrich paths run once the word is known: a
      * succeeded row is the forever lock (the toolbar's icon is grey for
-     * it); a pending row means another ask is in flight right now — the
-     * concurrent double-ask's visible loser gets the clean retryable-later
-     * answer instead of racing on. Failed rows pass (retryable at any
-     * count).
+     * it); a fresh pending row means another ask is in flight right now —
+     * the concurrent double-ask's visible loser gets the clean
+     * retryable-later answer instead of racing on. Failed rows pass
+     * (retryable at any count), and so does a pending row older than the
+     * grace window: pending is not a lock — a fatal/timeout/OOM between
+     * the pending save and the finalize would otherwise strand the word as
+     * "in progress" forever, and the spec locks by success only. The
+     * retrying flow's pending save then takes the stale row over
+     * (attempts++, asked_at refreshed). The window sits far above the
+     * provider layer's own cURL timeouts, so a genuinely live ask never
+     * reaches it.
      */
     private function ledgerBlock(Word $word): ?JsonResponse
     {
@@ -340,7 +373,10 @@ class ReadingAiController extends Controller
             return $this->aiError('AI enrichment has already been completed for this word.', 409);
         }
 
-        if ($ledger->exists && $ledger->status === WordAiFetch::STATUS_PENDING) {
+        if ($ledger->exists
+            && $ledger->status === WordAiFetch::STATUS_PENDING
+            && $ledger->asked_at !== null
+            && $ledger->asked_at->gt(now()->subMinutes(self::PENDING_STALE_AFTER_MINUTES))) {
             return $this->aiInProgress();
         }
 

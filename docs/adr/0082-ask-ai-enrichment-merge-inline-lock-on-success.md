@@ -56,14 +56,22 @@ demand. The spec's ask-AI icon raises three design questions:
    endpoint rejects further asks (409) and the toolbar's icon greys with
    an "already asked" tooltip (the payload's `ai_asked`). Failed attempts
    — no model chosen (recorded nowhere: the row materializes only when an
-   ask is attempted), no usable key, provider errors, unparseable or
-   fully-duplicate replies — stay retryable at any count, each retry
-   bumping `attempts`. Unlike the translation fetch's 6-attempt/24h
-   machine cap, the ask is a deliberate user action on a throttled
-   (20/min) endpoint: the cost guard is the lock, not an attempt ceiling.
-   A reply that parses but lands nothing new (every string deduped or
-   dropped) finalizes as failed — indistinguishable from a failure from
-   the reader's side, and retryable without re-spending on locked words.
+   ask is attempted), no usable key, provider errors, unparseable replies
+   — stay retryable at any count, each retry bumping `attempts`. Unlike
+   the translation fetch's 6-attempt/24h machine cap, the ask is a
+   deliberate user action on a throttled (20/min) endpoint: the cost
+   guard is the lock, not an attempt ceiling. A reply that parses but
+   lands nothing new finalizes as **succeeded** (2026-10-19 review
+   revision of the original "failed" ruling: the ask itself succeeded and
+   the content is already present — leaving such a word retryable let an
+   already-rich word be re-asked endlessly, each pass spending tokens,
+   and the original "retryable without re-spending on locked words"
+   benefit cut the other way). Pending rows are a grace, not a lock: one
+   pending longer than 15 minutes
+   (`ReadingAiController::PENDING_STALE_AFTER_MINUTES` — provider cURL
+   timeouts cap at 120s) is a crashed worker's orphan, and the retry
+   takes it over instead of stranding the word "in progress" forever
+   (same review pass; spec decision 4 locks by success only).
 3. **Translations stay link-only (ADR 0078 holds for AI).** Translation
    candidates resolve against the native language's EXISTING words
    through the shared `TranslationTargets` resolver (wanted classes per

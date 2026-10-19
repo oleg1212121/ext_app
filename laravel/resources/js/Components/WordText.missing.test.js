@@ -202,14 +202,42 @@ describe('MissingPopupContent', () => {
         expect(missingContentSource).not.toContain('fetch(');
     });
 
-    it('shows a failed ask beneath the toolbar — no-model/no-key get the explain pane’s guidance', () => {
-        expect(missingContentSource).toContain('word-popup-ask-ai-error');
-        expect(missingContentSource).toContain('{aiError}');
-        // The no-model (400) and no-key (403) answers carry the go-to-
-        // settings link the ExplainGuidance treatment uses.
-        expect(missingContentSource).toMatch(/aiErrorStatus === 400 \|\| aiErrorStatus === 403/);
-        expect(missingContentSource).toContain('/profile?tab=ai');
-        expect(missingContentSource).toContain("t('word.explain_go_to_settings')");
+    it('shows a failed ask beneath the toolbar — Retry, and no-model/no-key get the explain pane’s guidance', () => {
+        // The shared AskAiError render (PopupContent's toolbar mounts it
+        // too): the missing card passes the message, the status and the ask
+        // handler.
+        expect(missingContentSource).toContain('<AskAiError');
+        expect(missingContentSource).toContain('message={aiError}');
+        expect(missingContentSource).toContain('status={aiErrorStatus}');
+        expect(missingContentSource).toContain('onRetry={onAskAi}');
+        // The shared render carries the stable hook, the Retry control
+        // (the four-state contract's error state) and the go-to-settings
+        // link for the no-model (400) / no-key (403) answers — the
+        // ExplainGuidance treatment.
+        const errorComponent = popupSource.slice(
+            popupSource.indexOf('function AskAiError'),
+            popupSource.indexOf('export function MissingPopupContent'),
+        );
+        expect(errorComponent).toContain('word-popup-ask-ai-error');
+        expect(errorComponent).toContain('word-popup-ask-ai-retry');
+        expect(errorComponent).toMatch(/status === 400 \|\| status === 403/);
+        expect(errorComponent).toContain('/profile?tab=ai');
+        expect(errorComponent).toContain("t('word.explain_go_to_settings')");
+    });
+});
+
+describe('word.ask_ai_retry ui-string', () => {
+    // The ask error state's Retry control (both popup bodies mount the
+    // shared AskAiError render) — the explain pane's error state has one,
+    // and the four-state contract words the error treatment strictly.
+    const retryStringMatch = seederSource.match(/'word\.ask_ai_retry' => \[([\s\S]*?)\],/);
+
+    it('exists for all three interface languages', () => {
+        expect(retryStringMatch).toBeTruthy();
+        for (const lang of ['en', 'ru', 'be']) {
+            const match = retryStringMatch?.[1].match(new RegExp(`'${lang}' => '((?:[^'\\\\]|\\\\.)*)'`));
+            expect(match?.[1] ?? null, lang).toBeTruthy();
+        }
     });
 });
 

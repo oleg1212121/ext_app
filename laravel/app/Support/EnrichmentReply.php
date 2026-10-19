@@ -55,8 +55,8 @@ final class EnrichmentReply
         }
 
         $parsed = [];
-        foreach (self::CAPS as $section => $cap) {
-            $parsed[$section] = self::stringList($decoded[$section] ?? [], $cap, self::LIMITS[$section]);
+        foreach (array_keys(self::CAPS) as $section) {
+            $parsed[$section] = self::stringList($decoded[$section] ?? [], $section);
         }
 
         return $parsed;
@@ -87,10 +87,18 @@ final class EnrichmentReply
     }
 
     /**
+     * One section's list, from its key: the cap and column limit (and the
+     * drop-vs-truncate rule below) read off the section itself, never
+     * inferred from a numeric limit — a future section sharing another
+     * section's limit must not silently inherit its behavior.
+     *
      * @return list<string>
      */
-    private static function stringList(mixed $value, int $cap, int $limit): array
+    private static function stringList(mixed $value, string $section): array
     {
+        $cap = self::CAPS[$section];
+        $limit = self::LIMITS[$section];
+
         if (is_string($value)) {
             $value = [$value];
         }
@@ -125,7 +133,7 @@ final class EnrichmentReply
                 // against words.l_word and stage verbatim): a truncated one is
                 // no word, so it drops — the others truncate to fit their
                 // columns.
-                if ($limit === self::LIMITS['translations']) {
+                if ($section === 'translations') {
                     continue;
                 }
 

@@ -29,8 +29,10 @@ use Illuminate\Support\Facades\DB;
  * TranslationTargets resolver and link as word_translations pairs; the
  * unmatched stage into the word's translations JSON. ZERO word rows are ever
  * created by the merge — the method returns whether anything new landed at
- * all, so the endpoint can finalize the ledger as succeeded (lock) or a
- * retryable failure. The ONE word-minting method is {@see resolveOrAdopt},
+ * all (a fresh link, a new content row, a newly staged string), which the
+ * endpoint no longer branches on: a parsed reply locks the word either way,
+ * because the ask itself succeeded (nothing new means the content was
+ * already present). The ONE word-minting method is {@see resolveOrAdopt},
  * the missing popup's adopt-on-ask resolution (ticket 05), which runs before
  * any enrichment.
  */
@@ -56,17 +58,7 @@ class WordAiEnrichmentService
         $usable = false;
 
         DB::transaction(function () use ($word, $parsed, $nativeLanguage, &$usable): void {
-            foreach ($parsed['definitions'] as $text) {
-                $exists = Definition::query()
-                    ->where('word_id', $word->id)
-                    ->where('definition', $text)
-                    ->exists();
-
-                if (! $exists) {
-                    Definition::query()->create(['word_id' => $word->id, 'definition' => $text, 'source' => 'ai']);
-                    $usable = true;
-                }
-            }
+            $usable = $this->mergeAiRows($word, Definition::class, 'definition', $parsed['definitions']) || $usable;
 
             // Transcriptions carry a NOT NULL per-language type FK: the
             // language's IPA row when it has one, else its first type — a
@@ -75,23 +67,13 @@ class WordAiEnrichmentService
             $typeId = $this->transcriptionTypeId($word);
 
             if ($typeId !== null) {
-                foreach ($parsed['transcriptions'] as $text) {
-                    $exists = Transcription::query()
-                        ->where('word_id', $word->id)
-                        ->where('transcription', $text)
-                        ->where('transcription_type_id', $typeId)
-                        ->exists();
-
-                    if (! $exists) {
-                        Transcription::query()->create([
-                            'word_id' => $word->id,
-                            'transcription' => $text,
-                            'transcription_type_id' => $typeId,
-                            'source' => 'ai',
-                        ]);
-                        $usable = true;
-                    }
-                }
+                $usable = $this->mergeAiRows(
+                    $word,
+                    Transcription::class,
+                    'transcription',
+                    $parsed['transcriptions'],
+                    ['transcription_type_id' => $typeId],
+                ) || $usable;
             }
 
             // The examples table enforces unique (example, word_id) —
@@ -108,22 +90,49 @@ class WordAiEnrichmentService
                 }
             }
 
-            foreach ($parsed['etymologies'] as $text) {
-                $exists = Etymology::query()
-                    ->where('word_id', $word->id)
-                    ->where('etymology', $text)
-                    ->exists();
-
-                if (! $exists) {
-                    Etymology::query()->create(['word_id' => $word->id, 'etymology' => $text, 'source' => 'ai']);
-                    $usable = true;
-                }
-            }
+            $usable = $this->mergeAiRows($word, Etymology::class, 'etymology', $parsed['etymologies']) || $usable;
 
             if ($nativeLanguage !== null && (int) $nativeLanguage->id !== (int) $word->language_id) {
                 $usable = $this->linkOrStageTranslations($word, $parsed['translations'], $nativeLanguage) || $usable;
             }
         });
+
+        return $usable;
+    }
+
+    /**
+     * The exists→create merge the plain string-list sections share
+     * (definitions, etymologies, and transcriptions with their type scoped
+     * in through $scope): exact-text deduped, every created row carries
+     * `source = 'ai'`, true when anything new landed. $scope is the
+     * section's remaining identity — probed and created alike — which is
+     * how the transcription's NOT NULL type joins the shared shape without
+     * a branch of its own. (The examples section stays explicit above: its
+     * dedup is the DB's unique constraint via firstOrCreate, a different
+     * mechanism.)
+     *
+     * @param  class-string  $model
+     * @param  list<string>  $texts
+     * @param  array<string, int>  $scope
+     */
+    private function mergeAiRows(Word $word, string $model, string $textColumn, array $texts, array $scope = []): bool
+    {
+        $usable = false;
+
+        foreach ($texts as $text) {
+            $exists = $model::query()
+                ->where('word_id', $word->id)
+                ->where($textColumn, $text)
+                ->where($scope)
+                ->exists();
+
+            if (! $exists) {
+                $model::query()->create(
+                    ['word_id' => $word->id, $textColumn => $text, 'source' => 'ai'] + $scope,
+                );
+                $usable = true;
+            }
+        }
 
         return $usable;
     }

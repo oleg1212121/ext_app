@@ -1,5 +1,39 @@
 # Directory Update Log
 
+## 2026-10-19 (popup-ai-enrich review fix pass — 8 accepted findings, one commit)
+
+Code-review fixes on the merged ask-AI surface (no schema change, no
+route change; behavior text below supersedes the ticket-04/05 entries
+where they overlap):
+
+- **Pending is a grace, not a lock** (`domains/interactive-words.md`,
+  ledger-lock paragraph): a `word_ai_fetches` row pending longer than 15
+  minutes (`ReadingAiController::PENDING_STALE_AFTER_MINUTES`; provider
+  cURL timeouts cap at 120s) is stale — the retry takes it over
+  (attempts++, `asked_at` refreshed) instead of the old permanent
+  in-progress 409 stranding the word after a crashed ask.
+- **The enrich contract takes an optional `surface` on both modes**:
+  the known-word ask carries the popup's clicked surface, normalized
+  like the word-show endpoint's (`WordFamily::lookupKey`), so the
+  response payload keeps `is_form`/`form_of` on the live swap (it used
+  to rebuild from `l_word` and drop the "«went» — form of «go»" line).
+  `AiWordEnrichRequest`'s modes are exclusive on `word_id` vs
+  `language_code` only now.
+- **A parsed reply that dedupes to nothing new finalizes SUCCEEDED**
+  (200, `ai_asked` true) — the old 502 "no new dictionary content"
+  left an already-rich word re-askable forever; only an unparseable
+  reply stays a retryable 502.
+- **The ask error state carries a Retry control** (both popup bodies
+  via the shared `AskAiError` render — the four-state contract's error
+  treatment; new ui-string `word.ask_ai_retry`, en/ru/be, reseeded).
+  Smaller refactors: the ledger's provider/model split goes through
+  `AIModelResolver::parseModelString`; `EnrichmentReply::stringList`
+  keys its cap/limit/drop rule off the section name, not the limit
+  value; `WordAiEnrichmentService::mergeAiRows` collapses the three
+  identical exists→create loops (examples keep their firstOrCreate
+  dedup — the DB constraint is a different mechanism); enrich tests use
+  `assertForbidden`/`assertTooManyRequests` per the coding conventions.
+
 ## 2026-10-19 (popup-ai-enrich 06: verification + knowledge-base closure — the whole surface reviewed against the merged code)
 
 Closure ticket of the `popup-ai-enrich` spec — docs + verification only,

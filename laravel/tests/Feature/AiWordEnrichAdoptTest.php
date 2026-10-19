@@ -49,6 +49,17 @@ function mockResolverForAdopt(?string $reply = null, ?string &$captured = null):
 {
     $mock = mock(AIModelResolver::class);
     $mock->shouldReceive('resolveExplanationModel')->andReturn(ADOPT_MODEL_MOCK);
+    // The controller splits the ledger's provider/model through the real
+    // resolver API — the mock mirrors parseModelString's split (first
+    // colon).
+    $mock->shouldReceive('parseModelString')->andReturnUsing(function (string $key): array {
+        $colon = strpos($key, ':');
+
+        return [
+            'provider' => $colon === false ? $key : substr($key, 0, $colon),
+            'model' => $colon === false ? '' : substr($key, $colon + 1),
+        ];
+    });
     $mock->shouldReceive('ask')->andReturnUsing(function ($model, $instruction, $question) use ($reply, &$captured) {
         $captured = ['model' => $model, 'instruction' => $instruction, 'question' => $question];
 
@@ -202,6 +213,14 @@ it('answers a concurrent double-ask with a clean retryable-later response, never
 
     $mock = mock(AIModelResolver::class);
     $mock->shouldReceive('resolveExplanationModel')->andReturn(ADOPT_MODEL_MOCK);
+    $mock->shouldReceive('parseModelString')->andReturnUsing(function (string $key): array {
+        $colon = strpos($key, ':');
+
+        return [
+            'provider' => $colon === false ? $key : substr($key, 0, $colon),
+            'model' => $colon === false ? '' : substr($key, $colon + 1),
+        ];
+    });
     $mock->shouldReceive('ask')->never();
     app()->instance(AIModelResolver::class, $mock);
 
@@ -247,6 +266,14 @@ it('keeps the minted word and a retryable failed ledger when the ask fails — t
 
     $mock = mock(AIModelResolver::class);
     $mock->shouldReceive('resolveExplanationModel')->andReturn(ADOPT_MODEL_MOCK);
+    $mock->shouldReceive('parseModelString')->andReturnUsing(function (string $key): array {
+        $colon = strpos($key, ':');
+
+        return [
+            'provider' => $colon === false ? $key : substr($key, 0, $colon),
+            'model' => $colon === false ? '' : substr($key, $colon + 1),
+        ];
+    });
     $mock->shouldReceive('ask')->once()->andThrow(
         new AiProviderException('The AI service is busy. Please try again in a moment.', 429),
     );
@@ -255,7 +282,7 @@ it('keeps the minted word and a retryable failed ledger when the ask fails — t
 
     $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['surface' => 'bomb-hit', 'language_code' => 'en'])
-        ->assertStatus(429);
+        ->assertTooManyRequests();
 
     // The word stays minted (the dictionary path was the point); the ask
     // stays retryable.
@@ -303,11 +330,14 @@ it('validates the adoption payload: unknown language, missing fields, empty surf
         ->postJson('/ai/word-enrich', ['surface' => '́', 'language_code' => 'ru'])
         ->assertJsonValidationErrors(['surface']);
 
-    // The two modes are exclusive.
+    // The two modes are exclusive — the language code only rides on the
+    // adoption path, so a word id beside it errors on both. The surface is
+    // different: the known-word ask carries it too (the popup's clicked
+    // surface builds the response payload, ticket 04's review fix).
     $word = createWord('en', 'bank', 'noun');
     $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $word->id, 'surface' => 'bank', 'language_code' => 'en'])
-        ->assertJsonValidationErrors(['word_id']);
+        ->postJson('/ai/word-enrich', ['word_id' => $word->id, 'language_code' => 'en'])
+        ->assertJsonValidationErrors(['word_id', 'language_code']);
 
     expect(Word::query()->where('l_word', 'bomb-hit')->exists())->toBeFalse();
 });
