@@ -1,5 +1,67 @@
 # Directory Update Log
 
+## 2026-10-19 (knowledge-base closure — ADR 0081, the word-import-contract record — word-import-contract ticket 07)
+
+The documentation record of the whole shipped contract (docs-only change,
+no code). **New ADR 0081**
+(`docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md`): the
+word/l_word contract as six rules — plain display text (stress marks
+stripped for ru/be/uk ONLY, ё always kept, spelling follows the import
+source and stays hand-editable), the one l_word formula identical for
+words and forms (trim → lowercase → `\p{M}` strip → `\p{Cf}` strip →
+ё→е fold), the е-alias form rows, word uniqueness on
+`(l_word, language_id, word_class_id)` with the merge-not-replace
+attachment of ADR 0080 continued onto spellings and the
+normalize → gate → migrate ordering for existing databases (survivor
+preference ё-display > most definitions > lowest id), the
+`DefinitionLanguage` majority-script definition guard (import-time only,
+etymologies unguarded), the `dictionary:link-translations` chaining into
+`goldendict:import`, and the three-way tokenizer parity with
+`ALGORITHM_VERSION` deliberately unbumped. Alternatives considered
+recorded (lowercased-display uniqueness, display-side ё folding,
+migration-self-merge, stored-definition purge, dual tokenizer formulas).
+Consequences carry the ticket-06 dev-DB switchover numbers: 19,986
+duplicate rows merged (+14 unknown twins, 20,000 absorbed), 18,277 word +
+131,147 form keys recomputed, the all-zero gate, the unique built in 1s,
+en −14,043 / ru −5,957, ёлка one ё-display row with both form rows,
+собака 24 definitions intact.
+
+Closure fixes across the touched concepts (contradictions and stale
+statements the per-ticket edits had left):
+
+- `domains/dictionary-import.md`: the description frontmatter now
+  reflects the whole shipped contract (uniqueness triple, tokenizer
+  parity, link-pass chaining) and **no longer mis-cites the
+  `DefinitionLanguage` guard to "ADR 0078, addendum 2026-10-18"** — the
+  guard shipped 2026-10-19 under this contract (ADR 0081); the Creator
+  hygiene uniqueness sentence cites ADR 0081 and records that the dev DB
+  switched over; the Data repair section gained the 2026-10-19
+  switchover run record with the per-language combining-marks gate
+  wording (0 in ru; en legitimately keeps 334 mark-bearing rows where
+  the marks are spelling); "the ticket-08 attach rules" disambiguated to
+  the dictionary-word-purity spec's creator-attach ticket (this
+  feature's ticket 08 is the code review).
+- `database/dictionary.md`: description names the
+  `(l_word, language_id, word_class_id)` unique; the l_word note cites
+  ADR 0081 and records the switchover as COMPLETE (the recompute/merge
+  phases are no-ops on current databases); sources gained ADR 0081 +
+  `WordLookupKey`.
+- `playbooks/import-dictionary-data.md`: the normalize section spells
+  out the five-step switchover order for an existing database
+  (baseline dry → real run → THE GATE (0 duplicate-merge dry row / SQL
+  having-count) → `migrate` → post-migrate no-op dry, with the stop rule)
+  and records the real 2026-10-19 run numbers (102s/184s/86s timings,
+  dry-vs-real deltas and why, count moves, ёлка/собака spot gates, the
+  per-language marks caveat); **the Clean-rebuild step's `cmudict:import`
+  corrected to `dictionary:import-cmudict`** (the actual signature);
+  description reflects the chaining + normalize-before-migrate order;
+  sources gained ADR 0081, the uniqueness migration and both repair
+  commands.
+
+`generated.at` bumped on all three concepts; ADR 0081 added to their
+sources. `wiki:sync` run (regenerated the reference stamps — no
+route/model/command changes in this ticket); `wiki:validate` green.
+
 ## 2026-10-19 (entity tokenizer folds ё in parity with the dictionary key — word-import-contract ticket 09)
 
 The last code gap ticket 04's audit flagged ("biggest hidden dependency"):

@@ -1,11 +1,11 @@
 ---
 type: Database Schema
 title: Unified Dictionary Tables
-description: One words table (+ satellites) keyed by language, per-language word classes and transcription types, a symmetric word_translations pivot (one row per pair), and the word_translation_fetches ledger driving auto-fetched translations (Yandex→Google, link-only since 2026-10-18 — unmatched candidates stage, no word rows) that doubles as the exclusions list.
+description: One words table (+ satellites) keyed by language and unique per (l_word, language_id, word_class_id) — cross-source spellings of one word collapse into one row (ADR 0081), per-language word classes and transcription types, a symmetric word_translations pivot (one row per pair), and the word_translation_fetches ledger driving auto-fetched translations (Yandex→Google, link-only since 2026-10-18 — unmatched candidates stage, no word rows) that doubles as the exclusions list.
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T23:59:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T01:45:00+03:00 }
 sources:
    - id: migration
      resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -13,6 +13,12 @@ sources:
    - id: l-word-uniqueness
      resource: laravel/database/migrations/2026_10_19_000001_move_word_uniqueness_to_l_word.php
      title: Word uniqueness moved to (l_word, language_id, word_class_id)
+   - id: adr-0081
+     resource: docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md
+     title: ADR 0081 — the word/l_word contract, uniqueness on (l_word, language, class)
+   - id: word-lookup-key
+     resource: laravel/app/Support/WordLookupKey.php
+     title: Shared ё-aware l_word normalization (trim → lowercase → mark strip → zero-width strip → ё→е fold)
    - id: tag-pivot-rename
      resource: laravel/database/migrations/2026_10_11_000001_rename_word_tags_to_tagged_words.php
      title: Words-tag pivot rename to tagged_words
@@ -131,7 +137,9 @@ sources:
   (the entity-word linker's exact pass,
   `words:import-frequency`) compares against the normalized key. The words
   unique keys on this triple (see the table above), so a display spelling
-  never forks a word; display text **never folds and never loses ё**.
+  never forks a word; display text **never folds and never loses ё**
+  (ADR
+  [0081](../../docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md)).
   Stored display words are plain letters on BOTH import paths now (the ADR 0078
   kaikki display carve-out is reversed, 2026-10-18): the kaikki importer
   strips its ru/be/uk headwords and inflected forms, the GoldenDict
@@ -144,7 +152,13 @@ sources:
   changes — and the duplicate `(l_word, language_id, word_class_id)` rows
   the recompute exposes merge onto one survivor (ё-display first, then
   most definitions, then lowest id) under either schema, which is what
-  lets `migrate` build the unique on a pre-migrate database. Every imported word
+  lets `migrate` build the unique on a pre-migrate database. The dev DB
+  ran exactly that switchover on 2026-10-19 — normalize absorbed 20,000
+  duplicate rows, the zero-duplicate gate held, and the unique built in
+  1s (numbers and decisions in ADR
+  [0081](../../docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md)) —
+  so on current databases the recompute/merge phases are no-ops by
+  construction. Every imported word
   stores itself as its lemma form (`App\Support\LemmaForms`), a
   headword/form that strips to the empty string stores nothing, and every
   ё-form additionally carries its е-folded alias form row (2026-10-19).

@@ -1,12 +1,24 @@
 ---
 type: Playbook
 title: Importing Dictionary Data
-description: How to import Kaikki/Wiktionary dumps and GoldenDict-format dictionaries into the unified language-keyed dictionary tables, link translations, and repair the already-stored rows in place (words:normalize, wiktionary:demote-form-of).
+description: How to import Kaikki/Wiktionary dumps and GoldenDict-format dictionaries into the unified language-keyed dictionary tables (both import commands chain the translation link pass by default), and repair/switch over the already-stored rows in place — words:normalize (on a pre-migrate database its l_word recompute + duplicate merge runs BEFORE the (l_word, language_id, word_class_id) uniqueness migration, gated on zero duplicate groups) and wiktionary:demote-form-of.
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T23:59:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T01:45:00+03:00 }
 sources:
+  - id: adr-0081
+    resource: docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md
+    title: ADR 0081 — the word/l_word contract, uniqueness on (l_word, language, class)
+  - id: l-word-uniqueness
+    resource: laravel/database/migrations/2026_10_19_000001_move_word_uniqueness_to_l_word.php
+    title: Word uniqueness migration (builds only over merged data — normalize first)
+  - id: normalize-cmd
+    resource: laravel/app/Console/Commands/WordsNormalizeCommand.php
+    title: words:normalize command
+  - id: demote-cmd
+    resource: laravel/app/Console/Commands/DemoteFormOfCommand.php
+    title: wiktionary:demote-form-of command
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
     title: wiktionary:import command
@@ -308,7 +320,48 @@ gives them all). The 2026-10-19 l_word recompute + duplicate-merge phase
 same-key duplicate rows (cross-source ёлка/елка spellings, case twins)
 must run it BEFORE `php artisan migrate` — the unique index refuses to
 build over the duplicates — and gate on zero duplicate groups in between
-(a second `--dry` reporting a 0 duplicate-merge count is that gate).
+(a second `--dry` reporting a 0 duplicate-merge count is that gate). The
+order for an existing database is therefore, all via
+`docker exec ext_app_laravel` on the default connection with
+non-destructive commands only: (1) `words:normalize --dry` (baseline
+would-be counts), (2) the real `words:normalize` (detached), (3) THE
+GATE — a second `--dry` whose duplicate-merge row is 0 (the SQL
+equivalent: `select count(*) from (select language_id, l_word,
+word_class_id from words where l_word is not null group by 1,2,3 having
+count(*) > 1) g` → 0), (4) only now `php artisan migrate`, (5) a final
+`--dry` — every phase row 0. If the index build fails, STOP and report:
+same-key duplicates the gate should have caught remain — never improvise
+destructive repair.
+
+The dev DB ran exactly this switchover on 2026-10-19 (all numbers real,
+ADR
+[0081](../../docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md)
+has the record): the baseline `--dry` took 102s and reported **19,986
+duplicate rows to merge** and 18,277 word + 131,220 form keys to
+recompute (all other phases 0); the real run (184s, detached, exit 0)
+merged exactly those 19,986 — phase 3 then exposed 14 more unknown-class
+twins the dry could not see (the old phases' documented dry
+approximations; 20,000 absorbed rows deleted in total, and the forms
+recompute landed at 131,147, −73 vs dry, for the same reason) — the gate
+dry reported **every row 0** and the SQL duplicate-group count was 0;
+`migrate` built `uk_words_l_word_language_class` in **1s**; the
+post-migrate `--dry` was a full no-op (86s). Word counts moved en
+1,013,927 → 999,884 (−14,043) and ru 500,430 → 494,473 (−5,957) — the
+20,000 drop is exactly the absorbed rows, reported as a delta and not
+forced back; forms −10,331 net (insert-select dedupe on the 38,035 moved);
+`entity_words` unchanged (185 stamps re-pointed in place); NULL-key words
+0 (backfilled). Spot gates: ёлка/елка collapsed into ONE row — display
+`ёлка` (ё-survivor preference), key `елка`, frequency 4753 (the absorbed
+row's unranked 1,100,000 sentinel never beat the ranked 4753 in the LEAST
+fold) — carrying both form rows ёлка AND елка; собака stayed one row with
+all 24 definitions (22 + 2 moved from its absorbed `Собака` case twin);
+the staged-JSON trim sample (7,931 candidates across 5,000 staged rows)
+found 0 padded strings. **Gate wording caveat**: "zero combining marks in
+`words.word`/`forms.form`" holds only for the stress-mark languages — the
+full scans found 0 in ru, while en legitimately keeps 100 words + 234
+forms carrying marks (Pe̍h-ōe-jī-style Latin entries where the marks ARE
+spelling); scope any such check to the `App\Support\StressMarks`
+languages.
 
 1. **Dry first** — read every phase count before anything writes:
 
@@ -499,7 +552,7 @@ almost nothing:
    cascades take the satellites, translation links and user familiarity
    rows with them — accepted for a dev dataset) and imports kaikki words,
    definitions, forms, transcriptions, then links translations.
-2. Restore the auxiliaries: `cmudict:import`,
+2. Restore the auxiliaries: `dictionary:import-cmudict`,
    `words:import-frequency` / the frequency-lists import per their
    `--help` (ranks survive nothing — the wipe resets them).
 3. The bilingual GoldenDict runs (dry-run, then real, detached):
