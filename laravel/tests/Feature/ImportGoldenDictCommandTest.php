@@ -241,10 +241,12 @@ it('links candidates to existing target words, preferring the same class and phr
         ->and(WordTranslation::isLinked($giveUp->id, $aufhoerenPhrase->id))->toBeTrue()
         ->and(WordTranslation::isLinked($giveUp->id, $aufhoerenNoun->id))->toBeFalse();
 
-    // Raw translation strings staged into words.translations JSON like the
-    // Wiktionary import (flat, deduplicated list) — staged even when the
-    // candidate stays unmatched.
-    expect($cat->translations)->toBe(['Katze', 'Kater']);
+    // Linked candidates are pruned from the staged JSON by the trailing
+    // link pass (the same stage → link → prune contract as the Wiktionary
+    // import); hello's candidates (no de rows to resolve) stay staged.
+    $hello = Word::query()->where('language_id', $en->id)->where('word', 'hello')->firstOrFail();
+    expect($cat->refresh()->translations)->toBeNull()
+        ->and($hello->translations)->not->toBeNull();
 
     // The monolingual side is untouched by bilingual mode: definitions and
     // transcriptions still land.
@@ -338,14 +340,17 @@ it('is idempotent on re-runs and merges staged translations without clobbering',
         ->and(Definition::count())->toBe(6);
 
     $cat = Word::query()->where('word', 'cat')->firstOrFail();
-    expect($cat->translations)->toBe(['Katze', 'Kater']);
+    // Both candidates resolved against the seeded de rows, so the trailing
+    // link pass linked AND pruned them: the staged JSON empties to null.
+    expect($cat->refresh()->translations)->toBeNull();
 
     // Translations staged by another source survive a re-import: the merge
-    // pass unions the JSON, the upsert never replaces it.
+    // pass unions the JSON, the upsert never replaces it, and the trailing
+    // pass prunes only what resolves — the unmatched Kätzchen stays staged.
     $cat->forceFill(['translations' => ['Katze', 'Kater', 'Kätzchen']])->save();
     importBilingual()->assertSuccessful();
 
-    expect($cat->refresh()->translations)->toBe(['Katze', 'Kater', 'Kätzchen'])
+    expect($cat->refresh()->translations)->toBe(['Kätzchen'])
         ->and(WordTranslation::count())->toBe(2);
 });
 
@@ -364,6 +369,33 @@ it('skips the bilingual link and staging phases with --no-link', function () {
 
     // The monolingual import still runs fully.
     expect(Word::query()->where('language_id', $en->id)->count())->toBe(4);
+});
+
+it('leaves an existing staged backlog alone on --no-link and --dry-run, then converts it on a default run', function () {
+    createLanguages(['en', 'de']);
+    $en = Language::query()->where('code', 'en')->first();
+    $de = Language::query()->where('code', 'de')->first();
+    $noun = WordClass::query()->create(['language_id' => $de->id, 'slug' => 'noun', 'title' => 'noun']);
+    $katze = Word::query()->create(['word' => 'Katze', 'l_word' => 'katze', 'language_id' => $de->id, 'word_class_id' => $noun->id]);
+    $cat = Word::query()->create([
+        'word' => 'cat', 'l_word' => 'cat', 'language_id' => $en->id,
+        'word_class_id' => $noun->id, 'translations' => ['Katze'],
+    ]);
+
+    // --no-link skips the trailing pass: the backlog stays staged, no links.
+    importBilingual('de', ['--no-link' => true])->assertSuccessful();
+    expect($cat->refresh()->translations)->toBe(['Katze'])
+        ->and(WordTranslation::count())->toBe(0);
+
+    // --dry-run writes nothing either: the backlog survives untouched.
+    importBilingual('de', ['--dry-run' => true])->assertSuccessful();
+    expect($cat->refresh()->translations)->toBe(['Katze'])
+        ->and(WordTranslation::count())->toBe(0);
+
+    // The default run converts the backlog: linked and pruned.
+    importBilingual()->assertSuccessful();
+    expect($cat->refresh()->translations)->toBeNull()
+        ->and(WordTranslation::isLinked($cat->id, $katze->id))->toBeTrue();
 });
 
 it('validates --target-lang', function () {
@@ -396,11 +428,13 @@ it('strips stress marks from staged ru candidates and links existing plain rows'
     ])->assertSuccessful();
 
     // The candidates store as plain letters: the combining acutes leave the
-    // staged strings, so no stressed twin of "кошка" is ever looked up.
+    // staged strings, so no stressed twin of "кошка" is ever looked up. The
+    // trailing link pass then prunes what resolved (кошка, собака) and
+    // leaves only the unmatched "кот" staged.
     $cat = Word::query()->where('word', 'cat')->firstOrFail();
     $dog = Word::query()->where('word', 'dog')->firstOrFail();
-    expect($cat->translations)->toBe(['кошка', 'кот'])
-        ->and($dog->translations)->toBe(['собака']);
+    expect($cat->translations)->toBe(['кот'])
+        ->and($dog->translations)->toBeNull();
 
     // Links point at the existing plain rows ("кот" has no ru row: staged
     // only); no ru word row was created.
@@ -875,11 +909,12 @@ it('links candidates to the existing target word by l_word, staged strings plain
     expect($existing->refresh()->word)->toBe('машины')
         ->and($existing->wordClass->slug)->toBe('noun');
 
-    // The link points at the existing row's id and the staged string is
-    // plain letters — the combining acute left it with the word.
+    // The link points at the existing row's id; the candidate (plain
+    // letters — the combining acute left it at staging) resolved, so the
+    // trailing pass linked it and pruned it from the staged JSON.
     $zoom = Word::query()->where('word', 'zoom')->firstOrFail();
     expect(WordTranslation::isLinked($zoom->id, $existing->id))->toBeTrue()
-        ->and($zoom->translations)->toBe(['машины']);
+        ->and($zoom->translations)->toBeNull();
 });
 
 it('dedupes candidate links by l_word against one existing row and reports zeros on re-run', function () {

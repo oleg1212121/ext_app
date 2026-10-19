@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T15:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T19:30:00+03:00 }
 sources:
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
@@ -434,7 +434,12 @@ do not redistribute the extracted data.
    prefers `phrase`), never creating target rows — plus canonical
    `word_translations` links and `words.translations` JSON staging for
    every candidate (staged strings wait in the JSON for a re-run once the
-   target word exists; `--no-link` skips these phases). For dictionaries
+   target word exists; `--no-link` skips these phases). A default run
+   then chains `dictionary:link-translations` automatically (skipped on
+   `--dry-run`, `--no-link`, or when fewer than two languages hold
+   words), so linked candidates leave the staged JSON in the same
+   invocation — no manual pass needed unless the run used `--no-link`.
+   For dictionaries
    whose articles have structure the heuristics mangle, add
    `--profile=<slug>` (below). Re-runs upsert and text-dedupe — raw
    article HTML never enters the database, so a better extractor just

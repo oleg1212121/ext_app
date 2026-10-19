@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Classes\GoldenDictParser;
 use App\Models\Language;
+use App\Models\Word;
 use Illuminate\Console\Command;
 
 class ImportGoldenDictCommand extends Command
@@ -18,7 +19,7 @@ class ImportGoldenDictCommand extends Command
                             {--batch-size=500 : Number of records per DB flush}
                             {--max-entries= : Stop after this many parsed entries (smoke runs)}
                             {--dry-run : Parse and report what would be written, writing nothing}
-                            {--no-link : Skip the bilingual phases entirely (no links or staging)}';
+                            {--no-link : Skip the bilingual phases entirely (no links or staging) and the trailing translation link pass}';
 
     protected $description = 'Import a converted GoldenDict JSONL ({"word","alts","html"} per line, from ai/goldendict_convert.py) into the dictionary tables';
 
@@ -148,7 +149,35 @@ class ImportGoldenDictCommand extends Command
         }
         $this->table(['Metric', 'Count'], $rows);
 
-        return self::SUCCESS;
+        // The trailing link pass converts every staged candidate it can
+        // resolve — this run's and any earlier run's backlog — into
+        // word_translations rows and prunes exactly those strings from
+        // words.translations (the same stage → link → prune contract
+        // wiktionary:import-raw chains). Inline linking never prunes, so
+        // this pass is what keeps linked candidates from sitting in the
+        // staged JSON until someone remembers the manual command.
+        if ($dryRun || $noLink) {
+            $this->info('Skipping the translation link pass ('.($dryRun ? 'dry run' : '--no-link').'). Run dictionary:link-translations later.');
+
+            return self::SUCCESS;
+        }
+
+        $languagesWithWords = Language::query()
+            ->whereIn('id', Word::query()->select('language_id')->distinct())
+            ->count();
+        if ($languagesWithWords < 2) {
+            $this->warn('Fewer than two languages with imported words — skipping dictionary:link-translations.');
+
+            return self::SUCCESS;
+        }
+
+        $this->info('Linking translations...');
+        $exitCode = $this->call('dictionary:link-translations');
+        if ($exitCode !== self::SUCCESS) {
+            $this->warn('dictionary:link-translations failed — run it manually to finish linking.');
+        }
+
+        return $exitCode;
     }
 
     /**

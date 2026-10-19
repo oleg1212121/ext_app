@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T15:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T19:30:00+03:00 }
 sources:
   - id: adr-0078
     resource: docs/adr/0078-goldendict-plain-words-link-only-translations.md
@@ -278,8 +278,10 @@ ended at 1,013,927 exactly.
   from 91,552 to 52,472 rows — while raw `word_translations` went
   112,585 → 111,556, because the repair commands' dedupe collapsed 5,927
   redundant pairs as the pass added ~4,898 genuinely new (growth is
-  measured at the candidate→link level). `wiktionary:import-raw` runs it
-  automatically at the end (unless `--no-link`).
+  measured at the candidate→link level). `wiktionary:import-raw` and
+  `goldendict:import` run it automatically at the end (each unless
+  `--no-link`; the GoldenDict chaining also skips on `--dry-run` and when
+  fewer than two languages hold words).
 * `php artisan goldendict:import {file} --lang= [--target-lang=]` — the
   GoldenDict entry point: imports a **converted** JSONL (one
   `{"word", "alts", "html"}` record per line, produced by the python
@@ -438,12 +440,18 @@ ended at 1,013,927 exactly.
   once the target word exists; resolved pairs write canonical
   `word_translations` links (`word_a_id < word_b_id`, ADR 0020) via
   batched upserts, `translations_linked` counting only genuinely new
-  pairs. `--no-link` skips the link and staging phases (pure monolingual
-  behavior); the target language must be a registry code other than
-  `--lang`. Because the target dictionary no longer grows, an effective
-  import order is base dictionaries first (kaikki, frequency, cmudict),
-  then the bilingual GoldenDict runs — or re-run them after the base
-  import to link the staged candidates.
+  pairs. `--no-link` skips the link and staging phases **and** the
+  trailing link pass (pure monolingual behavior; `--dry-run` skips the
+  pass too); the target language must be a registry code other than
+  `--lang`. Since 2026-10-19 a default run chains
+  `dictionary:link-translations` at the end (skipped when fewer than two
+  languages hold words), so a bilingual run converts its own staged
+  candidates — and any earlier backlog — in the same invocation; inline
+  linking itself never prunes. An effective import order is still base
+  dictionaries first (kaikki, frequency, cmudict), then the bilingual
+  GoldenDict runs — a later base import's candidates wait staged for the
+  next pass (the next bilingual run, `wiktionary:import-raw`, or a manual
+  `dictionary:link-translations`).
 
 # GoldenDict vs Wiktionary imports
 
@@ -479,7 +487,9 @@ separate `dictionary:link-translations` pass links them against
 already-existing words — pruning what it linked; the GoldenDict bilingual
 path stages the raw
 candidates and links them directly against the target language's existing
-words (`--no-link` to opt out) — it never creates target rows. Both
+words (`--no-link` to opt out) — it never creates target rows, and the
+command's trailing `dictionary:link-translations` pass (2026-10-19)
+prunes what was linked. Both
 write the same staged-JSON contract (`App\Support\StagedTranslations`:
 exact stored strings, union-merge in, prune-on-link out) and resolve
 through the same `App\Support\TranslationTargets` semantics (wanted-class

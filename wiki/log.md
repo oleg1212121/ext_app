@@ -1,5 +1,33 @@
 # Directory Update Log
 
+## 2026-10-19 (link pass chains into goldendict:import — word-import-contract ticket 03)
+
+`goldendict:import` now ends a default run with the
+`dictionary:link-translations` pass — the same stage → link → prune
+contract `wiktionary:import-raw` already chains. GoldenDict's inline
+bilingual linking never prunes its own staged copies, so linked
+candidates used to sit in `words.translations` until someone ran the
+pass by hand; now a bilingual run converts its own staged candidates —
+and any earlier backlog — in the same invocation.
+
+- **Gates** (the pass is skipped, with an info line, when): `--dry-run`
+  (writes nothing at all — including not pruning), `--no-link` (which now
+  means "skip the bilingual phases **and** the trailing pass"), or fewer
+  than two languages holding words. A non-success from the pass warns and
+  propagates the exit code.
+- **Guard implementation note**: the language-count gate counts via
+  `Language::whereIn('id', Word::select('language_id')->distinct())` —
+  `Word::query()->select('language_id')->distinct()->count()` compiles to
+  plain `COUNT(*)` in Laravel (the `distinct()` is ignored), which let
+  the pass run against single-language DBs where it fails by design.
+- **Tests**: the "links candidates" contract test now pins the prune
+  (resolved candidates → JSON null, unmatched stay staged); the
+  idempotency test's third run keeps only the unmatched `Kätzchen`
+  staged; the stress-strip test keeps `кот` (no ru row) staged while
+  `кошка`/`собака` prune; a new gate test walks `--no-link` → `--dry-run`
+  → default run over a pre-seeded backlog (untouched, untouched, then
+  linked + pruned).
+
 ## 2026-10-19 (majority-script definition guard — word-import-contract ticket 02)
 
 Definitions now import only when they are written in the word language's
