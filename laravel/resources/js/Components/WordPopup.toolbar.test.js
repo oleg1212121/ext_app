@@ -204,11 +204,11 @@ describe('WordPopup action toolbar', () => {
     it('shows a failed ask beneath the toolbar — never silently', () => {
         // The stable hook beside the Anki status lines; the line carries the
         // server's guidance verbatim ({aiError} — no key / no model /
-        // already asked / throttled), and the network-level fallback copy
-        // lives in the ask callback.
+        // already asked / in progress / throttled), and the network-level
+        // fallback copy lives in the shared runEnrich.
         expect(toolbar).toContain('word-popup-ask-ai-error');
         expect(toolbar).toContain('{aiError}');
-        const askCallback = popupSource.slice(popupSource.indexOf('const askAi = () => {'));
+        const askCallback = popupSource.slice(popupSource.indexOf('const runEnrich = (body, origin) => {'));
         expect(askCallback).toContain("t('word.ask_ai_failed'");
     });
     it('gates the Explanation toggle and the robot on the explain payload and ADR 0046 key', () => {
@@ -272,41 +272,79 @@ describe('WordPopup header hairline', () => {
     });
 });
 
-describe('The live ask-AI request (popup-ai-enrich ticket 04)', () => {
-    // The outer WordPopup owns `data`; the ask callback posts the BOUND word
-    // id and swaps the whole payload in — the enriched card renders without
-    // a reopen.
+describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
+    // The outer WordPopup owns `data`; both ask callbacks post through one
+    // runEnrich and swap the whole payload in — the enriched/adopted card
+    // renders without a reopen.
     const popupBody = popupSource.slice(popupSource.indexOf('export default function WordPopup'));
+    const runEnrich = popupBody.slice(
+        popupBody.indexOf('const runEnrich = (body, origin) => {'),
+        popupBody.indexOf('const askAi = () => {'),
+    );
+    const askKnown = popupBody.slice(popupBody.indexOf('const askAi = () => {'), popupBody.indexOf('const askAiMissing = () => {'));
+    const askMissing = popupBody.slice(popupBody.indexOf('const askAiMissing = () => {'));
 
-    it('POSTs /ai/word-enrich with the bound word id', () => {
-        const ask = popupBody.slice(popupBody.indexOf('const askAi = () => {'));
-        expect(ask).toContain("fetch('/ai/word-enrich'");
-        expect(ask).toContain('word_id: data.id');
+    it('POSTs /ai/word-enrich once, with CSRF, from the shared runEnrich', () => {
+        expect(runEnrich.match(/fetch\('\/ai\/word-enrich'/g)).toHaveLength(1);
         // The click path carries CSRF exactly like the progress actions.
-        expect(ask).toContain('X-CSRF-TOKEN');
+        expect(runEnrich).toContain('X-CSRF-TOKEN');
+    });
+
+    it('the known-word ask posts the bound word id (ticket 04)', () => {
+        expect(askKnown).toContain('word_id: data.id');
+        // The succeeded lock's grey icon makes the click a no-op client-side.
+        expect(askKnown).toMatch(/if \(!data \|\| aiBusy \|\| data\.ai_asked\)/);
+    });
+
+    it('the missing-card ask posts the raw surface + the column language code (ticket 05)', () => {
+        // The server derives the lookup key from the RAW surface — the
+        // client never folds or strips.
+        expect(askMissing).toContain('{surface, language_code: language.code}');
+        // No column language, no ask (the icon disables through the null
+        // handler); a popup that already swapped to the dictionary view
+        // never re-asks the missing path either.
+        expect(askMissing).toMatch(/if \(data != null \|\| aiBusy \|\| language\?\.code == null\)/);
     });
 
     it('swaps the response payload in like the initial fetch does — no reopen', () => {
-        const ask = popupBody.slice(popupBody.indexOf('const askAi = () => {'));
-        expect(ask).toContain('setData(json.data)');
+        expect(runEnrich).toContain('setData(json.data)');
+        // The render branch: the missing card holds until a payload exists,
+        // then PopupContent renders it — the transition to the dictionary
+        // view.
+        expect(popupBody).toMatch(/wordId == null && data == null \? \(/);
     });
 
     it('guards against stale responses landing on a moved popup', () => {
-        const ask = popupBody.slice(popupBody.indexOf('const askAi = () => {'));
-        // Both completion paths check the mirrored data ref — a late result
-        // for a popup that has moved to another word is dropped.
-        expect(ask.match(/dataRef\.current !== data/g)).toHaveLength(2);
+        // Both completion paths check the ask's origin — the data mirror
+        // (a payload the fetch effect already replaced is never adopted)
+        // plus the word id / surface / column language the ask started
+        // from, which is how the missing card's null-data ask is pinned to
+        // its token.
+        expect(runEnrich.match(/staleAsk\(origin\)/g)).toHaveLength(2);
+        expect(popupBody).toMatch(/dataRef\.current !== origin\.data/);
+        expect(popupBody).toMatch(/originRef\.current\.surface !== origin\.surface/);
+        expect(popupBody).toMatch(/originRef\.current\.languageCode !== origin\.languageCode/);
     });
 
     it('resets the ask state when the popup moves to another word', () => {
-        // The fetch effect's reset block clears the in-flight flag and the
-        // error line for the new word.
+        // The fetch effect's reset block clears the in-flight flag, the
+        // error line and its status for the new word.
         const reset = popupBody.slice(
-            popupBody.indexOf('setAnkiExisting(\'checking\');'),
-            popupBody.indexOf("fetch(`/words/${wordId}"),
+            popupBody.indexOf("setAnkiExisting('checking');"),
+            popupBody.indexOf('fetch(`/words/${wordId}'),
         );
         expect(reset).toContain('setAiBusy(false)');
         expect(reset).toContain('setAiError(null)');
+        expect(reset).toContain('setAiErrorStatus(null)');
+    });
+
+    it('handlers act on the adopted word id, not the null missing-mode prop', () => {
+        // resolvedWordId: the bound word id for a mapped token, the adopted
+        // payload's id after the missing card's swap — progress actions and
+        // the explanation request keep working in the transitioned popup.
+        expect(popupBody).toMatch(/const resolvedWordId = wordId \?\? data\?\.id \?\? null;/);
+        expect(popupBody).toContain('fetch(`/words/${resolvedWordId}/progress`');
+        expect(popupBody).toContain('wordId: resolvedWordId');
     });
 });
 

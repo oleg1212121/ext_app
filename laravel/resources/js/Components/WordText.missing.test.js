@@ -11,10 +11,10 @@ import {describe, expect, it} from 'vitest';
 // show ё-folded, mark-stripped text) and zero network: no GET /words/, no
 // POST /word-events, nothing fetched or "being fetched". The old unclickable
 // phrasal-mark span branch merges into the same interactive path. Each
-// column's language travels down to the popup as a new prop from both
-// surfaces (reader display columns, simulator columns) — unused until
-// ticket 05's adopt-on-ask. The honest not-in-dictionary copy lives in the
-// word.* ui-strings seeder.
+// column's language travels down to the popup as a prop from both
+// surfaces (reader display columns, simulator columns) — ticket 05's
+// adopt-on-ask asks with it. The honest not-in-dictionary copy lives in
+// the word.* ui-strings seeder.
 
 const wordTextSource = readFileSync(new URL('./WordText.jsx', import.meta.url), 'utf8');
 const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
@@ -122,8 +122,7 @@ describe('WordText: the missing-mode payload', () => {
 
 describe('WordText → WordPopup: the column language rides along', () => {
     it('forwards a new language prop from the segment renderer to the popup', () => {
-        // Unused in this ticket — ticket 05's adopt-on-ask resolves the
-        // missing word's language from it.
+        // Ticket 05's adopt-on-ask resolves the missing word's ask from it.
         expect(wordTextSource).toMatch(/function WordText\(\{[\s\S]*?language = null/);
         expect(portalSource).toContain('language={language}');
     });
@@ -148,16 +147,20 @@ describe('WordPopup: missing mode', () => {
         expect(popupSource).toContain('fetch(`/words/${wordId}?surface=${encodeURIComponent(surface)}`');
     });
 
-    it('renders the missing card instead of the fetched popup content', () => {
+    it('renders the missing card until the adoption ask swaps a payload in', () => {
         const ternaryAt = popupRenderSource.indexOf(') : (');
-        expect(popupRenderSource).toMatch(/wordId == null \? \(/);
+        expect(popupRenderSource).toMatch(/wordId == null && data == null \? \(/);
         expect(ternaryAt).toBeGreaterThan(-1);
-        // The missing branch holds only the missing card…
-        const missingBranch = popupRenderSource.slice(popupRenderSource.indexOf('wordId == null ? ('), ternaryAt);
-        expect(missingBranch).toContain('<MissingPopupContent surface={surface}/>');
+        // The missing branch holds only the missing card — the ticket 05
+        // ask handler goes live on it only when a column language exists…
+        const missingBranch = popupRenderSource.slice(popupRenderSource.indexOf('wordId == null && data == null ? ('), ternaryAt);
+        expect(missingBranch).toContain('surface={surface}');
+        expect(missingBranch).toContain('<MissingPopupContent');
+        expect(missingBranch).toContain('askAiMissing');
         expect(missingBranch).not.toContain('<PopupContent');
         // …and PopupContent (toolbar, header, dictionary, Anki, explain)
-        // renders only in the loaded-word branch.
+        // renders the adopted payload — the transition to the full
+        // dictionary view is the same setData swap the known-word ask uses.
         expect(popupRenderSource.slice(ternaryAt)).toContain('<PopupContent');
     });
 
@@ -174,10 +177,14 @@ describe('MissingPopupContent', () => {
         expect(missingContentSource).toContain('word-popup-missing');
     });
 
-    it('carries only the Ask-AI placeholder — no progress, Anki, explain, robot', () => {
+    it('carries only the Ask-AI icon — live, but no progress, Anki, explain, robot', () => {
         expect(missingContentSource).toContain('word-popup-ask-ai');
-        expect(missingContentSource).toContain('t(\'word.ask_ai\')');
-        expect(missingContentSource).toMatch(/\n\s+disabled\n/);
+        expect(missingContentSource).toContain("t('word.ask_ai')");
+        // The ticket 05 icon disables (never hides) while inapplicable: no
+        // handler (the profile preview, or a column without a language
+        // descriptor) or an ask in flight.
+        expect(missingContentSource).toMatch(/disabled=\{onAskAi == null \|\| aiBusy\}/);
+        expect(missingContentSource).toContain('onClick={onAskAi}');
         for (const absent of [
             'word-popup-progress-known',
             'word-popup-progress-reset',
@@ -190,8 +197,19 @@ describe('MissingPopupContent', () => {
         ]) {
             expect(missingContentSource).not.toContain(absent);
         }
-        // Nothing is fetched — the card renders from the surface alone.
+        // The card itself fetches nothing — the ask POST lives in the outer
+        // WordPopup.
         expect(missingContentSource).not.toContain('fetch(');
+    });
+
+    it('shows a failed ask beneath the toolbar — no-model/no-key get the explain pane’s guidance', () => {
+        expect(missingContentSource).toContain('word-popup-ask-ai-error');
+        expect(missingContentSource).toContain('{aiError}');
+        // The no-model (400) and no-key (403) answers carry the go-to-
+        // settings link the ExplainGuidance treatment uses.
+        expect(missingContentSource).toMatch(/aiErrorStatus === 400 \|\| aiErrorStatus === 403/);
+        expect(missingContentSource).toContain('/profile?tab=ai');
+        expect(missingContentSource).toContain("t('word.explain_go_to_settings')");
     });
 });
 

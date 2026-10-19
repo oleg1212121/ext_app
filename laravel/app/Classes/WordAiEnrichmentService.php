@@ -5,6 +5,7 @@ namespace App\Classes;
 use App\Models\Definition;
 use App\Models\Etymology;
 use App\Models\Example;
+use App\Models\Form;
 use App\Models\Language;
 use App\Models\Transcription;
 use App\Models\TranscriptionType;
@@ -12,6 +13,7 @@ use App\Models\Word;
 use App\Models\WordClass;
 use App\Models\WordTranslation;
 use App\Support\EnrichmentReply;
+use App\Support\LemmaForms;
 use App\Support\StagedTranslations;
 use App\Support\StressMarks;
 use App\Support\TranslationTargets;
@@ -26,9 +28,11 @@ use Illuminate\Support\Facades\DB;
  * against the native language's EXISTING words through the shared
  * TranslationTargets resolver and link as word_translations pairs; the
  * unmatched stage into the word's translations JSON. ZERO word rows are ever
- * created here — the method returns whether anything new landed at all, so
- * the endpoint can finalize the ledger as succeeded (lock) or a retryable
- * failure.
+ * created by the merge — the method returns whether anything new landed at
+ * all, so the endpoint can finalize the ledger as succeeded (lock) or a
+ * retryable failure. The ONE word-minting method is {@see resolveOrAdopt},
+ * the missing popup's adopt-on-ask resolution (ticket 05), which runs before
+ * any enrichment.
  */
 class WordAiEnrichmentService
 {
@@ -122,6 +126,76 @@ class WordAiEnrichmentService
         });
 
         return $usable;
+    }
+
+    /**
+     * The missing popup's adopt-on-ask resolution (popup-ai-enrich ticket
+     * 05): the RAW clicked surface resolves against the language's
+     * dictionary rows through the shared {@see WordLookupKey} key — the
+     * client's title is never trusted. A hit adopts onto the EXISTING row
+     * (case/ё/stress variants never duplicate; a properly classed row wins
+     * over the unknown placeholder, `EntityWordAdoption`'s rule). A miss
+     * mints exactly one word with the dictionary-import creator hygiene: a
+     * plain display word (the combining stress marks leave the raw surface
+     * for the StressMarks languages — ADR 0081 rule 1 keeps ё and case in
+     * display), the folded l_word, the language's unknown class — never a
+     * class invented from the reply's translations (ADR 0059 spirit;
+     * applyParsed writes no class either) — carrying itself as its lemma
+     * form through the shared {@see LemmaForms} rows (the ё е-alias
+     * included). The mint's firstOrCreate on the unique
+     * (l_word, language, class) triple is the race net: a concurrent ask
+     * that lost the insert adopts the winner's row instead of failing.
+     */
+    public function resolveOrAdopt(string $surface, Language $language): Word
+    {
+        $key = WordLookupKey::normalize($surface);
+        $unknownClassId = $this->ensureUnknownClass((int) $language->id);
+
+        $candidates = Word::query()
+            ->where('language_id', $language->id)
+            ->where('l_word', $key)
+            ->orderBy('id')
+            ->get();
+
+        // A properly classed row beats the unknown placeholder; the lowest
+        // id takes it otherwise (EntityWordAdoption::preferClassed's rule).
+        $existing = $candidates->first(fn (Word $word): bool => (int) $word->word_class_id !== $unknownClassId)
+            ?? $candidates->first();
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $stripsMarks = StressMarks::stripsFor($language->code);
+        $display = $stripsMarks ? StressMarks::strip($surface) : $surface;
+
+        $word = Word::query()->firstOrCreate(
+            ['l_word' => $key, 'language_id' => $language->id, 'word_class_id' => $unknownClassId],
+            ['word' => mb_substr($display, 0, 256)],
+        );
+
+        if ($word->wasRecentlyCreated) {
+            Form::upsert(
+                LemmaForms::rows($word->word, [], $word->id, $stripsMarks),
+                ['form', 'word_id'],
+            );
+        }
+
+        return $word;
+    }
+
+    /**
+     * The 'unknown' part of speech every language carries — the same row
+     * WiktionaryParser::ensureWordClass('unknown') and
+     * EntityWordAdoption create.
+     */
+    private function ensureUnknownClass(int $languageId): int
+    {
+        return (int) WordClass::query()
+            ->firstOrCreate(
+                ['language_id' => $languageId, 'slug' => 'unknown'],
+                ['title' => 'unknown'],
+            )->id;
     }
 
     /**

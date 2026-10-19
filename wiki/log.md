@@ -1,5 +1,50 @@
 # Directory Update Log
 
+## 2026-10-19 (popup-ai-enrich 05: adopt-on-ask — the missing popup's path into the dictionary)
+
+The missing-word card's Ask-AI icon went live (ticket 05 of the
+`popup-ai-enrich` spec; spec decision 5):
+
+- **`POST /ai/word-enrich` grew its second mode** (`AiWordEnrichRequest`):
+  `{surface, language_code}` beside `{word_id}`, the two exclusive. The
+  language must map to a `languages` row and a surface whose
+  `WordLookupKey` key normalizes to nothing is rejected at validation; the
+  key is derived server-side — the raw clicked surface is never trusted.
+  `WordAiEnrichmentService::resolveOrAdopt` resolves it: a **hit adopts
+  onto the existing row** (a properly classed row over the unknown
+  placeholder, `EntityWordAdoption`'s rule — `Ёморок`/`ёморо́к` land on the
+  `еморок` row, no duplicates), a **miss mints exactly one word** with the
+  import-creator hygiene (plain display word, folded `l_word`, unknown
+  class — ADR 0059 spirit, never a class from the translations — carrying
+  itself as its lemma form through `LemmaForms`, ё е-alias included; the
+  firstOrCreate on the unique triple is the race net). The model gate
+  precedes the mint (no-model users mint nothing); then the identical
+  ticket-04 enrichment flow runs on the resolved word.
+- **Concurrent double-ask arbitration**: a pending `word_ai_fetches` row
+  (the winner mid-flight) answers the loser a clean retryable-later 409
+  ("An AI ask for this word is already in progress."); a truly
+  simultaneous loser, whose ledger insert bounces off the unique word
+  constraint, gets the same answer instead of a 500. Failed asks keep the
+  minted word and a retryable failed ledger.
+- **`WordPopup.jsx`**: `MissingPopupContent`'s ask icon is live — it posts
+  `{surface, language_code}` from the popup's `language` prop (a column
+  without a descriptor keeps it disabled) and, on 200, swaps the response
+  payload in with the same setData move as ticket 04 — the missing card
+  becomes the full dictionary view, its progress/Anki/explain handlers
+  acting on the adopted `data.id` through `resolvedWordId`. Both ask paths
+  share one `runEnrich` whose stale-origin guard (data mirror + word id /
+  surface / column language) drops late responses for a popup that moved;
+  no-model (400) / no-key (403) answers get the explain pane's
+  go-to-settings link on the missing card. No new ui-strings.
+- Tests: `tests/Feature/AiWordEnrichAdoptTest.php` (8 endpoint tests),
+  ticket-04 suite + word-endpoint pins re-run green, vitest source pins
+  updated in `WordPopup.toolbar.test.js` + `WordText.missing.test.js`
+  (233 pass), full `test:tia` green (1407), pint green.
+- **Concepts updated**: `interactive-words.md` (missing-card section's
+  adopt-on-ask, the enrich contract/ledger-lock paragraphs, routes table),
+  `ai-providers.md` (enrichment consumer names the adoption resolve);
+  `generated.at` bumped on both.
+
 ## 2026-10-19 (popup-ai-enrich 04: ask-AI enrichment — sync, ledger-locked, merged inline)
 
 The word popup's Ask-AI icon went live (ticket 04 of the `popup-ai-enrich`

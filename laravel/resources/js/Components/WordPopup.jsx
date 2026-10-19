@@ -363,38 +363,57 @@ function ExplainPane({explain, explainKey, preview = false}) {
 }
 
 /**
- * The missing-word card (popup-ai-enrich ticket 03): what an unmapped token
- * opens — the raw clicked surface as the title and an honest
+ * The missing-word card (popup-ai-enrich tickets 03 + 05): what an unmapped
+ * token opens — the raw clicked surface as the title and an honest
  * "not in the dictionary yet" note. There is no word id behind it: nothing
  * is fetched, no lookup event fires, and no familiarity / frequency /
- * form-of lines exist. The toolbar shows only what applies — the Ask-AI
- * placeholder, disabled until ticket 05 wires adopt-on-ask (its ask creates
- * the word first, then enriches, and the popup transitions to the dictionary
- * view; the popup's `language` prop is plumbed for exactly that). The
+ * form-of lines exist. The toolbar shows only what applies — the LIVE Ask-AI
+ * icon (ticket 05's adopt-on-ask): the ask resolves the raw surface
+ * server-side (a lookup-key hit adopts onto the existing row, a miss mints
+ * one word), enriches it, and the response payload swaps this card for the
+ * full dictionary view — ask-AI is the only path from missing to populated.
+ * Inapplicable states disable, never hide: no handler (the profile preview)
+ * or no column language to ask with, a request in flight. A failed ask
+ * shows the server's guidance verbatim beneath the toolbar — the no-model
+ * and no-key cases carry the explain pane's go-to-settings link. The
  * structure mirrors the real card (toolbar / header / dictionary, same
  * hairlines and stable `word-popup-*` hooks) so the card stays addressable
  * from outside styles the same way.
  */
-export function MissingPopupContent({surface}) {
+export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, aiError = null, aiErrorStatus = null}) {
     const {t} = useI18n();
+
+    const askAiLabel = aiBusy ? t('word.ask_ai_sending') : t('word.ask_ai');
 
     return (
         <>
             <div className="word-popup-actions shrink-0 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]">
                 <div className="flex items-center gap-1 py-1.5">
-                    {/* The Ask-AI placeholder: ticket 05's adopt-on-ask goes
-                        live here; until then the icon only renders,
-                        disabled. */}
                     <button
                         type="button"
-                        title={t('word.ask_ai')}
-                        aria-label={t('word.ask_ai')}
-                        disabled
+                        title={askAiLabel}
+                        aria-label={askAiLabel}
+                        disabled={onAskAi == null || aiBusy}
+                        onClick={onAskAi}
                         className={`word-popup-ask-ai ${toolbarButtonClass(false)} ml-auto`}
                     >
                         <Icon name="sparkles" className="h-[1.25em] w-[1.25em]"/>
                     </button>
                 </div>
+
+                {aiError && (
+                    <div className="word-popup-ask-ai-error pb-2 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
+                        <p>{aiError}</p>
+                        {(aiErrorStatus === 400 || aiErrorStatus === 403) && (
+                            <Link
+                                href="/profile?tab=ai"
+                                className="mt-1 inline-block underline underline-offset-2 hover:opacity-80"
+                            >
+                                {t('word.explain_go_to_settings')}
+                            </Link>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* The header carries the raw clicked surface only — no
@@ -858,13 +877,18 @@ export function PopupContent({
  * the host page from its reading font size (popupFontSizeFor); every inner
  * text size is em-relative to it, and the width scales with it.
  *
- * A `wordId` of null is MISSING mode (popup-ai-enrich ticket 03): the token
- * had no word-map entry, so nothing is fetched and no word-events fire — the
- * card renders from the raw `surface` alone via MissingPopupContent (honest
- * not-in-the-dictionary note, Ask-AI placeholder only). `language` — the
- * clicked column's descriptor language ({code, name}|null) — rides along
- * unused until ticket 05's adopt-on-ask resolves the new word's language
- * from it.
+ * A `wordId` of null is MISSING mode (popup-ai-enrich tickets 03 + 05): the
+ * token had no word-map entry, so nothing is fetched and no word-events fire
+ * — the card renders from the raw `surface` alone via MissingPopupContent
+ * (honest not-in-the-dictionary note, the live Ask-AI icon). Its ask posts
+ * `{surface, language_code}` from the `language` prop — the clicked column's
+ * descriptor language ({code, name}|null); a column without one keeps the
+ * icon disabled. The server derives the lookup key, adopts onto the existing
+ * row or mints one unknown-class word, and enriches it — the response
+ * payload swaps the missing card for the full dictionary view in the same
+ * setData move a known word's ask uses (the handlers act on the adopted
+ * `data.id` through resolvedWordId; the page's word map learns the new word
+ * on its next refresh).
  *
  * With an `explain` payload ({rowKind, rowId, side, sentenceIndex, modelKey,
  * enabled, modelLabel, followsAnswer, answerLabel}) the popup grows the
@@ -892,10 +916,6 @@ export function PopupContent({
  * The body itself lives in the exported PopupContent, which the profile's
  * Popups tab reuses for its live preview.
  */
-// `language` is plumbed from both surfaces for ticket 05's adopt-on-ask
-// (the missing card resolves the new word's language from it) — unused until
-// then.
-// eslint-disable-next-line no-unused-vars
 export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain, sections, language = null}) {
     const {t} = useI18n();
     const {props} = usePage();
@@ -910,9 +930,12 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // The ask-AI request state for the current word: `aiBusy` while the
     // enrichment POST is in flight (the icon disables), `aiError` the latest
     // failure's message (shown beneath the toolbar, the icon stays
-    // retryable). A success swaps the whole `data` payload in place.
+    // retryable), `aiErrorStatus` its HTTP status (400/403 — no model / no
+    // key — switch the missing card's error line to the explain pane's
+    // guidance treatment). A success swaps the whole `data` payload in place.
     const [aiBusy, setAiBusy] = useState(false);
     const [aiError, setAiError] = useState(null);
+    const [aiErrorStatus, setAiErrorStatus] = useState(null);
     // The on-open duplicate check's outcome for the current word:
     // 'checking' while the findNotes round-trip is in flight (the icon
     // stays in add form — no spinner), 'found' once the word sits in its
@@ -928,6 +951,18 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // precedent in ExplainPane).
     const dataRef = useRef(null);
     dataRef.current = data;
+    // Mirrors the popup's open origin next to dataRef: the missing card's
+    // adoption ask starts from data === null, so the data mirror alone
+    // cannot tell "still on the missing token" from "the popup moved on"
+    // (the fetch effect nulls data for the new word too) — the word id,
+    // surface and column language can.
+    const originRef = useRef(null);
+    originRef.current = {wordId, surface, languageCode: language?.code ?? null};
+    // The word identity the popup's handlers act on: the bound word id for a
+    // mapped token, the adopted payload's id once the missing card's ask
+    // swapped in (wordId stays null there — the page's word map only learns
+    // the new word on its next refresh).
+    const resolvedWordId = wordId ?? data?.id ?? null;
     const [modelsOpen, setModelsOpen] = useState(false);
     // Read by the document-level close handlers below: while the nested
     // Models used popup is open, that modal owns Escape and outside-click
@@ -962,9 +997,10 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         setAnkiExisting('checking');
         // A fresh word also clears the previous word's ask state — an
         // in-flight enrichment for the old word is dropped by its
-        // dataRef guard below, so the flag never sticks.
+        // staleAsk guard below, so the flag never sticks.
         setAiBusy(false);
         setAiError(null);
+        setAiErrorStatus(null);
 
         fetch(`/words/${wordId}?surface=${encodeURIComponent(surface)}`, {
             headers: {Accept: 'application/json'},
@@ -1052,7 +1088,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     const changeProgress = (action) => {
         setBusy(true);
         const method = action === 'known' ? 'PATCH' : 'DELETE';
-        fetch(`/words/${wordId}/progress`, {
+        fetch(`/words/${resolvedWordId}/progress`, {
             method,
             headers: {
                 'Content-Type': 'application/json',
@@ -1134,24 +1170,27 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         );
     };
 
-    // The per-word Ask-AI send (popup-ai-enrich ticket 04): one POST to
-    // /ai/word-enrich with the BOUND word id (data.id — the same id the
-    // server's ledger locks and the payload's ai_asked reports). The
-    // response is the word-show payload for the same word (the same
-    // WordPopupPayload assembler), so the swap is a plain setData — the
-    // enriched dictionary renders without a reopen. Both completion paths
-    // check the mirrored data ref first: a late result for a popup that has
-    // moved to another word is dropped (the explainKey precedent), and the
-    // fetch effect's reset clears the in-flight flag for the new word.
-    // Failures land in `aiError` beneath the toolbar — the server's
-    // guidance verbatim (no key, no model, already asked, throttled) — and
-    // the icon stays retryable, because only a succeeded ask locks.
-    const askAi = () => {
-        if (!data || aiBusy || data.ai_asked) {
-            return;
-        }
+    // The per-word Ask-AI send (popup-ai-enrich tickets 04 + 05): one POST
+    // to /ai/word-enrich. The response is the word-show payload (the same
+    // WordPopupPayload assembler serves both endpoints), so the swap is a
+    // plain setData — for a known word the enriched dictionary renders
+    // without a reopen; for the missing card the payload IS the transition
+    // to the full dictionary view. Both completion paths check the ask's
+    // origin first (see staleAsk): a late result for a popup that has moved
+    // to another token is dropped, and the fetch effect's reset clears the
+    // in-flight flag for the new word. Failures land in `aiError` beneath
+    // the toolbar — the server's guidance verbatim (no key, no model,
+    // already asked, in flight, throttled) — and the icon stays retryable,
+    // because only a succeeded ask locks.
+    const staleAsk = (origin) => dataRef.current !== origin.data
+        || originRef.current.wordId !== origin.wordId
+        || originRef.current.surface !== origin.surface
+        || originRef.current.languageCode !== origin.languageCode;
+
+    const runEnrich = (body, origin) => {
         setAiBusy(true);
         setAiError(null);
+        setAiErrorStatus(null);
         fetch('/ai/word-enrich', {
             method: 'POST',
             headers: {
@@ -1159,66 +1198,105 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                 Accept: 'application/json',
                 ...(getCsrfToken() ? {'X-CSRF-TOKEN': getCsrfToken()} : {}),
             },
-            body: JSON.stringify({word_id: data.id}),
+            body: JSON.stringify(body),
         })
             .then(async (res) => {
                 const json = await res.json().catch(() => null);
                 if (!res.ok) {
-                    throw new Error(
+                    // The status rides along: 400/403 (no model / no key)
+                    // switch the missing card's error line to the explain
+                    // pane's guidance treatment.
+                    const error = new Error(
                         json?.error
                             ?? json?.message
                             ?? t('word.ask_ai_failed', {status: res.status}),
                     );
+                    error.status = res.status;
+                    throw error;
                 }
 
                 return json;
             })
             .then((json) => {
-                if (dataRef.current !== data) {
+                if (staleAsk(origin)) {
                     return;
                 }
                 setAiBusy(false);
+                setAiErrorStatus(null);
                 setData(json.data);
             })
             .catch((e) => {
-                if (dataRef.current !== data) {
+                if (staleAsk(origin)) {
                     return;
                 }
                 setAiBusy(false);
+                setAiErrorStatus(e.status ?? null);
                 setAiError(e instanceof Error && e.message
                     ? e.message
                     : t('word.ask_ai_failed', {status: '?'}));
             });
     };
 
+    // The known-word ask (ticket 04): the BOUND word id (data.id — the same
+    // id the server's ledger locks and the payload's ai_asked reports).
+    const askAi = () => {
+        if (!data || aiBusy || data.ai_asked) {
+            return;
+        }
+        runEnrich({word_id: data.id}, {data, wordId, surface, languageCode: language?.code ?? null});
+    };
+
+    // The missing card's adopt-on-ask (ticket 05): the RAW clicked surface
+    // plus the clicked column's language code — the server derives the
+    // lookup key (never trusting the title), adopts onto the existing row
+    // or mints one, and the response payload swaps the missing card for the
+    // full dictionary view. A column without a language descriptor keeps
+    // the icon disabled: there is nothing valid to ask with.
+    const askAiMissing = () => {
+        if (data != null || aiBusy || language?.code == null) {
+            return;
+        }
+        runEnrich({surface, language_code: language.code}, {data: null, wordId, surface, languageCode: language.code});
+    };
+
     const explainProps = explain && explainKey
-        ? {...explain, wordId, surface}
+        ? {...explain, wordId: resolvedWordId, surface}
         : null;
 
     return createPortal(
         <div
             ref={ref}
             role="dialog"
-            aria-label={wordId == null ? surface : (data?.word ?? surface)}
+            aria-label={data?.word ?? surface}
             style={{...popupStyle(rect, fontSize), fontSize: `${fontSize}px`}}
             className={`word-popup absolute z-50 ${popupContainerClass}`}
         >
-            {wordId == null ? (
-                // Missing mode (popup-ai-enrich ticket 03): the unmapped
+            {wordId == null && data == null ? (
+                // Missing mode (popup-ai-enrich ticket 03) until the
+                // adoption ask swaps a payload in (ticket 05): the unmapped
                 // token's card — raw surface, honest not-in-dictionary note,
-                // Ask-AI placeholder only. No fetch, no word-events, no
-                // familiarity/frequency/form-of, no progress/Anki actions.
-                <MissingPopupContent surface={surface}/>
+                // the live Ask-AI icon. No fetch, no word-events, no
+                // familiarity/frequency/form-of, no progress/Anki actions —
+                // ask-AI is the only path from missing to populated, and the
+                // response payload moves the popup to the full dictionary
+                // view below.
+                <MissingPopupContent
+                    surface={surface}
+                    onAskAi={language?.code != null ? askAiMissing : null}
+                    aiBusy={aiBusy}
+                    aiError={aiError}
+                    aiErrorStatus={aiErrorStatus}
+                />
             ) : (
                 <>
-                    {(loading || error) && (
+                    {(loading || error) && data == null && (
                         <div className="p-3.5">
                             {loading && <p className="word-popup-loading text-[0.857em] opacity-60">{t('word.loading')}</p>}
                             {error && <p className="word-popup-error text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{error}</p>}
                         </div>
                     )}
 
-                    {!loading && data && (
+                    {data && (
                         <PopupContent
                             surface={surface}
                             familiarity={familiarity}

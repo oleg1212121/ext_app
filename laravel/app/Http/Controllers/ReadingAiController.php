@@ -11,10 +11,12 @@ use App\Http\Requests\AiQuestionRequest;
 use App\Http\Requests\AiWordEnrichRequest;
 use App\Http\Requests\AiWordExplainRequest;
 use App\Models\EntitySentence;
+use App\Models\Language;
 use App\Models\Word;
 use App\Models\WordAiFetch;
 use App\Support\EnrichmentReply;
 use App\Support\PromptTemplates;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -191,8 +193,8 @@ class ReadingAiController extends Controller
     }
 
     /**
-     * Ask-AI enrichment for a known word (popup-ai-enrich ticket 04): the
-     * user's explanation model answers a strict-JSON prompt through the same
+     * Ask-AI enrichment (popup-ai-enrich tickets 04 + 05): the user's
+     * explanation model answers a strict-JSON prompt through the same
      * BYO-key seam as explainWord, and the leniently-parsed reply merges
      * straight into the word's dictionary content — definitions,
      * transcriptions, examples, etymologies (new rows `source = 'ai'`),
@@ -200,26 +202,49 @@ class ReadingAiController extends Controller
      * the word on the first success; failed attempts stay retryable. The
      * response is the word-show payload (assembled by the same
      * WordPopupPayload presenter), so the popup swaps it in live.
+     *
+     * Two exclusive request modes: the known-word path binds the word by id
+     * (ticket 04); the missing-word adoption path (ticket 05) resolves it
+     * from the RAW clicked surface through the ADR 0081 lookup key — a hit
+     * adopts onto the existing row, a miss mints one unknown-class word
+     * (WordAiEnrichmentService::resolveOrAdopt) — then runs the identical
+     * flow. The model gate precedes the adoption mint, so a no-model user
+     * mints nothing; the ledger gate runs once per path after the word is
+     * known (409 precedence over the model 400 is ticket 04's documented
+     * order on the known path).
      */
     public function enrichWord(AiWordEnrichRequest $request): JsonResponse
     {
-        /** @var Word $word */
-        $word = Word::query()->findOrFail($request->validated('word_id'));
+        $validated = $request->validated();
 
-        // The ledger gate: a succeeded row is the forever lock (the toolbar's
-        // icon is grey for it); failed and pending attempts stay retryable.
-        // The row materializes only when an ask is actually attempted — a
-        // no-model request records nothing.
-        $ledger = WordAiFetch::query()->firstOrNew(['word_id' => $word->id]);
+        /** @var Word|null $word */
+        $word = array_key_exists('word_id', $validated)
+            ? Word::query()->findOrFail($validated['word_id'])
+            : null;
 
-        if ($ledger->exists && $ledger->status === WordAiFetch::STATUS_SUCCEEDED) {
-            return $this->aiError('AI enrichment has already been completed for this word.', 409);
+        if ($word !== null && ($blocked = $this->ledgerBlock($word)) !== null) {
+            return $blocked;
         }
 
         $model = $this->modelResolver->resolveExplanationModel();
 
         if ($model === null) {
             return $this->aiError('Choose an AI model in your profile settings.', 400);
+        }
+
+        if ($word === null) {
+            $language = Language::query()
+                ->where('code', (string) $validated['language_code'])
+                ->firstOrFail();
+
+            $word = $this->enrichment->resolveOrAdopt((string) $validated['surface'], $language);
+
+            // The adopted (possibly minted) word's ledger gate: a hit can
+            // already be locked or have an ask in flight; a fresh mint
+            // passes trivially.
+            if (($blocked = $this->ledgerBlock($word)) !== null) {
+                return $blocked;
+            }
         }
 
         // The ledger carries the resolved model's own two halves — the
@@ -229,14 +254,27 @@ class ReadingAiController extends Controller
         $provider = $colon === false ? null : substr($model['key'], 0, $colon);
         $modelName = $colon === false ? null : substr($model['key'], $colon + 1);
 
-        $ledger->forceFill([
-            'status' => WordAiFetch::STATUS_PENDING,
-            'provider' => $provider,
-            'model' => $modelName,
-            'attempts' => (int) $ledger->attempts + 1,
-            'asked_at' => now(),
-            'error' => null,
-        ])->save();
+        try {
+            $ledger = WordAiFetch::query()->firstOrNew(['word_id' => $word->id]);
+            $ledger->forceFill([
+                'status' => WordAiFetch::STATUS_PENDING,
+                'provider' => $provider,
+                'model' => $modelName,
+                'attempts' => (int) $ledger->attempts + 1,
+                'asked_at' => now(),
+                'error' => null,
+            ])->save();
+        } catch (QueryException $e) {
+            // A true simultaneous double-ask: both requests saw no ledger
+            // row, and the unique word constraint bounced the loser's
+            // insert. That loser gets the same clean retryable-later
+            // answer as the visible-pending gate — never a 500.
+            if (in_array($e->errorInfo[0] ?? null, ['23505', '23000'], true)) {
+                return $this->aiInProgress();
+            }
+
+            throw $e;
+        }
 
         $nativeLanguage = $request->user()->nativeLanguage();
         $instruction = PromptTemplates::enrichment(
@@ -244,8 +282,13 @@ class ReadingAiController extends Controller
             $word->language?->name ?? 'the word\'s language',
             $nativeLanguage?->name ?? 'English',
         );
+
+        // The adopted word's class is unknown until real data says
+        // otherwise (ADR 0059 spirit) — the placeholder class never
+        // travels into the prompt.
+        $classTitle = $word->wordClass?->title;
         $question = 'Word to enrich: «'.$word->word.'»'
-            .($word->wordClass?->title !== null ? ' — '.$word->wordClass->title : '');
+            .($classTitle !== null && $word->wordClass->slug !== 'unknown' ? ' — '.$classTitle : '');
 
         try {
             $answer = $this->modelResolver->ask($model['key'], $instruction, $question);
@@ -279,6 +322,39 @@ class ReadingAiController extends Controller
         return response()->json([
             'data' => WordPopupPayload::build($word, $word->l_word ?: $word->word, $request->user()),
         ], 200);
+    }
+
+    /**
+     * The ledger gate both enrich paths run once the word is known: a
+     * succeeded row is the forever lock (the toolbar's icon is grey for
+     * it); a pending row means another ask is in flight right now — the
+     * concurrent double-ask's visible loser gets the clean retryable-later
+     * answer instead of racing on. Failed rows pass (retryable at any
+     * count).
+     */
+    private function ledgerBlock(Word $word): ?JsonResponse
+    {
+        $ledger = WordAiFetch::query()->firstOrNew(['word_id' => $word->id]);
+
+        if ($ledger->exists && $ledger->status === WordAiFetch::STATUS_SUCCEEDED) {
+            return $this->aiError('AI enrichment has already been completed for this word.', 409);
+        }
+
+        if ($ledger->exists && $ledger->status === WordAiFetch::STATUS_PENDING) {
+            return $this->aiInProgress();
+        }
+
+        return null;
+    }
+
+    /**
+     * The concurrent double-ask's loser: the winner's ask is mid-flight, so
+     * a retry a moment later either re-asks (winner failed) or gets the
+     * completed lock (winner succeeded) — never a lost attempt.
+     */
+    private function aiInProgress(): JsonResponse
+    {
+        return $this->aiError('An AI ask for this word is already in progress. Try again in a moment.', 409);
     }
 
     /**

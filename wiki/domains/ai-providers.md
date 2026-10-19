@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-19T21:05:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T23:30:00+03:00 }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base
@@ -252,7 +252,8 @@ baseline migration creates the column NOT NULL with cascade delete
 * [Interactive Words](/domains/interactive-words.md) — the word popup's
   Context explanation (`/ai/word-explain`) and its ask-AI enrichment
   (`/ai/word-enrich`, one ledger-locked ask per word, merged inline under
-  per-row `source='ai'` provenance, ADR 0082) — both resolve the
+  per-row `source='ai'` provenance, ADR 0082; the missing card's adoption
+  ask resolves-or-mints the word first, ticket 05) — both resolve the
   **explanation model**. The enrichment prompt is the admin-editable
   `word.enrichment` template (`:word`/`:language`/`:native`,
   `PromptTemplates::enrichment`, code fallback) demanding strict JSON.
