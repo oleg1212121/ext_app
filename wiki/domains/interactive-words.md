@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — EVERY 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-20T20:23:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T20:50:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -228,6 +228,16 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    section carries the POS itself in its **"WORD — pos" label** (headword
    uppercase, POS lowercase, em dash): "MELT — verb" for a base group's own
    headword, "MELTED — adjective" for the popup-headword sections.
+   Beside the title, the header shows the word's **source badge**
+   (popup-provenance ticket 04, `word-popup-source`): the bound headword's
+   `words.source` import provenance (ADR 0084) plus its ask-AI marker, as
+   small muted plain text in the title's baseline row — the importer name
+   verbatim ("kaikki", "golddict", "cmudict", "entity") plus " · ai" when
+   `ai_asked` (a succeeded ledger row), "ai" alone when the word was
+   AI-enriched but no importer ever stamped it, and nothing at all when
+   neither is known (pre-provenance rows stay honest). This supersedes ADR
+   0082's "the popup renders no visual marker" at word level only —
+   per-row content stays unmarked (the badge's own ADR 0082 amendment).
    The popover renders one section per entry, top to bottom:
    **translations are the primary line** (native language first, capped at 8
    with a "+N more…" expander; a section with neither linked translations
@@ -253,7 +263,7 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    **Every element inside the card carries a stable `word-popup-*` class**
    (the portal/preview wrapper keeps `word-popup`): `word-popup-loading`,
    `-error`, `-actions` (the first-row toolbar strip), `-header`, `-title`,
-   `-familiarity`, `-frequency`, `-form-of`, `-models-button`,
+   `-source` (the header's provenance badge), `-familiarity`, `-frequency`, `-form-of`, `-models-button`,
    `-explain-toggle` (with `aria-pressed` while shown), `-ask-ai`,
    `-dictionary`, `-explain-row` (the mounted pane's first-row wrapper),
    `-section`,
@@ -847,7 +857,7 @@ see [Profile](/domains/profile.md) for the Anki tab side):
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `GET /words/{word}` | `WordController::show` | Word popup payload (assembled by the shared `WordPopupPayload`): the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) stable-sorted [live entry before demoted entry, then completeness-descending] (stored `words.completeness` 0–9, lazily recalculated when stale during the resolve, ADR 0083) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked), `tags` (the linked word's tag names — for the Anki card; eager-loaded with the family via `WordFamily::EAGER_LOAD`, no per-open lazy query), `ai_asked` (the word's ledger carries a `succeeded_at` — the toolbar flag that turns the plain ask icon into the re-ask variant) |
+| `GET /words/{word}` | `WordController::show` | Word popup payload (assembled by the shared `WordPopupPayload`): the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) stable-sorted [live entry before demoted entry, then completeness-descending] (stored `words.completeness` 0–9, lazily recalculated when stale during the resolve, ADR 0083) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked), `tags` (the linked word's tag names — for the Anki card; eager-loaded with the family via `WordFamily::EAGER_LOAD`, no per-open lazy query), `source` (the bound headword's `words.source` import provenance, ADR 0084 — the verbatim importer name for the header badge, null on pre-provenance rows), `ai_asked` (the word's ledger carries a `succeeded_at` — the toolbar flag that turns the plain ask icon into the re-ask variant) |
 | `POST /words/lookup` | `WordController::lookup` | The popup's on-open re-resolution (ticket 07, `WordLookupRequest` — the adoption-mode rules minus the word-id mode, throttle 60/min): the RAW clicked surface + the clicked column's language code resolve read-only through `WordAiEnrichmentService::resolveSurface` (the extracted read-only half of `resolveOrAdopt` — classed row over the unknown placeholder, first candidate when no unknown row exists, NEVER mints) → `{data: {word_id: int|null}}`; the popup fetches the payload through `GET /words/{word}` so no shape is duplicated |
 | `POST /ai/word-enrich` | `ReadingAiController::enrichWord` | Ask-AI enrichment, two modes (`AiWordEnrichRequest`, throttle 20/min): `{word_id}` for a known word (ticket 04 — an optional `surface` rides along so the payload resolves from the clicked surface) or `{surface, language_code}` for the missing card's adopt-on-ask (ticket 05 — `WordAiEnrichmentService::resolveOrAdopt` adopts onto the existing lookup-key hit or mints one unknown-class word with its lemma form, the mint stamped `words.source = 'ai'` (ADR 0084; a raced-in null row is claimed, a resolve hit's source never touched), then the shared flow). Explanation-model strict-JSON ask through `AIModelResolver::ask` (the ledger's provider/model split through `parseModelString`), lenient parse (`EnrichmentReply`), transactional merge — a re-ask deletes the word's previous `source='ai'` rows before the fresh reply merges (ADR 0082 amendment), with per-row provenance and link-only translations (`WordAiEnrichmentService`) — `word_ai_fetches` ledger (a fresh pending row / a lost unique-constraint insert answers a clean retryable 409; a pending row past the 15-minute grace is taken over by the retry); responds the word-show payload so the popup swaps it live (ADR 0082) |
 | `POST /ai/word-explain` | `ReadingAiController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |

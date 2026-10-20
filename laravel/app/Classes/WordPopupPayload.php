@@ -16,7 +16,9 @@ use Illuminate\Support\Collection;
  * {@see WordFamily::resolve} — which also applies the lazy completeness
  * recalc — and the bound headword's ever-succeeded ask-AI ledger rides along
  * as `ai_asked` (popup-ai-enrich ticket 04): the toolbar flag that turns the
- * plain ask icon into the re-ask variant (ADR 0082 amendment).
+ * plain ask icon into the re-ask variant (ADR 0082 amendment). The bound
+ * headword's import provenance (`words.source`, ADR 0084) rides beside it —
+ * the popup header's muted source badge (popup-provenance ticket 04).
  */
 final class WordPopupPayload
 {
@@ -28,7 +30,7 @@ final class WordPopupPayload
     }
 
     /**
-     * @return array{id: int, word: string, language_code: string|null, word_class: string|null, is_form: bool, form_of: list<string>, frequency: int|null, tags: list<string>, entries: list<array<string, mixed>>, ai_asked: bool}
+     * @return array{id: int, word: string, language_code: string|null, word_class: string|null, is_form: bool, form_of: list<string>, frequency: int|null, tags: list<string>, entries: list<array<string, mixed>>, source: string|null, ai_asked: bool}
      */
     public static function fromFamily(Word $linked, WordFamily $family, string $surface, Authenticatable $user): array
     {
@@ -51,6 +53,7 @@ final class WordPopupPayload
             'frequency' => self::frequencyRank($bound),
             'tags' => $bound->tags->pluck('name')->all(),
             'entries' => $entries,
+            'source' => $bound->source,
             'ai_asked' => WordAiFetch::succeededFor((int) $bound->id),
         ];
     }

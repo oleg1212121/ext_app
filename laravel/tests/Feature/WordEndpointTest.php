@@ -477,6 +477,26 @@ it('flags ai_asked only when a succeeded AI enrichment ledger row exists', funct
         ->assertJsonPath('data.ai_asked', false);
 });
 
+it('sends the word\'s import source at the payload top level', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $sourced = createWord('en', 'melt', 'verb', ['source' => Word::SOURCE_KAIKKI]);
+    $unsourced = createWord('en', 'boil', 'verb');
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $sourced->id]))
+        ->assertOk()
+        ->assertJsonPath('data.source', Word::SOURCE_KAIKKI);
+
+    // A pre-provenance row (never stamped by any importer) stays honest:
+    // source rides null and the header badge's other half — ai_asked —
+    // decides whether an "ai"-only badge renders at all.
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $unsourced->id]))
+        ->assertOk()
+        ->assertJsonPath('data.source', null);
+});
+
 it('sorts translations native language first', function () {
     createWordClasses();
     $user = User::factory()->create();

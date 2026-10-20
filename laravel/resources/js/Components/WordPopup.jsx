@@ -598,6 +598,16 @@ export function PopupContent({
         ? t('word.ask_ai_again')
         : (aiBusy ? t('word.ask_ai_sending') : t('word.ask_ai'));
 
+    // The header's provenance badge (popup-provenance ticket 04): the
+    // importing writer plus the word-level ai marker when a succeeded ask
+    // exists — "kaikki · ai"; "ai" alone for an enriched word no importer
+    // ever stamped; empty — the badge hides — when neither is known. The
+    // importer string renders verbatim: the closed words.source vocabulary
+    // is already human-readable, and a foreign value stays honest instead
+    // of being mapped or dropped (ADR 0082's no-marker ruling is superseded
+    // at word level only — per-row content stays unmarked).
+    const sourceBadge = [data.source, data.ai_asked ? 'ai' : ''].filter(Boolean).join(' · ');
+
     return (
         <>
             {/* The action toolbar — the popup's first row, above the word.
@@ -767,6 +777,13 @@ export function PopupContent({
                     {/* Reading font: RU headwords carry U+0301, which gaps when
                         base and mark come from different fonts (see --font-reading). */}
                     <span className="word-popup-title font-reading text-[1.286em] leading-tight">{data.word}</span>
+                    {/* Where the word came from (popup-provenance ticket 04):
+                        plain muted text in the baseline row, hidden entirely
+                        when neither the importer nor a succeeded ask-AI is
+                        known — pre-provenance rows stay honest. */}
+                    {sourceBadge !== '' && (
+                        <span className="word-popup-source whitespace-nowrap text-[0.786em] leading-tight opacity-60">{sourceBadge}</span>
+                    )}
                 </div>
 
                 {sections.familiarity !== false && (

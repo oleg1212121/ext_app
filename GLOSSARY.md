@@ -114,8 +114,11 @@ _Avoid_: quality score, richness
 **AI word enrichment (ask AI)**:
 Filling a sparse word's entry on demand by asking the user's own AI
 model (the explanation model). The reply lands as ordinary dictionary
-content with no visual marker, and one successful ask per word locks it
-against further asks; failed asks can be retried.
+content — per-row content stays unmarked; the word popup header's small
+source badge is the one word-level marker, reading the importing writer
+plus "· ai" (or "ai" alone for a word no importer stamped) once an ask
+succeeds. A succeeded ask is re-askable — the re-ask replaces the
+previous AI-written rows; failed asks can be retried.
 _Avoid_: AI import, auto-enrichment
 
 **Usage labels**:

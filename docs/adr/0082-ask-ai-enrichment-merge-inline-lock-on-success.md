@@ -169,3 +169,19 @@ be retried. Decision 2's succeeded row is no longer a lock:
 The one-ask ledger row, the pending grace window, failed-stays-retryable,
 the dedup-vs-imported, link-only translations, and the shared payload
 assembler all keep their original rulings.
+
+## Amended 2026-10-20 (word-level source badge in the popup header)
+
+Decision 1's "the popup renders no visual marker" is **superseded at word
+level only** (popup-provenance ticket 04): the popup header renders a
+small muted plain-text badge next to the headword, stating where the WORD
+came from — the importer name verbatim (the closed `words.source`
+vocabulary, ADR 0084) plus " · ai" when the payload's `ai_asked` reports
+a succeeded ask, "ai" alone when the word was AI-enriched but no importer
+ever stamped its row, nothing at all when neither is known (pre-provenance
+rows stay honest). The one shared assembler (decision 4) gained the
+top-level `source` beside `ai_asked`, so both endpoints stay
+shape-identical. Per-row content stays unmarked: the per-row `source`
+columns (null = imported / 'ai') are unchanged, and an imported vs an
+AI-written definition still reads identically in the popup — the badge
+speaks about the word's row, never about which content rows the AI wrote.

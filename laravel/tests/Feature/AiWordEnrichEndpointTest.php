@@ -116,6 +116,13 @@ it('enriches a sparse word end to end with the faked AI: content rows, link-only
     expect($payload['entries'][0]['staged_translations'])->toBe(['берег', 'прибанок']);
     expect($show['entries'][0]['staged_translations'])->toBe(['берег', 'прибанок']);
 
+    // The word's import provenance rides the same top level (popup-provenance
+    // ticket 04): null on BOTH sides here — the fixture word was never
+    // importer-stamped and enriching an existing row never claims its source
+    // (ADR 0084) — so the header badge shows "ai" alone for this word.
+    expect($payload['source'])->toBeNull();
+    expect($show['source'])->toBeNull();
+
     // Content rows all carry the ai provenance marker.
     expect(Definition::query()->where('word_id', $fixture['word']->id)->where('source', 'ai')->count())->toBe(2);
     expect(Transcription::query()->where('word_id', $fixture['word']->id)->where('source', 'ai')->count())->toBe(1);

@@ -1,5 +1,40 @@
 # Directory Update Log
 
+## 2026-10-20 (popup-provenance: the popup header shows a word's source + ai badge)
+
+Ticket 04 of the popup-provenance spec (words.source landed with ticket 03).
+Import provenance and ask-AI enrichment were DB-only: the popup rendered no
+marker anywhere, and a user could not tell a kaikki import from an
+AI-enriched adopt or a pre-provenance row.
+
+- **Payload** (`WordPopupPayload::fromFamily`, the ONE assembler both popup
+  endpoints share): the top level gained `source` — the bound headword's
+  `words.source` verbatim (null on pre-provenance rows) — beside the
+  existing `ai_asked`; both endpoints stay shape-identical by construction.
+- **Popup** (`Components/WordPopup.jsx`): a small muted plain-text badge in
+  the header's baseline row, next to the headword (`word-popup-source`
+  hook, opacity-muted so one style carries light+dark): the importer name
+  verbatim plus " · ai" when `ai_asked`, "ai" alone when the word was
+  enriched but no importer ever stamped it, nothing at all when neither is
+  known. The missing-word card's header carries no badge (no word behind
+  it).
+- **ADR 0082 amendment**: "the popup renders no visual marker" is
+  superseded at word level only — per-row content stays unmarked, per-row
+  `source` columns unchanged.
+- **Tests**: Pest pins `source` set and null on the show endpoint and null
+  on both sides of the ask response (the existing array-keys shape pin
+  already forces the ask and show payloads identical); a new vitest
+  source-pin suite (`WordPopup.sourceBadge.test.js`) pins the badge's
+  presence next to the title, its join derivation, the
+  hide-when-neither gate, the muted/small styling hooks, and the missing
+  card's badge-less header.
+- **Docs**: `domains/interactive-words.md` (header-badge paragraph, the
+  `word-popup-source` class hook, the route-table payload shape,
+  `generated.at` bumped); GLOSSARY.md's "AI word enrichment" entry amended
+  — the badge supersedes the old no-marker wording at word level, and the
+  stale succeeded-lock clause was corrected to the re-ask reality in
+  passing.
+
 ## 2026-10-20 (popup-provenance: the popup surfaces a word's staged translations as a language-less amber raw line)
 
 Ticket 02 of the popup-provenance spec (amber token came with ticket 01,
