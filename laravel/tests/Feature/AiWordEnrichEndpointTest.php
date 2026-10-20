@@ -425,6 +425,13 @@ it('falls back to the monolingual code word-enrichment template when no admin ro
     expect($captured['instruction'])->toContain('English etymology notes');
     expect($captured['instruction'])->toContain('in IPA');
     expect($captured['instruction'])->toContain('Russian');
+
+    // The usage-label object form (ticket 09): the prompt names the closed
+    // set and tells the model to label only when clearly so.
+    expect($captured['instruction'])->toContain('"text"');
+    expect($captured['instruction'])->toContain('"labels"');
+    expect($captured['instruction'])->toContain('obsolete, archaic, dated, colloquial, rare, dialectal');
+    expect($captured['instruction'])->toContain('otherwise the entry stays a plain string');
 });
 
 it('drops AI definitions in a foreign script at the merge — the import guard holds for AI content', function () {
@@ -477,6 +484,60 @@ it('still locks the word SUCCEEDED when every AI definition dropped the script g
     expect($ledger->status)->toBe('succeeded');
     expect($ledger->succeeded_at)->not->toBeNull();
     expect($ledger->error)->toBeNull();
+});
+
+it('persists a labelled {text, labels} definition on the source=ai row, the payload staying plain strings', function () {
+    $fixture = createEnrichFixture();
+    // Mixed shapes: a plain-string entry (unlabelled) and an object entry
+    // whose closed-set labels survive; the unknown slug drops.
+    mockResolverForEnrich(json_encode([
+        'translations' => ['банк'],
+        'definitions' => [
+            'A financial institution.',
+            ['text' => 'The land alongside a river.', 'labels' => ['dated', 'no-such-slug']],
+        ],
+    ]));
+
+    $response = $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
+
+    $response->assertOk();
+
+    $definitions = Definition::query()->where('word_id', $fixture['word']->id)->orderBy('id')->get();
+    expect($definitions)->toHaveCount(2);
+    expect($definitions[0]->definition)->toBe('A financial institution.')
+        ->and($definitions[0]->source)->toBe('ai')
+        ->and($definitions[0]->labels)->toBeNull()
+        ->and($definitions[1]->definition)->toBe('The land alongside a river.')
+        ->and($definitions[1]->source)->toBe('ai')
+        ->and($definitions[1]->labels)->toBe(['dated']);
+
+    // The popup payload keeps rendering definition strings — provenance and
+    // labels live in the DB.
+    expect($response->json('data.entries.0.definitions'))
+        ->toBe(['A financial institution.', 'The land alongside a river.']);
+});
+
+it('drops a {text, labels} definition entirely when its text fails the script guard', function () {
+    Http::fake();
+    $fixture = createEnrichFixture();
+    // The ticket-08 guard still reads the TEXT: a labelled foreign-script
+    // entry drops labels and all, while the own-script labelled one lands.
+    mockResolverForEnrich(json_encode([
+        'definitions' => [
+            ['text' => 'домашнее животное семейства псовых', 'labels' => ['colloquial']],
+            ['text' => 'A financial institution.', 'labels' => ['archaic']],
+        ],
+    ]));
+
+    $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
+        ->assertOk();
+
+    $definitions = Definition::query()->where('word_id', $fixture['word']->id)->get();
+    expect($definitions)->toHaveCount(1)
+        ->and($definitions[0]->definition)->toBe('A financial institution.')
+        ->and($definitions[0]->labels)->toBe(['archaic']);
 });
 
 it('validates the word id and requires authentication', function () {

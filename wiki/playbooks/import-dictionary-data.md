@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-20T01:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T18:40:00+03:00 }
 sources:
   - id: adr-0081
     resource: docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md
@@ -182,7 +182,12 @@ Two source shapes exist:
    dropped gloss counts in the summary table's "Definitions skipped
    (foreign language)" row. Import-time only: already-stored definitions
    are never touched (re-runs of an older dump re-insert nothing the
-   guard now drops — the merge stays insert-new-only).
+   guard now drops — the merge stays insert-new-only). A sense's tags
+   also label its definition: `senses[].tags` intersect the closed
+   `UsageLabels` set (obsolete, archaic, dated, colloquial, rare,
+   dialectal) onto `definitions.labels` (2026-10-20, ticket 09) —
+   grammar noise and unknown slugs drop, and rows written before the
+   column keep null (unlabelled; no backfill).
 4. Link words across languages through the staged translations:
 
    ```bash

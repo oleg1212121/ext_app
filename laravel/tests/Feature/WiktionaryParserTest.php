@@ -781,3 +781,44 @@ it('drops foreign-script glosses at the definition flush and counts them skipped
 
     unlink($enFile);
 });
+
+it('stores sense tags as usage labels on imported definitions, unlabelled senses staying null', function () {
+    $languages = createLanguages();
+    $enId = $languages['en']->id;
+
+    $tmpFile = writeJsonlFixture([
+        json_encode([
+            'word' => 'knave', 'pos' => 'noun',
+            'senses' => [
+                ['glosses' => ['a dishonest man'], 'tags' => ['archaic', 'masculine']],
+                ['glosses' => ['any given card in a deck']],
+            ],
+        ]),
+        json_encode([
+            'word' => ' Valor ', 'pos' => 'noun',
+            'senses' => [
+                ['glosses' => ['obsolete spelling of valour'], 'tags' => ['obsolete', 'form-of', 'singular']],
+                ['glosses' => ['courage'], 'tags' => ['dated', 'colloquial', 'rare']],
+            ],
+        ]),
+    ], 'wiktionary_labels');
+    (new WiktionaryParser('en', 'ru', 100))->import($tmpFile);
+
+    $knave = Word::where('word', 'knave')->where('language_id', $enId)->firstOrFail();
+    $knaveDefinitions = $knave->definitions->sortBy('id')->values();
+    expect($knaveDefinitions[0]->definition)->toBe('a dishonest man')
+        ->and($knaveDefinitions[0]->labels)->toBe(['archaic'])
+        ->and($knaveDefinitions[1]->definition)->toBe('any given card in a deck')
+        // An untagged sense stores the column's null default — the same
+        // "unlabelled" shape every pre-label row keeps.
+        ->and($knaveDefinitions[1]->labels)->toBeNull();
+
+    // The grammar noise (form-of, singular) never lands; the closed-set
+    // slugs survive in the dump's order through the stored JSON.
+    $valor = Word::where('word', 'Valor')->where('language_id', $enId)->firstOrFail();
+    $valorDefinitions = $valor->definitions->sortBy('id')->values();
+    expect($valorDefinitions[0]->labels)->toBe(['obsolete'])
+        ->and($valorDefinitions[1]->labels)->toBe(['dated', 'colloquial', 'rare']);
+
+    unlink($tmpFile);
+});

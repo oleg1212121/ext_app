@@ -16,6 +16,7 @@ use App\Support\LemmaForms;
 use App\Support\PosAliases;
 use App\Support\StressMarks;
 use App\Support\TranslationTargets;
+use App\Support\UsageLabels;
 use App\Support\WordLookupKey;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Console\Helper\ProgressBar;
@@ -290,7 +291,14 @@ class WiktionaryParser
                 $gloss = implode(' ', $sense->glosses ?? []);
             }
             if (trim($gloss) !== '') {
-                $definitions[] = $gloss;
+                // The sense's usage/register tags ride the definition: only
+                // the closed set survives from the tags array (the rest is
+                // grammar/gender noise), in the dump's own order. Both gloss
+                // paths label — raw_glosses and glosses share the sense.
+                $definitions[] = [
+                    'text' => $gloss,
+                    'labels' => UsageLabels::fromKaikkiTags((array) ($sense->tags ?? [])),
+                ];
             }
         }
 
@@ -317,12 +325,35 @@ class WiktionaryParser
             'l_word' => WordLookupKey::normalize($word),
             'pos' => $pos,
             'relay_base' => null,
-            'definitions' => array_values(array_unique($definitions)),
+            'definitions' => $this->uniqueDefinitions($definitions),
             'forms' => array_values(array_unique($forms)),
             'sounds' => $sounds,
             'etymology' => $etymology,
             'translations' => array_values(array_unique($translations)),
         ];
+    }
+
+    /**
+     * Definitions dedupe on their TEXT (first occurrence wins, its labels
+     * standing): the same gloss from two senses is one dictionary row
+     * whatever the tags said — the same exact-text rule array_unique
+     * applied when the records carried bare strings.
+     *
+     * @param  list<array{text: string, labels: list<string>}>  $definitions
+     * @return list<array{text: string, labels: list<string>}>
+     */
+    private function uniqueDefinitions(array $definitions): array
+    {
+        $seen = [];
+        $result = [];
+        foreach ($definitions as $definition) {
+            if (! isset($seen[$definition['text']])) {
+                $seen[$definition['text']] = true;
+                $result[] = $definition;
+            }
+        }
+
+        return $result;
     }
 
     public function extractTranslations(object $line): array
@@ -449,7 +480,10 @@ class WiktionaryParser
             $existing['relay_base'] = null;
         }
 
-        $existing['definitions'] = array_values(array_unique(array_merge($existing['definitions'], $incoming['definitions'])));
+        // Definitions dedupe on text across the merged lines, first
+        // occurrence (and its labels) standing — the same union the bare
+        // string lists got.
+        $existing['definitions'] = $this->uniqueDefinitions(array_merge($existing['definitions'], $incoming['definitions']));
         $existing['forms'] = array_values(array_unique(array_merge($existing['forms'], $incoming['forms'])));
         $existing['sounds'] = array_values(array_unique(array_merge($existing['sounds'], $incoming['sounds']), SORT_REGULAR));
         $existing['translations'] = array_values(array_unique(array_merge($existing['translations'], $incoming['translations'])));
@@ -617,14 +651,17 @@ class WiktionaryParser
                 // the en edition's English glosses on ru words (and vice
                 // versa) are the other language's prose, not definitions.
                 // Import-time only: stored definitions are never touched.
-                if (! DefinitionLanguage::keeps($this->lang, $definition)) {
+                if (! DefinitionLanguage::keeps($this->lang, $definition['text'])) {
                     $this->stats['definitions_skipped_foreign']++;
 
                     continue;
                 }
                 $rows[] = [
-                    'definition' => mb_substr($definition, 0, 500),
+                    'definition' => mb_substr($definition['text'], 0, 500),
                     'word_id' => $wordId,
+                    // An empty label list stores as null — the column's
+                    // "unlabelled" shape, identical to the pre-label rows.
+                    'labels' => $definition['labels'] === [] ? null : json_encode($definition['labels']),
                 ];
             }
         }

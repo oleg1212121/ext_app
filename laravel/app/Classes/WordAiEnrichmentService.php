@@ -58,10 +58,13 @@ class WordAiEnrichmentService
      * own-script definitions reach the insert, so a disobedient model's
      * foreign-script definitions drop instead of polluting the dictionary —
      * and an all-dropped reply is NOT an error, the ask itself still
-     * finalizes SUCCEEDED (the endpoint locks the word either way).
-     * Etymologies stay unguarded, the import's deliberate choice.
+     * finalizes SUCCEEDED (the endpoint locks the word either way). The
+     * guard filters on the entries' TEXT (ticket 09: a definition now
+     * arrives as a `['text' => ..., 'labels' => [...]]` pair — a dropped
+     * text drops its labels with it). Etymologies stay unguarded, the
+     * import's deliberate choice.
      *
-     * @param  array<string, list<string>>  $parsed
+     * @param  array<string, list<mixed>>  $parsed
      */
     public function applyParsed(Word $word, array $parsed, ?Language $nativeLanguage): bool
     {
@@ -70,7 +73,7 @@ class WordAiEnrichmentService
         $languageCode = (string) $word->language?->code;
         $definitions = array_values(array_filter(
             $parsed['definitions'],
-            fn (string $definition): bool => DefinitionLanguage::keeps($languageCode, $definition),
+            fn (array $definition): bool => DefinitionLanguage::keeps($languageCode, $definition['text']),
         ));
 
         DB::transaction(function () use ($word, $parsed, $definitions, $nativeLanguage, &$usable): void {
@@ -117,25 +120,31 @@ class WordAiEnrichmentService
     }
 
     /**
-     * The exists→create merge the plain string-list sections share
-     * (definitions, etymologies, and transcriptions with their type scoped
-     * in through $scope): exact-text deduped, every created row carries
-     * `source = 'ai'`, true when anything new landed. $scope is the
-     * section's remaining identity — probed and created alike — which is
-     * how the transcription's NOT NULL type joins the shared shape without
-     * a branch of its own. (The examples section stays explicit above: its
-     * dedup is the DB's unique constraint via firstOrCreate, a different
-     * mechanism.)
+     * The exists→create merge the string-list sections share (etymologies,
+     * and transcriptions with their type scoped in through $scope):
+     * exact-text deduped, every created row carries `source = 'ai'`, true
+     * when anything new landed. $scope is the section's remaining identity —
+     * probed and created alike — which is how the transcription's NOT NULL
+     * type joins the shared shape without a branch of its own. The
+     * definitions section (ticket 09) passes `['text' => ..., 'labels' =>
+     * [...]]` entries instead of bare strings: the text probes and stores
+     * like every other section, and a non-empty labels list rides onto the
+     * created row (an empty one stores as null, the column's unlabelled
+     * shape). (The examples section stays explicit above: its dedup is the
+     * DB's unique constraint via firstOrCreate, a different mechanism.)
      *
      * @param  class-string  $model
-     * @param  list<string>  $texts
+     * @param  list<string>|list<array{text: string, labels: list<string>}>  $entries
      * @param  array<string, int>  $scope
      */
-    private function mergeAiRows(Word $word, string $model, string $textColumn, array $texts, array $scope = []): bool
+    private function mergeAiRows(Word $word, string $model, string $textColumn, array $entries, array $scope = []): bool
     {
         $usable = false;
 
-        foreach ($texts as $text) {
+        foreach ($entries as $entry) {
+            $text = is_array($entry) ? $entry['text'] : $entry;
+            $labels = is_array($entry) ? $entry['labels'] : null;
+
             $exists = $model::query()
                 ->where('word_id', $word->id)
                 ->where($textColumn, $text)
@@ -143,9 +152,13 @@ class WordAiEnrichmentService
                 ->exists();
 
             if (! $exists) {
-                $model::query()->create(
-                    ['word_id' => $word->id, $textColumn => $text, 'source' => 'ai'] + $scope,
-                );
+                $attributes = ['word_id' => $word->id, $textColumn => $text, 'source' => 'ai'] + $scope;
+
+                if ($labels !== null && $labels !== []) {
+                    $attributes['labels'] = $labels;
+                }
+
+                $model::query()->create($attributes);
                 $usable = true;
             }
         }

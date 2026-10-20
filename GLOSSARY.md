@@ -115,6 +115,15 @@ content with no visual marker, and one successful ask per word locks it
 against further asks; failed asks can be retried.
 _Avoid_: AI import, auto-enrichment
 
+**Usage labels**:
+The register markers a definition sense can carry — a closed set
+(obsolete, archaic, dated, colloquial, rare, dialectal) stored on
+definitions and filled going forward only: from Wiktionary sense tags at
+import and from labelled AI definition objects at ask-AI. Existing rows
+keep null (unlabelled); a word whose every definition is labelled
+obsolete/archaic will rank as a demoted entry in the popup.
+_Avoid_: POS tags, grammar tags, sense tags
+
 **Missing word**:
 A word clicked in a text that the dictionary holds no entry for. It
 opens a placeholder card — the clicked spelling plus a plain

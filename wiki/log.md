@@ -1,5 +1,44 @@
 # Directory Update Log
 
+## 2026-10-20 (popup-ai-enrich 09: usage labels on definitions — obsolete/archaic/rare stored going forward, no backfill)
+
+Definitions can now carry usage/register labels, so unimportant senses
+can be demoted (ticket 10). User decision 2026-10-20: fix the code so
+future imports and AI asks label correctly; the existing ~1.5M rows keep
+null — no backfill.
+
+- **New column** (`database/dictionary.md` definitions row): nullable
+  `definitions.labels` jsonb (migration `2026_10_20_000001`, column
+  comment documents the closed set + "null = unlabelled"), cast on the
+  `Definition` model. jsonb so ticket 10's recalc SQL can mirror the
+  demotion check server-side.
+- **Single source of truth** `App\Support\UsageLabels`: the closed set
+  (`obsolete`, `archaic`, `dated`, `colloquial`, `rare`, `dialectal`),
+  the `[obsolete, archaic]` DEMOTING subset, `fromKaikkiTags` (intersect
+  — input order kept, duplicates collapsed, grammar/gender noise and
+  unknown slugs dropped) and `demoting()`.
+- **Kaikki import** (`domains/dictionary-import.md`): `senses[].tags` —
+  previously discarded — land as labels on imported definitions (both
+  the `raw_glosses` and `glosses` paths); same-text senses dedupe on the
+  text with the first occurrence's labels standing. GoldenDict stores
+  none — its headwords' usage markers were flattened during HTML
+  conversion, unrecoverable (documented, deliberately no code).
+- **Ask-AI enrichment** (`domains/interactive-words.md`): the reply's
+  definitions entries accept a plain string OR a `{text, labels}` object;
+  `EnrichmentReply` parses the section to `['text' => …, 'labels' => […]]`
+  pairs (a plain string is an unlabelled pair; unknown slugs dropped;
+  dedupe/truncate keep the first labels; other sections stay plain
+  strings and the popup payload keeps rendering strings). The
+  `DefinitionLanguage` guard still reads the text alone — a dropped
+  definition drops its labels with it — and the merge writes non-empty
+  labels on `source='ai'` rows (empty stores as null).
+- **Prompt**: `ENRICHMENT_FALLBACK` names the object form and the closed
+  set ("label only when clearly so; otherwise a plain string"); the
+  seeder picks the constant up for fresh seeds and the dev-seeded
+  `word.enrichment` row was refreshed by hand (`firstOrCreate` never
+  rewrites) and verified. Ticket 10 owns the scoring change; nothing
+  here touches completeness.
+
 ## 2026-10-20 (popup-ai-enrich 08: monolingual AI enrichment — definitions and etymologies in the word's own language)
 
 The ask-AI prompt no longer orders definitions in the user's native

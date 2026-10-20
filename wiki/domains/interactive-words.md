@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — EVERY 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-20T14:08:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T18:40:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -26,6 +26,9 @@ sources:
   - id: enrich-reply
     resource: laravel/app/Support/EnrichmentReply.php
     title: EnrichmentReply (lenient strict-JSON parser — fences, coercion, caps, truncation)
+  - id: usage-labels
+    resource: laravel/app/Support/UsageLabels.php
+    title: UsageLabels (the closed usage-label set — parser + AI labels, ticket 10 demotion subset)
   - id: word-ai-fetch
     resource: laravel/app/Models/WordAiFetch.php
     title: WordAiFetch (the ask-AI ledger — succeeded = the lock)
@@ -584,20 +587,31 @@ marker.
 * **The prompt.** `PromptTemplates::enrichment` — admin-editable
   `prompt_templates` key `word.enrichment` (seeded `firstOrCreate` from
   the code fallback, so the row is admin-visible/editable like the
-  explanation prompt) — demands **strict JSON**: translations /
-  definitions / transcriptions / examples / etymologies as string
-  arrays, **monolingual** (2026-10-20, ticket 08): definitions,
-  etymology notes and examples in the word's own language,
+  explanation prompt; the dev row was refreshed by hand when ticket 09
+  grew the fallback — `firstOrCreate` never rewrites) — demands **strict
+  JSON**: translations / definitions / transcriptions / examples /
+  etymologies as string arrays, **monolingual** (2026-10-20, ticket 08):
+  definitions, etymology notes and examples in the word's own language,
   transcriptions IPA — only the translations are in the user's native
-  language.
+  language. A definitions entry may instead be a `{text, labels}` object
+  (ticket 09) whose labels, "used ONLY when the sense is clearly so",
+  come from the closed set obsolete, archaic, dated, colloquial, rare,
+  dialectal — otherwise the entry stays a plain string.
 * **Lenient parsing.** `App\Support\EnrichmentReply` strips code fences
   and prose around the outermost `{...}`, coerces (a bare string becomes
   a one-element list, numbers stringify, booleans/nulls/nested
-  arrays/empties drop, duplicates collapse), caps the counts (12
+  arrays/empties drop, duplicates collapse on text), caps the counts (12
   translations / 8 definitions / 4 each of the rest) and truncates to the
   column limits (definitions 500, transcriptions 100, examples 500,
   etymologies 1000) — except translations, lookup candidates that must
-  stay whole words, which are dropped past 256 chars.
+  stay whole words, which are dropped past 256 chars. The definitions
+  section parses to `['text' => …, 'labels' => […]]` pairs whatever the
+  reply mixed in (ticket 09): a plain string is an unlabelled pair, an
+  object's labels filter through `App\Support\UsageLabels::fromKaikkiTags`
+  (order kept, unknown slugs and non-strings dropped), the first
+  occurrence's labels stand on a text collision, and a truncated text
+  keeps its labels — every other section stays plain strings, and the
+  popup payload keeps rendering definition strings (labels are DB-only).
 * **The merge.** In one transaction (`WordAiEnrichmentService`): each
   section merges into its table exact-text deduped — **new rows carry
   `source = 'ai'`**, null stays imported, and the popup renders no visual
@@ -608,7 +622,12 @@ marker.
   (ticket 08): foreign-script definitions drop instead of being stored,
   an all-dropped reply still finalizes **succeeded** (only unparseable
   replies are 502), and etymologies stay unguarded — the import's
-  deliberate parity. **Translations are link-only**
+  deliberate parity. The guard reads the entry's TEXT, so a dropped
+  foreign-script definition drops its labels with it, and a kept entry
+  stores its non-empty labels on `definitions.labels` (ticket 09, the
+  closed `UsageLabels` set — empty stores as null; see
+  [Dictionary import](/domains/dictionary-import.md) for the import-time
+  half and the no-backfill rule). **Translations are link-only**
   (ADR 0078 holds for AI): candidates normalize (trim, stress marks
   stripped for the target language's rule, over-long and
   sentence-punctuated dropped), resolve against the native language's
@@ -629,7 +648,9 @@ marker.
   the stale-pending takeover, the nothing-new success lock, the surface
   payload, dedup, caps/truncation, template + fallback + the monolingual
   script-guard pins (foreign-script definitions dropped, own-script kept,
-  all-dropped still succeeded), validation, throttle),
+  all-dropped still succeeded) + the labelled `{text, labels}` pins
+  (labels persisted on `source='ai'` rows, a dropped text dropping its
+  labels, the payload staying plain strings), validation, throttle),
   `tests/Feature/AiWordEnrichAdoptTest.php` (the ticket 05 adoption path:
   mint + lemma form + unknown class, ё/case/stress adoption onto the
   existing row, the pending double-ask 409, no-model mints nothing,

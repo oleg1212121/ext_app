@@ -19,7 +19,7 @@ it('parses a single valid JSONL line', function () {
     expect($result)->not->toBeNull();
     expect($result['word'])->toBe('hello');
     expect($result['pos'])->toBe('noun');
-    expect($result['definitions'])->toContain('A greeting');
+    expect($result['definitions'])->toContain(['text' => 'A greeting', 'labels' => []]);
     expect($result['translations'])->toContain('привет');
     expect($result['forms'])->toContain('hellos');
     expect($result['sounds'])->toHaveCount(1);
@@ -99,7 +99,7 @@ it('merges records for same word and pos', function () {
         'word' => 'run',
         'l_word' => 'run',
         'pos' => 'noun',
-        'definitions' => ['A physical activity'],
+        'definitions' => [['text' => 'A physical activity', 'labels' => []]],
         'forms' => ['runs'],
         'sounds' => [['value' => '/rʌn/', 'type' => 'ipa']],
         'etymology' => 'Old English',
@@ -109,7 +109,7 @@ it('merges records for same word and pos', function () {
         'word' => 'run',
         'l_word' => 'run',
         'pos' => 'noun',
-        'definitions' => ['Another definition'],
+        'definitions' => [['text' => 'Another definition', 'labels' => ['rare']]],
         'forms' => ['running'],
         'sounds' => [],
         'etymology' => null,
@@ -150,7 +150,59 @@ it('prioritizes raw_glosses over glosses', function () {
     $line = json_decode('{"word":"test","pos":"noun","senses":[{"raw_glosses":["raw def"],"glosses":["gloss def"]}]}');
 
     $result = $parser->parseLine($line);
-    expect($result['definitions'][0])->toBe('raw def');
+    expect($result['definitions'][0]['text'])->toBe('raw def');
+});
+
+it('maps sense tags onto usage labels on both gloss paths, dropping grammar noise', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"knave","pos":"noun","senses":['
+        .'{"raw_glosses":["a dishonest man"],"tags":["archaic","masculine"]},'
+        .'{"glosses":["a naughty child"],"tags":["dated","colloquial","singular"]},'
+        .'{"glosses":["any given card in a deck"]},'
+        .'{"glosses":["obsolete spelling of knafe"],"tags":["obsolete","form-of"]}]}');
+
+    $result = $parser->parseLine($line);
+
+    // The closed set survives in the dump's own order; the grammar/gender
+    // tags (masculine, singular, form-of) drop; an untagged sense stores
+    // unlabelled. Both gloss paths label.
+    expect($result['definitions'][0])->toBe(['text' => 'a dishonest man', 'labels' => ['archaic']])
+        ->and($result['definitions'][1]['labels'])->toBe(['dated', 'colloquial'])
+        ->and($result['definitions'][2])->toBe(['text' => 'any given card in a deck', 'labels' => []])
+        ->and($result['definitions'][3]['labels'])->toBe(['obsolete']);
+});
+
+it('dedupes same-text definitions keeping the first sense\'s labels', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"awe","pos":"noun","senses":['
+        .'{"glosses":["A feeling of fear and reverence"],"tags":["rare"]},'
+        .'{"glosses":["A feeling of fear and reverence"],"tags":["obsolete"]}]}');
+
+    $result = $parser->parseLine($line);
+
+    // One gloss text, one row: the first occurrence (and its tags) stands.
+    expect($result['definitions'])->toBe([['text' => 'A feeling of fear and reverence', 'labels' => ['rare']]]);
+});
+
+it('merges definitions across records by text, the first labels standing', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $existing = [
+        'word' => 'run', 'l_word' => 'run', 'pos' => 'noun', 'relay_base' => null,
+        'definitions' => [['text' => 'A stream', 'labels' => []]],
+        'forms' => [], 'sounds' => [], 'etymology' => null, 'translations' => [],
+    ];
+    $incoming = [
+        'word' => 'run', 'l_word' => 'run', 'pos' => 'noun', 'relay_base' => null,
+        'definitions' => [['text' => 'A stream', 'labels' => ['dialectal']], ['text' => 'A race', 'labels' => ['rare']]],
+        'forms' => [], 'sounds' => [], 'etymology' => null, 'translations' => [],
+    ];
+
+    $merged = $parser->mergeRecord($existing, $incoming);
+
+    expect($merged['definitions'])->toBe([
+        ['text' => 'A stream', 'labels' => []],
+        ['text' => 'A race', 'labels' => ['rare']],
+    ]);
 });
 
 it('throws on unsupported source language', function () {
@@ -273,7 +325,7 @@ function realRecord(string $word): array
         'l_word' => mb_strtolower($word),
         'pos' => 'noun',
         'relay_base' => null,
-        'definitions' => ['A real gloss'],
+        'definitions' => [['text' => 'A real gloss', 'labels' => []]],
         'forms' => [],
         'sounds' => [],
         'etymology' => null,
@@ -305,7 +357,7 @@ it('keeps a mixed entry a word with its real definitions', function () {
     $result = $parser->parseLine($line);
 
     expect($result['relay_base'])->toBeNull()
-        ->and($result['definitions'])->toBe(['An act of running']);
+        ->and($result['definitions'])->toBe([['text' => 'An act of running', 'labels' => []]]);
 });
 
 it('keeps an en relay base verbatim where no strip applies', function () {
@@ -324,9 +376,9 @@ it('merges a relay line with a real line into a word (union of senses is mixed)'
     $realThenRelay = $parser->mergeRecord(realRecord('cats'), relayRecord('cats', 'cat'));
 
     expect($relayThenReal['relay_base'])->toBeNull()
-        ->and($relayThenReal['definitions'])->toBe(['A real gloss'])
+        ->and($relayThenReal['definitions'])->toBe([['text' => 'A real gloss', 'labels' => []]])
         ->and($realThenRelay['relay_base'])->toBeNull()
-        ->and($realThenRelay['definitions'])->toBe(['A real gloss']);
+        ->and($realThenRelay['definitions'])->toBe([['text' => 'A real gloss', 'labels' => []]]);
 });
 
 it('merges two relay lines of one base into a single demotion', function () {
