@@ -20,8 +20,11 @@ import {describe, expect, it} from 'vitest';
 // Components/icons.jsx (currentColor, no own color) — their colors ride the
 // shared toolbarButtonClass color tokens (popup-provenance ticket 01): the
 // know icon verdigris, remove-mark vermilion, the robot info blue, the rest
-// neutral grey, the pressed tint verdigris. The profile preview's
-// inertness (no handlers reach PopupContent) is pinned on PopupsSettings.jsx.
+// neutral grey, the pressed tint verdigris — and the Anki icon is the one
+// conditional token: amber iff the on-open reachability probe answers
+// (popup-provenance ticket 05, pinned in WordPopup.ankiReachable.test.js).
+// The profile preview's inertness (no handlers reach PopupContent) is
+// pinned on PopupsSettings.jsx.
 
 const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
 const iconsSource = readFileSync(new URL('./icons.jsx', import.meta.url), 'utf8');
@@ -269,8 +272,9 @@ describe('WordPopup action toolbar', () => {
         // literals — Tailwind's scanner reads this file's text, so
         // concatenation-built names would never compile. "Remove mark" now
         // renders the destructive vermilion and the robot the info blue; the
-        // Anki + Ask-AI icons keep the neutral grey (amber waits in the map
-        // for its consumers, tickets 02 + 05).
+        // Ask-AI icon keeps the neutral grey, and the Anki icon is the
+        // conditional consumer — amber token iff the on-open probe says
+        // Anki is reachable, neutral otherwise (ticket 05, its own suite).
         const map = popupSource.slice(popupSource.indexOf('const TOOLBAR_ACCENTS'));
         expect(map).toContain('opacity-80 hover:opacity-100');
         for (const [token, variable] of [
@@ -288,9 +292,9 @@ describe('WordPopup action toolbar', () => {
         expect(buttonIn('word-popup-models-button')).toContain("toolbarButtonClass('info')");
         // Neutral is the signature's default: bare calls keep the old
         // reduced-opacity grey.
-        expect(buttonIn('word-popup-anki-send')).toContain('toolbarButtonClass()');
         expect(buttonIn('word-popup-ask-ai')).toContain('toolbarButtonClass()');
         expect(buttonIn('word-popup-explain-toggle')).toContain("toolbarButtonClass('neutral'");
+        expect(buttonIn('word-popup-anki-send')).toContain("toolbarButtonClass(ankiReachable ? 'amber' : 'neutral')");
     });
 
     it('renders the Anki status lines inside the toolbar strip', () => {

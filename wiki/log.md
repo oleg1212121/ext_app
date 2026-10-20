@@ -1,5 +1,47 @@
 # Directory Update Log
 
+## 2026-10-20 (popup-provenance: the Save-to-Anki icon reflects Anki reachability — on-open version probe, amber)
+
+Ticket 05 of the popup-provenance spec (amber token landed with ticket 01,
+the color-token toolbar helper too). The Anki icon carried no reachability
+information: a user with Anki off clicked send to find out, and a user who
+started Anki mid-session had no hint the popup could now reach it.
+
+- **Probe** (`Components/WordPopup.jsx`, outer `WordPopup`): on every open
+  with settings present and the payload loaded, a cancelled-guarded effect
+  beside the on-open duplicate check calls the profile tab's existing cheap
+  `ankiConnectVersion` (`lib/ankiConnect.js` — no new client code), keyed
+  `[ankiSettings, data]` exactly like the detection effect; a resolve marks
+  Anki reachable, a rejection marks unreachable, and the effect clears the
+  flag first so the icon sits grey while the round-trip is in flight and
+  each open answers for itself (starting Anki mid-session is picked up on
+  the next popup). No settings → no probe. Reachability stays a
+  browser-side fact — no backend flag.
+- **Icon**: the Save-to-Anki button's color token is now
+  `toolbarButtonClass(ankiReachable ? 'amber' : 'neutral')` — the amber
+  token (ticket 01) while AnkiConnect answers, the neutral grey while the
+  probe is pending, unreachable, or without settings. The send refreshes
+  the answer without a re-probe: any completed send (added / updated /
+  foreign-model duplicate — Anki answered every action) flips amber behind
+  the send's `dataRef` guard; a network-kind failure flips grey; an
+  anki-kind failure and a note-type mismatch keep amber. The probe lives in
+  the outer component only — `PopupContent` reads a false-defaulting
+  `ankiReachable` prop, so the profile's Popups-tab preview stays grey and
+  inert (no network), same as today.
+- **Tests**: new vitest source-pin suite
+  (`WordPopup.ankiReachable.test.js`) pins the probe wiring (existing-lib
+  reuse, the settings+data gate, the shared key and cancelled guard,
+  resolve/reject mapping, the false default) and every icon state
+  (pending/unreachable/no-settings → neutral, reachable → amber,
+  completed-send → amber without a re-probe, network-kind failure → grey,
+  anki-kind/mismatch → amber) plus the preview's inertness; the toolbar
+  suite's color-token pin updated to the conditional form. Full vitest
+  green (24 files / 270 tests); no PHP touched.
+- **Docs**: `domains/interactive-words.md` (the Anki-send section gains the
+  "Reachable amber" bullet, the description + `-anki-send` class-hook line
+  mention the conditional token, the preview bullet states the
+  never-probes guarantee, `generated.at` bumped).
+
 ## 2026-10-20 (popup-provenance: the popup header shows a word's source + ai badge)
 
 Ticket 04 of the popup-provenance spec (words.source landed with ticket 03).

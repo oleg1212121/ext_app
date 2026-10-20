@@ -8,7 +8,7 @@ import {renderMarkdown} from '../lib/markdown';
 import {canAskExplanation} from '../lib/wordExplain';
 import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
 import {Icon} from './icons.jsx';
-import {AnkiConnectError} from '../lib/ankiConnect';
+import {AnkiConnectError, ankiConnectVersion} from '../lib/ankiConnect';
 import {buildNoteFields, uiLabels} from '../lib/ankiTemplate';
 import {AnkiNoteTypeMismatchError, findExistingNote, sendAnkiNote} from '../lib/ankiSync';
 import {ankiWordSyncConfig} from '../lib/ankiWordConfig';
@@ -536,7 +536,10 @@ export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, ai
  * in-deck state (`ankiExisting`: 'checking' | 'found' | 'absent' — the
  * on-open duplicate check's outcome): 'found' flips it to the update glyph
  * with the "Update in Anki" tooltip, every other value keeps the add form —
- * including a silent detection failure. `ankiSend` holds the send's outcome
+ * including a silent detection failure. Its color reads Anki's
+ * reachability (`ankiReachable`, the outer WordPopup's on-open version
+ * probe's outcome — amber while AnkiConnect answers, grey while pending /
+ * unreachable / without settings). `ankiSend` holds the send's outcome
  * ({status: 'sending'|'added'|'updated'|'duplicate'|'error', error?}) for
  * the inline status line beneath the icon row; 'duplicate' is reachable
  * only for a FOREIGN-model note — a note of our own types updates in place
@@ -556,6 +559,13 @@ export function PopupContent({
     onAnkiSend = null,
     ankiSend = null,
     ankiExisting = 'absent',
+    // The on-open reachability probe's outcome (popup-provenance ticket 05),
+    // owned by the outer WordPopup — it needs the ankiSettings prop and the
+    // loaded data to probe, so PopupContent only reads the answer: amber
+    // while Anki is reachable, neutral grey otherwise (pending, unreachable,
+    // no settings). The default keeps the profile preview's icon grey and
+    // the preview itself probe-free.
+    ankiReachable = false,
     onAskAi = null,
     aiBusy = false,
     aiError = null,
@@ -654,16 +664,20 @@ export function PopupContent({
                         the update glyph + "Update in Anki"; checking,
                         absent and a silent failure all keep the add form —
                         the send still runs find-before-add, so a misjudged
-                        icon can never create a second card. The margin-auto
-                        push on this first right-hand icon shoves it and the
-                        icons after it to the row's right end. */}
+                        icon can never create a second card. Its color is
+                        the reachability probe's answer (popup-provenance
+                        ticket 05): amber while AnkiConnect answers, grey
+                        while the probe is pending / unreachable / without
+                        settings. The margin-auto push on this first
+                        right-hand icon shoves it and the icons after it to
+                        the row's right end. */}
                     <button
                         type="button"
                         title={ankiActionLabel}
                         aria-label={ankiActionLabel}
                         disabled={onAnkiSend == null || ankiSend?.status === 'sending'}
                         onClick={onAnkiSend}
-                        className={`word-popup-anki-send ${toolbarButtonClass()} ml-auto`}
+                        className={`word-popup-anki-send ${toolbarButtonClass(ankiReachable ? 'amber' : 'neutral')} ml-auto`}
                     >
                         <Icon name={ankiExisting === 'found' ? 'ankiUpdate' : 'ankiAdd'} className="h-[1.25em] w-[1.25em]"/>
                     </button>
@@ -1006,6 +1020,11 @@ export function PopupContent({
  * (lib/ankiSync.js's memoized findExistingNote — it never creates decks or
  * note types, and fails silently when Anki is off) drives the icon's add vs
  * update form; a send of an already-saved word updates the note in place.
+ * Beside it, an on-open reachability probe (the cheap AnkiConnect version
+ * action, popup-provenance ticket 05) paints the icon's amber token while
+ * Anki answers and keeps it grey while the probe is pending, when Anki is
+ * unreachable, or when no settings exist — send outcomes refresh the
+ * answer without a re-probe.
  * The body itself lives in the exported PopupContent, which the profile's
  * Popups tab reuses for its live preview.
  */
@@ -1076,6 +1095,13 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // its own find-before-add, so a misjudged icon can never create a
     // second card.
     const [ankiExisting, setAnkiExisting] = useState('checking');
+    // The on-open reachability probe's outcome (popup-provenance ticket 05):
+    // whether AnkiConnect answered its cheap version action for the current
+    // open — amber for the Anki icon while true, grey otherwise (pending,
+    // unreachable, no settings). A browser-side fact only: no backend flag,
+    // re-probed per open so starting Anki mid-session is picked up on the
+    // next popup.
+    const [ankiReachable, setAnkiReachable] = useState(false);
     // Mirrors `data` on every render; the send's completion paths compare
     // the data they started with against it, so a late result for a
     // previous word never lands on the current one (the explainKey
@@ -1229,6 +1255,43 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         };
     }, [ankiSettings, data]);
 
+    // On-open reachability probe (popup-provenance ticket 05): beside the
+    // duplicate check it shares the open lifecycle with — same
+    // [ankiSettings, data] key, same cancelled guard — the popup asks the
+    // user's AnkiConnect endpoint its cheap version action (the profile
+    // tab's manual-test probe, lib/ankiConnect.js's ankiConnectVersion).
+    // A resolve marks Anki reachable — the Save-to-Anki icon paints its
+    // amber token; a rejection (Anki off, CORS, HTTP/non-JSON) marks
+    // unreachable — neutral grey. No settings or payload, no probe: the
+    // flag keeps its false default. The probe starts by clearing the flag —
+    // whatever a previous open proved, the current probe answers for
+    // itself, so the icon sits grey while the round-trip is in flight — and
+    // re-runs per open (the key moves with every loaded payload), so
+    // starting Anki mid-session is picked up on the next popup. A late
+    // answer for a popup that has moved to another word is dropped.
+    useEffect(() => {
+        if (!ankiSettings || !data) {
+            return;
+        }
+        let cancelled = false;
+        setAnkiReachable(false);
+        ankiConnectVersion(ankiSettings).then(
+            () => {
+                if (!cancelled) {
+                    setAnkiReachable(true);
+                }
+            },
+            () => {
+                if (!cancelled) {
+                    setAnkiReachable(false);
+                }
+            },
+        );
+        return () => {
+            cancelled = true;
+        };
+    }, [ankiSettings, data]);
+
     useEffect(() => {
         const onKeyDown = (event) => {
             if (event.key === 'Escape') {
@@ -1322,6 +1385,11 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                 if (dataRef.current !== data) {
                     return;
                 }
+                // A completed send is itself reachability evidence — Anki
+                // answered every action, an added / updated note and a
+                // foreign-model duplicate alike — so the probe's answer is
+                // refreshed without a re-probe.
+                setAnkiReachable(true);
                 const status = result.added ? 'added' : result.updated ? 'updated' : 'duplicate';
                 setAnkiSend({status});
                 if (result.added || result.updated) {
@@ -1335,6 +1403,14 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             (error) => {
                 if (dataRef.current !== data) {
                     return;
+                }
+                // A network-kind failure means Anki never answered (the
+                // probe's amber was a stale truth) — grey again. An
+                // anki-kind failure means AnkiConnect answered with an
+                // error string and a note-type mismatch means the
+                // find-before-add talked to it: both keep the icon amber.
+                if (error instanceof AnkiConnectError && error.kind === 'network') {
+                    setAnkiReachable(false);
                 }
                 setAnkiSend({status: 'error', error});
             },
@@ -1519,6 +1595,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                             onAnkiSend={sendToAnki}
                             ankiSend={ankiSend}
                             ankiExisting={ankiExisting}
+                            ankiReachable={ankiReachable}
                             onAskAi={askAi}
                             aiBusy={aiBusy}
                             aiError={aiError}
