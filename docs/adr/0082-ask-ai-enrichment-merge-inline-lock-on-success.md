@@ -113,3 +113,25 @@ demand. The spec's ask-AI icon raises three design questions:
   mocked at the container — provider calls are raw cURL, invisible to
   `Http::fake` (`tests/Feature/AiWordEnrichEndpointTest.php`,
   `tests/Unit/EnrichmentReplyTest.php`).
+
+## Amended 2026-10-20 (popup-ai-enrich ticket 08)
+
+The prompt is **monolingual**. The original `word.enrichment` fallback
+ordered definitions and etymology notes in the user's native language
+("Reply in :native … short :native definitions") and dutifully produced
+Russian definitions for English words — but the dictionary is
+monolingual-Wiktionary-style: an entry defines its word in the word's own
+language, enforced on imports by the `DefinitionLanguage` majority-script
+guard. The fallback now orders definitions, etymology notes and examples
+in `:language` (the word's own language), transcriptions in IPA, and
+keeps only the translations in `:native`; decision 4's "admin-editable in
+`prompt_templates`" sentence is now concrete — the template is seeded
+`firstOrCreate` (ticket 08), so the row is editable without a code
+deploy.
+
+Decision 2's succeeded lock gains a guard rider: AI definitions pass the
+import's `DefinitionLanguage::keeps()` at the merge, so a disobedient
+model's foreign-script definitions drop instead of being stored — and an
+all-dropped reply still finalizes **succeeded** (only unparseable replies
+stay 502; a reply whose every definition dropped is not a failed ask).
+Etymologies remain deliberately unguarded, the import's parity.

@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T14:05:00+03:00 }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base
@@ -256,7 +256,11 @@ baseline migration creates the column NOT NULL with cascade delete
   ask resolves-or-mints the word first, ticket 05) — both resolve the
   **explanation model**. The enrichment prompt is the admin-editable
   `word.enrichment` template (`:word`/`:language`/`:native`,
-  `PromptTemplates::enrichment`, code fallback) demanding strict JSON.
+  `PromptTemplates::enrichment`, code fallback seeded as the row)
+  demanding strict JSON, **monolingual** (ticket 08, 2026-10-20):
+  definitions, etymology notes and examples in the word's own language,
+  transcriptions IPA, only translations native — and AI definitions pass
+  the import's `DefinitionLanguage` majority-script guard at the merge.
 
 # Extending
 

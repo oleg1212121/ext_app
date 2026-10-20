@@ -15,6 +15,7 @@ use App\Models\Word;
 use App\Models\WordAiFetch;
 use App\Models\WordTranslation;
 use App\Support\PromptTemplates;
+use Illuminate\Support\Facades\Http;
 use Mockery\MockInterface;
 
 const AI_ENRICH_MODEL_MOCK = ['id' => 7, 'key' => 'openrouter:google/gemini-3-flash-preview', 'label' => 'Gemini Flash'];
@@ -406,7 +407,7 @@ it('assembles the instruction from the admin-edited word-enrichment template', f
         ->toBe('Enrich the English word bank for a Russian speaker with strict JSON.');
 });
 
-it('falls back to the code word-enrichment template when no admin row exists', function () {
+it('falls back to the monolingual code word-enrichment template when no admin row exists', function () {
     $fixture = createEnrichFixture();
     $captured = null;
     mockResolverForEnrich(null, $captured);
@@ -415,8 +416,67 @@ it('falls back to the code word-enrichment template when no admin row exists', f
         ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
         ->assertOk();
 
+    // The monolingual dictionary contract (ticket 08): strict JSON, with
+    // definitions / etymology notes / examples in the word's OWN language
+    // and IPA transcriptions — only the translations point at the native
+    // language. Substituted pins: :language → English, :native → Russian.
     expect($captured['instruction'])->toContain('ONLY a JSON object');
+    expect($captured['instruction'])->toContain('English definitions');
+    expect($captured['instruction'])->toContain('English etymology notes');
+    expect($captured['instruction'])->toContain('in IPA');
     expect($captured['instruction'])->toContain('Russian');
+});
+
+it('drops AI definitions in a foreign script at the merge — the import guard holds for AI content', function () {
+    Http::fake();
+    $fixture = createEnrichFixture();
+    // The disobedient-model case the monolingual prompt exists for: an en
+    // word answered with Cyrillic definitions. Only the own-script (Latin)
+    // definition survives the merge; the Cyrillic etymology note lands —
+    // etymologies stay unguarded, the import's deliberate parity.
+    mockResolverForEnrich(json_encode([
+        'translations' => ['банк'],
+        'definitions' => ['домашнее животное семейства псовых', 'A financial institution.'],
+        'etymologies' => ['От итальянского banca.'],
+    ]));
+
+    $response = $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
+
+    $response->assertOk();
+
+    $definitions = Definition::query()->where('word_id', $fixture['word']->id)->orderBy('id')->get();
+    expect($definitions)->toHaveCount(1);
+    expect($definitions[0]->definition)->toBe('A financial institution.');
+    expect($definitions[0]->source)->toBe('ai');
+    expect(Etymology::query()
+        ->where('word_id', $fixture['word']->id)
+        ->where('etymology', 'От итальянского banca.')
+        ->exists())->toBeTrue();
+});
+
+it('still locks the word SUCCEEDED when every AI definition dropped the script guard', function () {
+    Http::fake();
+    $fixture = createEnrichFixture();
+    // All-Cyrillic definitions for the en word: the merge stores none of
+    // them (the translations still link/stage), but the ask itself
+    // succeeded — 200 and a succeeded ledger, never a 502.
+    mockResolverForEnrich(json_encode([
+        'translations' => ['банк', 'прибанок'],
+        'definitions' => ['домашнее животное семейства псовых', 'иностранный банк'],
+    ]));
+
+    $response = $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
+
+    $response->assertOk();
+    expect($response->json('data.ai_asked'))->toBeTrue();
+
+    expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(0);
+    $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->firstOrFail();
+    expect($ledger->status)->toBe('succeeded');
+    expect($ledger->succeeded_at)->not->toBeNull();
+    expect($ledger->error)->toBeNull();
 });
 
 it('validates the word id and requires authentication', function () {

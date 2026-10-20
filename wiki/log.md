@@ -1,5 +1,32 @@
 # Directory Update Log
 
+## 2026-10-20 (popup-ai-enrich 08: monolingual AI enrichment — definitions and etymologies in the word's own language)
+
+The ask-AI prompt no longer orders definitions in the user's native
+language (the "Russian definitions for English words" report — the prompt
+was working as written):
+
+- **The prompt is monolingual** (`domains/interactive-words.md` prompt
+  bullet, `domains/ai-providers.md` consumers bullet): the
+  `word.enrichment` fallback (`PromptTemplates::ENRICHMENT_FALLBACK`)
+  now orders definitions, etymology notes and examples in `:language`
+  (the word's own language), transcriptions IPA — only the translations
+  stay in `:native`. Strict-JSON contract, five keys, plain strings,
+  caps and the empty-array escape unchanged. The template is seeded
+  into `prompt_templates` (`PromptTemplateSeeder` `firstOrCreate`, like
+  `word.explanation`) so the row is admin-visible/editable; dev
+  reseeded. The Filament resource's placeholder hint lists `:language`.
+- **The import guard holds for AI** (`domains/interactive-words.md`
+  merge bullet, `database/dictionary.md` definitions row):
+  `WordAiEnrichmentService::applyParsed` filters AI definitions through
+  `DefinitionLanguage::keeps()` before insert — a disobedient model's
+  foreign-script definitions drop (en→Latin, ru/be/uk→Cyrillic
+  majority); an all-dropped reply still finalizes SUCCEEDED (only
+  unparseable replies are 502); etymologies stay unguarded, the
+  import's parity.
+- **ADR 0082** gained a dated amendment (2026-10-20) recording both
+  changes; history not rewritten.
+
 ## 2026-10-19 (popup-ai-enrich review fix pass — 8 accepted findings, one commit)
 
 Code-review fixes on the merged ask-AI surface (no schema change, no

@@ -136,7 +136,18 @@ it('adopts a case/ё/stress surface variant onto the EXISTING row — never a du
     mockResolverForAdopt(null, $captured);
 
     // Uppercase + ё-spelled surface (the reader clicked «Ёморок») resolves
-    // the е-keyed row and enriches IT.
+    // the е-keyed row and enriches IT. The reply is monolingual (ticket 08):
+    // the ru word's definitions come back in Cyrillic — a Latin-majority
+    // one would drop at the merge (the import guard holds for AI).
+    $reply = json_encode([
+        'translations' => ['банк', 'прибанок'],
+        'definitions' => ['нечистая сила, наваждение'],
+        'transcriptions' => ['jɪmɐˈrok'],
+        'examples' => ['Ёморок напугал всю деревню.'],
+        'etymologies' => ['От итальянского banca.'],
+    ]);
+    mockResolverForAdopt($reply, $captured);
+
     $response = $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['surface' => 'Ёморок', 'language_code' => 'ru']);
 

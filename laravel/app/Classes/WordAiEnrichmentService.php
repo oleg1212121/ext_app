@@ -12,6 +12,7 @@ use App\Models\TranscriptionType;
 use App\Models\Word;
 use App\Models\WordClass;
 use App\Models\WordTranslation;
+use App\Support\DefinitionLanguage;
 use App\Support\EnrichmentReply;
 use App\Support\LemmaForms;
 use App\Support\StagedTranslations;
@@ -52,6 +53,13 @@ class WordAiEnrichmentService
 
     /**
      * Merge a parsed reply (EnrichmentReply::parse output) into the word.
+     * AI definitions pass the import's {@see DefinitionLanguage}
+     * majority-script guard first (popup-ai-enrich ticket 08): only
+     * own-script definitions reach the insert, so a disobedient model's
+     * foreign-script definitions drop instead of polluting the dictionary —
+     * and an all-dropped reply is NOT an error, the ask itself still
+     * finalizes SUCCEEDED (the endpoint locks the word either way).
+     * Etymologies stay unguarded, the import's deliberate choice.
      *
      * @param  array<string, list<string>>  $parsed
      */
@@ -59,8 +67,14 @@ class WordAiEnrichmentService
     {
         $usable = false;
 
-        DB::transaction(function () use ($word, $parsed, $nativeLanguage, &$usable): void {
-            $usable = $this->mergeAiRows($word, Definition::class, 'definition', $parsed['definitions']) || $usable;
+        $languageCode = (string) $word->language?->code;
+        $definitions = array_values(array_filter(
+            $parsed['definitions'],
+            fn (string $definition): bool => DefinitionLanguage::keeps($languageCode, $definition),
+        ));
+
+        DB::transaction(function () use ($word, $parsed, $definitions, $nativeLanguage, &$usable): void {
+            $usable = $this->mergeAiRows($word, Definition::class, 'definition', $definitions) || $usable;
 
             // Transcriptions carry a NOT NULL per-language type FK: the
             // language's IPA row when it has one, else its first type — a

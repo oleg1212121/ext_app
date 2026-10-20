@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — EVERY 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T14:08:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -582,10 +582,14 @@ marker.
   `word.ask_ai_already` / `word.ask_ai_sending` / `word.ask_ai_failed` /
   `word.ask_ai_retry` (en/ru/be).
 * **The prompt.** `PromptTemplates::enrichment` — admin-editable
-  `prompt_templates` key `word.enrichment` with a code fallback — demands
-  **strict JSON**: translations / definitions / transcriptions / examples
-  / etymologies as string arrays, translations and definitions in the
-  user's native language, examples in the word's own language.
+  `prompt_templates` key `word.enrichment` (seeded `firstOrCreate` from
+  the code fallback, so the row is admin-visible/editable like the
+  explanation prompt) — demands **strict JSON**: translations /
+  definitions / transcriptions / examples / etymologies as string
+  arrays, **monolingual** (2026-10-20, ticket 08): definitions,
+  etymology notes and examples in the word's own language,
+  transcriptions IPA — only the translations are in the user's native
+  language.
 * **Lenient parsing.** `App\Support\EnrichmentReply` strips code fences
   and prose around the outermost `{...}`, coerces (a bare string becomes
   a one-element list, numbers stringify, booleans/nulls/nested
@@ -599,7 +603,12 @@ marker.
   `source = 'ai'`**, null stays imported, and the popup renders no visual
   marker (provenance is DB-only, ADR 0082). AI transcriptions reuse the
   word language's seeded transcription types (IPA first); a language with
-  none simply gets no AI transcriptions. **Translations are link-only**
+  none simply gets no AI transcriptions. **AI definitions pass the
+  import's `DefinitionLanguage` majority-script guard at the merge**
+  (ticket 08): foreign-script definitions drop instead of being stored,
+  an all-dropped reply still finalizes **succeeded** (only unparseable
+  replies are 502), and etymologies stay unguarded — the import's
+  deliberate parity. **Translations are link-only**
   (ADR 0078 holds for AI): candidates normalize (trim, stress marks
   stripped for the target language's rule, over-long and
   sentence-punctuated dropped), resolve against the native language's
@@ -618,8 +627,9 @@ marker.
   enrichment with the resolver mocked at the container — content rows +
   provenance, link + stage + zero word rows, ledger lock/retry/403/400 +
   the stale-pending takeover, the nothing-new success lock, the surface
-  payload, dedup, caps/truncation, template + fallback, validation,
-  throttle),
+  payload, dedup, caps/truncation, template + fallback + the monolingual
+  script-guard pins (foreign-script definitions dropped, own-script kept,
+  all-dropped still succeeded), validation, throttle),
   `tests/Feature/AiWordEnrichAdoptTest.php` (the ticket 05 adoption path:
   mint + lemma form + unknown class, ё/case/stress adoption onto the
   existing row, the pending double-ask 409, no-model mints nothing,

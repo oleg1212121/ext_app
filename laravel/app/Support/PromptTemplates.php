@@ -38,13 +38,15 @@ class PromptTemplates
         .':native equivalent word or phrase. Markdown formatting is allowed. Do not repeat the sentences back.';
 
     public const ENRICHMENT_FALLBACK = 'You are a dictionary assistant for a language learner. '
-        .'Enrich the dictionary entry for the :language word «:word». Reply in :native. '
+        .'Enrich the dictionary entry for the :language word «:word». '
+        .'This is a monolingual dictionary: definitions, etymology notes and examples are written in :language, '
+        .'like any :language dictionary entry; only the translations point to :native. '
         .'Answer with ONLY a JSON object — no prose, no markdown, no code fences — with exactly these keys, '
         .'each a JSON array of plain strings: translations (the closest :native equivalent words, 3 to 12), '
-        .'definitions (short :native definitions of the word\'s main senses, up to 8), '
-        .'transcriptions (the word\'s pronunciations, up to 4), '
+        .'definitions (short :language definitions of the word\'s main senses, up to 8), '
+        .'transcriptions (the word\'s pronunciations in IPA, up to 4), '
         .'examples (short example sentences in :language, up to 4), '
-        .'etymologies (short :native etymology notes, up to 4). '
+        .'etymologies (short :language etymology notes, up to 4). '
         .'Every string must be plain text with no numbering and no markdown. '
         .'Use an empty array for a key you cannot fill.';
 

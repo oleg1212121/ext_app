@@ -11,8 +11,8 @@ uses(TestCase::class, RefreshDatabase::class);
 it('seeds one row per prompt key', function () {
     app(PromptTemplateSeeder::class)->run();
 
-    expect(PromptTemplate::query()->count())->toBe(3);
-    foreach ([PromptTemplates::FORMAT_KEY, PromptTemplates::TASKS_KEY, PromptTemplates::EXPLANATION_KEY] as $key) {
+    expect(PromptTemplate::query()->count())->toBe(4);
+    foreach ([PromptTemplates::FORMAT_KEY, PromptTemplates::TASKS_KEY, PromptTemplates::EXPLANATION_KEY, PromptTemplates::ENRICHMENT_KEY] as $key) {
         expect(PromptTemplate::query()->where('key', $key)->exists())->toBeTrue();
     }
 });
@@ -26,13 +26,15 @@ it('seeds the fallback text', function () {
         ->toBe(PromptTemplates::TASKS_FALLBACK);
     expect(PromptTemplate::query()->where('key', PromptTemplates::EXPLANATION_KEY)->value('text'))
         ->toBe(PromptTemplates::EXPLANATION_FALLBACK);
+    expect(PromptTemplate::query()->where('key', PromptTemplates::ENRICHMENT_KEY)->value('text'))
+        ->toBe(PromptTemplates::ENRICHMENT_FALLBACK);
 });
 
 it('is idempotent', function () {
     app(PromptTemplateSeeder::class)->run();
     app(PromptTemplateSeeder::class)->run();
 
-    expect(PromptTemplate::query()->count())->toBe(3);
+    expect(PromptTemplate::query()->count())->toBe(4);
 });
 
 it('preserves admin-edited text on re-seed', function () {
@@ -45,5 +47,5 @@ it('preserves admin-edited text on re-seed', function () {
 
     expect(PromptTemplate::query()->where('key', PromptTemplates::FORMAT_KEY)->value('text'))
         ->toBe('admin custom prompt');
-    expect(PromptTemplate::query()->count())->toBe(3);
+    expect(PromptTemplate::query()->count())->toBe(4);
 });
