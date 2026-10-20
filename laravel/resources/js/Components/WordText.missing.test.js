@@ -44,7 +44,7 @@ const interactiveTokenSource = wordTextSource.slice(
 const portalSource = wordTextSource.slice(wordTextSource.indexOf('{popup && createPortal('));
 
 // The detail fetch effect: from its useEffect opener to the fetch itself.
-const fetchAt = popupSource.indexOf('fetch(`/words/${wordId}?surface=');
+const fetchAt = popupSource.indexOf('fetch(`/words/${fetchId}?surface=');
 const fetchEffectSource = popupSource.slice(
     popupSource.lastIndexOf('useEffect(() => {', fetchAt),
     fetchAt,
@@ -139,21 +139,25 @@ describe('WordText → WordPopup: the column language rides along', () => {
 });
 
 describe('WordPopup: missing mode', () => {
-    it('skips the detail fetch entirely when there is no word id', () => {
+    it('skips the detail fetch until an id exists — bound, or re-resolved by the lookup', () => {
         // The guard sits between the effect's opening and the fetch, so no
-        // GET /words/ can fire for a missing token.
-        expect(fetchEffectSource).toMatch(/if \(wordId == null\) \{\s*return;\s*\}/);
+        // GET /words/ can fire for a token without a word id — mapped
+        // directly, or re-resolved by ticket 07's on-open lookup (the
+        // lookedUpId state feeding fetchId). A missing token with no
+        // descriptor never gains an id, so its zero-fetch contract holds.
+        expect(fetchEffectSource).toMatch(/const fetchId = wordId \?\? lookedUpId;/);
+        expect(fetchEffectSource).toMatch(/if \(fetchId == null\) \{\s*return;\s*\}/);
         // The mapped path's fetch itself is untouched.
-        expect(popupSource).toContain('fetch(`/words/${wordId}?surface=${encodeURIComponent(surface)}`');
+        expect(popupSource).toContain('fetch(`/words/${fetchId}?surface=${encodeURIComponent(surface)}`');
     });
 
     it('renders the missing card until the adoption ask swaps a payload in', () => {
         const ternaryAt = popupRenderSource.indexOf(') : (');
-        expect(popupRenderSource).toMatch(/wordId == null && data == null \? \(/);
+        expect(popupRenderSource).toMatch(/wordId == null && lookedUpId == null && data == null \? \(/);
         expect(ternaryAt).toBeGreaterThan(-1);
         // The missing branch holds only the missing card — the ticket 05
         // ask handler goes live on it only when a column language exists…
-        const missingBranch = popupRenderSource.slice(popupRenderSource.indexOf('wordId == null && data == null ? ('), ternaryAt);
+        const missingBranch = popupRenderSource.slice(popupRenderSource.indexOf('wordId == null && lookedUpId == null && data == null ? ('), ternaryAt);
         expect(missingBranch).toContain('surface={surface}');
         expect(missingBranch).toContain('<MissingPopupContent');
         expect(missingBranch).toContain('askAiMissing');

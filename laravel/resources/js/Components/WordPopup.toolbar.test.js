@@ -324,8 +324,9 @@ describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
         expect(runEnrich).toContain('setData(json.data)');
         // The render branch: the missing card holds until a payload exists,
         // then PopupContent renders it — the transition to the dictionary
-        // view.
-        expect(popupBody).toMatch(/wordId == null && data == null \? \(/);
+        // view. (Ticket 07's lookedUpId leaves the branch the same way: a
+        // resolved id loads the payload through the fetch effect.)
+        expect(popupBody).toMatch(/wordId == null && lookedUpId == null && data == null \? \(/);
     });
 
     it('guards against stale responses landing on a moved popup', () => {
@@ -333,8 +334,9 @@ describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
         // (a payload the fetch effect already replaced is never adopted)
         // plus the word id / surface / column language the ask started
         // from, which is how the missing card's null-data ask is pinned to
-        // its token.
-        expect(runEnrich.match(/staleAsk\(origin\)/g)).toHaveLength(2);
+        // its token. Ticket 07's 409 sync reuses the same guard on its two
+        // late-landing refetch paths.
+        expect(runEnrich.match(/staleAsk\(origin\)/g)).toHaveLength(4);
         expect(popupBody).toMatch(/dataRef\.current !== origin\.data/);
         expect(popupBody).toMatch(/originRef\.current\.surface !== origin\.surface/);
         expect(popupBody).toMatch(/originRef\.current\.languageCode !== origin\.languageCode/);
@@ -345,7 +347,7 @@ describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
         // error line and its status for the new word.
         const reset = popupBody.slice(
             popupBody.indexOf("setAnkiExisting('checking');"),
-            popupBody.indexOf('fetch(`/words/${wordId}'),
+            popupBody.indexOf('fetch(`/words/${fetchId}'),
         );
         expect(reset).toContain('setAiBusy(false)');
         expect(reset).toContain('setAiError(null)');

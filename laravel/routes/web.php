@@ -88,6 +88,14 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::get('/recommendations', [RecommendationsController::class, 'index'])
         ->name('recommendations.index');
 
+    // The popup's on-open re-resolution (popup-ai-enrich ticket 07): a
+    // missing-mode surface resolves to its word id — read-only, id-only;
+    // the popup fetches the payload through GET /words/{word} below, so no
+    // payload shape is duplicated. whereNumber on {word} keeps the paths
+    // disjoint regardless of order.
+    Route::post('/words/lookup', [WordController::class, 'lookup'])
+        ->name('words.lookup')
+        ->middleware('throttle:60,1');
     Route::get('/words/{word}', [WordController::class, 'show'])
         ->whereNumber('word')
         ->name('words.show');

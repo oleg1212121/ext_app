@@ -1,12 +1,12 @@
 ---
 type: Feature
 title: Interactive Words
-description: Interactive words on the reader and bilinguals simulator — EVERY tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (popup-ai-enrich ticket 03): dictionary-linked tokens open word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; entries stable-sort completeness-descending over that assembly order — stored words.completeness 0-7, recalculated lazily when stale), unmapped tokens open a missing-word card (raw surface title + honest not-in-the-dictionary note, nothing fetched, no lookup events; its live Ask-AI icon is the card's only path into the dictionary — adopt-on-ask (ticket 05) POSTs {surface, language_code}, the server derives the ADR 0081 lookup key and adopts onto the existing row (case/ё/stress variants never duplicate) or mints exactly one unknown-class word with its lemma form, then runs the same enrichment; a concurrent double-ask loses to the ledger's unique word constraint with a clean retryable-later 409), per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon (one ledger-locked BYO-key enrichment per word, merged inline under per-row source='ai' provenance, ADR 0082), the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
+description: Interactive words on the reader and bilinguals simulator — EVERY tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (popup-ai-enrich ticket 03): dictionary-linked tokens open word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; entries stable-sort completeness-descending over that assembly order — stored words.completeness 0-7, recalculated lazily when stale), unmapped tokens open a missing-word card (raw surface title + honest not-in-the-dictionary note; on open the popup re-resolves the surface server-side (ticket 07 POST /words/lookup → {word_id}, read-only) so an adopt-on-ask mint stays found after any reload — a hit opens the full dictionary view with ai_asked grey, a miss leaves the honest card with no other traffic; its live Ask-AI icon is the card's only path into the dictionary — adopt-on-ask (ticket 05) POSTs {surface, language_code}, the server derives the ADR 0081 lookup key and adopts onto the existing row (case/ё/stress variants never duplicate) or mints exactly one unknown-class word with its lemma form, then runs the same enrichment; a concurrent double-ask loses to the ledger's unique word constraint with a clean retryable-later 409, and any ask 409 syncs the popup — payload refetch on the known path, lookup re-run on the missing card — so the icon greys), per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon (one ledger-locked BYO-key enrichment per word, merged inline under per-row source='ai' provenance, ADR 0082), the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place, an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-19T22:20:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-19T22:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
     resource: laravel/app/Http/Controllers/WordController.php
@@ -273,9 +273,11 @@ mode** (`Components/WordPopup.jsx`'s exported `MissingPopupContent`, rendered
 while `wordId` is null and no payload sits in `data`): the **raw clicked
 surface** as the title — the folded `l_word` key would show ё-folded,
 mark-stripped text — and one honest note, `word.not_in_dictionary` ("This
-word isn't in the dictionary yet."). **Nothing runs on open**: no
-`GET /words/` (the detail-fetch effect returns before its fetch when
-`wordId` is null), no `/word-events` lookup (there is no word id to
+word isn't in the dictionary yet."). **Almost nothing runs on open**: the
+one request is ticket 07's re-resolution lookup (below) when a column
+descriptor exists; no `GET /words/` fires until it resolves an id (the
+detail-fetch effect returns before its fetch while `fetchId` — `wordId ??
+lookedUpId` — is null), no `/word-events` lookup (there is no word id to
 ledger), and no familiarity / frequency / form-of lines. The toolbar shows
 only what applies — the **live Ask-AI icon** (below): know / remove / Anki /
 the Explanation toggle / the robot are inapplicable there, and ask-AI is the
@@ -326,6 +328,44 @@ guidance verbatim beneath the toolbar through the shared `AskAiError`
 render: the no-model (400) and no-key (403)
 answers carry the explain pane's go-to-settings link, and the Retry
 control re-sends the ask (word.ask_ai_retry).
+
+## Re-resolution: the asked-once word stays found (popup-ai-enrich ticket 07)
+
+Adopt-on-ask persists the minted word, but nothing links it into the page's
+`entity_words` map (that is `entities:enrich`'s job, scheduled — and dev
+runs no scheduler), so after any reload the token re-opened the missing
+card with a live Ask-AI icon over an already-asked word. The popup now
+re-resolves the surface server-side before the missing card settles:
+
+* **The read path.** On open in missing mode with a column language
+  descriptor (the same condition the ask uses), `WordPopup.jsx` POSTs
+  `POST /words/lookup` `{surface, language_code}` once (`WordLookupRequest`
+  mirrors the adoption-mode validation rules; throttle 60/min,
+  auth+approved). The endpoint answers `{data: {word_id: int|null}}` — the
+  id ALONE: the popup then fetches the full payload through the existing
+  `GET /words/{word}?surface=`, so no payload shape is duplicated. The
+  resolution is `WordAiEnrichmentService::resolveSurface`, the READ-ONLY
+  half extracted from `resolveOrAdopt` (which calls it and only mints on
+  null): normalize via `WordLookupKey`, query `(language_id, l_word)`,
+  classed row beats the unknown placeholder — with the unknown class id
+  resolved READ-ONLY, so a language whose placeholder row was never minted
+  falls back to the first candidate and a lookup can never create a row
+  (only `resolveOrAdopt`, the ask path, mints).
+* **The popup.** A hit stores the id (`lookedUpId`), which feeds the
+  detail-fetch effect (`fetchId = wordId ?? lookedUpId`) — the dictionary
+  view loads exactly like a mapped token's, and its `ai_asked` greys the
+  Ask-AI icon for an already-asked word. A null (genuine miss) — or a
+  failed lookup — leaves ticket 03's card untouched; the icon only
+  disables while the resolve is in flight (`lookupBusy`). The lookup
+  effect guards late answers with the fetch effect's `cancelled` pattern
+  (popup closed / surface moved drop the response). No descriptor → no
+  lookup, the card as ticket 03 rendered it.
+* **The 409 sync.** A 409 from the ask ("already been completed" or "in
+  progress" — both ledger gates) no longer leaves the icon live over a
+  stale payload: the known path refetches `/words/{id}?surface=` and swaps
+  it in under the same `staleAsk` guard; the missing card, whose adopted
+  word id the client never learns, re-runs its lookup instead — the minted
+  word resolves and the fetch effect loads the locked payload.
 
 # Auto-fetched translations
 
@@ -734,6 +774,7 @@ see [Profile](/domains/profile.md) for the Anki tab side):
 | Route | Handler | Purpose |
 |-------|---------|---------|
 | `GET /words/{word}` | `WordController::show` | Word popup payload (assembled by the shared `WordPopupPayload`): the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) stable-sorted completeness-descending (stored `words.completeness`, lazily recalculated when stale during the resolve) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked), `tags` (the linked word's tag names — for the Anki card; eager-loaded with the family via `WordFamily::EAGER_LOAD`, no per-open lazy query), `ai_asked` (a succeeded ask-AI ledger row exists — the toolbar's grey-icon flag) |
+| `POST /words/lookup` | `WordController::lookup` | The popup's on-open re-resolution (ticket 07, `WordLookupRequest` — the adoption-mode rules minus the word-id mode, throttle 60/min): the RAW clicked surface + the clicked column's language code resolve read-only through `WordAiEnrichmentService::resolveSurface` (the extracted read-only half of `resolveOrAdopt` — classed row over the unknown placeholder, first candidate when no unknown row exists, NEVER mints) → `{data: {word_id: int|null}}`; the popup fetches the payload through `GET /words/{word}` so no shape is duplicated |
 | `POST /ai/word-enrich` | `ReadingAiController::enrichWord` | Ask-AI enrichment, two modes (`AiWordEnrichRequest`, throttle 20/min): `{word_id}` for a known word (ticket 04 — an optional `surface` rides along so the payload resolves from the clicked surface) or `{surface, language_code}` for the missing card's adopt-on-ask (ticket 05 — `WordAiEnrichmentService::resolveOrAdopt` adopts onto the existing lookup-key hit or mints one unknown-class word with its lemma form, then the shared flow). Explanation-model strict-JSON ask through `AIModelResolver::ask` (the ledger's provider/model split through `parseModelString`), lenient parse (`EnrichmentReply`), transactional merge with per-row `source='ai'` provenance and link-only translations (`WordAiEnrichmentService`), `word_ai_fetches` ledger locking on success (a fresh pending row / a lost unique-constraint insert answers a clean retryable 409; a pending row past the 15-minute grace is taken over by the retry); responds the word-show payload so the popup swaps it live (ADR 0082) |
 | `POST /ai/word-explain` | `ReadingAiController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |
 | `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |

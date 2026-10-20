@@ -33,8 +33,10 @@ use Illuminate\Support\Facades\DB;
  * endpoint no longer branches on: a parsed reply locks the word either way,
  * because the ask itself succeeded (nothing new means the content was
  * already present). The ONE word-minting method is {@see resolveOrAdopt},
- * the missing popup's adopt-on-ask resolution (ticket 05), which runs before
- * any enrichment.
+ * the missing popup's adopt-on-ask resolution (ticket 05), which runs
+ * before any enrichment; its read-only half {@see resolveSurface} (ticket
+ * 07) serves the popup's on-open re-resolution lookup without ever
+ * creating a row.
  */
 class WordAiEnrichmentService
 {
@@ -157,23 +159,14 @@ class WordAiEnrichmentService
      */
     public function resolveOrAdopt(string $surface, Language $language): Word
     {
-        $key = WordLookupKey::normalize($surface);
-        $unknownClassId = $this->ensureUnknownClass((int) $language->id);
-
-        $candidates = Word::query()
-            ->where('language_id', $language->id)
-            ->where('l_word', $key)
-            ->orderBy('id')
-            ->get();
-
-        // A properly classed row beats the unknown placeholder; the lowest
-        // id takes it otherwise (EntityWordAdoption::preferClassed's rule).
-        $existing = $candidates->first(fn (Word $word): bool => (int) $word->word_class_id !== $unknownClassId)
-            ?? $candidates->first();
+        $existing = $this->resolveSurface($surface, $language);
 
         if ($existing !== null) {
             return $existing;
         }
+
+        $key = WordLookupKey::normalize($surface);
+        $unknownClassId = $this->ensureUnknownClass((int) $language->id);
 
         $stripsMarks = StressMarks::stripsFor($language->code);
         $display = $stripsMarks ? StressMarks::strip($surface) : $surface;
@@ -191,6 +184,44 @@ class WordAiEnrichmentService
         }
 
         return $word;
+    }
+
+    /**
+     * The read-only half of {@see resolveOrAdopt} (popup-ai-enrich ticket
+     * 07): the RAW surface resolves through the shared {@see WordLookupKey}
+     * key against the language's rows, a properly classed row beating the
+     * unknown placeholder (the lowest id takes it otherwise,
+     * `EntityWordAdoption::preferClassed`'s rule) — and NULL when nothing
+     * carries the key. The 'unknown' class id resolves READ-ONLY here: a
+     * language whose placeholder row was never minted simply has no
+     * placeholder to lose against (the first candidate wins), because a
+     * lookup must never create anything — the popup's on-open
+     * re-resolution runs on every missing-card open, and a silent
+     * word-class write would ride on a read. Only {@see resolveOrAdopt},
+     * the ask path, mints.
+     */
+    public function resolveSurface(string $surface, Language $language): ?Word
+    {
+        $key = WordLookupKey::normalize($surface);
+
+        $candidates = Word::query()
+            ->where('language_id', $language->id)
+            ->where('l_word', $key)
+            ->orderBy('id')
+            ->get();
+
+        // A properly classed row beats the unknown placeholder; the lowest
+        // id takes it otherwise (EntityWordAdoption::preferClassed's rule).
+        // With no unknown row at all (null id) every candidate counts as
+        // classed — the first candidate wins, the fallback the contract
+        // names.
+        $unknownClassId = WordClass::query()
+            ->where('language_id', $language->id)
+            ->where('slug', 'unknown')
+            ->value('id');
+
+        return $candidates->first(fn (Word $word): bool => (int) $word->word_class_id !== $unknownClassId)
+            ?? $candidates->first();
     }
 
     /**

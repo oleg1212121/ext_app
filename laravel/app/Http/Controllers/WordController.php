@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Classes\WordAiEnrichmentService;
 use App\Classes\WordFamiliarityService;
 use App\Classes\WordFamily;
 use App\Classes\WordPopupPayload;
@@ -9,6 +10,8 @@ use App\Classes\WordTranslationFetchService;
 use App\Classes\WordTranslations\WordTranslationResolver;
 use App\Http\Requests\RecordWordEventsRequest;
 use App\Http\Requests\UpdateWordProgressRequest;
+use App\Http\Requests\WordLookupRequest;
+use App\Models\Language;
 use App\Models\UserWord;
 use App\Models\Word;
 use App\Models\WordTranslation;
@@ -19,7 +22,10 @@ use Illuminate\Support\Collection;
 
 class WordController extends Controller
 {
-    public function __construct(private readonly WordFamiliarityService $familiarity) {}
+    public function __construct(
+        private readonly WordFamiliarityService $familiarity,
+        private readonly WordAiEnrichmentService $enrichment,
+    ) {}
 
     /**
      * Dictionary details for the word popup: the linked word's word family
@@ -47,6 +53,31 @@ class WordController extends Controller
         return response()->json([
             'data' => WordPopupPayload::fromFamily($word, $family, $surface, $request->user()),
         ]);
+    }
+
+    /**
+     * The popup's on-open re-resolution (popup-ai-enrich ticket 07): a
+     * missing-mode popup resolves its RAW clicked surface against the
+     * clicked column's language BEFORE rendering the missing card — a word
+     * a previous adopt-on-ask minted (persisted, but never linked into the
+     * page's entity_words map; the scheduler that would is `entities:enrich`)
+     * resolves to its id, the popup then fetches the full payload through
+     * GET /words/{word} above, and an already-asked word opens with its
+     * greyed icon instead of a re-ask that could only 409. Read-only by
+     * contract (WordAiEnrichmentService::resolveSurface never mints): a
+     * miss answers a null word_id and the honest missing card stays. The
+     * response is the id ALONE — the payload shape stays owned by the
+     * word-show endpoint, nothing is duplicated.
+     */
+    public function lookup(WordLookupRequest $request): JsonResponse
+    {
+        $language = Language::query()
+            ->where('code', (string) $request->validated('language_code'))
+            ->firstOrFail();
+
+        $word = $this->enrichment->resolveSurface((string) $request->validated('surface'), $language);
+
+        return response()->json(['data' => ['word_id' => $word?->id]]);
     }
 
     /**

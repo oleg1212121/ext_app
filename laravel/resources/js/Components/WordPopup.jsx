@@ -946,6 +946,32 @@ export function PopupContent({
  * The body itself lives in the exported PopupContent, which the profile's
  * Popups tab reuses for its live preview.
  */
+
+// The missing-mode re-resolution POST (popup-ai-enrich ticket 07), shared
+// by the popup's on-open resolve and its 409 sync: the RAW clicked surface
+// plus the clicked column's language code — the server derives the lookup
+// key (never trusting the title) — CSRF-signed like every mutating call.
+// Resolves the found word's id (null = genuinely missing); a transport
+// failure collapses to the same null, so every caller degrades to the
+// plain missing card instead of growing an error state of its own.
+const postLookup = (surface, languageCode) => fetch('/words/lookup', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(getCsrfToken() ? {'X-CSRF-TOKEN': getCsrfToken()} : {}),
+    },
+    body: JSON.stringify({surface, language_code: languageCode}),
+})
+    .then(async (res) => {
+        if (!res.ok) {
+            throw new Error(String(res.status));
+        }
+        return res.json();
+    })
+    .then((json) => json?.data?.word_id ?? null)
+    .catch(() => null);
+
 export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain, sections, language = null}) {
     const {t} = useI18n();
     const {props} = usePage();
@@ -966,6 +992,17 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     const [aiBusy, setAiBusy] = useState(false);
     const [aiError, setAiError] = useState(null);
     const [aiErrorStatus, setAiErrorStatus] = useState(null);
+    // The on-open re-resolution (popup-ai-enrich ticket 07): a missing-mode
+    // popup with a column language descriptor resolves its RAW surface
+    // server-side before the missing card settles — a hit means the word
+    // exists (a previous adopt-on-ask minted it; the page's word map just
+    // never learned it), so `lookedUpId` feeds the fetch effect below and
+    // the loaded payload's ai_asked greys the icon. A null (a genuine
+    // miss) — or a failed lookup — leaves ticket 03's missing card exactly
+    // as it was. `lookupBusy` holds the card's ask icon while the resolve
+    // is in flight.
+    const [lookedUpId, setLookedUpId] = useState(null);
+    const [lookupBusy, setLookupBusy] = useState(false);
     // The on-open duplicate check's outcome for the current word:
     // 'checking' while the findNotes round-trip is in flight (the icon
     // stays in add form — no spinner), 'found' once the word sits in its
@@ -1012,8 +1049,13 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     useEffect(() => {
         // Missing mode (popup-ai-enrich ticket 03): no word id — nothing to
         // fetch and no payload state to reset; the card renders from the
-        // surface alone. No GET /words/ may fire for a missing token.
-        if (wordId == null) {
+        // surface alone. No GET /words/ may fire for a token without an id
+        // — unless the on-open lookup resolved one (popup-ai-enrich ticket
+        // 07): fetchId is then the word the surface re-resolved to,
+        // fetched exactly like a mapped token so the payload's ai_asked
+        // drives the toolbar's grey icon.
+        const fetchId = wordId ?? lookedUpId;
+        if (fetchId == null) {
             return;
         }
         let cancelled = false;
@@ -1032,7 +1074,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         setAiError(null);
         setAiErrorStatus(null);
 
-        fetch(`/words/${wordId}?surface=${encodeURIComponent(surface)}`, {
+        fetch(`/words/${fetchId}?surface=${encodeURIComponent(surface)}`, {
             headers: {Accept: 'application/json'},
         })
             .then(async (res) => {
@@ -1060,7 +1102,34 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         return () => {
             cancelled = true;
         };
-    }, [wordId, surface, t]);
+    }, [wordId, lookedUpId, surface, t]);
+
+    // The on-open re-resolution (popup-ai-enrich ticket 07): in missing
+    // mode with a column language descriptor the popup POSTs /words/lookup
+    // once per open — the minted word a previous adopt-on-ask left behind
+    // re-links to the page (`entities:enrich`, the scheduler dev never
+    // runs, is the only other linker). A hit flips the popup into known
+    // mode through the fetch effect above; a null word_id (or a failed
+    // lookup) leaves the missing card. The cancelled guard mirrors the
+    // fetch effect's: a popup closed or moved to another surface drops the
+    // late answer instead of resolving the wrong token.
+    useEffect(() => {
+        setLookedUpId(null);
+        if (wordId != null || language?.code == null) {
+            return;
+        }
+        let cancelled = false;
+        setLookupBusy(true);
+        postLookup(surface, language.code).then((found) => {
+            if (!cancelled) {
+                setLookupBusy(false);
+                setLookedUpId(found);
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [wordId, surface, language?.code]);
 
     // On-open duplicate detection (anki-popup-refresh): the popup silently
     // asks Anki whether this word is already saved — scoped to the word's
@@ -1264,6 +1333,37 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                 setAiError(e instanceof Error && e.message
                     ? e.message
                     : t('word.ask_ai_failed', {status: '?'}));
+
+                // The 409 sync (popup-ai-enrich ticket 07): both ledger
+                // gates answer 409, and "already been completed" means the
+                // loaded payload's ai_asked is stale — the icon would stay
+                // live over a word no ask can touch again. Refetch the
+                // payload so the icon greys; the missing card has no id to
+                // refetch (the adopt-on-ask 409 carries no payload), so its
+                // lookup re-resolves the adopted word and the fetch effect
+                // loads the locked payload. A pending "in progress" 409
+                // refetches harmlessly — ai_asked stays false until the
+                // winner's ask succeeds.
+                if (e.status === 409) {
+                    if (origin.data?.id != null) {
+                        fetch(`/words/${origin.data.id}?surface=${encodeURIComponent(surface)}`, {
+                            headers: {Accept: 'application/json'},
+                        })
+                            .then(async (res) => (res.ok ? res.json() : null))
+                            .then((json) => {
+                                if (json && !staleAsk(origin)) {
+                                    setData(json.data);
+                                }
+                            })
+                            .catch(() => {});
+                    } else if (language?.code != null) {
+                        postLookup(surface, language.code).then((found) => {
+                            if (found != null && !staleAsk(origin)) {
+                                setLookedUpId(found);
+                            }
+                        });
+                    }
+                }
             });
     };
 
@@ -1304,18 +1404,19 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             style={{...popupStyle(rect, fontSize), fontSize: `${fontSize}px`}}
             className={`word-popup absolute z-50 ${popupContainerClass}`}
         >
-            {wordId == null && data == null ? (
+            {wordId == null && lookedUpId == null && data == null ? (
                 // Missing mode (popup-ai-enrich ticket 03) until the
-                // adoption ask swaps a payload in (ticket 05): the unmapped
-                // token's card — raw surface, honest not-in-dictionary note,
-                // the live Ask-AI icon. No fetch, no word-events, no
-                // familiarity/frequency/form-of, no progress/Anki actions —
-                // ask-AI is the only path from missing to populated, and the
-                // response payload moves the popup to the full dictionary
-                // view below.
+                // adoption ask swaps a payload in (ticket 05) or the
+                // on-open lookup resolves a hit (ticket 07): the unmapped
+                // token's card — raw surface, honest not-in-dictionary
+                // note, the live Ask-AI icon. No fetch, no word-events, no
+                // familiarity/frequency/form-of, no progress/Anki actions
+                // — ask-AI is the only path from missing to populated, and
+                // the response payload moves the popup to the full
+                // dictionary view below.
                 <MissingPopupContent
                     surface={surface}
-                    onAskAi={language?.code != null ? askAiMissing : null}
+                    onAskAi={language?.code != null && !lookupBusy ? askAiMissing : null}
                     aiBusy={aiBusy}
                     aiError={aiError}
                     aiErrorStatus={aiErrorStatus}

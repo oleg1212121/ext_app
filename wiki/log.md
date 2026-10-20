@@ -86,6 +86,53 @@ all already present from the code tickets); `wiki:validate` conformant.
 Verification battery on the integration branch: full `composer run test`,
 `npm run test`, `pint --dirty` — numbers in the ticket file.
 
+## 2026-10-20 (popup-ai-enrich 07: missing-word re-resolution — the asked-once word stays found)
+
+The adopt-on-ask persistence gap closed (ticket 07, the follow-up spec's
+item 6; diagnosis verified against the dev DB 2026-10-20: the minted words
+persist with `source='ai'` rows and succeeded ledger entries, but nothing
+links them into the page's `entity_words` map — `entities:enrich` is
+scheduled and dev runs no scheduler):
+
+- **`POST /words/lookup`** (`WordController::lookup`, auth+approved,
+  throttle 60/min, beside `GET /words/{word}`; new `WordLookupRequest`
+  mirroring the adoption-mode validation rules — surface max 256 with the
+  empty-key rejection, `exists:languages,code`): takes the RAW clicked
+  surface + the clicked column's language code, answers
+  `{data: {word_id: int|null}}` — the id alone, the payload shape stays
+  owned by `GET /words/{word}`.
+- **`WordAiEnrichmentService::resolveSurface`**: the read-only half of
+  `resolveOrAdopt` extracted (which now calls it and only mints on null —
+  exact behavior kept): `WordLookupKey` normalize, query
+  `(language_id, l_word)`, classed row beats the unknown placeholder with
+  the unknown class id resolved READ-ONLY (a language without the
+  placeholder row falls back to the first candidate — a lookup can never
+  create a word-class or word row).
+- **`WordPopup.jsx`**: a missing-mode popup with a language descriptor
+  POSTs the lookup once on open (`postLookup` module helper, CSRF-signed);
+  a hit stores `lookedUpId`, which feeds the detail-fetch effect
+  (`fetchId = wordId ?? lookedUpId`) — the dictionary view loads like a
+  mapped token's and `ai_asked` greys the icon; a miss (or a failed
+  lookup) leaves ticket 03's card untouched, the ask icon only disabled
+  while the resolve is in flight (`lookupBusy`); the lookup effect guards
+  stale answers with the fetch effect's `cancelled` pattern. A 409 from
+  the ask now syncs the popup: the known path refetches
+  `/words/{id}?surface=` and swaps it in under the `staleAsk` guard, the
+  missing card re-runs its lookup (the adopted id is unknown client-side).
+  Render branch grew the `lookedUpId == null` conjunct.
+- Tests: new `tests/Feature/WordLookupEndpointTest.php` (7 tests —
+  classed-over-unknown, the minted-word resolution (the report's exact
+  shape with the succeeded ledger), ё/stress variants, null miss,
+  no-unknown-class-created read path, validation, guests 401 +
+  unapproved-redirect); vitest source pins updated in
+  `WordText.missing.test.js` + `WordPopup.toolbar.test.js` and added in
+  `WordPopup.lookup.test.js` (242 pass total); enrich suites re-run green
+  (23); full `test:tia` green, pint clean.
+- Wiki: this entry; `interactive-words.md` (missing-card "almost nothing
+  runs on open", new re-resolution section, routes row, description);
+  `generated.at` bumped. `wiki:sync` re-stamped references for the new
+  route.
+
 ## 2026-10-19 (popup-ai-enrich 05: adopt-on-ask — the missing popup's path into the dictionary)
 
 The missing-word card's Ask-AI icon went live (ticket 05 of the
