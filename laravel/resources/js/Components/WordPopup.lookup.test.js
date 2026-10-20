@@ -9,13 +9,13 @@ import {describe, expect, it} from 'vitest';
 // /words/lookup, one shared helper, CSRF-signed) BEFORE the missing card
 // settles — a hit feeds the existing fetch effect (`wordId ?? lookedUpId`),
 // so the minted word a previous adopt-on-ask left behind opens the full
-// dictionary view with `ai_asked` grey, instead of a re-ask that could only
-// 409; a null (miss) — or a failed lookup — leaves ticket 03's card
+// dictionary view with `ai_asked` picking the re-ask icon variant; a null
+// (miss) — or a failed lookup — leaves ticket 03's card
 // untouched, and no lookup fires without a language descriptor. Stale
 // answers (popup closed / surface moved) drop through the fetch effect's
-// cancelled guard. A 409 from the ask ("already been completed" / "in
-// progress") syncs the popup with the ledger instead of leaving the icon
-// live: the known path refetches the payload, the missing card — whose
+// cancelled guard. A 409 from the ask (the "in progress" gate) syncs the
+// popup with the ledger instead of leaving the ask state stale: the known
+// path refetches the payload, the missing card — whose
 // adopted word id the client never learns — re-runs its lookup.
 
 const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
@@ -74,7 +74,7 @@ describe('WordPopup: the on-open lookup (ticket 07)', () => {
     it('a hit flips the popup into known mode through the existing fetch effect', () => {
         // The fetch id is the bound word OR the looked-up id — the payload
         // loads exactly like a mapped token's, so the ledger's ai_asked
-        // greys the icon for the already-asked word.
+        // picks the re-ask icon variant for the already-asked word.
         expect(fetchEffectSource).toMatch(/const fetchId = wordId \?\? lookedUpId;/);
         expect(fetchEffectSource).toMatch(/if \(fetchId == null\) \{/);
         // The lookup effect stores the resolved id…
@@ -124,7 +124,7 @@ describe('WordPopup: the on-open lookup (ticket 07)', () => {
 });
 
 describe('WordPopup: the 409 ask sync (ticket 07)', () => {
-    it('refetches the word payload on a known-path 409 so ai_asked greys the icon', () => {
+    it('refetches the word payload on a known-path 409 — a harmless sync with the ledger', () => {
         expect(runEnrichSource).toContain('if (e.status === 409)');
         // The refetch is the same word-show GET the payload came from…
         expect(runEnrichSource).toContain('fetch(`/words/${origin.data.id}?surface=${encodeURIComponent(surface)}`');
@@ -136,7 +136,7 @@ describe('WordPopup: the 409 ask sync (ticket 07)', () => {
     it('re-resolves instead on the missing path — the adopted word id is unknown client-side', () => {
         // The adopt-on-ask 409 carries no payload, so there is no id to
         // refetch: the lookup resolves the minted word and the fetch
-        // effect loads its locked payload (ai_asked true).
+        // effect loads its payload (ai_asked true, the re-ask icon).
         expect(runEnrichSource).toContain('postLookup(surface, language.code)');
         expect(runEnrichSource).toContain('setLookedUpId(found)');
     });

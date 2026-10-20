@@ -121,7 +121,8 @@ it('enriches a sparse word end to end with the faked AI: content rows, link-only
     expect($word->translations)->toContain('прибанок');
     expect(Word::query()->count())->toBe(2);
 
-    // The ledger locks the word on success.
+    // The ledger finalizes the ask on success (succeeded is not a lock —
+    // the toolbar's re-ask icon rides on it).
     $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->firstOrFail();
     expect($ledger->status)->toBe('succeeded');
     expect($ledger->attempts)->toBe(1);
@@ -146,29 +147,92 @@ it('enriches a sparse word end to end with the faked AI: content rows, link-only
     expect($captured['model'])->toBe('openrouter:google/gemini-3-flash-preview');
 });
 
-it('rejects an already-asked word without touching the AI again', function () {
+it('re-asks an already-enriched word: the previous AI rows are replaced, imported rows stay', function () {
+    Http::fake();
+    $fixture = createEnrichFixture();
+    // The first ask's succeeded ledger and its content: one AI-attributed
+    // definition (the re-ask must clear it) beside one imported one (the
+    // clear must never touch it).
+    WordAiFetch::query()->create([
+        'word_id' => $fixture['word']->id,
+        'status' => WordAiFetch::STATUS_SUCCEEDED,
+        'attempts' => 1,
+        'asked_at' => now()->subHour(),
+        'succeeded_at' => now()->subHour(),
+    ]);
+    $firstAskDefinition = Definition::query()->create([
+        'word_id' => $fixture['word']->id,
+        'definition' => 'A financial institution.',
+        'source' => 'ai',
+    ]);
+    Definition::query()->create(['word_id' => $fixture['word']->id, 'definition' => 'An imported gloss.']);
+
+    $captured = null;
+    mockResolverForEnrich(null, $captured);
+
+    $response = $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
+
+    // A succeeded row is no longer a lock (ADR 0082 amendment): the ask
+    // runs, the SAME ledger row advances, and the fresh reply replaces the
+    // previous AI rows — the imported one survives untouched.
+    $response->assertOk();
+    expect($response->json('data.ai_asked'))->toBeTrue();
+    expect($captured['question'])->toContain('bank');
+
+    $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->sole();
+    expect($ledger->status)->toBe('succeeded');
+    expect($ledger->attempts)->toBe(2);
+    expect($ledger->succeeded_at)->not->toBeNull();
+    expect($ledger->error)->toBeNull();
+
+    // The first ask's AI row is gone (a new row carries the same text);
+    // the imported row is exactly the seeded one.
+    expect(Definition::query()->find($firstAskDefinition->id))->toBeNull();
+    $definitions = Definition::query()->where('word_id', $fixture['word']->id)->orderBy('id')->get();
+    expect($definitions)->toHaveCount(3);
+    expect($definitions[0]->definition)->toBe('An imported gloss.')
+        ->and($definitions[0]->source)->toBeNull();
+    expect($definitions->slice(1)->values()->pluck('definition')->all())
+        ->toEqual(['A financial institution.', 'The land alongside a river.']);
+    expect($definitions->slice(1)->pluck('source')->all())->each->toBe('ai');
+});
+
+it('keeps ai_asked true after a failed re-ask — the icon stays the re-ask variant', function () {
+    Http::fake();
     $fixture = createEnrichFixture();
     WordAiFetch::query()->create([
         'word_id' => $fixture['word']->id,
         'status' => WordAiFetch::STATUS_SUCCEEDED,
         'attempts' => 1,
-        'asked_at' => now(),
-        'succeeded_at' => now(),
+        'asked_at' => now()->subHour(),
+        'succeeded_at' => now()->subHour(),
     ]);
-    Definition::query()->create(['word_id' => $fixture['word']->id, 'definition' => 'A financial institution.']);
 
     $mock = mock(AIModelResolver::class);
     $mock->shouldReceive('resolveExplanationModel')->andReturn(AI_ENRICH_MODEL_MOCK);
-    $mock->shouldReceive('ask')->never();
+    $mock->shouldReceive('parseModelString')->andReturnUsing(enrichModelSplit());
+    $mock->shouldReceive('ask')->once()->andThrow(
+        new AiProviderException('The AI service is busy. Please try again in a moment.', 429),
+    );
     app()->instance(AIModelResolver::class, $mock);
 
     $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-        ->assertStatus(409)
-        ->assertJsonPath('error', 'AI enrichment has already been completed for this word.');
+        ->assertTooManyRequests();
 
-    expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(1);
-    expect(WordAiFetch::query()->where('word_id', $fixture['word']->id)->where('attempts', 1)->exists())->toBeTrue();
+    // The re-ask finalized FAILED — but succeeded_at (the first success)
+    // is kept, and ai_asked is judged on it: the word-show payload stays
+    // ai_asked true, so the toolbar keeps the re-ask variant instead of
+    // regressing to the first-time icon.
+    $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->sole();
+    expect($ledger->status)->toBe('failed');
+    expect($ledger->attempts)->toBe(2);
+    expect($ledger->succeeded_at)->not->toBeNull();
+
+    $show = $this->actingAs($fixture['user'])
+        ->getJson('/words/'.$fixture['word']->id)->json('data');
+    expect($show['ai_asked'])->toBeTrue();
 });
 
 it('surfaces a missing provider key as 403 guidance and keeps the ask retryable', function () {
@@ -196,7 +260,7 @@ it('surfaces a missing provider key as 403 guidance and keeps the ask retryable'
     expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(0);
 });
 
-it('retries a failed ask with attempts++ and locks on the first success', function () {
+it('retries a failed ask with attempts++ and finalizes succeeded on the first success', function () {
     $fixture = createEnrichFixture();
 
     $mock = mock(AIModelResolver::class);
@@ -256,7 +320,7 @@ it('finalizes an unparseable reply as a retryable failure', function () {
     expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(0);
 });
 
-it('locks the word when a parsed reply dedupes to nothing new — the ask itself succeeded', function () {
+it('finalizes SUCCEEDED when a parsed reply dedupes to nothing new — the ask itself succeeded', function () {
     $fixture = createEnrichFixture();
     Definition::query()->create(['word_id' => $fixture['word']->id, 'definition' => 'A financial institution.']);
     WordTranslation::link($fixture['word']->id, $fixture['ruWord']->id);
@@ -270,10 +334,9 @@ it('locks the word when a parsed reply dedupes to nothing new — the ask itself
     $response = $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
 
-    // An already-rich word must not stay re-askable forever (each pass
-    // spends tokens): a successfully parsed reply finalizes the ledger
-    // SUCCEEDED even when the merge lands nothing new — the user's decision
-    // is one ask per word, locked by success.
+    // The dedupe landing nothing new is still a finished ask: the ledger
+    // finalizes SUCCEEDED — that succeeded_at is what the payload's
+    // ai_asked (and the toolbar's re-ask variant) reports.
     $response->assertOk();
     expect($response->json('data.ai_asked'))->toBeTrue();
 
@@ -463,7 +526,7 @@ it('drops AI definitions in a foreign script at the merge — the import guard h
         ->exists())->toBeTrue();
 });
 
-it('still locks the word SUCCEEDED when every AI definition dropped the script guard', function () {
+it('still finalizes the word SUCCEEDED when every AI definition dropped the script guard', function () {
     Http::fake();
     $fixture = createEnrichFixture();
     // All-Cyrillic definitions for the en word: the merge stores none of

@@ -13,7 +13,8 @@ use App\Support\WordLookupKey;
  * missing-mode popup resolves its RAW clicked surface server-side before
  * rendering the missing card, so a word a previous adopt-on-ask minted
  * (persisted, but never linked into the page's entity_words map) re-links
- * to the page and opens the full dictionary view — with ai_asked grey —
+ * to the page and opens the full dictionary view — with ai_asked true (the
+ * re-ask icon) —
  * after any reload. Helper names differ from the enrich suites' on purpose:
  * parallel workers may load all of them into one process.
  */

@@ -108,7 +108,7 @@ it('adopts on ask: a missing bomb-hit mints one unknown-class word with the fold
     expect(Definition::query()->where('word_id', $word->id)->where('source', 'ai')->count())->toBe(1);
     expect($word->fresh()->translations)->toContain('прибанок');
 
-    // The ledger locks the ADOPTED word on success.
+    // The ledger finalizes the ADOPTED word's ask on success.
     $ledger = WordAiFetch::query()->where('word_id', $word->id)->firstOrFail();
     expect($ledger->status)->toBe('succeeded');
     expect($ledger->attempts)->toBe(1);
@@ -158,8 +158,8 @@ it('adopts a case/ё/stress surface variant onto the EXISTING row — never a du
     expect(WordAiFetch::query()->where('word_id', $existing->id)->value('status'))->toBe('succeeded');
 
     // A stressed surface (the reader's stress toggle: «до́м») keys the same
-    // mark-free l_word and adopts onto the existing row — on a fresh word,
-    // so the succeeded lock above never interferes.
+    // mark-free l_word and adopts onto the existing row — on a fresh word
+    // with no ledger row, so the succeeded ask above never interferes.
     $stressed = $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['surface' => 'до́м', 'language_code' => 'ru']);
 
@@ -190,7 +190,7 @@ it('mints with the full creator hygiene: ё stays in the display word, the key f
     expect($forms->pluck('l_word')->unique()->all())->toBe(['елка']);
 });
 
-it('mints one word only: a second ask on the same surface adopts the minted row and stays ledger-locked', function () {
+it('mints one word only: a second ask on the same surface adopts the minted row and re-enriches it in place', function () {
     $fixture = createAdoptFixture();
     mockResolverForAdopt();
 
@@ -198,15 +198,21 @@ it('mints one word only: a second ask on the same surface adopts the minted row 
         ->postJson('/ai/word-enrich', ['surface' => 'cookie', 'language_code' => 'en'])
         ->assertOk();
 
-    // The retry after the lock: the surface resolves the minted row and the
-    // lock answers 409 — no second word, no second enrichment.
+    // The re-ask (ADR 0082 amendment): the succeeded ask is no longer a
+    // lock — the surface resolves the minted row and the ask runs again,
+    // replacing the previous AI rows. Still no second word, still one
+    // definition (the reply's identical text re-created in place).
     $response = $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['surface' => 'cookie', 'language_code' => 'en']);
 
-    $response->assertStatus(409);
+    $response->assertOk();
     expect(Word::query()->where('l_word', 'cookie')->count())->toBe(1);
     expect(Definition::query()->join('words', 'words.id', '=', 'definitions.word_id')
         ->where('words.l_word', 'cookie')->count())->toBe(1);
+    $word = Word::query()->where('l_word', 'cookie')->sole();
+    $ledger = WordAiFetch::query()->where('word_id', $word->id)->sole();
+    expect($ledger->attempts)->toBe(2);
+    expect($ledger->status)->toBe('succeeded');
 });
 
 it('answers a concurrent double-ask with a clean retryable-later response, never a 500', function () {

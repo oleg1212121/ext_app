@@ -7,7 +7,7 @@ import {describe, expect, it} from 'vitest';
 // source. What it locks (popup-ai-enrich ticket 01): NO tab strip — the
 // dictionary content always renders; the toolbar's single row is "I know" /
 // "Remove mark" on the left, then pushed right, in order, Anki, the
-// Explanation on-demand toggle, the Ask-AI disabled placeholder, and the
+// Explanation on-demand toggle, the live Ask-AI icon, and the
 // robot (models-used) icon rightmost. A hairline closes the header block
 // (word / familiarity / frequency / form-of) and the Explanation pane mounts
 // as the FIRST row of the dictionary view behind the same hairline — nothing
@@ -161,10 +161,21 @@ describe('WordPopup action toolbar', () => {
         expect(buttonIn('word-popup-progress-known')).toContain('<Icon name="checkCircle"');
         expect(buttonIn('word-popup-progress-reset')).toContain('<Icon name="minusCircle"');
         expect(buttonIn('word-popup-explain-toggle')).toContain('<Icon name="chatBubble"');
-        expect(buttonIn('word-popup-ask-ai')).toContain('<Icon name="sparkles"');
-        for (const name of ['checkCircle', 'minusCircle', 'ankiAdd', 'ankiUpdate', 'chatBubble', 'sparkles']) {
+        // The ask icon flips between the plain sparkles and the re-ask
+        // variant (sparkles inside the refresh ring) on the payload's
+        // ai_asked.
+        expect(buttonIn('word-popup-ask-ai')).toContain("<Icon name={data.ai_asked ? 'sparklesRefresh' : 'sparkles'}");
+        for (const name of ['checkCircle', 'minusCircle', 'ankiAdd', 'chatBubble']) {
             expect(iconsSource).toMatch(new RegExp(`^    ${name}: '`, 'm'));
         }
+        // ankiUpdate / sparkles alias their shared path consts (the re-ask
+        // ring and glyph re-compose them).
+        expect(iconsSource).toMatch(/^    ankiUpdate: ARROW_PATH,/m);
+        expect(iconsSource).toMatch(/^    sparkles: SPARKLES_PATH,/m);
+        // The re-ask glyph composes the shared sparkles with the shared
+        // chasing-arrows ring — a multi-path descriptor value.
+        expect(iconsSource).toMatch(/^    sparklesRefresh: \[/m);
+        expect(iconsSource).toContain('nonScalingStroke');
     });
 
     it('flips the Anki icon between its add and update forms on the detection outcome', () => {
@@ -177,27 +188,27 @@ describe('WordPopup action toolbar', () => {
         expect(labelConstSource()).toContain("ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send')");
     });
 
-    it('asks live — the ticket 04 icon never hides and only disables, per state', () => {
-        // The live enrichment (popup-ai-enrich ticket 04): the icon renders
-        // always and disables when inapplicable — no handler (the profile
-        // preview's inertness), a send in flight, or the word already asked
-        // (the succeeded ledger lock — the grey icon's click is a no-op).
+    it('asks live — the ticket 04 icon never hides and only disables per state; an asked word stays clickable', () => {
+        // The live enrichment (popup-ai-enrich ticket 04, re-ask per the
+        // ADR 0082 amendment): the icon renders always and disables when
+        // inapplicable — no handler (the profile preview's inertness) or a
+        // send in flight. A word already asked is NOT disabled: it shows
+        // the re-ask variant and the click re-asks.
         const askAi = buttonIn('word-popup-ask-ai');
         expect(askAi).toContain('onClick={onAskAi}');
-        expect(askAi).toMatch(/disabled=\{[^}]*onAskAi == null/);
-        expect(askAi).toMatch(/disabled=\{[^}]*aiBusy/);
-        expect(askAi).toMatch(/disabled=\{[^}]*data\.ai_asked/);
+        expect(askAi).toMatch(/disabled=\{onAskAi == null \|\| aiBusy\}/);
         expect(askAi).not.toMatch(/\n\s+disabled\n/);
     });
 
-    it('swaps the ask icon label between ask / sending / already asked', () => {
+    it('swaps the ask icon label between ask / ask again / sending', () => {
         // One hoisted label const drives tooltip + aria (the Anki pattern):
-        // the succeeded lock reads "already asked", a send in flight reads
-        // "sending", the default is the plain Ask AI.
+        // an already-enriched word reads "ask again" (the re-ask variant's
+        // first-time hint), a send in flight reads "sending", the default
+        // is the plain Ask AI.
         const askAi = buttonIn('word-popup-ask-ai');
         expect(askAi).toContain('title={askAiLabel}');
         expect(askAi).toContain('aria-label={askAiLabel}');
-        const label = popupSource.match(/const askAiLabel =[\s\S]*?data\.ai_asked\s*\?\s*t\('word\.ask_ai_already'\)\s*:\s*\(aiBusy \? t\('word\.ask_ai_sending'\) : t\('word\.ask_ai'\)\)/);
+        const label = popupSource.match(/const askAiLabel =[\s\S]*?data\.ai_asked\s*\?\s*t\('word\.ask_ai_again'\)\s*:\s*\(aiBusy \? t\('word\.ask_ai_sending'\) : t\('word\.ask_ai'\)\)/);
         expect(label).toHaveLength(1);
     });
 
@@ -205,7 +216,7 @@ describe('WordPopup action toolbar', () => {
         // The toolbar mounts the shared AskAiError render (the stable
         // word-popup-ask-ai-error hook lives on the component itself,
         // pinned below): the line carries the server's guidance verbatim
-        // (no key / no model / already asked / in progress / throttled)
+        // (no key / no model / in progress / throttled)
         // plus the four-state contract's Retry control, in both popup
         // bodies.
         expect(toolbar).toContain('<AskAiError');
@@ -306,8 +317,9 @@ describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
         // from the same clicked surface the initial GET did, so is_form /
         // form_of survive the live swap.
         expect(askKnown).toMatch(/\{word_id: data\.id, surface\}/);
-        // The succeeded lock's grey icon makes the click a no-op client-side.
-        expect(askKnown).toMatch(/if \(!data \|\| aiBusy \|\| data\.ai_asked\)/);
+        // The only client-side guards: a loaded payload and no ask in
+        // flight — an already-asked word re-asks (ADR 0082 amendment).
+        expect(askKnown).toMatch(/if \(!data \|\| aiBusy\)/);
     });
 
     it('the missing-card ask posts the raw surface + the column language code (ticket 05)', () => {

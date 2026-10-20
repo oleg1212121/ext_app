@@ -135,3 +135,37 @@ model's foreign-script definitions drop instead of being stored — and an
 all-dropped reply still finalizes **succeeded** (only unparseable replies
 stay 502; a reply whose every definition dropped is not a failed ask).
 Etymologies remain deliberately unguarded, the import's parity.
+
+## Amended 2026-10-20 (re-ask: the succeeded lock lifted)
+
+The forever lock is **superseded** — "the user's recourse is editing
+content in the admin panel, not re-asking" proved wrong in practice: the
+whole point of an on-demand, own-key enrichment is that a bad answer can
+be retried. Decision 2's succeeded row is no longer a lock:
+
+- `ledgerBlock()` drops the succeeded branch — the endpoint's only
+  remaining 409 is the fresh-pending "in progress" gate. A succeeded word
+  asked again runs the full flow on the SAME ledger row (attempts++,
+  back to pending, finalize succeeded again).
+- The toolbar's icon no longer greys: a payload with `ai_asked` true
+  shows the **re-ask variant** — the same sparkles inside the
+  chasing-arrows refresh ring — with an "Ask AI again (already enriched)"
+  tooltip saying this is not the first ask. `ai_asked` is judged on
+  `succeeded_at` (not the current status), so a FAILED re-ask keeps the
+  first success's timestamp and the icon stays the re-ask variant.
+- A re-ask **replaces** the previous AI rows: `applyParsed` deletes the
+  word's `source = 'ai'` rows (definitions / transcriptions / examples /
+  etymologies) inside the merge transaction before the fresh reply
+  merges. The original exact-text-dedup argument for additive merging
+  ("a re-ask would only add differently-worded variants") is exactly why
+  replace wins now — the variants would pile up. Imported rows (null
+  source) are never touched; AI-linked translations have no per-row AI
+  attribution to select on and stay.
+- The cost guard moves from the lock to the existing route throttle
+  (20/min) — the ask remains a deliberate user action, and the replace
+  semantics mean a re-ask can no longer grow the dictionary on every
+  pass.
+
+The one-ask ledger row, the pending grace window, failed-stays-retryable,
+the dedup-vs-imported, link-only translations, and the shared payload
+assembler all keep their original rulings.

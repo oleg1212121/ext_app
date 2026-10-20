@@ -23,21 +23,23 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * The ask-AI word enrichment's persistence (popup-ai-enrich ticket 04): a
- * parsed reply merges into the word's content in ONE transaction — exact-text
- * deduped per table, every new row carrying `source = 'ai'` (null stays
- * imported). Translations stay link-only (ADR 0078): candidates resolve
- * against the native language's EXISTING words through the shared
- * TranslationTargets resolver and link as word_translations pairs; the
- * unmatched stage into the word's translations JSON. ZERO word rows are ever
- * created by the merge — the method returns whether anything new landed at
- * all (a fresh link, a new content row, a newly staged string), which the
- * endpoint no longer branches on: a parsed reply locks the word either way,
- * because the ask itself succeeded (nothing new means the content was
- * already present). The ONE word-minting method is {@see resolveOrAdopt},
- * the missing popup's adopt-on-ask resolution (ticket 05), which runs
- * before any enrichment; its read-only half {@see resolveSurface} (ticket
- * 07) serves the popup's on-open re-resolution lookup without ever
- * creating a row.
+ * parsed reply merges into the word's content in ONE transaction — the
+ * word's previous AI rows are deleted first (the re-ask's replace
+ * semantics, ADR 0082 amendment; on a first ask there are none), then the
+ * fresh rows insert exact-text deduped against what remains, every row
+ * carrying `source = 'ai'` (null stays imported, and imported rows are
+ * never touched by the delete). Translations stay link-only (ADR 0078):
+ * candidates resolve against the native language's EXISTING words through
+ * the shared TranslationTargets resolver and link as word_translations
+ * pairs; the unmatched stage into the word's translations JSON. ZERO word
+ * rows are ever created by the merge — the method returns whether anything
+ * new landed at all (a fresh link, a new content row, a newly staged
+ * string), which the endpoint no longer branches on: a parsed reply
+ * finalizes the ask either way, because the ask itself succeeded. The ONE
+ * word-minting method is {@see resolveOrAdopt}, the missing popup's
+ * adopt-on-ask resolution (ticket 05), which runs before any enrichment;
+ * its read-only half {@see resolveSurface} (ticket 07) serves the popup's
+ * on-open re-resolution lookup without ever creating a row.
  */
 class WordAiEnrichmentService
 {
@@ -58,7 +60,7 @@ class WordAiEnrichmentService
      * own-script definitions reach the insert, so a disobedient model's
      * foreign-script definitions drop instead of polluting the dictionary —
      * and an all-dropped reply is NOT an error, the ask itself still
-     * finalizes SUCCEEDED (the endpoint locks the word either way). The
+     * finalizes SUCCEEDED (the endpoint finalizes the ledger either way). The
      * guard filters on the entries' TEXT (ticket 09: a definition now
      * arrives as a `['text' => ..., 'labels' => [...]]` pair — a dropped
      * text drops its labels with it). Etymologies stay unguarded, the
@@ -77,6 +79,15 @@ class WordAiEnrichmentService
         ));
 
         DB::transaction(function () use ($word, $parsed, $definitions, $nativeLanguage, &$usable): void {
+            // The re-ask's replace semantics (ADR 0082 amendment): the
+            // word's previous AI rows go first, so the fresh answer takes
+            // their place instead of piling differently-worded variants on
+            // top of them. On a first ask there is nothing to delete; an
+            // ask that dies between this delete and the succeeded finalize
+            // leaves the word with only its imported rows — the same
+            // retryable shape as any failed ask.
+            $this->clearAiRows($word);
+
             $usable = $this->mergeAiRows($word, Definition::class, 'definition', $definitions) || $usable;
 
             // Transcriptions carry a NOT NULL per-language type FK: the
@@ -117,6 +128,23 @@ class WordAiEnrichmentService
         });
 
         return $usable;
+    }
+
+    /**
+     * Delete the word's AI-attributed content rows — the re-ask's clear
+     * before the fresh merge (ADR 0082 amendment). Scoped strictly to
+     * `source = 'ai'`: imported rows (null source) are never touched, and
+     * the AI-linked translations stay as they are (they are link/stage
+     * records with no per-row AI attribution to select on). Runs inside
+     * {@see applyParsed}'s transaction, so a failed merge rolls the delete
+     * back.
+     */
+    private function clearAiRows(Word $word): void
+    {
+        Definition::query()->where('word_id', $word->id)->where('source', 'ai')->delete();
+        Transcription::query()->where('word_id', $word->id)->where('source', 'ai')->delete();
+        Example::query()->where('word_id', $word->id)->where('source', 'ai')->delete();
+        Etymology::query()->where('word_id', $word->id)->where('source', 'ai')->delete();
     }
 
     /**

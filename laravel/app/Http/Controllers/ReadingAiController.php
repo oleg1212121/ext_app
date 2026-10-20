@@ -323,11 +323,11 @@ class ReadingAiController extends Controller
             return $this->failLedger($ledger, 'The AI reply could not be parsed as strict JSON.', 502);
         }
 
-        // A successfully parsed reply locks the word even when the merge
+        // A successfully parsed reply finalizes the ask even when the merge
         // dedupes to nothing new: the ask itself succeeded and the content
-        // is already present. Leaving the word retryable would let an
-        // already-rich word be re-asked endlessly, each pass spending
-        // tokens (spec decision 4: one ask per word, locked by success).
+        // is present. The succeeded finalize is what the payload's
+        // `ai_asked` reports — the toolbar's plain icon turns into the
+        // re-ask variant (ADR 0082 amendment) on the next payload build.
         $this->enrichment->applyParsed($word, $parsed, $nativeLanguage);
 
         $ledger->forceFill([
@@ -338,7 +338,10 @@ class ReadingAiController extends Controller
 
         // The word is touched so ticket 02's lazy completeness recalc sees
         // a stale score (the payload build below then recalculates over the
-        // merged content — a no-op refresh when nothing new landed).
+        // replaced content). Note the finalize never clears `succeeded_at`
+        // afterwards: a later FAILED re-ask keeps it, so `ai_asked` —
+        // reported on `succeeded_at` — stays true and the re-ask icon
+        // survives a failed retry.
         $word->touch();
 
         $surface = array_key_exists('surface', $validated)
@@ -351,27 +354,22 @@ class ReadingAiController extends Controller
     }
 
     /**
-     * The ledger gate both enrich paths run once the word is known: a
-     * succeeded row is the forever lock (the toolbar's icon is grey for
-     * it); a fresh pending row means another ask is in flight right now —
-     * the concurrent double-ask's visible loser gets the clean
-     * retryable-later answer instead of racing on. Failed rows pass
-     * (retryable at any count), and so does a pending row older than the
-     * grace window: pending is not a lock — a fatal/timeout/OOM between
-     * the pending save and the finalize would otherwise strand the word as
-     * "in progress" forever, and the spec locks by success only. The
-     * retrying flow's pending save then takes the stale row over
-     * (attempts++, asked_at refreshed). The window sits far above the
-     * provider layer's own cURL timeouts, so a genuinely live ask never
-     * reaches it.
+     * The ledger gate both enrich paths run once the word is known: a fresh
+     * pending row means another ask is in flight right now — the concurrent
+     * double-ask's visible loser gets the clean retryable-later answer
+     * instead of racing on. Succeeded rows pass too (ADR 0082 amendment:
+     * the toolbar's re-ask icon, a re-ask replaces the previous AI rows),
+     * and so do failed rows (retryable at any count) and a pending row
+     * older than the grace window: pending is not a lock — a
+     * fatal/timeout/OOM between the pending save and the finalize would
+     * otherwise strand the word as "in progress" forever. The retrying
+     * flow's pending save then takes the stale row over (attempts++,
+     * asked_at refreshed). The window sits far above the provider layer's
+     * own cURL timeouts, so a genuinely live ask never reaches it.
      */
     private function ledgerBlock(Word $word): ?JsonResponse
     {
         $ledger = WordAiFetch::query()->firstOrNew(['word_id' => $word->id]);
-
-        if ($ledger->exists && $ledger->status === WordAiFetch::STATUS_SUCCEEDED) {
-            return $this->aiError('AI enrichment has already been completed for this word.', 409);
-        }
 
         if ($ledger->exists
             && $ledger->status === WordAiFetch::STATUS_PENDING
@@ -385,8 +383,9 @@ class ReadingAiController extends Controller
 
     /**
      * The concurrent double-ask's loser: the winner's ask is mid-flight, so
-     * a retry a moment later either re-asks (winner failed) or gets the
-     * completed lock (winner succeeded) — never a lost attempt.
+     * a retry a moment later either re-asks (winner failed, or the word was
+     * already succeeded and this was a re-ask) or replaces the freshly
+     * merged content (winner succeeded) — never a lost attempt.
      */
     private function aiInProgress(): JsonResponse
     {

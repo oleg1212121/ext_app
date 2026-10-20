@@ -1,5 +1,51 @@
 # Directory Update Log
 
+## 2026-10-20 (popup-ai-enrich re-ask: the succeeded lock lifted, replace-on-reask, the re-ask icon)
+
+User report: the Ask-AI icon answered "AI enrichment has already been
+completed for this word." on click — the ADR 0082 forever lock turned the
+icon into a dead end after the first ask, and the payload's `ai_asked`
+greying could even go stale enough to surface the 409 verbatim. Superseded
+by decision (user): a bad AI answer should be retryable on demand.
+
+- **Ledger de-locked** (`ReadingAiController::ledgerBlock`): the
+  succeeded-row 409 branch is gone — the endpoint's only remaining enrich
+  409 is the fresh-pending "in progress" gate (the 15-minute stale-pending
+  takeover and failed-stays-retryable rulings keep their original shape).
+  A re-ask runs the full flow on the SAME `word_ai_fetches` row
+  (attempts++, back to pending, finalize succeeded again); the cost guard
+  is the route's 20/min throttle. The word-show/`GET /words/{word}`
+  semantics change: `WordAiFetch::succeededFor` (the payload's
+  `ai_asked`) now reads **`succeeded_at`** instead of the current status,
+  so a FAILED re-ask keeps the first success's timestamp and the toolbar
+  keeps the re-ask variant.
+- **Replace-on-reask** (`WordAiEnrichmentService::applyParsed`): the
+  merge transaction deletes the word's `source = 'ai'` rows
+  (definitions/transcriptions/examples/etymologies) before the fresh
+  reply merges — the old additive-merge argument ("a re-ask would only
+  add differently-worded variants") is why replace wins; imported rows
+  (null source) are never touched and AI-linked translations stay
+  (no per-row AI attribution to select on).
+- **The re-ask icon** (`WordPopup.jsx` + `icons.jsx`): the payload's
+  `ai_asked` no longer disables the button — it flips the glyph to
+  `sparklesRefresh` (the shared sparkles scaled inside the shared
+  chasing-arrows ring; `Icon` now accepts multi-path descriptors with
+  `transform`/`non-scaling-stroke` so the small glyph keeps stroke
+  weight) with the "Ask AI again (already enriched)" tooltip
+  (`word.ask_ai_again` replaces `word.ask_ai_already` in the ui-strings;
+  dev DB reseeded). The missing card's icon is unchanged (no
+  `ai_asked` state there).
+- **ADR 0082** amended 2026-10-20 (the forever lock superseded — the
+  recourse-is-admin-editing consequence withdrawn);
+  `domains/interactive-words.md` ask-AI section, toolbar description,
+  409-sync note and Routes table rewritten, `generated.at` bumped.
+- Tests: the "rejects an already-asked word" endpoint test replaced by
+  the re-ask pair (succeeded row + AI/imported definitions → replace
+  pinned row-by-row; failed re-ask keeps `ai_asked` true through
+  `GET /words/{id}`), the adopt suite's "second ask stays 409-locked"
+  now pins the in-place re-enrich (still one word, attempts 2), vitest
+  toolbar/lookup pins updated to the re-ask contract.
+
 ## 2026-10-20 (popup-ai-enrich review fix pass — 4 accepted findings on 07–10)
 
 - **Lazy-vs-stored demotion alignment** (ADR 0083 decision 4 extended,

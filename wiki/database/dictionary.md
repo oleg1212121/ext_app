@@ -1,11 +1,11 @@
 ---
 type: Database Schema
 title: Unified Dictionary Tables
-description: One words table (+ satellites) keyed by language and unique per (l_word, language_id, word_class_id) — cross-source spellings of one word collapse into one row (ADR 0081), per-language word classes and transcription types, a symmetric word_translations pivot (one row per pair), the word_translation_fetches ledger driving auto-fetched translations (Yandex→Google, link-only since 2026-10-18 — unmatched candidates stage, no word rows) that doubles as the exclusions list, and the word_ai_fetches ledger locking the popup's one-shot ask-AI enrichment (merged inline under per-row source columns, ADR 0082).
+description: One words table (+ satellites) keyed by language and unique per (l_word, language_id, word_class_id) — cross-source spellings of one word collapse into one row (ADR 0081), per-language word classes and transcription types, a symmetric word_translations pivot (one row per pair), the word_translation_fetches ledger driving auto-fetched translations (Yandex→Google, link-only since 2026-10-18 — unmatched candidates stage, no word rows) that doubles as the exclusions list, and the word_ai_fetches ledger tracking the popup's ask-AI enrichment (merged inline under per-row source columns, ADR 0082 — re-askable since the 2026-10-20 amendment, a re-ask replacing the previous source='ai' rows).
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-20T18:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T19:30:00+03:00 }
 sources:
   - id: migration
     resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
@@ -96,7 +96,7 @@ sources:
 | `tags` / `tagged_words` | The **words tag pool** (ADR [0076](../../docs/adr/0076-per-type-tag-pools.md)): language-neutral `slug`+`name` labels curated in the admin (`TagResource`, nav group Words, `words_count` usage column, edit/delete + bulk delete) and attached to words via `Word::tags()` (`withTimestamps`) through the pivot — renamed from the dormant `word_tags` (migration `2026_10_11_000001`, index `uk_tagged_words_pair`). Attached through the Words form's searchable tag multi-select with inline create; shown as a badge column and a multi-select table filter on the Words list. The works/entities/alignments pools copy this shape (`work_tags`/`tagged_works`, `entity_tags`/`tagged_entities`, `alignment_tags`/`tagged_alignments`) |
 | `word_translations` | **One row per word pair** (symmetric, ADR 0020): `word_a_id`, `word_b_id` with canonical order `a < b` (entity-match convention), unique `(word_a_id, word_b_id)`, index on `word_b_id`. A link is usable from either word; links connect words of **different languages** only (enforced in the admin attach action). Supersedes the directed pivot of ADR 0018 |
 | `word_translation_fetches` | Auto-fetch ledger, one row per `(word_id, target_language_id)` (unique): `provider` (yandex/google), `status` (`pending`/`succeeded`/`empty`/`failed`), `linked_count`/`staged_count` (candidates the link-only fetch linked vs staged, migration `2026_10_18_000002`), `attempts`, `last_attempted_at` (migration `2026_09_29_000001`). `status = 'empty'` is the **exclusions list** — every provider answered "no translation", so the pair is never looked up again |
-| `word_ai_fetches` | Ask-AI enrichment ledger, one row per `word_id` (unique, migration `2026_10_19_000003`): `provider`/`model` (the resolved `provider:model` halves), `status` (`pending`/`succeeded`/`failed`), `attempts`, `error` (the latest failure, ≤ 500 chars), `asked_at`, `succeeded_at`. **A `succeeded` row is the one-ask-per-word lock** — the endpoint rejects further asks (409) and the payload's `ai_asked` greys the popup's ask icon; `failed` (and `pending`) attempts stay retryable at any count (popup-ai-enrich ticket 04, ADR 0082) |
+| `word_ai_fetches` | Ask-AI enrichment ledger, one row per `word_id` (unique, migration `2026_10_19_000003`): `provider`/`model` (the resolved `provider:model` halves), `status` (`pending`/`succeeded`/`failed`), `attempts`, `error` (the latest failure, ≤ 500 chars), `asked_at`, `succeeded_at`. Statuses track the LAST ask — **no lock** (the succeeded-is-forever-lock ruling was superseded by the 2026-10-20 ADR 0082 re-ask amendment): a re-ask runs on the same row, and the payload's `ai_asked` reads `succeeded_at` (a failed re-ask keeps the icon's re-ask variant); a fresh pending row is the retryable-later 409's "in progress" gate, a pending row past the 15-minute grace is taken over, `failed` (and succeeded) attempts re-askable at any count (popup-ai-enrich ticket 04, ADR 0082) |
 
 # Notes
 
@@ -268,10 +268,13 @@ sources:
   `labels` — the `DefinitionLanguage` guard still drops on the text
   alone, labels and all), translations **link-only** per ADR 0078
   (shared `TranslationTargets` + `StagedTranslations` toolkit — zero word
-  rows), and the `word_ai_fetches` ledger locking the word on the first
-  success (failed attempts stay retryable). The word is touched so the
-  stored completeness recalculates; provenance is DB-only — the popup
-  renders no marker. See [Interactive words](/domains/interactive-words.md).
+  rows), and the `word_ai_fetches` ledger tracking the ask (no lock since
+  the 2026-10-20 ADR 0082 re-ask amendment: the merge first deletes the
+  word's `source = 'ai'` rows, so a re-ask REPLACES the previous AI
+  content — imported rows untouched; failed attempts stay retryable). The
+  word is touched so the stored completeness recalculates; provenance is
+  DB-only — the popup renders no marker. See
+  [Interactive words](/domains/interactive-words.md).
 * **Tag pools** (2026-10-11, ADR
   [0076](../../docs/adr/0076-per-type-tag-pools.md)): admin-curated labels,
   four separate pools (one definition table + `tagged_<model>` pivot each),

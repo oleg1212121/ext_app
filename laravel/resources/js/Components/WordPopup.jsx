@@ -577,11 +577,12 @@ export function PopupContent({
         ? t('word.anki_sending')
         : (ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send'));
 
-    // The Ask-AI icon's label, shared by its title and aria-label: the
-    // succeeded ledger lock (the grey icon) reads "already asked", a request
-    // in flight reads "sending", the default is the plain Ask AI.
+    // The Ask-AI icon's label, shared by its title and aria-label: a word
+    // that has already been enriched once reads "ask again" (the re-ask
+    // variant's hint), a request in flight reads "sending", the default is
+    // the plain Ask AI.
     const askAiLabel = data.ai_asked
-        ? t('word.ask_ai_already')
+        ? t('word.ask_ai_again')
         : (aiBusy ? t('word.ask_ai_sending') : t('word.ask_ai'));
 
     return (
@@ -593,7 +594,8 @@ export function PopupContent({
                 always render: an inapplicable icon is disabled, not hidden
                 (know: familiarity already max or busy; remove mark: no mark
                 or busy; anki: no handler or a send in flight; ask-ai: no
-                handler, a request in flight, or the word already asked). The
+                handler or a request in flight — a word already asked keeps
+                the icon live as the re-ask variant). The
                 `progress_actions` visibility gate hides only the two
                 progress icons — the right-hand icons ignore the
                 popup-visibility toggles (spec). The Anki status lines and
@@ -662,23 +664,24 @@ export function PopupContent({
                             <Icon name="chatBubble" className="h-[1.25em] w-[1.25em]"/>
                         </button>
                     )}
-                    {/* The live Ask-AI icon (popup-ai-enrich ticket 04):
-                        one ask per word, ledger-locked on the server — the
-                        payload's `ai_asked` (a succeeded word_ai_fetches
-                        row) greys the icon with an "already asked"
-                        tooltip and makes the click a no-op; a request in
-                        flight disables it too; failed attempts stay
-                        retryable (the icon re-enables, the error shows
-                        beneath). */}
+                    {/* The live Ask-AI icon (popup-ai-enrich ticket 04,
+                        re-ask per the ADR 0082 amendment): one in-flight ask
+                        at a time — a request in flight disables the icon,
+                        failed attempts stay retryable (the error shows
+                        beneath). A word the AI already enriched once shows
+                        the re-ask variant (sparkles inside the refresh
+                        arrows) with the "ask again" hint and stays
+                        clickable: the re-ask replaces the previous AI
+                        rows. */}
                     <button
                         type="button"
                         title={askAiLabel}
                         aria-label={askAiLabel}
-                        disabled={onAskAi == null || aiBusy || data.ai_asked}
+                        disabled={onAskAi == null || aiBusy}
                         onClick={onAskAi}
                         className={`word-popup-ask-ai ${toolbarButtonClass(false)}`}
                     >
-                        <Icon name="sparkles" className="h-[1.25em] w-[1.25em]"/>
+                        <Icon name={data.ai_asked ? 'sparklesRefresh' : 'sparkles'} className="h-[1.25em] w-[1.25em]"/>
                     </button>
                     {/* Not a toggle: opens the Models used popup. Rightmost
                         on the row, behind the same gate as the Explanation
@@ -997,7 +1000,8 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // server-side before the missing card settles — a hit means the word
     // exists (a previous adopt-on-ask minted it; the page's word map just
     // never learned it), so `lookedUpId` feeds the fetch effect below and
-    // the loaded payload's ai_asked greys the icon. A null (a genuine
+    // the loaded payload's ai_asked picks the re-ask icon variant. A null (a
+    // genuine
     // miss) — or a failed lookup — leaves ticket 03's missing card exactly
     // as it was. `lookupBusy` holds the card's ask icon while the resolve
     // is in flight.
@@ -1053,7 +1057,8 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         // — unless the on-open lookup resolved one (popup-ai-enrich ticket
         // 07): fetchId is then the word the surface re-resolved to,
         // fetched exactly like a mapped token so the payload's ai_asked
-        // drives the toolbar's grey icon. The early return still clears the
+        // picks the toolbar's re-ask icon variant. The early return still
+        // clears the
         // previous word's payload state — the missing-card branch keys on
         // data == null, so a popup that moves here from a loaded token
         // without unmounting must not keep painting that token's
@@ -1341,16 +1346,17 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                     ? e.message
                     : t('word.ask_ai_failed', {status: '?'}));
 
-                // The 409 sync (popup-ai-enrich ticket 07): both ledger
-                // gates answer 409, and "already been completed" means the
-                // loaded payload's ai_asked is stale — the icon would stay
-                // live over a word no ask can touch again. Refetch the
-                // payload so the icon greys; the missing card has no id to
+                // The 409 sync: the only enrich 409 left (ADR 0082
+                // amendment — the completed lock is gone) is the "in
+                // progress" gate, meaning another tab/tab-window's ask is
+                // mid-flight. Refetching the payload is a harmless sync —
+                // ai_asked stays false until the winner's ask succeeds (a
+                // popup that was already re-ask-able just stays that way) —
+                // and it future-proofs the icon against any payload drift
+                // while the request ran. The missing card has no id to
                 // refetch (the adopt-on-ask 409 carries no payload), so its
                 // lookup re-resolves the adopted word and the fetch effect
-                // loads the locked payload. A pending "in progress" 409
-                // refetches harmlessly — ai_asked stays false until the
-                // winner's ask succeeds.
+                // loads the resulting payload.
                 if (e.status === 409) {
                     if (origin.data?.id != null) {
                         fetch(`/words/${origin.data.id}?surface=${encodeURIComponent(surface)}`, {
@@ -1374,13 +1380,14 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             });
     };
 
-    // The known-word ask (ticket 04): the BOUND word id (data.id — the same
-    // id the server's ledger locks and the payload's ai_asked reports) plus
-    // the popup's current surface — the response payload resolves from the
-    // same surface the initial GET did, so an inflected surface keeps its
-    // form-of line on the live swap.
+    // The known-word ask / re-ask (ticket 04, re-ask per the ADR 0082
+    // amendment): the BOUND word id (data.id — the same id the server's
+    // ledger tracks and the payload's ai_asked reports) plus the popup's
+    // current surface — the response payload resolves from the same surface
+    // the initial GET did, so an inflected surface keeps its form-of line
+    // on the live swap.
     const askAi = () => {
-        if (!data || aiBusy || data.ai_asked) {
+        if (!data || aiBusy) {
             return;
         }
         runEnrich({word_id: data.id, surface}, {data, wordId, surface, languageCode: language?.code ?? null});

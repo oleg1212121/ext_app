@@ -14,8 +14,9 @@ use Illuminate\Support\Collection;
  * (whose response the popup swaps in live, so its shape must never drift
  * from the initial fetch's). The word family resolves through
  * {@see WordFamily::resolve} — which also applies the lazy completeness
- * recalc — and the bound headword's succeeded ask-AI ledger row rides along
- * as `ai_asked` (popup-ai-enrich ticket 04): the toolbar's grey-icon flag.
+ * recalc — and the bound headword's ever-succeeded ask-AI ledger rides along
+ * as `ai_asked` (popup-ai-enrich ticket 04): the toolbar flag that turns the
+ * plain ask icon into the re-ask variant (ADR 0082 amendment).
  */
 final class WordPopupPayload
 {

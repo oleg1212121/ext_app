@@ -463,7 +463,8 @@ it('flags ai_asked only when a succeeded AI enrichment ledger row exists', funct
         ->assertOk()
         ->assertJsonPath('data.ai_asked', true);
 
-    // A failed ask stays retryable — the icon must not grey out for it.
+    // A failed first ask never succeeded — ai_asked stays false (the
+    // toolbar shows the first-time ask icon, retryable).
     $this->actingAs($user)
         ->getJson(route('words.show', ['word' => $failed->id]))
         ->assertOk()
