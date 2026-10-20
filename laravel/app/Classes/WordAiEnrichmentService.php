@@ -228,7 +228,7 @@ class WordAiEnrichmentService
 
         $word = Word::query()->firstOrCreate(
             ['l_word' => $key, 'language_id' => $language->id, 'word_class_id' => $unknownClassId],
-            ['word' => mb_substr($display, 0, 256)],
+            ['word' => mb_substr($display, 0, 256), 'source' => Word::SOURCE_AI],
         );
 
         if ($word->wasRecentlyCreated) {
@@ -236,6 +236,12 @@ class WordAiEnrichmentService
                 LemmaForms::rows($word->word, [], $word->id, $stripsMarks),
                 ['form', 'word_id'],
             );
+        } elseif ($word->source === null) {
+            // The fill-if-null backstop: the mint found a row that raced in
+            // from the concurrent double-ask — claim it for the ask unless
+            // another creator already owns it (ADR 0084). A resolve-surface
+            // hit above is a read: it is never claimed here.
+            $word->forceFill(['source' => Word::SOURCE_AI])->save();
         }
 
         return $word;

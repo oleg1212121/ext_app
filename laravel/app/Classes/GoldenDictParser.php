@@ -1116,6 +1116,10 @@ class GoldenDictParser
                     'translations' => $record['translations'] !== []
                         ? json_encode($record['translations'])
                         : null,
+                    // Provenance rides the INSERT only: the update list below
+                    // never touches source, so the first importer wins
+                    // (ADR 0084).
+                    'source' => Word::SOURCE_GOLDDICT,
                 ];
             }
 
@@ -1129,6 +1133,11 @@ class GoldenDictParser
             // push the unranked sentinel onto words a frequency list ranked,
             // nor clobber translations staged for the bilingual mode.
             Word::upsert($wordUpserts, ['l_word', 'language_id', 'word_class_id'], ['l_word']);
+
+            // The fill-if-null backdoor: a re-run badges the pre-column rows
+            // this batch touched, without claiming a row another creator
+            // already owns.
+            Word::fillSourceIfNull(Word::SOURCE_GOLDDICT, $this->languageId, $wordUpserts);
 
             $this->stats['words_imported'] += count($wordUpserts);
             $this->stats['batches_flushed']++;

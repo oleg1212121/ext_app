@@ -135,7 +135,7 @@ class EntityWordAdoption
                 'language_id' => $languageId,
                 'word_class_id' => $unknownClassId,
             ],
-            ['word' => mb_substr($display, 0, 256)],
+            ['word' => mb_substr($display, 0, 256), 'source' => Word::SOURCE_ENTITY],
         );
 
         if ($word->wasRecentlyCreated) {
@@ -143,6 +143,11 @@ class EntityWordAdoption
                 LemmaForms::rows($word->word, [], $word->id, $stripsMarks),
                 ['form', 'word_id'],
             );
+        } elseif ($word->source === null) {
+            // The fill-if-null backdoor: the mint found a row that raced in
+            // (or one a stale stamp re-keys onto, ADR 0084) — claim it for
+            // adoption unless another creator already owns it.
+            $word->forceFill(['source' => Word::SOURCE_ENTITY])->save();
         }
 
         return $word;

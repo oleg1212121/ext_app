@@ -1,5 +1,51 @@
 # Directory Update Log
 
+## 2026-10-20 (popup-provenance: words.source import provenance, stamped at insert, admin column + filter)
+
+Ticket 03 of the popup-provenance spec (the popup badge that reads this
+column lands with ticket 04). A word row could be minted by five writers
+with nothing on the row saying which — admin triage and the coming badge
+had no answer.
+
+- **`words.source`** (migration `2026_10_20_000003`, nullable string(16)
+  over the closed set `kaikki | golddict | cmudict | entity | ai`,
+  `Word::SOURCES`): stamped in the INSERT payload by every creating
+  writer — the kaikki and GoldenDict upsert row arrays (their update
+  lists unchanged, so `source` never rides an update), the cmudict upsert
+  (conflict update pinned to `['word']` explicitly — it was previously
+  derived from the row keys and would have absorbed the stamp), entity
+  adoption's and the ask-AI mint's `firstOrCreate` values. First importer
+  wins: when imports merge into the same `(l_word, language,
+  word_class_id)` row (ADR 0081), the creator never flips.
+- **The fill-if-null backdoor** (no one-time backfill): each importer's
+  per-batch write runs `Word::fillSourceIfNull` after its upsert — one
+  UPDATE claiming only still-null rows of the batch's
+  `(l_word, word_class_id)` pairs in the language, so re-running an
+  import badges the pre-column rows it touches while a row another
+  creator owns keeps its value. The single-row mints claim the row their
+  `firstOrCreate` found (the documented race nets); a resolve hit on the
+  adopt paths is a read, never a claim. Rows nothing touches again stay
+  null — pre-column rows and Filament hand-creates included (the Word
+  form gains NO source field: provenance is machine-written).
+- **Filament Words admin**: a Source badge column (dash for null,
+  searchable/sortable) and a Source select filter over `Word::SOURCES`.
+- **Tests**: `tests/Feature/WordSourceProvenanceTest.php` — the
+  fill-if-null helper contract (pair- and language-scoped, never
+  overwriting), insert stamps + re-run claims for kaikki (via
+  `WiktionaryParser`) and golddict (via `goldendict:import`), the cmudict
+  stamp, the entity mint/claim/adopt-onto matrix, the adopt-on-ask mint
+  stamp and the read-only resolve hit, and the admin column/filter.
+  Existing importer/adoption/enrich suites untouched and green.
+- **ADR 0084** records the decision set (closed set + insert stamp, first
+  importer wins, the backdoor, admin reads only);
+  `database/dictionary.md` (words row + sources),
+  `domains/dictionary-import.md` (the **Word source** glossary term in
+  Creator hygiene, sources, description) and
+  `domains/interactive-words.md` (the adopt-on-ask route row) updated;
+  `wiki:sync` re-stamped the migration references. Note: the dev DB
+  (`ext_app`) gets the column on the next manual `php artisan migrate` —
+  the test DB via the suite only.
+
 ## 2026-10-20 (popup-ai-enrich re-ask: the succeeded lock lifted, replace-on-reask, the re-ask icon)
 
 User report: the Ask-AI icon answered "AI enrichment has already been

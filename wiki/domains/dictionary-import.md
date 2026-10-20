@@ -1,12 +1,18 @@
 ---
 type: Pipeline
 title: Dictionary Import
-description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair (both import commands chain the link pass by default); each language's dictionary sources from its own Wiktionary edition dump and editions merge on overlap — existing rows keep their definitions and gain the new edition's (ADR 0080); both importers store plain (stress-free) display words and stage plain translation candidates for the stress-mark target languages, trimmed at storage; share one pos alias table, one lemma-form rule (ё-forms also emit an е-folded alias row), one ё-aware l_word key (trim → lowercase → combining-mark strip → zero-width/format-character strip → ё→е fold; display text never folds and keeps ё), one majority-script definition guard (`DefinitionLanguage`: a definition imports only in the word language's own script — en Latin, ru/be/uk Cyrillic — kept on a strict majority of its letters, dropped on a tie, letterless strings pass, unmapped languages unguarded; import-time only, etymologies never guarded), one usage-label mapping (kaikki `senses[].tags` intersect the closed `UsageLabels` set onto `definitions.labels` — going forward, null = unlabelled, no backfill), and one word-uniqueness triple (l_word, language_id, word_class_id) — cross-source spellings of one word (ёлка/елка, March/march) collapse into ONE row per class, the first source's display standing and staying hand-editable, existing duplicates merged onto the fullest survivor (ё-display first) before the unique builds (ADR 0081); kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions, and the entity tokenizers (PHP/JS/python, parity-bound) stamp entity_words through the same lookup key; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, l_word recompute with same-key duplicate merge onto the fullest survivor — ё-display first — under either schema, before migrate builds the unique, unknown-twin merges, alias-class fold, entity stamp key recompute, lemma-form backfill).
+description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionaries into the unified language-keyed dictionary tables and linking translations across every language pair (both import commands chain the link pass by default); each language's dictionary sources from its own Wiktionary edition dump and editions merge on overlap — existing rows keep their definitions and gain the new edition's (ADR 0080); both importers store plain (stress-free) display words and stage plain translation candidates for the stress-mark target languages, trimmed at storage; share one pos alias table, one lemma-form rule (ё-forms also emit an е-folded alias row), one ё-aware l_word key (trim → lowercase → combining-mark strip → zero-width/format-character strip → ё→е fold; display text never folds and keeps ё), one majority-script definition guard (`DefinitionLanguage`: a definition imports only in the word language's own script — en Latin, ru/be/uk Cyrillic — kept on a strict majority of its letters, dropped on a tie, letterless strings pass, unmapped languages unguarded; import-time only, etymologies never guarded), one usage-label mapping (kaikki `senses[].tags` intersect the closed `UsageLabels` set onto `definitions.labels` — going forward, null = unlabelled, no backfill), and one word-uniqueness triple (l_word, language_id, word_class_id) — cross-source spellings of one word (ёлка/елка, March/march) collapse into ONE row per class, the first source's display standing and staying hand-editable, existing duplicates merged onto the fullest survivor (ё-display first) before the unique builds (ADR 0081); kaikki form-of relay entries demote to forms of their base (shared parser-agnostic FormOfClassifier) instead of word rows, GoldenDict imports keep the phrase class to dictionary headwords and link translations without creating target words (ADR 0078, addendum 2026-10-18); multi-word headwords are shape-curated so junk verb rows never reach the multiword-verb lexicon (ADR 0059); the remaining word creators (cmudict, entity adoption, Filament manual create) attach to existing l_word rows instead of minting unknown-class twins and put new words through the same plain-display/lookup-key/lemma-form conventions and stamp the **Word source** column at insert (first importer wins, re-runs fill nulls only — ADR 0084; Filament manual create is the one creator that leaves it null), and the entity tokenizers (PHP/JS/python, parity-bound) stamp entity_words through the same lookup key; the already-stored residual repairs in place through the idempotent words:normalize phases (stress-strip merges, l_word recompute with same-key duplicate merge onto the fullest survivor — ё-display first — under either schema, before migrate builds the unique, unknown-twin merges, alias-class fold, entity stamp key recompute, lemma-form backfill).
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-20T18:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T21:40:00+03:00 }
 sources:
+  - id: word-source-adr
+    resource: docs/adr/0084-word-source-provenance.md
+    title: ADR 0084 — words.source insert-stamped, first importer wins, re-runs fill nulls only
+  - id: word-source-migration
+    resource: laravel/database/migrations/2026_10_20_000003_add_source_to_words_table.php
+    title: words.source — the nullable Word source column (popup-provenance ticket 03)
   - id: usage-labels
     resource: laravel/app/Support/UsageLabels.php
     title: UsageLabels — the closed usage-label set (kaikki tags and AI labels → definitions.labels)
@@ -508,6 +514,27 @@ candidates plain for the stress-mark languages (GoldenDict at segment
 strip, kaikki at candidate extraction).
 
 # Creator hygiene (no unknown-class twins)
+
+**Word source** (`words.source`, ADR
+[0084](../../docs/adr/0084-word-source-provenance.md)): the nullable
+string(16) recording WHICH creator minted a word row — the closed set
+`kaikki | golddict | cmudict | entity | ai` (`Word::SOURCES`), stamped in
+the INSERT payload by every creating writer (the importers' upsert row
+arrays; the adoption and ask-AI mints' `firstOrCreate` values), and never
+part of an update: the upserts' update lists omit it and the cmudict
+conflict update pins `['word']` explicitly, so the first importer wins
+when imports merge into the same row. There is no backfill — instead each
+creating writer's per-batch write runs a fill-if-null claim
+(`Word::fillSourceIfNull` for the importers: one UPDATE scoped to the
+batch's `(l_word, word_class_id)` pairs in the language, still-null rows
+only; the single-row mints claim the row their `firstOrCreate` found —
+the race net). Re-running an import badges the pre-column rows it
+touches; rows nothing touches again stay null, as do hand-created admin
+words (the Filament form carries no source field — provenance is
+machine-written; the Words table shows it as a column with a dash for
+null and filters on it). A resolve-hit on the adopt paths is a read, not
+a claim. The popup's provenance badge reads this column (popup-provenance
+ticket 04).
 
 Word uniqueness is `(l_word, language_id, word_class_id)` (2026-10-19,
 ADR

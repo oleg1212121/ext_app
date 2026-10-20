@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-20T18:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T21:40:00+03:00 }
 sources:
   - id: adr-0081
     resource: docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md
@@ -132,7 +132,11 @@ Two source shapes exist:
    → 22 definitions) without touching the en side. Afterwards run the
    repair chain (`words:normalize --dry` first; `words:import-frequency
    ru-rnc` re-clamps ru ranks — the link pass already ran inside the
-   import).
+   import). Provenance rides the same merge: every import stamps
+   `words.source` at insert and its per-batch fill-if-null claims
+   still-null rows it touches (ADR 0084) — so re-running an import after
+   the 2026-10-20 column lands badges the pre-column rows it covers;
+   rows nothing re-touches stay null.
 5. Useful flags: `--skip-extract` reuses existing extract files (e.g. rerun
    a failed import phase without a second decompression pass);
    `--extract-only` stops after the extract files; `--no-link` skips the

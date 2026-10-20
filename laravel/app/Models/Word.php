@@ -17,6 +17,31 @@ class Word extends Model
      */
     public const FREQUENCY_UNRANKED = 1100000;
 
+    /**
+     * The word-row creators — the closed words.source set (ADR 0084). Every
+     * writer that can CREATE a word row stamps its value at INSERT and never
+     * overwrites another one (first importer wins); null stays on pre-column
+     * rows and hand-created admin words until a creating writer touches the
+     * row again (the fill-if-null backdoor below).
+     */
+    public const SOURCE_KAIKKI = 'kaikki';
+
+    public const SOURCE_GOLDDICT = 'golddict';
+
+    public const SOURCE_CMUDICT = 'cmudict';
+
+    public const SOURCE_ENTITY = 'entity';
+
+    public const SOURCE_AI = 'ai';
+
+    public const SOURCES = [
+        self::SOURCE_KAIKKI,
+        self::SOURCE_GOLDDICT,
+        self::SOURCE_CMUDICT,
+        self::SOURCE_ENTITY,
+        self::SOURCE_AI,
+    ];
+
     protected $fillable = [
         'language_id',
         'word',
@@ -24,6 +49,7 @@ class Word extends Model
         'frequency',
         'word_class_id',
         'translations',
+        'source',
     ];
 
     protected function casts(): array
@@ -33,6 +59,37 @@ class Word extends Model
             'translations' => 'array',
             'completeness_at' => 'datetime',
         ];
+    }
+
+    /**
+     * The fill-if-null provenance backdoor (ADR 0084): claim every
+     * still-null row of the batch's (l_word, word_class_id) pairs in the
+     * language for $source — one UPDATE per import batch, run AFTER the
+     * batch's upsert. A re-running import badges the pre-column rows it
+     * touches; a row another creator already claimed keeps its value (the
+     * upsert's update list never carries source for the same reason — first
+     * importer wins). Rows nothing touches again stay null.
+     *
+     * @param  array<int, array{l_word: string, word_class_id: int}>  $wordUpserts  the batch's upsert rows
+     */
+    public static function fillSourceIfNull(string $source, int $languageId, array $wordUpserts): void
+    {
+        if ($wordUpserts === []) {
+            return;
+        }
+
+        $pairs = collect($wordUpserts)
+            ->unique(fn (array $upsert) => $upsert['l_word'].'|'.$upsert['word_class_id']);
+        $placeholders = $pairs->map(fn () => '(?, ?)')->implode(', ');
+        $bindings = $pairs
+            ->flatMap(fn (array $upsert) => [$upsert['l_word'], $upsert['word_class_id']])
+            ->all();
+
+        static::query()
+            ->where('language_id', $languageId)
+            ->whereRaw("(l_word, word_class_id) in ({$placeholders})", $bindings)
+            ->whereNull('source')
+            ->update(['source' => $source]);
     }
 
     public function language(): BelongsTo

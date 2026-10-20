@@ -5,7 +5,7 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-10-19T22:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T21:40:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: controller
@@ -86,7 +86,9 @@ re-indexes when stale and always runs the link pass, then runs
 same-`l_word` word row when the dictionary already carries one (first
 non-unknown-class row, else lowest id — never an `unknown` twin), and only
 genuinely new tokens get a `words` row of their own (class `unknown`, plain
-display word + lemma form) with `entity_words.word_id` pointed at it; every
+display word + lemma form, stamped `words.source = 'entity'` — ADR 0084; a
+raced-in null row is claimed, an adopt-onto hit's source never touched)
+with `entity_words.word_id` pointed at it; every
 entity word still lacking translations gets a background translation fetch
 queued (Yandex → Google; ledger-deduped — see
 [Interactive words](/domains/interactive-words.md) and

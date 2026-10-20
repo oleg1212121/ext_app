@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-20T18:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T21:40:00+03:00 }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base
@@ -253,7 +253,8 @@ baseline migration creates the column NOT NULL with cascade delete
   Context explanation (`/ai/word-explain`) and its ask-AI enrichment
   (`/ai/word-enrich`, one ledger-locked ask per word, merged inline under
   per-row `source='ai'` provenance, ADR 0082; the missing card's adoption
-  ask resolves-or-mints the word first, ticket 05) — both resolve the
+  ask resolves-or-mints the word first, the mint stamped
+  `words.source = 'ai'` (ADR 0084), ticket 05) — both resolve the
   **explanation model**. The enrichment prompt is the admin-editable
   `word.enrichment` template (`:word`/`:language`/`:native`,
   `PromptTemplates::enrichment`, code fallback seeded as the row)

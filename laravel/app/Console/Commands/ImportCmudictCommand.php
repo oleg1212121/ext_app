@@ -286,16 +286,26 @@ class ImportCmudictCommand extends Command
                 'l_word' => WordLookupKey::normalize($word),
                 'language_id' => $this->langId,
                 'word_class_id' => $this->unknownClassId,
+                // Provenance rides the INSERT only: the update list below
+                // never touches source, so the first creator wins (ADR 0084).
+                'source' => Word::SOURCE_CMUDICT,
             ], $missing);
 
             foreach (array_chunk($rows, 500) as $chunk) {
                 // The conflict clause matches the real unique key (the
                 // l_word triple); today's safety comes from the pre-check
-                // above — only l_words no row carries reach the insert.
-                Word::upsert($chunk, ['l_word', 'language_id', 'word_class_id']);
+                // above — only l_words no row carries reach the insert. The
+                // explicit update list keeps source out of the conflict
+                // update (a raced-in row keeps its own stamp and word).
+                Word::upsert($chunk, ['l_word', 'language_id', 'word_class_id'], ['word']);
             }
 
             $stats['words_created'] += count($missing);
+
+            // The fill-if-null backdoor: a row that raced in between the
+            // pre-check and the upsert gets claimed, without touching a row
+            // another creator already owns.
+            Word::fillSourceIfNull(Word::SOURCE_CMUDICT, $this->langId, $rows);
 
             $created = Word::query()
                 ->where('language_id', $this->langId)

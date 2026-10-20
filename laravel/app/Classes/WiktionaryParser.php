@@ -521,6 +521,10 @@ class WiktionaryParser
                     'language_id' => $this->languageId,
                     'word_class_id' => $posId,
                     'translations' => ! empty($record['translations']) ? json_encode($record['translations']) : null,
+                    // Provenance rides the INSERT only: the update list below
+                    // never touches source, so the first importer wins
+                    // (ADR 0084).
+                    'source' => Word::SOURCE_KAIKKI,
                 ];
             }
 
@@ -533,6 +537,11 @@ class WiktionaryParser
                 // rank are never clobbered (the ADR 0080 merge: the first
                 // spelling stands, the staged JSON is the edition's refresh).
                 Word::upsert($wordUpserts, ['l_word', 'language_id', 'word_class_id'], ['l_word', 'translations']);
+
+                // The fill-if-null backdoor: a re-run badges the pre-column
+                // rows this batch touched, without claiming a row another
+                // creator already owns.
+                Word::fillSourceIfNull(Word::SOURCE_KAIKKI, $this->languageId, $wordUpserts);
             }
 
             $this->stats['words_imported'] += count($wordUpserts);
