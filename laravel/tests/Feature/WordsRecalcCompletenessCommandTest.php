@@ -13,8 +13,8 @@ use Illuminate\Support\Facades\DB;
 uses(RefreshDatabase::class);
 
 /**
- * A rich word: definition + transcription + translation link + a real
- * frequency rank = 2 + 1 + 1 + 1 = 5.
+ * A rich word: definition (verb — a major POS) + transcription + translation
+ * link + a real frequency rank = 2 + 1 + 3 + 1 = 7.
  */
 function richWord(string $word = 'melt'): Word
 {
@@ -47,20 +47,90 @@ function ruTranslationTarget(): Word
     ], ['word' => 'плавить']);
 }
 
+/**
+ * A word in a class slug the standard seed doesn't carry (the matrix pins
+ * both adjective/adverb spellings and minor POSes).
+ */
+function commandWord(string $word, string $classSlug): Word
+{
+    createWordClasses();
+    $class = WordClass::query()->updateOrCreate(
+        [
+            'language_id' => Language::query()->where('code', 'en')->value('id'),
+            'slug' => $classSlug,
+        ],
+        ['title' => ucfirst($classSlug)],
+    );
+
+    return Word::query()->create([
+        'word' => $word,
+        'l_word' => $word,
+        'language_id' => Language::query()->where('code', 'en')->value('id'),
+        'word_class_id' => $class->id,
+    ]);
+}
+
 it('recalcs completeness for every word', function () {
     $rich = richWord();
     $bare = createWord('en', 'brume', 'noun');
-    // Sentinel frequency is not a real rank: the definition point only.
+    // Sentinel frequency is not a real rank: the noun's definition points only.
     $sentinel = createWord('en', 'zarf', 'noun', ['frequency' => Word::FREQUENCY_UNRANKED]);
     Definition::query()->create(['word_id' => $sentinel->id, 'definition' => 'A receptacle for coffee berries.']);
 
     $this->artisan('words:recalc-completeness')->assertSuccessful();
 
-    expect((int) $rich->fresh()->completeness)->toBe(5)
+    expect((int) $rich->fresh()->completeness)->toBe(7)
         ->and($rich->fresh()->completeness_at)->not->toBeNull()
         ->and((int) $bare->fresh()->completeness)->toBe(0)
         ->and($bare->fresh()->completeness_at)->not->toBeNull()
-        ->and((int) $sentinel->fresh()->completeness)->toBe(1);
+        ->and((int) $sentinel->fresh()->completeness)->toBe(2);
+});
+
+it('mirrors the definition weights: 2 on major POS (both spellings), 1 otherwise', function () {
+    $major = [];
+    foreach (['noun', 'verb', 'adjective', 'adj', 'adverb', 'adv'] as $slug) {
+        $major[$slug] = commandWord("word_{$slug}", $slug);
+        Definition::query()->create(['word_id' => $major[$slug]->id, 'definition' => 'A sense.']);
+    }
+    $minor = [];
+    foreach (['pronoun', 'phrase', 'unknown'] as $slug) {
+        $minor[$slug] = commandWord("minor_{$slug}", $slug);
+        Definition::query()->create(['word_id' => $minor[$slug]->id, 'definition' => 'A sense.']);
+    }
+
+    $this->artisan('words:recalc-completeness')->assertSuccessful();
+
+    foreach ($major as $slug => $word) {
+        expect((int) $word->fresh()->completeness)->toBe(2, "definitions on a {$slug} entry");
+    }
+    foreach ($minor as $slug => $word) {
+        expect((int) $word->fresh()->completeness)->toBe(1, "definitions on a {$slug} entry");
+    }
+});
+
+it('mirrors the demotion rule: 0 definition points only when EVERY definition demotes', function () {
+    // Every definition labelled obsolete/archaic: the word stays at 0.
+    $allDemoted = createWord('en', 'dodo', 'verb');
+    Definition::query()->create(['word_id' => $allDemoted->id, 'definition' => 'No longer used.', 'labels' => ['obsolete']]);
+    Definition::query()->create(['word_id' => $allDemoted->id, 'definition' => 'Out of use.', 'labels' => ['archaic']]);
+
+    // One live (unlabelled) definition among demoting ones: full points.
+    $mixed = createWord('en', 'brume', 'verb');
+    Definition::query()->create(['word_id' => $mixed->id, 'definition' => 'A live sense.']);
+    Definition::query()->create(['word_id' => $mixed->id, 'definition' => 'An obsolete sense.', 'labels' => ['obsolete']]);
+
+    // Non-demoting labels (colloquial/rare/...) never demote.
+    $colloquial = createWord('en', 'haze', 'verb');
+    Definition::query()->create(['word_id' => $colloquial->id, 'definition' => 'An informal sense.', 'labels' => ['colloquial']]);
+
+    // No definitions at all: live (0) — the score is 0 either way, but
+    // WordCompleteness::isDemoted must disagree with the all-demotion case.
+
+    $this->artisan('words:recalc-completeness')->assertSuccessful();
+
+    expect((int) $allDemoted->fresh()->completeness)->toBe(0)
+        ->and((int) $mixed->fresh()->completeness)->toBe(2)
+        ->and((int) $colloquial->fresh()->completeness)->toBe(2);
 });
 
 it('is idempotent — a second full run rewrites nothing', function () {
@@ -81,7 +151,7 @@ it('corrects a wrong score even under a fresh stamp on a full run', function () 
 
     $this->artisan('words:recalc-completeness')->assertSuccessful();
 
-    expect((int) $word->fresh()->completeness)->toBe(5);
+    expect((int) $word->fresh()->completeness)->toBe(7);
 });
 
 it('with --stale-only leaves fresh words alone and rewrites stale ones', function () {
@@ -105,7 +175,7 @@ it('with --stale-only leaves fresh words alone and rewrites stale ones', functio
     $staleAfter = $stale->fresh();
     expect($freshAfter->completeness_at->format('Y-m-d H:i:s'))->toBe($storedFuture, 'fresh word must not be rewritten')
         ->and($staleAfter->completeness_at->format('Y-m-d H:i:s'))->not->toBe($storedFuture, 'stale word must be rewritten')
-        ->and((int) $staleAfter->completeness)->toBe(5);
+        ->and((int) $staleAfter->completeness)->toBe(7);
 });
 
 it('with --stale-only still corrects never-scored words', function () {
@@ -113,5 +183,5 @@ it('with --stale-only still corrects never-scored words', function () {
 
     $this->artisan('words:recalc-completeness', ['--stale-only' => true])->assertSuccessful();
 
-    expect((int) $word->fresh()->completeness)->toBe(5);
+    expect((int) $word->fresh()->completeness)->toBe(7);
 });

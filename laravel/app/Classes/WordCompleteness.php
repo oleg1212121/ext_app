@@ -2,35 +2,56 @@
 
 namespace App\Classes;
 
+use App\Models\Definition;
 use App\Models\Form;
 use App\Models\Word;
 use App\Models\WordTranslation;
+use App\Support\UsageLabels;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 /**
  * The word's completeness — how much is known about it, stored on
- * `words.completeness` as a 0–7 score (popup-ai-enrich spec decision 3):
+ * `words.completeness` as a 0–9 score (popup-ai-enrich spec decision 3,
+ * weighted v2 of 2026-10-20 — importance as well as richness):
  *
  * | points | what                                             |
  * |--------|--------------------------------------------------|
- * | 2      | ≥ 1 linked translation (`word_translations` row) |
- * | 1      | definitions exist                                |
+ * | 3      | ≥ 1 linked translation (`word_translations` row) |
+ * | 2      | definitions exist AND the entry's class slug is
+ *          a major POS ({@see MAJOR_POS})                    |
+ * | 1      | definitions exist, any other POS                 |
+ * | 0      | definitions exist but **every** one carries a
+ *          demoting label ({@see UsageLabels::DEMOTING} —
+ *          no definitions is live, never demoted)           |
  * | 1      | transcriptions exist                             |
  * | 1      | examples exist                                   |
  * | 1      | etymologies exist                                |
  * | 1      | a real frequency rank (0 < rank < the unranked
  *          sentinel — 0 is the "never ranked" column default,
  *          `Word::FREQUENCY_UNRANKED` the explicit unranked
- *          stamp; ADR 0041's fold guard uses the same window) |
+ *          stamp; ADR 0041's fold guard uses the same window)|
  *
  * The score never depends on how many rows a kind has — existence only.
  * `words:recalc-completeness` computes the same matrix set-based in SQL;
- * its command test pins that mirror to this matrix.
+ * its command test pins that mirror to this matrix. The popup sorts live
+ * entries ahead of demoted ones before the score ({@see WordFamily}) —
+ * {@see isDemoted()} is the one demotion test both share, so sort and
+ * score can never disagree.
  */
 class WordCompleteness
 {
-    public const MAX = 7;
+    public const MAX = 9;
+
+    /**
+     * The class slugs whose definitions earn 2 points instead of 1 — both
+     * spellings of adjective/adverb: EntityWordLinker::CLASS_PRIORITY's
+     * long forms (what the import writes) plus the 'adj'/'adv' short
+     * forms some dictionary sources use.
+     *
+     * @var list<string>
+     */
+    public const MAJOR_POS = ['noun', 'verb', 'adjective', 'adj', 'adverb', 'adv'];
 
     /**
      * The matrix, over the word's loaded content relations. Callers that
@@ -42,14 +63,41 @@ class WordCompleteness
     {
         $score = 0;
 
-        $score += ($hasLinkedTranslations ?? self::hasLinkedTranslations($word)) ? 2 : 0;
-        $score += $word->definitions->isNotEmpty() ? 1 : 0;
+        $score += ($hasLinkedTranslations ?? self::hasLinkedTranslations($word)) ? 3 : 0;
+        $score += self::definitionPoints($word);
         $score += $word->transcriptions->isNotEmpty() ? 1 : 0;
         $score += $word->examples->isNotEmpty() ? 1 : 0;
         $score += $word->etymologies->isNotEmpty() ? 1 : 0;
         $score += self::hasRealFrequencyRank($word) ? 1 : 0;
 
         return $score;
+    }
+
+    /**
+     * Whether the entry sinks below every live one in the popup: it HAS
+     * definitions and every one of them carries a demoting label. An entry
+     * with no definitions is live, never demoted. Shared by the score's
+     * definition points and WordFamily's live-before-demoted sort.
+     */
+    public static function isDemoted(Word $word): bool
+    {
+        return $word->definitions->isNotEmpty()
+            && $word->definitions->every(
+                fn (Definition $definition): bool => UsageLabels::demoting($definition->labels),
+            );
+    }
+
+    /**
+     * The definition slice of the matrix: 0 when no definitions exist or
+     * the entry is demoted, else 2 on a major POS, 1 on anything else.
+     */
+    private static function definitionPoints(Word $word): int
+    {
+        if ($word->definitions->isEmpty() || self::isDemoted($word)) {
+            return 0;
+        }
+
+        return in_array($word->wordClass?->slug ?? '', self::MAJOR_POS, true) ? 2 : 1;
     }
 
     /**
@@ -95,15 +143,17 @@ class WordCompleteness
     /**
      * Lazy staleness recalc for the popup's word family: a word whose
      * `completeness_at` is missing or older than its own `updated_at` or the
-     * newest stamp of its content children (definitions/transcriptions/
-     * examples/etymologies/forms — translation links included, they carry 2
-     * of the 7 points) gets recomputed and persisted; fresh words are left
-     * untouched. The passed-in models have their in-memory completeness
-     * attributes refreshed either way, so ordering always sees an int.
+     * newest stamp of its content children (definitions — labels included,
+     * they carry the demotion rule — transcriptions/examples/etymologies/
+     * forms; translation links carry 3 of the 9 points) gets recomputed and
+     * persisted; fresh words are left untouched. The passed-in models have
+     * their in-memory completeness attributes refreshed either way, so
+     * ordering always sees an int.
      *
-     * Content-child stamps ride the caller's eager-loaded relations; forms
-     * (not eager-loaded) and the translation pivot are aggregated with one
-     * query each per family.
+     * Content-child stamps (and the class slug the major-POS rule reads)
+     * ride the caller's eager-loaded relations; forms (not eager-loaded)
+     * and the translation pivot are aggregated with one query each per
+     * family.
      *
      * @param  Collection<int, Word>  $words
      * @return Collection<int, Word>

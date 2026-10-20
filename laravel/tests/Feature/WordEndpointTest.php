@@ -2,6 +2,7 @@
 
 use App\Models\Definition;
 use App\Models\Etymology;
+use App\Models\Example;
 use App\Models\Form;
 use App\Models\Language;
 use App\Models\Tag;
@@ -136,13 +137,15 @@ it('merges base-word entries of the surface form and hides the relay entry', fun
         ->assertOk()
         ->assertJsonPath('data.form_of', ['melt'])
         ->assertJsonCount(2, 'data.entries')
-        // Own group keeps the real melted entry; the relay entry is hidden.
-        ->assertJsonPath('data.entries.0.id', $meltedAdj->id)
-        ->assertJsonPath('data.entries.0.word', 'melted')
+        // The relay entry is hidden; the surviving own-group entry (unknown
+        // class: definition 1 + rank 1 = 2) and the base entry (verb:
+        // definition 2 + rank 1 = 3) sort by completeness.
+        ->assertJsonPath('data.entries.0.id', $meltVerb->id)
+        ->assertJsonPath('data.entries.0.word', 'melt')
         // The base group is scoped to the claiming class (melt/verb).
-        ->assertJsonPath('data.entries.1.id', $meltVerb->id)
-        ->assertJsonPath('data.entries.1.word', 'melt')
-        ->assertJsonPath('data.entries.1.definitions.0', 'To change from solid to liquid state.');
+        ->assertJsonPath('data.entries.1.id', $meltedAdj->id)
+        ->assertJsonPath('data.entries.1.word', 'melted')
+        ->assertJsonPath('data.entries.1.definitions.0', 'Being in a liquid state as a result of melting.');
 
     expect(collect($response->json('data.entries'))->pluck('id'))->not->toContain($meltNoun->id);
 });
@@ -277,9 +280,10 @@ it('keeps the linked entry first when completeness ties', function () {
 
     $melted = createWord('en', 'melted', 'unknown');
     Definition::query()->create(['word_id' => $melted->id, 'definition' => 'Converted to a liquid state.']);
-    // One definition each, neither ranked: both score 1 — today's order
-    // (own group, linked word first) stands as the tiebreak.
-    $meltVerb = createWord('en', 'melt', 'verb');
+    // One definition each, unknown class throughout, neither ranked: both
+    // score 1 — today's order (own group, linked word first) stands as the
+    // tiebreak.
+    $meltVerb = createWord('en', 'melt', 'unknown');
     Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid.']);
     Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melted', 'l_word' => 'melted']);
 
@@ -314,10 +318,48 @@ it('orders base-word groups by frequency without a cap', function () {
         ->assertOk()
         ->assertJsonPath('data.form_of', ['leave', 'lift'])
         ->assertJsonCount(4, 'data.entries')
-        ->assertJsonPath('data.entries.0.id', $leftAdj->id)
-        ->assertJsonPath('data.entries.1.id', $leaveNoun->id)
-        ->assertJsonPath('data.entries.2.id', $leaveVerb->id)
-        ->assertJsonPath('data.entries.3.id', $liftVerb->id);
+        // Major POS outranks the minor entry through the score (verb/noun
+        // definitions 2 + rank 1 = 3 vs the unknown-class 1 + rank 1 = 2),
+        // so the assembly's leading own-group entry sinks last.
+        ->assertJsonPath('data.entries.0.id', $leaveNoun->id)
+        ->assertJsonPath('data.entries.1.id', $leaveVerb->id)
+        ->assertJsonPath('data.entries.2.id', $liftVerb->id)
+        ->assertJsonPath('data.entries.3.id', $leftAdj->id);
+});
+
+it('ranks a live entry ahead of a demoted one regardless of completeness', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    // The linked entry is demoted (every definition obsolete) yet rich:
+    // demoted (0 definition points) + transcription + example + rank = 3.
+    $meltedVerb = createWord('en', 'melted', 'verb', ['frequency' => 900]);
+    Definition::query()->create(['word_id' => $meltedVerb->id, 'definition' => 'No longer in use.', 'labels' => ['obsolete']]);
+    Transcription::query()->create([
+        'word_id' => $meltedVerb->id,
+        'transcription_type_id' => TranscriptionType::query()->create([
+            'language_id' => Language::query()->where('code', 'en')->value('id'),
+            'slug' => 'ipa',
+            'title' => 'IPA',
+        ])->id,
+        'transcription' => 'mɛltɪd',
+    ]);
+    Example::query()->create(['word_id' => $meltedVerb->id, 'example' => 'It was melted down.']);
+
+    // The base entry is live and sparser: one definition on a verb entry,
+    // score 2 — but live always sorts first.
+    $meltVerb = createWord('en', 'melt', 'verb');
+    Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid.']);
+    Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melted', 'l_word' => 'melted']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $meltedVerb->id, 'surface' => 'melted']))
+        ->assertOk()
+        ->assertJsonCount(2, 'data.entries')
+        ->assertJsonPath('data.entries.0.id', $meltVerb->id)
+        ->assertJsonPath('data.entries.0.word', 'melt')
+        ->assertJsonPath('data.entries.1.id', $meltedVerb->id)
+        ->assertJsonPath('data.entries.1.word', 'melted');
 });
 
 it('finds base words through a surface carrying combining marks', function () {

@@ -20,10 +20,12 @@ use Illuminate\Support\Collection;
  * into real entries, so e.g. "saw/verb" carries real saw senses AND
  * "simple past of see".
  *
- * The assembled entries then stable-sort completeness-descending (stored
- * `words.completeness`, recalculated lazily on the way out — see
- * WordCompleteness): the richest entry leads, and the assembly order
- * (linked word first, class priority, base-group frequency) is the tiebreak.
+ * The assembled entries then stable-sort [live entry before demoted entry,
+ * then completeness-descending] (stored `words.completeness`, recalculated
+ * lazily on the way out — see WordCompleteness): the richest live entry
+ * leads, an entry whose every sense is obsolete/archaic sinks below every
+ * live one, and the assembly order (linked word first, class priority,
+ * base-group frequency) is the tiebreak.
  */
 class WordFamily
 {
@@ -53,8 +55,9 @@ class WordFamily
         'language:id,code',
         // created_at/updated_at ride along: WordCompleteness's staleness
         // threshold reads the children's newest stamps off the loaded
-        // relations (no per-child re-query).
-        'definitions:id,word_id,definition,created_at,updated_at',
+        // relations (no per-child re-query); labels rides along for the
+        // demotion test (live-before-demoted ordering, ticket 10).
+        'definitions:id,word_id,definition,labels,created_at,updated_at',
         'transcriptions:id,word_id,transcription,transcription_type_id,created_at,updated_at',
         'transcriptions.transcriptionType:id,slug,title',
         'examples:id,word_id,example,created_at,updated_at',
@@ -112,13 +115,17 @@ class WordFamily
 
         // The lazy completeness recalc (both columns persisted when stale,
         // in-memory scores refreshed either way), then the popup ordering:
-        // completeness-descending over the assembled order — linked word
-        // first, class priority, base groups ranked by frequency — which
-        // remains the tiebreak for equal scores. PHP 8 sorts are stable, so
-        // uasort preserves the assembled order within a score.
+        // live entries before demoted ones (WordCompleteness::isDemoted —
+        // every definition labelled obsolete/archaic; shared with the
+        // score so they can never disagree), then completeness-descending,
+        // over the assembled order — linked word first, class priority,
+        // base groups ranked by frequency — which remains the tiebreak for
+        // equal scores among equally-live entries. PHP 8 sorts are stable,
+        // so uasort preserves the assembled order within a score.
         WordCompleteness::recalcFamily($entries);
         $entries = $entries->sort(
-            fn (Word $a, Word $b): int => ($b->completeness ?? 0) <=> ($a->completeness ?? 0),
+            fn (Word $a, Word $b): int => ((int) WordCompleteness::isDemoted($a) <=> (int) WordCompleteness::isDemoted($b))
+                ?: (($b->completeness ?? 0) <=> ($a->completeness ?? 0)),
         )->values();
 
         return new self($entries, self::baseGroupHeadwords($baseGroups));

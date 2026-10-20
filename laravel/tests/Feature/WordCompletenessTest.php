@@ -10,6 +10,7 @@ use App\Models\Language;
 use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\Word;
+use App\Models\WordClass;
 use App\Models\WordTranslation;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -19,7 +20,7 @@ uses(RefreshDatabase::class);
 
 /**
  * A word with nothing known about it — the 0 anchor of the completeness
- * matrix (spec decision 3).
+ * matrix (spec decision 3, weighted v2).
  */
 function bareCompletenessWord(string $word = 'melt', array $attributes = []): Word
 {
@@ -33,7 +34,7 @@ function bareCompletenessWord(string $word = 'melt', array $attributes = []): Wo
 function currentScore(Word $word, ?bool $hasLinkedTranslations = null): int
 {
     return WordCompleteness::score(
-        $word->load(['definitions', 'transcriptions', 'examples', 'etymologies']),
+        $word->load(['definitions', 'transcriptions', 'examples', 'etymologies', 'wordClass']),
         $hasLinkedTranslations,
     );
 }
@@ -46,6 +47,36 @@ function enIpaType(): TranscriptionType
         'language_id' => Language::query()->where('code', 'en')->value('id'),
         'slug' => 'ipa',
         'title' => 'IPA',
+    ]);
+}
+
+/**
+ * A word class for any slug the matrix pins beyond the standard seed
+ * (adjective/adverb and their short spellings, minor POSes).
+ */
+function enWordClass(string $slug): WordClass
+{
+    createWordClasses();
+
+    return WordClass::query()->updateOrCreate(
+        ['language_id' => Language::query()->where('code', 'en')->value('id'), 'slug' => $slug],
+        ['title' => ucfirst($slug)],
+    );
+}
+
+/**
+ * A word in any class slug (createWord only knows the standard seed).
+ */
+function wordInClass(string $word, string $slug, array $attributes = []): Word
+{
+    $class = enWordClass($slug);
+
+    return Word::query()->create([
+        'word' => $word,
+        'l_word' => $word,
+        'language_id' => Language::query()->where('code', 'en')->value('id'),
+        'word_class_id' => $class->id,
+        ...$attributes,
     ]);
 }
 
@@ -63,20 +94,83 @@ it('scores the unranked frequency sentinel and the no-rank default 0', function 
         ->and(currentScore($neverRanked, false))->toBe(0);
 });
 
-it('scores linked translations 2 — existence, not count', function () {
+it('scores linked translations 3 — existence, not count', function () {
     $word = bareCompletenessWord();
     WordTranslation::link($word->id, createWord('ru', 'кот', 'noun')->id);
     WordTranslation::link($word->id, createWord('ru', 'плавить', 'verb')->id);
 
-    expect(currentScore($word, hasLinkedTranslations: true))->toBe(2);
+    expect(currentScore($word, hasLinkedTranslations: true))->toBe(3);
+});
+
+it('scores definitions 2 on the major POS — both adjective/adverb spellings', function () {
+    foreach (['noun', 'verb', 'adjective', 'adj', 'adverb', 'adv'] as $slug) {
+        $word = wordInClass("word_{$slug}", $slug);
+        Definition::query()->create(['word_id' => $word->id, 'definition' => 'A sense.']);
+
+        expect(currentScore($word, false))->toBe(2, "definitions on a {$slug} entry");
+    }
+});
+
+it('scores definitions 1 on any other POS', function () {
+    foreach (['pronoun', 'phrase', 'unknown'] as $slug) {
+        $word = wordInClass("word_{$slug}", $slug);
+        Definition::query()->create(['word_id' => $word->id, 'definition' => 'A sense.']);
+
+        expect(currentScore($word, false))->toBe(1, "definitions on a {$slug} entry");
+    }
+});
+
+it('scores definitions 0 when every definition carries a demoting label', function () {
+    $cases = [['obsolete'], ['archaic'], ['obsolete', 'rare']];
+    foreach ($cases as $i => $labels) {
+        $word = bareCompletenessWord("obsolete{$i}");
+        Definition::query()->create(['word_id' => $word->id, 'definition' => 'No longer used.', 'labels' => $labels]);
+        Definition::query()->create(['word_id' => $word->id, 'definition' => 'Out of use.', 'labels' => $labels]);
+
+        expect(currentScore($word, false))->toBe(0);
+    }
+});
+
+it('scores definition points when only some definitions are demoted', function () {
+    $word = bareCompletenessWord();
+    Definition::query()->create(['word_id' => $word->id, 'definition' => 'A live sense.']);
+    Definition::query()->create(['word_id' => $word->id, 'definition' => 'An obsolete sense.', 'labels' => ['obsolete']]);
+
+    // Not EVERY definition demotes: the live sense keeps the verb's 2 points.
+    expect(currentScore($word, false))->toBe(2);
+});
+
+it('treats a word with no definitions as live, not demoted', function () {
+    expect(WordCompleteness::isDemoted(bareCompletenessWord()))->toBeFalse();
+});
+
+it('isDemoted agrees with the score only when every definition demotes', function () {
+    $allObsolete = bareCompletenessWord('zarf');
+    Definition::query()->create(['word_id' => $allObsolete->id, 'definition' => 'No longer used.', 'labels' => ['obsolete']]);
+
+    $mixed = bareCompletenessWord('brume');
+    Definition::query()->create(['word_id' => $mixed->id, 'definition' => 'A live sense.']);
+    Definition::query()->create(['word_id' => $mixed->id, 'definition' => 'An archaic sense.', 'labels' => ['archaic']]);
+
+    $unlabelled = bareCompletenessWord('fog');
+    Definition::query()->create(['word_id' => $unlabelled->id, 'definition' => 'A live sense.']);
+
+    $nonDemotingLabels = bareCompletenessWord('haze');
+    Definition::query()->create(['word_id' => $nonDemotingLabels->id, 'definition' => 'Informal sense.', 'labels' => ['colloquial']]);
+
+    expect(WordCompleteness::isDemoted($allObsolete))->toBeTrue()
+        ->and(WordCompleteness::isDemoted($mixed))->toBeFalse()
+        ->and(WordCompleteness::isDemoted($unlabelled))->toBeFalse()
+        ->and(WordCompleteness::isDemoted($nonDemotingLabels))->toBeFalse();
 });
 
 it('scores each content child 1 — existence, not count', function () {
     $type = enIpaType();
 
-    $defined = bareCompletenessWord('saw');
-    Definition::query()->create(['word_id' => $defined->id, 'definition' => 'To cut with a saw.']);
-    Definition::query()->create(['word_id' => $defined->id, 'definition' => 'A saying.']);
+    // Definitions on a MINOR POS carry the single point (major POS would be 2).
+    $defined = wordInClass('i', 'pronoun');
+    Definition::query()->create(['word_id' => $defined->id, 'definition' => 'The speaker or writer.']);
+    Definition::query()->create(['word_id' => $defined->id, 'definition' => 'The one, itself.']);
     expect(currentScore($defined, false))->toBe(1);
 
     $transcribed = bareCompletenessWord('sigh');
@@ -102,16 +196,16 @@ it('scores a real frequency rank 1', function () {
     expect(currentScore($ranked, false))->toBe(1);
 });
 
-it('scores links, one content kind and a real rank 4', function () {
+it('scores links, one content kind and a real rank 6', function () {
     $word = bareCompletenessWord('melt', ['frequency' => 900]);
     Definition::query()->create(['word_id' => $word->id, 'definition' => 'To change from solid to liquid.']);
     WordTranslation::link($word->id, createWord('ru', 'плавить', 'verb')->id);
 
-    // links 2 + definition 1 + rank 1
-    expect(currentScore($word, hasLinkedTranslations: true))->toBe(4);
+    // links 3 + definition on a verb 2 + rank 1
+    expect(currentScore($word, hasLinkedTranslations: true))->toBe(6);
 });
 
-it('scores links, three content kinds and a real rank 6', function () {
+it('scores links, three content kinds and a real rank 8', function () {
     $type = enIpaType();
     $word = bareCompletenessWord('melt', ['frequency' => 900]);
     Definition::query()->create(['word_id' => $word->id, 'definition' => 'To change from solid to liquid.']);
@@ -123,11 +217,11 @@ it('scores links, three content kinds and a real rank 6', function () {
     Example::query()->create(['word_id' => $word->id, 'example' => 'The snow melts.']);
     WordTranslation::link($word->id, createWord('ru', 'плавить', 'verb')->id);
 
-    // links 2 + definition 1 + transcription 1 + example 1 + rank 1
-    expect(currentScore($word, hasLinkedTranslations: true))->toBe(6);
+    // links 3 + definition 2 + transcription 1 + example 1 + rank 1
+    expect(currentScore($word, hasLinkedTranslations: true))->toBe(8);
 });
 
-it('scores a fully known word 7', function () {
+it('scores a fully known word 9', function () {
     $type = enIpaType();
     $word = bareCompletenessWord('melt', ['frequency' => 900]);
     Definition::query()->create(['word_id' => $word->id, 'definition' => 'To change from solid to liquid.']);
@@ -140,7 +234,7 @@ it('scores a fully known word 7', function () {
     Etymology::query()->create(['word_id' => $word->id, 'etymology' => 'From Old English meltan.']);
     WordTranslation::link($word->id, createWord('ru', 'плавить', 'verb')->id);
 
-    expect(currentScore($word, hasLinkedTranslations: true))->toBe(7);
+    expect(currentScore($word, hasLinkedTranslations: true))->toBe(WordCompleteness::MAX)->toBe(9);
 });
 
 // ---------------------------------------------------------------------------
@@ -180,7 +274,7 @@ function futureStamps(string $table, int $wordId, Carbon $from): void
  * so the observable is the SCORE: planted wrong (0) under the fresh stamp,
  * only a real recompute rewrites it to the true value (> 0).
  */
-function expectRecalced(Word $word, Carbon $stamp, int $expectedScore = 1): void
+function expectRecalced(Word $word, Carbon $stamp, int $expectedScore = 2): void
 {
     DB::table('words')->where('id', $word->id)->update(['completeness' => 0]);
 
@@ -198,8 +292,20 @@ it('recalcs a never-scored word when the popup family resolves', function () {
     WordFamily::resolve($word, 'melt');
 
     $fresh = $word->fresh();
-    expect($fresh->completeness)->toBe(1)
+    expect($fresh->completeness)->toBe(2) // definitions on a verb entry
         ->and($fresh->completeness_at)->not->toBeNull();
+});
+
+it('recalcs when demoting labels land after the last score', function () {
+    [$word, $stamp] = resolvedWord();
+
+    DB::table('definitions')->where('word_id', $word->id)->update([
+        'labels' => json_encode(['obsolete']),
+        'updated_at' => $stamp->copy()->addMinute(),
+    ]);
+
+    // Every definition now demotes: the definition points sink.
+    expectRecalced($word, $stamp, expectedScore: 0);
 });
 
 it('does not recompute a fresh word on resolve', function () {
@@ -233,7 +339,7 @@ it('recalcs when a definition row was inserted', function () {
     Definition::query()->create(['word_id' => $word->id, 'definition' => 'Operate a saw.']);
     futureStamps('definitions', $word->id, $stamp);
 
-    expectRecalced($word, $stamp, expectedScore: 1); // existence, not count
+    expectRecalced($word, $stamp, expectedScore: 2); // verb entry, existence not count
 });
 
 it('recalcs when a definition row was updated', function () {
@@ -258,7 +364,7 @@ it('recalcs when a transcription row was inserted', function () {
     ]);
     futureStamps('transcriptions', $word->id, $stamp);
 
-    expectRecalced($word, $stamp, expectedScore: 2); // definition + transcription
+    expectRecalced($word, $stamp, expectedScore: 3); // definition + transcription
 });
 
 it('recalcs when a transcription row was updated', function () {
@@ -275,7 +381,7 @@ it('recalcs when a transcription row was updated', function () {
         'updated_at' => $stamp->copy()->addMinute(),
     ]);
 
-    expectRecalced($word, $stamp, expectedScore: 2); // definition + transcription
+    expectRecalced($word, $stamp, expectedScore: 3); // definition + transcription
 });
 
 it('recalcs when an example row was inserted', function () {
@@ -284,7 +390,7 @@ it('recalcs when an example row was inserted', function () {
     Example::query()->create(['word_id' => $word->id, 'example' => 'The snow melts.']);
     futureStamps('examples', $word->id, $stamp);
 
-    expectRecalced($word, $stamp, expectedScore: 2); // definition + example
+    expectRecalced($word, $stamp, expectedScore: 3); // definition + example
 });
 
 it('recalcs when an example row was updated', function () {
@@ -296,7 +402,7 @@ it('recalcs when an example row was updated', function () {
         'updated_at' => $stamp->copy()->addMinute(),
     ]);
 
-    expectRecalced($word, $stamp, expectedScore: 2); // definition + example
+    expectRecalced($word, $stamp, expectedScore: 3); // definition + example
 });
 
 it('recalcs when an etymology row was inserted', function () {
@@ -305,7 +411,7 @@ it('recalcs when an etymology row was inserted', function () {
     Etymology::query()->create(['word_id' => $word->id, 'etymology' => 'From Old English meltan.']);
     futureStamps('etymologies', $word->id, $stamp);
 
-    expectRecalced($word, $stamp, expectedScore: 2); // definition + etymology
+    expectRecalced($word, $stamp, expectedScore: 3); // definition + etymology
 });
 
 it('recalcs when an etymology row was updated', function () {
@@ -317,7 +423,7 @@ it('recalcs when an etymology row was updated', function () {
         'updated_at' => $stamp->copy()->addMinute(),
     ]);
 
-    expectRecalced($word, $stamp, expectedScore: 2); // definition + etymology
+    expectRecalced($word, $stamp, expectedScore: 3); // definition + etymology
 });
 
 it('recalcs when a form row was inserted', function () {
@@ -326,7 +432,7 @@ it('recalcs when a form row was inserted', function () {
     Form::query()->create(['word_id' => $word->id, 'form' => 'melted', 'l_word' => 'melted']);
     futureStamps('forms', $word->id, $stamp);
 
-    expectRecalced($word, $stamp, expectedScore: 1); // forms carry no score points
+    expectRecalced($word, $stamp, expectedScore: 2); // forms carry no score points
 });
 
 it('recalcs when a form row was updated', function () {
@@ -338,7 +444,7 @@ it('recalcs when a form row was updated', function () {
         'updated_at' => $stamp->copy()->addMinute(),
     ]);
 
-    expectRecalced($word, $stamp, expectedScore: 1); // forms carry no score points
+    expectRecalced($word, $stamp, expectedScore: 2); // forms carry no score points
 });
 
 it('recalcs when a translation link lands after the last score', function () {
@@ -350,5 +456,5 @@ it('recalcs when a translation link lands after the last score', function () {
         'updated_at' => $stamp->copy()->addMinute(),
     ]);
 
-    expectRecalced($word, $stamp, expectedScore: 3); // definition 1 + translation 2
+    expectRecalced($word, $stamp, expectedScore: 5); // definitions 2 + translation 3
 });

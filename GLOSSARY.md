@@ -102,10 +102,13 @@ send all work with the user's real Anki.
 ## Interactive words
 
 **Word completeness**:
-How much is known about a dictionary word, scored 0–7: linked
-translations weigh most, and having any definitions, transcriptions,
-examples, etymology, and a real frequency rank each add a point. The
-word popup uses the score to show a word's fullest entries first.
+How much is known about a dictionary word, scored 0–9 with importance
+weighed in: linked translations count most, definitions count more on the
+major parts of speech (noun/verb/adjective/adverb), and an entry whose
+every definition is labelled obsolete/archaic drops its definition
+points. Transcriptions, examples, etymology, and a real frequency rank
+each add a point. The word popup shows a word's fullest live entries
+first — a demoted (obsolete-only) entry sinks below every live one.
 _Avoid_: quality score, richness
 
 **AI word enrichment (ask AI)**:

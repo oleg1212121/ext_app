@@ -2,24 +2,30 @@
 
 namespace App\Console\Commands;
 
+use App\Classes\WordCompleteness;
 use App\Models\Word;
+use App\Support\UsageLabels;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use stdClass;
 
 /**
  * Chunked backfill of the word popup's completeness score onto
- * `words.completeness`/`words.completeness_at` — the same 0–7 matrix the
- * lazy `WordCompleteness::recalcFamily` applies on popup open (linked
- * translations 2; definitions/transcriptions/examples/etymologies 1 each; a
- * real frequency rank — 0 < rank < the unranked sentinel — 1), computed
- * set-based per id-range chunk so a run over the whole dictionary stays one
- * indexed pass per child table per chunk.
+ * `words.completeness`/`words.completeness_at` — the same 0–9 matrix the
+ * lazy `WordCompleteness::recalcFamily` applies on popup open (weighted v2
+ * of 2026-10-20: linked translations 3; definitions 2 on a major POS —
+ * noun/verb/adjective/adj/adverb/adv — else 1, and 0 when EVERY definition
+ * carries a demoting label (`UsageLabels::DEMOTING`, no definitions is
+ * live); transcriptions/examples/etymologies 1 each; a real frequency rank
+ * — 0 < rank < the unranked sentinel — 1), computed set-based per id-range
+ * chunk so a run over the whole dictionary stays one indexed pass per
+ * child table per chunk.
  *
  * Modes:
  * - full (default): authoritative re-score of every word in range, writing
  *   only rows whose stored value differs or whose stamp is missing — a
- *   re-run is a no-op by construction.
+ *   re-run is a no-op by construction, and the mode for weight changes
+ *   (the v2 re-pin swept the whole dictionary).
  * - `--stale-only`: rewrites only words the lazy staleness predicate flags
  *   (stamp missing or older than the word row, any content child, or the
  *   translation pivot). Fresh words are left untouched — their stamps keep
@@ -32,7 +38,7 @@ class WordsRecalcCompletenessCommand extends Command
         {--stale-only : Only rewrite words whose completeness_at is missing or older than the word row or any content child (definitions/transcriptions/examples/etymologies/forms, translation links included)}
         {--chunk=5000 : Words per id-range pass}';
 
-    protected $description = "Backfill the word popup's completeness score (0-7: linked translations 2, definitions/transcriptions/examples/etymologies 1 each, a real frequency rank 1) onto words.completeness";
+    protected $description = "Backfill the word popup's completeness score (0-9: linked translations 3, definitions 2 on major POS noun/verb/adjective/adj/adverb/adv else 1 — 0 when every definition is labelled obsolete/archaic, transcriptions/examples/etymologies 1 each, a real frequency rank 1) onto words.completeness";
 
     private const STATEMENT_CHUNK = 1000;
 
@@ -108,12 +114,24 @@ class WordsRecalcCompletenessCommand extends Command
 
     /**
      * The completeness matrix set-based (mirrors WordCompleteness::score —
-     * the command test pins the mirror), with both write predicates
-     * computed per row: `stale` drives --stale-only, `apply_full` drives
-     * the authoritative full sweep.
+     * the command test pins the mirror; the demoting label set and the
+     * major-POS slugs are read from UsageLabels::DEMOTING and
+     * WordCompleteness::MAJOR_POS so the PHP side stays the single source
+     * of truth), with both write predicates computed per row: `stale`
+     * drives --stale-only, `apply_full` drives the authoritative full
+     * sweep.
      */
     private function scanSql(): string
     {
+        $demoting = implode(', ', array_map(
+            fn (string $slug): string => "'".$slug."'",
+            UsageLabels::DEMOTING,
+        ));
+        $majorPos = implode(', ', array_map(
+            fn (string $slug): string => "'".$slug."'",
+            WordCompleteness::MAJOR_POS,
+        ));
+
         $childStamps = [
             'definitions' => 'd',
             'transcriptions' => 'c',
@@ -132,12 +150,22 @@ class WordsRecalcCompletenessCommand extends Command
             .' (w.completeness_at is null or w.completeness_at < s.threshold) as stale,'
             .' (w.completeness is distinct from s.score or w.completeness_at is null) as apply_full'
             .' from words w'
+            .' left join word_classes wc on wc.id = w.word_class_id'
             .' cross join lateral ('
             .' select'
-            // word_translations existence: 2 points
-            .'   (case when exists (select 1 from word_translations t where t.word_a_id = w.id or t.word_b_id = w.id) then 2 else 0 end)'
-            // each content child: 1 point
-            .'  + (case when exists (select 1 from definitions d where d.word_id = w.id) then 1 else 0 end)'
+            // word_translations existence: 3 points
+            .'   (case when exists (select 1 from word_translations t where t.word_a_id = w.id or t.word_b_id = w.id) then 3 else 0 end)'
+            // definitions: 0 when the entry has none or when EVERY one
+            // carries a demoting label (UsageLabels::DEMOTING — NULL labels
+            // are unlabelled/live; jsonb_exists_any is the ?| operator's
+            // function form, which PDO's ?-placeholder parser would eat),
+            // else 2 on a major POS else 1
+            .'  + (case'
+            .'       when not exists (select 1 from definitions d where d.word_id = w.id) then 0'
+            ."       when exists (select 1 from definitions d where d.word_id = w.id and not coalesce(jsonb_exists_any(d.labels, array[{$demoting}]), false))"
+            ."       then (case when wc.slug in ({$majorPos}) then 2 else 1 end)"
+            .'       else 0 end)'
+            // each remaining content child: 1 point
             .'  + (case when exists (select 1 from transcriptions c where c.word_id = w.id) then 1 else 0 end)'
             .'  + (case when exists (select 1 from examples e where e.word_id = w.id) then 1 else 0 end)'
             .'  + (case when exists (select 1 from etymologies et where et.word_id = w.id) then 1 else 0 end)'

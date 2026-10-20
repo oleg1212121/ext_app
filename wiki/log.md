@@ -1,5 +1,41 @@
 # Directory Update Log
 
+## 2026-10-20 (popup-ai-enrich 10: completeness v2 — 0–9, live entries before demoted)
+
+The stored completeness score re-weights so it encodes importance as well
+as richness, and the popup now sorts live entries ahead of obsolete-only
+ones (ADR 0083, with ticket 09's labels).
+
+- **New matrix** (`database/dictionary.md` words row + Word completeness
+  note): 0–9 — linked translations 3 (was 2); definitions 2 on a major
+  POS (noun/verb/adjective/adj/adverb/adv, both adjective/adverb
+  spellings) and 1 on any other POS; **0 when every definition carries a
+  demoting label** (`UsageLabels::DEMOTING` — no definitions is live,
+  never demoted); transcriptions/examples/etymologies/frequency 1 each.
+  `WordCompleteness::MAX` = 9; `isDemoted` is the one demotion test,
+  shared by the score and `WordFamily`'s sort so they cannot drift.
+- **Popup ordering** (`domains/interactive-words.md`): the stable sort
+  becomes [live entry before demoted entry, then completeness desc] over
+  the assembled order — linked-first/class-priority/frequency remain the
+  tiebreaks; a demoted entry sinks below every live one even at a higher
+  score.
+- **SQL mirror** (`words:recalc-completeness`): scanSql joins
+  `word_classes` for the major-POS case and mirrors the all-demotion rule
+  with `jsonb_exists_any(labels, array['obsolete','archaic'])` (the `?|`
+  operator's function form — PDO's `?`-placeholder parser would eat a
+  literal `?|`; NULL labels = live); both slug lists are read from
+  `UsageLabels::DEMOTING` / `WordCompleteness::MAJOR_POS` at build time.
+  Command description re-pinned; `words.completeness` column comment
+  re-pinned by comment-only migration `2026_10_20_000002`.
+- **Dev sweep** (full, no --stale-only — the weights changed for
+  everyone): 2026-10-20, 1,494,359 words scanned, 1,225,100 rewritten in
+  4m11s; a following `--stale-only` pass rewrote 0 (idempotency holds).
+  Histogram after the sweep: 0 → 1,200; 1 → 108,576; 2 → 352,777;
+  3 → 436,535; 4 → 385,085; 5 → 68,972; 6 → 19,639; 7 → 48,429;
+  8 → 73,143; 9 → 3. Zero labelled definitions in dev so far (no
+  backfill), so the 0 bucket is no-content words — demotion wakes as
+  labelled data accumulates.
+
 ## 2026-10-20 (popup-ai-enrich 09: usage labels on definitions — obsolete/archaic/rare stored going forward, no backfill)
 
 Definitions can now carry usage/register labels, so unimportant senses

@@ -132,9 +132,10 @@ it('enriches a sparse word end to end with the faked AI: content rows, link-only
     expect($ledger->error)->toBeNull();
 
     // The word was touched, so ticket 02's completeness recalculated over
-    // the new content: links (2) + definitions + transcriptions + examples +
-    // etymologies = 6, no frequency rank.
-    expect($word->completeness)->toBe(6);
+    // the new content (weighted v2): links (3) + definitions on a major POS
+    // (2) + transcriptions + examples + etymologies (1 each) = 8, no
+    // frequency rank, no labels.
+    expect($word->completeness)->toBe(8);
     expect($word->completeness_at)->not->toBeNull();
 
     // The prompt went through the enrichment template with the native
