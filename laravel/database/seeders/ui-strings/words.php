@@ -46,6 +46,11 @@ return [
     'word.explain_preview' => ['en' => 'This is where the **context explanation** appears — an AI answer about what this word means in its sentence. Try the real thing in the reader or the simulator.', 'ru' => 'Здесь появляется **контекстный разбор** — ответ ИИ о том, что это слово значит в своём предложении. Попробуйте настоящий разбор в читалке или симуляторе.', 'be' => 'Тут з\'яўляецца **кантэкстны разбор** — адказ ШІ пра тое, што гэта слова значыць у сваім сказе. Паспрабуйце сапраўдны разбор у чыталцы або сімулятары.'],
     'word.definitions' => ['en' => 'Definitions (:count)', 'ru' => 'Определения (:count)', 'be' => 'Вызначэнні (:count)'],
     'word.no_translations' => ['en' => 'No translations yet — automatic translation may still be in progress.', 'ru' => 'Переводов пока нет — автоматический перевод ещё может выполняться.', 'be' => 'Перакладаў пакуль няма — аўтаматычны пераклад яшчэ можа выконвацца.'],
+    // The staged raw candidates line (popup-provenance ticket 02, ADR 0085):
+    // the tiny muted label prefixing the word's unlinked raw translation
+    // strings — the amber line under the linked green translations. The calm
+    // placeholder above shows only when linked AND staged are both empty.
+    'word.raw_translations' => ['en' => 'raw:', 'ru' => 'сырые:', 'be' => 'сырыя:'],
     'word.anki_send' => ['en' => 'Save to Anki', 'ru' => 'Сохранить в Anki', 'be' => 'Захаваць у Anki'],
     'word.anki_update' => ['en' => 'Update in Anki', 'ru' => 'Обновить в Anki', 'be' => 'Абнавіць у Anki'],
     'word.anki_sending' => ['en' => 'Saving…', 'ru' => 'Сохраняем…', 'be' => 'Захоўваем…'],

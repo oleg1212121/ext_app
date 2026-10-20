@@ -88,6 +88,19 @@ it('seeds the sample-card updated string in all three interface languages', func
     ]);
 });
 
+it('seeds the staged raw translations label in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // popup-provenance ticket 02: the tiny muted label prefixing the amber
+    // raw line under the linked green translations.
+    expect(seededUiStringTexts('word.raw_translations'))->toBe([
+        'en' => 'raw:',
+        'ru' => 'сырые:',
+        'be' => 'сырыя:',
+    ]);
+});
+
 it('seeds be texts for sampled keys across every group', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();

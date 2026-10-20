@@ -60,10 +60,12 @@ final class WordPopupPayload
      * The headword travels along so the UI can label sections that belong to
      * a base word of the family rather than the popup's own headword.
      *
-     * @return array{id: int, word: string, word_class: string|null, transcriptions: list<array{value: string, type: string|null}>, definitions: list<string>, translations: array, examples: list<string>, etymologies: list<string>}
+     * @return array{id: int, word: string, word_class: string|null, transcriptions: list<array{value: string, type: string|null}>, definitions: list<string>, translations: array, staged_translations: list<string>, examples: list<string>, etymologies: list<string>}
      */
     private static function entry(Word $word, Authenticatable $user): array
     {
+        $linked = self::translations($word, $user);
+
         return [
             'id' => $word->id,
             'word' => $word->word,
@@ -76,7 +78,8 @@ final class WordPopupPayload
                 ->values()
                 ->all(),
             'definitions' => $word->definitions->pluck('definition')->all(),
-            'translations' => self::translations($word, $user)->all(),
+            'translations' => $linked->all(),
+            'staged_translations' => self::stagedTranslations($word, $linked),
             'examples' => $word->examples->pluck('example')->all(),
             'etymologies' => $word->etymologies->pluck('etymology')->all(),
         ];
@@ -101,6 +104,33 @@ final class WordPopupPayload
                 'word' => $translation->word,
                 'language_code' => $translation->language?->code,
             ]);
+    }
+
+    /**
+     * The entry's staged raw translation candidates — the `words.translations`
+     * JSON the importers and translation fetches stage into (ADR 0085) —
+     * surfaced language-less, as-is, under the linked translations. A staged
+     * string that only restates a linked display word (case-insensitively)
+     * is dropped, and so is a case twin of an earlier staged string (first
+     * occurrence stands); stored order is kept, capped at the linked line's
+     * limit. Empty when the word stages nothing — the raw line hides.
+     *
+     * @param  Collection<int, array{id: int, word: string, language_code: string|null}>  $linked
+     * @return list<string>
+     */
+    private static function stagedTranslations(Word $word, Collection $linked): array
+    {
+        $linkedWords = $linked
+            ->map(fn (array $translation): string => mb_strtolower($translation['word']))
+            ->all();
+
+        return collect($word->translations ?? [])
+            ->filter(fn (mixed $candidate): bool => is_string($candidate) && $candidate !== '')
+            ->reject(fn (string $candidate): bool => in_array(mb_strtolower($candidate), $linkedWords, true))
+            ->unique(fn (string $candidate): string => mb_strtolower($candidate))
+            ->values()
+            ->take(self::TRANSLATION_LIMIT)
+            ->all();
     }
 
     /**

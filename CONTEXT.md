@@ -352,9 +352,10 @@ _Avoid_: translation (also means a **Staged translation** or the general
 notion), relation, mapping, directed translation.
 
 **Staged translation**:
-A raw target-language word string the import recorded on a Word, awaiting
-**Translation linking** into **Translation links**. Working data of the
-pipeline, never shown to end users.
+A raw target-language word string the import or translation fetch recorded
+on a Word, awaiting **Translation linking** into **Translation links**.
+Working data of the pipeline, shown to end users only as the word popup's
+muted amber "raw:" line (ADR 0085) — never as a curated translation.
 _Avoid_: raw translation, pending translation, translation (overloaded).
 
 **Raw dump**:

@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — EVERY 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-20T21:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T20:23:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -104,6 +104,9 @@ sources:
   - id: adr-anki
     resource: docs/adr/0077-browser-side-ankiconnect.md
     title: ADR 0077 (Anki export is browser-side; values-always-sent + hide-class template semantics; addendum v3 — re-sends update own notes in place)
+  - id: adr-0085
+    resource: docs/adr/0085-staged-translations-popup-raw-line.md
+    title: ADR 0085 (staged translations surface in the popup as a language-less amber raw line; Anki keeps linked translations only)
   - id: adr-enrich
     resource: docs/adr/0082-ask-ai-enrichment-merge-inline-lock-on-success.md
     title: ADR 0082 (ask-AI enrichment merges inline with per-row provenance, locks on success, translations link-only)
@@ -121,7 +124,9 @@ tokenizer word token** (≥2 letters, hyphens/apostrophes intra-word —
 **Word popup** — one
 section per part of speech recorded under the headword (language + `l_word`),
 each with its definitions, transcriptions, translations (native language
-first), examples and etymology, plus an **action toolbar as the popup's
+first) plus the word's staged raw candidates as their own muted amber
+"raw:" line when staged (ADR 0085), examples and etymology, plus an
+**action toolbar as the popup's
 first row** — "I know this word" and "Remove mark" icons on the left;
 pushed right, in order: the always-visible Anki send icon, the on-demand
 Explanation toggle, the Ask-AI icon (a ledger-tracked, re-askable BYO-key
@@ -179,7 +184,12 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    headword excluded), ranked by `words.frequency` (lower = more common) and
    uncapped, as
    `entries: [{id, word, word_class, transcriptions, definitions, translations,
-   examples, etymologies}]`. Each base group is **scoped to the word classes
+   staged_translations, examples, etymologies}]` — `staged_translations`
+   being the entry's staged raw candidates from the `words.translations`
+   JSON (ADR 0085), deduped case-insensitively against the linked display
+   words (and within itself, first occurrence standing), stored order kept,
+   capped at the linked line's 100 (`TRANSLATION_LIMIT`), `[]` when nothing
+   is staged. Each base group is **scoped to the word classes
    whose entries actually claim the surface as a form** (ADR 0047) — "me"
    pulls in only "I — Pronoun", not the character/numeral entries sharing the
    spelling, and "melted" no longer rides in "melt — Noun". Relay
@@ -220,9 +230,18 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    headword, "MELTED — adjective" for the popup-headword sections.
    The popover renders one section per entry, top to bottom:
    **translations are the primary line** (native language first, capped at 8
-   with a "+N more…" expander; a section with none shows the calm
+   with a "+N more…" expander; a section with neither linked translations
+   nor staged candidates shows the calm
    "no translations yet — automatic translation may still be in progress"
-   note, since the background fetch only lands on the next open), then the
+   note, since the background fetch only lands on the next open). Under the
+   linked line, an entry that stages raw candidates renders them as a
+   **second collapsible line** (ADR 0085): the tiny muted "raw:" label
+   (`word.raw_translations`), the staged strings language-less as-is,
+   amber (`--color-amber`/`--color-amber-night` — the staged/raw token),
+   with its own cap of 8 and its own "+N more…" expander — popup-only by
+   decision (ADR 0085): the Anki note fields and card Body keep rendering
+   linked translations only. The raw line hides entirely when the entry
+   stages nothing. Then the
    **main transcription** in brackets with a "+N more" toggle revealing the
    rest, then **three counted collapses** — "Definitions (N)", "Examples
    (N)", "Etymology (N)" — independent `<details>`, closed by default, state
@@ -239,7 +258,9 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    `-dictionary`, `-explain-row` (the mounted pane's first-row wrapper),
    `-section`,
    `-section-label`, `-translations`, `-translations-more`,
-   `-translations-placeholder`, `-transcriptions`, `-transcriptions-more`,
+   `-translations-placeholder`, `-raw-translations` (the staged raw line,
+   with `-raw-translations-more` on its expander), `-transcriptions`,
+   `-transcriptions-more`,
    `-no-definitions`, `-definitions` (with `-definitions-list` on its `ol`),
    `-examples` (with `-examples-list` on its `ul`), `-etymologies`,
    `-summary` on every collapse summary, `-progress-known`,

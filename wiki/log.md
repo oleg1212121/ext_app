@@ -1,5 +1,47 @@
 # Directory Update Log
 
+## 2026-10-20 (popup-provenance: the popup surfaces a word's staged translations as a language-less amber raw line)
+
+Ticket 02 of the popup-provenance spec (amber token came with ticket 01,
+words.source with ticket 03). The staged `words.translations` JSON — the
+link pass's working data — was invisible to end users: a word whose
+candidates are all still unlinked read as "no translations yet" even while
+carrying a dozen raw glosses.
+
+- **Payload** (`WordPopupPayload::entry`, the ONE assembler both popup
+  endpoints share): every entry now carries `staged_translations` beside
+  `translations` — the word's staged strings verbatim, language-less, in
+  stored order, deduped case-insensitively against the linked line's
+  display words (a staged restatement of a linked word drops) and within
+  itself (a case twin keeps its first occurrence), capped at the linked
+  line's 100 (`TRANSLATION_LIMIT`), `[]` when nothing is staged.
+- **Popup** (`Components/WordPopup.jsx`): a second collapsible line
+  directly under the linked green translations line — tiny muted
+  `word.raw_translations` label ("raw:", en/ru/be "raw:/сырые:/сырыя:"),
+  the strings amber (`--color-amber`/`--color-amber-night`), its own cap
+  of 8 and its own "+N more…" expander (`word-popup-raw-translations`
+  /`-raw-translations-more` class hooks). Hidden entirely when the entry
+  stages nothing; the calm placeholder shows only when linked AND staged
+  are both empty. `CollapsibleLine`'s empty-items contract tightened:
+  without an `empty` fallback an empty line renders nothing (previously an
+  empty `<p>` shell). **Popup-only by decision**: `lib/ankiTemplate.js`
+  untouched — the Anki note fields and card Body keep rendering linked
+  translations only, and a vitest pin guards the exclusion.
+- **Tests**: Pest pins the payload on both endpoints (dedupe vs linked
+  display words, always-carried empty shape, the 100 cap, and the ask-AI
+  response carrying the staged strings identically to the refetched show
+  payload), the seeder test pins the new ui-string in all three interface
+  languages; a new vitest source-pin suite
+  (`WordPopup.translations.test.js`) pins the raw line's rendering,
+  absence, placeholder logic, amber token, and the Anki exclusion.
+- **ADR 0085** records the decision set (surfaced language-less as-is,
+  dedupe + cap rules, popup-only); `domains/interactive-words.md`
+  (payload shape, popover paragraph, class hooks, sources),
+  `database/dictionary.md` (the `translations` column, sources) and
+  CONTEXT.md's **Staged translation** glossary term (no longer "never
+  shown to end users") updated. Payload/UI changes add no route, model or
+  artisan command, so `wiki:sync` had nothing to regenerate.
+
 ## 2026-10-20 (popup-provenance: words.source import provenance, stamped at insert, admin column + filter)
 
 Ticket 03 of the popup-provenance spec (the popup badge that reads this

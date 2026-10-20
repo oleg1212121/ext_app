@@ -497,6 +497,56 @@ it('sorts translations native language first', function () {
         ->assertJsonPath('data.entries.0.translations.0.language_code', 'ru');
 });
 
+it('exposes the staged raw translations deduped against the linked display words', function () {
+    createWordClasses();
+    $user = User::factory()->create();
+    $enWord = createWord('en', 'cat', 'noun');
+    $ruWord = createWord('ru', 'кот', 'noun');
+    WordTranslation::link($enWord->id, $ruWord->id);
+
+    // Staged raw candidates (popup-provenance ticket 02, ADR 0085): «Кот»
+    // only restates the linked display word (case-insensitive) — dropped;
+    // «dog» survives; the «DOG» case twin of an earlier staged string does
+    // not repeat it (first occurrence stands).
+    $enWord->forceFill(['translations' => ['Кот', 'dog', 'DOG']])->save();
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $enWord->id]))
+        ->assertOk()
+        ->assertJsonPath('data.entries.0.translations.0.word', 'кот')
+        ->assertJsonPath('data.entries.0.staged_translations', ['dog']);
+});
+
+it('always carries staged_translations — an empty list when nothing is staged', function () {
+    createWordClasses();
+    $user = User::factory()->create();
+    $word = createWord('en', 'cat', 'noun');
+
+    // The key rides every entry even when the word stages nothing (the raw
+    // line hides on an empty list; the frontend reads it unconditionally).
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $word->id]))
+        ->assertOk()
+        ->assertJsonPath('data.entries.0.staged_translations', []);
+});
+
+it('caps the staged raw translations at the payload translation limit', function () {
+    createWordClasses();
+    $user = User::factory()->create();
+    $word = createWord('en', 'cat', 'noun');
+    $word->forceFill(['translations' => array_map(
+        fn (int $i): string => "raw candidate {$i}",
+        range(1, 101),
+    )])->save();
+
+    $staged = $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $word->id]))
+        ->assertOk()
+        ->json('data.entries.0.staged_translations');
+
+    expect($staged)->toHaveCount(100);
+});
+
 it('sets a word known (familiarity 100) for the current user', function () {
     $user = User::factory()->create();
     $word = createWordWithDetails();

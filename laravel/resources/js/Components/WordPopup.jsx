@@ -147,7 +147,8 @@ function sectionLabel(entry, headword) {
  * expanded state). `label` names the stable `word-popup-{label}` and
  * `word-popup-{label}-more` classes, `renderItem` maps an item to its text,
  * `decorate` wraps the joined text (transcriptions wear brackets), and
- * `empty` replaces the whole line when there is nothing to show.
+ * `empty` replaces the whole line when there is nothing to show — null
+ * included, so a line without a fallback renders nothing at all.
  */
 function CollapsibleLine({
     items,
@@ -162,7 +163,7 @@ function CollapsibleLine({
     const {t} = useI18n();
     const [expanded, setExpanded] = useState(false);
 
-    if (empty !== null && items.length === 0) {
+    if (items.length === 0) {
         return empty;
     }
 
@@ -820,20 +821,50 @@ export function PopupContent({
                             // Empty is normal here: the background
                             // auto-fetch (Yandex → Google) queues silently
                             // and only lands on the next open, so the card
-                            // says so calmly instead of showing an error.
-                            <CollapsibleLine
-                                items={entry.translations ?? []}
-                                previewCount={TRANSLATIONS_PREVIEW}
-                                separator=", "
-                                label="translations"
-                                renderItem={(translation) => translation.word}
-                                className="mt-2 text-[0.929em] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
-                                empty={(
-                                    <p className="word-popup-translations-placeholder mt-2 text-[0.857em] opacity-60">
-                                        {t('word.no_translations')}
-                                    </p>
+                            // says so calmly instead of showing an error —
+                            // but only while the raw line has nothing to
+                            // show either (ticket 02): a word carrying
+                            // staged candidates never reads as empty.
+                            <React.Fragment>
+                                <CollapsibleLine
+                                    items={entry.translations ?? []}
+                                    previewCount={TRANSLATIONS_PREVIEW}
+                                    separator=", "
+                                    label="translations"
+                                    renderItem={(translation) => translation.word}
+                                    className="mt-2 text-[0.929em] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
+                                    empty={(entry.staged_translations?.length ?? 0) > 0 ? null : (
+                                        <p className="word-popup-translations-placeholder mt-2 text-[0.857em] opacity-60">
+                                            {t('word.no_translations')}
+                                        </p>
+                                    )}
+                                />
+                                {(entry.staged_translations?.length ?? 0) > 0 && (
+                                    // The staged raw candidates (the
+                                    // words.translations JSON —
+                                    // popup-provenance ticket 02, ADR 0085):
+                                    // language-less as-is, amber, with the
+                                    // muted raw: label and the line's own
+                                    // "+N more…" expander. Popup-only — the
+                                    // Anki fields keep the linked
+                                    // translations.
+                                    <CollapsibleLine
+                                        items={entry.staged_translations}
+                                        previewCount={TRANSLATIONS_PREVIEW}
+                                        separator=", "
+                                        label="raw-translations"
+                                        renderItem={(candidate) => candidate}
+                                        decorate={(text) => (
+                                            <>
+                                                <span className="opacity-60">{t('word.raw_translations')}</span>
+                                                {' '}
+                                                {text}
+                                            </>
+                                        )}
+                                        className="mt-1 text-[0.857em] leading-snug text-[var(--color-amber)] dark:text-[var(--color-amber-night)]"
+                                    />
                                 )}
-                            />
+                            </React.Fragment>
                         )}
 
                         {sections.transcriptions !== false && entry.transcriptions?.length > 0 && (

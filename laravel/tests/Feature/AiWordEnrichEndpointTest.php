@@ -109,6 +109,13 @@ it('enriches a sparse word end to end with the faked AI: content rows, link-only
     expect($payload['entries'][0]['definitions'])->toContain('A financial institution.');
     expect($payload['entries'][0]['transcriptions'][0]['value'])->toBe('bæŋk');
 
+    // The staged raw strings ride the shared payload (popup-provenance
+    // ticket 02): the linked «банк» is deduped out, the unmatched two
+    // surface language-less as-is — on the ask response AND the refetched
+    // show payload, the one assembler serving both.
+    expect($payload['entries'][0]['staged_translations'])->toBe(['берег', 'прибанок']);
+    expect($show['entries'][0]['staged_translations'])->toBe(['берег', 'прибанок']);
+
     // Content rows all carry the ai provenance marker.
     expect(Definition::query()->where('word_id', $fixture['word']->id)->where('source', 'ai')->count())->toBe(2);
     expect(Transcription::query()->where('word_id', $fixture['word']->id)->where('source', 'ai')->count())->toBe(1);
