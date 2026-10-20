@@ -116,8 +116,9 @@ Filling a sparse word's entry on demand by asking the user's own AI
 model (the explanation model). The reply lands as ordinary dictionary
 content — per-row content stays unmarked; the word popup header's small
 source badge is the one word-level marker, reading the importing writer
-plus "· ai" (or "ai" alone for a word no importer stamped) once an ask
-succeeds. A succeeded ask is re-askable — the re-ask replaces the
+plus "· ai" (or "ai" alone for a word no importer stamped; an adopt-on-ask
+mint, whose source is 'ai' itself, dedups to the same plain "ai") once an
+ask succeeds. A succeeded ask is re-askable — the re-ask replaces the
 previous AI-written rows; failed asks can be retried.
 _Avoid_: AI import, auto-enrichment
 

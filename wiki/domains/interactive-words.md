@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — EVERY 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-20T21:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T21:25:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -235,7 +235,10 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    verbatim ("kaikki", "golddict", "cmudict", "entity") plus " · ai" when
    `ai_asked` (a succeeded ledger row), "ai" alone when the word was
    AI-enriched but no importer ever stamped it, and nothing at all when
-   neither is known (pre-provenance rows stay honest). This supersedes ADR
+   neither is known (pre-provenance rows stay honest); an adopt-on-ask
+   mint carries `source = 'ai'` (ADR 0084) and `ai_asked` from the same
+   ask — the badge dedups the duplicate to the same plain "ai", never
+   "ai · ai". This supersedes ADR
    0082's "the popup renders no visual marker" at word level only —
    per-row content stays unmarked (the badge's own ADR 0082 amendment).
    The popover renders one section per entry, top to bottom:

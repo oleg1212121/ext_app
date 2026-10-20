@@ -611,12 +611,15 @@ export function PopupContent({
     // The header's provenance badge (popup-provenance ticket 04): the
     // importing writer plus the word-level ai marker when a succeeded ask
     // exists — "kaikki · ai"; "ai" alone for an enriched word no importer
-    // ever stamped; empty — the badge hides — when neither is known. The
-    // importer string renders verbatim: the closed words.source vocabulary
-    // is already human-readable, and a foreign value stays honest instead
-    // of being mapped or dropped (ADR 0082's no-marker ruling is superseded
-    // at word level only — per-row content stays unmarked).
-    const sourceBadge = [data.source, data.ai_asked ? 'ai' : ''].filter(Boolean).join(' · ');
+    // ever stamped; empty — the badge hides — when neither is known. An
+    // adopt-on-ask mint carries source 'ai' (ADR 0084) AND ai_asked true
+    // from the same ask — the same fact twice — so the parts dedupe and
+    // plain "ai" renders, never "ai · ai". The importer string renders
+    // verbatim: the closed words.source vocabulary is already
+    // human-readable, and a foreign value stays honest instead of being
+    // mapped or dropped (ADR 0082's no-marker ruling is superseded at word
+    // level only — per-row content stays unmarked).
+    const sourceBadge = [...new Set([data.source, data.ai_asked ? 'ai' : ''].filter(Boolean))].join(' · ');
 
     return (
         <>

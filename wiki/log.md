@@ -1,5 +1,26 @@
 # Directory Update Log
 
+## 2026-10-20 (popup-provenance review fix: the source badge dedups the adopt-on-ask word's "ai")
+
+Review-pass fix on ticket 04's badge (one commit, three accepted findings).
+
+- **The dedup**: an adopt-on-ask word carries `words.source = 'ai'`
+  (ADR 0084) AND `ai_asked` true from the same ask, so the badge
+  derivation rendered "ai · ai". The parts now dedupe (Set) and plain
+  "ai" renders; the vitest source-badge suite replaced its
+  verbatim-expression pin (which pinned the buggy expression) with the
+  four real payload states, evaluated against the derivation lifted from
+  the component source; the ruling is one line on ADR 0082's
+  word-level-badge amendment. `domains/interactive-words.md` badge
+  paragraph, `database/dictionary.md`'s `words.source` cell + GLOSSARY
+  "AI word enrichment" updated, `generated.at` bumped on both concepts.
+- **Naming**: the fill-if-null mechanism is "backdoor" everywhere
+  (ADR 0084 + the migration's term) — `WordAiEnrichmentService` and one
+  `WordSourceProvenanceTest` comment said "backstop"; mechanical swap.
+- **Tests**: `WordSourceProvenanceTest` uses the `Word::SOURCE_*`
+  constants instead of scattered literals; only the closed-set pin keeps
+  its literals (it guards the vocabulary itself).
+
 ## 2026-10-20 (popup-provenance: the Save-to-Anki icon reflects Anki reachability — on-open version probe, amber)
 
 Ticket 05 of the popup-provenance spec (amber token landed with ticket 01,

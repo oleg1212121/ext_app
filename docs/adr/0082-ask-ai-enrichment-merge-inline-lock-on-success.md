@@ -179,7 +179,9 @@ came from — the importer name verbatim (the closed `words.source`
 vocabulary, ADR 0084) plus " · ai" when the payload's `ai_asked` reports
 a succeeded ask, "ai" alone when the word was AI-enriched but no importer
 ever stamped its row, nothing at all when neither is known (pre-provenance
-rows stay honest). The one shared assembler (decision 4) gained the
+rows stay honest). An adopt-on-ask word carries `source = 'ai'` (ADR 0084)
+AND `ai_asked` true from that same ask — the badge dedups the duplicate and
+renders plain "ai", never "ai · ai". The one shared assembler (decision 4) gained the
 top-level `source` beside `ai_asked`, so both endpoints stay
 shape-identical. Per-row content stays unmarked: the per-row `source`
 columns (null = imported / 'ai') are unchanged, and an imported vs an

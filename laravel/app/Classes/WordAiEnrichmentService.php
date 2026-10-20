@@ -237,7 +237,7 @@ class WordAiEnrichmentService
                 ['form', 'word_id'],
             );
         } elseif ($word->source === null) {
-            // The fill-if-null backstop: the mint found a row that raced in
+            // The fill-if-null backdoor: the mint found a row that raced in
             // from the concurrent double-ask — claim it for the ask unless
             // another creator already owns it (ADR 0084). A resolve-surface
             // hit above is a read: it is never claimed here.
