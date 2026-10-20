@@ -31,6 +31,11 @@
     --color-ink-soft: #4B4639;
     --color-verdigris: #2F6E66;
     --color-vermilion: #B0451E;
+    /* Muted accents in the house register, same low-saturation style as
+       verdigris/vermilion: info blue for provenance/informational marks,
+       amber for staged/raw and availability states (popup-provenance). */
+    --color-info: #35718F;
+    --color-amber: #B0801E;
     --color-hairline: #C7BC9C;
 
     --color-ink-night: #14120F;
@@ -38,6 +43,8 @@
     --color-hairline-night: #3A352A;
     --color-verdigris-night: #6FA89F;
     --color-vermilion-night: #D4562F;
+    --color-info-night: #7FB3D2;
+    --color-amber-night: #D4A24C;
 
     /* Bilinguals workbench — scoped tokens; simulator page only. */
     --font-wbench-serif: 'Source Serif 4', 'Fraunces', Georgia, 'Times New Roman', serif;

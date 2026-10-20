@@ -46,16 +46,28 @@ export const popupContainerClass = 'flex flex-col overflow-hidden rounded-md bor
 
 // Action-toolbar icon buttons (the popup's first row). The glyphs carry no
 // color of their own — these text classes drive the resting and hover states:
-// "I know this word" keeps the verdigris accent the old footer button's
-// border gave it, the others rest at the old tab strip's reduced opacity.
-// `pressed` is the Explanation toggle's shown state: verdigris text plus a
-// persistent tint, so the icon reads as active while its pane is mounted.
-const toolbarButtonClass = (accent, pressed = false) => [
+// each button passes a color token (verdigris / vermilion / amber / info, or
+// the neutral default). An accent token paints the icon in that house hue
+// with a matching faint hover wash, day and night; neutral rests at the old
+// tab strip's reduced opacity. The class strings are full literals on
+// purpose — Tailwind's scanner reads this file's text, so names built by
+// concatenation would never compile.
+const TOOLBAR_ACCENTS = {
+    verdigris: 'text-[var(--color-verdigris)] hover:bg-[var(--color-verdigris)]/10 dark:text-[var(--color-verdigris-night)] dark:hover:bg-[var(--color-verdigris-night)]/10',
+    vermilion: 'text-[var(--color-vermilion)] hover:bg-[var(--color-vermilion)]/10 dark:text-[var(--color-vermilion-night)] dark:hover:bg-[var(--color-vermilion-night)]/10',
+    amber: 'text-[var(--color-amber)] hover:bg-[var(--color-amber)]/10 dark:text-[var(--color-amber-night)] dark:hover:bg-[var(--color-amber-night)]/10',
+    info: 'text-[var(--color-info)] hover:bg-[var(--color-info)]/10 dark:text-[var(--color-info-night)] dark:hover:bg-[var(--color-info-night)]/10',
+    neutral: 'opacity-80 hover:opacity-100',
+};
+// `pressed` is the Explanation toggle's shown state: the verdigris accent
+// plus a persistent tint, so the icon reads as active while its pane is
+// mounted — verdigris whatever the passed token (only the toggle presses,
+// and it passes neutral).
+const toolbarButtonClass = (color = 'neutral', pressed = false) => [
     'rounded-sm p-1 transition-[opacity,background-color]',
-    accent || pressed
-        ? 'text-[var(--color-verdigris)] hover:bg-[var(--color-verdigris)]/10 dark:text-[var(--color-verdigris-night)] dark:hover:bg-[var(--color-verdigris-night)]/10'
-        : 'opacity-80 hover:opacity-100',
-    ...(pressed ? ['bg-[var(--color-verdigris)]/10 dark:bg-[var(--color-verdigris-night)]/10'] : []),
+    pressed
+        ? `${TOOLBAR_ACCENTS.verdigris} bg-[var(--color-verdigris)]/10 dark:bg-[var(--color-verdigris-night)]/10`
+        : TOOLBAR_ACCENTS[color],
     'disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
 ].join(' ');
 
@@ -436,7 +448,7 @@ export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, ai
                         aria-label={askAiLabel}
                         disabled={onAskAi == null || aiBusy}
                         onClick={onAskAi}
-                        className={`word-popup-ask-ai ${toolbarButtonClass(false)} ml-auto`}
+                        className={`word-popup-ask-ai ${toolbarButtonClass()} ml-auto`}
                     >
                         <Icon name="sparkles" className="h-[1.25em] w-[1.25em]"/>
                     </button>
@@ -609,7 +621,7 @@ export function PopupContent({
                             aria-label={t('word.i_know_this')}
                             disabled={progressBusy || onProgressAction == null || familiarity === FAMILIARITY_MAX}
                             onClick={() => onProgressAction?.('known')}
-                            className={`word-popup-progress-known ${toolbarButtonClass(true)}`}
+                            className={`word-popup-progress-known ${toolbarButtonClass('verdigris')}`}
                         >
                             <Icon name="checkCircle" className="h-[1.25em] w-[1.25em]"/>
                         </button>
@@ -621,7 +633,7 @@ export function PopupContent({
                             aria-label={t('word.remove_mark')}
                             disabled={progressBusy || onProgressAction == null || familiarity == null}
                             onClick={() => onProgressAction?.('reset')}
-                            className={`word-popup-progress-reset ${toolbarButtonClass(false)}`}
+                            className={`word-popup-progress-reset ${toolbarButtonClass('vermilion')}`}
                         >
                             <Icon name="minusCircle" className="h-[1.25em] w-[1.25em]"/>
                         </button>
@@ -640,7 +652,7 @@ export function PopupContent({
                         aria-label={ankiActionLabel}
                         disabled={onAnkiSend == null || ankiSend?.status === 'sending'}
                         onClick={onAnkiSend}
-                        className={`word-popup-anki-send ${toolbarButtonClass(false)} ml-auto`}
+                        className={`word-popup-anki-send ${toolbarButtonClass()} ml-auto`}
                     >
                         <Icon name={ankiExisting === 'found' ? 'ankiUpdate' : 'ankiAdd'} className="h-[1.25em] w-[1.25em]"/>
                     </button>
@@ -659,7 +671,7 @@ export function PopupContent({
                             aria-label={t('word.explain_toggle')}
                             aria-pressed={explainShown}
                             onClick={() => setExplainShown((shown) => !shown)}
-                            className={`word-popup-explain-toggle ${toolbarButtonClass(false, explainShown)}`}
+                            className={`word-popup-explain-toggle ${toolbarButtonClass('neutral', explainShown)}`}
                         >
                             <Icon name="chatBubble" className="h-[1.25em] w-[1.25em]"/>
                         </button>
@@ -679,7 +691,7 @@ export function PopupContent({
                         aria-label={askAiLabel}
                         disabled={onAskAi == null || aiBusy}
                         onClick={onAskAi}
-                        className={`word-popup-ask-ai ${toolbarButtonClass(false)}`}
+                        className={`word-popup-ask-ai ${toolbarButtonClass()}`}
                     >
                         <Icon name={data.ai_asked ? 'sparklesRefresh' : 'sparkles'} className="h-[1.25em] w-[1.25em]"/>
                     </button>
@@ -694,7 +706,7 @@ export function PopupContent({
                             title={t('ai.models_icon')}
                             aria-label={t('ai.models_icon')}
                             aria-haspopup="dialog"
-                            className={`word-popup-models-button ${toolbarButtonClass(false)}`}
+                            className={`word-popup-models-button ${toolbarButtonClass('info')}`}
                         >
                             <RobotHelpIcon className="h-[1.25em] w-[1.25em]"/>
                         </button>

@@ -17,7 +17,10 @@ import {describe, expect, it} from 'vitest';
 // disappear when inapplicable (the `progress_actions` gate covers only the
 // two progress icons), tooltips and aria-labels come from the word.* /
 // ai.* ui-strings, and the glyphs come from the shared line-art set in
-// Components/icons.jsx (currentColor, no own color). The profile preview's
+// Components/icons.jsx (currentColor, no own color) — their colors ride the
+// shared toolbarButtonClass color tokens (popup-provenance ticket 01): the
+// know icon verdigris, remove-mark vermilion, the robot info blue, the rest
+// neutral grey, the pressed tint verdigris. The profile preview's
 // inertness (no handlers reach PopupContent) is pinned on PopupsSettings.jsx.
 
 const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
@@ -250,13 +253,44 @@ describe('WordPopup action toolbar', () => {
         // …one click flips the flag either way.
         expect(toggle).toContain('onClick={() => setExplainShown((shown) => !shown)}');
         // While shown the icon reads as pressed: the shared button class's
-        // pressed branch (verdigris accent + persistent tint).
-        expect(toggle).toContain('toolbarButtonClass(false, explainShown)');
+        // pressed branch (verdigris accent + persistent tint, whatever token
+        // the button passes — the toggle rests neutral).
+        expect(toggle).toContain("toolbarButtonClass('neutral', explainShown)");
         const helper = popupSource.slice(popupSource.indexOf('const toolbarButtonClass'));
-        const pressedBranch = helper.slice(helper.indexOf('(accent, pressed'), helper.indexOf("'disabled:opacity-40'"));
-        expect(pressedBranch).toContain('accent || pressed');
+        const pressedBranch = helper.slice(helper.indexOf("pressed = false"), helper.indexOf("'disabled:opacity-40'"));
+        expect(pressedBranch).toContain('TOOLBAR_ACCENTS.verdigris');
         expect(pressedBranch).toContain('bg-[var(--color-verdigris)]/10');
         expect(pressedBranch).toContain('dark:bg-[var(--color-verdigris-night)]/10');
+    });
+
+    it('paints the icons per color token — know verdigris, remove-mark vermilion, robot info, the rest neutral', () => {
+        // popup-provenance ticket 01: the helper takes a color token, and the
+        // token map carries the house hues. Its class strings are full
+        // literals — Tailwind's scanner reads this file's text, so
+        // concatenation-built names would never compile. "Remove mark" now
+        // renders the destructive vermilion and the robot the info blue; the
+        // Anki + Ask-AI icons keep the neutral grey (amber waits in the map
+        // for its consumers, tickets 02 + 05).
+        const map = popupSource.slice(popupSource.indexOf('const TOOLBAR_ACCENTS'));
+        expect(map).toContain('opacity-80 hover:opacity-100');
+        for (const [token, variable] of [
+            ['verdigris', '--color-verdigris'],
+            ['vermilion', '--color-vermilion'],
+            ['amber', '--color-amber'],
+            ['info', '--color-info'],
+        ]) {
+            expect(map).toMatch(new RegExp(`^    ${token}: `, 'm'));
+            expect(map).toContain(`text-[var(${variable})]`);
+            expect(map).toContain(`dark:text-[var(${variable}-night)]`);
+        }
+        expect(buttonIn('word-popup-progress-known')).toContain("toolbarButtonClass('verdigris')");
+        expect(buttonIn('word-popup-progress-reset')).toContain("toolbarButtonClass('vermilion')");
+        expect(buttonIn('word-popup-models-button')).toContain("toolbarButtonClass('info')");
+        // Neutral is the signature's default: bare calls keep the old
+        // reduced-opacity grey.
+        expect(buttonIn('word-popup-anki-send')).toContain('toolbarButtonClass()');
+        expect(buttonIn('word-popup-ask-ai')).toContain('toolbarButtonClass()');
+        expect(buttonIn('word-popup-explain-toggle')).toContain("toolbarButtonClass('neutral'");
     });
 
     it('renders the Anki status lines inside the toolbar strip', () => {
