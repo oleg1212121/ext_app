@@ -61,7 +61,14 @@ this project had a column to hold them.
    priority, base-group frequency remain the tiebreaks); a demoted entry
    sinks below every live one even at a higher score.
    `WordCompleteness::isDemoted` is the one demotion test, shared by the
-   score and the sort so they cannot drift. `words:recalc-completeness`
+   score and the sort so they cannot drift, and it judges the word's
+   **stored** definition set: the popup's relay-gloss display filter
+   ("simple past of see" stripped from partially-relay entries) swaps the
+   loaded relation only AFTER the recalc and the sort have run — judging
+   the filtered set would let the lazy path demote an entry the
+   `words:recalc-completeness` sweep (relay glosses are unlabelled, live
+   rows in SQL) keeps up, and `words.completeness` would flap depending
+   on which ran last. `words:recalc-completeness`
    must compute the same matrix set-based in SQL — the demotion check
    mirrors `DEMOTING` through `jsonb_exists_any(labels,
    array['obsolete','archaic'])` (the `?|` operator's function form; PDO's

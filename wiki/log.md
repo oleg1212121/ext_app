@@ -1,5 +1,32 @@
 # Directory Update Log
 
+## 2026-10-20 (popup-ai-enrich review fix pass — 4 accepted findings on 07–10)
+
+- **Lazy-vs-stored demotion alignment** (ADR 0083 decision 4 extended,
+  `database/dictionary.md` Word completeness note,
+  `domains/interactive-words.md` popup section): the demotion test and the
+  definition points now judge the word's **stored** definition set on BOTH
+  paths — `WordFamily::resolve`'s relay-gloss display filter swaps the
+  loaded relation only AFTER `WordCompleteness::recalcFamily` and the
+  live-before-demoted sort have run (it used to run first, so a
+  partially-relay entry whose every surviving sense is obsolete/archaic
+  demoted lazily while the `words:recalc-completeness` SQL — relay glosses
+  are unlabelled, live rows — kept it up, and `words.completeness` flapped
+  depending on which ran last). The lazy staleness window now sees the
+  stored children too, matching the sweep's all-definitions threshold.
+  Pinned by twin tests asserting the same score (3) for the same rows:
+  `WordEndpointTest` (lazy recalc through the popup open) +
+  `WordsRecalcCompletenessCommandTest` (SQL).
+- **`WordPopup` fetch effect early-return** clears
+  loading/error/data before returning for an id-less (missing) token — the
+  missing-card branch's `data == null` conjunct no longer relies on the
+  popup unmounting between clicks (vitest source pin added).
+- **`AiWordEnrichEndpointTest`**: the labelled `{text, labels}` merge test
+  gained the house-required `Http::fake()` its sibling guards already had.
+- **`database/dictionary.md` frontmatter**: the `sources` list's
+  mixed 3-space/2-space indent runs normalized to 2-space (strict
+  symfony/yaml chokes on the mix).
+
 ## 2026-10-20 (popup-ai-enrich 10: completeness v2 — 0–9, live entries before demoted)
 
 The stored completeness score re-weights so it encodes importance as well

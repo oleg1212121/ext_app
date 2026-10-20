@@ -133,6 +133,23 @@ it('mirrors the demotion rule: 0 definition points only when EVERY definition de
         ->and((int) $colloquial->fresh()->completeness)->toBe(2);
 });
 
+it('judges demotion on the stored definitions — a relay gloss keeps a partially-relay entry live', function () {
+    // The popup display-filters relay glosses ("simple past of see") out of
+    // partially-relay entries before rendering; the sweep scores the STORED
+    // rows, where the unlabelled relay gloss is a live sense. The lazy
+    // recalc pins the same rows to the same score in WordEndpointTest —
+    // both paths must agree or words.completeness flaps between them.
+    $word = createWord('en', 'saw', 'verb', ['frequency' => 900]);
+    Definition::query()->create(['word_id' => $word->id, 'definition' => 'simple past of see']);
+    Definition::query()->create(['word_id' => $word->id, 'definition' => 'No longer used.', 'labels' => ['obsolete']]);
+
+    $this->artisan('words:recalc-completeness')->assertSuccessful();
+
+    // Live verb definitions 2 + rank 1 = 3 — not the display-filtered set's
+    // demoted 0 + rank 1 = 1.
+    expect((int) $word->fresh()->completeness)->toBe(3);
+});
+
 it('is idempotent — a second full run rewrites nothing', function () {
     $word = richWord();
     $this->artisan('words:recalc-completeness')->assertSuccessful();

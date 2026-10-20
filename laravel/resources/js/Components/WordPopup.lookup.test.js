@@ -76,13 +76,25 @@ describe('WordPopup: the on-open lookup (ticket 07)', () => {
         // loads exactly like a mapped token's, so the ledger's ai_asked
         // greys the icon for the already-asked word.
         expect(fetchEffectSource).toMatch(/const fetchId = wordId \?\? lookedUpId;/);
-        expect(fetchEffectSource).toMatch(/if \(fetchId == null\) \{\s*return;\s*\}/);
+        expect(fetchEffectSource).toMatch(/if \(fetchId == null\) \{/);
         // The lookup effect stores the resolved id…
         expect(lookupEffectSource).toContain('setLookedUpId(found)');
         // …and the render branch leaves missing mode once an id exists —
         // the loading line shows while the payload loads, then the
         // dictionary view.
         expect(popupRenderSource).toMatch(/wordId == null && lookedUpId == null && data == null \? \(/);
+    });
+
+    it('the fetch effect’s early return clears the payload state — the missing branch is self-sufficient', () => {
+        // The missing-card branch keys on `data == null`; without the clear
+        // it only ever held because the popup unmounted between clicks. A
+        // popup that stays mounted while the selection moves from a known
+        // token (dictionary loaded) to a missing one must show the missing
+        // card, not the previous token's stale dictionary — and none of its
+        // loading/error state.
+        expect(fetchEffectSource).toMatch(
+            /if \(fetchId == null\) \{\s*setLoading\(false\);\s*setError\(null\);\s*setData\(null\);\s*return;\s*\}/,
+        );
     });
 
     it('a miss — or a failed lookup — leaves the missing card with its live ask icon', () => {

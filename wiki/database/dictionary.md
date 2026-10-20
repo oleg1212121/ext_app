@@ -5,38 +5,38 @@ description: One words table (+ satellites) keyed by language and unique per (l_
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-20T15:15:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T18:30:00+03:00 }
 sources:
-   - id: migration
-     resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
-     title: Unified dictionary creation (squashed baseline)
-   - id: l-word-uniqueness
-     resource: laravel/database/migrations/2026_10_19_000001_move_word_uniqueness_to_l_word.php
-     title: Word uniqueness moved to (l_word, language_id, word_class_id)
-   - id: adr-0081
-     resource: docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md
-     title: ADR 0081 — the word/l_word contract, uniqueness on (l_word, language, class)
-   - id: word-lookup-key
-     resource: laravel/app/Support/WordLookupKey.php
-     title: Shared ё-aware l_word normalization (trim → lowercase → mark strip → zero-width strip → ё→е fold)
-   - id: tag-pivot-rename
-     resource: laravel/database/migrations/2026_10_11_000001_rename_word_tags_to_tagged_words.php
-     title: Words-tag pivot rename to tagged_words
-   - id: fetch-migration
-     resource: laravel/database/migrations/2026_09_29_000001_create_word_translation_fetches_table.php
-     title: Auto-fetch ledger creation
-   - id: importer
-     resource: laravel/app/Classes/WiktionaryParser.php
-     title: Wiktionary (Kaikki) import writer
-   - id: stress-marks
-     resource: laravel/app/Support/StressMarks.php
-     title: Shared Cyrillic stress-mark normalizer (ru/be/uk list + stripping)
-   - id: lemma-forms
-     resource: laravel/app/Support/LemmaForms.php
-     title: Shared lemma-form rule and form-row hygiene (cap/strip/empty-guard/dedupe)
-   - id: pos-aliases
-     resource: laravel/app/Support/PosAliases.php
-     title: Shared pos alias table (dictionary abbreviations + kaikki slugs → canonical class slugs)
+  - id: migration
+    resource: laravel/database/migrations/2026_09_10_000005_create_dictionary_tables.php
+    title: Unified dictionary creation (squashed baseline)
+  - id: l-word-uniqueness
+    resource: laravel/database/migrations/2026_10_19_000001_move_word_uniqueness_to_l_word.php
+    title: Word uniqueness moved to (l_word, language_id, word_class_id)
+  - id: adr-0081
+    resource: docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md
+    title: ADR 0081 — the word/l_word contract, uniqueness on (l_word, language, class)
+  - id: word-lookup-key
+    resource: laravel/app/Support/WordLookupKey.php
+    title: Shared ё-aware l_word normalization (trim → lowercase → mark strip → zero-width strip → ё→е fold)
+  - id: tag-pivot-rename
+    resource: laravel/database/migrations/2026_10_11_000001_rename_word_tags_to_tagged_words.php
+    title: Words-tag pivot rename to tagged_words
+  - id: fetch-migration
+    resource: laravel/database/migrations/2026_09_29_000001_create_word_translation_fetches_table.php
+    title: Auto-fetch ledger creation
+  - id: importer
+    resource: laravel/app/Classes/WiktionaryParser.php
+    title: Wiktionary (Kaikki) import writer
+  - id: stress-marks
+    resource: laravel/app/Support/StressMarks.php
+    title: Shared Cyrillic stress-mark normalizer (ru/be/uk list + stripping)
+  - id: lemma-forms
+    resource: laravel/app/Support/LemmaForms.php
+    title: Shared lemma-form rule and form-row hygiene (cap/strip/empty-guard/dedupe)
+  - id: pos-aliases
+    resource: laravel/app/Support/PosAliases.php
+    title: Shared pos alias table (dictionary abbreviations + kaikki slugs → canonical class slugs)
   - id: word-id-indexes
     resource: laravel/database/migrations/2026_10_18_000001_add_word_id_indexes_to_forms_transcriptions_and_word_children.php
     title: word_id-leading indexes on forms/transcriptions/examples/pronunciations/user_word/user_word_event
@@ -67,15 +67,15 @@ sources:
   - id: ai-fetches-migration
     resource: laravel/database/migrations/2026_10_19_000003_create_word_ai_fetches_table.php
     title: word_ai_fetches — the ask-AI enrichment ledger (popup-ai-enrich ticket 04)
-   - id: source-migration
-     resource: laravel/database/migrations/2026_10_19_000004_add_source_to_word_content_tables.php
-     title: nullable source columns on definitions/transcriptions/examples/etymologies
-   - id: labels-migration
-     resource: laravel/database/migrations/2026_10_20_000001_add_labels_to_definitions_table.php
-     title: definitions.labels — usage/register labels (closed set, null = unlabelled, no backfill)
-   - id: usage-labels
-     resource: laravel/app/Support/UsageLabels.php
-     title: UsageLabels — the closed usage-label set shared by import, enrichment and scoring
+  - id: source-migration
+    resource: laravel/database/migrations/2026_10_19_000004_add_source_to_word_content_tables.php
+    title: nullable source columns on definitions/transcriptions/examples/etymologies
+  - id: labels-migration
+    resource: laravel/database/migrations/2026_10_20_000001_add_labels_to_definitions_table.php
+    title: definitions.labels — usage/register labels (closed set, null = unlabelled, no backfill)
+  - id: usage-labels
+    resource: laravel/app/Support/UsageLabels.php
+    title: UsageLabels — the closed usage-label set shared by import, enrichment and scoring
   - id: enrich-service
     resource: laravel/app/Classes/WordAiEnrichmentService.php
     title: WordAiEnrichmentService (the transactional merge writer)
@@ -112,7 +112,11 @@ sources:
   1 (0 < rank < the sentinel — 0 is the never-ranked column default,
   `Word::FREQUENCY_UNRANKED` the explicit unranked stamp).
   `WordCompleteness::score` is the matrix, `WordCompleteness::isDemoted`
-  the one demotion test (shared with the popup sort),
+  the one demotion test (shared with the popup sort), both judging the
+  word's **stored** definitions — the popup's relay-gloss display filter
+  runs only after the lazy recalc and the ordering, so a partially-relay
+  entry (an unlabelled relay gloss among obsolete senses) scores the same
+  on a popup open as the sweep scores it,
   `WordCompleteness::recalcFamily` the lazy recompute: when the popup
   family resolves (`WordFamily::resolve`), a word whose `completeness_at`
   is missing or older than its own `updated_at` or the newest stamp of its

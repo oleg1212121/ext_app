@@ -146,7 +146,13 @@ describe('WordPopup: missing mode', () => {
         // lookedUpId state feeding fetchId). A missing token with no
         // descriptor never gains an id, so its zero-fetch contract holds.
         expect(fetchEffectSource).toMatch(/const fetchId = wordId \?\? lookedUpId;/);
-        expect(fetchEffectSource).toMatch(/if \(fetchId == null\) \{\s*return;\s*\}/);
+        // The early return still clears the previous word's loading/error/
+        // data — the missing branch keys on data == null, so a popup that
+        // moves here from a loaded token without unmounting shows the
+        // missing card, never the stale dictionary.
+        expect(fetchEffectSource).toMatch(
+            /if \(fetchId == null\) \{\s*setLoading\(false\);\s*setError\(null\);\s*setData\(null\);\s*return;\s*\}/,
+        );
         // The mapped path's fetch itself is untouched.
         expect(popupSource).toContain('fetch(`/words/${fetchId}?surface=${encodeURIComponent(surface)}`');
     });

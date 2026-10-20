@@ -222,6 +222,41 @@ it('filters relay glosses out of partially-relay entries', function () {
         ->and($sawEntry['definitions'])->toBe(['To cut (something) with a saw.']);
 });
 
+it('scores a partially-relay entry on the stored definitions — the display filter never demotes', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    // Every surviving (non-relay) sense is obsolete, but the entry also
+    // carries relay glosses. Completeness must judge the STORED set — where
+    // the unlabelled relay gloss is a live row, exactly as the
+    // words:recalc-completeness sweep scores it — never the
+    // display-filtered set the popup hides, or words.completeness would
+    // flap between a popup open (lazy recalc) and a sweep.
+    $sawVerb = createWord('en', 'saw', 'verb', ['frequency' => 900]);
+    Definition::query()->create(['word_id' => $sawVerb->id, 'definition' => 'simple past of see']);
+    Definition::query()->create(['word_id' => $sawVerb->id, 'definition' => 'No longer used.', 'labels' => ['obsolete']]);
+    Form::query()->create(['word_id' => $sawVerb->id, 'form' => 'sawn', 'l_word' => 'sawn']);
+
+    $sawn = createWord('en', 'sawn', 'unknown');
+
+    $response = $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $sawn->id, 'surface' => 'sawn']))
+        ->assertOk()
+        ->assertJsonPath('data.form_of', ['saw']);
+
+    // Stored-set scoring: live verb definitions 2 + rank 1 = 3 — judged on
+    // the filtered set this entry would demote to 0 + rank 1 = 1. The
+    // sweep's SQL pins the same rows to the same score in
+    // WordsRecalcCompletenessCommandTest.
+    expect((int) $sawVerb->fresh()->completeness)->toBe(3);
+
+    // The payload still renders the display-filtered definitions — the
+    // relay gloss stays hidden even though it scored.
+    $sawEntry = collect($response->json('data.entries'))->firstWhere('id', $sawVerb->id);
+    expect($sawEntry)->not->toBeNull()
+        ->and($sawEntry['definitions'])->toBe(['No longer used.']);
+});
+
 it('keeps a relay-only entry when the forms table offers no base word', function () {
     $user = User::factory()->create();
     createWordClasses();

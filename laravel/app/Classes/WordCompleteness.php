@@ -57,7 +57,11 @@ class WordCompleteness
      * The matrix, over the word's loaded content relations. Callers that
      * know the translation-link state pass it in (the popup family resolves
      * it with one pivot query, the backfill with a SQL EXISTS); without the
-     * argument the word's translation-link relations are consulted.
+     * argument the word's translation-link relations are consulted. The
+     * loaded relations must be the STORED rows — a caller that display-
+     * filters one before scoring scores a different word than
+     * words:recalc-completeness's SQL does (WordFamily filters relay
+     * glosses only after this and the ordering have run).
      */
     public static function score(Word $word, ?bool $hasLinkedTranslations = null): int
     {

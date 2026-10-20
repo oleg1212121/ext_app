@@ -18,7 +18,12 @@ use Illuminate\Support\Collection;
  * (the popup shows a "form of" pointer line instead) and stray relay glosses
  * are filtered out of partially-relay entries — kaikki merges form-of lines
  * into real entries, so e.g. "saw/verb" carries real saw senses AND
- * "simple past of see".
+ * "simple past of see". Both are display-only: the filtering swaps the
+ * definitions relation AFTER the completeness recalc and the ordering below,
+ * which must judge the word's stored definition set — the same set
+ * words:recalc-completeness's SQL mirrors (a relay gloss is an unlabelled,
+ * live row there) — or the two paths would score such an entry differently
+ * and words.completeness would flap depending on which ran last.
  *
  * The assembled entries then stable-sort [live entry before demoted entry,
  * then completeness-descending] (stored `words.completeness`, recalculated
@@ -104,6 +109,36 @@ class WordFamily
                 ->values());
         }
 
+        // The lazy completeness recalc (both columns persisted when stale,
+        // in-memory scores refreshed either way) runs while every entry's
+        // definitions relation is still the STORED set: isDemoted and the
+        // definition points must judge what is in the database — the same
+        // rows words:recalc-completeness's SQL scores, where a relay gloss
+        // is an unlabelled, live definition — never the display-filtered
+        // set below. contentStamp's staleness window reads the same stored
+        // children, matching the sweep's all-definitions threshold.
+        WordCompleteness::recalcFamily($entries);
+
+        // The popup ordering: live entries before demoted ones
+        // (WordCompleteness::isDemoted — every stored definition labelled
+        // obsolete/archaic; shared with the score so they can never
+        // disagree), then completeness-descending, over the assembled
+        // order — linked word first, class priority, base groups ranked by
+        // frequency — which remains the tiebreak for equal scores among
+        // equally-live entries. PHP 8 sorts are stable, so uasort preserves
+        // the assembled order within a score.
+        $entries = $entries->sort(
+            fn (Word $a, Word $b): int => ((int) WordCompleteness::isDemoted($a) <=> (int) WordCompleteness::isDemoted($b))
+                ?: (($b->completeness ?? 0) <=> ($a->completeness ?? 0)),
+        )->values();
+
+        // Only now the display filter: swapping the definitions relation to
+        // the relay-filtered set would otherwise leak into the scoring and
+        // the demotion test above (a partially-relay entry whose every
+        // surviving sense is obsolete/archaic would demote here while the
+        // sweep — relay glosses unlabelled, live — keeps it up), and the
+        // stored words.completeness would flap depending on which path ran
+        // last.
         if ($relayHiding) {
             $entries->each(fn (Word $entry) => $entry->setRelation(
                 'definitions',
@@ -112,21 +147,6 @@ class WordFamily
                     ->values(),
             ));
         }
-
-        // The lazy completeness recalc (both columns persisted when stale,
-        // in-memory scores refreshed either way), then the popup ordering:
-        // live entries before demoted ones (WordCompleteness::isDemoted —
-        // every definition labelled obsolete/archaic; shared with the
-        // score so they can never disagree), then completeness-descending,
-        // over the assembled order — linked word first, class priority,
-        // base groups ranked by frequency — which remains the tiebreak for
-        // equal scores among equally-live entries. PHP 8 sorts are stable,
-        // so uasort preserves the assembled order within a score.
-        WordCompleteness::recalcFamily($entries);
-        $entries = $entries->sort(
-            fn (Word $a, Word $b): int => ((int) WordCompleteness::isDemoted($a) <=> (int) WordCompleteness::isDemoted($b))
-                ?: (($b->completeness ?? 0) <=> ($a->completeness ?? 0)),
-        )->values();
 
         return new self($entries, self::baseGroupHeadwords($baseGroups));
     }

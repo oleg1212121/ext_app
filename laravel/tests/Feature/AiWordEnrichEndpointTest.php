@@ -488,6 +488,7 @@ it('still locks the word SUCCEEDED when every AI definition dropped the script g
 });
 
 it('persists a labelled {text, labels} definition on the source=ai row, the payload staying plain strings', function () {
+    Http::fake();
     $fixture = createEnrichFixture();
     // Mixed shapes: a plain-string entry (unlabelled) and an object entry
     // whose closed-set labels survive; the unknown slug drops.

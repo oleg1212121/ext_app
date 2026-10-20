@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — EVERY 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-20T15:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T18:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -187,7 +187,11 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    boilerplate like "past participle of the verb melt") are hidden when a
    base group carries the real content, and stray relay glosses are filtered
    out of partially-relay entries ("saw/verb" mixes real senses with "simple
-   past of see"). The assembled list then **stable-sorts [live entry
+   past of see") — a display-only step that runs AFTER the completeness
+   work below, which must judge the word's stored definitions (a relay
+   gloss is an unlabelled, live row to the sweep's SQL; filtering first
+   would let the lazy path demote an entry the sweep keeps up, ADR 0083).
+   The assembled list then **stable-sorts [live entry
    before demoted entry, then completeness-descending]** (popup-ai-enrich
    tickets 02 + 10, ADR 0083): every entry's
    stored `words.completeness` (0–9 weighted v2, see

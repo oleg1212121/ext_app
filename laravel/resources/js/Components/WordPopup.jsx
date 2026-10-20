@@ -1053,9 +1053,16 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         // — unless the on-open lookup resolved one (popup-ai-enrich ticket
         // 07): fetchId is then the word the surface re-resolved to,
         // fetched exactly like a mapped token so the payload's ai_asked
-        // drives the toolbar's grey icon.
+        // drives the toolbar's grey icon. The early return still clears the
+        // previous word's payload state — the missing-card branch keys on
+        // data == null, so a popup that moves here from a loaded token
+        // without unmounting must not keep painting that token's
+        // dictionary.
         const fetchId = wordId ?? lookedUpId;
         if (fetchId == null) {
+            setLoading(false);
+            setError(null);
+            setData(null);
             return;
         }
         let cancelled = false;
