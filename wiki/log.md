@@ -1,5 +1,35 @@
 # Directory Update Log
 
+## 2026-10-23 (wiki:validate fails on unacknowledged warnings — owner+dated baseline)
+
+Ticket 01 of the retro-fixes-2 spec. A mechanism, not another burn-down:
+the 2026-10-14 retro burned the wiki warnings 88 → 0 and they regrew to
+32 within nine days of ordinary feature work.
+
+- **The gate**: `wiki:validate` now exits 1 when any warning is not
+  acknowledged in the checked-in baseline `wiki/validate-baseline.json` —
+  JSON `entries` of `{warning, owner, date, note}` matched by exact
+  message equality. A missing baseline behaves as empty; a malformed
+  baseline is reported as an error, never silently ignored. Acknowledged
+  warnings summarize in one line naming the baseline; `--prune` drops
+  entries that no longer match any current warning so the file cannot
+  rot. Remediation printed on failure: bump the listing concept's
+  `generated.at`, or acknowledge in the baseline with owner+date.
+- **Baseline**: shipped populated with the 32 source-mtime-drift warnings
+  live on 2026-10-23 (owner `human:alex`), generated from the live
+  validator output so messages match byte-for-byte. CI stays trivially
+  green — `WIKI_SKIP_MTIME_CHECKS=1` mutes the drift check there — and
+  the gate still fails on any non-mtime warning (unknown status, stale
+  content, missing source, reserved-file frontmatter).
+- **Wiring**: `App\Classes\WikiValidator` gained `acknowledgedWarnings()`,
+  `unacknowledgedWarnings()`, `staleBaselineEntries()`,
+  `baselineEntries()`, `baselineErrors()`, `baselinePath()` and
+  `encodeBaseline()`; `warnings()`/`errors()` behavior is unchanged.
+  `WikiValidate` prints the gate and carries `--prune`. `WikiTest` now
+  enforces zero unacknowledged warnings on the real bundle and covers the
+  gate mechanics (fresh drift, acknowledgement, stale entries, malformed
+  baseline, prune, mtime-skip behavior) against a temp-dir fixture bundle.
+
 ## 2026-10-20 (popup-provenance review fix: the source badge dedups the adopt-on-ask word's "ai")
 
 Review-pass fix on ticket 04's badge (one commit, three accepted findings).

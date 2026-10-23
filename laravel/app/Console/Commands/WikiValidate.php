@@ -9,12 +9,20 @@ use Illuminate\Console\Command;
 /**
  * Validates the OKF wiki bundle: frontmatter conformance (errors), broken
  * cross-links (errors), and freshness/provenance signals (warnings).
+ *
+ * The run fails on errors AND on unacknowledged warnings — warnings not
+ * matched by an entry in the bundle's validate-baseline.json. Fix new
+ * warnings (bump the listing concept's generated.at) or acknowledge
+ * known-benign ones in the baseline with owner+date; --prune drops
+ * baseline entries that no longer match any current warning.
  */
 class WikiValidate extends Command
 {
-    protected $signature = 'wiki:validate {--path= : Override the wiki bundle path}';
+    protected $signature = 'wiki:validate
+        {--path= : Override the wiki bundle path}
+        {--prune : Drop baseline entries that no longer match any current warning}';
 
-    protected $description = 'Validate the OKF wiki bundle (conformance, links, staleness)';
+    protected $description = 'Validate the OKF wiki bundle (conformance, links, staleness, acknowledged-warning gate)';
 
     public function handle(): int
     {
@@ -30,25 +38,65 @@ class WikiValidate extends Command
 
         $validator = (new WikiValidator($root))->validate();
 
-        foreach ($validator->warnings() as $warning) {
+        if ($this->option('prune')) {
+            $this->pruneBaseline($validator);
+        }
+
+        foreach ($validator->unacknowledgedWarnings() as $warning) {
             $this->warn("  [warn] {$warning}");
+        }
+
+        foreach ($validator->staleBaselineEntries() as $entry) {
+            $this->info("  [info] stale baseline entry: {$entry['warning']} (matches no current warning; run with --prune to drop)");
+        }
+
+        $acknowledgedCount = count($validator->acknowledgedWarnings());
+        if ($acknowledgedCount > 0) {
+            $this->info("  [info] {$acknowledgedCount} warning(s) acknowledged in {$validator->baselinePath()}");
         }
 
         foreach ($validator->errors() as $error) {
             $this->error("  [error] {$error}");
         }
 
-        $warningCount = count($validator->warnings());
-        $errorCount = count($validator->errors());
+        foreach ($validator->baselineErrors() as $error) {
+            $this->error("  [error] {$error}");
+        }
 
-        if ($errorCount > 0) {
-            $this->error("Wiki validation failed: {$errorCount} error(s), {$warningCount} warning(s).");
+        $errorCount = count($validator->errors()) + count($validator->baselineErrors());
+        $unacknowledgedCount = count($validator->unacknowledgedWarnings());
+
+        if ($errorCount > 0 || $unacknowledgedCount > 0) {
+            $this->error("Wiki validation failed: {$errorCount} error(s), {$unacknowledgedCount} unacknowledged warning(s).");
+            $this->error("Fix unacknowledged warnings: bump the listing concept's generated.at, or acknowledge in the baseline with owner+date ({$validator->baselinePath()}).");
 
             return self::FAILURE;
         }
 
-        $this->info("Wiki bundle is conformant. {$warningCount} warning(s).");
+        $this->info('Wiki bundle is conformant. '.count($validator->warnings()).' warning(s), all acknowledged.');
 
         return self::SUCCESS;
+    }
+
+    private function pruneBaseline(WikiValidator $validator): void
+    {
+        $path = $validator->baselinePath();
+
+        if ($validator->baselineErrors() !== []) {
+            $this->error("Refusing to prune: {$path} is malformed — fix or delete it first.");
+
+            return;
+        }
+
+        $kept = $validator->prunedBaselineEntries();
+        $dropped = count($validator->baselineEntries()) - count($kept);
+
+        if (file_put_contents($path, WikiValidator::encodeBaseline($kept)) === false) {
+            $this->error("Could not write baseline {$path}.");
+
+            return;
+        }
+
+        $this->info("Pruned baseline {$path}: dropped {$dropped} stale entr".($dropped === 1 ? 'y' : 'ies').', kept '.count($kept).'.');
     }
 }

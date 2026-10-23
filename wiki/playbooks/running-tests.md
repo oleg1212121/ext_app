@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T12:25:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
 sources:
   - id: phpunit
@@ -28,6 +28,9 @@ sources:
   - id: wikiconfig
     resource: laravel/config/wiki.php
     title: Wiki validation config (skip_mtime_staleness flag)
+  - id: wikibaseline
+    resource: wiki/validate-baseline.json
+    title: Acknowledged-warning baseline (exact-message entries, owner+date; --prune keeps it current)
   - id: packagejson
     resource: laravel/package.json
     title: NPM scripts (vitest run, eslint)
@@ -80,7 +83,12 @@ sources:
   source. The Tests and TIA Baseline workflows set
   `WIKI_SKIP_MTIME_CHECKS=1`, read via
   `config('wiki.skip_mtime_staleness')` in `WikiValidator`. Local runs keep
-  the signal.
+  the signal, and it is a gate: `wiki:validate` exits 1 on any warning not
+  acknowledged in `wiki/validate-baseline.json` (entries matched by exact
+  message, each with owner+date; `--prune` drops entries that no longer
+  match; a malformed baseline is an error). CI stays trivially green — the
+  muted check covers every currently baselined warning — and the gate still
+  fails on any non-mtime warning.
 * `composer run test` clears the **config and route caches** first, then runs
   the suite **in parallel** (Pest `--parallel`, one process per CPU core —
   8 in the dev container). Each parallel worker runs against its own

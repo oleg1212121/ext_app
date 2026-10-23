@@ -11,7 +11,8 @@ This document provides guidelines for agents operating in this Laravel bilingual
 **Maintenance rules (required):**
 - When you change a feature, flow, or schema, update the matching concept in `wiki/`, bump its `generated.at`, and add an entry to `wiki/log.md`.
 - When you add/change routes, models, or artisan commands, regenerate the machine-owned references: `docker exec ext_app_laravel php artisan wiki:sync` (never hand-edit `wiki/reference/`).
-- `docker exec ext_app_laravel php artisan wiki:validate` must pass (it also runs as part of the test suite via `tests/Feature/WikiTest.php`).
+- `docker exec ext_app_laravel php artisan wiki:validate` must pass with zero unacknowledged warnings (it also runs as part of the test suite via `tests/Feature/WikiTest.php`; any warning not acknowledged in `wiki/validate-baseline.json` fails the run).
+- Editing a concept's listed sources means bumping that concept's `generated.at` — that clears its drift warning. Known-benign drift you cannot clear gets an owner+dated entry in `wiki/validate-baseline.json`; run `docker exec ext_app_laravel php artisan wiki:validate --prune` to drop baseline entries that no longer match so the file cannot rot.
 - After reviewing a concept for accuracy, record it: add `verified: { by: human:<you>, at: <datetime> }` to its frontmatter.
 
 ## Docker Environment
