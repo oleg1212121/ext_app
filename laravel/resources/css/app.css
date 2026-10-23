@@ -186,7 +186,7 @@ b, strong {
     --word-known: #16a34a;
     --phrasal-underline: var(--color-verdigris);
     --phrasal-hit-background: gainsboro;
-    --stress-mark-color: red;
+    --stress-mark-color: #b5b5b5;
 }
 
 .dark {
@@ -275,6 +275,6 @@ b, strong {
     width: 0.32em;
     height: 0.21em;
     background: var(--stress-mark-color);
-    clip-path: polygon(62% 0, 100% 0, 20% 100%, 0 100%);
+    clip-path: polygon(20% 0, 70% 0, 20% 100%, 0 100%);
     pointer-events: none;
 }
