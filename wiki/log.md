@@ -1,5 +1,48 @@
 # Directory Update Log
 
+## 2026-10-23 (popup-usage-labels ticket 04: the data run — fast wipe + full kaikki re-import populates real label coverage)
+
+The backfill behind ticket 02's update-on-reimport semantics, executed per
+the user's 2026-10-23 directive (test machine, collateral loss acceptable,
+speed preferred): a single-statement non-transactional `TRUNCATE` of `words`
+plus all twelve tables referencing it (`definitions`, `forms`,
+`transcriptions`, `etymologies`, `examples`, `pronunciations`,
+`word_translations`, `tagged_words`, `user_word_event` (familiarity events,
+226 rows), `word_translation_fetches`, `word_ai_fetches`, `entity_words`,
+`user_word`) — instant, where the old chunked `--fresh` path crawled —
+keeping the `tags`, `word_classes` and `transcription_types` taxonomy. The
+referring-tables list came from `pg_constraint` (the DB is the authority;
+the migrations-grep guess had `word_familiarity` wrong — the table is
+`user_word_event`). Pre-wipe state for the record: 1,494,360 words
+(10 `source='kaikki'` — the sample slice; the rest pre-dated the source
+column), 2,055,696 definitions (10 labelled), 184,315 links, 0 AI rows
+after the wipe.
+
+Then both editions re-imported via the documented `wiktionary:import-raw`
+with `--skip-extract` (extracts on disk; one wrinkle — the en-edition dump
+had been renamed `en-raw-wiktextract-data.jsonl.gz` while the extracts keep
+the old base, fixed with a symlink so `extractPathFor` pairing resolves).
+Run 1 (en edition, `--langs=en,ru`): 1,492,835 + 442,594 lines → 1,003,469
+words, 92,954 foreign-prose definitions skipped by the majority-script
+guard, link pass 77,448 en→ru. Run 2 (ru edition, `--langs=ru
+--target-langs=en` — the flag is required for single-language runs):
+489,522 lines → 470,816 words, 6,935 relays demoted, 40 foreign-skipped;
+its link pass linked 77,188 ru→en plus 20,451 more en→ru (run 2's new ru
+words resolved staged candidates run 1 had left). Directed linkings
+(175,087) collapse to **147,708 canonical pairs** (`word_translations`
+unique per pair).
+
+Final dev-DB state: **en=932,146 / ru=481,440 words; 95,494 labelled
+definitions** (obsolete 39,993, archaic 19,207, rare 18,080, dated 11,387,
+colloquial 7,309, dialectal 5,031); `definitions_labels_updated=0` in both
+runs is correct — empty tables mean every definition was a fresh insert
+carrying labels natively (the update path was proven earlier on the sample
+slice: 10 updates, repeat run 0). Spot check: `бытность`'s "жизнь,
+существование" definition carries `["obsolete"]` — the popup's payload
+ships it (`{text, labels}`) and the chip rendering is suite-pinned; the
+Filament Labels column reads the same rows. No orphaned parallel-worker
+test databases.
+
 ## 2026-10-23 (popup-usage-labels: labels become visible — popup chips in two display tiers, Anki plain-text prefix, update-on-reimport backfill)
 
 The usage labels stored since 2026-10-20 (popup-ai-enrich ticket 09)
