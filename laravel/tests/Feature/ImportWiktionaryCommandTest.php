@@ -193,3 +193,20 @@ it('is idempotent on re-runs — definitions are not duplicated', function () {
 
     unlink($tmpFile);
 });
+
+it('reports updated definition labels in the summary table', function () {
+    createLanguages();
+    $tmpFile = tempnam(sys_get_temp_dir(), 'wiktionary_cmd_labels_');
+    file_put_contents($tmpFile, json_encode([
+        'word' => 'cat', 'pos' => 'noun',
+        'senses' => [['glosses' => ['A small domesticated feline'], 'tags' => ['rare']]],
+    ])."\n");
+
+    $this->artisan('wiktionary:import', ['file' => $tmpFile, '--lang' => 'en', '--target-lang' => 'ru'])
+        ->expectsOutputToContain('Definitions labels updated')
+        ->assertSuccessful();
+
+    expect(Definition::query()->where('labels', '!=', null)->count())->toBe(1);
+
+    unlink($tmpFile);
+});

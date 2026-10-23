@@ -822,3 +822,127 @@ it('stores sense tags as usage labels on imported definitions, unlabelled senses
 
     unlink($tmpFile);
 });
+
+it('updates labels on case-insensitively same-text definitions on re-import, new senses still inserting', function () {
+    $languages = createLanguages();
+    $enId = $languages['en']->id;
+
+    // The first import writes the pre-label rows a full import leaves
+    // behind: unlabelled senses.
+    $unlabelled = writeJsonlFixture([
+        json_encode([
+            'word' => 'knave', 'pos' => 'noun',
+            'senses' => [
+                ['glosses' => ['a dishonest man']],
+                ['glosses' => ['any given card in a deck']],
+            ],
+            'etymology_text' => 'Middle English knave.',
+        ]),
+    ], 'wiktionary_relabels_pre');
+    (new WiktionaryParser('en', 'ru', 100))->import($unlabelled);
+    unlink($unlabelled);
+
+    expect(Definition::count())->toBe(2);
+
+    // The re-import tags the senses: the first gloss differs in case only
+    // (the case-insensitive key must match the stored row, whose text stays
+    // untouched), the second gains labels where null stood, and a third
+    // sense is genuinely new — it inserts.
+    $tagged = writeJsonlFixture([
+        json_encode([
+            'word' => 'knave', 'pos' => 'noun',
+            'senses' => [
+                ['glosses' => ['A dishonest man'], 'tags' => ['archaic', 'masculine']],
+                ['glosses' => ['any given card in a deck'], 'tags' => ['rare', 'dialectal']],
+                ['glosses' => ['a wicked fellow'], 'tags' => ['dated']],
+            ],
+            'etymology_text' => 'Middle English knave.',
+        ]),
+    ], 'wiktionary_relabels_post');
+    $stats = (new WiktionaryParser('en', 'ru', 100))->import($tagged);
+
+    $knave = Word::where('word', 'knave')->where('language_id', $enId)->firstOrFail();
+    $definitions = $knave->definitions()->orderBy('id')->get();
+    expect($definitions)->toHaveCount(3)
+        ->and($definitions[0]->definition)->toBe('a dishonest man')
+        ->and($definitions[0]->labels)->toBe(['archaic'])
+        ->and($definitions[1]->definition)->toBe('any given card in a deck')
+        ->and($definitions[1]->labels)->toBe(['rare', 'dialectal'])
+        ->and($definitions[2]->definition)->toBe('a wicked fellow')
+        ->and($definitions[2]->labels)->toBe(['dated'])
+        ->and($stats['definitions_labels_updated'])->toBe(2)
+        // Etymologies keep the insert-new-only behavior: no second row.
+        ->and($knave->etymologies()->count())->toBe(1);
+
+    // A repeat import of the same dump converges: nothing left to update,
+    // nothing new to insert.
+    $repeat = (new WiktionaryParser('en', 'ru', 100))->import($tagged);
+    unlink($tagged);
+
+    expect($repeat['definitions_labels_updated'])->toBe(0)
+        ->and($knave->definitions()->count())->toBe(3);
+});
+
+it('resets labels to null on re-import when the source no longer tags the sense', function () {
+    $languages = createLanguages();
+    $enId = $languages['en']->id;
+
+    $tagged = writeJsonlFixture([
+        json_encode([
+            'word' => 'knave', 'pos' => 'noun',
+            'senses' => [['glosses' => ['a dishonest man'], 'tags' => ['archaic']]],
+        ]),
+    ], 'wiktionary_relabel_drop_tagged');
+    (new WiktionaryParser('en', 'ru', 100))->import($tagged);
+    unlink($tagged);
+
+    $untagged = writeJsonlFixture([
+        json_encode([
+            'word' => 'knave', 'pos' => 'noun',
+            'senses' => [['glosses' => ['a dishonest man']]],
+        ]),
+    ], 'wiktionary_relabel_drop_untagged');
+    $stats = (new WiktionaryParser('en', 'ru', 100))->import($untagged);
+    unlink($untagged);
+
+    $definition = Word::where('word', 'knave')->where('language_id', $enId)->firstOrFail()
+        ->definitions()->firstOrFail();
+    expect($definition->definition)->toBe('a dishonest man')
+        ->and($definition->labels)->toBeNull()
+        ->and($stats['definitions_labels_updated'])->toBe(1);
+});
+
+it('never updates labels on ask-AI definition rows', function () {
+    $languages = createLanguages();
+    $enId = $languages['en']->id;
+
+    $tagged = writeJsonlFixture([
+        json_encode([
+            'word' => 'knave', 'pos' => 'noun',
+            'senses' => [
+                ['glosses' => ['a dishonest man'], 'tags' => ['archaic']],
+                ['glosses' => ['any given card in a deck']],
+            ],
+        ]),
+    ], 'wiktionary_relabel_ai');
+    (new WiktionaryParser('en', 'ru', 100))->import($tagged);
+
+    // One row becomes an ask-AI enrichment row: its labels are another
+    // writer's, and the dump's tag list never overrides them.
+    $aiRow = Word::where('word', 'knave')->where('language_id', $enId)->firstOrFail()
+        ->definitions()->where('definition', 'a dishonest man')->firstOrFail();
+    $aiRow->update(['source' => Word::SOURCE_AI, 'labels' => ['colloquial']]);
+
+    $stats = (new WiktionaryParser('en', 'ru', 100))->import($tagged);
+    unlink($tagged);
+
+    $dishonest = $aiRow->fresh();
+    // The unlabelled row converges against its own null: zero updates even
+    // though the AI row's incoming value differs from what it stores.
+    $plain = Word::where('word', 'knave')->where('language_id', $enId)->firstOrFail()
+        ->definitions()->where('definition', 'any given card in a deck')->firstOrFail();
+    expect($dishonest->source)->toBe(Word::SOURCE_AI)
+        ->and($dishonest->labels)->toBe(['colloquial'])
+        ->and($stats['definitions_labels_updated'])->toBe(0)
+        ->and($plain->labels)->toBeNull();
+});

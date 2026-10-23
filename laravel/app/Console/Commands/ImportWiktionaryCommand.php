@@ -81,6 +81,7 @@ class ImportWiktionaryCommand extends Command
             ['Lines read', $stats['lines_read']],
             ['Words imported', $stats['words_imported']],
             ['Definitions skipped (foreign language)', $stats['definitions_skipped_foreign']],
+            ['Definitions labels updated', $stats['definitions_labels_updated']],
             ['Relays demoted', $stats['relays_demoted']],
             ['Relay bases created', $stats['relay_bases_created']],
             ['Lookups created', $stats['lookups_created']],

@@ -49,6 +49,7 @@ class WiktionaryParser
         'lookups_created' => 0,
         'batches_flushed' => 0,
         'definitions_skipped_foreign' => 0,
+        'definitions_labels_updated' => 0,
     ];
 
     public function __construct(string $lang, string|array $targetLang = 'ru', int $batchSize = 500)
@@ -659,7 +660,8 @@ class WiktionaryParser
                 // when it is written in the word language's own script —
                 // the en edition's English glosses on ru words (and vice
                 // versa) are the other language's prose, not definitions.
-                // Import-time only: stored definitions are never touched.
+                // Import-time only: stored texts are never rewritten (the
+                // labels of a same-text row are, see mergeDefinitionRows).
                 if (! DefinitionLanguage::keeps($this->lang, $definition['text'])) {
                     $this->stats['definitions_skipped_foreign']++;
 
@@ -676,7 +678,86 @@ class WiktionaryParser
         }
         if (! empty($rows)) {
             $this->uniqueByCompound($rows, ['definition', 'word_id']);
-            $this->insertNewOnly(Definition::class, $rows, 'definition', 'word_id');
+            $this->mergeDefinitionRows($rows);
+        }
+    }
+
+    /**
+     * The definitions flush's merge step — the etymologies keep the plain
+     * {@see insertNewOnly}. New texts insert as before, and a
+     * case-insensitively same-text row (the very key insertNewOnly skips
+     * on) has its labels refreshed to the incoming value, null included:
+     * the re-import is the labels backfill, and a source that stopped
+     * tagging a sense unlabels it again. The ask-AI enrichment's rows
+     * (source='ai') are another writer's — their labels stand. Every
+     * changed row counts in definitions_labels_updated, the summary's
+     * backfill gauge; a converged repeat import updates nothing.
+     *
+     * @param  list<array{definition: string, word_id: int, labels: string|null}>  $rows
+     */
+    private function mergeDefinitionRows(array $rows): void
+    {
+        $wordIds = collect($rows)->pluck('word_id')->unique()->toArray();
+
+        // Existing rows keyed like insertNewOnly keys them — word_id plus
+        // the lowercased text — with id/labels/source riding along for the
+        // update step. definitions.word_id is indexed for exactly this.
+        $existing = [];
+        foreach (array_chunk($wordIds, 100) as $chunk) {
+            foreach (Definition::query()->whereIn('word_id', $chunk)->get(['id', 'word_id', 'definition', 'labels', 'source']) as $row) {
+                $existing[$row->word_id.'|'.mb_strtolower($row->definition)] = $row;
+            }
+        }
+
+        $newRows = [];
+        $updatesById = [];
+        foreach ($rows as $row) {
+            $current = $existing[$row['word_id'].'|'.mb_strtolower($row['definition'])] ?? null;
+
+            if ($current === null) {
+                $newRows[] = $row;
+
+                continue;
+            }
+            if ($current->source === Word::SOURCE_AI) {
+                continue;
+            }
+            $incoming = $row['labels'] === null ? null : json_decode($row['labels'], true);
+            // List comparison, order-sensitive: storage keeps the order the
+            // source listed the tags in, so a converged dump compares equal.
+            if ($current->labels !== $incoming) {
+                $updatesById[$current->id] = $row['labels'];
+                // One batch can carry two spellings of the same text: the
+                // second compares against the first's value, not the stale
+                // pre-batch one.
+                $current->labels = $incoming;
+                $this->stats['definitions_labels_updated']++;
+            }
+        }
+
+        if ($newRows !== []) {
+            Definition::insert($newRows);
+        }
+
+        // One UPDATE per distinct incoming value, not per row — the full
+        // re-import touches millions of rows but only a handful of label
+        // lists. Raw JSON strings: the same convention the word upserts use
+        // for jsonb columns. The null group stays separate — PHP casts null
+        // array keys to '', and '' is not JSON Postgres would take.
+        $updatesByJson = [];
+        $nullLabelIds = [];
+        foreach ($updatesById as $id => $labels) {
+            if ($labels === null) {
+                $nullLabelIds[] = $id;
+            } else {
+                $updatesByJson[$labels][] = $id;
+            }
+        }
+        if ($nullLabelIds !== []) {
+            Definition::query()->whereIn('id', $nullLabelIds)->update(['labels' => null]);
+        }
+        foreach ($updatesByJson as $labels => $ids) {
+            Definition::query()->whereIn('id', $ids)->update(['labels' => $labels]);
         }
     }
 
@@ -751,6 +832,14 @@ class WiktionaryParser
         return $wordIds[$lookupKey]->id ?? null;
     }
 
+    /**
+     * The etymologies' insert-new-only merge (definitions route through
+     * {@see mergeDefinitionRows} instead — their same-text rows carry
+     * updatable labels): a row whose case-insensitive text the database
+     * already stores is skipped, every other row inserts.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     */
     private function insertNewOnly(string $model, array $rows, string $textColumn, string $fkColumn): void
     {
         if (empty($rows)) {
