@@ -1,5 +1,135 @@
 # Directory Update Log
 
+## 2026-10-23 (popup-usage-labels follow-up 2: the marked section dims whole — hover restores it — and the mark now demotes)
+
+User follow-up on the word-level mark pass: the 50% dim landed on the
+"WORD — pos" header name only, but the whole obsolete pos/section should
+dim; it should regain opacity on hover; and a mark-demoted entry should
+sort last (a low completeness score), which the previous pass explicitly
+did not do — `isDemoted` kept judging only the definitions, so a marked
+entry with unlabelled senses still ranked live.
+
+Landed, three moves:
+
+- **Display** — `WordPopup.jsx`: the dim branch moved from the header
+  `<h3>` to the `<section>` element itself
+  (`word-popup-section-dimmed opacity-50 transition-opacity
+  hover:opacity-100` from `dimsEntry(entry)`) so every block inside dims,
+  the header keeps its base 60% (no more opacity swap), and hover
+  restores full opacity. A dimming *sense* inside an already-dimmed
+  section skips its own dim (`!dimsEntry(entry) && dimsDefinition(...)`):
+  stacked it would read 0.25 statically and hover would restore only the
+  line, not the section. Sense-level dim gains the same hover restore for
+  live sections. `lib/usageLabelDisplay.js` + the Popups sample fixture:
+  comment-only catch-up.
+- **Ordering** — `WordCompleteness::isDemoted` ORs the word-level
+  `UsageLabels::demoting($word->labels)` test ahead of the
+  every-definitions test: the mark demotes directly, definitions or not,
+  and `definitionPoints` follows through the shared test, so a marked
+  entry sinks below every live one AND scores 0 definition points. The
+  recalc SQL mirrors the branch (`jsonb_exists_any(w.labels, …)`) so the
+  sweep stays agreement-bound; the mark rides `words.updated_at`, no new
+  staleness machinery. `DEMOTING` itself unchanged — rare/dialectal still
+  dim on display and still rank live.
+- **Tests + docs** — vitest pins rewritten (section-element extraction:
+  dim hook + hover on the section, header pinned to always-60; the
+  no-stacking guard; sense hover), Pest gains the mark-demotes cases
+  (isDemoted with/without definitions, rare-marked stays live with full
+  points, marked scores 0, the sweep mirror, the endpoint ordering test
+  where a rich marked entry sinks below a sparser live one). ADR 0083
+  gained a second 2026-10-23 amendment (superseding the "demotion is
+  untouched" stance of the first follow-up); interactive-words +
+  database/dictionary re-stamped.
+
+## 2026-10-23 (popup-usage-labels follow-up: the section header dims from the word's own mark — words.labels, not a senses aggregate)
+
+User report: in the decimated popup the "DECIMATE — noun" header rendered
+undimmed and unlabelled although every sense under it carries obsolete —
+the header treatment should apply to obsolete parts of speech, sourced the
+way Wiktionary itself marks them. Verified in the dump first: for
+decimate's noun kaikki leaves the entry-level `tags` null — the mark the
+page prints under `===Noun===` is the headword-level `{{tlb|en|obsolete}}`
+template, preserved in `head_templates` while wiktextract propagates it
+onto every sense (a 200k-line sample: `tlb` is the only headword-label
+template of consequence there, plus 11 `term-label` aliases; multi-label
+args like `("2": "obsolete", "3": "rare")` and grammar noise
+("transitive, chiefly archaic") both occur). So the mark is imported from
+the source's own headword label — deliberately NOT derived from the
+definitions, per the user's correction of the originally planned
+client-side aggregation: an entry whose every sense happens to be labelled
+keeps an unmarked header.
+
+Landed: `words.labels` jsonb nullable (migration `2026_10_23_000001`,
+Word fillable + array cast); `WiktionaryParser::parseLine` unions the
+`tlb`/`term-label` head-template numbered args (arg 1 = language) and the
+entry-level `tags` through the same `UsageLabels::fromKaikkiTags` filter
+onto the record's `labels`, `mergeRecord` unions first-seen-first, and the
+word upsert stores it with `labels` in its UPDATE list — the re-import is
+this mark's backfill, a source that stops marking unmarks the row;
+`WordPopupPayload::entry` ships it as `entries[].labels` (null → `[]`);
+the popup header dims to 50% (`word-popup-section-dimmed`, replacing its
+base 60% outright — two opacity utilities would race in the stylesheet
+order) and prefixes the mark's chips after the label text
+(`word-popup-section-label-chip`, same tier styling as a sense's), driven
+by `dimsEntry`/`entryUsageChips` in `lib/usageLabelDisplay.js`; the
+Popups-tab sample fixture gained a marked "MELT — noun" section.
+Completeness/demotion is untouched — `WordCompleteness::isDemoted` keeps
+judging the definitions (words.labels only ever marks the display).
+Tests: 4 unit + 1 feature parser cases (tlb parse, alias + entry-tags
+union, closed-set noise drop, storage + re-import unmark), the endpoint
+`entries.N.labels` shape, 7 lib behavioral cases + 5 header source pins;
+vitest 304 green, targeted Pest 96 green, pint clean. Wiki:
+interactive-words (payload shape + header treatment + hooks),
+dictionary-import (the word-level mark paragraph), database/dictionary
+(words.labels row + migration source), playbook + profile + anki-export
+stamps bumped; wiki:validate conformant.
+
+Data run (the backfill, no wipe): both editions re-imported
+`--skip-extract --no-link` over the live rows — en 1,492,835 lines /
+940,637 words upserted (~16 min), ru 489,522 / 470,816 (~10 min),
+`definitions_labels_updated` 0 in both (converged, same as the ticket-04
+runs). Coverage: en 875 words carry the word-level mark (headword-level
+`{{tlb}}` marks are rare on Wiktionary — most labelling sits on senses),
+ru 0 (its edition marks per sense). Spot check: `decimate` noun row
+2973498 stores `["obsolete"]` beside its three tithing senses while the
+verb row stays null — the popup's noun header now dims with the chip, the
+verb header untouched.
+
+## 2026-10-23 (popup fix: form-only surfaces resolve through the forms table — "smiled" no longer answers the missing card)
+
+User report: clicking 'smiled' in the reader answered "This word isn't in
+the dictionary yet" although the surface is visible in the database. Three
+stacked causes: (1) the import's relay demotion (ADR 0079) stores a pure
+form-of entry like 'smiled' only as a `forms` row on the base 'smile' — no
+`words` row (verified: 0 rows, `forms` → word 2957551); (2)
+`WordAiEnrichmentService::resolveSurface` — the engine behind the popup's
+on-open `POST /words/lookup` re-resolution — queried `words.l_word` only,
+never `forms`, so a form-only surface answered `word_id: null`; (3) the
+fast path that WOULD have resolved it (the per-entity `entity_words` map,
+whose linker has an exact-then-forms resolution) had been TRUNCATEd by the
+same morning's data run and could not self-rebuild — `crossword:refresh`
+only picks entities with a stale index or unlinked rows, and the surviving
+`entities.words_indexed_at` plus the empty `entity_words` satisfied neither.
+
+Fix: `resolveSurface` gained a forms pass — exact `(language_id, l_word)`
+first, then `forms.l_word → base word` (EntityWordLinker::link's order, an
+exact headword always beating a forms row; the prefer-classed rule
+unchanged). Intentional documented consequence: `resolveOrAdopt` (the
+adopt-on-ask) now adopts a form-only surface onto its BASE lemma instead of
+minting a placeholder twin of a demoted relay. Three new endpoint tests
+pin the fallback, exact-precedence, and prefer-classed-over-unknown in the
+forms pass (WordLookupEndpointTest, 26 passed with the adopt/provenance
+suites; TIA 1480 green; pint clean).
+
+Dev-DB recovery (the second half of the report — every token opened in
+missing mode on the wiped map): `entities.words_indexed_at` nulled on all
+6 entities, `crossword:refresh --limit=10` dispatched, the default queue
+drained with a one-shot `queue:work --stop-when-empty` run (the 4
+pending `low`-lane `EnrichEntitySentences` jobs untouched). Result:
+`entity_words` rebuilt to 21,585 rows, all linked (0 unlinked); 'smiled'
+maps to word 2957551 in the entity-19 map; `resolveSurface('smiled', en)`
+returns 'smile'; `crossword:refresh` reports nothing left to do.
+
 ## 2026-10-23 (popup-usage-labels ticket 04: the data run — fast wipe + full kaikki re-import populates real label coverage)
 
 The backfill behind ticket 02's update-on-reimport semantics, executed per

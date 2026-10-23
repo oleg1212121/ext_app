@@ -200,8 +200,12 @@ class WordAiEnrichmentService
      * dictionary rows through the shared {@see WordLookupKey} key — the
      * client's title is never trusted. A hit adopts onto the EXISTING row
      * (case/ё/stress variants never duplicate; a properly classed row wins
-     * over the unknown placeholder, `EntityWordAdoption`'s rule). A miss
-     * mints exactly one word with the dictionary-import creator hygiene: a
+     * over the unknown placeholder, `EntityWordAdoption`'s rule) — and a
+     * surface surviving only as an inflected form adopts onto its BASE
+     * lemma (resolveSurface's forms pass), so the ask enriches "smile",
+     * never a placeholder twin of a relay-demoted surface (ADR 0079). A
+     * miss mints exactly one word with the dictionary-import creator
+     * hygiene: a
      * plain display word (the combining stress marks leave the raw surface
      * for the StressMarks languages — ADR 0081 rule 1 keeps ё and case in
      * display), the folded l_word, the language's unknown class — never a
@@ -250,16 +254,19 @@ class WordAiEnrichmentService
     /**
      * The read-only half of {@see resolveOrAdopt} (popup-ai-enrich ticket
      * 07): the RAW surface resolves through the shared {@see WordLookupKey}
-     * key against the language's rows, a properly classed row beating the
-     * unknown placeholder (the lowest id takes it otherwise,
-     * `EntityWordAdoption::preferClassed`'s rule) — and NULL when nothing
-     * carries the key. The 'unknown' class id resolves READ-ONLY here: a
-     * language whose placeholder row was never minted simply has no
-     * placeholder to lose against (the first candidate wins), because a
-     * lookup must never create anything — the popup's on-open
-     * re-resolution runs on every missing-card open, and a silent
-     * word-class write would ride on a read. Only {@see resolveOrAdopt},
-     * the ask path, mints.
+     * key against the language's rows — exact headwords first, then the
+     * forms table (EntityWordLinker::link's order), so a surface surviving
+     * only as an inflected form of its lemma — a relay demoted at import,
+     * ADR 0079, "smiled" → "smile" — still resolves to its base word; a
+     * properly classed row beats the unknown placeholder (the lowest id
+     * takes it otherwise, `EntityWordAdoption::preferClassed`'s rule) —
+     * and NULL when nothing carries the key. The 'unknown' class id
+     * resolves READ-ONLY here: a language whose placeholder row was never
+     * minted simply has no placeholder to lose against (the first
+     * candidate wins), because a lookup must never create anything — the
+     * popup's on-open re-resolution runs on every missing-card open, and
+     * a silent word-class write would ride on a read. Only
+     * {@see resolveOrAdopt}, the ask path, mints.
      */
     public function resolveSurface(string $surface, Language $language): ?Word
     {
@@ -270,6 +277,16 @@ class WordAiEnrichmentService
             ->where('l_word', $key)
             ->orderBy('id')
             ->get();
+
+        // The forms pass sees only the surfaces the exact pass missed — an
+        // exact headword always wins (EntityWordLinker::link's rule).
+        if ($candidates->isEmpty()) {
+            $candidates = Word::query()
+                ->where('language_id', $language->id)
+                ->whereIn('id', Form::query()->select('word_id')->where('l_word', $key))
+                ->orderBy('id')
+                ->get();
+        }
 
         // A properly classed row beats the unknown placeholder; the lowest
         // id takes it otherwise (EntityWordAdoption::preferClassed's rule).

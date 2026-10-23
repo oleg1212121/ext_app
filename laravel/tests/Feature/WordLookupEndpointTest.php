@@ -32,6 +32,15 @@ function createLookupWord(string $surface, string $classSlug, string $languageCo
     ]);
 }
 
+function createLookupForm(string $form, Word $base): Form
+{
+    return Form::query()->create([
+        'form' => $form,
+        'l_word' => WordLookupKey::normalize($form),
+        'word_id' => $base->id,
+    ]);
+}
+
 it('resolves a properly classed row over the unknown placeholder', function () {
     $fixture = createLookupFixture();
 
@@ -88,6 +97,58 @@ it('resolves case/ё/stress surface variants onto the keyed row', function () {
         ->postJson('/words/lookup', ['surface' => 'Ёморок', 'language_code' => 'ru']);
     $yospelled->assertOk();
     expect($yospelled->json('data.word_id'))->toBe($yomorok->id);
+});
+
+it('resolves a relay-demoted surface through the forms table to its base lemma', function () {
+    $fixture = createLookupFixture();
+
+    // The import's relay demotion (ADR 0079): "smiled" is a pure form-of
+    // entry in the dump, so it lands as a forms row on the base "smile" —
+    // no words row of its own. The popup's on-open lookup must still find
+    // the lemma instead of answering the missing card.
+    $smile = createLookupWord('smile', 'verb');
+    createLookupForm('smiled', $smile);
+
+    $response = $this->actingAs($fixture['user'])
+        ->postJson('/words/lookup', ['surface' => 'Smiled', 'language_code' => 'en']);
+
+    $response->assertOk();
+    expect($response->json('data.word_id'))->toBe($smile->id);
+});
+
+it('prefers the exact headword over a forms row pointing elsewhere', function () {
+    $fixture = createLookupFixture();
+
+    $smile = createLookupWord('smile', 'verb');
+    createLookupForm('smiled', $smile);
+    // An exact headword sharing the clicked key (the archaic noun row):
+    // the exact pass matched it, so the forms pass never runs —
+    // EntityWordLinker::link's exact-then-forms order.
+    $exact = createLookupWord('smiled', 'noun');
+
+    $response = $this->actingAs($fixture['user'])
+        ->postJson('/words/lookup', ['surface' => 'smiled', 'language_code' => 'en']);
+
+    $response->assertOk();
+    expect($response->json('data.word_id'))->toBe($exact->id);
+});
+
+it('applies the prefer-classed rule to the forms pass candidates too', function () {
+    $fixture = createLookupFixture();
+
+    // Two rows of the same lemma claim the inflected key via forms: a
+    // placeholder mint (lower id) and a properly classed import row — the
+    // classed row wins regardless of id, the rule the exact pass follows.
+    $minted = createLookupWord('smile', 'unknown');
+    createLookupForm('smiled', $minted);
+    $classed = createLookupWord('smile', 'verb');
+    createLookupForm('smiled', $classed);
+
+    $response = $this->actingAs($fixture['user'])
+        ->postJson('/words/lookup', ['surface' => 'smiled', 'language_code' => 'en']);
+
+    $response->assertOk();
+    expect($response->json('data.word_id'))->toBe($classed->id);
 });
 
 it('answers a null word_id for a genuinely unknown surface', function () {

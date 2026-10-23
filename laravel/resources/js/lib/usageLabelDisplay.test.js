@@ -1,5 +1,13 @@
 import {describe, expect, it} from 'vitest';
-import {DIMMING_LABELS, REGISTER_LABELS, dimsDefinition, isKnownLabel, usageLabelChips} from './usageLabelDisplay';
+import {
+    DIMMING_LABELS,
+    REGISTER_LABELS,
+    dimsDefinition,
+    dimsEntry,
+    entryUsageChips,
+    isKnownLabel,
+    usageLabelChips,
+} from './usageLabelDisplay';
 
 const t = (key) => `t:${key}`;
 
@@ -27,7 +35,7 @@ describe('dimsDefinition — the popup\'s display dimming tier', () => {
     });
 });
 
-describe('usageLabelChips — one localized chip per label', () => {
+describe('entryUsageChips — one localized chip per label', () => {
     it('resolves each label onto its word.label_* ui-string key', () => {
         expect(usageLabelChips(['obsolete'], t)).toEqual([{text: 't:word.label_obsolete', dimming: true}]);
         expect(usageLabelChips(['colloquial'], t)).toEqual([{text: 't:word.label_colloquial', dimming: false}]);
@@ -54,6 +62,49 @@ describe('usageLabelChips — one localized chip per label', () => {
         expect(usageLabelChips(['no-such-slug'], t)).toEqual([]);
         expect(usageLabelChips(['dated', 'no-such-slug'], t)).toEqual([{text: 't:word.label_dated', dimming: false}]);
         expect(usageLabelChips(null, t)).toEqual([]);
+    });
+});
+
+describe('dimsEntry — the section header\'s word-level dimming', () => {
+    it('dims a section whose word carries any of the four dimming labels', () => {
+        for (const slug of DIMMING_LABELS) {
+            expect(dimsEntry({labels: [slug]})).toBe(true);
+        }
+    });
+
+    it('never dims on the register tier', () => {
+        expect(dimsEntry({labels: ['dated']})).toBe(false);
+        expect(dimsEntry({labels: ['colloquial']})).toBe(false);
+    });
+
+    it('dims a mixed word-level set — any dimming label present wins', () => {
+        expect(dimsEntry({labels: ['dated', 'obsolete']})).toBe(true);
+    });
+
+    it('never derives the mark from the senses — the definitions stay display-only', () => {
+        expect(dimsEntry({labels: [], definitions: [{labels: ['obsolete']}, {labels: ['archaic']}]})).toBe(false);
+    });
+
+    it('tolerates a missing labels field and a null entry', () => {
+        expect(dimsEntry({})).toBe(false);
+        expect(dimsEntry({labels: null})).toBe(false);
+        expect(dimsEntry(null)).toBe(false);
+    });
+});
+
+describe('entryUsageChips — the header\'s word-level chips', () => {
+    it('renders the word-level labels through the shared chip renderer, tiered', () => {
+        expect(entryUsageChips({labels: ['obsolete']}, t)).toEqual([{text: 't:word.label_obsolete', dimming: true}]);
+        expect(entryUsageChips({labels: ['dated', 'rare']}, t)).toEqual([
+            {text: 't:word.label_dated', dimming: false},
+            {text: 't:word.label_rare', dimming: true},
+        ]);
+    });
+
+    it('tolerates a missing labels field and drops unknown slugs', () => {
+        expect(entryUsageChips({}, t)).toEqual([]);
+        expect(entryUsageChips({labels: null}, t)).toEqual([]);
+        expect(entryUsageChips({labels: ['no-such-slug']}, t)).toEqual([]);
     });
 });
 

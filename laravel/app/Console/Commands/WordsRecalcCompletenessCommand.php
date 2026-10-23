@@ -14,8 +14,9 @@ use stdClass;
  * `words.completeness`/`words.completeness_at` — the same 0–9 matrix the
  * lazy `WordCompleteness::recalcFamily` applies on popup open (weighted v2
  * of 2026-10-20: linked translations 3; definitions 2 on a major POS —
- * noun/verb/adjective/adj/adverb/adv — else 1, and 0 when EVERY definition
- * carries a demoting label (`UsageLabels::DEMOTING`, no definitions is
+ * noun/verb/adjective/adj/adverb/adv — else 1, and 0 when the word's own
+ * headword mark (`words.labels`) or EVERY definition carries a demoting
+ * label (`UsageLabels::DEMOTING`, an unmarked word with no definitions is
  * live); transcriptions/examples/etymologies 1 each; a real frequency rank
  * — 0 < rank < the unranked sentinel — 1), computed set-based per id-range
  * chunk so a run over the whole dictionary stays one indexed pass per
@@ -38,7 +39,7 @@ class WordsRecalcCompletenessCommand extends Command
         {--stale-only : Only rewrite words whose completeness_at is missing or older than the word row or any content child (definitions/transcriptions/examples/etymologies/forms, translation links included)}
         {--chunk=5000 : Words per id-range pass}';
 
-    protected $description = "Backfill the word popup's completeness score (0-9: linked translations 3, definitions 2 on major POS noun/verb/adjective/adj/adverb/adv else 1 — 0 when every definition is labelled obsolete/archaic, transcriptions/examples/etymologies 1 each, a real frequency rank 1) onto words.completeness";
+    protected $description = "Backfill the word popup's completeness score (0-9: linked translations 3, definitions 2 on major POS noun/verb/adjective/adj/adverb/adv else 1 — 0 when the word's own labels mark or every definition is labelled obsolete/archaic, transcriptions/examples/etymologies 1 each, a real frequency rank 1) onto words.completeness";
 
     private const STATEMENT_CHUNK = 1000;
 
@@ -155,12 +156,15 @@ class WordsRecalcCompletenessCommand extends Command
             .' select'
             // word_translations existence: 3 points
             .'   (case when exists (select 1 from word_translations t where t.word_a_id = w.id or t.word_b_id = w.id) then 3 else 0 end)'
-            // definitions: 0 when the entry has none or when EVERY one
-            // carries a demoting label (UsageLabels::DEMOTING — NULL labels
-            // are unlabelled/live; jsonb_exists_any is the ?| operator's
-            // function form, which PDO's ?-placeholder parser would eat),
-            // else 2 on a major POS else 1
+            // definitions: 0 when the word's OWN headword mark
+            // (words.labels) carries a demoting label, when the entry has
+            // none, or when EVERY one carries a demoting label
+            // (UsageLabels::DEMOTING — NULL labels are unlabelled/live;
+            // jsonb_exists_any is the ?| operator's function form, which
+            // PDO's ?-placeholder parser would eat), else 2 on a major POS
+            // else 1
             .'  + (case'
+            ."       when coalesce(jsonb_exists_any(w.labels, array[{$demoting}]), false) then 0"
             .'       when not exists (select 1 from definitions d where d.word_id = w.id) then 0'
             ."       when exists (select 1 from definitions d where d.word_id = w.id and not coalesce(jsonb_exists_any(d.labels, array[{$demoting}]), false))"
             ."       then (case when wc.slug in ({$majorPos}) then 2 else 1 end)"

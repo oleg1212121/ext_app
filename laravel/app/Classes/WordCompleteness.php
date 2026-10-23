@@ -22,8 +22,10 @@ use Illuminate\Support\Collection;
  *          a major POS ({@see MAJOR_POS})                    |
  * | 1      | definitions exist, any other POS                 |
  * | 0      | definitions exist but **every** one carries a
- *          demoting label ({@see UsageLabels::DEMOTING} —
- *          no definitions is live, never demoted)           |
+ *          demoting label, OR the word's own headword mark
+ *          (`words.labels`) carries one ({@see
+ *          UsageLabels::DEMOTING} — an unmarked entry with no
+ *          definitions is live, never demoted)              |
  * | 1      | transcriptions exist                             |
  * | 1      | examples exist                                   |
  * | 1      | etymologies exist                                |
@@ -78,13 +80,20 @@ class WordCompleteness
     }
 
     /**
-     * Whether the entry sinks below every live one in the popup: it HAS
-     * definitions and every one of them carries a demoting label. An entry
-     * with no definitions is live, never demoted. Shared by the score's
-     * definition points and WordFamily's live-before-demoted sort.
+     * Whether the entry sinks below every live one in the popup: its OWN
+     * headword carries a demoting label (`words.labels` — the source's
+     * word-level mark, demoting directly, definitions or not), or it HAS
+     * definitions and every one of them carries a demoting label. An
+     * unmarked entry with no definitions is live, never demoted. Shared by
+     * the score's definition points and WordFamily's live-before-demoted
+     * sort.
      */
     public static function isDemoted(Word $word): bool
     {
+        if (UsageLabels::demoting($word->labels)) {
+            return true;
+        }
+
         return $word->definitions->isNotEmpty()
             && $word->definitions->every(
                 fn (Definition $definition): bool => UsageLabels::demoting($definition->labels),
@@ -146,13 +155,14 @@ class WordCompleteness
 
     /**
      * Lazy staleness recalc for the popup's word family: a word whose
-     * `completeness_at` is missing or older than its own `updated_at` or the
-     * newest stamp of its content children (definitions — labels included,
-     * they carry the demotion rule — transcriptions/examples/etymologies/
-     * forms; translation links carry 3 of the 9 points) gets recomputed and
-     * persisted; fresh words are left untouched. The passed-in models have
-     * their in-memory completeness attributes refreshed either way, so
-     * ordering always sees an int.
+     * `completeness_at` is missing or older than its own `updated_at` (the
+     * word-level `labels` mark rides the word row — its demotion wakes
+     * through this stamp) or the newest stamp of its content children
+     * (definitions — labels included, they carry the demotion rule —
+     * transcriptions/examples/etymologies/forms; translation links carry 3
+     * of the 9 points) gets recomputed and persisted; fresh words are left
+     * untouched. The passed-in models have their in-memory completeness
+     * attributes refreshed either way, so ordering always sees an int.
      *
      * Content-child stamps (and the class slug the major-POS rule reads)
      * ride the caller's eager-loaded relations; forms (not eager-loaded)

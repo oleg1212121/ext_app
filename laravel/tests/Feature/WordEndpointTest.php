@@ -74,6 +74,26 @@ it('ships definitions as {text, labels} objects — stored labels ride, a null c
         ]);
 });
 
+it('ships the word-level mark as entries.N.labels — a null column lands as []', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $plain = createWord('en', 'decimate', 'verb');
+    $marked = createWord('en', 'decimate', 'noun');
+    $marked->update(['labels' => ['obsolete']]);
+
+    // The follow-up payload: each entry carries the word's own mark — the
+    // source's headword label, stored on the row at import — beside its
+    // definitions' per-sense labels. The popup's section header dims and
+    // chips from this, never an aggregate of the senses.
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $plain->id]))
+        ->assertOk()
+        ->assertJsonPath('data.entries.0.id', $plain->id)
+        ->assertJsonPath('data.entries.0.labels', [])
+        ->assertJsonPath('data.entries.1.id', $marked->id)
+        ->assertJsonPath('data.entries.1.labels', ['obsolete']);
+});
+
 it('returns one entry per part of speech of the headword, linked word first', function () {
     $user = User::factory()->create();
     createWordClasses();
@@ -416,6 +436,41 @@ it('ranks a live entry ahead of a demoted one regardless of completeness', funct
         ->assertJsonPath('data.entries.0.word', 'melt')
         ->assertJsonPath('data.entries.1.id', $meltedVerb->id)
         ->assertJsonPath('data.entries.1.word', 'melted');
+});
+
+it('ranks a live entry ahead of one demoted by its own word-level mark', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    // The linked entry's own headword mark (words.labels) demotes it while
+    // every sense stays unlabelled: 0 definition points + transcription +
+    // example + rank = 3 — still below the sparser live base entry (2).
+    $meltedVerb = createWord('en', 'melted', 'verb', ['frequency' => 900, 'labels' => ['obsolete']]);
+    Definition::query()->create(['word_id' => $meltedVerb->id, 'definition' => 'Now chiefly poetic.']);
+    Transcription::query()->create([
+        'word_id' => $meltedVerb->id,
+        'transcription_type_id' => TranscriptionType::query()->create([
+            'language_id' => Language::query()->where('code', 'en')->value('id'),
+            'slug' => 'ipa',
+            'title' => 'IPA',
+        ])->id,
+        'transcription' => 'mɛltɪd',
+    ]);
+    Example::query()->create(['word_id' => $meltedVerb->id, 'example' => 'It was melted down.']);
+
+    $meltVerb = createWord('en', 'melt', 'verb');
+    Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid.']);
+    Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melted', 'l_word' => 'melted']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $meltedVerb->id, 'surface' => 'melted']))
+        ->assertOk()
+        ->assertJsonCount(2, 'data.entries')
+        ->assertJsonPath('data.entries.0.id', $meltVerb->id)
+        ->assertJsonPath('data.entries.0.word', 'melt')
+        ->assertJsonPath('data.entries.1.id', $meltedVerb->id)
+        ->assertJsonPath('data.entries.1.word', 'melted')
+        ->assertJsonPath('data.entries.1.labels', ['obsolete']);
 });
 
 it('finds base words through a surface carrying combining marks', function () {

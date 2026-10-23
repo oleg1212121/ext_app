@@ -49,6 +49,7 @@ class Word extends Model
         'frequency',
         'word_class_id',
         'translations',
+        'labels',
         'source',
     ];
 
@@ -57,6 +58,7 @@ class Word extends Model
         return [
             'frequency' => 'decimal:2',
             'translations' => 'array',
+            'labels' => 'array',
             'completeness_at' => 'datetime',
         ];
     }

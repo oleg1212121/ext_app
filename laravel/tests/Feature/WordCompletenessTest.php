@@ -164,6 +164,34 @@ it('isDemoted agrees with the score only when every definition demotes', functio
         ->and(WordCompleteness::isDemoted($nonDemotingLabels))->toBeFalse();
 });
 
+it('isDemoted when the word\'s own headword mark carries a demoting label — definitions or not', function () {
+    // The word-level mark (words.labels, the source's headword mark)
+    // demotes directly, whatever the senses say — even no definitions,
+    // which without a mark is the live anchor above.
+    $markedNoDefinitions = bareCompletenessWord('zarf', ['labels' => ['obsolete']]);
+
+    $markedLiveSense = bareCompletenessWord('brume', ['labels' => ['archaic']]);
+    Definition::query()->create(['word_id' => $markedLiveSense->id, 'definition' => 'A live sense.']);
+
+    expect(WordCompleteness::isDemoted($markedNoDefinitions))->toBeTrue()
+        ->and(WordCompleteness::isDemoted($markedLiveSense))->toBeTrue();
+});
+
+it('keeps a word-level non-demoting mark (rare) live with full definition points', function () {
+    $word = bareCompletenessWord('zarf', ['labels' => ['rare']]);
+    Definition::query()->create(['word_id' => $word->id, 'definition' => 'A live sense.']);
+
+    expect(WordCompleteness::isDemoted($word))->toBeFalse()
+        ->and(currentScore($word, false))->toBe(2);
+});
+
+it('scores definitions 0 when the word\'s own mark carries a demoting label', function () {
+    $word = bareCompletenessWord('zarf', ['labels' => ['obsolete']]);
+    Definition::query()->create(['word_id' => $word->id, 'definition' => 'A sense.']);
+
+    expect(currentScore($word, false))->toBe(0);
+});
+
 it('scores each content child 1 — existence, not count', function () {
     $type = enIpaType();
 

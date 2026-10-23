@@ -104,6 +104,7 @@ it('merges records for same word and pos', function () {
         'sounds' => [['value' => '/rʌn/', 'type' => 'ipa']],
         'etymology' => 'Old English',
         'translations' => ['бег'],
+        'labels' => ['archaic'],
     ];
     $incoming = [
         'word' => 'run',
@@ -114,6 +115,7 @@ it('merges records for same word and pos', function () {
         'sounds' => [],
         'etymology' => null,
         'translations' => ['пробежка'],
+        'labels' => [],
     ];
 
     $merged = $parser->mergeRecord($existing, $incoming);
@@ -122,6 +124,7 @@ it('merges records for same word and pos', function () {
     expect($merged['forms'])->toHaveCount(2);
     expect($merged['translations'])->toHaveCount(2);
     expect($merged['etymology'])->toBe('Old English');
+    expect($merged['labels'])->toBe(['archaic']);
 });
 
 it('uniqueByCompound removes duplicates', function () {
@@ -172,6 +175,52 @@ it('maps sense tags onto usage labels on both gloss paths, dropping grammar nois
         ->and($result['definitions'][3]['labels'])->toBe(['obsolete']);
 });
 
+it('stores the headword mark from the tlb head template onto the record', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    // decimate's noun: the "(obsolete)" under the ===Noun=== heading is
+    // {{tlb|en|obsolete}} — kaikki keeps it out of senses[] entirely.
+    $line = json_decode('{"word":"decimate","pos":"noun",'
+        .'"head_templates":['
+        .'{"name":"en-noun","args":{},"expansion":"decimate (plural decimates)"},'
+        .'{"name":"tlb","args":{"1":"en","2":"obsolete"},"expansion":"(obsolete)"}],'
+        .'"senses":[{"glosses":["A tithe."]}]}');
+
+    $result = $parser->parseLine($line);
+
+    // The word-level mark is the template's own, never the senses' aggregate.
+    expect($result['labels'])->toBe(['obsolete'])
+        ->and($result['definitions'][0]['labels'])->toBe([]);
+});
+
+it('unions the word-level mark across the tlb args, the term-label alias and the entry tags', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"awe","pos":"noun","tags":["archaic"],'
+        .'"head_templates":['
+        .'{"name":"tlb","args":{"1":"en","2":"rare","3":"obsolete"},"expansion":"(rare, obsolete)"}],'
+        .'"senses":[{"glosses":["A feeling."]},{"glosses":["Another."]}]}');
+    $aliased = json_decode('{"word":"awe","pos":"verb","tags":["dated"],'
+        .'"head_templates":[{"name":"term-label","args":{"1":"en","2":"colloquial"},"expansion":"(colloquial)"}],'
+        .'"senses":[{"glosses":["To awe."]}]}');
+
+    expect($parser->parseLine($line)['labels'])->toBe(['archaic', 'rare', 'obsolete'])
+        ->and($parser->parseLine($aliased)['labels'])->toBe(['dated', 'colloquial']);
+});
+
+it('keeps the word-level mark empty when no headword label exists', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    // Grammar noise in the tlb args drops through the closed-set filter;
+    // a plain headword template carries no mark at all.
+    $marked = json_decode('{"word":"foregone","pos":"adjective","tags":["not-a-label"],'
+        .'"head_templates":[{"name":"tlb","args":{"1":"en","2":"transitive","3":"chiefly","4":"archaic"},"expansion":"(transitive, chiefly archaic)"}],'
+        .'"senses":[{"glosses":["Previous, beyond."]}]}');
+    $plain = json_decode('{"word":"calm","pos":"adjective",'
+        .'"head_templates":[{"name":"en-adj","args":{},"expansion":"calm"}],'
+        .'"senses":[{"glosses":["Peaceful."]}]}');
+
+    expect($parser->parseLine($marked)['labels'])->toBe(['archaic'])
+        ->and($parser->parseLine($plain)['labels'])->toBe([]);
+});
+
 it('dedupes same-text definitions keeping the first sense\'s labels', function () {
     $parser = new WiktionaryParser('en', 'ru');
     $line = json_decode('{"word":"awe","pos":"noun","senses":['
@@ -189,12 +238,12 @@ it('merges definitions across records by text, the first labels standing', funct
     $existing = [
         'word' => 'run', 'l_word' => 'run', 'pos' => 'noun', 'relay_base' => null,
         'definitions' => [['text' => 'A stream', 'labels' => []]],
-        'forms' => [], 'sounds' => [], 'etymology' => null, 'translations' => [],
+        'forms' => [], 'sounds' => [], 'etymology' => null, 'translations' => [], 'labels' => [],
     ];
     $incoming = [
         'word' => 'run', 'l_word' => 'run', 'pos' => 'noun', 'relay_base' => null,
         'definitions' => [['text' => 'A stream', 'labels' => ['dialectal']], ['text' => 'A race', 'labels' => ['rare']]],
-        'forms' => [], 'sounds' => [], 'etymology' => null, 'translations' => [],
+        'forms' => [], 'sounds' => [], 'etymology' => null, 'translations' => [], 'labels' => [],
     ];
 
     $merged = $parser->mergeRecord($existing, $incoming);
@@ -203,6 +252,24 @@ it('merges definitions across records by text, the first labels standing', funct
         ['text' => 'A stream', 'labels' => []],
         ['text' => 'A race', 'labels' => ['rare']],
     ]);
+});
+
+it('merges the word-level mark across records by union, first occurrence first', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $existing = [
+        'word' => 'run', 'l_word' => 'run', 'pos' => 'noun', 'relay_base' => null,
+        'definitions' => [], 'forms' => [], 'sounds' => [], 'etymology' => null,
+        'translations' => [], 'labels' => ['obsolete'],
+    ];
+    $incoming = [
+        'word' => 'run', 'l_word' => 'run', 'pos' => 'noun', 'relay_base' => null,
+        'definitions' => [], 'forms' => [], 'sounds' => [], 'etymology' => null,
+        'translations' => [], 'labels' => ['archaic', 'obsolete'],
+    ];
+
+    $merged = $parser->mergeRecord($existing, $incoming);
+
+    expect($merged['labels'])->toBe(['obsolete', 'archaic']);
 });
 
 it('throws on unsupported source language', function () {
@@ -315,6 +382,7 @@ function relayRecord(string $word, string $base): array
         'sounds' => [],
         'etymology' => null,
         'translations' => [],
+        'labels' => [],
     ];
 }
 
@@ -330,6 +398,7 @@ function realRecord(string $word): array
         'sounds' => [],
         'etymology' => null,
         'translations' => [],
+        'labels' => [],
     ];
 }
 

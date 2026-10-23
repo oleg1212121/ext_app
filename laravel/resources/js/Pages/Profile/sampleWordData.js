@@ -11,7 +11,10 @@
 // sense, a register-tier one (muted chip, no dim) and a dimming-tier one
 // (vermilion chips + half-opacity line) — plus the popup's own adjective
 // section ("MELTED — adjective") with zero translations, which shows the
-// no-translations placeholder. A rank and a marked familiarity top it off.
+// no-translations placeholder, and a marked noun section ("MELT — noun")
+// whose word-level label (the source's headword mark, entry.labels) dims
+// the whole section at half opacity, hover restoring it, with its own
+// chip on the header. A rank and a marked familiarity top it off.
 export const SAMPLE_DATA = {
     id: 1,
     word: 'melted',
@@ -62,6 +65,24 @@ export const SAMPLE_DATA = {
             word_class: 'Adjective',
             transcriptions: [],
             definitions: [{text: 'Changed into liquid form; no longer solid.', labels: []}],
+            translations: [],
+            examples: [],
+            etymologies: [],
+        },
+        {
+            id: 3,
+            word: 'melt',
+            word_class: 'Noun',
+            // The word-level mark: the "(obsolete)" Wiktionary prints under
+            // the noun heading, stored on the entry itself — the whole
+            // section dims (hover restores) and the header chips from it,
+            // while the senses keep their own styling.
+            labels: ['obsolete'],
+            transcriptions: [],
+            definitions: [
+                {text: 'A quantity of molten metal ready for casting.', labels: ['obsolete']},
+                {text: 'The process of melting; a spell of mild weather.', labels: ['obsolete']},
+            ],
             translations: [],
             examples: [],
             etymologies: [],

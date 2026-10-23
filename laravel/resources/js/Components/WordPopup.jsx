@@ -6,7 +6,7 @@ import {useI18n} from '../i18n';
 import {getCsrfToken} from '../lib/http';
 import {renderMarkdown} from '../lib/markdown';
 import {canAskExplanation} from '../lib/wordExplain';
-import {dimsDefinition, usageLabelChips} from '../lib/usageLabelDisplay';
+import {dimsDefinition, dimsEntry, entryUsageChips, usageLabelChips} from '../lib/usageLabelDisplay';
 import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
 import {Icon} from './icons.jsx';
 import {AnkiConnectError, ankiConnectVersion} from '../lib/ankiConnect';
@@ -844,11 +844,31 @@ export function PopupContent({
                         key={entry.id}
                         className={`word-popup-section${index > 0
                             ? ' mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
+                            : ''}${dimsEntry(entry)
+                            ? ' word-popup-section-dimmed opacity-50 transition-opacity hover:opacity-100'
                             : ''}`}
                     >
                         {sectionLabel(entry, data.word) && (
+                            // The word-level mark (popup-usage-labels
+                            // follow-up) dims the WHOLE <section> — the dim
+                            // branch in the section's className above carries
+                            // word-popup-section-dimmed at half opacity over
+                            // every block, hover restoring full opacity —
+                            // while the header keeps its own base 60% and
+                            // chips the mark after the text in the same tier
+                            // styling as a sense's.
                             <h3 className="word-popup-section-label text-[0.786em] tracking-wider opacity-60">
                                 {sectionLabel(entry, data.word)}
+                                {entryUsageChips(entry, t).map((chip, chipIndex) => (
+                                    <span
+                                        key={chipIndex}
+                                        className={chip.dimming
+                                            ? 'word-popup-section-label-chip ml-1.5 inline-block rounded-sm border border-[var(--color-vermilion)]/40 px-1 text-[0.786em] leading-tight text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)]/40 dark:text-[var(--color-vermilion-night)]'
+                                            : 'word-popup-section-label-chip ml-1.5 text-[0.786em] opacity-60'}
+                                    >
+                                        {chip.text}
+                                    </span>
+                                ))}
                             </h3>
                         )}
 
@@ -927,14 +947,21 @@ export function PopupContent({
                                         one per label before the sense text —
                                         vermilion for the dimming tier, muted
                                         plain text (the raw:-label precedent)
-                                        for the register one; a sense carrying
-                                        any dimming label dims whole. Full
-                                        literal class strings — Tailwind's
+                                        for the register one; a live section's
+                                        sense carrying any dimming label dims
+                                        whole, hover restoring the line — but a
+                                        sense inside an already-dimmed section
+                                        skips the extra opacity, or the static
+                                        stack would read 0.25 and hover would
+                                        restore only the sense, not the section.
+                                        Full literal class strings — Tailwind's
                                         scanner reads this file's text. */}
                                     {entry.definitions.map((definition, definitionIndex) => (
                                         <li
                                             key={definitionIndex}
-                                            className={dimsDefinition(definition.labels) ? 'word-popup-definition-dimmed opacity-50' : undefined}
+                                            className={!dimsEntry(entry) && dimsDefinition(definition.labels)
+                                                ? 'word-popup-definition-dimmed opacity-50 transition-opacity hover:opacity-100'
+                                                : undefined}
                                         >
                                             {usageLabelChips(definition.labels, t).map((chip, chipIndex) => (
                                                 <span

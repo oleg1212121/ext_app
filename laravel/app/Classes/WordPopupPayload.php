@@ -64,7 +64,7 @@ final class WordPopupPayload
      * The headword travels along so the UI can label sections that belong to
      * a base word of the family rather than the popup's own headword.
      *
-     * @return array{id: int, word: string, word_class: string|null, transcriptions: list<array{value: string, type: string|null}>, definitions: list<array{text: string, labels: list<string>}>, translations: array, staged_translations: list<string>, examples: list<string>, etymologies: list<string>}
+     * @return array{id: int, word: string, word_class: string|null, labels: list<string>, transcriptions: list<array{value: string, type: string|null}>, definitions: list<array{text: string, labels: list<string>}>, translations: array, staged_translations: list<string>, examples: list<string>, etymologies: list<string>}
      */
     private static function entry(Word $word, Authenticatable $user): array
     {
@@ -74,6 +74,12 @@ final class WordPopupPayload
             'id' => $word->id,
             'word' => $word->word,
             'word_class' => $word->wordClass?->title,
+            // The word's own usage mark (popup-usage-labels follow-up): the
+            // source's headword label, stored on the row at import. The
+            // section header dims and chips from this — never an aggregate
+            // of the senses' labels. A null column lands as the empty list,
+            // the same "unlabelled" shape a sense's rides on.
+            'labels' => $word->labels ?? [],
             'transcriptions' => $word->transcriptions
                 ->map(fn (Transcription $transcription): array => [
                     'value' => $transcription->transcription,

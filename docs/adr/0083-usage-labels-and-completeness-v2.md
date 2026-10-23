@@ -144,3 +144,32 @@ The labels also stopped being DB-only:
   both tiers composed identically (the prefix is study information, not a
   visual demotion), and senses without a known label rendering
   byte-identically to before.
+
+## Amended 2026-10-23, second pass (popup-usage-labels follow-up: the word's own mark demotes, and the dim covers the whole section)
+
+Two follow-ups to the popup-usage-labels headword mark
+(`words.labels`, migration `2026_10_23_000001`), which landed
+display-only over this record's demotion rule:
+
+- **Demotion extends to the word's own headword mark.** A word whose
+  `words.labels` carries a `DEMOTING` slug now demotes directly —
+  `WordCompleteness::isDemoted` ORs the word-level
+  `UsageLabels::demoting()` test ahead of the every-definition test — and
+  loses its definition points through the shared `isDemoted`, so a marked
+  entry sinks below every live one in the popup sort and scores 0
+  definition points even with unlabelled senses. The recalc SQL mirrors
+  the branch (`jsonb_exists_any(w.labels, array[...DEMOTING...])`) so the
+  sweep and the lazy recalc stay agreement-bound as decision 4 requires;
+  the mark rides `words.updated_at`, so no new staleness machinery. An
+  unmarked word with no definitions stays live, never demoted, and the
+  non-demoting display labels (rare, dialectal — the JS-side dimming tier)
+  still never demote: `DEMOTING` itself is unchanged. The follow-up's
+  original "completeness/demotion is untouched — words.labels only ever
+  marks the display" stance is superseded by this amendment.
+- **The display dim moved from the header to the whole section.** A
+  word-marked entry's `<section>` carries `word-popup-section-dimmed` at
+  50% opacity over every block (the header keeps its base 60%; senses
+  inside a dimmed section skip their own sense dim, which would stack to
+  0.25 statically and restore only the line on hover), and hovering the
+  section restores full opacity. Display-only and JS-side; the tiers and
+  `DEMOTING` relationship above is untouched.

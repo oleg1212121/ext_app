@@ -120,9 +120,10 @@ class WordFamily
         WordCompleteness::recalcFamily($entries);
 
         // The popup ordering: live entries before demoted ones
-        // (WordCompleteness::isDemoted — every stored definition labelled
-        // obsolete/archaic; shared with the score so they can never
-        // disagree), then completeness-descending, over the assembled
+        // (WordCompleteness::isDemoted — the word's own headword mark
+        // labelled obsolete/archaic, or every stored definition labelled
+        // so; shared with the score so they can never disagree), then
+        // completeness-descending, over the assembled
         // order — linked word first, class priority, base groups ranked by
         // frequency — which remains the tiebreak for equal scores among
         // equally-live entries. PHP 8 sorts are stable, so uasort preserves

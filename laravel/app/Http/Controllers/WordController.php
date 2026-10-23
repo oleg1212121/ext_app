@@ -61,13 +61,16 @@ class WordController extends Controller
      * clicked column's language BEFORE rendering the missing card — a word
      * a previous adopt-on-ask minted (persisted, but never linked into the
      * page's entity_words map; the scheduler that would is `entities:enrich`)
-     * resolves to its id, the popup then fetches the full payload through
-     * GET /words/{word} above, and an already-asked word opens with its
-     * greyed icon instead of a re-ask that could only 409. Read-only by
-     * contract (WordAiEnrichmentService::resolveSurface never mints): a
-     * miss answers a null word_id and the honest missing card stays. The
-     * response is the id ALONE — the payload shape stays owned by the
-     * word-show endpoint, nothing is duplicated.
+     * resolves to its id, and so does a surface surviving only as an
+     * inflected form (resolveSurface's forms pass): a relay-demoted
+     * "smiled" (ADR 0079) resolves to the base word "smile" instead of
+     * answering the missing card. The popup then fetches the full payload
+     * through GET /words/{word} above, and an already-asked word opens
+     * with its greyed icon instead of a re-ask that could only 409.
+     * Read-only by contract (WordAiEnrichmentService::resolveSurface never
+     * mints): a miss answers a null word_id and the honest missing card
+     * stays. The response is the id ALONE — the payload shape stays owned
+     * by the word-show endpoint, nothing is duplicated.
      */
     public function lookup(WordLookupRequest $request): JsonResponse
     {

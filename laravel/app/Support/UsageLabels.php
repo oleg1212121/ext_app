@@ -9,7 +9,8 @@ namespace App\Support;
  * reply's `{text, labels}` definition objects filter their labels through
  * the same helper, the merge stores the result on `definitions.labels`
  * (null when nothing remains), and ticket 10's completeness scoring demotes
- * a word whose definitions all carry the {@see DEMOTING} subset. The set is
+ * a word whose own headword mark (`words.labels`) or whose definitions all
+ * carry the {@see DEMOTING} subset. The set is
  * closed on purpose: the popup can render the labels and ticket 10's SQL
  * can mirror the demotion check only while the slugs stay enumerable.
  * Labels were filled going forward only until 2026-10-23: since then a
@@ -28,7 +29,8 @@ final class UsageLabels
 
     /**
      * The subset that demotes a definition (and, ticket 10, the word's
-     * completeness when EVERY definition carries one of these).
+     * completeness when the word's own headword mark or EVERY definition
+     * carries one of these).
      */
     public const DEMOTING = ['obsolete', 'archaic'];
 

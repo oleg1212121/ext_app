@@ -258,6 +258,7 @@ class WiktionaryParser
                 'sounds' => [],
                 'etymology' => null,
                 'translations' => [],
+                'labels' => [],
             ];
         }
 
@@ -305,6 +306,27 @@ class WiktionaryParser
 
         $translations = $this->extractTranslations($line);
 
+        // The word-level usage mark — the label Wiktionary prints under the
+        // part-of-speech heading ("decimate (obsolete)" on the noun). kaikki
+        // keeps it out of senses[]: it rides the entry-level tags array
+        // (absent from this edition's dump, but in the wiktextract schema)
+        // and the headword-label head template's args — tlb, or its
+        // term-label alias. Arg 1 is the language code; the numbered args
+        // after it are the labels, grammar words included ("transitive,
+        // chiefly archaic") — the closed-set filter drops the noise and
+        // keeps the mark the word itself carries, never an aggregate of its
+        // senses.
+        $headwordTags = (array) ($line->tags ?? []);
+        foreach ($line->head_templates ?? [] as $template) {
+            if (in_array($template->name ?? null, ['tlb', 'term-label'], true)) {
+                foreach ((array) ($template->args ?? []) as $key => $value) {
+                    if ($key !== '1' && is_string($value) && preg_match('/^\d+$/', (string) $key) === 1) {
+                        $headwordTags[] = $value;
+                    }
+                }
+            }
+        }
+
         // The en edition carries one etymology string (`etymology_text`);
         // the ru edition an ARRAY of text blocks (`etymology_texts`) — one
         // block per etymology hypothesis. A populated singular wins when
@@ -331,6 +353,7 @@ class WiktionaryParser
             'sounds' => $sounds,
             'etymology' => $etymology,
             'translations' => array_values(array_unique($translations)),
+            'labels' => UsageLabels::fromKaikkiTags($headwordTags),
         ];
     }
 
@@ -488,6 +511,7 @@ class WiktionaryParser
         $existing['forms'] = array_values(array_unique(array_merge($existing['forms'], $incoming['forms'])));
         $existing['sounds'] = array_values(array_unique(array_merge($existing['sounds'], $incoming['sounds']), SORT_REGULAR));
         $existing['translations'] = array_values(array_unique(array_merge($existing['translations'], $incoming['translations'])));
+        $existing['labels'] = array_values(array_unique(array_merge($existing['labels'], $incoming['labels'])));
 
         if ($existing['etymology'] === null && $incoming['etymology'] !== null) {
             $existing['etymology'] = $incoming['etymology'];
@@ -522,6 +546,10 @@ class WiktionaryParser
                     'language_id' => $this->languageId,
                     'word_class_id' => $posId,
                     'translations' => ! empty($record['translations']) ? json_encode($record['translations']) : null,
+                    // The word-level mark stores like a definition's: the
+                    // raw JSON string, null when nothing remains (the
+                    // column's "unlabelled" shape).
+                    'labels' => ! empty($record['labels']) ? json_encode($record['labels']) : null,
                     // Provenance rides the INSERT only: the update list below
                     // never touches source, so the first importer wins
                     // (ADR 0084).
@@ -533,11 +561,14 @@ class WiktionaryParser
             if ($wordUpserts !== []) {
                 // Uniqueness keys on (l_word, language_id, word_class_id): a
                 // second source's spelling of one word attaches to the first
-                // source's row. On conflict refresh the key and the staged
-                // candidates only — the stored display word and the frequency
-                // rank are never clobbered (the ADR 0080 merge: the first
-                // spelling stands, the staged JSON is the edition's refresh).
-                Word::upsert($wordUpserts, ['l_word', 'language_id', 'word_class_id'], ['l_word', 'translations']);
+                // source's row. On conflict refresh the key, the staged
+                // candidates and the word-level mark — the re-import is the
+                // labels backfill, a source that stopped marking the
+                // headword unmarks the row again — while the stored display
+                // word and the frequency rank are never clobbered (the
+                // ADR 0080 merge: the first spelling stands, the staged JSON
+                // is the edition's refresh).
+                Word::upsert($wordUpserts, ['l_word', 'language_id', 'word_class_id'], ['l_word', 'translations', 'labels']);
 
                 // The fill-if-null backdoor: a re-run badges the pre-column
                 // rows this batch touched, without claiming a row another

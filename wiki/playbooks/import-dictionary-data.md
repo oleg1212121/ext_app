@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-23T18:16:42+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T20:25:00+03:00 }
 sources:
   - id: adr-0081
     resource: docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md
@@ -196,7 +196,13 @@ Two source shapes exist:
    excluded, etymologies insert-new-only) — the re-import itself is the
    labels backfill (2026-10-23, popup-usage-labels, superseding the
    2026-10-20 no-backfill stance), and every changed row counts in the
-   summary table's "Definitions labels updated" row.
+   summary table's "Definitions labels updated" row. The word itself
+   carries its own mark (2026-10-23, popup-usage-labels follow-up): the
+   `{{tlb}}`/`term-label` head-template args and the entry-level `tags`
+   — the label Wiktionary prints under the part-of-speech heading —
+   intersect the same closed set onto `words.labels`, stored by the word
+   upsert with the column in its UPDATE list (the re-import backfills
+   and unmarks it); deliberately never an aggregate of the senses.
 4. Link words across languages through the staged translations:
 
    ```bash

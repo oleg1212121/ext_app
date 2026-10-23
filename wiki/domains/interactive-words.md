@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Interactive words on the reader and bilinguals simulator — EVERY tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (popup-ai-enrich ticket 03): dictionary-linked tokens open word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; entries stable-sort [live entry before demoted entry — every definition labelled obsolete/archaic — then completeness-descending] over that assembly order — stored words.completeness 0-9 weighted v2 (ADR 0083), recalculated lazily when stale), unmapped tokens open a missing-word card (raw surface title + honest not-in-the-dictionary note; on open the popup re-resolves the surface server-side (ticket 07 POST /words/lookup → {word_id}, read-only) so an adopt-on-ask mint stays found after any reload — a hit opens the full dictionary view with ai_asked true (the re-ask icon), a miss leaves the honest card with no other traffic; its live Ask-AI icon is the card's only path into the dictionary — adopt-on-ask (ticket 05) POSTs {surface, language_code}, the server derives the ADR 0081 lookup key and adopts onto the existing row (case/ё/stress variants never duplicate) or mints exactly one unknown-class word with its lemma form, then runs the same enrichment; a concurrent double-ask loses to the ledger's fresh-pending gate with a clean retryable-later 409, and any ask 409 syncs the popup — payload refetch on the known path, lookup re-run on the missing card), per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon (a ledger-tracked BYO-key enrichment per word — re-askable since the 2026-10-20 ADR 0082 amendment, the re-ask replacing the previous source='ai' rows — merged inline under per-row provenance), the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place — its icon amber while an on-open AnkiConnect version probe answers, grey while the probe is pending, unreachable, or without settings (popup-provenance ticket 05), an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), labelled definition senses marked with localized usage-label chips (two display tiers — obsolete/archaic/rare/dialectal dim the line to half opacity, dated/colloquial a muted chip; deliberately not the completeness DEMOTING subset), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
+description: Interactive words on the reader and bilinguals simulator — EVERY tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (popup-ai-enrich ticket 03): dictionary-linked tokens open word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; entries stable-sort [live entry before demoted entry — its own headword mark or every definition labelled obsolete/archaic — then completeness-descending] over that assembly order — stored words.completeness 0-9 weighted v2 (ADR 0083), recalculated lazily when stale), unmapped tokens open a missing-word card (raw surface title + honest not-in-the-dictionary note; on open the popup re-resolves the surface server-side (ticket 07 POST /words/lookup → {word_id}, read-only — exact headwords first, then the forms table, so a relay-demoted surface like 'smiled' resolves to its base 'smile', ADR 0079) so an adopt-on-ask mint stays found after any reload — a hit opens the full dictionary view with ai_asked true (the re-ask icon), a miss leaves the honest card with no other traffic; its live Ask-AI icon is the card's only path into the dictionary — adopt-on-ask (ticket 05) POSTs {surface, language_code}, the server derives the ADR 0081 lookup key and adopts onto the existing row (case/ё/stress variants never duplicate; a form-only surface adopts its base lemma) or mints exactly one unknown-class word with its lemma form, then runs the same enrichment; a concurrent double-ask loses to the ledger's fresh-pending gate with a clean retryable-later 409, and any ask 409 syncs the popup — payload refetch on the known path, lookup re-run on the missing card), per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon (a ledger-tracked BYO-key enrichment per word — re-askable since the 2026-10-20 ADR 0082 amendment, the re-ask replacing the previous source='ai' rows — merged inline under per-row provenance), the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place — its icon amber while an on-open AnkiConnect version probe answers, grey while the probe is pending, unreachable, or without settings (popup-provenance ticket 05), an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), labelled definition senses marked with localized usage-label chips (two display tiers — obsolete/archaic/rare/dialectal dim the line to half opacity, dated/colloquial a muted chip; deliberately not the completeness DEMOTING subset; the same tiers dim a whole section — hover restoring it — when the word itself carries the source's headword mark, entry.labels), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-23T18:16:42+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T21:50:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -186,7 +186,7 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    of every **Base word** the `forms` table maps the surface token to (own
    headword excluded), ranked by `words.frequency` (lower = more common) and
    uncapped, as
-   `entries: [{id, word, word_class, transcriptions, definitions, translations,
+   `entries: [{id, word, word_class, labels, transcriptions, definitions, translations,
    staged_translations, examples, etymologies}]` — `staged_translations`
    being the entry's staged raw candidates from the `words.translations`
    JSON (ADR 0085), deduped case-insensitively against the linked display
@@ -196,7 +196,14 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    (popup-usage-labels ticket 01) — the definition text plus the sense's
    stored usage-label slugs, a null column landing as the empty list so the
    client never special-cases the unlabelled shape; both endpoints build
-   through the one `WordPopupPayload::entry`, so the shapes cannot drift. Each base group is **scoped to the word classes
+   through the one `WordPopupPayload::entry`, so the shapes cannot drift.
+   `labels` on the entry itself is the **word's own usage mark**
+   (popup-usage-labels follow-up) — the source's headword label stored on
+   `words.labels` at import (see [Dictionary import](/domains/dictionary-import.md)),
+   a null column landing as `[]`; the whole section dims from it — hover
+   restoring full opacity — with the header chipping the mark, never an
+   aggregate of the senses' labels, and the mark demotes the entry in the
+   ordering below. Each base group is **scoped to the word classes
    whose entries actually claim the surface as a form** (ADR 0047) — "me"
    pulls in only "I — Pronoun", not the character/numeral entries sharing the
    spelling, and "melted" no longer rides in "melt — Noun". Relay
@@ -217,9 +224,11 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    any content child (definitions/transcriptions/examples/etymologies/
    forms, translation links included) is recomputed and re-stamped during
    the resolve (`WordCompleteness::recalcFamily`), fresh words are left
-   untouched — then an entry whose every definition carries a demoting
-   label (`labels` obsolete/archaic, `WordCompleteness::isDemoted`; no
-   definitions is live) sinks below every live one, the richest live entry
+   untouched — then an entry whose own word-level mark or whose every
+   definition carries a demoting
+   label (`labels` obsolete/archaic, `WordCompleteness::isDemoted`; an
+   unmarked entry with no definitions is live) sinks below every live one
+   with its definition points scored 0, the richest live entry
    leads, and the assembly order
    (linked word first, class priority, base-group frequency) preserved as
    the tiebreak for equal scores among equally-live entries (a sparse
@@ -279,7 +288,23 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    (the raw:-label precedent) and never dims; the display split
    deliberately differs from the completeness `DEMOTING` subset
    (obsolete/archaic only), which stays untouched. Unlabelled senses
-   render exactly as before. The definitions
+   render exactly as before. The same tiers serve the **whole marked
+   section** (popup-usage-labels follow-up): when the word itself carries a
+   usage mark — `entry.labels`, the source's own headword label
+   ("(obsolete)" under Wiktionary's `===Noun===` heading, the `{{tlb}}`
+   template; stored on `words.labels` at import, never derived from the
+   senses — an entry whose every definition happens to be labelled keeps
+   an unmarked, undimmed section) — the entire "WORD — pos" `<section>`
+   drops to 50% opacity (`word-popup-section-dimmed` on the section
+   element, every block inside it, the header keeping its base 60%; a
+   dimming sense inside skips its own sense dim, which would stack to
+   0.25 statically and restore only the line on hover), hovering the
+   section restores full opacity (`transition-opacity
+   hover:opacity-100`), and the header prefixes the mark's chips after
+   the label text
+   (`word-popup-section-label-chip`, the same tier styling a sense's
+   chips get, resolved through `dimsEntry`/`entryUsageChips` in the
+   shared lib). The definitions
    `<ol>` places its markers *inside* the list items
    (`list-style-position: inside`) so wide ("100.") numbers can never spill
    past the card edge.
@@ -290,7 +315,8 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    `-explain-toggle` (with `aria-pressed` while shown), `-ask-ai`,
    `-dictionary`, `-explain-row` (the mounted pane's first-row wrapper),
    `-section`,
-   `-section-label`, `-translations`, `-translations-more`,
+   `-section-label` / `-section-label-chip` (a header's word-level chip) /
+   `-section-dimmed` (the header a word-level mark dims), `-translations`, `-translations-more`,
    `-translations-placeholder`, `-raw-translations` (the staged raw line,
    with `-raw-translations-more` on its expander), `-transcriptions`,
    `-transcriptions-more`,
@@ -418,8 +444,13 @@ re-resolves the surface server-side before the missing card settles:
   `GET /words/{word}?surface=`, so no payload shape is duplicated. The
   resolution is `WordAiEnrichmentService::resolveSurface`, the READ-ONLY
   half extracted from `resolveOrAdopt` (which calls it and only mints on
-  null): normalize via `WordLookupKey`, query `(language_id, l_word)`,
-  classed row beats the unknown placeholder — with the unknown class id
+  null): normalize via `WordLookupKey`, query `(language_id, l_word)` —
+  and when the exact pass is empty, a second pass resolves through the
+  forms table (`forms.l_word` → base word, EntityWordLinker::link's
+  exact-then-forms order: a relay-demoted surface — ADR 0079, 'smiled'
+  stored only as a form of 'smile' — finds its lemma, and an exact
+  headword always beats a forms row) — classed row beats the unknown
+  placeholder — with the unknown class id
   resolved READ-ONLY, so a language whose placeholder row was never minted
   falls back to the first candidate and a lookup can never create a row
   (only `resolveOrAdopt`, the ask path, mints).
@@ -914,8 +945,8 @@ see [Profile](/domains/profile.md) for the Anki tab side):
 | Route | Handler | Purpose |
 |-------|---------|---------|
 | `GET /words/{word}` | `WordController::show` | Word popup payload (assembled by the shared `WordPopupPayload`): the word family (own headword group + base-word groups scoped to claiming classes, ADR 0045 + 0047) stable-sorted [live entry before demoted entry, then completeness-descending] (stored `words.completeness` 0–9, lazily recalculated when stale during the resolve, ADR 0083) as `entries` (word, class, transcriptions, definitions, native-first translations cap 100, examples, etymologies), `form_of`, `is_form`, `frequency` (integer rank, null when unranked), `tags` (the linked word's tag names — for the Anki card; eager-loaded with the family via `WordFamily::EAGER_LOAD`, no per-open lazy query), `source` (the bound headword's `words.source` import provenance, ADR 0084 — the verbatim importer name for the header badge, null on pre-provenance rows), `ai_asked` (the word's ledger carries a `succeeded_at` — the toolbar flag that turns the plain ask icon into the re-ask variant) |
-| `POST /words/lookup` | `WordController::lookup` | The popup's on-open re-resolution (ticket 07, `WordLookupRequest` — the adoption-mode rules minus the word-id mode, throttle 60/min): the RAW clicked surface + the clicked column's language code resolve read-only through `WordAiEnrichmentService::resolveSurface` (the extracted read-only half of `resolveOrAdopt` — classed row over the unknown placeholder, first candidate when no unknown row exists, NEVER mints) → `{data: {word_id: int|null}}`; the popup fetches the payload through `GET /words/{word}` so no shape is duplicated |
-| `POST /ai/word-enrich` | `ReadingAiController::enrichWord` | Ask-AI enrichment, two modes (`AiWordEnrichRequest`, throttle 20/min): `{word_id}` for a known word (ticket 04 — an optional `surface` rides along so the payload resolves from the clicked surface) or `{surface, language_code}` for the missing card's adopt-on-ask (ticket 05 — `WordAiEnrichmentService::resolveOrAdopt` adopts onto the existing lookup-key hit or mints one unknown-class word with its lemma form, the mint stamped `words.source = 'ai'` (ADR 0084; a raced-in null row is claimed, a resolve hit's source never touched), then the shared flow). Explanation-model strict-JSON ask through `AIModelResolver::ask` (the ledger's provider/model split through `parseModelString`), lenient parse (`EnrichmentReply`), transactional merge — a re-ask deletes the word's previous `source='ai'` rows before the fresh reply merges (ADR 0082 amendment), with per-row provenance and link-only translations (`WordAiEnrichmentService`) — `word_ai_fetches` ledger (a fresh pending row / a lost unique-constraint insert answers a clean retryable 409; a pending row past the 15-minute grace is taken over by the retry); responds the word-show payload so the popup swaps it live (ADR 0082) |
+| `POST /words/lookup` | `WordController::lookup` | The popup's on-open re-resolution (ticket 07, `WordLookupRequest` — the adoption-mode rules minus the word-id mode, throttle 60/min): the RAW clicked surface + the clicked column's language code resolve read-only through `WordAiEnrichmentService::resolveSurface` (the extracted read-only half of `resolveOrAdopt` — exact `(language_id, l_word)` first, then the forms table so a relay-demoted surface resolves to its base (ADR 0079), classed row over the unknown placeholder, first candidate when no unknown row exists, NEVER mints) → `{data: {word_id: int|null}}`; the popup fetches the payload through `GET /words/{word}` so no shape is duplicated |
+| `POST /ai/word-enrich` | `ReadingAiController::enrichWord` | Ask-AI enrichment, two modes (`AiWordEnrichRequest`, throttle 20/min): `{word_id}` for a known word (ticket 04 — an optional `surface` rides along so the payload resolves from the clicked surface) or `{surface, language_code}` for the missing card's adopt-on-ask (ticket 05 — `WordAiEnrichmentService::resolveOrAdopt` adopts onto the existing lookup-key hit — exact or through the forms pass, a form-only surface adopting its base lemma — or mints one unknown-class word with its lemma form, the mint stamped `words.source = 'ai'` (ADR 0084; a raced-in null row is claimed, a resolve hit's source never touched), then the shared flow). Explanation-model strict-JSON ask through `AIModelResolver::ask` (the ledger's provider/model split through `parseModelString`), lenient parse (`EnrichmentReply`), transactional merge — a re-ask deletes the word's previous `source='ai'` rows before the fresh reply merges (ADR 0082 amendment), with per-row provenance and link-only translations (`WordAiEnrichmentService`) — `word_ai_fetches` ledger (a fresh pending row / a lost unique-constraint insert answers a clean retryable 409; a pending row past the 15-minute grace is taken over by the retry); responds the word-show payload so the popup swaps it live (ADR 0082) |
 | `POST /ai/word-explain` | `ReadingAiController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |
 | `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |
 | `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to untouched) |

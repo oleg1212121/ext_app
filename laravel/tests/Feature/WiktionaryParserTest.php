@@ -946,3 +946,54 @@ it('never updates labels on ask-AI definition rows', function () {
         ->and($stats['definitions_labels_updated'])->toBe(0)
         ->and($plain->labels)->toBeNull();
 });
+
+it('stores the headword mark on the word row and refreshes it on re-import', function () {
+    $languages = createLanguages();
+    $enId = $languages['en']->id;
+
+    $marked = writeJsonlFixture([
+        json_encode([
+            'word' => 'decimate', 'pos' => 'noun',
+            // The {{tlb|en|obsolete}} under the ===Noun=== heading — the
+            // mark the word itself carries, kept out of senses[] by kaikki.
+            'head_templates' => [
+                ['name' => 'en-noun', 'args' => [], 'expansion' => 'decimate (plural decimates)'],
+                ['name' => 'tlb', 'args' => ['1' => 'en', '2' => 'obsolete'], 'expansion' => '(obsolete)'],
+            ],
+            'senses' => [['glosses' => ['A tithe or other 10% tax or payment.']]],
+        ]),
+        json_encode([
+            'word' => 'calm', 'pos' => 'adjective',
+            'senses' => [['glosses' => ['Peaceful, still.']]],
+        ]),
+    ], 'wiktionary_word_labels');
+    (new WiktionaryParser('en', 'ru', 100))->import($marked);
+    unlink($marked);
+
+    $decimate = Word::where('word', 'decimate')->where('language_id', $enId)->firstOrFail();
+    expect($decimate->labels)->toBe(['obsolete'])
+        // An unmarked headword stores the column's null default — the
+        // same "unlabelled" shape the definitions column keeps.
+        ->and(Word::where('word', 'calm')->where('language_id', $enId)->firstOrFail()->labels)->toBeNull();
+
+    // The re-import whose source dropped the headword label unmarks the
+    // row (the upsert's update list carries the column) and leaves the
+    // senses untouched — the same converged-repeat semantics the sense
+    // labels' merge has.
+    $unmarked = writeJsonlFixture([
+        json_encode([
+            'word' => 'decimate', 'pos' => 'noun',
+            'head_templates' => [
+                ['name' => 'en-noun', 'args' => [], 'expansion' => 'decimate (plural decimates)'],
+            ],
+            'senses' => [['glosses' => ['A tithe or other 10% tax or payment.']]],
+        ]),
+    ], 'wiktionary_word_labels_unmarked');
+    $stats = (new WiktionaryParser('en', 'ru', 100))->import($unmarked);
+    unlink($unmarked);
+
+    $decimate = $decimate->fresh();
+    expect($decimate->labels)->toBeNull()
+        ->and($decimate->definitions()->count())->toBe(1)
+        ->and($stats['definitions_labels_updated'])->toBe(0);
+});

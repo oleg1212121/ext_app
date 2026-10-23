@@ -108,7 +108,7 @@ it('mirrors the definition weights: 2 on major POS (both spellings), 1 otherwise
     }
 });
 
-it('mirrors the demotion rule: 0 definition points only when EVERY definition demotes', function () {
+it('mirrors the demotion rule: 0 definition points on a demoting word mark or when EVERY definition demotes', function () {
     // Every definition labelled obsolete/archaic: the word stays at 0.
     $allDemoted = createWord('en', 'dodo', 'verb');
     Definition::query()->create(['word_id' => $allDemoted->id, 'definition' => 'No longer used.', 'labels' => ['obsolete']]);
@@ -123,6 +123,15 @@ it('mirrors the demotion rule: 0 definition points only when EVERY definition de
     $colloquial = createWord('en', 'haze', 'verb');
     Definition::query()->create(['word_id' => $colloquial->id, 'definition' => 'An informal sense.', 'labels' => ['colloquial']]);
 
+    // The word's OWN headword mark (words.labels) demotes: 0 definition
+    // points even with unlabelled senses.
+    $marked = createWord('en', 'zed', 'verb', ['labels' => ['obsolete']]);
+    Definition::query()->create(['word_id' => $marked->id, 'definition' => 'A sense.']);
+
+    // A word-level non-demoting mark (rare) keeps the points.
+    $rareMarked = createWord('en', 'knar', 'verb', ['labels' => ['rare']]);
+    Definition::query()->create(['word_id' => $rareMarked->id, 'definition' => 'A sense.']);
+
     // No definitions at all: live (0) — the score is 0 either way, but
     // WordCompleteness::isDemoted must disagree with the all-demotion case.
 
@@ -130,7 +139,9 @@ it('mirrors the demotion rule: 0 definition points only when EVERY definition de
 
     expect((int) $allDemoted->fresh()->completeness)->toBe(0)
         ->and((int) $mixed->fresh()->completeness)->toBe(2)
-        ->and((int) $colloquial->fresh()->completeness)->toBe(2);
+        ->and((int) $colloquial->fresh()->completeness)->toBe(2)
+        ->and((int) $marked->fresh()->completeness)->toBe(0)
+        ->and((int) $rareMarked->fresh()->completeness)->toBe(2);
 });
 
 it('judges demotion on the stored definitions — a relay gloss keeps a partially-relay entry live', function () {
