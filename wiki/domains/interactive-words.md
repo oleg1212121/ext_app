@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Interactive words on the reader and bilinguals simulator — EVERY tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (popup-ai-enrich ticket 03): dictionary-linked tokens open word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; entries stable-sort [live entry before demoted entry — every definition labelled obsolete/archaic — then completeness-descending] over that assembly order — stored words.completeness 0-9 weighted v2 (ADR 0083), recalculated lazily when stale), unmapped tokens open a missing-word card (raw surface title + honest not-in-the-dictionary note; on open the popup re-resolves the surface server-side (ticket 07 POST /words/lookup → {word_id}, read-only) so an adopt-on-ask mint stays found after any reload — a hit opens the full dictionary view with ai_asked true (the re-ask icon), a miss leaves the honest card with no other traffic; its live Ask-AI icon is the card's only path into the dictionary — adopt-on-ask (ticket 05) POSTs {surface, language_code}, the server derives the ADR 0081 lookup key and adopts onto the existing row (case/ё/stress variants never duplicate) or mints exactly one unknown-class word with its lemma form, then runs the same enrichment; a concurrent double-ask loses to the ledger's fresh-pending gate with a clean retryable-later 409, and any ask 409 syncs the popup — payload refetch on the known path, lookup re-run on the missing card), per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon (a ledger-tracked BYO-key enrichment per word — re-askable since the 2026-10-20 ADR 0082 amendment, the re-ask replacing the previous source='ai' rows — merged inline under per-row provenance), the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place — its icon amber while an on-open AnkiConnect version probe answers, grey while the probe is pending, unreachable, or without settings (popup-provenance ticket 05), an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
+description: Interactive words on the reader and bilinguals simulator — EVERY tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (popup-ai-enrich ticket 03): dictionary-linked tokens open word popups aggregating the word family (own headword group plus base-word groups via the forms table, class-scoped to claiming entries, form-of entries hidden behind a pointer line, ADR 0045 + 0047; entries stable-sort [live entry before demoted entry — every definition labelled obsolete/archaic — then completeness-descending] over that assembly order — stored words.completeness 0-9 weighted v2 (ADR 0083), recalculated lazily when stale), unmapped tokens open a missing-word card (raw surface title + honest not-in-the-dictionary note; on open the popup re-resolves the surface server-side (ticket 07 POST /words/lookup → {word_id}, read-only) so an adopt-on-ask mint stays found after any reload — a hit opens the full dictionary view with ai_asked true (the re-ask icon), a miss leaves the honest card with no other traffic; its live Ask-AI icon is the card's only path into the dictionary — adopt-on-ask (ticket 05) POSTs {surface, language_code}, the server derives the ADR 0081 lookup key and adopts onto the existing row (case/ё/stress variants never duplicate) or mints exactly one unknown-class word with its lemma form, then runs the same enrichment; a concurrent double-ask loses to the ledger's fresh-pending gate with a clean retryable-later 409, and any ask 409 syncs the popup — payload refetch on the known path, lookup re-run on the missing card), per-user block visibility via Popup preferences, ADR 0046; typography follows the host page's font setting, ADR 0031), an action toolbar as the popup's first row (progress icons left; pushed right, in order — Anki send, the on-demand Explanation toggle, the Ask-AI icon (a ledger-tracked BYO-key enrichment per word — re-askable since the 2026-10-20 ADR 0082 amendment, the re-ask replacing the previous source='ai' rows — merged inline under per-row provenance), the robot (models-used) icon rightmost; status lines beneath; disabled-not-hidden), a per-word Anki send that detects the word on open and refreshes an already-saved own note in place — its icon amber while an on-open AnkiConnect version probe answers, grey while the probe is pending, unreachable, or without settings (popup-provenance ticket 05), an on-demand Explanation toggle mounting the AI Context explanation as the dictionary view's first row (no tab strip since popup-ai-enrich ticket 01 — the dictionary always renders), labelled definition senses marked with localized usage-label chips (two display tiers — obsolete/archaic/rare/dialectal dim the line to half opacity, dated/colloquial a muted chip; deliberately not the completeness DEMOTING subset), render-time segmentation, read/lookup familiarity events, and silent background auto-fetch of missing translations (Yandex→Google, link-only since 2026-10-18 — matches link existing target words, the rest stages for the link pass, never a word row; ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-20T21:25:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T16:25:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -80,6 +80,9 @@ sources:
   - id: word-popup
     resource: laravel/resources/js/Components/WordPopup.jsx
     title: WordPopup (lazy detail popup — toolbar + always-rendered dictionary, no tab strip)
+  - id: usage-label-display
+    resource: laravel/resources/js/lib/usageLabelDisplay.js
+    title: usageLabelDisplay.js (the usage-label display tiers — DIMMING/REGISTER sets, chips + Anki prefix helpers)
   - id: familiarity-lib
     resource: laravel/resources/js/lib/wordFamiliarity.js
     title: Browser familiarity helpers (event POST, word ids, map patching)
@@ -189,7 +192,11 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    JSON (ADR 0085), deduped case-insensitively against the linked display
    words (and within itself, first occurrence standing), stored order kept,
    capped at the linked line's 100 (`TRANSLATION_LIMIT`), `[]` when nothing
-   is staged. Each base group is **scoped to the word classes
+   is staged. `definitions` ship as per-sense `{text, labels}` objects
+   (popup-usage-labels ticket 01) — the definition text plus the sense's
+   stored usage-label slugs, a null column landing as the empty list so the
+   client never special-cases the unlabelled shape; both endpoints build
+   through the one `WordPopupPayload::entry`, so the shapes cannot drift. Each base group is **scoped to the word classes
    whose entries actually claim the surface as a form** (ADR 0047) — "me"
    pulls in only "I — Pronoun", not the character/numeral entries sharing the
    spelling, and "melted" no longer rides in "melt — Noun". Relay
@@ -259,7 +266,20 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    rest, then **three counted collapses** — "Definitions (N)", "Examples
    (N)", "Etymology (N)" — independent `<details>`, closed by default, state
    per section (empty definitions say "No definitions yet."; sections
-   without examples/etymology hide those collapses). The definitions
+   without examples/etymology hide those collapses). A labelled sense
+   prefixes its **usage-label chips** before the text (popup-usage-labels
+   tickets 01 + 03): one chip per label resolved through the six
+   `word.label_*` ui-strings (en the plain words; ru/be the dictionary
+   abbreviations — устар., арх., не совр., разг., редк., диал.), split
+   into **two display tiers** by `resources/js/lib/usageLabelDisplay.js` —
+   any dimming-tier label (obsolete, archaic, rare, dialectal) renders
+   vermilion chips (the house red token, day + night) and drops the whole
+   sense line to 50% opacity, even beside muted ones, while the register
+   tier (dated, colloquial) renders a muted `opacity-60` plain-text chip
+   (the raw:-label precedent) and never dims; the display split
+   deliberately differs from the completeness `DEMOTING` subset
+   (obsolete/archaic only), which stays untouched. Unlabelled senses
+   render exactly as before. The definitions
    `<ol>` places its markers *inside* the list items
    (`list-style-position: inside`) so wide ("100.") numbers can never spill
    past the card edge.
@@ -275,6 +295,8 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    with `-raw-translations-more` on its expander), `-transcriptions`,
    `-transcriptions-more`,
    `-no-definitions`, `-definitions` (with `-definitions-list` on its `ol`),
+   `-definition-label` (a usage-label chip) / `-definition-dimmed` (the
+   sense line a dimming-tier label dims),
    `-examples` (with `-examples-list` on its `ul`), `-etymologies`,
    `-summary` on every collapse summary, `-progress-known`,
    `-progress-reset`, `-anki-send` (the Anki icon button — add or update
@@ -663,7 +685,8 @@ and **replaces** the word's previous AI rows.
   (order kept, unknown slugs and non-strings dropped), the first
   occurrence's labels stand on a text collision, and a truncated text
   keeps its labels — every other section stays plain strings, and the
-  popup payload keeps rendering definition strings (labels are DB-only).
+  popup payload ships definitions as `{text, labels}` objects (the labels
+  rendered as chips — the definitions passage above).
 * **The merge.** In one transaction (`WordAiEnrichmentService`): the
   word's previous `source = 'ai'` rows are **deleted first** (the re-ask's
   replace semantics, the ADR 0082 amendment — imported rows are never
@@ -683,7 +706,7 @@ and **replaces** the word's previous AI rows.
   stores its non-empty labels on `definitions.labels` (ticket 09, the
   closed `UsageLabels` set — empty stores as null; see
   [Dictionary import](/domains/dictionary-import.md) for the import-time
-  half and the no-backfill rule). **Translations are link-only**
+  half and the update-on-reimport rule). **Translations are link-only**
   (ADR 0078 holds for AI): candidates normalize (trim, stress marks
   stripped for the target language's rule, over-long and
   sentence-punctuated dropped), resolve against the native language's
@@ -707,7 +730,8 @@ and **replaces** the word's previous AI rows.
   script-guard pins (foreign-script definitions dropped, own-script kept,
   all-dropped still succeeded) + the labelled `{text, labels}` pins
   (labels persisted on `source='ai'` rows, a dropped text dropping its
-  labels, the payload staying plain strings), validation, throttle),
+  labels, the ask response and a fresh show pinned shape-identical),
+  validation, throttle),
   `tests/Feature/AiWordEnrichAdoptTest.php` (the ticket 05 adoption path:
   mint + lemma form + unknown class, ё/case/stress adoption onto the
   existing row, the pending double-ask 409, no-model mints nothing,
@@ -794,7 +818,12 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   the label wording is the popup's own UI-language strings — passed to the
   builder from `sendToAnki` through the shared `uiLabels(t)` builder and
   frozen into the note at send time, so a card sent from an ru/be UI keeps
-  that wording in Anki.
+  that wording in Anki. The wording object's eighth `label` key (the
+  slug→name resolver, popup-usage-labels ticket 03) resolves through the
+  same `word.label_*` strings the popup's chips use, so a definition line
+  carries its usage labels as a plain-text prefix — "(устар., редк.) Жизнь,
+  быт…" — both display tiers composed identically and senses without a
+  known label rendering byte-identically to before.
 * **Auto-ensure.** The first send of a page session runs the memoized
   ensure (deck create-if-missing, the word's resolved note type — the
   per-language "ExtApp Vocabulary ⋅ <code>" or the unsuffixed base —

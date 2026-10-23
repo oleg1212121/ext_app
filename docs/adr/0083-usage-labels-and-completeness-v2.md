@@ -98,3 +98,49 @@ this project had a column to hold them.
 - Ticket 09's closed-set rule extends to any future label source: a new
   slug means a `SLUGS` (and possibly `DEMOTING`) change plus a re-sweep,
   not a schema change.
+
+## Amended 2026-10-23 (popup-usage-labels: labels surface in the popup and Anki; update-on-reimport supersedes no-backfill)
+
+Decision 2's no-backfill is **superseded** (user decision 2026-10-23):
+the definition flush is no longer insert-only. A case-insensitively
+same-text stored row (the very `word_id|lower(text)` key the old
+insert-new-only path skipped on) has its labels refreshed to the incoming
+value — null included, so a source that stopped tagging a sense unlabels
+it again, and a repeat import converges to zero further updates — while
+the stored definition TEXT is never rewritten (case-only matches update
+in place), rows the ask-AI enrichment wrote (`source = 'ai'`) are another
+writer's and keep their labels whatever the dump says, and etymologies
+keep the plain insert-new-only behavior. Every changed row counts into a
+`definitions_labels_updated` stat in the import summary, and there is
+still no row-rewrite migration: the backfill IS the re-import. Demotion's
+"wakes per-word as labelled data accumulates" (consequence 1) now has its
+data path; decision 1's "going forward only" narrows to "the closed set
+stands, the label sources gain the re-import refresh".
+
+Decision 2's GoldenDict rationale also stands unchanged — inline markers
+stay unparsed; with the surfacing below landed, teaching the importer to
+read them is a follow-up candidate, not part of this record.
+
+The labels also stopped being DB-only:
+
+- **The popup payload ships them** — `WordPopupPayload::entry`'s
+  definitions are `{text, labels}` objects (a null column lands as the
+  empty list, so the client never special-cases the unlabelled shape),
+  both popup endpoints building from the one assembler, so the shapes
+  cannot drift.
+- **The popup renders them as localized chips in two display tiers** —
+  one chip per label resolved through the six `word.label_*` ui-strings
+  (en the plain words; ru/be the dictionary abbreviations), vermilion
+  chips + the whole sense line at 50% opacity when any of
+  obsolete/archaic/rare/dialectal is present, a muted plain-text chip for
+  dated/colloquial. The display dimming set deliberately differs from the
+  completeness `DEMOTING` subset (obsolete/archaic): it lives JS-side
+  (`resources/js/lib/usageLabelDisplay.js`), and decision 4's recalc SQL
+  and scoring are untouched — a rare- or dialectal-only entry still ranks
+  live.
+- **Anki notes carry them as a plain-text prefix** — `(устар., редк.)
+  Жизнь, быт…`, composed once in the shared definitions section so the
+  flat Definitions field and the Body's per-entry section cannot drift,
+  both tiers composed identically (the prefix is study information, not a
+  visual demotion), and senses without a known label rendering
+  byte-identically to before.

@@ -4,7 +4,7 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, per-language Anki settings (a language selector over deck + card content) with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T16:25:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -255,14 +255,17 @@ value is the whole dictionary rendered per entry in the popup's order —
 "WORD — pos" label on every entry (single-entry words included, exactly
 the popup's pane), the translations line (cap 8 + expander, or the calm
 "No translations yet" placeholder), bracketed transcriptions, the counted
-collapsed sections ("No definitions yet." when empty), hairline
+collapsed sections ("No definitions yet." when empty — a labelled
+definition line carrying its plain-text usage-label prefix, both display
+tiers alike), hairline
 separators. A `fields` option (the resolved Anki settings map, passed by
 both senders — the tab's `settings.fields`, the popup's shared
 `ankiSettings` prop) shapes that Body at send time: the body section
 toggles plus the `body` master drop their sections entire, placeholder
-included — newly sent cards only. A `labels` option carries the seven
+included — newly sent cards only. A `labels` option carries the eight
 UI-language strings (summaries, expander, "form of", the two calm
-placeholders) — the tab passes
+placeholders, and the definition `label` resolver behind that prefix) —
+the tab passes
 its locale's via `useI18n` (both senders share `ankiTemplate.js`'s
 `uiLabels(t)` builder over the app's `word.*` strings), so the preview
 shows the real wording; the wording is frozen into the note at send time.

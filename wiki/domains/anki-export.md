@@ -4,7 +4,7 @@ title: Anki Export
 description: The path from saved words to the user's desktop Anki — per-user per-language connection/card settings (deck + field toggles per enabled language over a legacy global base) on the profile's Anki tab, a deterministic popup-styled card template (the Front is the word; the Back is header + the 13th Body field's popup-interleaved dictionary + footer) with split toggle semantics — scalar toggles hide-class template-side, body toggles shape the Body value at send time — one-click template sync into Anki, and per-word sends from the word popup that detect on open and refresh an already-saved own note in place, all driven browser-side through AnkiConnect (ADR 0077 + addenda; v3 records the updates-in-place reversal).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-20T17:55:00+00:00 }
+generated: { by: agent:zcode, at: 2026-10-23T13:25:00+00:00 }
 verified: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
 sources:
   - id: adr
@@ -173,7 +173,10 @@ sources below).
    per-entry "WORD — pos" labels when a word has 2+ dictionary entries,
    counted `<details>` summaries ("Definitions (3)") for
    Definitions/Examples/Etymology — collapsed like the popup, expandable
-   natively in Anki's WebView with no JS — the translations preview (the
+   natively in Anki's WebView with no JS, each definition line prefixed
+   with its usage labels as plain text ("(устар., редк.) …" — both display
+   tiers alike, the prefix is study information rather than styling;
+   popup-usage-labels ticket 03) — the translations preview (the
    popup's first-8 cap) behind a "+N more…" expander, " · "-joined
    transcriptions, and the localized "form of" prefix inside the WordFamily
    value. The 13th field, **`Body`, is the rendered dictionary**: one
@@ -182,7 +185,8 @@ sources below).
    popup's pane), the translations line (cap 8 + expander, or the calm
    "No translations yet" placeholder), the bracketed transcriptions (first
    + "+N more…"), the counted collapsed Definitions/Examples/Etymology
-   ("No definitions yet." when empty) — and it is the only field that
+   ("No definitions yet." when empty; a labelled definition line carries
+   the same plain-text label prefix) — and it is the only field that
    renders the dictionary on the card. **The body toggles are send-time**:
    both senders pass the resolved fields map, and the body sections
    (translations, transcription, definitions, examples, etymology) plus
@@ -190,8 +194,11 @@ sources below).
    leaves no dangling label or placeholder — so they affect **newly sent
    cards only**; existing notes keep the body they were sent with, and
    re-syncing the template does not restyle it (ADR 0077 addendum v2). A
-   `labels` option carries the seven UI-language strings (the three
-   counted summaries, the expander, "form of", the two calm placeholders):
+   `labels` option carries the eight UI-language strings (the three
+   counted summaries, the expander, "form of", the two calm placeholders,
+   and since popup-usage-labels ticket 03 the definition `label` resolver —
+   the slug→name mapping behind the plain-text prefix, resolved through
+   the same `word.label_*` strings the popup's chips use):
    senders pass their locale's wording — both build it with
    `ankiTemplate.js`'s `uiLabels(t)` over the app's
    `word.*` ui-strings, one shared mapping — and it is frozen into

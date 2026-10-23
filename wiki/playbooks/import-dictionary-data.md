@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-20T21:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T16:25:00+03:00 }
 sources:
   - id: adr-0081
     resource: docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md
@@ -184,14 +184,19 @@ Two source shapes exist:
    Cyrillic; strict majority keeps, tie drops, letterless passes,
    unmapped languages unguarded; etymologies unguarded) — and every
    dropped gloss counts in the summary table's "Definitions skipped
-   (foreign language)" row. Import-time only: already-stored definitions
-   are never touched (re-runs of an older dump re-insert nothing the
-   guard now drops — the merge stays insert-new-only). A sense's tags
-   also label its definition: `senses[].tags` intersect the closed
+   (foreign language)" row. Import-time only: stored definition TEXT is
+   never rewritten (re-runs of an older dump re-insert nothing the
+   guard now drops — the merge stays insert-new-only for text). A sense's
+   tags also label its definition: `senses[].tags` intersect the closed
    `UsageLabels` set (obsolete, archaic, dated, colloquial, rare,
    dialectal) onto `definitions.labels` (2026-10-20, ticket 09) —
-   grammar noise and unknown slugs drop, and rows written before the
-   column keep null (unlabelled; no backfill).
+   grammar noise and unknown slugs drop. The flush also refreshes labels
+   on case-insensitively same-text stored rows to the incoming value
+   (null included; stored text untouched, ask-AI `source='ai'` rows
+   excluded, etymologies insert-new-only) — the re-import itself is the
+   labels backfill (2026-10-23, popup-usage-labels, superseding the
+   2026-10-20 no-backfill stance), and every changed row counts in the
+   summary table's "Definitions labels updated" row.
 4. Link words across languages through the staged translations:
 
    ```bash

@@ -131,9 +131,13 @@ _Avoid_: AI import, auto-enrichment
 **Usage labels**:
 The register markers a definition sense can carry — a closed set
 (obsolete, archaic, dated, colloquial, rare, dialectal) stored on
-definitions and filled going forward only: from Wiktionary sense tags at
-import and from labelled AI definition objects at ask-AI. Existing rows
-keep null (unlabelled); a word whose every definition is labelled
+definitions: from Wiktionary sense tags at import, from labelled AI
+definition objects at ask-AI, and backfilled onto existing rows by a
+re-import (the definitions flush refreshes labels on same-text rows;
+ask-AI rows are never touched). Labelled senses surface in the word popup
+as localized chips in two display tiers — obsolete/archaic/rare/dialectal
+dim the line, dated/colloquial render a muted chip — and in Anki notes as
+a plain-text prefix; a word whose every definition is labelled
 obsolete/archaic will rank as a demoted entry in the popup.
 _Avoid_: POS tags, grammar tags, sense tags
 

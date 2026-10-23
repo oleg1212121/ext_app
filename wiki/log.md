@@ -1,5 +1,52 @@
 # Directory Update Log
 
+## 2026-10-23 (popup-usage-labels: labels become visible — popup chips in two display tiers, Anki plain-text prefix, update-on-reimport backfill)
+
+The usage labels stored since 2026-10-20 (popup-ai-enrich ticket 09)
+become visible, and the no-backfill stance is superseded (user decision
+2026-10-23). Tickets 01–03 are the code (commits `4a57d48`, `fe4a28b`,
+`9ff4dc0`); this entry is the docs pass (ticket 05) — the full-kaikki
+re-import itself is ticket 04 and logs its own line.
+
+- **Popup payload** (`domains/interactive-words.md`):
+  `WordPopupPayload::entry` ships per-entry definitions as
+  `{text, labels}` objects (a null column lands as the empty list, so
+  the client never special-cases the unlabelled shape); both popup
+  endpoints build from the one assembler, so the shapes cannot drift.
+- **Chips in two display tiers** (`domains/interactive-words.md`): each
+  labelled sense renders one chip per label through the six
+  `word.label_*` ui-strings (en the plain words; ru/be the dictionary
+  abbreviations устар., арх., не совр., разг., редк., диал.), tiered by
+  the new `resources/js/lib/usageLabelDisplay.js` — any dimming-tier
+  label (obsolete/archaic/rare/dialectal) renders vermilion chips plus
+  the sense line at 50% opacity, the register tier (dated/colloquial) a
+  muted `opacity-60` chip that never dims. The display split
+  deliberately differs from the completeness `DEMOTING` subset
+  (obsolete/archaic) — scoring and the recalc SQL are untouched. New
+  class hooks `word-popup-definition-label` / `-definition-dimmed`
+  registered in the concept's class-hook registry.
+- **Anki plain-text prefix** (`domains/anki-export.md`,
+  `domains/profile.md`): definition lines in both note fields carry
+  `(устар., редк.) текст` — composed once in the shared definitions
+  section so the fields cannot drift, both display tiers identical,
+  unlabelled lines byte-identical; the wording object gained an eighth
+  `label` key resolved through the same `word.label_*` strings the
+  popup's chips use.
+- **Update-on-reimport** (`domains/dictionary-import.md`,
+  `database/dictionary.md`, `playbooks/import-dictionary-data.md`): the
+  definitions flush refreshes labels on case-insensitively same-text
+  rows to the incoming value (null included; stored TEXT never
+  rewritten; `source='ai'` rows excluded; etymologies stay
+  insert-new-only), every changed row counted in the new "Definitions
+  labels updated" import-summary row. Supersedes ADR 0083 decision 2's
+  no-backfill — the backfill is the re-import itself, never a
+  row-rewrite migration (ADR 0083 amended in place; GoldenDict markers
+  stay unparsed — follow-up candidate).
+- **Docs pass**: GLOSSARY.md's "Usage labels" entry drops its
+  "existing rows keep null" clause and records the popup + Anki
+  surfacing; the six touched concepts re-stamped; `wiki:sync` verified
+  a no-op (no route/model/command changes in this spec).
+
 ## 2026-10-23 (retro-fixes-2 review fix pass — the gate cannot bite its own tail anymore)
 
 Fix pass on the two-axis review of tickets 01–04: one blocker plus five
