@@ -45,6 +45,16 @@ return [
     'word.explain_go_to_settings' => ['en' => 'Go to Profile → AI Models', 'ru' => 'Перейти в профиль → ИИ-модели', 'be' => 'Перайсці ў профіль → ШІ-мадэлі'],
     'word.explain_preview' => ['en' => 'This is where the **context explanation** appears — an AI answer about what this word means in its sentence. Try the real thing in the reader or the simulator.', 'ru' => 'Здесь появляется **контекстный разбор** — ответ ИИ о том, что это слово значит в своём предложении. Попробуйте настоящий разбор в читалке или симуляторе.', 'be' => 'Тут з\'яўляецца **кантэкстны разбор** — адказ ШІ пра тое, што гэта слова значыць у сваім сказе. Паспрабуйце сапраўдны разбор у чыталцы або сімулятары.'],
     'word.definitions' => ['en' => 'Definitions (:count)', 'ru' => 'Определения (:count)', 'be' => 'Вызначэнні (:count)'],
+    // The usage-label chips (popup-usage-labels ticket 01): the closed six
+    // render before their sense text — the dimming tier (obsolete, archaic,
+    // rare, dialectal) dims the line, dated/colloquial stay a muted chip.
+    // ru/be use the dictionary abbreviations.
+    'word.label_obsolete' => ['en' => 'obsolete', 'ru' => 'устар.', 'be' => 'устар.'],
+    'word.label_archaic' => ['en' => 'archaic', 'ru' => 'арх.', 'be' => 'арх.'],
+    'word.label_dated' => ['en' => 'dated', 'ru' => 'не совр.', 'be' => 'не суч.'],
+    'word.label_colloquial' => ['en' => 'colloquial', 'ru' => 'разг.', 'be' => 'разг.'],
+    'word.label_rare' => ['en' => 'rare', 'ru' => 'редк.', 'be' => 'рэдк.'],
+    'word.label_dialectal' => ['en' => 'dialectal', 'ru' => 'диал.', 'be' => 'дыял.'],
     'word.no_translations' => ['en' => 'No translations yet — automatic translation may still be in progress.', 'ru' => 'Переводов пока нет — автоматический перевод ещё может выполняться.', 'be' => 'Перакладаў пакуль няма — аўтаматычны пераклад яшчэ можа выконвацца.'],
     // The staged raw candidates line (popup-provenance ticket 02, ADR 0085):
     // the tiny muted label prefixing the word's unlinked raw translation

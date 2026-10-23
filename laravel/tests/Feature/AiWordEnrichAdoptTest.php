@@ -101,7 +101,8 @@ it('adopts on ask: a missing bomb-hit mints one unknown-class word with the fold
     expect($payload['id'])->toBe($word->id);
     expect($payload['word'])->toBe('bomb-hit');
     expect($payload['ai_asked'])->toBeTrue();
-    expect($payload['entries'][0]['definitions'])->toContain('A financial institution.');
+    expect($payload['entries'][0]['definitions'])->toBe($show['entries'][0]['definitions']);
+    expect($payload['entries'][0]['definitions'])->toContain(['text' => 'A financial institution.', 'labels' => []]);
 
     // The same enrichment flow: content rows carry the ai provenance and the
     // translations link against the EXISTING ru row only (link-only).

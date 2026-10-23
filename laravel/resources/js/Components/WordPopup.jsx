@@ -6,6 +6,7 @@ import {useI18n} from '../i18n';
 import {getCsrfToken} from '../lib/http';
 import {renderMarkdown} from '../lib/markdown';
 import {canAskExplanation} from '../lib/wordExplain';
+import {dimsDefinition, usageLabelChips} from '../lib/usageLabelDisplay';
 import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
 import {Icon} from './icons.jsx';
 import {AnkiConnectError, ankiConnectVersion} from '../lib/ankiConnect';
@@ -922,8 +923,31 @@ export function PopupContent({
                                     inline box — `ml-4` + outside markers push
                                     wide ("100.") numbers past the card edge. */}
                                 <ol className="word-popup-definitions-list mt-1.5 list-decimal list-inside space-y-1 text-[0.929em] leading-snug">
+                                    {/* Usage-label chips (popup-usage-labels):
+                                        one per label before the sense text —
+                                        vermilion for the dimming tier, muted
+                                        plain text (the raw:-label precedent)
+                                        for the register one; a sense carrying
+                                        any dimming label dims whole. Full
+                                        literal class strings — Tailwind's
+                                        scanner reads this file's text. */}
                                     {entry.definitions.map((definition, definitionIndex) => (
-                                        <li key={definitionIndex}>{definition}</li>
+                                        <li
+                                            key={definitionIndex}
+                                            className={dimsDefinition(definition.labels) ? 'word-popup-definition-dimmed opacity-50' : undefined}
+                                        >
+                                            {usageLabelChips(definition.labels, t).map((chip, chipIndex) => (
+                                                <span
+                                                    key={chipIndex}
+                                                    className={chip.dimming
+                                                        ? 'word-popup-definition-label mr-1 inline-block rounded-sm border border-[var(--color-vermilion)]/40 px-1 text-[0.786em] leading-tight text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)]/40 dark:text-[var(--color-vermilion-night)]'
+                                                        : 'word-popup-definition-label mr-1 text-[0.786em] opacity-60'}
+                                                >
+                                                    {chip.text}
+                                                </span>
+                                            ))}
+                                            {definition.text}
+                                        </li>
                                     ))}
                                 </ol>
                             </details>

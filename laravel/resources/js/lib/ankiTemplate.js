@@ -400,6 +400,13 @@ const countedSection = (summary, content) =>
 
 const listItems = (items) => items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
 
+// A definition arrives as the popup payload's {text, labels} object
+// (popup-usage-labels ticket 01); plain strings (older payloads, hand
+// fixtures) normalize through the same door. The labels ride for the
+// popup's chips only — at this boundary a definition is its text, full
+// stop (ticket 03 adds the plain-text prefix).
+const definitionText = (definition) => (typeof definition === 'string' ? definition : definition.text)
+
 // The three counted collapsed sections — Definitions, Examples, Etymology —
 // in the popup's shape. Shared by the flat fields (entrySections: an empty
 // entry renders nothing) and the Body's per-entry sections (entryBody:
@@ -408,7 +415,7 @@ const listItems = (items) => items.map((item) => `<li>${escapeHtml(item)}</li>`)
 // and the two contexts cannot drift. Null on empty: each caller tells its
 // own empty story.
 const definitionsSection = (items, wording) => items.length === 0 ? null
-    : countedSection(wording.definitions(items.length), `<ol class="ef-definitions-list">${listItems(items)}</ol>`)
+    : countedSection(wording.definitions(items.length), `<ol class="ef-definitions-list">${listItems(items.map(definitionText))}</ol>`)
 
 const examplesSection = (items, wording) => items.length === 0 ? null
     : countedSection(wording.examples(items.length), `<ul class="ef-examples-list">${listItems(items)}</ul>`)

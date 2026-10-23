@@ -13,6 +13,9 @@ import {
 // Minimal word payload with the shape the word popup receives (GET
 // /words/{word}); two translations in different languages exercise the
 // native-language filter without dragging in the full sample fixture.
+// Definitions are the payload's {text, labels} objects (popup-usage-labels
+// ticket 01) — the note fields below must come out byte-identical to the
+// old string shape.
 const DATA = {
     word: 'melted',
     language_code: 'en',
@@ -22,7 +25,7 @@ const DATA = {
         {
             word_class: 'Verb',
             transcriptions: [{value: 'melt'}],
-            definitions: ['To change from a solid to a liquid state.'],
+            definitions: [{text: 'To change from a solid to a liquid state.', labels: []}],
             translations: [
                 {word: 'таять', language_code: 'ru'},
                 {word: 'таяць', language_code: 'be'},
@@ -45,7 +48,7 @@ const MULTI = {
             word: 'melt',
             word_class: 'Verb',
             transcriptions: [{value: 'melt'}, {value: 'MELT'}],
-            definitions: ['To change from a solid to a liquid state.', 'To dissolve.'],
+            definitions: [{text: 'To change from a solid to a liquid state.', labels: []}, {text: 'To dissolve.', labels: ['dated']}],
             translations: [
                 {word: 'таять', language_code: 'ru'},
                 {word: 'плавить', language_code: 'ru'},
@@ -57,7 +60,7 @@ const MULTI = {
             word: 'melted',
             word_class: 'Adjective',
             transcriptions: [],
-            definitions: ['Changed into liquid form.'],
+            definitions: [{text: 'Changed into liquid form.', labels: []}],
             translations: [],
             examples: [],
             etymologies: [],
@@ -274,6 +277,18 @@ describe('buildNoteFields', () => {
         expect(note.Examples).toBe('');
         expect(note.Etymology).toBe('');
         expect(note.WordFamily).toBe('');
+    });
+
+    it('drops usage labels at the note boundary — a labelled object renders byte-identical to its bare text', () => {
+        // The popup ships {text, labels} objects (popup-usage-labels
+        // ticket 01); the note is built from the text alone until ticket 03
+        // adds the plain-text prefix — labels never leak into any field,
+        // and plain strings (older fixtures) normalize through the same door.
+        const labelled = buildNoteFields({word: 'melt', entries: [{definitions: [{text: 'To dissolve.', labels: ['obsolete', 'dated']}]}]});
+        const bare = buildNoteFields({word: 'melt', entries: [{definitions: ['To dissolve.']}]});
+        expect(labelled.Definitions).toBe(bare.Definitions);
+        expect(labelled.Body).toBe(bare.Body);
+        expect(labelled.Definitions).toContain('<li>To dissolve.</li>');
     });
 
     it('labels each flat section "WORD — pos" only when the payload has 2+ entries', () => {

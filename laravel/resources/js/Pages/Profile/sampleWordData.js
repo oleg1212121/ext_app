@@ -6,10 +6,12 @@
 // A fixture-style word family exercising every state the popup can render:
 // a form of "melt" whose base-word section ("MELT — verb") carries two
 // transcriptions ("+1 more…" toggle), 10 translations (8 shown + "+2 more…")
-// and counted definitions/examples/etymology collapses — plus the popup's
-// own adjective section ("MELTED — adjective") with zero translations, which
-// shows the no-translations placeholder. A rank and a marked familiarity top
-// it off.
+// and counted definitions/examples/etymology collapses — the definitions
+// demonstrating the usage-label chips (popup-usage-labels): an unlabelled
+// sense, a register-tier one (muted chip, no dim) and a dimming-tier one
+// (vermilion chips + half-opacity line) — plus the popup's own adjective
+// section ("MELTED — adjective") with zero translations, which shows the
+// no-translations placeholder. A rank and a marked familiarity top it off.
 export const SAMPLE_DATA = {
     id: 1,
     word: 'melted',
@@ -28,8 +30,9 @@ export const SAMPLE_DATA = {
                 {value: 'MELT', type: 'English Pronunciation'},
             ],
             definitions: [
-                'To change from a solid to a liquid state under heat.',
-                'To dissolve, blend, or merge — the crowd melted away.',
+                {text: 'To change from a solid to a liquid state under heat.', labels: []},
+                {text: 'To dissolve, blend, or merge — the crowd melted away.', labels: ['colloquial']},
+                {text: 'To pour (molten metal) into a mould.', labels: ['obsolete']},
             ],
             translations: [
                 {id: 1, word: 'таять', language_code: 'ru'},
@@ -58,7 +61,7 @@ export const SAMPLE_DATA = {
             word: 'melted',
             word_class: 'Adjective',
             transcriptions: [],
-            definitions: ['Changed into liquid form; no longer solid.'],
+            definitions: [{text: 'Changed into liquid form; no longer solid.', labels: []}],
             translations: [],
             examples: [],
             etymologies: [],

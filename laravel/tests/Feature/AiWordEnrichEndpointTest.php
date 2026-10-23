@@ -106,7 +106,11 @@ it('enriches a sparse word end to end with the faked AI: content rows, link-only
     expect(array_keys($payload))->toEqual(array_keys($show));
     expect($payload['id'])->toBe($fixture['word']->id);
     expect($payload['ai_asked'])->toBeTrue();
-    expect($payload['entries'][0]['definitions'])->toContain('A financial institution.');
+    // Definitions ship as {text, labels} objects — and the ask response and
+    // the initial fetch carry the identical shape (the one assembler,
+    // popup-usage-labels ticket 01).
+    expect($payload['entries'][0]['definitions'])->toBe($show['entries'][0]['definitions']);
+    expect($payload['entries'][0]['definitions'])->toContain(['text' => 'A financial institution.', 'labels' => []]);
     expect($payload['entries'][0]['transcriptions'][0]['value'])->toBe('bæŋk');
 
     // The staged raw strings ride the shared payload (popup-provenance
@@ -591,10 +595,13 @@ it('persists a labelled {text, labels} definition on the source=ai row, the payl
         ->and($definitions[1]->source)->toBe('ai')
         ->and($definitions[1]->labels)->toBe(['dated']);
 
-    // The popup payload keeps rendering definition strings — provenance and
-    // labels live in the DB.
-    expect($response->json('data.entries.0.definitions'))
-        ->toBe(['A financial institution.', 'The land alongside a river.']);
+    // The popup payload ships {text, labels} objects — the stored labels
+    // ride beside the text for the popup's chips (popup-usage-labels
+    // ticket 01); a null column lands as [].
+    expect($response->json('data.entries.0.definitions'))->toBe([
+        ['text' => 'A financial institution.', 'labels' => []],
+        ['text' => 'The land alongside a river.', 'labels' => ['dated']],
+    ]);
 });
 
 it('drops a {text, labels} definition entirely when its text fails the script guard', function () {

@@ -101,6 +101,32 @@ it('seeds the staged raw translations label in all three interface languages', f
     ]);
 });
 
+it('seeds the six usage-label chips in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // popup-usage-labels ticket 01: the closed six render as chips before
+    // their sense text; ru/be use the dictionary abbreviations.
+    expect(seededUiStringTexts('word.label_obsolete'))->toBe([
+        'en' => 'obsolete', 'ru' => 'устар.', 'be' => 'устар.',
+    ]);
+    expect(seededUiStringTexts('word.label_archaic'))->toBe([
+        'en' => 'archaic', 'ru' => 'арх.', 'be' => 'арх.',
+    ]);
+    expect(seededUiStringTexts('word.label_dated'))->toBe([
+        'en' => 'dated', 'ru' => 'не совр.', 'be' => 'не суч.',
+    ]);
+    expect(seededUiStringTexts('word.label_colloquial'))->toBe([
+        'en' => 'colloquial', 'ru' => 'разг.', 'be' => 'разг.',
+    ]);
+    expect(seededUiStringTexts('word.label_rare'))->toBe([
+        'en' => 'rare', 'ru' => 'редк.', 'be' => 'рэдк.',
+    ]);
+    expect(seededUiStringTexts('word.label_dialectal'))->toBe([
+        'en' => 'dialectal', 'ru' => 'диал.', 'be' => 'дыял.',
+    ]);
+});
+
 it('seeds be texts for sampled keys across every group', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();

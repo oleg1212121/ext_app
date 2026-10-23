@@ -2,6 +2,7 @@
 
 namespace App\Classes;
 
+use App\Models\Definition;
 use App\Models\Transcription;
 use App\Models\Word;
 use App\Models\WordAiFetch;
@@ -63,7 +64,7 @@ final class WordPopupPayload
      * The headword travels along so the UI can label sections that belong to
      * a base word of the family rather than the popup's own headword.
      *
-     * @return array{id: int, word: string, word_class: string|null, transcriptions: list<array{value: string, type: string|null}>, definitions: list<string>, translations: array, staged_translations: list<string>, examples: list<string>, etymologies: list<string>}
+     * @return array{id: int, word: string, word_class: string|null, transcriptions: list<array{value: string, type: string|null}>, definitions: list<array{text: string, labels: list<string>}>, translations: array, staged_translations: list<string>, examples: list<string>, etymologies: list<string>}
      */
     private static function entry(Word $word, Authenticatable $user): array
     {
@@ -80,7 +81,17 @@ final class WordPopupPayload
                 ])
                 ->values()
                 ->all(),
-            'definitions' => $word->definitions->pluck('definition')->all(),
+            // Each sense ships as a {text, labels} object (popup-usage-labels
+            // ticket 01): the usage labels ride beside the text for the
+            // popup's chips, and a null column lands as the empty list — the
+            // client never special-cases the column's "unlabelled" shape.
+            'definitions' => $word->definitions
+                ->map(fn (Definition $definition): array => [
+                    'text' => $definition->definition,
+                    'labels' => $definition->labels ?? [],
+                ])
+                ->values()
+                ->all(),
             'translations' => $linked->all(),
             'staged_translations' => self::stagedTranslations($word, $linked),
             'examples' => $word->examples->pluck('example')->all(),

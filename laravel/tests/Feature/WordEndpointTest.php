@@ -48,10 +48,30 @@ it('returns dictionary details for a word', function () {
         ->assertJsonPath('data.is_form', false)
         ->assertJsonCount(1, 'data.entries')
         ->assertJsonPath('data.entries.0.word_class', 'Существительное')
-        ->assertJsonPath('data.entries.0.definitions.0', 'Домашнее животное семейства кошачьих.')
+        ->assertJsonPath('data.entries.0.definitions.0.text', 'Домашнее животное семейства кошачьих.')
         ->assertJsonPath('data.entries.0.transcriptions.0.value', 'kot')
         ->assertJsonPath('data.entries.0.transcriptions.0.type', 'МФА')
         ->assertJsonPath('data.entries.0.etymologies.0', 'От праслав. *kotь.');
+});
+
+it('ships definitions as {text, labels} objects — stored labels ride, a null column lands as []', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $word = createWord('en', 'knave', 'noun');
+    Definition::query()->create(['word_id' => $word->id, 'definition' => 'a dishonest man', 'labels' => ['archaic']]);
+    Definition::query()->create(['word_id' => $word->id, 'definition' => 'any given card in a deck']);
+
+    // The popup-usage-labels payload: every definition is the object the
+    // popup's chips render from — labels verbatim when the column stores
+    // them, the empty list when it stores null (the column's "unlabelled"
+    // shape), so the client never special-cases null.
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $word->id]))
+        ->assertOk()
+        ->assertJsonPath('data.entries.0.definitions', [
+            ['text' => 'a dishonest man', 'labels' => ['archaic']],
+            ['text' => 'any given card in a deck', 'labels' => []],
+        ]);
 });
 
 it('returns one entry per part of speech of the headword, linked word first', function () {
@@ -71,10 +91,10 @@ it('returns one entry per part of speech of the headword, linked word first', fu
         ->assertJsonCount(2, 'data.entries')
         ->assertJsonPath('data.entries.0.id', $verb->id)
         ->assertJsonPath('data.entries.0.word_class', 'Verb')
-        ->assertJsonPath('data.entries.0.definitions.0', 'To rely on.')
+        ->assertJsonPath('data.entries.0.definitions.0.text', 'To rely on.')
         ->assertJsonPath('data.entries.1.id', $noun->id)
         ->assertJsonPath('data.entries.1.word_class', 'Noun')
-        ->assertJsonPath('data.entries.1.definitions.0', 'A financial institution.');
+        ->assertJsonPath('data.entries.1.definitions.0.text', 'A financial institution.');
 });
 
 it('flags a surface form different from the dictionary lemma', function () {
@@ -145,7 +165,7 @@ it('merges base-word entries of the surface form and hides the relay entry', fun
         // The base group is scoped to the claiming class (melt/verb).
         ->assertJsonPath('data.entries.1.id', $meltedAdj->id)
         ->assertJsonPath('data.entries.1.word', 'melted')
-        ->assertJsonPath('data.entries.1.definitions.0', 'Being in a liquid state as a result of melting.');
+        ->assertJsonPath('data.entries.1.definitions.0.text', 'Being in a liquid state as a result of melting.');
 
     expect(collect($response->json('data.entries'))->pluck('id'))->not->toContain($meltNoun->id);
 });
@@ -219,7 +239,7 @@ it('filters relay glosses out of partially-relay entries', function () {
 
     $sawEntry = collect($response->json('data.entries'))->firstWhere('id', $sawVerb->id);
     expect($sawEntry)->not->toBeNull()
-        ->and($sawEntry['definitions'])->toBe(['To cut (something) with a saw.']);
+        ->and($sawEntry['definitions'])->toBe([['text' => 'To cut (something) with a saw.', 'labels' => []]]);
 });
 
 it('scores a partially-relay entry on the stored definitions — the display filter never demotes', function () {
@@ -254,7 +274,8 @@ it('scores a partially-relay entry on the stored definitions — the display fil
     // relay gloss stays hidden even though it scored.
     $sawEntry = collect($response->json('data.entries'))->firstWhere('id', $sawVerb->id);
     expect($sawEntry)->not->toBeNull()
-        ->and($sawEntry['definitions'])->toBe(['No longer used.']);
+        // The stored labels ride the object beside the text.
+        ->and($sawEntry['definitions'])->toBe([['text' => 'No longer used.', 'labels' => ['obsolete']]]);
 });
 
 it('keeps a relay-only entry when the forms table offers no base word', function () {
@@ -269,7 +290,7 @@ it('keeps a relay-only entry when the forms table offers no base word', function
         ->assertOk()
         ->assertJsonPath('data.form_of', [])
         ->assertJsonCount(1, 'data.entries')
-        ->assertJsonPath('data.entries.0.definitions.0', 'simple past and past participle of melt');
+        ->assertJsonPath('data.entries.0.definitions.0.text', 'simple past and past participle of melt');
 });
 
 it('does not duplicate the own headword when the forms table lists it as a form', function () {
