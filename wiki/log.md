@@ -1,5 +1,42 @@
 # Directory Update Log
 
+## 2026-10-23 (agent workflow steering — cheap reads, no worktrees, plan-mode docs, full suite once per spec)
+
+Ticket 04 of the retro-fixes-2 spec. Four rules the retro found being
+rediscovered or violated per run now live in the homes agents read at
+the moment they would violate them.
+
+- **Economy (no whole-file re-reads)**: implementers read the pointed
+  ranges with offset/limit — never a >500-line file whole when the notes
+  name the range; researchers quote the exact current hunk (≈5–10 lines,
+  verbatim, at its file:line) for every edit site — pointers locate,
+  hunks save a whole-file read.
+- **No worktrees**: the container bind-mounts `./laravel` of the main
+  checkout only and test runs share `ext_app_test`, so a worktree's
+  `laravel/` cannot run container tests — ticket work happens
+  sequentially in the main checkout; implement-spec's per-ticket
+  worktree default does not apply in this repo.
+- **Plan-mode doc writes**: under plan mode docs are read-only —
+  grill-with-docs → domain-modeling's write-as-you-go ADR/GLOSSARY
+  updates are collected as plan items and written immediately after
+  plan approval.
+- **Test rhythm**: per-ticket verification is `composer run test:tia`
+  (plus targeted `php artisan test` on the files being worked), never
+  the full suite per ticket; the full `composer run test` runs once per
+  spec, after all tickets resolve and before review dispatch; a later
+  fix pass verifies with `test:tia` plus the touched test files; CI on
+  push remains the final full gate.
+
+Homes: AGENTS.md (testing paragraph, Database warning block, wiki
+maintenance rules) plus the `.zcode/agents/implementer.md` and
+`.zcode/agents/researcher.md` definitions (gitignored, edited on disk,
+not part of the commit). Skills under `.agents/skills/` stay pristine by
+decision — AGENTS.md is the override layer. No routes/models/commands
+changed, so wiki:sync was not needed; the three concepts listing
+AGENTS.md as a frontmatter source already carry acknowledged drift
+entries in `wiki/validate-baseline.json` (stable message identity), so
+the baseline is untouched.
+
 ## 2026-10-23 (one glossary, two declared homes — GLOSSARY.md and CONTEXT.md point at each other)
 
 Ticket 03 of the retro-fixes-2 spec. One session placed glossary terms in
