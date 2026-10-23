@@ -30,6 +30,10 @@
 // wrapper. Nothing in this module touches Anki — the template push and
 // sample card reuse these artifacts from lib/ankiSync.js.
 
+// The usage-label closed set (the six slugs a definition may carry) — the
+// Anki prefix drops unknown strays exactly like the popup's chips do.
+import {isKnownLabel} from './usageLabelDisplay';
+
 // Settings key → Anki note-type field name, in the note type's fixed field
 // order (must stay in lockstep with App\Support\AnkiSettings::FIELDS).
 // Schema v2: `body` is the 13th field, last — the value-carrier of the
@@ -360,9 +364,13 @@ const DEFAULT_LABELS = {
     formOf: 'form of',
     noTranslations: 'No translations yet — automatic translation may still be in progress.',
     noDefinitions: 'No definitions yet.',
+    // The en ui-strings are the slugs themselves (word.label_obsolete =
+    // "obsolete", …), so the default resolver is the identity — unknown
+    // slugs are dropped before a name is ever resolved.
+    label: (slug) => slug,
 }
 
-// The localized counterpart of the defaults: the same seven keys pulled from
+// The localized counterpart of the defaults: the same eight keys pulled from
 // the app's own ui-strings (database/seeders/ui-strings/words.php). Both
 // senders (the word popup's sendToAnki, the Anki tab's sampleNoteFields)
 // call this with their `useI18n` t — one definition of the mapping, so the
@@ -378,6 +386,7 @@ export function uiLabels(t) {
         formOf: t('word.form_of'),
         noTranslations: t('word.no_translations'),
         noDefinitions: t('word.no_definitions'),
+        label: (slug) => t(`word.label_${slug}`),
     }
 }
 
@@ -402,10 +411,24 @@ const listItems = (items) => items.map((item) => `<li>${escapeHtml(item)}</li>`)
 
 // A definition arrives as the popup payload's {text, labels} object
 // (popup-usage-labels ticket 01); plain strings (older payloads, hand
-// fixtures) normalize through the same door. The labels ride for the
-// popup's chips only — at this boundary a definition is its text, full
-// stop (ticket 03 adds the plain-text prefix).
+// fixtures) normalize through the same door.
 const definitionText = (definition) => (typeof definition === 'string' ? definition : definition.text)
+
+// One definition line's plain-text label prefix — "(устар., редк.) " —
+// built from the same localized word.label_* strings the popup's chips
+// resolve, one name per known label in stored order (ticket 03). Both
+// display tiers compose identically here: the prefix is study information
+// ("don't memorize this sense unaware"), not a visual demotion. Senses
+// without a known label — plain strings, null/empty label lists, unknown
+// slugs — get '' and stay byte-identical to the bare text. Trusted app
+// wording, never escaped, exactly like the summary labels.
+const labelPrefix = (labels, wording) => {
+    const names = (labels ?? []).filter(isKnownLabel).map(wording.label)
+    return names.length === 0 ? '' : `(${names.join(', ')}) `
+}
+
+const definitionLine = (definition, wording) =>
+    labelPrefix(definition.labels, wording) + escapeHtml(definitionText(definition))
 
 // The three counted collapsed sections — Definitions, Examples, Etymology —
 // in the popup's shape. Shared by the flat fields (entrySections: an empty
@@ -415,7 +438,7 @@ const definitionText = (definition) => (typeof definition === 'string' ? definit
 // and the two contexts cannot drift. Null on empty: each caller tells its
 // own empty story.
 const definitionsSection = (items, wording) => items.length === 0 ? null
-    : countedSection(wording.definitions(items.length), `<ol class="ef-definitions-list">${listItems(items.map(definitionText))}</ol>`)
+    : countedSection(wording.definitions(items.length), `<ol class="ef-definitions-list">${items.map((item) => `<li>${definitionLine(item, wording)}</li>`).join('')}</ol>`)
 
 const examplesSection = (items, wording) => items.length === 0 ? null
     : countedSection(wording.examples(items.length), `<ul class="ef-examples-list">${listItems(items)}</ul>`)
@@ -550,8 +573,8 @@ const bodyValue = (entries, headword, wording, fields) => entries
 // language, falling back to all translations when none match (or nothing
 // was passed) — the Body copies the popup instead: per-entry translations
 // as the payload carries them, native-first. `labels` carries the sender's
-// UI-language summary/expander/form-of/placeholder strings (English
-// defaults). `fields` is the resolved Anki settings map: the body section
+// UI-language summary/expander/form-of/placeholder strings and the
+// definition label names (English defaults). `fields` is the resolved Anki settings map: the body section
 // toggles (translations, transcription, definitions, examples, etymology)
 // plus the `body` master toggle shape the Body value at SEND TIME — they
 // affect newly sent cards only; an absent key means on.

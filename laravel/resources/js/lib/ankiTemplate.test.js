@@ -279,16 +279,44 @@ describe('buildNoteFields', () => {
         expect(note.WordFamily).toBe('');
     });
 
-    it('drops usage labels at the note boundary — a labelled object renders byte-identical to its bare text', () => {
+    it('prefixes a labelled sense with its plain-text labels — one label, several, both fields, both tiers', () => {
         // The popup ships {text, labels} objects (popup-usage-labels
-        // ticket 01); the note is built from the text alone until ticket 03
-        // adds the plain-text prefix — labels never leak into any field,
-        // and plain strings (older fixtures) normalize through the same door.
-        const labelled = buildNoteFields({word: 'melt', entries: [{definitions: [{text: 'To dissolve.', labels: ['obsolete', 'dated']}]}]});
-        const bare = buildNoteFields({word: 'melt', entries: [{definitions: ['To dissolve.']}]});
-        expect(labelled.Definitions).toBe(bare.Definitions);
-        expect(labelled.Body).toBe(bare.Body);
-        expect(labelled.Definitions).toContain('<li>To dissolve.</li>');
+        // ticket 01); the note renders the labels as a plain-text prefix
+        // before the text (ticket 03) — "(label, label) text", localized
+        // through the wording's label resolver. Both display tiers compose
+        // identically here: the prefix is study information ("don't
+        // memorize this sense unaware"), not a visual demotion, so
+        // register-tier dated composes exactly like dimming-tier
+        // obsolete/rare, in stored order. Unknown slugs drop — the set is
+        // closed, like the popup's chips.
+        const note = buildNoteFields({word: 'melt', entries: [{definitions: [
+            {text: 'To dissolve.', labels: ['dated']},
+            {text: 'To melt down.', labels: ['obsolete', 'rare']},
+            {text: 'To fuse.', labels: ['no-such-slug']},
+        ]}]});
+        expect(note.Definitions).toContain('<li>(dated) To dissolve.</li>');
+        expect(note.Definitions).toContain('<li>(obsolete, rare) To melt down.</li>');
+        expect(note.Definitions).toContain('<li>To fuse.</li>');
+        expect(note.Body).toContain('<li>(dated) To dissolve.</li>');
+        expect(note.Body).toContain('<li>(obsolete, rare) To melt down.</li>');
+        expect(note.Body).toContain('<li>To fuse.</li>');
+    });
+
+    it('leaves no-label lines byte-identical — empty lists, null labels, and plain strings through one door', () => {
+        const objects = buildNoteFields({word: 'melt', entries: [{definitions: [
+            {text: 'To change from a solid to a liquid state.', labels: []},
+            {text: 'To dissolve.', labels: null},
+        ]}]});
+        const strings = buildNoteFields({word: 'melt', entries: [{definitions: [
+            'To change from a solid to a liquid state.',
+            'To dissolve.',
+        ]}]});
+        expect(objects.Definitions).toBe(strings.Definitions);
+        expect(objects.Body).toBe(strings.Body);
+        expect(objects.Definitions).toBe(
+            '<details class="ef-details"><summary class="ef-summary">Definitions (2)</summary>'
+            + '<ol class="ef-definitions-list"><li>To change from a solid to a liquid state.</li><li>To dissolve.</li></ol></details>',
+        );
     });
 
     it('labels each flat section "WORD — pos" only when the payload has 2+ entries', () => {
@@ -560,11 +588,12 @@ describe('uiLabels', () => {
         ]);
     });
 
-    it('maps the seven keys to the app\'s word.* ui-strings — the mapping both senders share', () => {
+    it('maps the eight keys to the app\'s word.* ui-strings — the mapping both senders share', () => {
         expect(probe((labels) => labels.definitions(3))).toEqual([{key: 'word.definitions', params: {count: 3}}]);
         expect(probe((labels) => labels.examples(2))).toEqual([{key: 'word.examples', params: {count: 2}}]);
         expect(probe((labels) => labels.etymology(1))).toEqual([{key: 'word.etymology', params: {count: 1}}]);
         expect(probe((labels) => labels.more(5))).toEqual([{key: 'word.more', params: {count: 5}}]);
+        expect(probe((labels) => labels.label('obsolete'))).toEqual([{key: 'word.label_obsolete', params: undefined}]);
         expect(probe((labels) => labels.noTranslations)).toEqual([]);
         expect(probe((labels) => labels.noDefinitions)).toEqual([]);
     });
@@ -577,6 +606,16 @@ describe('uiLabels', () => {
         expect(note.Definitions).toContain('<summary class="ef-summary">Определения (2)</summary>');
         expect(note.WordFamily).toBe('форма слова melt');
         expect(note.Body).toContain('Определения (2)');
+    });
+
+    it('resolves the definition label prefix through the same word.label_* strings the popup chips use', () => {
+        const t = (key) => ({'word.label_obsolete': 'устар.', 'word.label_rare': 'редк.'}[key] ?? key);
+        const note = buildNoteFields({
+            word: 'жизнь',
+            entries: [{definitions: [{text: 'Жизнь, быт.', labels: ['obsolete', 'rare']}]}],
+        }, {labels: uiLabels(t)});
+        expect(note.Definitions).toContain('<li>(устар., редк.) Жизнь, быт.</li>');
+        expect(note.Body).toContain('<li>(устар., редк.) Жизнь, быт.</li>');
     });
 });
 

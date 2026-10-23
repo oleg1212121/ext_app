@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {DIMMING_LABELS, REGISTER_LABELS, dimsDefinition, usageLabelChips} from './usageLabelDisplay';
+import {DIMMING_LABELS, REGISTER_LABELS, dimsDefinition, isKnownLabel, usageLabelChips} from './usageLabelDisplay';
 
 const t = (key) => `t:${key}`;
 
@@ -54,6 +54,19 @@ describe('usageLabelChips — one localized chip per label', () => {
         expect(usageLabelChips(['no-such-slug'], t)).toEqual([]);
         expect(usageLabelChips(['dated', 'no-such-slug'], t)).toEqual([{text: 't:word.label_dated', dimming: false}]);
         expect(usageLabelChips(null, t)).toEqual([]);
+    });
+});
+
+describe('isKnownLabel — the closed-set statement both renderers share', () => {
+    // The chips (popup) and the plain-text prefix (Anki notes,
+    // popup-usage-labels ticket 03) must drop the same strays: one
+    // predicate, two renderers.
+    it('accepts exactly the six slugs across the two tiers and drops everything else', () => {
+        for (const slug of [...DIMMING_LABELS, ...REGISTER_LABELS]) {
+            expect(isKnownLabel(slug)).toBe(true);
+        }
+        expect(isKnownLabel('no-such-slug')).toBe(false);
+        expect(isKnownLabel(undefined)).toBe(false);
     });
 });
 

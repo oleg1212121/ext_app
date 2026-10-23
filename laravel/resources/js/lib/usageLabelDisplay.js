@@ -20,6 +20,11 @@ export const REGISTER_LABELS = ['dated', 'colloquial'];
 
 export const isDimmingLabel = (slug) => DIMMING_LABELS.includes(slug);
 
+// The closed-set statement both renderers share: the popup's chips and the
+// Anki note's plain-text label prefix (lib/ankiTemplate) drop the same
+// unknown strays — a slug outside the two tiers has no word.label_* string.
+export const isKnownLabel = (slug) => isDimmingLabel(slug) || REGISTER_LABELS.includes(slug);
+
 // A sense dims when any of its labels sits in the dimming tier; a null
 // column (unlabelled) and the empty list both render undimmed.
 export const dimsDefinition = (labels) => (labels ?? []).some(isDimmingLabel);
@@ -29,5 +34,5 @@ export const dimsDefinition = (labels) => (labels ?? []).some(isDimmingLabel);
 // slugs drop — the set is closed; this is belt-and-braces against a stray
 // slug rendering as a raw ui-string key.
 export const usageLabelChips = (labels, t) => (labels ?? [])
-    .filter((slug) => isDimmingLabel(slug) || REGISTER_LABELS.includes(slug))
+    .filter(isKnownLabel)
     .map((slug) => ({text: t(`word.label_${slug}`), dimming: isDimmingLabel(slug)}));
