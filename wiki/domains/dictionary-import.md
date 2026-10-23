@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-23T16:25:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T18:16:42+03:00 }
 sources:
   - id: word-source-adr
     resource: docs/adr/0084-word-source-provenance.md
