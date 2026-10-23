@@ -4,6 +4,12 @@ Terms of art used in ext_app, a bilingual language-learning app. Definitions
 say what a term **is**; where rival names exist, the preferred one leads and
 the rest are listed under _Avoid_.
 
+This file owns terms of art for user-facing flows (today: Anki export,
+Interactive words). The repository's authoritative domain glossary is
+[CONTEXT.md](CONTEXT.md), organized per context — new domain terms belong
+there. Wiki domain concepts may echo a term but link to its owning file
+instead of re-defining it.
+
 ## Anki export
 
 Everything around sending saved words into a user's desktop

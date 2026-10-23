@@ -1,3 +1,8 @@
+The repository's authoritative domain glossary, organized per context — each
+entry below is the canonical statement of its term (as `docs/agents/domain.md`
+already declares). Terms of art for user-facing flows (Anki export,
+Interactive words) live in [GLOSSARY.md](GLOSSARY.md) instead.
+
 # Sentence Alignment Context
 
 The domain of pairing the sentences of two same-work entities (two versions of

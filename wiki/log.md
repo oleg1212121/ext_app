@@ -1,5 +1,26 @@
 # Directory Update Log
 
+## 2026-10-23 (one glossary, two declared homes — GLOSSARY.md and CONTEXT.md point at each other)
+
+Ticket 03 of the retro-fixes-2 spec. One session placed glossary terms in
+three homes (CONTEXT.md, GLOSSARY.md, and term entries inside wiki domain
+concepts) with zero cross-references between the root files — each
+implementer had to guess where a new term goes.
+
+- **The declared split**: CONTEXT.md is the authoritative per-context
+  domain glossary (`docs/agents/domain.md` already declared it so); its new
+  preamble says so and points flow terms to GLOSSARY.md. GLOSSARY.md owns
+  terms of art for user-facing flows (today: Anki export, Interactive
+  words); its header note states the split and points domain terms back to
+  CONTEXT.md.
+- **Echo, don't re-define**: wiki domain concepts may echo a term but link
+  to its owning root file instead of re-defining it — the rule lives in
+  GLOSSARY.md's header note.
+- Declaration only — no entries moved. The three placements that motivated
+  the ticket stay where they are (CONTEXT.md's Staged translation,
+  GLOSSARY.md's AI word enrichment, the dictionary-import concept's Word
+  source term); the declaration governs future placements.
+
 ## 2026-10-23 (source pins evaluate derived logic — the lift-and-evaluate convention)
 
 Ticket 02 of the retro-fixes-2 spec. The "ai · ai" badge bug passed its
