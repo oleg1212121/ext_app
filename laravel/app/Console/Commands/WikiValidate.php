@@ -14,7 +14,9 @@ use Illuminate\Console\Command;
  * matched by an entry in the bundle's validate-baseline.json. Fix new
  * warnings (bump the listing concept's generated.at) or acknowledge
  * known-benign ones in the baseline with owner+date; --prune drops
- * baseline entries that no longer match any current warning.
+ * baseline entries that no longer match any current warning (refusing
+ * under the CI mtime skip, where every mtime entry would read stale,
+ * and writing nothing when the file would not change).
  */
 class WikiValidate extends Command
 {
@@ -82,6 +84,12 @@ class WikiValidate extends Command
     {
         $path = $validator->baselinePath();
 
+        if ((bool) config('wiki.skip_mtime_staleness', false)) {
+            $this->error('Refusing to prune: the mtime staleness check is skipped (WIKI_SKIP_MTIME_CHECKS), so every mtime baseline entry reads as stale and pruning would gut the baseline. Run locally with the check enabled.');
+
+            return;
+        }
+
         if ($validator->baselineErrors() !== []) {
             $this->error("Refusing to prune: {$path} is malformed — fix or delete it first.");
 
@@ -90,8 +98,15 @@ class WikiValidate extends Command
 
         $kept = $validator->prunedBaselineEntries();
         $dropped = count($validator->baselineEntries()) - count($kept);
+        $encoded = WikiValidator::encodeBaseline($kept);
 
-        if (file_put_contents($path, WikiValidator::encodeBaseline($kept)) === false) {
+        if (file_get_contents($path) === $encoded) {
+            $this->info("Pruned baseline {$path}: nothing to drop (dropped {$dropped}, kept ".count($kept).') — file untouched.');
+
+            return;
+        }
+
+        if (file_put_contents($path, $encoded) === false) {
             $this->error("Could not write baseline {$path}.");
 
             return;

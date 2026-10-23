@@ -4,7 +4,7 @@ title: Coding Conventions
 description: Project-wide rules for code style, structure, testing, and agent behavior in this repository.
 tags: [conventions, style, testing]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T11:25:11+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T13:20:00+03:00 }
 verified: { by: human:alex, at: 2026-07-26T18:45:00Z }
 sources:
   - id: agents
@@ -65,8 +65,18 @@ sources:
   runs pre-dispatch code inline; Python timeouts reach 600s), guarded drain
   loops with convergence assertions, and `per_page` passed/asserted on
   paginated endpoints. Details: [Running Tests](/playbooks/running-tests.md).
-* Default to `composer run test:tia` after changes — it re-runs only tests
-  touched by changed files; the full suite is for pre-merge/CI verification.
+* Per-ticket verification is `composer run test:tia` plus a targeted
+  `php artisan test` on the files being worked — never the full suite per
+  ticket. The full `composer run test` runs once per spec, after all its
+  tickets resolve and before review dispatch; a later fix pass verifies
+  with `test:tia` plus the touched test files; CI on push stays the final
+  full gate.
+* The wiki gate: `php artisan wiki:validate` must pass with zero
+  unacknowledged warnings — fix a new warning by bumping the listing
+  concept's `generated.at`, or acknowledge known-benign drift in
+  `wiki/validate-baseline.json` with an owner+dated entry; `--prune`
+  drops baseline entries that no longer match. Details:
+  [Running Tests](/playbooks/running-tests.md).
 * Every change must be covered by a test that runs green; see
   [Running Tests](/playbooks/running-tests.md).
 

@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-23T12:41:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T13:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
 sources:
   - id: phpunit
@@ -91,8 +91,10 @@ sources:
   `config('wiki.skip_mtime_staleness')` in `WikiValidator`. Local runs keep
   the signal, and it is a gate: `wiki:validate` exits 1 on any warning not
   acknowledged in `wiki/validate-baseline.json` (entries matched by exact
-  message, each with owner+date; `--prune` drops entries that no longer
-  match; a malformed baseline is an error). CI stays trivially green — the
+  message, each requiring non-empty owner+date; `--prune` drops entries
+  that no longer match, refuses to run under the mtime skip, and writes
+  nothing when nothing would change; a malformed baseline is an error).
+  CI stays trivially green — the
   muted check covers every currently baselined warning — and the gate still
   fails on any non-mtime warning.
 * `composer run test` clears the **config and route caches** first, then runs

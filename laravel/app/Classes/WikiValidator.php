@@ -8,7 +8,9 @@ namespace App\Classes;
  *
  * Warnings can be acknowledged in a checked-in baseline (a
  * validate-baseline.json inside the bundle root): JSON `entries` of
- * {warning, owner, date, note} matched by exact message equality, so
+ * {warning, owner, date, note} — each requiring a non-empty string
+ * warning, owner and date, since the owner+date is what makes an
+ * acknowledgement accountable — matched by exact message equality, so
  * known-benign signals (typically source-mtime drift) keep the run green
  * while any NEW warning fails it. A malformed baseline is reported as an
  * error — never silently ignored.
@@ -29,13 +31,19 @@ class WikiValidator
     /** @var array<int, array<string, mixed>> valid baseline entries, in file order */
     private array $baselineEntries = [];
 
+    /** @var array<int, array<string, mixed>> baseline entries matching a current warning (the prune keep-set) */
+    private array $matchingBaselineEntries = [];
+
+    /** @var array<int, array<string, mixed>> baseline entries matching no current warning (pruning candidates) */
+    private array $staleBaselineEntries = [];
+
     /** @var array<int, string> */
     private array $acknowledged = [];
 
     /** @var array<int, string> */
     private array $unacknowledged = [];
 
-    public function __construct(private readonly string $root, private readonly ?string $baselinePathOverride = null) {}
+    public function __construct(private readonly string $root) {}
 
     /**
      * @return array<int, string>
@@ -85,11 +93,11 @@ class WikiValidator
     }
 
     /**
-     * Path the baseline is read from (bundle root by default).
+     * Path the baseline is read from (bundle root).
      */
     public function baselinePath(): string
     {
-        return $this->baselinePathOverride ?? $this->root.'/'.self::BASELINE_FILENAME;
+        return $this->root.'/'.self::BASELINE_FILENAME;
     }
 
     /**
@@ -109,10 +117,7 @@ class WikiValidator
      */
     public function staleBaselineEntries(): array
     {
-        return array_values(array_filter(
-            $this->baselineEntries,
-            fn (array $entry): bool => ! in_array($entry['warning'], $this->warnings, true),
-        ));
+        return $this->staleBaselineEntries;
     }
 
     /**
@@ -122,10 +127,7 @@ class WikiValidator
      */
     public function prunedBaselineEntries(): array
     {
-        return array_values(array_filter(
-            $this->baselineEntries,
-            fn (array $entry): bool => in_array($entry['warning'], $this->warnings, true),
-        ));
+        return $this->matchingBaselineEntries;
     }
 
     /**
@@ -147,6 +149,8 @@ class WikiValidator
         $this->warnings = [];
         $this->baselineErrors = [];
         $this->baselineEntries = [];
+        $this->matchingBaselineEntries = [];
+        $this->staleBaselineEntries = [];
         $this->acknowledged = [];
         $this->unacknowledged = [];
 
@@ -192,25 +196,41 @@ class WikiValidator
             return;
         }
 
+        $acknowledgedMessages = [];
         foreach ($decoded['entries'] as $index => $entry) {
-            if (! is_array($entry) || ! is_string($entry['warning'] ?? null) || trim($entry['warning']) === '') {
-                $this->baselineErrors[] = "{$path}: entries[{$index}] must be an object with a non-empty string \"warning\"";
+            if (! is_array($entry)
+                || ! self::isNonEmptyString($entry['warning'] ?? null)
+                || ! self::isNonEmptyString($entry['owner'] ?? null)
+                || ! self::isNonEmptyString($entry['date'] ?? null)
+            ) {
+                $this->baselineErrors[] = "{$path}: entries[{$index}] must be an object with non-empty string \"warning\", \"owner\" and \"date\"";
 
                 continue;
             }
 
             $this->baselineEntries[] = $entry;
+
+            if (in_array($entry['warning'], $this->warnings, true)) {
+                $this->matchingBaselineEntries[] = $entry;
+                $acknowledgedMessages[$entry['warning']] = true;
+            } else {
+                $this->staleBaselineEntries[] = $entry;
+            }
         }
 
-        $acknowledgedMessages = array_column($this->baselineEntries, 'warning');
         $this->acknowledged = array_values(array_filter(
             $this->warnings,
-            fn (string $warning): bool => in_array($warning, $acknowledgedMessages, true),
+            fn (string $warning): bool => isset($acknowledgedMessages[$warning]),
         ));
         $this->unacknowledged = array_values(array_filter(
             $this->warnings,
-            fn (string $warning): bool => ! in_array($warning, $acknowledgedMessages, true),
+            fn (string $warning): bool => ! isset($acknowledgedMessages[$warning]),
         ));
+    }
+
+    private static function isNonEmptyString(mixed $value): bool
+    {
+        return is_string($value) && trim($value) !== '';
     }
 
     private function validateFile(string $relativePath): void

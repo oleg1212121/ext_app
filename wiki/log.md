@@ -1,5 +1,53 @@
 # Directory Update Log
 
+## 2026-10-23 (retro-fixes-2 review fix pass — the gate cannot bite its own tail anymore)
+
+Fix pass on the two-axis review of tickets 01–04: one blocker plus five
+nits, all in the ticket-01 mechanism (the unacknowledged-warning gate)
+except the last.
+
+- **No-op prune no longer rewrites the baseline (blocker)**: `--prune`
+  used to rewrite `wiki/validate-baseline.json` unconditionally, so every
+  no-op prune mtime-bumped the file — which the running-tests playbook
+  lists as a source — minting a fresh unacknowledged drift warning and
+  reding the gate + WikiTest until the playbook's `generated.at` was
+  bumped again. Prune now compares the encoded keep-set against the
+  current file contents and writes only on a real difference
+  ("nothing to drop … file untouched"); a fixture test pins content and
+  mtime untouched, verified live on the real bundle.
+- **Prune refuses under the CI mtime skip**: with
+  `WIKI_SKIP_MTIME_CHECKS=1` every mtime baseline entry reads as stale,
+  so a CI-side prune would have rewritten the baseline to empty. Prune
+  now refuses the same way it refuses a malformed file.
+- **Baseline entries require owner+date**: validation required only a
+  non-empty `warning`; an acknowledgement without its owner+date defeats
+  the mechanism's point. Entries missing non-empty `warning`, `owner` or
+  `date` now land in the baseline-errors path (loud, nothing
+  acknowledged).
+- **Validator cleanup**: the never-used `baselinePathOverride`
+  constructor parameter is gone; `staleBaselineEntries()` and
+  `prunedBaselineEntries()` no longer re-filter the full entry list on
+  every call — `loadBaseline()` partitions entries once into
+  matching/stale buckets and derives both views plus the
+  acknowledged/unacknowledged warning sets from the partition.
+- **coding-conventions.md refreshed** (the gate's own preferred
+  remediation for its AGENTS.md drift): the Testing section now mirrors
+  the per-spec test rhythm (per-ticket `test:tia` + targeted files, full
+  suite once per spec before review dispatch, fix pass = `test:tia` +
+  touched files) and the wiki gate (zero unacknowledged warnings,
+  owner+dated acknowledgements, `--prune`); `generated.at` bumped and
+  the cleared drift entry pruned (baseline 29 → 28). running-tests.md's
+  gate bullet updated for the new prune semantics and its `generated.at`
+  bumped with it (the baseline file is one of its sources).
+
+Code: `laravel/app/Classes/WikiValidator.php`,
+`laravel/app/Console/Commands/WikiValidate.php`,
+`laravel/tests/Feature/WikiTest.php` (3 new fixture tests — 15 passed /
+58 assertions in the file; `test:tia` 1471 passed, pint clean). No
+routes/models/commands changed beyond docblocks, so wiki:sync needed no
+content regeneration; `wiki:validate` conformant (28 acknowledged, zero
+unacknowledged) and a repeat `--prune` leaves the baseline byte-identical.
+
 ## 2026-10-23 (agent workflow steering — cheap reads, no worktrees, plan-mode docs, full suite once per spec)
 
 Ticket 04 of the retro-fixes-2 spec. Four rules the retro found being

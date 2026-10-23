@@ -13,12 +13,6 @@
             "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
         },
         {
-            "warning": "conventions/coding-conventions.md: source 'AGENTS.md' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
             "warning": "database/dictionary.md: source 'laravel/database/migrations/2026_10_20_000003_add_source_to_words_table.php' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-23",

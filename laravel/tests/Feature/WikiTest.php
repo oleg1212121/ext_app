@@ -256,4 +256,50 @@ MD);
 
         expect(file_get_contents($this->baselinePath))->toBe('{ not valid json');
     });
+
+    it('leaves the baseline untouched when a prune would change nothing', function () {
+        wikiGateWriteBaseline($this->baselinePath, [
+            ['warning' => $this->driftWarning, 'owner' => 'human:alex', 'date' => '2026-10-23', 'note' => 'benign drift'],
+        ]);
+        $originalContent = file_get_contents($this->baselinePath);
+        touch($this->baselinePath, time() - 3600);
+        $originalMtime = filemtime($this->baselinePath);
+
+        $this->artisan('wiki:validate', ['--path' => $this->root, '--prune' => true])
+            ->expectsOutputToContain('file untouched')
+            ->assertSuccessful();
+
+        clearstatcache();
+
+        expect(file_get_contents($this->baselinePath))->toBe($originalContent)
+            ->and(filemtime($this->baselinePath))->toBe($originalMtime);
+    });
+
+    it('refuses to prune while the mtime staleness check is skipped', function () {
+        config(['wiki.skip_mtime_staleness' => true]);
+        wikiGateWriteBaseline($this->baselinePath, [
+            ['warning' => $this->staleEntryWarning, 'owner' => 'human:alex', 'date' => '2026-10-23', 'note' => 'source removed since'],
+        ]);
+        $originalContent = file_get_contents($this->baselinePath);
+
+        $this->artisan('wiki:validate', ['--path' => $this->root, '--prune' => true])
+            ->expectsOutputToContain('Refusing to prune')
+            ->assertSuccessful();
+
+        expect(file_get_contents($this->baselinePath))->toBe($originalContent);
+    });
+
+    it('reports a baseline entry without owner and date as an error and acknowledges nothing', function () {
+        wikiGateWriteBaseline($this->baselinePath, [
+            ['warning' => $this->driftWarning, 'note' => 'missing the owner+date that makes an acknowledgement accountable'],
+        ]);
+
+        $validator = (new WikiValidator($this->root))->validate();
+
+        expect($validator->baselineErrors())->toHaveCount(1)
+            ->and($validator->baselineErrors()[0])->toContain('"owner" and "date"')
+            ->and($validator->acknowledgedWarnings())->toBe([])
+            ->and($validator->unacknowledgedWarnings())->toBe([$this->driftWarning])
+            ->and($validator->baselineEntries())->toBe([]);
+    });
 });
