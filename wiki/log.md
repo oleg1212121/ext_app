@@ -1,5 +1,33 @@
 # Directory Update Log
 
+## 2026-10-23 (source pins evaluate derived logic — the lift-and-evaluate convention)
+
+Ticket 02 of the retro-fixes-2 spec. The "ai · ai" badge bug passed its
+own vitest source pin: the pin string-matched the buggy expression
+verbatim, so red-green was impossible for that logic error and only the
+review pass caught it. The cure already shipped with the fix
+(`cab5280`'s source-badge suite); this ticket states the rule in every
+home an agent or reviewer reads.
+
+- **The split**: a pin over DERIVED logic lifts the real expression out
+  of the component source and evaluates it against payload states;
+  verbatim-contains pins are allowed only for wiring/structure
+  (pass-throughs, class hooks, presence/absence).
+- **Playbook** (`playbooks/running-tests.md`): the blessed-pin bullet no
+  longer claims "exactly one" Components-side pin — the split's two
+  exemplars are blessed by name (`WordPopup.ankiSend.test.js`,
+  contains-only; `WordPopup.sourceBadge.test.js`, lift-and-evaluate) with
+  the incident as rationale; `generated.at` bumped.
+- **ADR 0066**: amendment section splits the "pinned verbatim"
+  consequence along the same line, citing the incident and both
+  exemplars; `lib/` imports stay behavioral.
+- **Reviewer agent**: the test-hygiene clause now flags verbatim-contains
+  pins over derived logic and requires the lift-and-evaluate form.
+- `architecture/frontend.md`'s vitest section drops its own "pure `lib/`
+  modules only" staleness and states the split; `generated.at` bumped
+  (the ADR is one of its listed sources — the new gate flagged the drift).
+- No test code changed — the exemplar suite already ships.
+
 ## 2026-10-23 (wiki:validate fails on unacknowledged warnings — owner+dated baseline)
 
 Ticket 01 of the retro-fixes-2 spec. A mechanism, not another burn-down:

@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-23T12:25:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T12:41:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
 sources:
   - id: phpunit
@@ -31,6 +31,12 @@ sources:
   - id: wikibaseline
     resource: wiki/validate-baseline.json
     title: Acknowledged-warning baseline (exact-message entries, owner+date; --prune keeps it current)
+  - id: sourcebadgepin
+    resource: laravel/resources/js/Components/WordPopup.sourceBadge.test.js
+    title: The lift-and-evaluate source pin (derived logic evaluated against payload states)
+  - id: ankisendpin
+    resource: laravel/resources/js/Components/WordPopup.ankiSend.test.js
+    title: The contains-only wiring source pin (send-path pass-throughs)
   - id: packagejson
     resource: laravel/package.json
     title: NPM scripts (vitest run, eslint)
@@ -146,17 +152,33 @@ sources:
   modules (SSE parsing, payload mapping, clamps, position store, error
   chains, and the anki JS trio — wire-shape client, template generator, sync
   orchestration, exercised with `vi.stubGlobal('fetch', …)` since the
-  browser-side AnkiConnect client is pure request/response logic) plus
-  exactly one blessed Components-side source pin:
-  `Components/WordPopup.ankiSend.test.js` reads the popup's `sendToAnki`
-  JSX as text and pins the send-path's two pass-throughs — the `labels`
-  (the note must be built with `uiLabels(t)`, so cards carry the sender's
-  UI language — ADR 0077 addendum point E) and, since the Route A body
-  toggles went send-time, the resolved `fields` map (the body toggles plus
-  the `body` master must shape the Body value at send time). **No jsdom,
-  no React/component tests**: pages and hooks are wiring, covered by Pest
-  and manual verification (ADR 0066); a second out-of-`lib/` file needs
-  its own ADR blessing.
+  browser-side AnkiConnect client is pure request/response logic) plus the
+  blessed Components-side source pins, which read popup JSX as text
+  (ADR 0066's exception to the lib/-only rule). Every source pin obeys one
+  split — **a pin over DERIVED logic lifts the real expression out of the
+  component source and evaluates it against payload states; a
+  verbatim-contains pin is allowed only for wiring/structure**
+  (pass-throughs, class hooks, presence/absence). The split's two
+  exemplars, blessed by name:
+  - `Components/WordPopup.ankiSend.test.js` — the contains-only pin. Reads
+    the popup's `sendToAnki` JSX as text and pins the send-path's two
+    pass-throughs — the `labels` (the note must be built with
+    `uiLabels(t)`, so cards carry the sender's UI language — ADR 0077
+    addendum point E) and, since the Route A body toggles went send-time,
+    the resolved `fields` map (the body toggles plus the `body` master must
+    shape the Body value at send time). Pass-through wiring:
+    byte-for-byte is exactly right here.
+  - `Components/WordPopup.sourceBadge.test.js` — the lift-and-evaluate
+    pin. Regex-lifts the header badge's real `sourceBadge` derivation out
+    of `WordPopup.jsx` and evaluates it via `new Function` against the
+    `{source, ai_asked}` payload states. Rationale: the "ai · ai" badge
+    bug passed its own original pin — that pin asserted the buggy
+    expression byte-for-byte, so red-green was impossible for that logic
+    error and only the review pass caught it (fixed 2026-10-20, `cab5280`).
+    A pin that asserts what an expression RETURNS never matches its text.
+  **No jsdom, no React/component tests**: pages and hooks are wiring,
+  covered by Pest and manual verification (ADR 0066); source pins assert
+  the component's text, they never render it.
 * `vitest.config.js` is standalone and deliberately does NOT load the
   laravel-vite plugin or the app's `vite.config.js` — keep it that way, or
   the suite becomes a build.
@@ -166,8 +188,8 @@ sources:
   runs without Vite/npm and must stay PHP-only.
 * Test files are colocated next to the module they pin
   (`resources/js/lib/*.test.*`); the standing exception is the blessed
-  Components-side source pin above, which pins wiring inside the component
-  file it reads. When extracting logic from a page, put the
+  Components-side source pins above, which pin assertions inside the
+  component files they read. When extracting logic from a page, put the
   pure part in `lib/` (`.mjs` if it must stay framework-free) so it has a
   home to test in.
 * A module with its own memo cache (e.g. `lib/ankiSync.js` memoizes ensures

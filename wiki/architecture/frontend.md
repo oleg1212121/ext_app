@@ -4,7 +4,7 @@ title: Frontend Architecture
 description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, Vite build, JS module layering (lib/, hooks/, page-local), vitest for pure logic, and ESLint for static correctness.
 tags: [frontend, react, inertia, livewire, tailwind, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T10:30:26+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T12:47:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: package
@@ -108,9 +108,14 @@ De-facto convention, now documented (follow it for new code):
 # Pure-logic JS tests (vitest)
 
 `npm run test` (= `vitest run`) executes `resources/js/**/*.test.{js,mjs}`
-in Node — pure `lib/` modules only, colocated next to the code they pin.
+in Node — pure `lib/` modules plus the blessed Components-side source pins
+(popup JSX read as text, ADR 0066), colocated next to the code they pin.
 No jsdom and no React testing: components and hooks are wiring, covered by
-the Pest feature suite and manual verification (ADR 0066). `vitest.config.js`
+the Pest feature suite and manual verification (ADR 0066). Source pins obey
+one split — a pin over derived logic lifts the real expression out of the
+component source and evaluates it against payload states
+(`WordPopup.sourceBadge.test.js`); verbatim-contains pins are
+wiring/structure only (`WordPopup.ankiSend.test.js`). `vitest.config.js`
 is standalone and must not load the laravel-vite plugin. CI runs it as the
 `frontend` job in `tests.yml`; `composer run test` deliberately does not
 chain it. Invoke via `docker exec ext_app_laravel npm run test`.
