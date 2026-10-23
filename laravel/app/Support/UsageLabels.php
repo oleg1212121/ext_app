@@ -12,10 +12,11 @@ namespace App\Support;
  * a word whose definitions all carry the {@see DEMOTING} subset. The set is
  * closed on purpose: the popup can render the labels and ticket 10's SQL
  * can mirror the demotion check only while the slugs stay enumerable.
- * Going forward only — pre-label rows were never backfilled (user decision
- * 2026-10-20), null = unlabelled. GoldenDict labels are unrecoverable: the
- * HTML conversion flattened the headwords' usage markers away before this
- * column existed.
+ * Labels were filled going forward only until 2026-10-23: since then a
+ * kaikki re-import refreshes them on same-text rows (ADR 0083 amendment),
+ * so the backfill is the re-import itself. GoldenDict labels are
+ * unrecoverable: the HTML conversion flattened the headwords' usage
+ * markers away before this column existed.
  */
 final class UsageLabels
 {

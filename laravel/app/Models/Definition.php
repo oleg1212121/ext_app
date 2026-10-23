@@ -13,8 +13,8 @@ class Definition extends Model
     {
         return [
             // The usage/register labels (App\Support\UsageLabels closed
-            // set); null = unlabelled — pre-2026-10 rows were never
-            // backfilled.
+            // set); null = unlabelled. A kaikki re-import refreshes labels
+            // on same-text rows (ADR 0083 amendment, 2026-10-23).
             'labels' => 'array',
         ];
     }

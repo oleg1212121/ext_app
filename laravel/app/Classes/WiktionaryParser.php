@@ -702,6 +702,9 @@ class WiktionaryParser
         // Existing rows keyed like insertNewOnly keys them — word_id plus
         // the lowercased text — with id/labels/source riding along for the
         // update step. definitions.word_id is indexed for exactly this.
+        // One row per case-folded text is assumed (the map's last fetch
+        // would win a case-variant duplicate — definitions carry no such
+        // unique index).
         $existing = [];
         foreach (array_chunk($wordIds, 100) as $chunk) {
             foreach (Definition::query()->whereIn('word_id', $chunk)->get(['id', 'word_id', 'definition', 'labels', 'source']) as $row) {
