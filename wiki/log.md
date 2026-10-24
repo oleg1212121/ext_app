@@ -1,5 +1,40 @@
 # Directory Update Log
 
+## 2026-10-24 (popup bug pass: per-part source chips, source-data migration run, silent Anki probes)
+
+User follow-up on the morning's popup-refinements branch — three bugs:
+
+- **Source chips, one bordered label per part.** The user asked for the
+  resource titles as LABELS, not running text: the section-label
+  provenance chip dropped the " · " join — `sourceBadge` is now an array
+  of parts rendered as one small hairline-bordered chip each ("DECIMATED
+  — verb [wiktionary] [ai]"; same dedup, same verbatim importer names,
+  same hide-when-unknown). sourceBadge suite rewritten for the
+  array derivation and the chip styling.
+- **'kaikki' → 'wiktionary' actually applied to the dev DB.** The
+  morning's data migration `2026_10_24_000001` was committed but pending
+  — `php artisan migrate` ran it (1,412,073 rows flipped in 20s); the
+  popup had kept reading the old stored value. No code change.
+- **Probing goes silent until the reader engages.** With Anki off the
+  user still got one console error per cold session (the browser logs
+  every refused fetch — the 30s memo made it rare, not gone).
+  `lib/ankiConnect.js`'s `probeReachable` now keeps a page-session
+  SUCCESS ledger: the on-open probe runs gated (`{onlyIfKnown: true}`)
+  and a cold session's opens answer null from the ledger WITHOUT a
+  request — zero refused fetches. The way back in is the reader's own
+  engagement: hovering the icon (`onAnkiProbe`) or clicking it
+  (`ankiIconClick` — probe, then send) probes UNGATED, lighting a
+  running Anki amber in place and opening the ledger gate; a failed
+  engaged probe or a network-kind send failure closes it again
+  (`unmarkAnkiReachable`). The icon's grey is COLOR only now — the
+  disable-on-unreachable rule is reverted (a disabled grey icon could
+  never re-discover Anki); disabled keeps only no-handler/sending.
+  Fourth tooltip state `word.anki_unknown` (new ui-string, seeded) names
+  the endpoint and offers the click-as-check; known-unreachable keeps
+  the `word.anki_unreachable` guidance. ankiConnect behavioral suite
+  gains the ledger/gate/in-flight-share pins; ankiReachable suite
+  rewritten; toolbar disable pin updated.
+
 ## 2026-10-24 (popup refinements: section-label source chip, kaikki→wiktionary, Anki grey-when-unreachable + quiet probes, native-side explain)
 
 User-reported popup UX pass — six changes, one branch:

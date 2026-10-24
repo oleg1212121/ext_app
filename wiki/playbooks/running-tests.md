@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-24T13:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-24T15:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
 sources:
   - id: phpunit
@@ -171,8 +171,11 @@ sources:
     shape the Body value at send time). Pass-through wiring:
     byte-for-byte is exactly right here.
   - `Components/WordPopup.sourceBadge.test.js` — the lift-and-evaluate
-    pin. Regex-lifts the header badge's real `sourceBadge` derivation out
-    of `WordPopup.jsx` and evaluates it via `new Function` against the
+    pin. Regex-lifts the section-label chips' real `sourceBadge`
+    derivation out
+    of `WordPopup.jsx` (an array of source parts since the 2026-10-24
+    per-part chip render — one bordered label each) and evaluates it via
+    `new Function` against the
     `{source, ai_asked}` payload states. Rationale: the "ai · ai" badge
     bug passed its own original pin — that pin asserted the buggy
     expression byte-for-byte, so red-green was impossible for that logic

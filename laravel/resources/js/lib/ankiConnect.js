@@ -86,32 +86,66 @@ export function ankiConnectVersion(config) {
     return invoke('version', null, config)
 }
 
-// The popup's on-open reachability probe (WordPopup.jsx): a FAILURE is
-// memoized per endpoint for 30s — rejections inside the window are answered
-// from the memo without touching the network, so browsing with Anki off
-// costs at most one failed request per 30s instead of per popup open. Any
-// resolve (Anki came up) clears the memo and the next open probes fresh.
+// The popup's on-open reachability probe (WordPopup.jsx) is gated by a
+// page-session SUCCESS ledger and padded by a FAILURE memo:
+//
+// - A FAILURE is memoized per endpoint for 30s — rejections inside the
+//   window are answered from the memo without touching the network.
+// - Any resolve (probe or a completed send) adds the endpoint to the
+//   page-session reachable ledger; a probe failure removes it. The popup's
+//   on-open probe passes {onlyIfKnown: true}: an endpoint with no success
+//   on record resolves null WITHOUT a request — the browser logs every
+//   refused fetch as a console error, so with Anki down a cold page
+//   opening popups costs ZERO requests (zero console errors) instead of
+//   one per 30s window. The ledger is page-session only: a reload starts
+//   cold and quiet, and the user's first hover/click of the Anki icon (the
+//   un-gated probe) or a completed send re-establishes it — from then on
+//   opens probe again, silently, because successes don't log.
+// - One request can be in flight per endpoint; concurrent probes share it.
+//
 // The profile tab's manual Test button keeps the unmemoized
 // ankiConnectVersion — a settings change must always probe for real.
 const PROBE_FAILURE_RETRY_AFTER_MS = 30_000
 const failedProbes = new Map()
+const reachableEndpoints = new Set()
+const inFlightProbes = new Map()
 
-export function probeReachable(config) {
+export function markAnkiReachable(config) {
+    reachableEndpoints.add(ankiConnectEndpoint(config))
+}
+
+export function unmarkAnkiReachable(config) {
+    reachableEndpoints.delete(ankiConnectEndpoint(config))
+}
+
+export function probeReachable(config, {onlyIfKnown = false} = {}) {
     const endpoint = ankiConnectEndpoint(config)
+    if (onlyIfKnown && !reachableEndpoints.has(endpoint)) {
+        return Promise.resolve(null)
+    }
     const memo = failedProbes.get(endpoint)
     if (memo != null && Date.now() - memo.at < PROBE_FAILURE_RETRY_AFTER_MS) {
         return Promise.reject(memo.error)
     }
-    return ankiConnectVersion(config).then(
+    if (inFlightProbes.has(endpoint)) {
+        return inFlightProbes.get(endpoint)
+    }
+    const probe = ankiConnectVersion(config).then(
         (version) => {
+            reachableEndpoints.add(endpoint)
             failedProbes.delete(endpoint)
+            inFlightProbes.delete(endpoint)
             return version
         },
         (error) => {
+            reachableEndpoints.delete(endpoint)
             failedProbes.set(endpoint, {at: Date.now(), error})
+            inFlightProbes.delete(endpoint)
             throw error
         },
     )
+    inFlightProbes.set(endpoint, probe)
+    return probe
 }
 
 export function requestPermission(config) {

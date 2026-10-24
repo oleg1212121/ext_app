@@ -4,7 +4,7 @@ title: Anki Export
 description: The path from saved words to the user's desktop Anki — per-user per-language connection/card settings (deck + field toggles per enabled language over a legacy global base) on the profile's Anki tab, a deterministic popup-styled card template (the Front is the word; the Back is header + the 13th Body field's popup-interleaved dictionary + footer) with split toggle semantics — scalar toggles hide-class template-side, body toggles shape the Body value at send time — one-click template sync into Anki, and per-word sends from the word popup that detect on open and refresh an already-saved own note in place, all driven browser-side through AnkiConnect (ADR 0077 + addenda; v3 records the updates-in-place reversal).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-24T12:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-24T15:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
 sources:
   - id: adr
@@ -234,6 +234,9 @@ sources below).
    note-type mismatches with the teaching copy (step 3's delete-and-resync
    fix; the error names the model it inspected). The per-word send's
    behavior — toolbar icon placement, disabled-not-hidden, the
+   color-only reachability grey (the on-open probe is quiet for a cold
+   page session, so the icon stays clickable and hover/click is the
+   discovery path), the
    added/updated/duplicate status lines — is specified in
    [Interactive Words](/domains/interactive-words.md). Legacy notes: a
    word saved before the popup-card rework (plain `<br>`-joined values) or

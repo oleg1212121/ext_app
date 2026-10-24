@@ -71,6 +71,12 @@ return [
     // word.anki_updated instead.
     'word.anki_already' => ['en' => 'Already in Anki.', 'ru' => 'Уже в Anki.', 'be' => 'Ужо ў Anki.'],
     'word.anki_unreachable' => ['en' => 'Can\'t reach Anki — make sure desktop Anki with AnkiConnect is running.', 'ru' => 'Нет связи с Anki — убедитесь, что запущен настольный Anki с AnkiConnect.', 'be' => 'Няма сувязі з Anki — пераканайцеся, што запушчаны настольны Anki з AnkiConnect.'],
+    // The quiet-probe fourth state (2026-10-24): the page session has NO
+    // successful Anki answer on record (fresh reload, Anki never up), so
+    // opens stopped probing — the endpoint is asked only when the reader
+    // engages the icon. The click IS the check: the send's find-before-add
+    // talks to AnkiConnect for real.
+    'word.anki_unknown' => ['en' => 'Haven\'t heard from Anki this session — click to try saving (checks :endpoint).', 'ru' => 'Anki пока не отвечала в этой сессии — нажмите, чтобы попробовать сохранить (проверка: :endpoint).', 'be' => 'Anki пакуль не адказвала ў гэтай сесіі — націсніце, каб паспрабаваць захаваць (праверка: :endpoint).'],
     // :model carries the note type the mismatch was raised against — with
     // per-language types ("ExtApp Vocabulary ⋅ <code>") any of them can
     // mismatch, so the copy can no longer hardcode the base name.

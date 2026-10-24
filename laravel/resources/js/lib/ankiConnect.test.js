@@ -1,4 +1,15 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+
+// The popup's on-open reachability probe wraps the version action in a
+// page-session SUCCESS ledger, a 30s per-endpoint failure memo and an
+// in-flight share: a gated call ({onlyIfKnown: true}) answers null without
+// a request while no success is on record (the browser logs every refused
+// fetch — a cold page browsing with Anki down must stay silent), and once
+// anything succeeds (a probe, a completed send via markAnkiReachable) the
+// gated calls probe for real again. A failure (or unmarkAnkiReachable)
+// drops the ledger entry and re-silences the gate; failures also memoize
+// 30s so ungated retries stay rare. Each test uses its own port so the
+// module state's cross-test keys stay apart.
 import {
     ANKI_DEFAULT_PORT,
     ANKI_DEFAULT_URL,
@@ -13,6 +24,7 @@ import {
     findNotes,
     getNoteTags,
     invoke,
+    markAnkiReachable,
     modelFieldNames,
     modelNames,
     modelTemplates,
@@ -20,6 +32,7 @@ import {
     probeReachable,
     removeTags,
     requestPermission,
+    unmarkAnkiReachable,
     updateModelStyling,
     updateModelTemplates,
     updateNote,
@@ -121,11 +134,9 @@ describe('invoke', () => {
     });
 });
 
-// The popup's on-open reachability probe wraps the version action in a
-// 30s per-endpoint failure memo: browsing with Anki off costs at most one
-// failed request per window instead of one per popup open (the browser
-// always logs a refused fetch). Each test uses its own port so the module
-// memo's cross-test state stays keyed apart.
+// The failure memo (and the in-flight share) on their own — the ungated
+// probe's padding. Each test uses its own port so the module state's
+// cross-test keys stay apart.
 describe('probeReachable', () => {
     it('passes the version answer through', async () => {
         vi.useFakeTimers();
@@ -205,6 +216,66 @@ describe('probeReachable', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it('concurrent probes share one request', async () => {
+        let resolveFetch;
+        fetchMock.mockReturnValue(new Promise((resolve) => {
+            resolveFetch = resolve;
+        }));
+        const first = probeReachable({port: 8807});
+        const second = probeReachable({port: 8807});
+        resolveFetch(okAnswer('1.0'));
+        await expect(first).resolves.toBe('1.0');
+        await expect(second).resolves.toBe('1.0');
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+});
+
+// The quiet gate (2026-10-24): the popup's on-open probe passes
+// {onlyIfKnown: true} — while the page session holds no successful Anki
+// answer, the gated call answers null WITHOUT touching the network, so a
+// cold page browsed with Anki down logs zero console errors. Engaging Anki
+// for real (an ungated probe — the reader's hover/click — or a completed
+// send via markAnkiReachable) lights the gate; a failure or
+// unmarkAnkiReachable (a send that found Anki gone) extinguishes it.
+describe('probeReachable — the session success ledger gates onlyIfKnown', () => {
+    it('a cold endpoint answers null to the gated probe without a request', async () => {
+        await expect(probeReachable({port: 8811}, {onlyIfKnown: true})).resolves.toBeNull();
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('an ungated probe always fetches — and its success opens the gate', async () => {
+        fetchMock.mockResolvedValue(okAnswer('1.0'));
+        await expect(probeReachable({port: 8812})).resolves.toBe('1.0');
+
+        fetchMock.mockClear();
+        await expect(probeReachable({port: 8812}, {onlyIfKnown: true})).resolves.toBe('1.0');
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('markAnkiReachable opens the gate — a send-completed success counts', async () => {
+        markAnkiReachable({port: 8813});
+        fetchMock.mockResolvedValue(okAnswer('1.0'));
+        await expect(probeReachable({port: 8813}, {onlyIfKnown: true})).resolves.toBe('1.0');
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('a failed probe closes the gate again — the next open goes quiet', async () => {
+        markAnkiReachable({port: 8814});
+        fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+        await probeReachable({port: 8814}).catch(() => null);
+
+        fetchMock.mockClear();
+        await expect(probeReachable({port: 8814}, {onlyIfKnown: true})).resolves.toBeNull();
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('unmarkAnkiReachable closes the gate — a network-failed send re-silences', async () => {
+        markAnkiReachable({port: 8815});
+        unmarkAnkiReachable({port: 8815});
+        await expect(probeReachable({port: 8815}, {onlyIfKnown: true})).resolves.toBeNull();
+        expect(fetchMock).not.toHaveBeenCalled();
     });
 });
 

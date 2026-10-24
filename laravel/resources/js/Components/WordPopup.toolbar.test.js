@@ -132,11 +132,11 @@ describe('WordPopup action toolbar', () => {
         // One gate per progress icon, both inside the toolbar…
         expect(toolbar.match(/sections\.progress_actions !== false/g)).toHaveLength(2);
         // …and the four right-hand icons sit outside them: the Anki icon is
-        // disabled only by its own state (no handler, send in flight, or —
-        // since 2026-10-24 — the reachability probe saying Anki is off),
+        // disabled only by its own state (no handler, send in flight — grey
+        // since the 2026-10-24 quiet probes is COLOR, never a disable),
         // the other two never disable through a visibility toggle.
         const anki = buttonIn('word-popup-anki-send');
-        expect(anki).toMatch(/disabled=\{onAnkiSend == null \|\| ankiSend\?\.status === 'sending' \|\| !ankiReachable\}/);
+        expect(anki).toMatch(/disabled=\{onAnkiSend == null \|\| ankiSend\?\.status === 'sending'\}/);
         expect(anki).not.toContain('sections.');
         expect(buttonIn('word-popup-explain-toggle')).not.toContain('progress_actions');
         expect(buttonIn('word-popup-ask-ai')).not.toContain('sections.');
@@ -177,11 +177,11 @@ describe('WordPopup action toolbar', () => {
         }
         // ankiUpdate / sparkles alias their shared path consts (the re-ask
         // ring and glyph re-compose them).
-        expect(iconsSource).toMatch(/^    ankiUpdate: ARROW_PATH,/m);
-        expect(iconsSource).toMatch(/^    sparkles: SPARKLES_PATH,/m);
+        expect(iconsSource).toMatch(/^ {4}ankiUpdate: ARROW_PATH,/m);
+        expect(iconsSource).toMatch(/^ {4}sparkles: SPARKLES_PATH,/m);
         // The re-ask glyph composes the shared sparkles with the shared
         // chasing-arrows ring — a multi-path descriptor value.
-        expect(iconsSource).toMatch(/^    sparklesRefresh: \[/m);
+        expect(iconsSource).toMatch(/^ {4}sparklesRefresh: \[/m);
         expect(iconsSource).toContain('nonScalingStroke');
     });
 

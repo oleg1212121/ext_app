@@ -87,7 +87,9 @@ by design (ADR 0082).
 ## Amendment 2026-10-24: the Wiktionary value is 'wiktionary', not 'kaikki'
 
 The popup renders the stored value verbatim (the provenance badge, since
-moved to each section label's end), and "kaikki" is the dump service's
+moved to each section label's end and, the same day, rendered as one
+small bordered label per source part — the "wiktionary" chip plus the
+"ai" chip when asked), and "kaikki" is the dump service's
 name (kaikki.org), not the source's — the content comes from Wiktionary.
 The stored value was renamed for user-facing honesty:
 
