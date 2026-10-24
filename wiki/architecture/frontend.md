@@ -1,14 +1,18 @@
 ---
 type: Architecture
 title: Frontend Architecture
-description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, Vite build, JS module layering (lib/, hooks/, page-local), and vitest for pure logic.
-tags: [frontend, react, inertia, livewire, tailwind, vitest]
+description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, Vite build, JS module layering (lib/, hooks/, page-local), vitest for pure logic, and ESLint for static correctness.
+tags: [frontend, react, inertia, livewire, tailwind, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-05T20:05:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-23T16:25:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: package
     resource: laravel/package.json
     title: NPM manifest
+  - id: eslint-config
+    resource: laravel/eslint.config.js
+    title: ESLint flat config (correctness rules over resources/js, warn-tier carve-outs)
   - id: css
     resource: laravel/resources/css/app.css
     title: Tailwind 4 CSS-first configuration
@@ -24,8 +28,9 @@ sources:
 
 | Stack | Where | Used for |
 |-------|-------|----------|
-| **Inertia + React 19 (JSX)** | `resources/js/Pages/` | **Primary.** All new pages. Bilinguals simulator, Reader, Entities/Alignments, Dashboard, Welcome, auth pages |
-| **Livewire 4** | `app/Livewire/`, `resources/views/livewire/` | Filament admin pages and the Filament alignment editor |
+| **Inertia + React 19 (JSX)** | `resources/js/Pages/` | **Primary.** All new pages. Bilinguals simulator, Reader, Entities/Alignments (incl. the manual alignment editor page), Dashboard, Welcome |
+| **Livewire 4** | (dependency only — `app/Livewire/` and `resources/views/livewire/` were deleted) | Filament's internal rendering engine; no app Livewire components exist |
+| **Blade (Breeze)** | `resources/views/auth/` | Auth pages (login/register/reset) — plain Blade, not React |
 | **Alpine.js 3** | started in `resources/js/app.jsx`, only on non-Inertia pages | Lightweight interactivity in Blade (auth-page nav dropdowns) |
 
 **Rule: new pages are Inertia/React (JSX).** Do not add new Livewire
@@ -36,7 +41,8 @@ pages). On React pages its global MutationObserver would re-walk every node
 React touches — pure overhead there and a freeze ingredient on the reader
 (see wiki/log.md, 2026-09-23).
 
-UI kit: `flowbite-react` components (see `resources/js/Pages/` for usage).
+UI kit: `flowbite-react` components (imported from `resources/js/Components/`
+and across `resources/js/Pages/`).
 
 # Tailwind CSS 4 — CSS-first config
 
@@ -71,7 +77,8 @@ mode use `dark:` utilities.
 
 * Controllers return `Inertia::render('Page/Name', [...props])`.
 * POST endpoints consumed by React return `JsonResponse`, not Inertia
-  redirects (see `SimulatorController::text()`, `askAi()`).
+  redirects (see `SimulatorController::text()`,
+  `ReadingAiController::askAi()`).
 
 # JS module layering
 
@@ -85,8 +92,8 @@ De-facto convention, now documented (follow it for new code):
   helpers (`http.js`, `wordFamiliarity.js`). The `.mjs` extension marks
   modules loadable outside the app bundle (Node/CLI/vitest) — keep pure
   logic there so vitest can pin it.
-* **`resources/js/hooks/`** — shared React hooks with an ADR-citing header
-  comment: `useSideFlip` (ADR 0037), `useUiSettingsAutosave` (ADR 0024),
+* **`resources/js/hooks/`** — shared React hooks (most carry an ADR-citing
+  header comment): `useSideFlip` (ADR 0037), `useUiSettingsAutosave`,
   `useDragResize` (panel drag mechanics shared by the simulator's AI panel
   and workplace and the crossword right panel). Hooks never touch
   localStorage directly — they import the load/save pair from `lib/`.
@@ -101,9 +108,29 @@ De-facto convention, now documented (follow it for new code):
 # Pure-logic JS tests (vitest)
 
 `npm run test` (= `vitest run`) executes `resources/js/**/*.test.{js,mjs}`
-in Node — pure `lib/` modules only, colocated next to the code they pin.
+in Node — pure `lib/` modules plus the blessed Components-side source pins
+(popup JSX read as text, ADR 0066), colocated next to the code they pin.
 No jsdom and no React testing: components and hooks are wiring, covered by
-the Pest feature suite and manual verification (ADR 0066). `vitest.config.js`
+the Pest feature suite and manual verification (ADR 0066). Source pins obey
+one split — a pin over derived logic lifts the real expression out of the
+component source and evaluates it against payload states
+(`WordPopup.sourceBadge.test.js`); verbatim-contains pins are
+wiring/structure only (`WordPopup.ankiSend.test.js`). `vitest.config.js`
 is standalone and must not load the laravel-vite plugin. CI runs it as the
 `frontend` job in `tests.yml`; `composer run test` deliberately does not
 chain it. Invoke via `docker exec ext_app_laravel npm run test`.
+
+# Static analysis (ESLint, correctness only)
+
+`npm run lint` (= `eslint resources/js`) statically checks every
+`resources/js/**/*.{js,mjs,jsx}`. It exists because Vite bundles but does
+not statically resolve identifiers — a missing import once shipped through
+`vite build` and only a manual Node smoke caught it (wiki/log.md,
+2026-10-15). `laravel/eslint.config.js` is flat config (eslint 10) with
+deliberate, in-file-commented tiers: `no-undef` + core recommended +
+rules-of-hooks fail the run; legacy-but-working hook patterns the v7
+analyzer flags sit at `warn`; deliberate idioms have file-scoped carve-outs
+(`no-control-regex` in `lib/markdown.js`, `react-hooks/globals` in
+`i18n.jsx`). Warnings are review signal, never a reformat mandate — fix
+real bugs in place. CI runs it as the `lint` job in `tests.yml`. Invoke via
+`docker exec ext_app_laravel npm run lint`.

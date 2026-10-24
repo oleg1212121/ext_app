@@ -18,7 +18,7 @@ class ImportRawWiktextractCommand extends Command
                             {--force : Skip the --fresh confirmation prompt}
                             {--extract-only : Stop after writing the per-language extract files}
                             {--skip-extract : Reuse existing extract files instead of re-extracting}
-                            {--no-link : Skip the wiktionary:link-translations pass}
+                            {--no-link : Skip the dictionary:link-translations pass}
                             {--max-lines= : Limit raw lines read during extraction (smoke runs)}';
 
     protected $description = 'Import selected languages from a monolithic kaikki raw-wiktextract dump (.jsonl or .jsonl.gz): extract per-language files, import each, then link translations';
@@ -157,22 +157,22 @@ class ImportRawWiktextractCommand extends Command
         $this->table(['Metric', 'Count'], $rows);
 
         if ($this->option('no-link')) {
-            $this->info('Skipping translation linking (--no-link). Run wiktionary:link-translations later.');
+            $this->info('Skipping translation linking (--no-link). Run dictionary:link-translations later.');
 
             return self::SUCCESS;
         }
 
         $languagesWithWords = Word::query()->select('language_id')->distinct()->count();
         if ($languagesWithWords < 2) {
-            $this->warn('Fewer than two languages with imported words — skipping wiktionary:link-translations.');
+            $this->warn('Fewer than two languages with imported words — skipping dictionary:link-translations.');
 
             return self::SUCCESS;
         }
 
         $this->info('Linking translations...');
-        $exitCode = $this->call('wiktionary:link-translations');
+        $exitCode = $this->call('dictionary:link-translations');
         if ($exitCode !== self::SUCCESS) {
-            $this->warn('wiktionary:link-translations failed — run it manually to finish linking.');
+            $this->warn('dictionary:link-translations failed — run it manually to finish linking.');
         }
 
         return $exitCode;

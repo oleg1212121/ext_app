@@ -5,7 +5,8 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-10-08T16:47:00Z }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -240,7 +241,9 @@ admins are exempt (same bypass as `EntityAccessService`).
 # Text hash maintenance
 
 `EntityTextHasher` computes `text_hash` = sha256 over sentence contents in
-`order`, each whitespace-normalized (case/punctuation preserved). The digest
+`order`, each whitespace-normalized (case/punctuation preserved); sentences
+carrying an illustration also fold `|illustration:{image_hash}` into the
+digest, so swapping an image marks the entity stale too. The digest
 streams the sentences with an `orderBy('order')->cursor()` + incremental
 `hash_update` — never `chunkById` (id order ≠ document order after a
 rebalance; the digest would change) — so an entity's whole text is never

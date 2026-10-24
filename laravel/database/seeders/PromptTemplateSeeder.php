@@ -28,5 +28,10 @@ class PromptTemplateSeeder extends Seeder
             ['key' => PromptTemplates::EXPLANATION_KEY],
             ['text' => PromptTemplates::EXPLANATION_FALLBACK],
         );
+
+        PromptTemplate::query()->firstOrCreate(
+            ['key' => PromptTemplates::ENRICHMENT_KEY],
+            ['text' => PromptTemplates::ENRICHMENT_FALLBACK],
+        );
     }
 }

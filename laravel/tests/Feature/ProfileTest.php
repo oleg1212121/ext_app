@@ -3,6 +3,7 @@
 use App\Models\Language;
 use App\Models\User;
 use Database\Seeders\LanguageSeeder;
+use Illuminate\Support\Collection;
 
 test('profile page is displayed', function () {
     $user = User::factory()->create();
@@ -34,6 +35,156 @@ test('profile page shares the popups tab and all-visible defaults', function () 
             ->where('popupVisibility.examples', true)
             ->where('popupVisibility.etymologies', true)
             ->where('popupVisibility.explanation', true));
+});
+
+test('profile page shares anki settings with every card field on by default', function () {
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('ankiSettings.url', 'http://127.0.0.1')
+            ->where('ankiSettings.port', 8765)
+            ->where('ankiSettings.deck', 'ExtApp')
+            ->where('ankiSettings.fields.word', true)
+            ->where('ankiSettings.fields.transcription', true)
+            ->where('ankiSettings.fields.part_of_speech', true)
+            ->where('ankiSettings.fields.frequency', true)
+            ->where('ankiSettings.fields.definitions', true)
+            ->where('ankiSettings.fields.translations', true)
+            ->where('ankiSettings.fields.examples', true)
+            ->where('ankiSettings.fields.etymology', true)
+            ->where('ankiSettings.fields.word_family', true)
+            ->where('ankiSettings.fields.tags', true)
+            ->where('ankiSettings.fields.familiarity', true)
+            ->where('ankiSettings.fields.language', true)
+            ->where('ankiSettings.fields.body', true));
+});
+
+test('anki settings prop reflects the saved connection and field opt-outs', function () {
+    $user = User::factory()->create();
+    $user->settings()->updateOrCreate([], [
+        'ui_settings' => ['anki' => [
+            'url' => 'http://localhost',
+            'port' => 8766,
+            'fields' => ['etymology' => false],
+        ]],
+    ]);
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('ankiSettings.url', 'http://localhost')
+            ->where('ankiSettings.port', 8766)
+            // Keys never touched keep their defaults.
+            ->where('ankiSettings.deck', 'ExtApp')
+            ->where('ankiSettings.fields.etymology', false)
+            ->where('ankiSettings.fields.word', true));
+});
+
+test('anki settings prop resolves every enabled language over the legacy global base', function () {
+    // A user with only legacy saved settings (no per-language entries) must
+    // resolve every language — and `default` — to today's global values.
+    createLanguages(['en', 'ru']);
+    $user = User::factory()->create();
+    $user->settings()->updateOrCreate([], [
+        'ui_settings' => ['anki' => [
+            'deck' => 'My deck',
+            'fields' => ['etymology' => false],
+        ]],
+    ]);
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            // The legacy base stays at the top level, unchanged from before.
+            ->where('ankiSettings.deck', 'My deck')
+            ->where('ankiSettings.fields.etymology', false)
+            ->where('ankiSettings.languages.en.deck', 'My deck')
+            ->where('ankiSettings.languages.en.fields.etymology', false)
+            ->where('ankiSettings.languages.en.fields.word', true)
+            ->where('ankiSettings.languages.ru.deck', 'My deck')
+            ->where('ankiSettings.languages.ru.fields.etymology', false)
+            // Words with an unknown or missing language code resolve here.
+            ->where('ankiSettings.languages.default.deck', 'My deck')
+            ->where('ankiSettings.languages.default.fields.etymology', false));
+});
+
+test('anki settings prop prefers saved per-language entries over the legacy base', function () {
+    createLanguages(['en', 'ru']);
+    $user = User::factory()->create();
+    $user->settings()->updateOrCreate([], [
+        'ui_settings' => ['anki' => [
+            'deck' => 'My deck',
+            'fields' => ['etymology' => false],
+            'languages' => [
+                'en' => ['deck' => 'English deck', 'fields' => ['etymology' => true, 'tags' => false]],
+            ],
+        ]],
+    ]);
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('ankiSettings.languages.en.deck', 'English deck')
+            // Per-language values win; keys that language never saved walk
+            // the chain per-language → legacy base → defaults.
+            ->where('ankiSettings.languages.en.fields.etymology', true)
+            ->where('ankiSettings.languages.en.fields.tags', false)
+            ->where('ankiSettings.languages.en.fields.word', true)
+            // Untouched languages and `default` stay on the legacy base.
+            ->where('ankiSettings.languages.ru.deck', 'My deck')
+            ->where('ankiSettings.languages.ru.fields.etymology', false)
+            ->where('ankiSettings.languages.default.deck', 'My deck'));
+});
+
+test('anki settings prop carries one entry per enabled language plus default', function () {
+    // Disabled languages get no entry at all; `default` always exists for
+    // words with an unknown or missing language code.
+    createLanguages(['en']);
+    Language::create(['code' => 'fr', 'name' => 'French', 'is_enabled' => false, 'sort_order' => 9]);
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('ankiSettings.languages', function (Collection $languages) {
+                // The fluent where() hands the prop over as a Collection;
+                // the entries themselves stay plain arrays.
+                $languages = $languages->all();
+
+                expect(array_keys($languages))->toBe(['en', 'default'])
+                    ->and(array_keys($languages['en']))->toBe(['deck', 'fields'])
+                    ->and(array_keys($languages['default']))->toBe(['deck', 'fields']);
+
+                return true;
+            }));
+});
+
+test('profile page shares language codes with the languages prop', function () {
+    // The Anki tab's language selector keys off the code (the per-language
+    // settings map and the per-language note type are code-keyed), so the
+    // shared prop carries it beside the id.
+    createLanguages(['en', 'ru']);
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('languages.0.code', 'en')
+            ->where('languages.1.code', 'ru'));
 });
 
 test('popup visibility prop reflects the saved opt-outs', function () {

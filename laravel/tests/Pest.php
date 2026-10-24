@@ -11,6 +11,7 @@ use App\Models\Work;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\Support\FakePythonClient;
 use Tests\TestCase;
 
@@ -36,6 +37,14 @@ pest()->extend(TestCase::class)
 beforeEach(function () {
     expect(DB::connection()->getName())->toBe('testing');
 });
+
+// Hermeticity guard: a Feature test that reaches the network without a fake
+// fails fast instead of calling a live API (the sync queue would run fetch
+// jobs inline mid-request). Tests opt into HTTP via Http::fake() (+
+// enableTranslationProviders() for the translate providers).
+beforeEach(function () {
+    Http::preventStrayRequests();
+})->in('Feature');
 
 pest()->tia()
     ->filtered()
@@ -94,13 +103,14 @@ function createLanguages(array $codes = ['en', 'ru']): array
         'en' => ['name' => 'English', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 0],
         'ru' => ['name' => 'Russian', 'is_enabled' => true, 'is_interface_enabled' => true, 'sort_order' => 1],
         'be' => ['name' => 'Belarusian', 'native_name' => 'Беларуская', 'is_enabled' => true, 'is_interface_enabled' => false, 'sort_order' => 2],
+        'de' => ['name' => 'German', 'native_name' => 'Deutsch', 'is_enabled' => true, 'is_interface_enabled' => false, 'sort_order' => 3],
     ];
 
     $languages = [];
     foreach ($codes as $code) {
         if (! array_key_exists($code, $attributes)) {
             throw new InvalidArgumentException(
-                "Unsupported language code [{$code}] for createLanguages(). Supported codes: en, ru, be.",
+                "Unsupported language code [{$code}] for createLanguages(). Supported codes: en, ru, be, de.",
             );
         }
 

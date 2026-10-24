@@ -4,7 +4,8 @@ title: Application Overview
 description: What ext_app is, its main components, and how a request flows through the system.
 tags: [architecture, overview]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-11T12:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: composer
     resource: laravel/composer.json
@@ -29,7 +30,7 @@ The repo root is a **Docker workspace**; the Laravel application lives in
 | Path | Purpose |
 |------|---------|
 | `laravel/` | The Laravel 13 application (mounted to `/var/www` in the app container) |
-| `wiki/` | This OKF knowledge bundle (mounted to `/var/wiki`) |
+| `wiki/` | This OKF knowledge bundle (repo root bind-mounted at `/var/repo` in the app container, so `wiki/` is `/var/repo/wiki`) |
 | `docker-compose/python/` | FastAPI python microservice (`ai/` package: splitting, embeddings, alignment) + prebuilt `ai/venv` (dev machine; prod native path uses `ai_env/`) |
 | `docker-compose/postgres/` | PostgreSQL data directory |
 | `nginx/` | Nginx config |
@@ -39,10 +40,13 @@ The repo root is a **Docker workspace**; the Laravel application lives in
 
 * **Laravel app** — monolith serving three UI stacks simultaneously; see
   [Frontend](/architecture/frontend.md).
-* **Filament 5 admin** at `/admin` — CRUD for dictionaries, entities, and the
-  manual alignment editor ([Entities & Alignment](/database/entities-alignment.md)).
+* **Filament 5 admin** at `/admin` — CRUD for dictionaries, entities and tag
+  pools ([Entities & Alignment](/database/entities-alignment.md)); the manual
+  alignment editor is an Inertia/React page outside the admin
+  (`/works/{work}/alignments/{entityMatch}/edit`).
 * **Queue workers** — background jobs on the database queue in two strict-order
-  lanes (`default`, `low`; a job declares its lane as a class property, see
+  lanes (`default`, `low`; a job declares its lane as a class **attribute**,
+  `#[Queue(QueueLane::DEFAULT)]`, see
   ADR 0042), each run bounded by a fixed run budget with unbounded pipelines
   self-re-dispatching over durable progress markers (ADR 0043): the upload
   pipeline (`ProcessEntityFile`, `SplitEntityFileSentences`,
@@ -50,10 +54,11 @@ The repo root is a **Docker workspace**; the Laravel application lives in
   [alignment pipeline](/domains/sentence-alignment.md)
   (`AlignEntitySentences`, self-re-dispatching per chunk), scheduled sweeps
   (`RefreshEntityWords`, `ComputeEntityTextHash`) and `SyncAiModelsJob`.
-* **Python microservice** (`ext_python`) — BGE-M3 sentence-transformer
-  (1024-dim) over HTTP: `/embed`, `/embed/batch`, `/cosine/batch`, `/split`,
-  `/align`. Sentence splitting and DP alignment run there; Laravel stores the
-  results. Config: `config/services.php` → `python`.
+* **Python microservice** (`ext_python`) — sentence-transformer models over
+  HTTP: `/health`, `/embed`, `/split`, `/align`, `/enrich` (the old
+  `/embed/batch` and `/cosine/batch` endpoints were removed). Sentence
+  splitting and DP alignment run there; Laravel stores the results. Config:
+  `config/services.php` → `python`.
 * **External AI APIs** — six providers behind one abstraction; see
   [AI Providers](/domains/ai-providers.md).
 
@@ -69,8 +74,8 @@ The repo root is a **Docker workspace**; the Laravel application lives in
 
 # Version truth
 
-The `laravel/CLAUDE.md` Boost guidelines list outdated versions (Laravel 12,
-Filament 3, Livewire 3, Pest 3, Tailwind 3). **Trust `composer.json` /
-`composer.lock` and `package.json` over prose.** Actual: PHP ^8.3 (8.4
-runtime), Laravel ^13.6, Livewire ^4, Filament ^5, Pest ^4, PHPUnit ^12,
+**Trust `composer.json` / `composer.lock` and `package.json` over prose** —
+older AI-authored guidelines (and older copies of this wiki) have listed
+outdated versions. Actual: PHP ^8.3 (8.4
+runtime), Laravel ^13.6, Livewire ^4, Filament ^5, Pest ^5, PHPUnit ^13,
 Tailwind ^4, React ^19, Inertia ^3.

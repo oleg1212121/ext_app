@@ -116,6 +116,7 @@ export default function TextContent(props) {
                                     // keyless users still get the word popup's
                                     // tab strip and its Models used popup.
                                     explain={props.first.explainable ? props.explain ?? undefined : undefined}
+                                    language={props.first.language}
                                     showStress={props.showStress}
                                     showPhrasal={props.showPhrasal}
                                     figureProps={SIMULATOR_FIGURE_PROPS}
@@ -148,6 +149,7 @@ export default function TextContent(props) {
                                         onWordProgress={props.onWordProgress}
                                         popupFontSize={props.popupFontSize}
                                         explain={props.second.explainable ? props.explain ?? undefined : undefined}
+                                        language={props.second.language}
                                         showStress={props.showStress}
                                         showPhrasal={props.showPhrasal}
                                         figureProps={SIMULATOR_FIGURE_PROPS}

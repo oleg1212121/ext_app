@@ -56,3 +56,22 @@ CI runs both jobs on the same triggers as before.
 - `package-lock.json` is now load-bearing for CI (`npm ci` + cache).
 - The next pure extraction (reading-surface chrome, candidate 6 of the
   architecture review) has a home to test in.
+
+## Amended 2026-10-23 (source pins: derived logic is evaluated, never matched verbatim)
+
+Consequence 1's "pinned verbatim" splits into two pin kinds now that the
+suite blesses Components-side source pins (popup JSX read as text): a pin
+asserting **derived logic** must lift the real expression out of the
+component source and evaluate it against payload states (the exemplar,
+`Components/WordPopup.sourceBadge.test.js`, regex-lifts the badge
+derivation and evaluates it via `new Function` against the payload
+states); verbatim-contains pins are allowed only for **wiring/structure**
+— pass-throughs, class hooks, presence/absence (exemplar:
+`Components/WordPopup.ankiSend.test.js`). The incident that forces the
+split: the "ai · ai" badge bug passed its own verbatim-contains pin — the
+pin asserted the buggy expression byte-for-byte, so red-green was
+impossible for that logic error and only the review pass caught it
+(fixed 2026-10-20, `cab5280`). The decision above is unchanged: logic
+that CAN be imported from `lib/` is still tested behaviorally; the
+lift-and-evaluate form exists for the components that sit outside
+vitest's behavioral reach.

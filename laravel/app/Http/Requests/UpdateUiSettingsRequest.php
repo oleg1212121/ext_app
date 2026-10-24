@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Classes\Enrichment\EnricherRegistry;
+use App\Support\AnkiSettings;
 use App\Support\SavedUiSettings;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -50,7 +51,34 @@ class UpdateUiSettingsRequest extends FormRequest
             'popup.examples' => ['boolean'],
             'popup.etymologies' => ['boolean'],
             'popup.explanation' => ['boolean'],
+            // Anki connection (the profile's Anki tab): AnkiConnect endpoint
+            // + port. The browser calls AnkiConnect directly; Laravel
+            // only stores these (unknown keys are stripped by validated()).
+            // The legacy global base — top-level anki.deck/anki.fields —
+            // deliberately has NO rules (anki-popup-refresh): it is
+            // read-only now, so a payload's values are stripped as unknown
+            // keys while UiSettingsController preserves the previously
+            // saved pair the word-level fallback still reads.
+            'anki' => ['nullable', 'array'],
+            'anki.url' => ['nullable', 'string', 'max:255'],
+            'anki.port' => ['nullable', 'integer', 'min:1', 'max:65535'],
+            'anki.languages' => ['nullable', 'array'],
         ];
+
+        // Per-language deck + field toggles (the Anki tab's language
+        // selector). Rules exist only for enabled language codes, so
+        // validated() strips whole non-enabled entries and unknown keys
+        // inside an entry, exactly like the section's other keys — a
+        // language that stops being enabled silently loses its overrides.
+        // The resolved `default` entry is computed server-side from the
+        // legacy global base (AnkiSettings::for) and is never persistable.
+        foreach (AnkiSettings::enabledCodes() as $code) {
+            $rules["anki.languages.{$code}.deck"] = ['nullable', 'string', 'max:100'];
+            $rules["anki.languages.{$code}.fields"] = ['nullable', 'array'];
+            foreach (AnkiSettings::FIELDS as $field) {
+                $rules["anki.languages.{$code}.fields.{$field}"] = ['boolean'];
+            }
+        }
 
         // The annotation display preferences are registry-owned (ADR 0067):
         // every annotation accepts its key on both surfaces.

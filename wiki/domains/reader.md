@@ -4,8 +4,9 @@ title: Reader
 description: React reading interface for imported text entities in any enabled language, with bilingual Reading rows (canonical a/b row objects, ADR 0060), inline illustration sentences (ADR 0050), a server-default reading side with a client-side swap, server-side pagination, and a per-device reading position.
 tags: [reader, inertia, react, illustrations]
 status: stable
-stale_after: 2026-12-28
-generated: { by: agent:zcode, at: 2026-10-10T21:17:00+03:00 }
+stale_after: 2027-01-19
+generated: { by: agent:zcode, at: 2026-10-24T12:30:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
@@ -164,8 +165,11 @@ page appears directly, at its top.
 payload (scoped to the current page's rows): `wordMaps` keyed by canonical
 side (`{a, b}`; the b map empty when rows are single-language), plus
 `highlight` (the saved `reader.highlight` setting) and the `highlightable`
-language flags (side language ≠ the user's native language). The same rule
-now gates the AI Context explanation tab: `explainable` flags and `explain`
+language flags (side language ≠ the user's native language). `explainable`
+(2026-10-24: per-side existence — the not-native rule governs
+`highlightable` only) gates the word popup's AI Context explanation toggle:
+`explainable`
+flags and `explain`
 (`{enabled, modelKey, modelLabel, followsAnswer, answerLabel}` — assembled
 server-side by `AIModelResolver::explainConfig()`, the same builder the
 simulator ships from; the reader's `answerLabel` is null — ADR 0035).

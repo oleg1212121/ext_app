@@ -5,14 +5,43 @@ namespace App\Classes;
 /**
  * Validates an OKF v0.2 knowledge bundle: frontmatter conformance, broken
  * cross-links, freshness (stale_after), and source provenance signals.
+ *
+ * Warnings can be acknowledged in a checked-in baseline (a
+ * validate-baseline.json inside the bundle root): JSON `entries` of
+ * {warning, owner, date, note} — each requiring a non-empty string
+ * warning, owner and date, since the owner+date is what makes an
+ * acknowledgement accountable — matched by exact message equality, so
+ * known-benign signals (typically source-mtime drift) keep the run green
+ * while any NEW warning fails it. A malformed baseline is reported as an
+ * error — never silently ignored.
  */
 class WikiValidator
 {
+    public const BASELINE_FILENAME = 'validate-baseline.json';
+
     /** @var array<int, string> */
     private array $errors = [];
 
     /** @var array<int, string> */
     private array $warnings = [];
+
+    /** @var array<int, string> */
+    private array $baselineErrors = [];
+
+    /** @var array<int, array<string, mixed>> valid baseline entries, in file order */
+    private array $baselineEntries = [];
+
+    /** @var array<int, array<string, mixed>> baseline entries matching a current warning (the prune keep-set) */
+    private array $matchingBaselineEntries = [];
+
+    /** @var array<int, array<string, mixed>> baseline entries matching no current warning (pruning candidates) */
+    private array $staleBaselineEntries = [];
+
+    /** @var array<int, string> */
+    private array $acknowledged = [];
+
+    /** @var array<int, string> */
+    private array $unacknowledged = [];
 
     public function __construct(private readonly string $root) {}
 
@@ -32,10 +61,98 @@ class WikiValidator
         return $this->warnings;
     }
 
+    /**
+     * Warnings acknowledged by a baseline entry (exact message equality).
+     *
+     * @return array<int, string>
+     */
+    public function acknowledgedWarnings(): array
+    {
+        return $this->acknowledged;
+    }
+
+    /**
+     * Warnings with no matching baseline entry — the ones that fail the run.
+     *
+     * @return array<int, string>
+     */
+    public function unacknowledgedWarnings(): array
+    {
+        return $this->unacknowledged;
+    }
+
+    /**
+     * Problems with the baseline file itself (invalid JSON, wrong shape,
+     * entries without a usable warning message). Reported as errors.
+     *
+     * @return array<int, string>
+     */
+    public function baselineErrors(): array
+    {
+        return $this->baselineErrors;
+    }
+
+    /**
+     * Path the baseline is read from (bundle root).
+     */
+    public function baselinePath(): string
+    {
+        return $this->root.'/'.self::BASELINE_FILENAME;
+    }
+
+    /**
+     * All valid baseline entries, in file order.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function baselineEntries(): array
+    {
+        return $this->baselineEntries;
+    }
+
+    /**
+     * Baseline entries matching no current warning — pruning candidates.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function staleBaselineEntries(): array
+    {
+        return $this->staleBaselineEntries;
+    }
+
+    /**
+     * Baseline entries to keep when pruning (those matching a current warning).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function prunedBaselineEntries(): array
+    {
+        return $this->matchingBaselineEntries;
+    }
+
+    /**
+     * Serialize baseline entries to the canonical on-disk format.
+     *
+     * @param  array<int, array<string, mixed>>  $entries
+     */
+    public static function encodeBaseline(array $entries): string
+    {
+        return json_encode(
+            ['entries' => array_values($entries)],
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        ).PHP_EOL;
+    }
+
     public function validate(): self
     {
         $this->errors = [];
         $this->warnings = [];
+        $this->baselineErrors = [];
+        $this->baselineEntries = [];
+        $this->matchingBaselineEntries = [];
+        $this->staleBaselineEntries = [];
+        $this->acknowledged = [];
+        $this->unacknowledged = [];
 
         if (! is_dir($this->root)) {
             $this->errors[] = "Wiki bundle not found at {$this->root}";
@@ -47,7 +164,73 @@ class WikiValidator
             $this->validateFile($relativePath);
         }
 
+        $this->loadBaseline();
+
         return $this;
+    }
+
+    private function loadBaseline(): void
+    {
+        $path = $this->baselinePath();
+
+        if (! is_file($path)) {
+            $this->unacknowledged = $this->warnings;
+
+            return;
+        }
+
+        $raw = file_get_contents($path);
+        $decoded = $raw === false ? null : json_decode($raw, true);
+
+        if ($decoded === null && json_last_error() !== JSON_ERROR_NONE) {
+            $this->baselineErrors[] = "{$path}: baseline is not valid JSON — ".json_last_error_msg();
+            $this->unacknowledged = $this->warnings;
+
+            return;
+        }
+
+        if (! is_array($decoded) || ! array_key_exists('entries', $decoded) || ! is_array($decoded['entries'])) {
+            $this->baselineErrors[] = "{$path}: baseline must be a JSON object with an \"entries\" array";
+            $this->unacknowledged = $this->warnings;
+
+            return;
+        }
+
+        $acknowledgedMessages = [];
+        foreach ($decoded['entries'] as $index => $entry) {
+            if (! is_array($entry)
+                || ! self::isNonEmptyString($entry['warning'] ?? null)
+                || ! self::isNonEmptyString($entry['owner'] ?? null)
+                || ! self::isNonEmptyString($entry['date'] ?? null)
+            ) {
+                $this->baselineErrors[] = "{$path}: entries[{$index}] must be an object with non-empty string \"warning\", \"owner\" and \"date\"";
+
+                continue;
+            }
+
+            $this->baselineEntries[] = $entry;
+
+            if (in_array($entry['warning'], $this->warnings, true)) {
+                $this->matchingBaselineEntries[] = $entry;
+                $acknowledgedMessages[$entry['warning']] = true;
+            } else {
+                $this->staleBaselineEntries[] = $entry;
+            }
+        }
+
+        $this->acknowledged = array_values(array_filter(
+            $this->warnings,
+            fn (string $warning): bool => isset($acknowledgedMessages[$warning]),
+        ));
+        $this->unacknowledged = array_values(array_filter(
+            $this->warnings,
+            fn (string $warning): bool => ! isset($acknowledgedMessages[$warning]),
+        ));
+    }
+
+    private static function isNonEmptyString(mixed $value): bool
+    {
+        return is_string($value) && trim($value) !== '';
     }
 
     private function validateFile(string $relativePath): void

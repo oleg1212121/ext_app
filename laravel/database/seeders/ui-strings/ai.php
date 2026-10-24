@@ -1,7 +1,8 @@
 <?php
 
 // UI strings: the Models used popup (Components/ModelsUsedPopup.jsx), shared
-// by the simulator's AI Response panel and the word popup's Explanation tab.
+// by the simulator's AI Response panel and the word popup's toolbar (the
+// robot icon, rightmost).
 return [
     'ai.models_title' => ['en' => 'AI models used', 'ru' => 'Используемые ИИ-модели', 'be' => 'Выкарыстаныя ШІ-мадэлі'],
     'ai.models_icon' => ['en' => 'AI models', 'ru' => 'ИИ-модели', 'be' => 'ШІ-мадэлі'],

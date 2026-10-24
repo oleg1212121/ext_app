@@ -5,7 +5,8 @@ description: Frequency-rank placement test — a 50-word sample over the ranked 
 tags: [word-test, placement, familiarity, frequency, inertia, react]
 status: stable
 stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-10-06T18:00:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/WordTestController.php

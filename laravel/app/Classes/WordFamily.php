@@ -18,7 +18,19 @@ use Illuminate\Support\Collection;
  * (the popup shows a "form of" pointer line instead) and stray relay glosses
  * are filtered out of partially-relay entries — kaikki merges form-of lines
  * into real entries, so e.g. "saw/verb" carries real saw senses AND
- * "simple past of see".
+ * "simple past of see". Both are display-only: the filtering swaps the
+ * definitions relation AFTER the completeness recalc and the ordering below,
+ * which must judge the word's stored definition set — the same set
+ * words:recalc-completeness's SQL mirrors (a relay gloss is an unlabelled,
+ * live row there) — or the two paths would score such an entry differently
+ * and words.completeness would flap depending on which ran last.
+ *
+ * The assembled entries then stable-sort [live entry before demoted entry,
+ * then completeness-descending] (stored `words.completeness`, recalculated
+ * lazily on the way out — see WordCompleteness): the richest live entry
+ * leads, an entry whose every sense is obsolete/archaic sinks below every
+ * live one, and the assembly order (linked word first, class priority,
+ * base-group frequency) is the tiebreak.
  */
 class WordFamily
 {
@@ -46,11 +58,19 @@ class WordFamily
     private const EAGER_LOAD = [
         'wordClass:id,slug,title',
         'language:id,code',
-        'definitions:id,word_id,definition',
-        'transcriptions:id,word_id,transcription,transcription_type_id',
+        // created_at/updated_at ride along: WordCompleteness's staleness
+        // threshold reads the children's newest stamps off the loaded
+        // relations (no per-child re-query); labels rides along for the
+        // demotion test (live-before-demoted ordering, ticket 10).
+        'definitions:id,word_id,definition,labels,created_at,updated_at',
+        'transcriptions:id,word_id,transcription,transcription_type_id,created_at,updated_at',
         'transcriptions.transcriptionType:id,slug,title',
-        'examples:id,word_id,example',
-        'etymologies:id,word_id,etymology',
+        'examples:id,word_id,example,created_at,updated_at',
+        'etymologies:id,word_id,etymology,created_at,updated_at',
+        // Plain relation (no column list): the tagged_words pivot columns must
+        // ride along. WordController::show plucks tag names off the bound word
+        // for the popup's "Save to Anki" card.
+        'tags',
     ];
 
     /**
@@ -89,6 +109,37 @@ class WordFamily
                 ->values());
         }
 
+        // The lazy completeness recalc (both columns persisted when stale,
+        // in-memory scores refreshed either way) runs while every entry's
+        // definitions relation is still the STORED set: isDemoted and the
+        // definition points must judge what is in the database — the same
+        // rows words:recalc-completeness's SQL scores, where a relay gloss
+        // is an unlabelled, live definition — never the display-filtered
+        // set below. contentStamp's staleness window reads the same stored
+        // children, matching the sweep's all-definitions threshold.
+        WordCompleteness::recalcFamily($entries);
+
+        // The popup ordering: live entries before demoted ones
+        // (WordCompleteness::isDemoted — the word's own headword mark
+        // labelled obsolete/archaic, or every stored definition labelled
+        // so; shared with the score so they can never disagree), then
+        // completeness-descending, over the assembled
+        // order — linked word first, class priority, base groups ranked by
+        // frequency — which remains the tiebreak for equal scores among
+        // equally-live entries. PHP 8 sorts are stable, so uasort preserves
+        // the assembled order within a score.
+        $entries = $entries->sort(
+            fn (Word $a, Word $b): int => ((int) WordCompleteness::isDemoted($a) <=> (int) WordCompleteness::isDemoted($b))
+                ?: (($b->completeness ?? 0) <=> ($a->completeness ?? 0)),
+        )->values();
+
+        // Only now the display filter: swapping the definitions relation to
+        // the relay-filtered set would otherwise leak into the scoring and
+        // the demotion test above (a partially-relay entry whose every
+        // surviving sense is obsolete/archaic would demote here while the
+        // sweep — relay glosses unlabelled, live — keeps it up), and the
+        // stored words.completeness would flap depending on which path ran
+        // last.
         if ($relayHiding) {
             $entries->each(fn (Word $entry) => $entry->setRelation(
                 'definitions',

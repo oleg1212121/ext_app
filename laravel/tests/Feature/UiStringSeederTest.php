@@ -31,6 +31,102 @@ it('seeds every interface-enabled language that has a value for the key', functi
     ]);
 });
 
+it('seeds the Anki tab language-selector string in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    expect(seededUiStringTexts('profile.anki_language'))->toBe([
+        'en' => 'Language',
+        'ru' => 'Язык',
+        'be' => 'Мова',
+    ]);
+});
+
+it('seeds the word popup update-affordance strings in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // anki-popup-refresh ticket 05: the toolbar icon's update form and its
+    // "Updated in Anki." status — the duplicate dead-end's replacements.
+    expect(seededUiStringTexts('word.anki_update'))->toBe([
+        'en' => 'Update in Anki',
+        'ru' => 'Обновить в Anki',
+        'be' => 'Абнавіць у Anki',
+    ]);
+    expect(seededUiStringTexts('word.anki_updated'))->toBe([
+        'en' => 'Updated in Anki.',
+        'ru' => 'Обновлено в Anki.',
+        'be' => 'Абноўлена ў Anki.',
+    ]);
+});
+
+it('seeds the model-aware popup mismatch string in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // anki-popup-refresh review fixes: per-language note types can mismatch
+    // too, so the popup copy interpolates the actual :model (mirroring the
+    // profile tab's strings) instead of hardcoding the legacy base name.
+    expect(seededUiStringTexts('word.anki_mismatch'))->toBe([
+        'en' => 'The ":model" note type in Anki is out of date. In Anki, open Tools → Manage Note Types and delete ":model" (its notes are deleted with it), then sync again from Profile → Anki and send your words again.',
+        'ru' => 'Тип заметок «:model» в Anki устарел. В Anki откройте «Инструменты → Управление типами заметок» и удалите «:model» (его заметки удалятся вместе с ним), затем снова синхронизируйте профиль → Anki и отправьте слова заново.',
+        'be' => 'Тып нататак «:model» у Anki састарэў. У Anki адкрыйце «Інструменты → Кіраванне тыпамі нататак» і выдаліце «:model» (яго нататкі выдаляцца разам з ім), затым зноў сінхранізуйце профіль → Anki і адпраўце словы яшчэ раз.',
+    ]);
+});
+
+it('seeds the sample-card updated string in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // anki-popup-refresh review fixes: the sync layer reports {added,
+    // updated}, so a re-sent sample that refreshed the app's own note in
+    // place reports "updated" instead of "nothing was duplicated".
+    expect(seededUiStringTexts('profile.anki_sample_updated'))->toBe([
+        'en' => 'Sample card updated in ":deck".',
+        'ru' => 'Пример карточки обновлён в «:deck».',
+        'be' => 'Прыклад карткі абноўлены ў «:deck».',
+    ]);
+});
+
+it('seeds the staged raw translations label in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // popup-provenance ticket 02: the tiny muted label prefixing the amber
+    // raw line under the linked green translations.
+    expect(seededUiStringTexts('word.raw_translations'))->toBe([
+        'en' => 'raw:',
+        'ru' => 'сырые:',
+        'be' => 'сырыя:',
+    ]);
+});
+
+it('seeds the six usage-label chips in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // popup-usage-labels ticket 01: the closed six render as chips before
+    // their sense text; ru/be use the dictionary abbreviations.
+    expect(seededUiStringTexts('word.label_obsolete'))->toBe([
+        'en' => 'obsolete', 'ru' => 'устар.', 'be' => 'устар.',
+    ]);
+    expect(seededUiStringTexts('word.label_archaic'))->toBe([
+        'en' => 'archaic', 'ru' => 'арх.', 'be' => 'арх.',
+    ]);
+    expect(seededUiStringTexts('word.label_dated'))->toBe([
+        'en' => 'dated', 'ru' => 'не совр.', 'be' => 'не суч.',
+    ]);
+    expect(seededUiStringTexts('word.label_colloquial'))->toBe([
+        'en' => 'colloquial', 'ru' => 'разг.', 'be' => 'разг.',
+    ]);
+    expect(seededUiStringTexts('word.label_rare'))->toBe([
+        'en' => 'rare', 'ru' => 'редк.', 'be' => 'рэдк.',
+    ]);
+    expect(seededUiStringTexts('word.label_dialectal'))->toBe([
+        'en' => 'dialectal', 'ru' => 'диал.', 'be' => 'дыял.',
+    ]);
+});
+
 it('seeds be texts for sampled keys across every group', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();
@@ -53,7 +149,7 @@ it('seeds be texts for sampled keys across every group', function () {
         'recommendations.apply' => 'Ужыць',
         'sounds.group_vowels' => 'Галосныя',
         'welcome.about' => 'Пра праект',
-        'word.tab_dictionary' => 'Слоўнік',
+        'word.ask_ai' => 'Спытаць ШІ',
         'wordtest.submit' => 'Адправіць',
     ];
 

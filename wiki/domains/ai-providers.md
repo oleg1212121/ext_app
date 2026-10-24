@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent/zcode, at: 2026-10-04T17:50:46Z }
+generated: { by: agent:zcode, at: 2026-10-23T18:55:00+03:00 }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base
@@ -13,6 +13,9 @@ sources:
   - id: resolver
     resource: laravel/app/Classes/AIModelResolver.php
     title: Provider registry and entry point
+  - id: enrich-service
+    resource: laravel/app/Classes/WordAiEnrichmentService.php
+    title: WordAiEnrichmentService (the ask-AI enrichment consumer, ADR 0082)
   - id: adr-preferences
     resource: docs/adr/0035-per-user-ai-model-preferences.md
     title: ADR 0035 — Per-user AI model preferences, resolved server-side
@@ -52,15 +55,9 @@ sources:
    - id: provider-model
      resource: laravel/app/Models/AiProvider.php
      title: DB-backed AI provider (enable overlay)
-   - id: provider-migration
-     resource: laravel/database/migrations/2026_08_23_000001_create_ai_providers_table.php
-     title: ai_providers table
-    - id: model-fk-migration
-      resource: laravel/database/migrations/2026_08_23_000002_add_ai_provider_id_to_ai_models.php
-      title: ai_models.ai_provider_id FK (added nullable)
-    - id: model-fk-not-null
-      resource: laravel/database/migrations/2026_08_24_000001_make_ai_models_provider_not_null.php
-      title: ai_models.ai_provider_id made NOT NULL + cascade delete
+   - id: ai-tables-migration
+     resource: laravel/database/migrations/2026_09_10_000002_create_ai_tables.php
+     title: ai_providers / ai_models (NOT NULL ai_provider_id FK) / user_api_keys
    - id: provider-seeder
      resource: laravel/database/seeders/AiProviderSeeder.php
      title: AiProviderSeeder
@@ -70,9 +67,6 @@ sources:
    - id: user-key-model
      resource: laravel/app/Models/UserApiKey.php
      title: Per-user API key (encrypted)
-   - id: user-key-migration
-     resource: laravel/database/migrations/2026_08_23_000003_create_user_api_keys_table.php
-     title: user_api_keys table
    - id: user-key-request
      resource: laravel/app/Http/Requests/StoreApiKeyRequest.php
      title: StoreApiKeyRequest
@@ -144,9 +138,9 @@ OpenRouter model ids containing `/` are fine), e.g.
 
 User-facing request endpoints do **not** accept a model from the client
 (ADR 0035): `/ai/question` and `/ai/question/stream` resolve the answer model
-and `/ai/word-explain` the explanation model via the methods above, answering
-with "Choose an AI model in your profile settings." when the resolution is
-null. The Profile persists both ids via `PATCH /profile/ai-models`
+and `/ai/word-explain` and `/ai/word-enrich` the explanation model via the
+methods above, answering with "Choose an AI model in your profile settings."
+when the resolution is null. The Profile persists both ids via `PATCH /profile/ai-models`
 (`UpdateAiModelPreferencesRequest`, `Rule::exists('ai_models')->where('is_enabled')`).
 
 `App\Classes\AiProvider` (abstract, implements
@@ -213,9 +207,8 @@ reads its enabled, unexpired models from `ai_models` in its constructor, via the
 **NOT NULL** `ai_provider_id` foreign key to `ai_providers` (unique with
 `external_id`, `cascadeOnDelete`), reconstructing the legacy
 `key => "Name ($X.XX/$Y.YY)"` display format via `AiModel::displayLabel()`. The
-column was originally added nullable (leaving pre-existing catalog rows
-orphaned); a follow-up migration enforces NOT NULL, so orphan rows can no longer
-exist.
+baseline migration creates the column NOT NULL with cascade delete
+(`2026_09_10_000002_create_ai_tables`), so orphan rows cannot exist.
 
 * `App\Services\AiModelSync` (abstract, implements `App\Contracts\ModelSync`)
   holds the shared fetch / upsert / delete-missing logic. `sync()` reads the
@@ -256,6 +249,22 @@ exist.
 * [Bilinguals Simulator](/domains/bilinguals-simulator.md) — translation
   assessment (`/ai/question`).
 * `Test::askAI` (`/word/ask-ai`) — word-level AI questions.
+* [Interactive Words](/domains/interactive-words.md) — the word popup's
+  Context explanation (`/ai/word-explain`) and its ask-AI enrichment
+  (`/ai/word-enrich`, one ledger-locked ask per word, merged inline under
+  per-row `source='ai'` provenance, ADR 0082; the missing card's adoption
+  ask resolves-or-mints the word first, the mint stamped
+  `words.source = 'ai'` (ADR 0084), ticket 05) — both resolve the
+  **explanation model**. The enrichment prompt is the admin-editable
+  `word.enrichment` template (`:word`/`:language`/`:native`,
+  `PromptTemplates::enrichment`, code fallback seeded as the row)
+  demanding strict JSON, **monolingual** (ticket 08, 2026-10-20):
+  definitions, etymology notes and examples in the word's own language,
+  transcriptions IPA, only translations native — and AI definitions pass
+  the import's `DefinitionLanguage` majority-script guard at the merge.
+  A definitions entry may carry usage labels (`{text, labels}` object,
+  the closed `UsageLabels` set — ticket 09), stored on
+  `definitions.labels` for the `source='ai'` rows.
 
 # Extending
 

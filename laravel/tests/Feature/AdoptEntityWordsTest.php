@@ -6,6 +6,7 @@ use App\Classes\EntityWordLinker;
 use App\Jobs\FetchWordTranslations;
 use App\Jobs\RefreshEntityWords;
 use App\Models\EntityWord;
+use App\Models\Form;
 use App\Models\Language;
 use App\Models\Word;
 use App\Models\WordTranslation;
@@ -43,7 +44,82 @@ it('adopts stamped tokens into the dictionary under the unknown class', function
     expect($word->word)->toBe('Flibbertigibbet')
         ->and($word->l_word)->toBe('flibbertigibbet')
         ->and($word->wordClass->slug)->toBe('unknown')
-        ->and($word->language->code)->toBe('en');
+        ->and($word->language->code)->toBe('en')
+        // The adopted word carries itself as its lemma form — the forms
+        // table alone must resolve lookups.
+        ->and(Form::query()->where('word_id', $word->id)->pluck('form')->all())
+        ->toBe(['Flibbertigibbet']);
+});
+
+it('adopts the existing row when the token’s l_word already exists, preferring the classed one', function () {
+    $entity = createEntity('en');
+
+    // A classed row already carries the token's l_word (e.g. it became
+    // matchable after the link stamp): adoption must attach to it, not
+    // mint an unknown twin.
+    $dog = createWord('en', 'dog', 'noun');
+    $stampedDog = adoptionEntityWord($entity, 'dog', stamped: true);
+
+    // Even a lower-id unknown row must lose to the classed one.
+    $runUnknown = createWord('en', 'run', 'unknown');
+    $runVerb = createWord('en', 'run', 'verb');
+    $stampedRun = adoptionEntityWord($entity, 'run', stamped: true);
+
+    $this->artisan('words:adopt-from-entities')->assertSuccessful();
+
+    expect($stampedDog->refresh()->word_id)->toBe($dog->id)
+        ->and($stampedRun->refresh()->word_id)->toBe($runVerb->id)
+        ->and($runVerb->id)->toBeGreaterThan($runUnknown->id)
+        ->and(Word::query()->where('l_word', 'dog')->count())->toBe(1)
+        ->and(Word::query()->where('l_word', 'run')->count())->toBe(2);
+});
+
+it('attaches to the folded-key row when a stale entity stamp misses it', function () {
+    $entity = createEntity('ru');
+
+    // The entity stamp predates the ё-fold in the key formula: the token
+    // keys 'ёлка' while the dictionary row keys 'елка'. The candidate
+    // lookup misses, and the mint must still attach to the row the
+    // normalized key lands on — the unique index allows exactly one.
+    $stamped = EntityWord::query()->create([
+        'entity_id' => $entity->id,
+        'l_word' => 'ёлка',
+        'token' => 'ёлка',
+        'count' => 1,
+        'unmatchable_at' => now(),
+    ]);
+    $existing = createWord('ru', 'ёлка', 'unknown', ['l_word' => 'елка']);
+
+    $this->artisan('words:adopt-from-entities')->assertSuccessful();
+
+    expect($stamped->refresh()->word_id)->toBe($existing->id)
+        ->and(Word::query()->where('language_id', $existing->language_id)->count())->toBe(1);
+});
+
+it('stores a genuinely new ru token as a plain display word with its lemma form', function () {
+    $entity = createEntity('ru');
+
+    // Raw surface token carries the combining stress mark; the indexer
+    // already keyed it plain (the tokenizer rule).
+    $stamped = EntityWord::query()->create([
+        'entity_id' => $entity->id,
+        'l_word' => 'собаку',
+        'token' => 'соба́ку',
+        'count' => 1,
+        'unmatchable_at' => now(),
+    ]);
+
+    $this->artisan('words:adopt-from-entities')->assertSuccessful();
+
+    $stamped->refresh();
+    $word = Word::query()->findOrFail($stamped->word_id);
+
+    expect($word->word)->toBe('собаку')
+        ->and($word->word)->not->toBe('соба́ку')
+        ->and($word->l_word)->toBe('собаку')
+        ->and($word->wordClass->slug)->toBe('unknown')
+        ->and(Form::query()->where('word_id', $word->id)->pluck('form')->all())
+        ->toBe(['собаку']);
 });
 
 it('queues fetches for adopted and translation-less words, never for translated ones', function () {

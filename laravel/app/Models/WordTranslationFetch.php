@@ -8,7 +8,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * One fetch-ledger row per (word, target language). status=empty is the
  * exclusion list: every provider answered "no translation", so the word is
- * never looked up again for that language.
+ * never looked up again for that language. The link-only fetch records its
+ * outcome on the row: linked_count candidates became word_translations
+ * pairs, staged_count were staged into the source word's translations JSON
+ * for the later link pass.
  */
 class WordTranslationFetch extends Model
 {
@@ -31,6 +34,8 @@ class WordTranslationFetch extends Model
         'target_language_id',
         'provider',
         'status',
+        'linked_count',
+        'staged_count',
         'attempts',
         'last_attempted_at',
     ];
@@ -38,6 +43,8 @@ class WordTranslationFetch extends Model
     protected function casts(): array
     {
         return [
+            'linked_count' => 'integer',
+            'staged_count' => 'integer',
             'attempts' => 'integer',
             'last_attempted_at' => 'datetime',
         ];

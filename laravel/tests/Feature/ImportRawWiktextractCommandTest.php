@@ -55,8 +55,10 @@ it('imports en and ru end to end, stages translations symmetrically and links by
     expect($koshka)->not->toBeNull();
     expect(Word::query()->where('language_id', $ru->id)->where('word', 'chien')->exists())->toBeFalse();
 
-    expect($cat->translations)->toContain('кошка');
-    expect($koshka->translations)->toContain('cat');
+    // The default link pass links the staged candidates and prunes them
+    // from the JSON — a fully-matched word stores null afterwards.
+    expect($cat->refresh()->translations)->toBeNull();
+    expect($koshka->refresh()->translations)->toBeNull();
 
     expect(WordTranslation::count())->toBe(1);
 

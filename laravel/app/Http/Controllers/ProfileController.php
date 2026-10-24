@@ -47,6 +47,10 @@ class ProfileController extends Controller
             ->get()
             ->map(fn (Language $language): array => [
                 'id' => $language->id,
+                // The Anki tab's language selector keys off the code: the
+                // per-language settings map and the per-language note type
+                // are code-keyed.
+                'code' => $language->code,
                 'name' => $language->name,
                 'native_name' => $language->native_name,
                 'is_interface_enabled' => $language->is_interface_enabled,

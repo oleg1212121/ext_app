@@ -5,7 +5,7 @@ import {useI18n} from '../i18n';
 
 /**
  * The robot-with-question-mark icon that opens the Models used popup from
- * the AI Response panel header and the Word popup's Explanation tab.
+ * the AI Response panel header and the word popup's toolbar (rightmost).
  */
 export function RobotHelpIcon({className = 'h-4 w-4'}) {
     return (

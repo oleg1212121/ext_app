@@ -4,7 +4,7 @@ title: Coding Conventions
 description: Project-wide rules for code style, structure, testing, and agent behavior in this repository.
 tags: [conventions, style, testing]
 status: stable
-generated: { by: agent:zcode, at: 2026-09-17T23:40:00Z }
+generated: { by: agent:zcode, at: 2026-10-23T16:25:00+03:00 }
 verified: { by: human:alex, at: 2026-07-26T18:45:00Z }
 sources:
   - id: agents
@@ -21,7 +21,8 @@ sources:
 
 # Laravel 12+ structure
 
-* No `app/Http/Middleware/` — register middleware in `bootstrap/app.php`.
+* Middleware classes live in `app/Http/Middleware/` but there is **no
+  `Http/Kernel.php`** — they are registered/aliased in `bootstrap/app.php`.
 * No `app/Console/Kernel.php` — commands in `app/Console/Commands/`
   **auto-register**; scheduling lives in `routes/console.php`.
 * Use `php artisan make:*` generators (with `--no-interaction`) for new files.
@@ -46,11 +47,15 @@ sources:
   Blade. See [Frontend](/architecture/frontend.md).
 * Tailwind 4: CSS-first config only (`resources/css/app.css`); gap utilities
   for spacing; support `dark:` where existing pages do.
-* Livewire events: `$this->dispatch()`, never `emit`.
+* Livewire events (`$this->dispatch()`, never `emit`) now apply only inside
+  Filament — no app-level Livewire components exist.
 
 # Testing
 
 * Pest syntax only; tests in `tests/Feature` / `tests/Unit`.
+* Pure-JS logic in `resources/js/lib/` is tested with vitest
+  (`docker exec ext_app_laravel npm run test`); new lib modules get vitest
+  tests beside the module, same as Pest for PHP.
 * Use specific assertions: `assertForbidden()`, `assertNotFound()`,
   `assertSuccessful()` — not `assertStatus(403)`.
 * Test database is `ext_app_test` (from `phpunit.xml`) — never the dev DB.
@@ -60,14 +65,25 @@ sources:
   runs pre-dispatch code inline; Python timeouts reach 600s), guarded drain
   loops with convergence assertions, and `per_page` passed/asserted on
   paginated endpoints. Details: [Running Tests](/playbooks/running-tests.md).
-* Default to `composer run test:tia` after changes — it re-runs only tests
-  touched by changed files; the full suite is for pre-merge/CI verification.
+* Per-ticket verification is `composer run test:tia` plus a targeted
+  `php artisan test` on the files being worked — never the full suite per
+  ticket. The full `composer run test` runs once per spec, after all its
+  tickets resolve and before review dispatch; a later fix pass verifies
+  with `test:tia` plus the touched test files; CI on push stays the final
+  full gate.
+* The wiki gate: `php artisan wiki:validate` must pass with zero
+  unacknowledged warnings — fix a new warning by bumping the listing
+  concept's `generated.at`, or acknowledge known-benign drift in
+  `wiki/validate-baseline.json` with an owner+dated entry; `--prune`
+  drops baseline entries that no longer match. Details:
+  [Running Tests](/playbooks/running-tests.md).
 * Every change must be covered by a test that runs green; see
   [Running Tests](/playbooks/running-tests.md).
 
 # Documentation freshness trap
 
-`laravel/CLAUDE.md` (Boost guidelines) and `.github/copilot-instructions.md`
-list **outdated** package versions (Laravel 12, Filament 3, Livewire 3, Pest 3,
+Older AI-authored guideline files (a `laravel/CLAUDE.md` from the Boost era,
+`.github/copilot-instructions.md` — neither exists in the tree anymore) listed
+**outdated** package versions (Laravel 12, Filament 3, Livewire 3, Pest 3,
 Tailwind 3). Trust `composer.lock`/`package.json` and
 [Application Overview](/architecture/overview.md#version-truth) instead.

@@ -10,8 +10,10 @@ This document provides guidelines for agents operating in this Laravel bilingual
 
 **Maintenance rules (required):**
 - When you change a feature, flow, or schema, update the matching concept in `wiki/`, bump its `generated.at`, and add an entry to `wiki/log.md`.
+- Under plan mode docs are read-only: skills that write ADRs/glossary entries as they go (grill-with-docs → domain-modeling) must instead collect those updates as plan items, written immediately after plan approval.
 - When you add/change routes, models, or artisan commands, regenerate the machine-owned references: `docker exec ext_app_laravel php artisan wiki:sync` (never hand-edit `wiki/reference/`).
-- `docker exec ext_app_laravel php artisan wiki:validate` must pass (it also runs as part of the test suite via `tests/Feature/WikiTest.php`).
+- `docker exec ext_app_laravel php artisan wiki:validate` must pass with zero unacknowledged warnings (it also runs as part of the test suite via `tests/Feature/WikiTest.php`; any warning not acknowledged in `wiki/validate-baseline.json` fails the run).
+- Editing a concept's listed sources means bumping that concept's `generated.at` — that clears its drift warning. Known-benign drift you cannot clear gets an owner+dated entry in `wiki/validate-baseline.json`; run `docker exec ext_app_laravel php artisan wiki:validate --prune` to drop baseline entries that no longer match so the file cannot rot.
 - After reviewing a concept for accuracy, record it: add `verified: { by: human:<you>, at: <datetime> }` to its frontmatter.
 
 ## Docker Environment
@@ -125,7 +127,7 @@ docker exec ext_app_laravel composer run test:tia
 docker exec ext_app_laravel sh -c 'cd /var/www && PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/var/www/scripts/php-ini php vendor/bin/pest --parallel --tia --drop-databases --coverage --fresh'
 ```
 
-**Default to `composer run test:tia` after changes** — it re-runs only tests touched by your files; save the full `composer run test` for pre-merge/CI verification.
+**Default to `composer run test:tia` after changes** — it re-runs only tests touched by your files; save the full `composer run test` for pre-merge/CI verification. The rhythm: per-ticket verification is `test:tia` (plus targeted `php artisan test` on the files being worked), never the full suite per ticket; the full `composer run test` runs once per spec, after all tickets resolve and before review dispatch, so review sees a fully-green branch; a later fix pass verifies with `test:tia` plus the touched test files. CI on push remains the final full gate.
 
 Test database: `ext_app_test` (configured in phpunit.xml, not the default).
 
@@ -137,6 +139,16 @@ Test database: `ext_app_test` (configured in phpunit.xml, not the default).
 docker exec ext_python python -m pytest /app/ai -q
 ```
 
+**JS logic tests (vitest)** — pure JS modules in `resources/js/lib/` are
+covered by vitest tests beside them (`*.test.js` / `*.test.mjs`, Node
+environment, no Vite build — ADR 0066). New lib modules get vitest tests,
+same as Pest for PHP. CI gates them via the "Vitest (pure JS logic)" job in
+`.github/workflows/tests.yml`:
+
+```bash
+docker exec ext_app_laravel npm run test
+```
+
 ### Database
 
 > **⚠️ DESTRUCTIVE COMMAND WARNING**
@@ -146,6 +158,7 @@ docker exec ext_python python -m pytest /app/ai -q
 > - Tests use a **dedicated `testing` connection** (defined in `config/database.php`, pinned in `phpunit.xml` via `DB_CONNECTION=testing`) that points at `ext_app_test`. `tests/Pest.php` asserts `DB::connection()->getName() === 'testing'` before every Feature test, so a test run on the wrong connection fails before any destructive migration runs.
 > - For destructive ops on the test DB, go through the test runner: `composer run test` / `composer run test:tia`, or `php artisan migrate:fresh` with `DB_CONNECTION=testing` explicitly set. Verify the resolved database name is `ext_app_test` (not `ext_app`) before pressing enter.
 > - **Never start two test runs concurrently** — they share `ext_app_test` and corrupt each other's `RefreshDatabase` state. Run suites sequentially.
+> - **No git worktrees** — the container bind-mounts `./laravel` of the main checkout only and test runs share `ext_app_test`, so a worktree's `laravel/` cannot run container tests. Ticket work happens sequentially in the main checkout; implement-spec's per-ticket worktree default does not apply in this repo.
 > - `composer run test` and `composer run test:tia` run Pest in parallel (workers use temporary `ext_app_test_test_{N}` databases). Both scripts export `LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1` — without it Pest's `--drop-databases` flag is silently ignored (Pest sets `$_ENV`, Laravel reads `$_SERVER`), so worker DBs accumulate as orphans.
 
 ```bash

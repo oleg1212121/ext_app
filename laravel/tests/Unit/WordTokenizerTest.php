@@ -84,3 +84,21 @@ it('returns an empty array for text without letters', function () {
 
     expect($tokenizer->tokenize('123 ... «» --'))->toBe([]);
 });
+
+it('folds ё into the key in parity with WordLookupKey while keeping the display token', function () {
+    $tokenizer = new WordTokenizer;
+
+    $words = $tokenizer->tokenize('Ёлка ёлка ЁЛКА ещё.');
+
+    // One key for all three spellings; the first surface stays the display
+    // token, ё untouched.
+    expect($words['елка'])->toBe(['token' => 'Ёлка', 'count' => 3]);
+    expect($words['еще']['token'])->toBe('ещё');
+    expect($words)->not->toHaveKey('ёлка');
+
+    // The full WordLookupKey pipeline on a lone surface: trim, marks,
+    // zero-width format characters, then the case-folded ё.
+    expect($tokenizer->lookupKey('Ёлка'))->toBe('елка')
+        ->and($tokenizer->lookupKey("до́м \u{200B}"))->toBe('дом')
+        ->and($tokenizer->lookupKey(' поёт '))->toBe('поет');
+});

@@ -5,7 +5,8 @@ description: End-to-end workflow for aligning two same-work entities (any langua
 tags: [alignment, embeddings, jobs, howto]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-05T21:35:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: import-sim
     resource: laravel/app/Console/Commands/ImportSimulatorEntitiesCommand.php
@@ -31,7 +32,9 @@ sources:
 
 * The python service is up: `ext_python` on `http://ext_python:8000`
   (Laravel uses `services.python.url`; default already points there). Check
-  `curl localhost:8001/health` from the host → `{"status":"ok","dim":1024}`.
+  `curl localhost:8001/health` from the host → `{"status":"ok","dim":1024}`
+  (the deployed env pins `MODEL_PATH` to BGE-M3, 1024-dim; the code default
+  is `models/labse`, 768-dim, so a machine running defaults reports 768).
 * A queue worker is running (`composer run dev` includes
   `queue:listen --tries=1 --queue=default,low`). Alignment jobs declare their
   queue lane as a class attribute (`QueueLane`, ADR 0042) — all currently on
@@ -69,7 +72,9 @@ sources:
    reads the language from the entity) and flips each dispatched entity to
    `status = 'processing'` (its processing slot is held until the signature
    lands or the job's retries run out — ADR 0044). Signatures are BGE-M3
-   (1024-dim) text fingerprints used to verify that a pair is actually
+   (1024-dim, per the deployed `MODEL_PATH` in `docker-compose/python/env/.env`;
+   code default `models/labse`, 768-dim) text fingerprints used to verify that
+   a pair is actually
    the same text (threshold 0.70, see
    [Sentence Alignment](/domains/sentence-alignment.md)). Old 384-dim
    e5-small signatures are incompatible — null them out first
@@ -138,7 +143,11 @@ sources:
     either entity is invisible to the reader. "One side's sentences
     exhausted before the other's" is a normal completion (the remaining tail
     is drained), not an error — see
-    [Sentence Alignment](/domains/sentence-alignment.md).
+    [Sentence Alignment](/domains/sentence-alignment.md). First completion
+    also auto-dispatches a one-time **refine** round
+    (`RefineEntitySentences`; rerunnable via `alignments:refine`), which
+    re-scores regions below the match-score floor against a higher-quality
+    window pass — `refined_at` records that it ran.
     Small entities (`max(a_total, b_total) ≤ 75`) are raised to a single
     chunk in `beginFromScratch()`, skipping the seam rollback/trim machinery
     entirely.
@@ -160,10 +169,12 @@ sources:
     testing: `docker exec ext_app_laravel php artisan alignments:resume`
     (`--limit=N` to override the batch size, `--dry-run` to report without
     dispatching).
- 5. **Review manually** in the Filament admin: `EntityMatchResource` →
-    custom `EditEntityAlignment` page (draft store → persister → presenter
-    classes in `app/Classes/AlignmentEditor*`). Web view: the work's
-    Alignments page and `/alignments/{entityMatch}` (ADR 0036). The Filament table offers two explicit
+ 5. **Review manually** in the Filament admin: `EntityMatchResource` → its
+    "Edit alignment" action opens the Inertia/React editor at the work-nested
+    route `/works/{work}/alignments/{entityMatch}/edit` (`works.alignments.edit`,
+    `AlignmentController::show`; the draft store → persister → presenter
+    classes live in `app/Classes/AlignmentEditor*`; the old flat
+    `/alignments/{entityMatch}` route is gone, ADR 0036/0072). The Filament table offers two explicit
     restart actions (visible on `status ∈ {stale, completed, failed}`):
     **Re-align** calls the landmark-aware `begin()` — preserving human
     `alignment_chunk=-1` rows and high-confidence landmarks, deleting only

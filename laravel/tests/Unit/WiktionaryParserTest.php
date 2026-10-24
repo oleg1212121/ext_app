@@ -19,7 +19,7 @@ it('parses a single valid JSONL line', function () {
     expect($result)->not->toBeNull();
     expect($result['word'])->toBe('hello');
     expect($result['pos'])->toBe('noun');
-    expect($result['definitions'])->toContain('A greeting');
+    expect($result['definitions'])->toContain(['text' => 'A greeting', 'labels' => []]);
     expect($result['translations'])->toContain('привет');
     expect($result['forms'])->toContain('hellos');
     expect($result['sounds'])->toHaveCount(1);
@@ -43,14 +43,54 @@ it('handles missing pos with unknown default', function () {
     expect($result['pos'])->toBe('unknown');
 });
 
-it('strips combining stress marks from the lookup key', function () {
+it('strips stress marks from the ru display word and the lookup key', function () {
     $parser = new WiktionaryParser('ru', 'en');
     $line = json_decode('{"word":"свобо́дный","pos":"adjective","senses":[{"glosses":["free"]}]}');
 
     $result = $parser->parseLine($line);
 
-    expect($result['word'])->toBe('свобо́дный');
+    expect($result['word'])->toBe('свободный');
     expect($result['l_word'])->toBe('свободный');
+});
+
+it('keeps non-stress-mark display words verbatim', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"café","pos":"noun"}');
+
+    $result = $parser->parseLine($line);
+
+    // Diacritics are legitimate spelling outside the stress-mark languages.
+    expect($result['word'])->toBe('café');
+});
+
+it('rejects a ru headword that strips to nothing', function () {
+    $parser = new WiktionaryParser('ru', 'en');
+    $line = json_decode('{"word":"'."\u{0301}".'","pos":"noun"}');
+
+    expect($parser->parseLine($line))->toBeNull();
+});
+
+it('maps the raw kaikki pos through the shared alias table', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $adj = $parser->parseLine(json_decode('{"word":"quick","pos":"adj"}'));
+
+    expect($adj['pos'])->toBe('adjective');
+    expect($parser->parseLine(json_decode('{"word":"murky","pos":"unknown"}'))['pos'])->toBe('unknown');
+    expect($parser->parseLine(json_decode('{"word":"quox","pos":"unsupported_pos"}'))['pos'])->toBe('unsupported_pos');
+});
+
+it('skips romanization-tagged forms', function () {
+    $parser = new WiktionaryParser('ru', 'en');
+    $line = json_decode('{"word":"четвереньках","pos":"noun","forms":['
+        .'{"form":"četverénʹkax","tags":["romanization"]},'
+        .'{"form":"четвереньки","tags":["genitive"]},'
+        .'{"form":"доме"}]}');
+
+    $result = $parser->parseLine($line);
+
+    // The Latin transliteration never lands; other-tagged and untagged
+    // forms pass through untouched.
+    expect($result['forms'])->toBe(['четвереньки', 'доме']);
 });
 
 it('merges records for same word and pos', function () {
@@ -59,21 +99,23 @@ it('merges records for same word and pos', function () {
         'word' => 'run',
         'l_word' => 'run',
         'pos' => 'noun',
-        'definitions' => ['A physical activity'],
+        'definitions' => [['text' => 'A physical activity', 'labels' => []]],
         'forms' => ['runs'],
         'sounds' => [['value' => '/rʌn/', 'type' => 'ipa']],
         'etymology' => 'Old English',
         'translations' => ['бег'],
+        'labels' => ['archaic'],
     ];
     $incoming = [
         'word' => 'run',
         'l_word' => 'run',
         'pos' => 'noun',
-        'definitions' => ['Another definition'],
+        'definitions' => [['text' => 'Another definition', 'labels' => ['rare']]],
         'forms' => ['running'],
         'sounds' => [],
         'etymology' => null,
         'translations' => ['пробежка'],
+        'labels' => [],
     ];
 
     $merged = $parser->mergeRecord($existing, $incoming);
@@ -82,6 +124,7 @@ it('merges records for same word and pos', function () {
     expect($merged['forms'])->toHaveCount(2);
     expect($merged['translations'])->toHaveCount(2);
     expect($merged['etymology'])->toBe('Old English');
+    expect($merged['labels'])->toBe(['archaic']);
 });
 
 it('uniqueByCompound removes duplicates', function () {
@@ -110,7 +153,123 @@ it('prioritizes raw_glosses over glosses', function () {
     $line = json_decode('{"word":"test","pos":"noun","senses":[{"raw_glosses":["raw def"],"glosses":["gloss def"]}]}');
 
     $result = $parser->parseLine($line);
-    expect($result['definitions'][0])->toBe('raw def');
+    expect($result['definitions'][0]['text'])->toBe('raw def');
+});
+
+it('maps sense tags onto usage labels on both gloss paths, dropping grammar noise', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"knave","pos":"noun","senses":['
+        .'{"raw_glosses":["a dishonest man"],"tags":["archaic","masculine"]},'
+        .'{"glosses":["a naughty child"],"tags":["dated","colloquial","singular"]},'
+        .'{"glosses":["any given card in a deck"]},'
+        .'{"glosses":["obsolete spelling of knafe"],"tags":["obsolete","form-of"]}]}');
+
+    $result = $parser->parseLine($line);
+
+    // The closed set survives in the dump's own order; the grammar/gender
+    // tags (masculine, singular, form-of) drop; an untagged sense stores
+    // unlabelled. Both gloss paths label.
+    expect($result['definitions'][0])->toBe(['text' => 'a dishonest man', 'labels' => ['archaic']])
+        ->and($result['definitions'][1]['labels'])->toBe(['dated', 'colloquial'])
+        ->and($result['definitions'][2])->toBe(['text' => 'any given card in a deck', 'labels' => []])
+        ->and($result['definitions'][3]['labels'])->toBe(['obsolete']);
+});
+
+it('stores the headword mark from the tlb head template onto the record', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    // decimate's noun: the "(obsolete)" under the ===Noun=== heading is
+    // {{tlb|en|obsolete}} — kaikki keeps it out of senses[] entirely.
+    $line = json_decode('{"word":"decimate","pos":"noun",'
+        .'"head_templates":['
+        .'{"name":"en-noun","args":{},"expansion":"decimate (plural decimates)"},'
+        .'{"name":"tlb","args":{"1":"en","2":"obsolete"},"expansion":"(obsolete)"}],'
+        .'"senses":[{"glosses":["A tithe."]}]}');
+
+    $result = $parser->parseLine($line);
+
+    // The word-level mark is the template's own, never the senses' aggregate.
+    expect($result['labels'])->toBe(['obsolete'])
+        ->and($result['definitions'][0]['labels'])->toBe([]);
+});
+
+it('unions the word-level mark across the tlb args, the term-label alias and the entry tags', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"awe","pos":"noun","tags":["archaic"],'
+        .'"head_templates":['
+        .'{"name":"tlb","args":{"1":"en","2":"rare","3":"obsolete"},"expansion":"(rare, obsolete)"}],'
+        .'"senses":[{"glosses":["A feeling."]},{"glosses":["Another."]}]}');
+    $aliased = json_decode('{"word":"awe","pos":"verb","tags":["dated"],'
+        .'"head_templates":[{"name":"term-label","args":{"1":"en","2":"colloquial"},"expansion":"(colloquial)"}],'
+        .'"senses":[{"glosses":["To awe."]}]}');
+
+    expect($parser->parseLine($line)['labels'])->toBe(['archaic', 'rare', 'obsolete'])
+        ->and($parser->parseLine($aliased)['labels'])->toBe(['dated', 'colloquial']);
+});
+
+it('keeps the word-level mark empty when no headword label exists', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    // Grammar noise in the tlb args drops through the closed-set filter;
+    // a plain headword template carries no mark at all.
+    $marked = json_decode('{"word":"foregone","pos":"adjective","tags":["not-a-label"],'
+        .'"head_templates":[{"name":"tlb","args":{"1":"en","2":"transitive","3":"chiefly","4":"archaic"},"expansion":"(transitive, chiefly archaic)"}],'
+        .'"senses":[{"glosses":["Previous, beyond."]}]}');
+    $plain = json_decode('{"word":"calm","pos":"adjective",'
+        .'"head_templates":[{"name":"en-adj","args":{},"expansion":"calm"}],'
+        .'"senses":[{"glosses":["Peaceful."]}]}');
+
+    expect($parser->parseLine($marked)['labels'])->toBe(['archaic'])
+        ->and($parser->parseLine($plain)['labels'])->toBe([]);
+});
+
+it('dedupes same-text definitions keeping the first sense\'s labels', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"awe","pos":"noun","senses":['
+        .'{"glosses":["A feeling of fear and reverence"],"tags":["rare"]},'
+        .'{"glosses":["A feeling of fear and reverence"],"tags":["obsolete"]}]}');
+
+    $result = $parser->parseLine($line);
+
+    // One gloss text, one row: the first occurrence (and its tags) stands.
+    expect($result['definitions'])->toBe([['text' => 'A feeling of fear and reverence', 'labels' => ['rare']]]);
+});
+
+it('merges definitions across records by text, the first labels standing', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $existing = [
+        'word' => 'run', 'l_word' => 'run', 'pos' => 'noun', 'relay_base' => null,
+        'definitions' => [['text' => 'A stream', 'labels' => []]],
+        'forms' => [], 'sounds' => [], 'etymology' => null, 'translations' => [], 'labels' => [],
+    ];
+    $incoming = [
+        'word' => 'run', 'l_word' => 'run', 'pos' => 'noun', 'relay_base' => null,
+        'definitions' => [['text' => 'A stream', 'labels' => ['dialectal']], ['text' => 'A race', 'labels' => ['rare']]],
+        'forms' => [], 'sounds' => [], 'etymology' => null, 'translations' => [], 'labels' => [],
+    ];
+
+    $merged = $parser->mergeRecord($existing, $incoming);
+
+    expect($merged['definitions'])->toBe([
+        ['text' => 'A stream', 'labels' => []],
+        ['text' => 'A race', 'labels' => ['rare']],
+    ]);
+});
+
+it('merges the word-level mark across records by union, first occurrence first', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $existing = [
+        'word' => 'run', 'l_word' => 'run', 'pos' => 'noun', 'relay_base' => null,
+        'definitions' => [], 'forms' => [], 'sounds' => [], 'etymology' => null,
+        'translations' => [], 'labels' => ['obsolete'],
+    ];
+    $incoming = [
+        'word' => 'run', 'l_word' => 'run', 'pos' => 'noun', 'relay_base' => null,
+        'definitions' => [], 'forms' => [], 'sounds' => [], 'etymology' => null,
+        'translations' => [], 'labels' => ['archaic', 'obsolete'],
+    ];
+
+    $merged = $parser->mergeRecord($existing, $incoming);
+
+    expect($merged['labels'])->toBe(['obsolete', 'archaic']);
 });
 
 it('throws on unsupported source language', function () {
@@ -148,16 +307,32 @@ it('extracts translations via extractTranslations method', function () {
     expect($translations)->toHaveCount(2);
 });
 
-it('extracts translations with stress marks preserved', function () {
+it('stores a marked ru staged candidate plain', function () {
     $parser = new WiktionaryParser('en', 'ru');
     // Build JSON with actual combining acute accent (U+0301) embedded in the word
     $jsonStr = '{"word":"house","pos":"noun","senses":[{"glosses":["building"],"translations":[{"code":"ru","word":"до'."\u{0301}".'м"}]}]}';
     $line = json_decode($jsonStr);
 
-    $translations = $parser->extractTranslations($line);
-    expect($translations)->toHaveCount(1);
-    // Verify the translation contains the combining mark (U+0301)
-    expect(preg_match('/\x{0301}/u', $translations[0]))->toBe(1);
+    // Staged candidates sit in words.translations verbatim until a link
+    // pass converts them — so the strip happens at staging time (spec
+    // rule 1: staged candidates never carry combining marks).
+    expect($parser->extractTranslations($line))->toBe(['дом']);
+});
+
+it('stages nothing for a ru candidate that is nothing but combining marks', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"house","pos":"noun","translations":[{"code":"ru","word":"'."\u{0301}".'"}]}');
+
+    expect($parser->extractTranslations($line))->toBe([]);
+});
+
+it('keeps a non-stress-mark target candidate verbatim', function () {
+    $parser = new WiktionaryParser('en', ['ru', 'de']);
+    $line = json_decode('{"word":"house","pos":"noun","translations":[{"code":"de","word":"Gebäude"},{"code":"ru","word":"до'."\u{0301}".'м"}]}');
+
+    // Diacritics outside the StressMarks languages are legitimate spelling;
+    // the ru candidate strips anyway.
+    expect($parser->extractTranslations($line))->toBe(['Gebäude', 'дом']);
 });
 
 it('accepts multiple target languages for staged translations', function () {
@@ -178,3 +353,116 @@ it('rejects an empty target language list', function () {
 it('rejects the source language as a target', function () {
     new WiktionaryParser('en', ['ru', 'en']);
 })->throws(InvalidArgumentException::class);
+
+function relayParserLine(): object
+{
+    // The real dump shape of the четвереньках relay entry: one sense
+    // carrying form_of + the form-of tag, plus the usual content keys a
+    // relay must NOT import.
+    $base = 'четвере'."\u{0301}".'ньки';
+
+    return json_decode('{"word":"четвереньках","pos":"noun",'
+        .'"forms":[{"form":"četverénʹkax","tags":["romanization"]}],'
+        .'"sounds":[{"ipa":"[t͡ɕɪtvʲɪˈrʲenʲkəx]"}],'
+        .'"senses":[{"glosses":["prepositional of '.$base.' (četverénʹki)"],"tags":["form-of","prepositional"],'
+        .'"form_of":[{"word":"'.$base.'","extra":"četverénʹki"}]}],'
+        .'"etymology_text":"From четвере'."\u{0301}".'ньки.",'
+        .'"translations":[{"code":"en","word":"all fours"}]}');
+}
+
+function relayRecord(string $word, string $base): array
+{
+    return [
+        'word' => $word,
+        'l_word' => mb_strtolower($word),
+        'pos' => 'noun',
+        'relay_base' => $base,
+        'definitions' => [],
+        'forms' => [],
+        'sounds' => [],
+        'etymology' => null,
+        'translations' => [],
+        'labels' => [],
+    ];
+}
+
+function realRecord(string $word): array
+{
+    return [
+        'word' => $word,
+        'l_word' => mb_strtolower($word),
+        'pos' => 'noun',
+        'relay_base' => null,
+        'definitions' => [['text' => 'A real gloss', 'labels' => []]],
+        'forms' => [],
+        'sounds' => [],
+        'etymology' => null,
+        'translations' => [],
+        'labels' => [],
+    ];
+}
+
+it('marks a relay entry for demotion to a form of its base and carries no content', function () {
+    $parser = new WiktionaryParser('ru', 'en');
+
+    $result = $parser->parseLine(relayParserLine());
+
+    expect($result['relay_base'])->toBe('четвереньки')
+        ->and($result['definitions'])->toBe([])
+        ->and($result['forms'])->toBe([])
+        ->and($result['sounds'])->toBe([])
+        ->and($result['translations'])->toBe([])
+        ->and($result['etymology'])->toBeNull()
+        ->and($result['word'])->toBe('четвереньках')
+        ->and($result['l_word'])->toBe('четвереньках');
+});
+
+it('keeps a mixed entry a word with its real definitions', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"run","pos":"noun","senses":['
+        .'{"tags":["form-of"],"form_of":[{"word":"run"}]},'
+        .'{"glosses":["An act of running"]}]}');
+
+    $result = $parser->parseLine($line);
+
+    expect($result['relay_base'])->toBeNull()
+        ->and($result['definitions'])->toBe([['text' => 'An act of running', 'labels' => []]]);
+});
+
+it('keeps an en relay base verbatim where no strip applies', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+    $line = json_decode('{"word":"cats","pos":"noun","senses":[{"glosses":["plural of cat"],'
+        .'"tags":["form-of","plural"],"form_of":[{"word":"cat"}]}]}');
+
+    expect($parser->parseLine($line)['relay_base'])->toBe('cat');
+});
+
+it('merges a relay line with a real line into a word (union of senses is mixed)', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+
+    // Either order: the mixed union stays a word.
+    $relayThenReal = $parser->mergeRecord(relayRecord('cats', 'cat'), realRecord('cats'));
+    $realThenRelay = $parser->mergeRecord(realRecord('cats'), relayRecord('cats', 'cat'));
+
+    expect($relayThenReal['relay_base'])->toBeNull()
+        ->and($relayThenReal['definitions'])->toBe([['text' => 'A real gloss', 'labels' => []]])
+        ->and($realThenRelay['relay_base'])->toBeNull()
+        ->and($realThenRelay['definitions'])->toBe([['text' => 'A real gloss', 'labels' => []]]);
+});
+
+it('merges two relay lines of one base into a single demotion', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+
+    $merged = $parser->mergeRecord(relayRecord('cats', 'cat'), relayRecord('cats', 'Cat'));
+
+    expect($merged['relay_base'])->toBe('cat');
+});
+
+it('keeps two relay lines with disagreeing bases a word', function () {
+    $parser = new WiktionaryParser('en', 'ru');
+
+    $merged = $parser->mergeRecord(relayRecord('cats', 'cat'), relayRecord('cats', 'Cat'));
+
+    $disagreeing = $parser->mergeRecord($merged, relayRecord('cats', 'dog'));
+    expect($disagreeing['relay_base'])->toBeNull();
+});

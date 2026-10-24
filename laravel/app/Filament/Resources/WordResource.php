@@ -98,6 +98,12 @@ class WordResource extends Resource
                 TextColumn::make('wordClass.slug')
                     ->label('Class')
                     ->sortable(),
+                TextColumn::make('source')
+                    ->label('Source')
+                    ->badge()
+                    ->placeholder('—')
+                    ->searchable()
+                    ->sortable(),
                 TextColumn::make('tags.name')
                     ->label('Tags')
                     ->badge(),
@@ -109,6 +115,9 @@ class WordResource extends Resource
                     ->relationship('language', 'name'),
                 SelectFilter::make('wordClass')
                     ->relationship('wordClass', 'title'),
+                SelectFilter::make('source')
+                    ->label('Source')
+                    ->options(array_combine(Word::SOURCES, Word::SOURCES)),
                 SelectFilter::make('tags')
                     ->relationship('tags', 'name')
                     ->multiple()

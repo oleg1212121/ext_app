@@ -4,17 +4,26 @@ namespace App\Classes;
 
 use App\Models\Entity;
 use App\Models\EntityWord;
+use App\Models\Form;
 use App\Models\Language;
 use App\Models\Word;
 use App\Models\WordClass;
+use App\Support\LemmaForms;
+use App\Support\StressMarks;
+use App\Support\WordLookupKey;
 use Illuminate\Support\Collection;
 
 /**
  * Adopts an entity's unmatchable tokens into the dictionary: tokens the
- * linker stamped unmatchable get a `words` row of their own (class
- * 'unknown'), and every entity word that still has no translation gets a
- * fetch queued. The fetch ledger decides per (word, target language)
- * whether a job is really needed — excluded words never re-check.
+ * linker stamped unmatchable attach to an existing same-l_word word row of
+ * the language when one exists (preferring a properly classed row over the
+ * unknown placeholder) — a twin row is never minted for an l_word the
+ * dictionary already carries. Only when nothing matches does adoption
+ * create a row (class 'unknown'): a plain display word (no combining
+ * stress marks for ru/be/uk) that carries itself as its lemma form. Every
+ * entity word that still has no translation gets a fetch queued. The fetch
+ * ledger decides per (word, target language) whether a job is really
+ * needed — excluded words never re-check.
  */
 class EntityWordAdoption
 {
@@ -52,23 +61,35 @@ class EntityWordAdoption
     private function adoptUnmatched(Entity $entity): int
     {
         $adopted = 0;
-        $unknownClassId = $this->ensureUnknownClass((int) $entity->language_id);
+        $languageId = (int) $entity->language_id;
+        $unknownClassId = $this->ensureUnknownClass($languageId);
+        $stripsMarks = StressMarks::stripsFor((string) $entity->language->code);
 
         EntityWord::query()
             ->where('entity_id', $entity->id)
             ->whereNull('word_id')
             ->whereNotNull('unmatchable_at')
             ->orderBy('id')
-            ->chunkById(self::BATCH_SIZE, function ($rows) use ($entity, $unknownClassId, &$adopted): void {
+            ->chunkById(self::BATCH_SIZE, function ($rows) use ($languageId, $unknownClassId, $stripsMarks, &$adopted): void {
+                // One batched lookup per chunk keeps the per-token cost at a
+                // plain array pick: this runs inside crossword:refresh.
+                $candidates = Word::query()
+                    ->where('language_id', $languageId)
+                    ->whereIn('l_word', $rows->pluck('l_word')->unique()->all())
+                    ->orderBy('id')
+                    ->get(['id', 'l_word', 'word_class_id'])
+                    ->groupBy('l_word');
+
                 foreach ($rows as $row) {
-                    $word = Word::query()->firstOrCreate(
-                        [
-                            'word' => $row->token,
-                            'language_id' => $entity->language_id,
-                            'word_class_id' => $unknownClassId,
-                        ],
-                        ['l_word' => $row->l_word],
-                    );
+                    $word = $this->preferClassed($candidates->get($row->l_word), $unknownClassId)
+                        ?? $this->createAdoptedWord($languageId, $row, $unknownClassId, $stripsMarks);
+
+                    if ($word === null) {
+                        // A token that is nothing but combining marks has no
+                        // plain display word: leave it stamped instead of
+                        // storing a junk row.
+                        continue;
+                    }
 
                     $row->forceFill(['word_id' => $word->id, 'unmatchable_at' => null])->save();
                     $adopted++;
@@ -76,6 +97,60 @@ class EntityWordAdoption
             });
 
         return $adopted;
+    }
+
+    /**
+     * The existing row to adopt: the first non-unknown-class candidate in
+     * id order, else the lowest-id row — an unknown placeholder never beats
+     * a properly classed row of the same l_word.
+     *
+     * @param  Collection<int, Word>|null  $candidates
+     */
+    private function preferClassed(?Collection $candidates, int $unknownClassId): ?Word
+    {
+        return $candidates?->first(fn (Word $word) => (int) $word->word_class_id !== $unknownClassId)
+            ?? $candidates?->first();
+    }
+
+    /**
+     * The dictionary has no row for the token's l_word: mint one. The raw
+     * surface token keeps its casing but stores plain — the combining
+     * stress marks leave the display word (ru/be/uk) — and the new word
+     * carries itself as its lemma form. The mint is a firstOrCreate on the
+     * unique (l_word, language, class) triple: a row that raced in, or one
+     * the same normalized key reaches under a stale entity stamp (a
+     * pre-fold 'ёлка' stamp while the row keys 'елка'), is adopted, not
+     * duplicated.
+     */
+    private function createAdoptedWord(int $languageId, EntityWord $row, int $unknownClassId, bool $stripsMarks): ?Word
+    {
+        $display = $stripsMarks ? StressMarks::strip($row->token) : $row->token;
+        if ($display === '') {
+            return null;
+        }
+
+        $word = Word::query()->firstOrCreate(
+            [
+                'l_word' => WordLookupKey::normalize($display),
+                'language_id' => $languageId,
+                'word_class_id' => $unknownClassId,
+            ],
+            ['word' => mb_substr($display, 0, 256), 'source' => Word::SOURCE_ENTITY],
+        );
+
+        if ($word->wasRecentlyCreated) {
+            Form::upsert(
+                LemmaForms::rows($word->word, [], $word->id, $stripsMarks),
+                ['form', 'word_id'],
+            );
+        } elseif ($word->source === null) {
+            // The fill-if-null backdoor: the mint found a row that raced in
+            // (or one a stale stamp re-keys onto, ADR 0084) — claim it for
+            // adoption unless another creator already owns it.
+            $word->forceFill(['source' => Word::SOURCE_ENTITY])->save();
+        }
+
+        return $word;
     }
 
     /**

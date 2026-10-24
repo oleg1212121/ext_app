@@ -1,15 +1,33 @@
 // Browser-side port of App\Classes\WordTokenizer. The two MUST stay in sync:
 // the interactive word map sent by the server is keyed by the PHP tokenizer's
-// lowercase l_word values, and the parity is enforced by
+// WordLookupKey values, and the parity is enforced by
 // tests/Unit/TokenizerParityTest.php.
-const TOKEN_PATTERN = /[\p{L}\p{M}]+(?:['’\-][\p{L}\p{M}]+)*/gu;
+const TOKEN_PATTERN = /[\p{L}\p{M}]+(?:['’-][\p{L}\p{M}]+)*/gu;
 
-// Keys strip combining marks (stress marks, U+0301) after lowercasing: the
-// dictionary's l_word keys are mark-free (WiktionaryParser::normalizeLookupKey),
-// so a stressed token must lose its marks to resolve — and stressed_content
+// Keys run the same pipeline as App\Support\WordLookupKey::normalize — trim,
+// lowercase, strip combining marks (\p{M}: the stress acutes and any other
+// mark), strip zero-width format characters (\p{Cf}: ZWSP, ZWJ, BOM, soft
+// hyphen), then fold ё→е — because the dictionary's l_word keys carry exactly
+// that normalization (WordLookupKey::normalize): a stressed or ё-spelled
+// token must lose the marks and fold the ё to resolve — and stressed_content
 // is rendered through this same key when the reader's stress toggle is on
 // (ADR 0052).
+// Lowercasing first puts Ё into the plain-ё fold's reach.
 const MARK_PATTERN = /\p{M}/gu;
+const FORMAT_PATTERN = /\p{Cf}/gu;
+
+function lookupKey(surface) {
+    const key = surface
+        .trim()
+        .toLowerCase()
+        .replace(MARK_PATTERN, '')
+        .replace(FORMAT_PATTERN, '')
+        .trim();
+
+    // The case-preserving fold lives in PHP's WordLookupKey::foldYo; keys are
+    // already lowercase here, so folding ё→е covers Ё too.
+    return key.replace(/ё/g, 'е');
+}
 
 const MIN_LENGTH = 2;
 
@@ -47,7 +65,7 @@ export function segmentText(text) {
         if (match.index > cursor) {
             segments.push({text: text.slice(cursor, match.index), key: null});
         }
-        segments.push({text: match[0], key: surface.toLowerCase().replace(MARK_PATTERN, '')});
+        segments.push({text: match[0], key: lookupKey(surface)});
         cursor = match.index + match[0].length;
     }
     if (cursor < text.length) {

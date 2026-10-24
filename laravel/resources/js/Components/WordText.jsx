@@ -27,7 +27,7 @@ function tierClass(familiarity, highlight) {
 
 // Mirror of the tokenizer's word pattern: the gaps between key segments can
 // still pack single-letter words (я, о, а) that a stress mark can land on.
-const WORD_RUN_PATTERN = /[\p{L}\p{M}]+(?:['’\-][\p{L}\p{M}]+)*/gu;
+const WORD_RUN_PATTERN = /[\p{L}\p{M}]+(?:['’-][\p{L}\p{M}]+)*/gu;
 
 const renderStressMarks = (offsets) => offsets.map((offset) => (
     <span key={offset} className="stress-mark" data-offset={offset} aria-hidden="true"/>
@@ -100,9 +100,12 @@ function stressContent(segment, pieces) {
 /**
  * Renders one reading row side (ADR 0060): the side's sentence objects in
  * document order — illustrations as figures, text sentences split into
- * interactive dictionary words. Only tokens present in the word map
- * ({l_word: {w: wordId, s: familiarity|null}}) become interactive;
- * everything else is plain text. Ctrl+click opens the popup (plain clicks
+ * interactive dictionary words. EVERY tokenizer word token is interactive
+ * (popup-ai-enrich ticket 03): tokens present in the word map
+ * ({l_word: {w: wordId, s: familiarity|null}}) keep the familiarity tint and
+ * fetch the popup; unmapped ones render plain (no tint) and open the popup in
+ * missing mode — the raw surface plus an honest not-in-the-dictionary note,
+ * nothing fetched, no lookup events. Ctrl+click opens the popup (plain clicks
  * do nothing); highlight = knowledge tinting, gated by the caller.
  *
  * Interactive tokens are role="button" spans, not real <button> elements:
@@ -121,12 +124,18 @@ function stressContent(segment, pieces) {
  * onto the plain text; any divergence renders that sentence plain.
  *
  * Phrasal verbs (ADR 0057): when showPhrasal is on, the tokens each hit
- * covers get a dotted underline with the matched headword as tooltip. Hit
- * spans index the sentence's plain text, which is what gets segmented.
+ * covers get a dotted underline with the matched headword as tooltip — the
+ * mark rides onto the interactive span, so an unmapped hit opens the
+ * missing popup like any other unmapped token. Hit spans index the
+ * sentence's plain text, which is what gets segmented.
  *
  * With `explain` ({sentenceId-carrying popup config}) present — enabled or
  * not — WordPopup gets an explain payload keyed by the clicked sentence's
  * entity sentence id, which every sentence object carries.
+ *
+ * `language` is the column's descriptor language ({code, name}|null) —
+ * passed through to the popup for ticket 05's adopt-on-ask, unused until
+ * then.
  */
 function WordText({
     sentences = [],
@@ -137,6 +146,7 @@ function WordText({
     className,
     popupFontSize,
     explain,
+    language = null,
     showStress = false,
     showPhrasal = false,
     figureProps,
@@ -267,7 +277,19 @@ function WordText({
             return;
         }
         const entry = wordMap[segment.key];
+        // Missing mode (popup-ai-enrich ticket 03): an unmapped token has no
+        // word id — the card opens from the RAW surface (the folded key would
+        // show ё-folded, mark-stripped text), nothing is fetched, and no
+        // lookup event fires. The only way from missing to populated is
+        // ticket 05's adopt-on-ask.
         if (!entry?.w) {
+            setPopup({
+                wordId: null,
+                surface: segment.text,
+                familiarity: null,
+                rect: event.currentTarget.getBoundingClientRect(),
+                sentenceId,
+            });
             return;
         }
         setPopup({
@@ -323,19 +345,15 @@ function WordText({
                     charOffset += segment.text.length;
                     const pieces = stressPieces(segment, base, stress);
                     if (segment.key !== null) {
+                        // Every key segment is interactive (popup-ai-enrich
+                        // ticket 03): a mapped entry keeps tint + fetch; an
+                        // unmapped one renders plain and opens the missing
+                        // card — the old unclickable phrasal-mark span branch
+                        // merged into this same path (the mark rides
+                        // markClass onto the interactive span).
                         const markLabel = phrasal !== null ? (phrasal.get(tokenIndex++) ?? null) : null;
-                        const entry = wordMap[segment.key];
                         const markClass = markLabel !== null ? ' phrasal-hit' : '';
-                        if (entry?.w) {
-                            return renderToken(segment, segmentIndex, entry, markClass, markLabel, pieces);
-                        }
-                        if (markLabel !== null) {
-                            return (
-                                <span key={segmentIndex} className={'word-token phrasal-hit'} title={markLabel}>
-                                    {stressContent(segment, pieces)}
-                                </span>
-                            );
-                        }
+                        return renderToken(segment, segmentIndex, wordMap[segment.key], markClass, markLabel, pieces);
                     }
                     return <React.Fragment key={segmentIndex}>{stressContent(segment, pieces)}</React.Fragment>;
                 })}
@@ -348,7 +366,9 @@ function WordText({
             key={index}
             role="button"
             tabIndex={0}
-            className={tierClass(entry.s, highlight) + markClass}
+            // Mapped tokens keep the familiarity tiers; an unmapped one is a
+            // bare word-token — hover-underline and pointer, NO tint.
+            className={(entry?.w ? tierClass(entry.s, highlight) : 'word-token') + markClass}
             title={markLabel ?? undefined}
             onClick={(event) => openPopup(event, segment, sentence.id)}
             onKeyDown={(event) => {
@@ -401,6 +421,7 @@ function WordText({
                     rect={popup.rect}
                     fontSize={popupFontSize}
                     explain={explainPayload}
+                    language={language}
                     onClose={() => setPopup(null)}
                     onProgress={handleProgress}
                 />,

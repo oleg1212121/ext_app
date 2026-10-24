@@ -126,3 +126,34 @@ it('links words without a word_id even after the dictionary word is deleted', fu
 
     expect(EntityWord::query()->find($entityWordId)->refresh()->word_id)->toBeNull();
 });
+
+it('stamps ё tokens with the folded key so they link and adopt onto the е-keyed row', function () {
+    $entity = createEntity('ru');
+    addSentence($entity, 'Большая ёлка горит.');
+    addSentence($entity, 'Ёлка светит.');
+
+    app(EntityWordIndexer::class)->index($entity);
+
+    // The stamp carries the folded key (WordLookupKey parity) while the
+    // display token keeps its ё; no ё-keyed row may exist beside it.
+    $stamped = EntityWord::query()->where('entity_id', $entity->id)->where('l_word', 'елка')->first();
+    expect($stamped->token)->toBe('ёлка')
+        ->and($stamped->count)->toBe(2)
+        ->and(EntityWord::query()->where('entity_id', $entity->id)->where('l_word', 'ёлка')->exists())->toBeFalse();
+
+    // No dictionary row yet — the linker stamps the token unmatchable.
+    $this->artisan('crossword:link', ['--entity' => [$entity->id]]);
+    expect($stamped->refresh()->unmatchable_at)->not->toBeNull()
+        ->and($stamped->word_id)->toBeNull();
+
+    // The е-keyed row arrives (import / normalize); adoption must attach
+    // the folded stamp to it — never mint a duplicate the unique index
+    // would reject.
+    $yolka = createWord('ru', 'ёлка', 'noun', ['l_word' => 'елка']);
+
+    $this->artisan('words:adopt-from-entities')->assertSuccessful();
+
+    expect($stamped->refresh()->word_id)->toBe($yolka->id)
+        ->and($stamped->unmatchable_at)->toBeNull()
+        ->and(Word::query()->where('l_word', 'елка')->count())->toBe(1);
+});

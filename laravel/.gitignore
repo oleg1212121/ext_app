@@ -34,3 +34,8 @@ storage/app/*
 /tmp/
 .vscode/settings.json
 .php-cs-fixer.cache
+
+# Dictionary source files (MDX/MDD/7z + converted JSONL) — hundreds of MB,
+# imported via goldendict:import; the TIA git repo rooted here would
+# content-hash them into OOM.
+/goldendict/

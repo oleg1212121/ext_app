@@ -1,12 +1,24 @@
 ---
 type: Playbook
 title: Importing Dictionary Data
-description: How to import Kaikki/Wiktionary dumps into the unified language-keyed dictionary tables and link translations.
-tags: [dictionary, import, wiktionary, kaikki]
+description: How to import Kaikki/Wiktionary dumps and GoldenDict-format dictionaries into the unified language-keyed dictionary tables (both import commands chain the translation link pass by default), and repair/switch over the already-stored rows in place — words:normalize (on a pre-migrate database its l_word recompute + duplicate merge runs BEFORE the (l_word, language_id, word_class_id) uniqueness migration, gated on zero duplicate groups) and wiktionary:demote-form-of.
+tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
-stale_after: 2026-12-16
-generated: { by: agent:zcode, at: 2026-10-10T19:55:00+03:00 }
+stale_after: 2027-01-19
+generated: { by: agent:zcode, at: 2026-10-24T12:30:00+03:00 }
 sources:
+  - id: adr-0081
+    resource: docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md
+    title: ADR 0081 — the word/l_word contract, uniqueness on (l_word, language, class)
+  - id: l-word-uniqueness
+    resource: laravel/database/migrations/2026_10_19_000001_move_word_uniqueness_to_l_word.php
+    title: Word uniqueness migration (builds only over merged data — normalize first)
+  - id: normalize-cmd
+    resource: laravel/app/Console/Commands/WordsNormalizeCommand.php
+    title: words:normalize command
+  - id: demote-cmd
+    resource: laravel/app/Console/Commands/DemoteFormOfCommand.php
+    title: wiktionary:demote-form-of command
   - id: import-cmd
     resource: laravel/app/Console/Commands/ImportWiktionaryCommand.php
     title: wiktionary:import command
@@ -15,13 +27,28 @@ sources:
     title: wiktionary:import-raw command
   - id: link-cmd
     resource: laravel/app/Console/Commands/LinkTranslationsCommand.php
-    title: wiktionary:link-translations command
+    title: dictionary:link-translations command
   - id: kaikki
     resource: laravel/app/Classes/WiktionaryParser.php
     title: Kaikki/Wiktionary JSONL parser
   - id: extractor
     resource: laravel/app/Classes/RawWiktextractExtractor.php
     title: Raw dump per-language extractor
+  - id: goldendict-cmd
+    resource: laravel/app/Console/Commands/ImportGoldenDictCommand.php
+    title: goldendict:import command
+  - id: goldendict
+    resource: laravel/app/Classes/GoldenDictParser.php
+    title: GoldenDict JSONL parser
+  - id: goldendict-profiles
+    resource: laravel/config/goldendict.php
+    title: Extraction profiles (config/goldendict.php)
+  - id: goldendict-convert
+    resource: docker-compose/python/ai/goldendict_convert.py
+    title: goldendict_convert.py (MDX/DSL/StarDict → JSONL)
+  - id: definition-language
+    resource: laravel/app/Support/DefinitionLanguage.php
+    title: Majority-script definition guard (definitions import only in the word language's own script)
 ---
 
 # Overview
@@ -37,17 +64,34 @@ replaced the old mirrored per-language tables.
 
 Two source shapes exist:
 
-* **Raw dump** — `raw-wiktextract-data.jsonl.gz`, the whole English
-  Wiktionary with every language interleaved (~2.7GB compressed, tens of
-  millions of lines). Use `wiktionary:import-raw` (below).
+* **Raw dump (per edition)** — `raw-wiktextract-data.jsonl.gz`, a whole
+  Wiktionary *edition* with every language it covers interleaved. Each
+  edition is its own kaikki.org download:
+  * English edition (en.wiktionary, glosses in English):
+    [kaikki.org/dictionary/rawdata.html](https://kaikki.org/dictionary/rawdata.html)
+    (~2.7GB compressed, tens of millions of lines).
+  * Russian edition (ru.wiktionary, glosses in Russian):
+    [kaikki.org/ruwiktionary/rawdata.html](https://kaikki.org/ruwiktionary/rawdata.html)
+    (~300MB compressed; the 2026-10-01 dump is 2,729,136 lines — ~1M
+    hard-redirects the parser skips, ~489k `lang_code=ru` entries).
+
+  Use `wiktionary:import-raw` (below). Each language's dictionary
+  sources from its own edition, and editions **merge** on overlap —
+  ADR
+  [0080](../../docs/adr/0080-per-edition-wiktionary-sourcing-merge-on-overlap.md).
+  (kaikki's pre-split "Russian" files are NOT the ru edition — also
+  en.wiktionary, just pre-split, and equally lemma-poor.)
 * **Per-language download** — kaikki.org's pre-split
   `kaikki.org-dictionary-<Language>.jsonl` files. Use
   `wiktionary:import` directly (bottom of this page).
 
 # Steps — raw dump (wiktionary:import-raw)
 
-1. Download the dump onto the host and put it under `laravel/` (e.g.
-   `laravel/kaikki/raw-wiktextract-data.jsonl.gz`) so the container sees it.
+1. Download the edition dump onto the host and put it under `laravel/`
+   (e.g. `laravel/kaikki/raw-wiktextract-data.jsonl.gz` for the en
+   edition, `laravel/kaikki/ru-raw-wiktextract-data.jsonl.gz` for the
+   ru edition — URLs above) so the container sees it. No decompression:
+   the parser reads `.jsonl.gz` transparently.
 2. Ensure the languages exist in the languages registry (seeded en/ru, or
    Filament `/admin` → Languages). `--langs` accepts any registry code.
 3. **Smoke-run first** — a capped extraction over the real gz validates
@@ -61,19 +105,44 @@ Two source shapes exist:
 4. Run the real import detached, redirecting output (multi-hour run):
 
    ```bash
-   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan wiktionary:import-raw kaikki/raw-wiktextract-data.jsonl.gz >> storage/logs/import-raw.log 2>&1'
+   # English edition — the historical full import, both languages, symmetric staging:
+   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan wiktionary:import-raw kaikki/raw-wiktextract-data.jsonl.gz --langs=en,ru >> storage/logs/import-raw.log 2>&1'
+   # Russian edition — single language; --target-langs is then REQUIRED (gotcha below):
+   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan wiktionary:import-raw kaikki/ru-raw-wiktextract-data.jsonl.gz --langs=ru --target-langs=en >> storage/logs/import-ru-edition.log 2>&1'
    ```
 
-   Phases: extract (writes `kaikki/raw-wiktextract-data.en.jsonl` and
-   `.ru.jsonl` next to the dump, overwriting) → import each `--langs`
-   language (symmetric translation staging by default) → link translations.
-   Heartbeats every 100k lines (lines, kept counts, RSS, elapsed) land in
+   **`--target-langs` gotcha**: with a single-language `--langs=ru` the
+   flag is not optional — the default staging targets are "every other
+   imported language", so `--langs=ru` alone leaves the set empty and
+   the parser refuses to start ("At least one target language is
+   required"). Name at least one other registry code
+   (`--target-langs=en` for the ru edition run).
+
+   Phases: extract (writes `kaikki/<base>.<code>.jsonl` next to the
+   dump, overwriting) → import each `--langs` language (symmetric
+   translation staging by default) → link translations. Heartbeats
+   every 100k lines (lines, kept counts, RSS, elapsed) land in
    `storage/logs/laravel.log`, so progress is observable even detached.
+
+   **Merge, not replace** (ADR 0080): without `--fresh` a second
+   edition's import into an existing dictionary is additive — word rows
+   upsert, definitions/etymologies insert-new-only text-deduped — so
+   the 2026-10-18 ru-edition run gave the pre-existing en-sourced ru
+   rows Russian glosses beside their English ones (собака: same row, 14
+   → 22 definitions) without touching the en side. Afterwards run the
+   repair chain (`words:normalize --dry` first; `words:import-frequency
+   ru-rnc` re-clamps ru ranks — the link pass already ran inside the
+   import). Provenance rides the same merge: every import stamps
+   `words.source` at insert and its per-batch fill-if-null claims
+   still-null rows it touches (ADR 0084) — so re-running an import after
+   the 2026-10-20 column lands badges the pre-column rows it covers;
+   rows nothing re-touches stay null.
 5. Useful flags: `--skip-extract` reuses existing extract files (e.g. rerun
    a failed import phase without a second decompression pass);
    `--extract-only` stops after the extract files; `--no-link` skips the
-   linking pass; `--target-langs=ru` restricts staging to one direction;
-   `--batch-size=500` tunes DB flush size.
+   linking pass; `--target-langs=ru` restricts staging to one direction —
+   and is **required** when `--langs` names a single language (gotcha
+   above); `--batch-size=500` tunes DB flush size.
 6. **Clean rebuild** from a newer dump: add `--fresh --force` (non-interactive
    runs require `--force`). `--fresh` wipes the selected languages' words —
    FK cascades take definitions, forms, etymologies, transcriptions,
@@ -98,23 +167,66 @@ Two source shapes exist:
    docker exec ext_app_laravel php artisan wiktionary:import storage/app/<file>.jsonl --lang=en --target-lang=ru
    ```
 
-   Missing per-language lookups are **auto-created** (unseen dump `pos` →
-   word class, unseen sound type → transcription type, slug as placeholder
+   Missing per-language lookups are **auto-created** (the dump `pos` first
+   canonicalizes through the shared `App\Support\PosAliases` alias table —
+   "adj" imports as "adjective" — then an unseen slug → word class, an
+   unseen sound type → transcription type, slug as placeholder
    title) — nothing is skipped, and a brand-new language needs no seeders;
-   curate the placeholder titles in `/admin` afterwards.
+   curate the placeholder titles in `/admin` afterwards. Every imported
+   word stores itself as its lemma form (`App\Support\LemmaForms`; a
+   ё-form also carries its е-folded alias row — ёлка AND елка, both keyed
+   `елка`), and `romanization`-tagged forms and stressed ru/be/uk
+   headwords never store — nor do marks in the staged translation
+   candidates for ru/be/uk targets (they strip at staging time); headwords
+   and staged candidates trim at storage, en and ru alike. A definition
+   stores only when it is written in the word language's own script —
+   the `DefinitionLanguage` majority-script guard (en Latin, ru/be/uk
+   Cyrillic; strict majority keeps, tie drops, letterless passes,
+   unmapped languages unguarded; etymologies unguarded) — and every
+   dropped gloss counts in the summary table's "Definitions skipped
+   (foreign language)" row. Import-time only: stored definition TEXT is
+   never rewritten (re-runs of an older dump re-insert nothing the
+   guard now drops — the merge stays insert-new-only for text). A sense's
+   tags also label its definition: `senses[].tags` intersect the closed
+   `UsageLabels` set (obsolete, archaic, dated, colloquial, rare,
+   dialectal) onto `definitions.labels` (2026-10-20, ticket 09) —
+   grammar noise and unknown slugs drop. The flush also refreshes labels
+   on case-insensitively same-text stored rows to the incoming value
+   (null included; stored text untouched, ask-AI `source='ai'` rows
+   excluded, etymologies insert-new-only) — the re-import itself is the
+   labels backfill (2026-10-23, popup-usage-labels, superseding the
+   2026-10-20 no-backfill stance), and every changed row counts in the
+   summary table's "Definitions labels updated" row. The word itself
+   carries its own mark (2026-10-23, popup-usage-labels follow-up): the
+   `{{tlb}}`/`term-label` head-template args and the entry-level `tags`
+   — the label Wiktionary prints under the part-of-speech heading —
+   intersect the same closed set onto `words.labels`, stored by the word
+   upsert with the column in its UPDATE list (the re-import backfills
+   and unmarks it); deliberately never an aggregate of the senses.
 4. Link words across languages through the staged translations:
 
    ```bash
-   docker exec ext_app_laravel php artisan wiktionary:link-translations
+   docker exec ext_app_laravel php artisan dictionary:link-translations
    ```
 
    The command links **every language pair** among languages that have
    imported words, writing one canonical `word_translations` row per pair
-   (`word_a_id < word_b_id`, ADR 0020). Matching strips the Cyrillic
-   stress marks (e.g. `приве́т` → `привет`) when pairing into the
-   stress-mark languages ru/be/uk (the shared `App\Support\StressMarks`).
-   Re-runs are
-   idempotent and never duplicate links created by hand in the admin.
+   (`word_a_id < word_b_id`, ADR 0020). Candidates resolve through the
+   shared `App\Support\TranslationTargets` resolver — same class as the
+   source word first, `phrase` for multi-word candidates, else any class
+   (lowest id) — and the Cyrillic stress marks strip at pairing time
+   (e.g. `приве́т` → `привет`, the shared `App\Support\StressMarks`;
+   rows staged marked before the staging-time strip prune by their exact
+   stored string).
+   **Prune-on-link**: every candidate it converts leaves the word's
+   `words.translations` JSON (an emptied JSON stores null), so re-runs are
+   idempotent and report fewer staged candidates; unmatched candidates
+   stay staged for a later pass once their target words exist, and are
+   reported as a per-direction count plus a capped sample in the summary
+   table (never per-candidate lines — the staged volume is in the
+   hundreds of thousands). Run it after populating all languages; a
+   re-import refreshes `l_word` only, so the staged JSON survives
+   unrelated imports and this pass is what finally shrinks it.
 5. Verify in the Filament admin (`/admin`, group "Words"): the `Word`
    resource with relation managers for definitions, forms, translations,
    etymologies, examples, transcriptions, pronunciations; the **Word
@@ -124,6 +236,467 @@ Two source shapes exist:
    the **Translations** tab offers **Attach translation** (pick an existing
    word in another language) and **Create word & link** (create the missing
    target word and link it in one step). Links work from either word.
+
+# Cleaning imported relay rows (wiktionary:demote-form-of)
+
+Dumps imported before the form-of relay demotion (the ADR 0079 import
+rule) left relay word rows in the data — at the 2026-10-18 cleanup, ru
+363,446 and en 500,776 of them were deleted (~379k of 444k ru and ~974k
+of 1.5M en words had relay-style glosses; the dump signal, not the gloss
+pattern, is the cleanup's ground truth). The cleanup streams the same
+kaikki dump for one language, rebuilds the exact
+relay→base verdict through the shared `App\Classes\Wiktionary\FormOfClassifier`
+plus the pure `App\Classes\Wiktionary\RelayDemotionMap` unions, and applies
+it set-based in chunks — no re-import, no wipe: it deletes by explicit ids
+from the dump map. On the current dev DB a re-run matches nothing; this
+section applies when importing dumps that predate the rule or rebuilding
+from scratch.
+
+1. **Dry first** — read the counts before anything writes:
+
+   ```bash
+   docker exec ext_app_laravel php artisan wiktionary:demote-form-of --lang=ru --dry
+   ```
+
+   Prints every phase count without writing: relay surfaces found (minus
+   surfaces that also carry a real dump entry, minus conflicting-base and
+   cycle participants), relay word rows matched vs kept (base missing from
+   the DB), would-be link re-points / self-pairs, entity_words, staged
+   JSON merges, forms attached, re-ranked bases, deletions, and
+   romanization junk forms. The `--dry` link counts are pre-database
+   approximations (the real run dedupes onto existing pairs at insert
+   time); everything else is exact.
+
+2. **Real run, detached** (the dump-streaming pass dominates — expect tens
+   of minutes at ru/en dump size; the progress bar lands in the redirected
+   log so detached runs stay observable):
+
+   ```bash
+   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan wiktionary:demote-form-of --lang=ru >> storage/logs/demote-ru.log 2>&1'
+   ```
+
+   Flags: `--file=` overrides the default dump path
+   (`kaikki/kaikki.org-dictionary-<Language name>.jsonl` under the app
+   root — any dump works, e.g. the ru edition extract
+   `kaikki/ru-raw-wiktextract-data.ru.jsonl`: the noted cleanup for the
+   14,899 relay-shaped en-era ru leftovers whose surface the ru dump
+   carries only as another word's form, ADR
+   [0080](../../docs/adr/0080-per-edition-wiktionary-sourcing-merge-on-overlap.md));
+   `--chunk=N` (default 25000) sizes the set-based apply pass —
+   the in-memory map holds every relay surface of the language (~1M en
+   pairs fit comfortably; chunking bounds the DB statements, not the map).
+   The command raises its own `memory_limit` to 2G (`ImportRawWiktextractCommand`
+   precedent) — the relay map OOMs at the 128M CLI default mid-scan
+   (verified 2026-10-18: the first dev-DB run died at ~105k dump lines
+   before the bump).
+   Per chunk, in FK-safe order: translation links (both arms) re-point
+   onto the base — canonical pairs, insert-or-ignore dedupes onto
+   pre-existing pairs, self-pairs (relay→own base, two relays of one base)
+   dropped, relays demoting in a LATER chunk resolved through the full map
+   so their pairs survive both deletions; `entity_words.word_id` re-points
+   (the token's `l_word` stays the surface the entity text carries); the
+   relay's staged `words.translations` JSON union-merges into the base;
+   the relay surface attaches as a form of the base (upsert on
+   `(form, word_id)` — a base that already claims the surface keeps one
+   row); the relay's frequency rank folds into the base as **LEAST**
+   (ranks: lower = more common — never raises a rank; the unranked
+   sentinel 1,100,000 never demotes a ranked base, an unranked base
+   inherits a ranked relay's rank — the user-approved fold, ADR 0070's
+   convention); then the relay rows delete (definitions and relay-glosses
+   die with the row — pure pointers; children cascade fast through the
+   word_id-leading indexes). Finally, for the stress-mark languages
+   (ru/be/uk) the romanization-tagged junk forms (Latin transliterations
+   on Cyrillic words) collected from the same stream delete by exact
+   (entry `l_word`, form `l_word`) pairs — dump-derived, no heuristic.
+
+3. **What stays**: a surface with any real dump entry stays a word;
+   bases missing from the database keep their relays as words — counted
+   and sampled in the summary; relay rows that resolve nothing stay put.
+   **Re-run safe**: a demoted relay no longer exists as a word row, so a
+   second run matches nothing (the missing-base sample keeps reporting the
+   kept relays each run). The `WordFamily` read-layer relay-gloss defense
+   stays — harmless once the relays are gone. Chain the runs before
+   `dictionary:link-translations` in a fresh pipeline: demote first, link
+   second, so staged JSON the demote moved onto bases links in the same
+   pass.
+
+# Repairing stored data in place (words:normalize)
+
+The importers enforce the purity rules for new rows; the damage already
+stored from before those rules is repaired in place by one idempotent
+command — no re-import, no wipe: every phase finds its rows by explicit
+mapping (strip diff, stale lookup keys and duplicate
+`(l_word, language_id, word_class_id)` rows, unknown-class twins, alias
+class rows, stale entity stamps, missing lemma forms) and a second run
+matches nothing. The dev DB ran it 2026-10-18
+(what the counts landed on): 11 stressed display words merged + 1 stripped
+in place, 2,954 unknown-class twins merged (ru 1,536 / en 1,418, mostly
+cmudict transcriptions), 7,514 alias duplicates merged (the
+`adj`/`adjective` fold) + 216,440 rows reclassed, and 1,018,396 lemma
+forms backfilled (en 1,507,795 / ru 29,171 had none — the long phase). After that run every phase reports
+zeros; a pre-rule database needs the baselines re-counted first (a `--dry`
+gives them all). The 2026-10-19 l_word recompute + duplicate-merge phase
+(phase 2) is the pre-migrate data path: a database still holding
+same-key duplicate rows (cross-source ёлка/елка spellings, case twins)
+must run it BEFORE `php artisan migrate` — the unique index refuses to
+build over the duplicates — and gate on zero duplicate groups in between
+(a second `--dry` reporting a 0 duplicate-merge count is that gate). The
+order for an existing database is therefore, all via
+`docker exec ext_app_laravel` on the default connection with
+non-destructive commands only: (1) `words:normalize --dry` (baseline
+would-be counts), (2) the real `words:normalize` (detached), (3) THE
+GATE — a second `--dry` whose duplicate-merge row is 0 (the SQL
+equivalent: `select count(*) from (select language_id, l_word,
+word_class_id from words where l_word is not null group by 1,2,3 having
+count(*) > 1) g` → 0), (4) only now `php artisan migrate`, (5) a final
+`--dry` — every phase row 0. If the index build fails, STOP and report:
+same-key duplicates the gate should have caught remain — never improvise
+destructive repair.
+
+The dev DB ran exactly this switchover on 2026-10-19 (all numbers real,
+ADR
+[0081](../../docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md)
+has the record): the baseline `--dry` took 102s and reported **19,986
+duplicate rows to merge** and 18,277 word + 131,220 form keys to
+recompute (all other phases 0); the real run (184s, detached, exit 0)
+merged exactly those 19,986 — phase 3 then exposed 14 more unknown-class
+twins the dry could not see (the old phases' documented dry
+approximations; 20,000 absorbed rows deleted in total, and the forms
+recompute landed at 131,147, −73 vs dry, for the same reason) — the gate
+dry reported **every row 0** and the SQL duplicate-group count was 0;
+`migrate` built `uk_words_l_word_language_class` in **1s**; the
+post-migrate `--dry` was a full no-op (86s). Word counts moved en
+1,013,927 → 999,884 (−14,043) and ru 500,430 → 494,473 (−5,957) — the
+20,000 drop is exactly the absorbed rows, reported as a delta and not
+forced back; forms −10,331 net (insert-select dedupe on the 38,035 moved);
+`entity_words` unchanged (185 stamps re-pointed in place); NULL-key words
+0 (backfilled). Spot gates: ёлка/елка collapsed into ONE row — display
+`ёлка` (ё-survivor preference), key `елка`, frequency 4753 (the absorbed
+row's unranked 1,100,000 sentinel never beat the ranked 4753 in the LEAST
+fold) — carrying both form rows ёлка AND елка; собака stayed one row with
+all 24 definitions (22 + 2 moved from its absorbed `Собака` case twin);
+the staged-JSON trim sample (7,931 candidates across 5,000 staged rows)
+found 0 padded strings. **Gate wording caveat**: "zero combining marks in
+`words.word`/`forms.form`" holds only for the stress-mark languages — the
+full scans found 0 in ru, while en legitimately keeps 100 words + 234
+forms carrying marks (Pe̍h-ōe-jī-style Latin entries where the marks ARE
+spelling); scope any such check to the `App\Support\StressMarks`
+languages.
+
+1. **Dry first** — read every phase count before anything writes:
+
+   ```bash
+   docker exec ext_app_laravel php artisan words:normalize --dry
+   ```
+
+   Prints all phase rows without writing: stressed words merged into plain
+   twins / stripped in place, stressed forms collapsed / stripped /
+   deduped, words/forms l_word keys recomputed, duplicate rows merged per
+   `(l_word, language, class)`, unknown twins merged, alias-class words
+   merged vs reclassed and alias classes deleted, entity stamp keys
+   recomputed and stamp duplicates collapsed, lemma forms backfilled, plus
+   the merge-machinery children (definitions/etymologies, forms,
+   transcriptions incl. the ˈ-IPA gate drops, examples, pronunciations,
+   entity_words, tagged_words, user_word(+event), fetch ledger, both-arm
+   link re-points with self-pair and dedupe counts, staged-JSON merges,
+   LEAST rank folds, absorbed rows deleted). The child-move counts are
+   pre-database approximations where insert-time dedupe applies; phase-4
+   reclass counts include rows a real run would merge. Nothing else is
+   approximate — the dry counts match the real run's.
+
+2. **Real run, detached** (the lemma backfill dominates — tens of minutes
+   at en scale; the progress bar lands in the redirected log):
+
+   ```bash
+   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan words:normalize >> storage/logs/words-normalize.log 2>&1'
+   ```
+
+   Phases, in order: (1) ru/be/uk display `words.word`/`forms.form` lose
+   their combining stress marks — a stressed word merges into an existing
+   plain twin (same language + class + stripped display, lowest id
+   survives and absorbs the children), otherwise it strips in place;
+   stressed forms group per (word, stripped form) — a group whose plain
+   twin already exists collapses, otherwise the lowest form id survives
+   and the other variants dedupe (two stressed variants can strip to one
+   plain string). (2) every `words.l_word`/`forms.l_word` recomputes to
+   the current `WordLookupKey` formula (only rows whose value changes:
+   stale old-formula keys, en diacritics, NULL backfills), then duplicate
+   `(l_word, language_id, word_class_id)` rows merge — the survivor is
+   the ё-display row first, then most definitions, then the lowest id;
+   detection keys on the effective post-recompute keys and the key updates
+   apply after the merge, so no update collides — and this is the phase
+   that unblocks `migrate` on a pre-migrate database. (3) `unknown`-class
+   twins merge into the lowest-id non-unknown same-`l_word` row; when the
+   survivor already carries a ˈ-marked IPA transcription the twin's
+   transcriptions die with the merge (the cmudict convention — Kaikki
+   wins where it has stress data). (4) Alias word classes fold into their
+   canonical class per language (PosAliases semantics, resolved by
+   class-row slug): l_word-keyed twins merge, twinless leftovers reclass
+   in place, orphan alias class rows delete last. (5) the entity
+   tokenizer's `entity_words.l_word` stamps recompute from the token
+   (the old formula never folded ё); a recomputed key colliding with
+   another stamp of the same entity folds the counts into the
+   already-correct stamp. (6) Every word gains itself as its lemma form
+   where missing (insert-new-only on the `(form, word_id)` unique,
+   chunked).
+
+   `--chunk=N` (default 20000) sizes the scan passes and the lemma
+   backfill; the word merges are set-based through a temp mapping table —
+   one statement per child table. Never run two normalize runs at once.
+   The command raises its own `memory_limit` to 2G (same
+   `ImportRawWiktextractCommand` precedent as the demote command) — the
+   alias-fold group map and the merge maps hold real-data-sized row sets
+   and OOM at the 128M CLI default (verified 2026-10-18 in the phase-3
+   alias fold on the dev DB).
+
+3. **Chain it in the repair pipeline** (the 2026-10-18 dev-DB order, all
+   `--dry` first) — `wiktionary:demote-form-of` per language, then
+   `words:normalize`, then `dictionary:link-translations` (so staged JSON
+   the repairs moved onto survivors links in the same pass), then
+   `words:import-frequency-lists` (band ranks land on bases through the
+   lemma-form join — 82,833 of the run's 160,753 matches) and
+   `crossword:link` (the repairs re-pointed `entity_words` onto bases;
+   `--retry-unmatched` re-attempts stale unmatchable stamps). Re-run safe:
+   every phase reports zeros on a second run. Case-variant same-class
+   duplicates are deliberately NOT merged (March/march can be genuinely
+   different words); resolve genuine ones by hand.
+
+# Steps — GoldenDict dictionary (goldendict:import)
+
+For GoldenDict-format dictionaries (freemdict etc.). The converter accepts
+MDict `.mdx`, ABBYY Lingvo `.dsl` (UTF-8 or UTF-16LE/BE) and StarDict sets
+(an `.ifo` path or a directory containing exactly one set) — see the usage
+note in `docker-compose/python/ai/goldendict_convert.py`. Two stages: a
+host-side pyglossary conversion, then the container-side import. Put the
+dictionary file under the repo (e.g. `laravel/goldendict/`) so the
+host-side converter and the container-side import see the same files — the
+JSONL lands next to the source. Legal note: freemdict dictionaries are
+frequently commercial rips (Lingvo etc.) — fine for personal learning use;
+do not redistribute the extracted data.
+
+1. **Convert** on the host through the bind-mounted python venv (stage 1,
+   writes the JSONL next to the source; encrypted/regcode MDX is rejected
+   with a clear error):
+
+   ```bash
+   docker-compose/python/ai/venv/bin/python \
+       docker-compose/python/ai/goldendict_convert.py laravel/goldendict/DICT.mdx
+   # -> laravel/goldendict/DICT.mdx.jsonl with {"word", "alts", "html"} records
+   ```
+
+2. **Preview dry** — parse a capped slice and report what would be
+   written (stat rows only; nothing is written, not even auto-created
+   lookups). The bilingual link tally is diffed against the database, so
+   re-previewing an already-linked dictionary reports `translations_linked`
+   zeros and repeats the `unmatched candidates` count; would-be links stay
+   an in-run estimate (deduplicated within the run only):
+
+   ```bash
+   docker exec ext_app_laravel sh -c 'cd /var/www && php artisan goldendict:import goldendict/DICT.mdx.jsonl --lang=xx --max-entries=500 --dry-run'
+   ```
+
+3. **Smoke-run against the testing DB** — the same capped run with real
+   writes, so the full write path (lookup auto-creation, upserts, links)
+   is exercised on throwaway `ext_app_test` data first:
+
+   ```bash
+   docker exec ext_app_laravel sh -c 'cd /var/www && DB_CONNECTION=testing php artisan migrate:fresh --seed'
+   docker exec ext_app_laravel sh -c 'cd /var/www && DB_CONNECTION=testing php artisan goldendict:import goldendict/DICT.mdx.jsonl --lang=xx --max-entries=500'
+   ```
+
+4. **Run the real import detached**, redirecting output — dictionary-sized
+   JSONLs are long-running, and heartbeats every 100k entries (counts,
+   RSS, elapsed) land in `storage/logs/laravel.log` so progress stays
+   observable:
+
+   ```bash
+   docker exec -d ext_app_laravel sh -c 'cd /var/www && php artisan goldendict:import goldendict/DICT.mdx.jsonl --lang=xx >> storage/logs/goldendict-import.log 2>&1'
+   ```
+
+   `--lang` accepts any registry code, missing lookups auto-create like
+   the Wiktionary import. Extraction is a generic heuristic (plain-text
+   block segments → definitions, `[bracketed]`/`/slashed/` IPA →
+   transcriptions under the auto-created `ipa` type, POS abbreviations →
+   word-class slugs, `alts` → forms, multi-word headwords → `phrase`
+   unless they are junk: a multi-word headword with sentence punctuation
+   or more than 3 tokens is rejected, ADR 0078). For ru/be/uk sources the
+   stored words and forms are **plain letters** — the combining stress
+   acutes are stripped at parse time, so stressed variants collapse into
+   the plain rows. For a **bilingual** dictionary add `--target-lang=yy`:
+   translation candidates (the comma/semicolon-delimited article segments
+   that survive the noise filters) **link to existing target-language
+   words** — resolved by `l_word` (same class preferred, multi-word
+   prefers `phrase`), never creating target rows — plus canonical
+   `word_translations` links and `words.translations` JSON staging for
+   every candidate (staged strings wait in the JSON for a re-run once the
+   target word exists; `--no-link` skips these phases). A default run
+   then chains `dictionary:link-translations` automatically (skipped on
+   `--dry-run`, `--no-link`, or when fewer than two languages hold
+   words), so linked candidates leave the staged JSON in the same
+   invocation — no manual pass needed unless the run used `--no-link`.
+   For dictionaries
+   whose articles have structure the heuristics mangle, add
+   `--profile=<slug>` (below). Re-runs upsert and text-dedupe — raw
+   article HTML never enters the database, so a better extractor just
+   re-imports the JSONL.
+
+   Optional **host-side JSONL pre-filter** (a plain jsonl text pass, no
+   container round-trip needed): dictionaries ship non-word records you
+   can drop before importing rather than prune from the DB afterwards —
+   Mostitsky eXtro's `[1]`-style citation stubs, `**`/`***` info cards
+   and `_`-prefixed navigation pages (73 records) were deleted, and DSL
+   syntax quotes stripped from headwords (`"ангелы"` → `ангелы`, 5
+   records, also fixing their `l_word`). Keep it conservative and
+   eyeball the drop list first: bare-number headwords there are real
+   entries (`1947` = Roswell year) and stay. The `.dsl`/`.mdx` source of
+   truth is untouched — reconvert regenerates an unfiltered JSONL.
+
+5. Verify in the Filament admin (`/admin`, group "Words") like the
+   Wiktionary flow above.
+
+### Clean rebuild after import-rule changes (ADR 0078)
+
+When the import rules change in a way old data violates (stressed display
+twins — including the kaikki ru/be/uk headwords since the 2026-10-18
+carve-out reversal, `adj`/`adjective` alias twins, romanization-tagged
+forms, missing lemma forms, translation-created bare stubs, junk `phrase`
+rows), the fix is a wipe + re-import, not an in-place patch — unless the
+dedicated repair commands cover the residual (`words:normalize` and
+`wiktionary:demote-form-of`, above; the dictionary-word-purity tickets).
+Import order matters — base
+dictionaries before the bilingual runs, or the first bilingual run links
+almost nothing:
+
+1. `wiktionary:import-raw kaikki/raw-wiktextract-data.jsonl.gz
+   --langs=en,ru --fresh --force` — wipes all en+ru dictionary data (FK
+   cascades take the satellites, translation links and user familiarity
+   rows with them — accepted for a dev dataset) and imports kaikki words,
+   definitions, forms, transcriptions, then links translations.
+2. Restore the auxiliaries: `dictionary:import-cmudict`,
+   `words:import-frequency` / the frequency-lists import per their
+   `--help` (ranks survive nothing — the wipe resets them).
+3. The bilingual GoldenDict runs (dry-run, then real, detached):
+   `goldendict:import … --lang=ru --target-lang=en
+   --profile=mostitsky-ru-en` and `goldendict:import … --lang=en
+   --target-lang=ru --profile=oxford-en-ru`. Their candidates now link
+   against the kaikki rows; the unmatched remainder stays staged in
+   `words.translations` and links on a later re-run if the base import
+   grows the target language.
+4. Re-run the entity linking pass (`crossword:link` per the `--fresh`
+   note above) — the wipe reset `entity_words.word_id`.
+5. Verify: no U+0301 in stored ru `words.word`/`forms.form` (headwords
+   included — the kaikki path strips them now too), no Latin
+   romanization-tagged forms on ru words, every imported word carries
+   itself among its forms (lemma form), no `adj` word class beside
+   `adjective`, no translation-created bare ru stubs, `phrase` rows only
+   under dictionary headwords.
+
+### Extraction profiles (--profile=<slug>)
+
+A profile is a declarative XPath selector map in
+`laravel/config/goldendict.php` that tunes the generic heuristics for ONE
+dictionary — no code changes per dictionary. To author one:
+
+1. Convert a slice of the dictionary and smoke-run **without** the profile
+   (`--dry-run --max-entries=500`) to get the baseline stat row.
+2. Copy a profile in `config/goldendict.php` — `oxford-en-ru` is the
+   working real-world example (Oxford Russian Dictionary En-Ru: IPA from
+   `phoneticText` divs/spans via their direct text nodes with a
+   `normalize-space(.) != ","` predicate dropping the separator node,
+   Russian equivalents from `targetLangTranslation` spans excluding
+   `exampleGroup` blocks, numbered sense units from `sense-1`/`sense-2`
+   divs, word classes from `partOfSpeech` divs, `exampleGroup` blocks
+   stripped), `mostitsky-ru-en` the DSL one (see the tip below) —
+   or the `example-classes` template, rename
+   the slug, and retarget the six selector keys at the dictionary's
+   article structure:
+   * `transcriptions` — each matched node's text becomes a transcription
+     (enclosing `[brackets]`/`/slashes/` trimmed; **not** gated on the
+     IPA-marker heuristic — the profile author vouches for these nodes,
+     so non-IPA transcription systems work).
+   * `translations` — the matched nodes' texts replace the heuristic
+     block segments as the source of translation candidates (the noise
+     filters still apply: comma/semicolon split, grammar tags and junk
+     dropped). Bilingual mode only.
+   * `definitions` — the matched nodes' texts are the definition
+     segments instead of the heuristic nearest-block grouping.
+   * `forms` — each matched node's text splits on commas/semicolons/
+     slashes into individual forms ("am, is, are / was") that **merge**
+     with the entry's `alts` in the forms table (never replace them).
+   * `pos` — the matched nodes' texts are word-class candidates: the
+     first text the POS dictionary maps ("transitive verb" → `verb`)
+     overrides the heuristic pos hints; an unmappable text is a miss.
+   * `strip` — the matched nodes are removed from the article DOM
+     before any extraction (subtraction, not extraction: they vanish
+     from every other kind's input) and never count as a match/miss.
+   Each value is an XPath 1.0 string or a list of them (queried in
+   order). The `contains(concat(" ", normalize-space(@class), " "), "…")`
+   idiom matches a class as a whole token.
+3. Smoke-run **with** `--profile=<slug> --dry-run` and compare the stat
+   rows — the demo is the same JSONL visibly extracting differently.
+4. Iterate: a selector that matches nothing in an article falls back to
+   the heuristic for that kind and article — and so does a selector whose
+   matched nodes hold only whitespace text (transcriptions also trim
+   bracket/slash delimiters; a matched-but-empty
+   kind is a miss, never a silently emptied extraction) — an entry is
+   never dropped. The one exception is **translations when the profile
+   configures a translations selector**: there the author vouches for
+   where the equivalents live, so a miss yields no candidates for that
+   article instead of mining the raw block text (which manufactured junk
+   target words out of example scaffolding). Every article where NO
+   selector effectively matched is
+   counted in the
+   "Profile no-match articles" stat row and sampled (capped) into one
+   `Goldendict profile '…': no selector matched in N articles` notice in
+   `storage/logs/laravel.log`, so you can see what you are missing.
+5. Known-slug safety: an unknown slug fails the command with the known
+   list; unknown keys or syntactically broken XPath fail up front before
+   anything is written.
+
+When the dictionary's markup gives no class to hook onto, a
+**content-language test** can still separate the kinds: pyglossary
+renders the Mostitsky DSL `[trn]` equivalents as plain
+`padding-left:1em` paragraphs — indistinguishable by shape from the
+`[com]` commentary paragraphs — but they are the only such paragraphs
+whose text carries no Cyrillic, so `mostitsky-ru-en` selects them with
+`translate()` stripping the Cyrillic alphabet and comparing:
+`//p[@style="padding-left:1em;margin:0"][normalize-space(translate(normalize-space(.), "абвгде…", "")) = normalize-space(.)]`.
+Configuring that selector also vouches translations (cross-reference
+articles yield no candidates instead of mined Russian commentary —
+translation candidates went 1154 → 209 on the first 500 entries). The
+same dictionary shows when NOT to strip: its bold `<b>` carries real
+content in other articles, so the headword echo stays in the
+definitions, and `span.sec` (► source links, «см. тж» blocks, GoldenDict
+artifacts) takes the noise. The `[p]` tags there are subject domains
+(`уфол.`, `астрон.`), not word classes — no `pos` selector.
+
+Format quirks to keep in mind (from the converter): DSL parenthesized
+title variants concatenate into the headword (`dog(n.)` → `dogn.`), DSL
+curly-brace homonym markers surface as a bold `<b>…</b>` prefix, and
+StarDict sets with `sametypesequence=m` yield **plain-text** bodies in
+`html` — selectors must not assume strict HTML.
+
+### Prod deploy (python image rebuild)
+
+The converter's `pyglossary` dependency is pinned in
+`docker-compose/python/requirements.txt`, and the prod python image bakes
+that file — dev is unaffected (the bind-mounted venv was pip-installed
+directly). After this feature lands on master, the prod machine's next
+deploy therefore needs the routine python image rebuild **before**
+`./deploy.sh` will run: `requirements.txt` is one of the five stamped
+container-definition files, so the stamp guard refuses (by design) until
+the image is rebuilt and re-stamped:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build python
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile cloudflare up -d
+./deploy.sh --stamp
+./deploy.sh   # or re-run the Deploy workflow
+```
+
+(The generic flow is
+[Production Deployment](/playbooks/production-deployment.md) → "When
+images DO change".)
 
 # Notes
 

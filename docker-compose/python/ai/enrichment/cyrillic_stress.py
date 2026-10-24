@@ -44,6 +44,27 @@ def strip_marks(text: str) -> str:
     return regex.sub(r"\p{M}", "", text)
 
 
+_YO_FOLD = str.maketrans({"ё": "е", "Ё": "Е"})
+
+
+def lookup_key(word: str) -> str:
+    """The dictionary lookup key of a surface form.
+
+    Mirrors Laravel's ``App\\Support\\WordLookupKey::normalize`` — trim,
+    lowercase, strip combining marks, strip zero-width format characters
+    (``\\p{Cf}``: ZWSP, ZWJ, BOM, soft hyphen), trim again, then fold ё→е —
+    so a ё token compares equal to its е-folded dictionary form. The key
+    folds; the display text never does. PHP's WordTokenizer (via
+    ``WordLookupKey``) and the browser wordTokenizer.mjs carry the same
+    formula (TokenizerParityTest on the Laravel side pins the PHP↔JS pair;
+    this module's pytest pins cover the python one).
+    """
+    key = word.strip().lower()
+    key = regex.sub(r"\p{M}", "", key)
+    key = regex.sub(r"\p{Cf}", "", key).strip()
+    return key.translate(_YO_FOLD)
+
+
 def _vowel_indices(word: str, vowels: frozenset[str]) -> list[int]:
     """Positions of the language's vowel letters in ``word``."""
     return [i for i, ch in enumerate(word) if ch in vowels]
@@ -115,10 +136,6 @@ def _dict_fallback(
     return _apply_acute_by_index(surface, vowel_index, vowels)
 
 
-def _normalize_yo(word: str) -> str:
-    return word.lower().replace("ё", "е")
-
-
 def _match_case(word: str, reference: str) -> str:
     if not word or not reference:
         return word
@@ -159,7 +176,7 @@ def mark_sentence(
             # Tokenization drift between caller and service — leave unmarked.
             continue
         converted = _convert_marker(silero_word, vowels) if silero_word is not None else None
-        if converted is not None and _normalize_yo(strip_marks(converted)) == _normalize_yo(strip_marks(surface)):
+        if converted is not None and lookup_key(converted) == lookup_key(surface):
             # Silero's letters win (keeps its е→ё conversions); match case.
             marked[token["start"]] = _match_case(converted, surface)
         elif len(_vowel_indices(surface, vowels)) > 1:

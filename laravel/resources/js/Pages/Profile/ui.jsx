@@ -70,18 +70,22 @@ export function InputError({messages = []}) {
     )
 }
 
-export function CheckboxRow({id, checked, onChange, label}) {
+export function CheckboxRow({id, checked, onChange, label, disabled = false}) {
     return (
         <label
             htmlFor={id}
-            className="flex cursor-pointer select-none items-center gap-3 py-1.5"
+            className={[
+                'flex select-none items-center gap-3 py-1.5',
+                disabled ? 'opacity-50' : 'cursor-pointer',
+            ].join(' ')}
         >
             <input
                 id={id}
                 type="checkbox"
                 checked={checked}
                 onChange={(event) => onChange(event.target.checked)}
-                className="h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-vermilion)] dark:accent-[var(--color-vermilion-night)]"
+                disabled={disabled}
+                className="h-4 w-4 shrink-0 accent-[var(--color-vermilion)] disabled:cursor-not-allowed dark:accent-[var(--color-vermilion-night)]"
             />
             <span className="text-sm text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
                 {label}
@@ -151,16 +155,18 @@ export function DangerButton({children, onClick, type = 'button', className = ''
     )
 }
 
-export function SecondaryButton({children, onClick, type = 'button'}) {
+export function SecondaryButton({children, onClick, type = 'button', disabled = false}) {
     return (
         <button
             type={type}
             onClick={onClick}
+            disabled={disabled}
             className={[
                 'inline-flex items-center px-4 py-2 rounded-sm text-sm font-medium transition-colors',
                 'bg-[var(--color-vellum-deep)] dark:bg-[var(--color-hairline-night)]',
                 'text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]',
                 'hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:focus-visible:ring-[var(--color-vermilion-night)]',
+                'disabled:opacity-50 disabled:hover:opacity-50',
             ].join(' ')}
         >
             {children}
@@ -236,15 +242,15 @@ export function TrashIcon() {
 // The profile's layout-width variant, shared by the two tab layers that cap
 // content (`TabPanel` in Edit.jsx and `Card` here): 'panel' (default) keeps
 // a layer at its reading width, 'wide' lifts the cap so a tab's layout can
-// span the full profile frame — the Popups tab is the only 'wide' tab
-// (ticket 02). Each layer passes its own capped class.
+// span the full profile frame — the Popups and Anki tabs are the 'wide'
+// tabs. Each layer passes its own capped class.
 export function profileWidthClass(width = 'panel', cappedClass) {
     return width === 'wide' ? '' : cappedClass
 }
 
 // The bordered panel every profile section sits in. Regular sections keep
-// their inner content cap; the Popups tab passes 'wide' so its two-column
-// layout can span the full profile frame.
+// their inner content cap; the Popups and Anki tabs pass 'wide' so their
+// layouts can span the full profile frame.
 export function Card({children, width = 'panel'}) {
     return (
         <div className="border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[var(--color-vellum)] dark:bg-[var(--color-ink-night)] rounded-sm p-4 sm:p-8">

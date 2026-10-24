@@ -95,6 +95,7 @@ function ReaderRow({
                         className="whitespace-pre-line"
                         popupFontSize={popupFontSize}
                         explain={firstExplain}
+                        language={first.language}
                         showStress={showStress}
                         showPhrasal={showPhrasal}
                     />
@@ -134,6 +135,7 @@ function ReaderRow({
                                 onWordProgress={onWordProgress}
                                 popupFontSize={popupFontSize}
                                 explain={secondExplain}
+                                language={second.language}
                                 showStress={showStress}
                                 showPhrasal={showPhrasal}
                             />

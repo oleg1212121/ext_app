@@ -133,3 +133,15 @@ their side helpers are deleted from `MeaningMatchPresenter`, which keeps
 > `SimulatorTextEndpointTest` asserts the sibling eligibility keys (the
 > simulator's `explainable` was previously untested) and gains a
 > page-scoping test mirroring the reader's.
+
+> **Amendment (2026-10-24): explainable is per-side existence, not the native-language rule.**
+> The 2026-10-04 amendment gave `highlightable` and `explainable` the same
+> "not the user's native language" rule. The popup's Explain toggle and
+> robot are now wanted on the native side too — a native-language popup
+> explains the *foreign* text around a native word just as usefully, and
+> the two popups (en/ru) should look alike. `wordMapsFor`'s `explainable`
+> map now answers "does this side exist" (`isset($sideEntities[...])`),
+> while `highlightable` keeps the not-native rule — native text must not
+> tint. The `explain` config payload (`{enabled, modelKey, ...}`) and the
+> server-side explain endpoint are unchanged; the flag was purely
+> client-side gating (the endpoint never re-checked the language).

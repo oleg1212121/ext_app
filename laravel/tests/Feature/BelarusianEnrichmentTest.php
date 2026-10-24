@@ -112,7 +112,10 @@ it('sends dictionary stress hints for belarusian tokens', function () {
     // The forms table carries the stressed inflected form (acute style).
     Form::query()->create(['word_id' => $book->id, 'form' => 'кні́гу', 'l_word' => 'кнігу']);
     // The ё-headword carries the stress by itself (same check as Russian).
-    beWord('вёска');
+    // The stored key is the folded contract key (WordLookupKey): the token's
+    // key folds ё→е, so the row must key `веска` for the resolution to hit —
+    // display keeps ё and supplies the hint.
+    beWord('вёска', attributes: ['l_word' => 'веска']);
 
     app(SentenceEnrichmentService::class)->enrichChunk(
         $entity->refresh(),

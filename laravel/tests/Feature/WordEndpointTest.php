@@ -2,12 +2,15 @@
 
 use App\Models\Definition;
 use App\Models\Etymology;
+use App\Models\Example;
 use App\Models\Form;
 use App\Models\Language;
+use App\Models\Tag;
 use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\User;
 use App\Models\Word;
+use App\Models\WordAiFetch;
 use App\Models\WordClass;
 use App\Models\WordTranslation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -45,10 +48,50 @@ it('returns dictionary details for a word', function () {
         ->assertJsonPath('data.is_form', false)
         ->assertJsonCount(1, 'data.entries')
         ->assertJsonPath('data.entries.0.word_class', 'Существительное')
-        ->assertJsonPath('data.entries.0.definitions.0', 'Домашнее животное семейства кошачьих.')
+        ->assertJsonPath('data.entries.0.definitions.0.text', 'Домашнее животное семейства кошачьих.')
         ->assertJsonPath('data.entries.0.transcriptions.0.value', 'kot')
         ->assertJsonPath('data.entries.0.transcriptions.0.type', 'МФА')
         ->assertJsonPath('data.entries.0.etymologies.0', 'От праслав. *kotь.');
+});
+
+it('ships definitions as {text, labels} objects — stored labels ride, a null column lands as []', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $word = createWord('en', 'knave', 'noun');
+    Definition::query()->create(['word_id' => $word->id, 'definition' => 'a dishonest man', 'labels' => ['archaic']]);
+    Definition::query()->create(['word_id' => $word->id, 'definition' => 'any given card in a deck']);
+
+    // The popup-usage-labels payload: every definition is the object the
+    // popup's chips render from — labels verbatim when the column stores
+    // them, the empty list when it stores null (the column's "unlabelled"
+    // shape), so the client never special-cases null.
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $word->id]))
+        ->assertOk()
+        ->assertJsonPath('data.entries.0.definitions', [
+            ['text' => 'a dishonest man', 'labels' => ['archaic']],
+            ['text' => 'any given card in a deck', 'labels' => []],
+        ]);
+});
+
+it('ships the word-level mark as entries.N.labels — a null column lands as []', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $plain = createWord('en', 'decimate', 'verb');
+    $marked = createWord('en', 'decimate', 'noun');
+    $marked->update(['labels' => ['obsolete']]);
+
+    // The follow-up payload: each entry carries the word's own mark — the
+    // source's headword label, stored on the row at import — beside its
+    // definitions' per-sense labels. The popup's section header dims and
+    // chips from this, never an aggregate of the senses.
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $plain->id]))
+        ->assertOk()
+        ->assertJsonPath('data.entries.0.id', $plain->id)
+        ->assertJsonPath('data.entries.0.labels', [])
+        ->assertJsonPath('data.entries.1.id', $marked->id)
+        ->assertJsonPath('data.entries.1.labels', ['obsolete']);
 });
 
 it('returns one entry per part of speech of the headword, linked word first', function () {
@@ -68,10 +111,10 @@ it('returns one entry per part of speech of the headword, linked word first', fu
         ->assertJsonCount(2, 'data.entries')
         ->assertJsonPath('data.entries.0.id', $verb->id)
         ->assertJsonPath('data.entries.0.word_class', 'Verb')
-        ->assertJsonPath('data.entries.0.definitions.0', 'To rely on.')
+        ->assertJsonPath('data.entries.0.definitions.0.text', 'To rely on.')
         ->assertJsonPath('data.entries.1.id', $noun->id)
         ->assertJsonPath('data.entries.1.word_class', 'Noun')
-        ->assertJsonPath('data.entries.1.definitions.0', 'A financial institution.');
+        ->assertJsonPath('data.entries.1.definitions.0.text', 'A financial institution.');
 });
 
 it('flags a surface form different from the dictionary lemma', function () {
@@ -134,13 +177,15 @@ it('merges base-word entries of the surface form and hides the relay entry', fun
         ->assertOk()
         ->assertJsonPath('data.form_of', ['melt'])
         ->assertJsonCount(2, 'data.entries')
-        // Own group keeps the real melted entry; the relay entry is hidden.
-        ->assertJsonPath('data.entries.0.id', $meltedAdj->id)
-        ->assertJsonPath('data.entries.0.word', 'melted')
+        // The relay entry is hidden; the surviving own-group entry (unknown
+        // class: definition 1 + rank 1 = 2) and the base entry (verb:
+        // definition 2 + rank 1 = 3) sort by completeness.
+        ->assertJsonPath('data.entries.0.id', $meltVerb->id)
+        ->assertJsonPath('data.entries.0.word', 'melt')
         // The base group is scoped to the claiming class (melt/verb).
-        ->assertJsonPath('data.entries.1.id', $meltVerb->id)
-        ->assertJsonPath('data.entries.1.word', 'melt')
-        ->assertJsonPath('data.entries.1.definitions.0', 'To change from solid to liquid state.');
+        ->assertJsonPath('data.entries.1.id', $meltedAdj->id)
+        ->assertJsonPath('data.entries.1.word', 'melted')
+        ->assertJsonPath('data.entries.1.definitions.0.text', 'Being in a liquid state as a result of melting.');
 
     expect(collect($response->json('data.entries'))->pluck('id'))->not->toContain($meltNoun->id);
 });
@@ -214,7 +259,43 @@ it('filters relay glosses out of partially-relay entries', function () {
 
     $sawEntry = collect($response->json('data.entries'))->firstWhere('id', $sawVerb->id);
     expect($sawEntry)->not->toBeNull()
-        ->and($sawEntry['definitions'])->toBe(['To cut (something) with a saw.']);
+        ->and($sawEntry['definitions'])->toBe([['text' => 'To cut (something) with a saw.', 'labels' => []]]);
+});
+
+it('scores a partially-relay entry on the stored definitions — the display filter never demotes', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    // Every surviving (non-relay) sense is obsolete, but the entry also
+    // carries relay glosses. Completeness must judge the STORED set — where
+    // the unlabelled relay gloss is a live row, exactly as the
+    // words:recalc-completeness sweep scores it — never the
+    // display-filtered set the popup hides, or words.completeness would
+    // flap between a popup open (lazy recalc) and a sweep.
+    $sawVerb = createWord('en', 'saw', 'verb', ['frequency' => 900]);
+    Definition::query()->create(['word_id' => $sawVerb->id, 'definition' => 'simple past of see']);
+    Definition::query()->create(['word_id' => $sawVerb->id, 'definition' => 'No longer used.', 'labels' => ['obsolete']]);
+    Form::query()->create(['word_id' => $sawVerb->id, 'form' => 'sawn', 'l_word' => 'sawn']);
+
+    $sawn = createWord('en', 'sawn', 'unknown');
+
+    $response = $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $sawn->id, 'surface' => 'sawn']))
+        ->assertOk()
+        ->assertJsonPath('data.form_of', ['saw']);
+
+    // Stored-set scoring: live verb definitions 2 + rank 1 = 3 — judged on
+    // the filtered set this entry would demote to 0 + rank 1 = 1. The
+    // sweep's SQL pins the same rows to the same score in
+    // WordsRecalcCompletenessCommandTest.
+    expect((int) $sawVerb->fresh()->completeness)->toBe(3);
+
+    // The payload still renders the display-filtered definitions — the
+    // relay gloss stays hidden even though it scored.
+    $sawEntry = collect($response->json('data.entries'))->firstWhere('id', $sawVerb->id);
+    expect($sawEntry)->not->toBeNull()
+        // The stored labels ride the object beside the text.
+        ->and($sawEntry['definitions'])->toBe([['text' => 'No longer used.', 'labels' => ['obsolete']]]);
 });
 
 it('keeps a relay-only entry when the forms table offers no base word', function () {
@@ -229,7 +310,7 @@ it('keeps a relay-only entry when the forms table offers no base word', function
         ->assertOk()
         ->assertJsonPath('data.form_of', [])
         ->assertJsonCount(1, 'data.entries')
-        ->assertJsonPath('data.entries.0.definitions.0', 'simple past and past participle of melt');
+        ->assertJsonPath('data.entries.0.definitions.0.text', 'simple past and past participle of melt');
 });
 
 it('does not duplicate the own headword when the forms table lists it as a form', function () {
@@ -246,6 +327,48 @@ it('does not duplicate the own headword when the forms table lists it as a form'
         ->assertJsonPath('data.form_of', [])
         ->assertJsonCount(1, 'data.entries')
         ->assertJsonPath('data.is_form', true);
+});
+
+it('sorts the family by completeness, richest entry first', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    // The linked row knows nothing; the base word carries the content.
+    $melted = createWord('en', 'melted', 'unknown');
+    $meltVerb = createWord('en', 'melt', 'verb', ['frequency' => 900]);
+    Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid.']);
+    Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melted', 'l_word' => 'melted']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $melted->id, 'surface' => 'melted']))
+        ->assertOk()
+        // The popup header still binds the linked word even though its entry
+        // sinks below the richer base entry.
+        ->assertJsonPath('data.id', $melted->id)
+        ->assertJsonCount(2, 'data.entries')
+        ->assertJsonPath('data.entries.0.id', $meltVerb->id)
+        ->assertJsonPath('data.entries.1.id', $melted->id);
+});
+
+it('keeps the linked entry first when completeness ties', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    $melted = createWord('en', 'melted', 'unknown');
+    Definition::query()->create(['word_id' => $melted->id, 'definition' => 'Converted to a liquid state.']);
+    // One definition each, unknown class throughout, neither ranked: both
+    // score 1 — today's order (own group, linked word first) stands as the
+    // tiebreak.
+    $meltVerb = createWord('en', 'melt', 'unknown');
+    Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid.']);
+    Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melted', 'l_word' => 'melted']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $melted->id, 'surface' => 'melted']))
+        ->assertOk()
+        ->assertJsonCount(2, 'data.entries')
+        ->assertJsonPath('data.entries.0.id', $melted->id)
+        ->assertJsonPath('data.entries.1.id', $meltVerb->id);
 });
 
 it('orders base-word groups by frequency without a cap', function () {
@@ -271,10 +394,83 @@ it('orders base-word groups by frequency without a cap', function () {
         ->assertOk()
         ->assertJsonPath('data.form_of', ['leave', 'lift'])
         ->assertJsonCount(4, 'data.entries')
-        ->assertJsonPath('data.entries.0.id', $leftAdj->id)
-        ->assertJsonPath('data.entries.1.id', $leaveNoun->id)
-        ->assertJsonPath('data.entries.2.id', $leaveVerb->id)
-        ->assertJsonPath('data.entries.3.id', $liftVerb->id);
+        // Major POS outranks the minor entry through the score (verb/noun
+        // definitions 2 + rank 1 = 3 vs the unknown-class 1 + rank 1 = 2),
+        // so the assembly's leading own-group entry sinks last.
+        ->assertJsonPath('data.entries.0.id', $leaveNoun->id)
+        ->assertJsonPath('data.entries.1.id', $leaveVerb->id)
+        ->assertJsonPath('data.entries.2.id', $liftVerb->id)
+        ->assertJsonPath('data.entries.3.id', $leftAdj->id);
+});
+
+it('ranks a live entry ahead of a demoted one regardless of completeness', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    // The linked entry is demoted (every definition obsolete) yet rich:
+    // demoted (0 definition points) + transcription + example + rank = 3.
+    $meltedVerb = createWord('en', 'melted', 'verb', ['frequency' => 900]);
+    Definition::query()->create(['word_id' => $meltedVerb->id, 'definition' => 'No longer in use.', 'labels' => ['obsolete']]);
+    Transcription::query()->create([
+        'word_id' => $meltedVerb->id,
+        'transcription_type_id' => TranscriptionType::query()->create([
+            'language_id' => Language::query()->where('code', 'en')->value('id'),
+            'slug' => 'ipa',
+            'title' => 'IPA',
+        ])->id,
+        'transcription' => 'mɛltɪd',
+    ]);
+    Example::query()->create(['word_id' => $meltedVerb->id, 'example' => 'It was melted down.']);
+
+    // The base entry is live and sparser: one definition on a verb entry,
+    // score 2 — but live always sorts first.
+    $meltVerb = createWord('en', 'melt', 'verb');
+    Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid.']);
+    Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melted', 'l_word' => 'melted']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $meltedVerb->id, 'surface' => 'melted']))
+        ->assertOk()
+        ->assertJsonCount(2, 'data.entries')
+        ->assertJsonPath('data.entries.0.id', $meltVerb->id)
+        ->assertJsonPath('data.entries.0.word', 'melt')
+        ->assertJsonPath('data.entries.1.id', $meltedVerb->id)
+        ->assertJsonPath('data.entries.1.word', 'melted');
+});
+
+it('ranks a live entry ahead of one demoted by its own word-level mark', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+
+    // The linked entry's own headword mark (words.labels) demotes it while
+    // every sense stays unlabelled: 0 definition points + transcription +
+    // example + rank = 3 — still below the sparser live base entry (2).
+    $meltedVerb = createWord('en', 'melted', 'verb', ['frequency' => 900, 'labels' => ['obsolete']]);
+    Definition::query()->create(['word_id' => $meltedVerb->id, 'definition' => 'Now chiefly poetic.']);
+    Transcription::query()->create([
+        'word_id' => $meltedVerb->id,
+        'transcription_type_id' => TranscriptionType::query()->create([
+            'language_id' => Language::query()->where('code', 'en')->value('id'),
+            'slug' => 'ipa',
+            'title' => 'IPA',
+        ])->id,
+        'transcription' => 'mɛltɪd',
+    ]);
+    Example::query()->create(['word_id' => $meltedVerb->id, 'example' => 'It was melted down.']);
+
+    $meltVerb = createWord('en', 'melt', 'verb');
+    Definition::query()->create(['word_id' => $meltVerb->id, 'definition' => 'To change from solid to liquid.']);
+    Form::query()->create(['word_id' => $meltVerb->id, 'form' => 'melted', 'l_word' => 'melted']);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $meltedVerb->id, 'surface' => 'melted']))
+        ->assertOk()
+        ->assertJsonCount(2, 'data.entries')
+        ->assertJsonPath('data.entries.0.id', $meltVerb->id)
+        ->assertJsonPath('data.entries.0.word', 'melt')
+        ->assertJsonPath('data.entries.1.id', $meltedVerb->id)
+        ->assertJsonPath('data.entries.1.word', 'melted')
+        ->assertJsonPath('data.entries.1.labels', ['obsolete']);
 });
 
 it('finds base words through a surface carrying combining marks', function () {
@@ -292,6 +488,89 @@ it('finds base words through a surface carrying combining marks', function () {
         ->getJson(route('words.show', ['word' => $kota->id, 'surface' => 'ко́та']))
         ->assertOk()
         ->assertJsonPath('data.form_of', ['кот']);
+});
+
+it('exposes the word tags for the Anki card', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $word = createWord('en', 'melt', 'verb');
+    $a2 = Tag::factory()->create(['name' => 'A2', 'slug' => 'a2']);
+    $top = Tag::factory()->create(['name' => 'top-3000', 'slug' => 'top-3000']);
+    $word->tags()->sync([$a2->id, $top->id]);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $word->id]))
+        ->assertOk()
+        ->assertJsonPath('data.tags', ['A2', 'top-3000']);
+});
+
+it('returns an empty tag list for untagged words', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $word = createWord('en', 'melt', 'verb');
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $word->id]))
+        ->assertOk()
+        ->assertJsonPath('data.tags', []);
+});
+
+it('flags ai_asked only when a succeeded AI enrichment ledger row exists', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $asked = createWord('en', 'melt', 'verb');
+    $failed = createWord('en', 'boil', 'verb');
+
+    WordAiFetch::query()->create([
+        'word_id' => $asked->id,
+        'status' => WordAiFetch::STATUS_SUCCEEDED,
+        'attempts' => 1,
+        'asked_at' => now(),
+        'succeeded_at' => now(),
+    ]);
+    WordAiFetch::query()->create([
+        'word_id' => $failed->id,
+        'status' => WordAiFetch::STATUS_FAILED,
+        'attempts' => 2,
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $asked->id]))
+        ->assertOk()
+        ->assertJsonPath('data.ai_asked', true);
+
+    // A failed first ask never succeeded — ai_asked stays false (the
+    // toolbar shows the first-time ask icon, retryable).
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $failed->id]))
+        ->assertOk()
+        ->assertJsonPath('data.ai_asked', false);
+
+    $never = createWord('en', 'freeze', 'verb');
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $never->id]))
+        ->assertOk()
+        ->assertJsonPath('data.ai_asked', false);
+});
+
+it('sends the word\'s import source at the payload top level', function () {
+    $user = User::factory()->create();
+    createWordClasses();
+    $sourced = createWord('en', 'melt', 'verb', ['source' => Word::SOURCE_WIKTIONARY]);
+    $unsourced = createWord('en', 'boil', 'verb');
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $sourced->id]))
+        ->assertOk()
+        ->assertJsonPath('data.source', Word::SOURCE_WIKTIONARY);
+
+    // A pre-provenance row (never stamped by any importer) stays honest:
+    // source rides null and the header badge's other half — ai_asked —
+    // decides whether an "ai"-only badge renders at all.
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $unsourced->id]))
+        ->assertOk()
+        ->assertJsonPath('data.source', null);
 });
 
 it('sorts translations native language first', function () {
@@ -312,6 +591,56 @@ it('sorts translations native language first', function () {
         ->assertOk()
         ->assertJsonPath('data.entries.0.translations.0.word', 'кот')
         ->assertJsonPath('data.entries.0.translations.0.language_code', 'ru');
+});
+
+it('exposes the staged raw translations deduped against the linked display words', function () {
+    createWordClasses();
+    $user = User::factory()->create();
+    $enWord = createWord('en', 'cat', 'noun');
+    $ruWord = createWord('ru', 'кот', 'noun');
+    WordTranslation::link($enWord->id, $ruWord->id);
+
+    // Staged raw candidates (popup-provenance ticket 02, ADR 0085): «Кот»
+    // only restates the linked display word (case-insensitive) — dropped;
+    // «dog» survives; the «DOG» case twin of an earlier staged string does
+    // not repeat it (first occurrence stands).
+    $enWord->forceFill(['translations' => ['Кот', 'dog', 'DOG']])->save();
+
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $enWord->id]))
+        ->assertOk()
+        ->assertJsonPath('data.entries.0.translations.0.word', 'кот')
+        ->assertJsonPath('data.entries.0.staged_translations', ['dog']);
+});
+
+it('always carries staged_translations — an empty list when nothing is staged', function () {
+    createWordClasses();
+    $user = User::factory()->create();
+    $word = createWord('en', 'cat', 'noun');
+
+    // The key rides every entry even when the word stages nothing (the raw
+    // line hides on an empty list; the frontend reads it unconditionally).
+    $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $word->id]))
+        ->assertOk()
+        ->assertJsonPath('data.entries.0.staged_translations', []);
+});
+
+it('caps the staged raw translations at the payload translation limit', function () {
+    createWordClasses();
+    $user = User::factory()->create();
+    $word = createWord('en', 'cat', 'noun');
+    $word->forceFill(['translations' => array_map(
+        fn (int $i): string => "raw candidate {$i}",
+        range(1, 101),
+    )])->save();
+
+    $staged = $this->actingAs($user)
+        ->getJson(route('words.show', ['word' => $word->id]))
+        ->assertOk()
+        ->json('data.entries.0.staged_translations');
+
+    expect($staged)->toHaveCount(100);
 });
 
 it('sets a word known (familiarity 100) for the current user', function () {

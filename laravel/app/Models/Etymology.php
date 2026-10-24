@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Etymology extends Model
 {
-    protected $fillable = ['word_id', 'etymology'];
+    protected $fillable = ['word_id', 'etymology', 'source'];
 
     public function word(): BelongsTo
     {

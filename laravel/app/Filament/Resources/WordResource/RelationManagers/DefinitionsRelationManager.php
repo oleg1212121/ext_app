@@ -29,6 +29,13 @@ class DefinitionsRelationManager extends RelationManager
             ->recordTitleAttribute('definition')
             ->columns([
                 TextColumn::make('definition'),
+                // The closed-set usage slugs (App\Support\UsageLabels) as
+                // badges — the verification aid for the re-import labels
+                // backfill: rows the import refreshed light up here.
+                TextColumn::make('labels')
+                    ->label('Labels')
+                    ->badge()
+                    ->placeholder('—'),
             ])
             ->headerActions([
                 Actions\CreateAction::make(),

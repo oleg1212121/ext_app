@@ -1,3 +1,8 @@
+The repository's authoritative domain glossary, organized per context — each
+entry below is the canonical statement of its term (as `docs/agents/domain.md`
+already declares). Terms of art for user-facing flows (Anki export,
+Interactive words) live in [GLOSSARY.md](GLOSSARY.md) instead.
+
 # Sentence Alignment Context
 
 The domain of pairing the sentences of two same-work entities (two versions of
@@ -352,17 +357,23 @@ _Avoid_: translation (also means a **Staged translation** or the general
 notion), relation, mapping, directed translation.
 
 **Staged translation**:
-A raw target-language word string the import recorded on a Word, awaiting
-**Translation linking** into **Translation links**. Working data of the
-pipeline, never shown to end users.
+A raw target-language word string the import or translation fetch recorded
+on a Word, awaiting **Translation linking** into **Translation links**.
+Working data of the pipeline, shown to end users only as the word popup's
+muted amber "raw:" line (ADR 0085) — never as a curated translation.
 _Avoid_: raw translation, pending translation, translation (overloaded).
 
 **Raw dump**:
-The monolithic kaikki.org extract of the entire English Wiktionary — one
-JSON object per line, mixing the entries of every language in one file,
-each entry carrying its language. Source material for **Language
-extracts**; never imported directly.
-_Avoid_: kaikki file (ambiguous — per-language dumps also exist), full dump.
+A monolithic kaikki.org extract of one entire Wiktionary **edition** —
+the English edition (kaikki.org/dictionary/rawdata.html) and the Russian
+edition (kaikki.org/ruwiktionary/rawdata.html) are the two in use — one
+JSON object per line, mixing the entries of every language that edition
+covers in one file, each entry carrying its language. Source material
+for **Language extracts**; never imported directly. Each language's
+dictionary sources from its own edition, and editions merge on overlap
+(ADR 0080).
+_Avoid_: kaikki file (ambiguous — per-language dumps also exist), full
+dump, "the" raw dump (there is one per edition).
 
 **Language extract**:
 The per-language file filtered from a **Raw dump** — raw lines of exactly

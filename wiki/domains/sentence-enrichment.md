@@ -5,7 +5,8 @@ description: Local-only per-sentence enrichment — Russian/Belarusian/English s
 tags: [enrichment, stress-marks, multi-word-verbs, enrichers, annotations, python-service, spacy, reader, simulator, silero, belarusian]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-11T12:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-19T22:30:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: service
      resource: laravel/app/Classes/SentenceEnrichmentService.php
@@ -171,7 +172,9 @@ split as `/split` and `/align`.
   of content-word marks correctly (РАніцай, ракОй, прыйшлА, ГОрад, вадзЕ)
   with only monosyllabic-clitic noise; unknown words stay unmarked. The
   whole algorithm lives in the shared `ai/enrichment/cyrillic_stress.py`
-  (tokenization mirroring WordTokenizer, mark stripping, `+`→U+0301
+  (tokenization mirroring WordTokenizer, the shared `lookup_key` —
+  Laravel's `WordLookupKey::normalize` pipeline, used for the
+  Silero-output comparison —, mark stripping, `+`→U+0301
   conversion, dictionary fallback, span-preserving rebuild), parameterized
   by the vowel set.
 - **en stress** (`ai/enrichment/en_stress.py`): the ˈ in a hint variant gives
@@ -306,11 +309,17 @@ batched phrasal pairing, 503 details).
   draw from the shared grey line-art icon set (`icons.jsx`; WordText is the
   shared renderer). Filament previews both columns in
   SentencesRelationManager (visible by default).
-- **Tokenizer keys strip combining marks** on both sides (`WordTokenizer::
-  lookupKey`, `wordTokenizer.mjs`) — the dictionary's `l_word` normalization,
-  and what keeps pre-marked source content resolving; since the overlay
-  renders plain text, word-map keys always come from unstressed characters.
-  `TokenizerParityTest` carries stress-marked samples. `WordController::show`
+- **Tokenizer keys run the shared `l_word` pipeline on both sides**
+  (`WordTokenizer::lookupKey` → `WordLookupKey::normalize`,
+  `wordTokenizer.mjs`, and the python tokenizer's `lookup_key` in
+  `ai/enrichment/cyrillic_stress.py`) — trim, lowercase, mark strip,
+  zero-width/format-character strip, ё→е fold, the exact normalization
+  `words.l_word`/`entity_words.l_word` carry, and what keeps pre-marked
+  source content and ё spellings resolving; since the overlay
+  renders plain text, word-map keys always come from unstressed,
+  е-folded characters.
+  `TokenizerParityTest` carries stress-marked and ё/zero-width samples.
+  `WordController::show`
   strips marks from popup surfaces defensively.
 
 ## Deployment note
@@ -333,10 +342,18 @@ rebuild the python image
 (the one `.github/workflows/deploy.yml` actually runs) `deploy-native.sh`
 handles this automatically: it pip-syncs the machine-local venv from
 `requirements.txt` on every deploy and restarts + health-checks
-`ext-python` whenever the pull touched `docker-compose/python/`. After a
+`ext-python` whenever the pull touched `docker-compose/python/`. The
+2026-10-19 `lookup_key` parity refactor (word-import-contract ticket 09)
+was result-neutral — the Silero comparison key only gained the trim and
+zero-width strips, which cannot fire on token surfaces — so
+`ALGORITHM_VERSION` stayed at 1 on both sides and no re-enrichment sweep
+was owed. After a
 prod deploy the CMUdict file (`laravel/kaikki/cmudict.dict`) must be fetched
 once and `dictionary:import-cmudict` run (kaikki-sourced rows are preserved
 on re-import). After the ADR 0059 deploy: run
 `php artisan words:reclass-multiword` (dry-run first) to clean the English
-verb rows, then let the sweep grind the v2 `en_phrasal` backfill or
+verb rows — a row whose `l_word` the phrase class already carries is
+skipped, not reclassed (the words unique is `(l_word, language_id,
+word_class_id)`; a case-variant display hides nothing) —, then let the
+sweep grind the v2 `en_phrasal` backfill or
 accelerate it with `entities:enrich --enricher=en_phrasal --limit=N`.

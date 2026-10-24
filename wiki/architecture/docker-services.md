@@ -4,7 +4,8 @@ title: Docker & Services
 description: Containers, ports, mounts, and the rule that all PHP/Composer/NPM commands run inside the app container.
 tags: [docker, infrastructure, devops]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-11T12:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-15T11:25:11+03:00 }
+verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: compose
     resource: docker-compose.yml
@@ -62,7 +63,7 @@ envelope.
 | `./docker-compose/python/ai` | `/app/ai` | Live python source (mirror of the Laravel bind-mount pattern; `uvicorn --reload` picks up edits without rebuild) |
 | `./docker-compose/python/env` | `/app/env` (ro) | Live `.env` for `ext_python`; `config.py` re-reads `/app/env/.env` per request so threshold/window/model-path edits apply without recreate/restart. Also set via `env_file:` for import-time constants |
 | `./docker-compose/python/scripts` | `/app/scripts` (ro) | Helper scripts (`download_model.py`) |
-| `./docker-compose/python/models` (host bind mount) | `/app/models` | Model weights persisted here on the host disk. **LaBSE** at `/app/models/labse` (active: used for both signatures and alignment via `MODEL_PATH`/`ALIGN_MODEL_PATH` in `docker-compose/python/env/.env`). **BGE-M3** at `/app/models/bge_m3` (downloaded and staged for future use; switch by editing those two `.env` vars). The image itself carries no models. Host bind mount (not a named volume) so it survives Docker Desktop "Purge data". |
+| `./docker-compose/python/models` (host bind mount) | `/app/models` | Model weights persisted here on the host disk. **BGE-M3** at `/app/models/bge_m3` (active for signatures/embeddings: `MODEL_PATH` in `docker-compose/python/env/.env`) and **LaBSE** at `/app/models/labse` (active for alignment: `ALIGN_MODEL_PATH`; MiniLM also on disk at `/app/models/minilm`). The image itself carries no models. Host bind mount (not a named volume) so it survives Docker Desktop "Purge data". |
 
 Note: inside the container the app is `/var/www` and the repo root is
 `/var/repo` — so `wiki/` is `/var/repo/wiki` and a `sources` path like
@@ -136,7 +137,8 @@ playbook). Full walkthrough + one-time switchover from the baked setup:
 - **Images rebuild manually only** when a Dockerfile changes:
   `docker compose -f docker-compose.yml -f docker-compose.prod.yml build app`
   (or `build python`), then `up -d` + `./deploy.sh --stamp`.
-- **CI**: `.github/workflows/tests.yml` (Pest + Pint) on every `master`
+- **CI**: `.github/workflows/tests.yml` (Pest + Pint + the Vitest `frontend`
+  job) on every `master`
   push (and PRs); `.github/workflows/deploy.yml` autodeploys via the
   self-hosted `prod` runner — deploys are machine-run, container
   recreation stays human-run.

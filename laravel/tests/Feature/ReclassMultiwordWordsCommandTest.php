@@ -52,3 +52,15 @@ it('skips a row whose headword already exists in the phrase class', function () 
         ->and(Word::query()->where('l_word', 'do it')->count())->toBe(2)
         ->and(WordClass::query()->where('slug', 'phrase')->whereHas('language', fn ($q) => $q->where('code', 'en'))->count())->toBe(1);
 });
+
+it('skips a case-variant row whose lookup key already exists in the phrase class', function () {
+    // The phrase row spells "do it", the junk verb row "Do It": different
+    // displays, one l_word — the collision the unique key would raise.
+    $junk = createWord('en', 'Do It', 'verb');
+    createWord('en', 'do it', 'phrase');
+
+    $this->artisan('words:reclass-multiword')->assertSuccessful();
+
+    expect($junk->refresh()->wordClass->slug)->toBe('verb')
+        ->and(Word::query()->where('l_word', 'do it')->count())->toBe(2);
+});

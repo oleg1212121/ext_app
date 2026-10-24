@@ -36,7 +36,7 @@ class PromptTemplateResource extends Resource
                 Textarea::make('text')
                     ->required()
                     ->rows(8)
-                    ->hint('Placeholders are substituted at request time: :base/:learning — assessment question, column language names; :word/:native — word explanation, clicked word and native language.'),
+                    ->hint('Placeholders are substituted at request time: :base/:learning — assessment question, column language names; :word/:native — word explanation, clicked word and native language; :word/:language/:native — word enrichment, headword, its own language and native language.'),
             ]);
     }
 

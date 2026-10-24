@@ -23,3 +23,7 @@ spacy==3.8.16
 # Model wheel pinned to the spaCy version above; baked into the image so
 # HF_HUB_OFFLINE never needs a runtime download (ADR 0059).
 en-core-web-md @ https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl
+# GoldenDict/MDict front door (goldendict import pipeline): mdx→jsonl
+# conversion in ai/goldendict_convert.py. Stdlib-only core — MDX 2.0 reading
+# needs no extra deps.
+pyglossary==5.4.2

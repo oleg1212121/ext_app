@@ -5,6 +5,7 @@ import {useI18n} from '../../i18n'
 import ProfileInformation from './ProfileInformation.jsx'
 import PreferencesForm from './PreferencesForm.jsx'
 import PopupsSettings from './PopupsSettings.jsx'
+import AnkiSettings from './AnkiSettings.jsx'
 import UpdatePassword from './UpdatePassword.jsx'
 import ApiKeys from './ApiKeys.jsx'
 import AiModels from './AiModels.jsx'
@@ -15,6 +16,7 @@ const TABS = [
     {id: 'account', labelKey: 'profile.tab_account'},
     {id: 'preferences', labelKey: 'profile.tab_preferences'},
     {id: 'popups', labelKey: 'profile.tab_popups'},
+    {id: 'anki', labelKey: 'profile.tab_anki'},
     {id: 'ai', labelKey: 'profile.tab_ai'},
     {id: 'danger', labelKey: 'profile.tab_danger'},
 ]
@@ -46,7 +48,7 @@ function Underline({isActive}) {
 // Unmount-style tab panel (matches the Crossword right panel): only the
 // active tab's forms stay mounted, exactly like a page reload today.
 // Regular tabs keep their cards capped at the panel level so the wide page
-// frame does not stretch them; the Popups tab opts into 'wide' (ticket 02),
+// frame does not stretch them; the Popups and Anki tabs opt into 'wide',
 // the shared profile width variant from ui.jsx.
 function TabPanel({active, width = 'panel', children}) {
     if (!active) return null
@@ -62,6 +64,7 @@ const initialTab = () => {
 
 export default function Edit({
     user,
+    auth = null,
     apiKeyProviders = [],
     nativeLanguageId = null,
     interfaceLanguageId = null,
@@ -70,6 +73,7 @@ export default function Edit({
     aiModelId = null,
     explanationModelId = null,
     popupVisibility = null,
+    ankiSettings = null,
 }) {
     const { t } = useI18n()
     const [activeTab, setActiveTab] = useState(initialTab)
@@ -135,6 +139,19 @@ export default function Edit({
                     <TabPanel active={activeTab === 'popups'} width="wide">
                         <Card width="wide">
                             <PopupsSettings popupVisibility={popupVisibility}/>
+                        </Card>
+                    </TabPanel>
+
+                    <TabPanel active={activeTab === 'anki'} width="wide">
+                        <Card width="wide">
+                            {/* The tab's note builder needs the native language CODE
+                                (shared auth prop), not the settings' numeric id; the
+                                selector needs the enabled-language list with codes. */}
+                            <AnkiSettings
+                                ankiSettings={ankiSettings}
+                                languages={languages}
+                                nativeLanguage={auth?.user?.native_language ?? null}
+                            />
                         </Card>
                     </TabPanel>
 

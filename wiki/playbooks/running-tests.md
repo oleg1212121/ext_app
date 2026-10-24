@@ -1,10 +1,11 @@
 ---
 type: Playbook
 title: Running Tests
-description: How to run the Pest test suite against the dedicated ext_app_test database, and the vitest suite for pure JS logic.
-tags: [testing, pest, vitest]
+description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
+tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-11T19:02:52+03:00 }
+generated: { by: agent:zcode, at: 2026-10-24T15:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -23,13 +24,25 @@ sources:
     title: Testing environment file template (tracked; .env.testing is gitignored)
   - id: ciworkflow
     resource: .github/workflows/tests.yml
-    title: Tests workflow (CI env provisioning, wiki mtime skip, frontend vitest job)
+    title: Tests workflow (CI env provisioning, wiki mtime skip, frontend vitest + eslint lint jobs)
   - id: wikiconfig
     resource: laravel/config/wiki.php
     title: Wiki validation config (skip_mtime_staleness flag)
+  - id: wikibaseline
+    resource: wiki/validate-baseline.json
+    title: Acknowledged-warning baseline (exact-message entries, owner+date; --prune keeps it current)
+  - id: sourcebadgepin
+    resource: laravel/resources/js/Components/WordPopup.sourceBadge.test.js
+    title: The lift-and-evaluate source pin (derived logic evaluated against payload states)
+  - id: ankisendpin
+    resource: laravel/resources/js/Components/WordPopup.ankiSend.test.js
+    title: The contains-only wiring source pin (send-path pass-throughs)
   - id: packagejson
     resource: laravel/package.json
-    title: NPM scripts (vitest run)
+    title: NPM scripts (vitest run, eslint)
+  - id: eslintconfig
+    resource: laravel/eslint.config.js
+    title: ESLint flat config (correctness rules over resources/js, warn-tier carve-outs)
   - id: pytestini
     resource: docker-compose/python/ai/pytest.ini
     title: Python service pytest config (markers, pythonpath)
@@ -45,6 +58,16 @@ sources:
 * Test database: **`ext_app_test`** (set in `phpunit.xml` and `.env.testing`,
   not the default `testing` DB). Tests use `QUEUE_CONNECTION=sync`, array
   cache/session.
+* **The suite is hermetic — and green.** `tests/Pest.php` arms
+  `Http::preventStrayRequests()` for every Feature test, and `phpunit.xml`
+  force-blanks the external API keys (`OPENROUTER_API_KEY`,
+  `GOOGLE_TRANSLATE_API_KEY`, `YANDEX_TRANSLATE_API_KEY`), so an unfaked
+  network call fails fast and "no provider configured" is the default test
+  world (a leaked real Google key used to keep 10 tests permanently red with
+  `API_KEY_SERVICE_BLOCKED` — fixed 2026-10-14). **Any failure on a clean
+  tree is yours**: never wave it off as pre-existing. Tests opt into the
+  translate providers per test via `enableTranslationProviders()` +
+  `Http::fake()`.
 * **CI needs a `.env` file.** Laravel boots off `.env` via phpdotenv's
   `@file_get_contents('.env')`; with no env file at all, PHPUnit flags a
   warning on roughly every test and (under the CI runtime) ~45 of them
@@ -66,7 +89,14 @@ sources:
   source. The Tests and TIA Baseline workflows set
   `WIKI_SKIP_MTIME_CHECKS=1`, read via
   `config('wiki.skip_mtime_staleness')` in `WikiValidator`. Local runs keep
-  the signal.
+  the signal, and it is a gate: `wiki:validate` exits 1 on any warning not
+  acknowledged in `wiki/validate-baseline.json` (entries matched by exact
+  message, each requiring non-empty owner+date; `--prune` drops entries
+  that no longer match, refuses to run under the mtime skip, and writes
+  nothing when nothing would change; a malformed baseline is an error).
+  CI stays trivially green — the
+  muted check covers every currently baselined warning — and the gate still
+  fails on any non-mtime warning.
 * `composer run test` clears the **config and route caches** first, then runs
   the suite **in parallel** (Pest `--parallel`, one process per CPU core —
   8 in the dev container). Each parallel worker runs against its own
@@ -121,9 +151,39 @@ sources:
 
 * `docker exec ext_app_laravel npm run test` (= `vitest run`) executes
   `resources/js/**/*.test.{js,mjs}` in Node. The suite pins pure `lib/`
-  modules only (SSE parsing, payload mapping, clamps, position store, error
-  chains) — **no jsdom, no React/component tests**: pages and hooks are
-  wiring, covered by Pest and manual verification (ADR 0066).
+  modules (SSE parsing, payload mapping, clamps, position store, error
+  chains, and the anki JS trio — wire-shape client, template generator, sync
+  orchestration, exercised with `vi.stubGlobal('fetch', …)` since the
+  browser-side AnkiConnect client is pure request/response logic) plus the
+  blessed Components-side source pins, which read popup JSX as text
+  (ADR 0066's exception to the lib/-only rule). Every source pin obeys one
+  split — **a pin over DERIVED logic lifts the real expression out of the
+  component source and evaluates it against payload states; a
+  verbatim-contains pin is allowed only for wiring/structure**
+  (pass-throughs, class hooks, presence/absence). The split's two
+  exemplars, blessed by name:
+  - `Components/WordPopup.ankiSend.test.js` — the contains-only pin. Reads
+    the popup's `sendToAnki` JSX as text and pins the send-path's two
+    pass-throughs — the `labels` (the note must be built with
+    `uiLabels(t)`, so cards carry the sender's UI language — ADR 0077
+    addendum point E) and, since the Route A body toggles went send-time,
+    the resolved `fields` map (the body toggles plus the `body` master must
+    shape the Body value at send time). Pass-through wiring:
+    byte-for-byte is exactly right here.
+  - `Components/WordPopup.sourceBadge.test.js` — the lift-and-evaluate
+    pin. Regex-lifts the section-label chips' real `sourceBadge`
+    derivation out
+    of `WordPopup.jsx` (an array of source parts since the 2026-10-24
+    per-part chip render — one bordered label each) and evaluates it via
+    `new Function` against the
+    `{source, ai_asked}` payload states. Rationale: the "ai · ai" badge
+    bug passed its own original pin — that pin asserted the buggy
+    expression byte-for-byte, so red-green was impossible for that logic
+    error and only the review pass caught it (fixed 2026-10-20, `cab5280`).
+    A pin that asserts what an expression RETURNS never matches its text.
+  **No jsdom, no React/component tests**: pages and hooks are wiring,
+  covered by Pest and manual verification (ADR 0066); source pins assert
+  the component's text, they never render it.
 * `vitest.config.js` is standalone and deliberately does NOT load the
   laravel-vite plugin or the app's `vite.config.js` — keep it that way, or
   the suite becomes a build.
@@ -132,9 +192,42 @@ sources:
   load-bearing). `composer run test` deliberately does NOT chain it: Pest
   runs without Vite/npm and must stay PHP-only.
 * Test files are colocated next to the module they pin
-  (`resources/js/lib/*.test.*`). When extracting logic from a page, put the
+  (`resources/js/lib/*.test.*`); the standing exception is the blessed
+  Components-side source pins above, which pin assertions inside the
+  component files they read. When extracting logic from a page, put the
   pure part in `lib/` (`.mjs` if it must stay framework-free) so it has a
   home to test in.
+* A module with its own memo cache (e.g. `lib/ankiSync.js` memoizes ensures
+  in a module-level Set) is tested with static single-generation imports and
+  a unique memo key per test, NOT `vi.resetModules()` + dynamic import:
+  re-evaluating the module chain per test mints fresh error classes, so
+  `instanceof` against the test file's static imports fails, and a per-test
+  port/config counter that resets re-mints keys an earlier test already
+  memoized (ensures silently become memo hits). Reuse one config object
+  within a test to exercise the shared-session memo; mint a fresh one for a
+  cold session.
+
+# Frontend static analysis (ESLint, correctness only)
+
+* `docker exec ext_app_laravel npm run lint` (= `eslint resources/js`)
+  statically checks every `resources/js/**/*.{js,mjs,jsx}` for **correctness,
+  not style**: `no-undef` (the guard this pass exists for — a missing import
+  once sailed through `vite build`; only a manual Node smoke caught it),
+  the core recommended set, and `eslint-plugin-react-hooks` (rules-of-hooks
+  + the v7 compiler-backed set). Errors fail the run; warnings don't.
+* `laravel/eslint.config.js` is flat config (eslint 10). Rule tiers are
+  deliberate and commented in-file: genuine-violation rules stay `error`;
+  legacy-but-working patterns the v7 hook analyzer flags
+  (`refs`, `set-state-in-effect`, `immutability`,
+  `preserve-manual-memoization`) sit at `warn`; two deliberate patterns have
+  file-scoped carve-offs (`no-control-regex` in `lib/markdown.js` — the
+  \u0000/\u0001 sentinels ARE the mechanism; `react-hooks/globals` in
+  `i18n.jsx` — the module-level strings cache IS the t() mechanism). A new
+  warning is review signal, not a reformat mandate: fix real bugs in place,
+  never mass-edit to silence a rule.
+* CI runs it as the **`lint`** job in `tests.yml` (`npm ci` + `npm run
+  lint`, Node with npm cache off `package-lock.json`), mirroring the
+  `frontend` job.
 
 # Commands
 
@@ -166,6 +259,10 @@ docker exec ext_app_laravel sh -c 'cd /var/www && PHP_INI_SCAN_DIR=/usr/local/et
 
 # Frontend: pure-logic JS tests (vitest, Node only — no DB, no build)
 docker exec ext_app_laravel npm run test
+
+# Frontend static analysis: ESLint over resources/js (correctness only —
+# errors fail, warnings don't)
+docker exec ext_app_laravel npm run lint
 
 # Python service (pytest, inside the ext_python container; ~5s, no weights)
 docker exec ext_python python -m pytest /app/ai -q
@@ -266,7 +363,12 @@ Rules for any new or modified test:
   maps to in production — so an unexpected call fails loudly. Wire-level
   `Http::fake()` lives only in `PythonClientTest` (the adapter's own tests);
   a file-level `beforeEach(fn () => fakePython())` suffices when tests only
-  assert dispatches (see `FilamentReAlignActionTest.php`).
+  assert dispatches (see `FilamentReAlignActionTest.php`). Since 2026-10-14
+  the guard is suite-wide: `tests/Pest.php` arms
+  `Http::preventStrayRequests()` for every Feature test, so a leaked wire
+  call throws immediately instead of hanging (Google/Yandex keys are
+  force-blanked in `phpunit.xml`; opt in with
+  `enableTranslationProviders()` + `Http::fake()`).
 * **Cap drain loops.** A `while` loop that re-runs a job until the match
   leaves `aligning` needs a small guard (`$guard < 10`) *and* a convergence
   assertion after the loop (`status === 'completed'`) so a stalled job fails

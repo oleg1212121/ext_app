@@ -5,7 +5,8 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-10-06T12:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-20T21:40:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/CrosswordController.php
@@ -81,8 +82,13 @@ stamped unmatchable, and dispatches one `RefreshEntityWords` queue job per
 entity (`ShouldBeUnique` keyed by entity id; see ADR
 [0026](../../docs/adr/0026-background-word-list-refresh.md)). The job
 re-indexes when stale and always runs the link pass, then runs
-`EntityWordAdoption`: stamped unmatchable tokens get a `words` row of their
-own (class `unknown`) with `entity_words.word_id` pointed at it, and every
+`EntityWordAdoption`: stamped unmatchable tokens adopt the existing
+same-`l_word` word row when the dictionary already carries one (first
+non-unknown-class row, else lowest id — never an `unknown` twin), and only
+genuinely new tokens get a `words` row of their own (class `unknown`, plain
+display word + lemma form, stamped `words.source = 'entity'` — ADR 0084; a
+raced-in null row is claimed, an adopt-onto hit's source never touched)
+with `entity_words.word_id` pointed at it; every
 entity word still lacking translations gets a background translation fetch
 queued (Yandex → Google; ledger-deduped — see
 [Interactive words](/domains/interactive-words.md) and
@@ -109,8 +115,12 @@ in id order, bounded by `--limit` (200). Dev:
 # Pipeline
 
 1. **Index** — `EntityWordIndexer` tokenizes `entity_sentences` (PHP
-   `WordTokenizer`, Unicode regex) into `entity_words` (token, lowercase
-   key, count) with `entities.words_indexed_at` staleness tracking.
+   `WordTokenizer`, Unicode regex) into `entity_words` (token,
+   `WordLookupKey` key, count) — the key is the dictionary's own
+   normalization (lowercase, combining marks and zero-width format
+   characters stripped, ё→е folded), so a ёлка token stamps `елка` and
+   resolves against е-keyed word rows directly — with
+   `entities.words_indexed_at` staleness tracking.
    Rebuilt by the background refresh (or manually via `crossword:index`);
    generate no longer rebuilds inline.
 2. **Link** — `EntityWordLinker` (shared by the background refresh and
