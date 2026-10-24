@@ -1,5 +1,64 @@
 # Directory Update Log
 
+## 2026-10-24 (PROD dictionary rebuild: fresh kaikki dumps, wipe-first migration fix, red Deploy #33 closed)
+
+Executed on the prod laptop itself (native systemd stack) per the user's
+directive — full en+ru dictionary wipe and re-import from FRESH kaikki
+dumps, replacing the pre-October dataset. Precursor state: prod was 9
+migrations behind with Deploy run #33 red — its `migrate --force` died
+building `uk_words_l_word_language_class` over the old 1.94M-word data
+(`words.source` didn't even exist). The window inverted the deploy order:
+wipe first, migrate second, deploy-native.sh third — all 9 pending
+migrations then applied on empty tables in <1s and the deploy completed
+("Deployed 0a45ed9"), closing out #33's failure.
+
+- **Fresh dumps** (user asked for freshest data): en edition
+  `kaikki.org/dictionary/raw-wiktextract-data.jsonl.gz` (2.9GB, extracted
+  2026-10-21 from the 2026-10-01 enwiktionary dump) replacing the Sep-16
+  file in place; ru edition
+  `kaikki.org/ruwiktionary/raw-wiktextract-data.jsonl.gz` (295MB,
+  extracted 2026-10-20) downloaded new — the ru-edition dump had never
+  been on prod. Both `gzip -t` verified; downloads ran pre-window with
+  the site up.
+- **Window (≈65 min downtime, 17:05–18:10 local)**: `artisan down` +
+  queue workers stopped → manual backup
+  `backups/ext_app-20261024-140611.sql.gz` (THE rollback point; nightly
+  03:00 dump also exists) → wipe as a single `DELETE FROM words`
+  (1,940,135 rows ≈ 4 min; FK cascades cleared satellites; unlike dev's
+  TRUNCATE path this preserved all 21,389 `entity_words` tokens via
+  set-null — lost 34,610 `user_word` + 5,494 `user_word_event` rows,
+  accepted) → migrate → deploy-native.sh → imports.
+- **en edition run (~25 min)**: extract 11,121,531 lines in 101s → kept
+  en 1,499,161 + ru 443,260; import + link pass 77,619 en→ru
+  (37,310 staged stubs pruned). **ru edition run (~7 min)**: 2,729,136
+  lines → 489,522 kept, **6,935 relays demoted — dev's exact number**;
+  link pass +20,494 en→ru more. Auxiliaries: cmudict (119,370 IPA,
+  46,765 en words created), en-opensubtitles (283,471 ranked), ru-rnc
+  (54,919), band lists (73,042 direct). `words:normalize` merged 46
+  residual duplicate rows, gate re-run 0, ru-rnc re-clamped.
+  `crossword:link`: 20,689/21,387 entity words relinked (97%).
+  `words:recalc-completeness`: 1,464,816 rewritten.
+- **Final: en=983,230 / ru=481,586 words; 147,866 canonical pairs** —
+  vs dev's Sep-16 rebuild (932,146 / 481,440 / 147,708) within 0.5% on
+  every figure (en delta = fresh-dump growth + cmudict-created words;
+  dev's totals also included GoldenDict, see skips). Source:
+  wiktionary 1,416,526 / cmudict 46,765 / NULL 1,525 (definition-less
+  shell rows, 0.1%, inert). Checks: U+0301 in ru words/forms = 0; no
+  `adj` class; lemma self-form coverage 0 missing; duplicate gate 0;
+  `собака`/`dictionary` serve full definitions + ranks through Eloquent.
+- **Artifact noted (dev-parity, not a regression)**: the ru-edition
+  dump's inflection-table tags land as Latin form rows on ru words
+  (`imperfective` 1,505, `perfective` 1,417, `a` 1,196 — 4,465 pure-Latin
+  forms on Cyrillic headwords total, ~5k more with descriptors like
+  `1a imperfective intransitive`). NO romanization found (zero
+  transliteration-form pattern). Worth a future form-filter ticket.
+- **Skipped by user directive**: the full Pest suite gate (dev-machine
+  step; CI had run on the PR) and the GoldenDict bilingual stage — the
+  Oxford/Mostitsky JSONLs exist only on dev, `laravel/goldendict/` was
+  never copied to prod. That stage is additive: run
+  `goldendict:import … --profile=oxford-en-ru|--profile=mostitsky-ru-en`
+  anytime after copying the files, no re-wipe needed.
+
 ## 2026-10-24 (popup bug pass: per-part source chips, source-data migration run, silent Anki probes)
 
 User follow-up on the morning's popup-refinements branch — three bugs:
