@@ -17,6 +17,7 @@ import {
     modelNames,
     modelTemplates,
     notesInfo,
+    probeReachable,
     removeTags,
     requestPermission,
     updateModelStyling,
@@ -70,7 +71,11 @@ describe('invoke', () => {
         const [url, init] = fetchMock.mock.calls[0];
         expect(url).toBe('http://127.0.0.1:8765');
         expect(init.method).toBe('POST');
-        expect(init.headers).toEqual({'Content-Type': 'application/json'});
+        // No Content-Type header: a string body defaults to text/plain, a
+        // CORS-simple request — the browser never fires the OPTIONS
+        // preflight (one refused request instead of two when Anki is down),
+        // and AnkiConnect parses the raw body as JSON either way.
+        expect(init.headers).toBeUndefined();
         expect(JSON.parse(init.body)).toEqual({
             action: 'findNotes',
             version: 6,
@@ -113,6 +118,93 @@ describe('invoke', () => {
         const jsonError = await invoke('version', null, CONFIG).catch((caught) => caught);
         expect(jsonError.kind).toBe('network');
         expect(jsonError.message).toBe('AnkiConnect answer was not JSON');
+    });
+});
+
+// The popup's on-open reachability probe wraps the version action in a
+// 30s per-endpoint failure memo: browsing with Anki off costs at most one
+// failed request per window instead of one per popup open (the browser
+// always logs a refused fetch). Each test uses its own port so the module
+// memo's cross-test state stays keyed apart.
+describe('probeReachable', () => {
+    it('passes the version answer through', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(0);
+            fetchMock.mockResolvedValue(okAnswer('1.0'));
+            await expect(probeReachable({port: 8801})).resolves.toBe('1.0');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('memoizes a failure for 30s — a retry inside the window never fetches', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(0);
+            fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+            const first = await probeReachable({port: 8802}).catch((caught) => caught);
+            expect(first).toBeInstanceOf(AnkiConnectError);
+            expect(first.kind).toBe('network');
+
+            const second = await probeReachable({port: 8802}).catch((caught) => caught);
+            expect(second).toBe(first);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('the memo expires after 30s — a later retry probes for real', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(0);
+            fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+            await probeReachable({port: 8803}).catch(() => null);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+
+            vi.advanceTimersByTime(30_000);
+            await probeReachable({port: 8803}).catch(() => null);
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('a success clears the memo — the next failure fetches again', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(0);
+            fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+            await probeReachable({port: 8804}).catch(() => null);
+            // Past the window the retry reaches the network and succeeds —
+            // which clears the memoized failure.
+            vi.advanceTimersByTime(30_000);
+            fetchMock.mockResolvedValue(okAnswer('1.0'));
+            await expect(probeReachable({port: 8804})).resolves.toBe('1.0');
+
+            // A fresh failure right after is NOT answered from the memo —
+            // it fetches (and re-memoizes).
+            fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+            const again = await probeReachable({port: 8804}).catch((caught) => caught);
+            expect(again.kind).toBe('network');
+            expect(fetchMock).toHaveBeenCalledTimes(3);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('endpoints memoize separately', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(0);
+            fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+            await probeReachable({port: 8805}).catch(() => null);
+            await probeReachable({port: 8806}).catch(() => null);
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 

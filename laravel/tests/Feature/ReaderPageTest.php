@@ -563,9 +563,12 @@ test('reader page passes explanation gating and side props', function () {
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
-            // Reading the RU b-side: it is not native, the EN a-side is.
+            // Both sides exist, so both carry the Explanation toggle + robot
+            // (explainable is per-side existence, 2026-10-24 — the native
+            // language no longer gates it); highlightable keeps the
+            // not-native rule.
             ->where('explainable.b', true)
-            ->where('explainable.a', false)
+            ->where('explainable.a', true)
             ->where('defaultSide', 'b')
             // No API keys yet: AI explanations stay off.
             ->where('explain.enabled', false)
@@ -615,8 +618,9 @@ test('a single language reader page has no primary side', function () {
         ->assertInertia(fn ($page) => $page
             ->component('Reader')
             ->where('defaultSide', null)
-            // The factory user is a native English speaker: the EN side is
-            // native, so it is not explainable — and there is no other side.
-            ->where('explainable.a', false)
+            // Explainable is per-side existence (2026-10-24): the one EN
+            // side exists — native or not, it carries the toggle — and the
+            // missing b-side is never explainable.
+            ->where('explainable.a', true)
             ->where('explainable.b', false));
 });

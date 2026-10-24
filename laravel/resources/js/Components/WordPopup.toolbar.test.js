@@ -132,10 +132,11 @@ describe('WordPopup action toolbar', () => {
         // One gate per progress icon, both inside the toolbar…
         expect(toolbar.match(/sections\.progress_actions !== false/g)).toHaveLength(2);
         // …and the four right-hand icons sit outside them: the Anki icon is
-        // disabled only by its own state, the other two never disable through
-        // a visibility toggle.
+        // disabled only by its own state (no handler, send in flight, or —
+        // since 2026-10-24 — the reachability probe saying Anki is off),
+        // the other two never disable through a visibility toggle.
         const anki = buttonIn('word-popup-anki-send');
-        expect(anki).toMatch(/disabled=\{onAnkiSend == null \|\| ankiSend\?\.status === 'sending'\}/);
+        expect(anki).toMatch(/disabled=\{onAnkiSend == null \|\| ankiSend\?\.status === 'sending' \|\| !ankiReachable\}/);
         expect(anki).not.toContain('sections.');
         expect(buttonIn('word-popup-explain-toggle')).not.toContain('progress_actions');
         expect(buttonIn('word-popup-ask-ai')).not.toContain('sections.');

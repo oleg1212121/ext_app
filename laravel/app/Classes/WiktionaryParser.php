@@ -553,7 +553,7 @@ class WiktionaryParser
                     // Provenance rides the INSERT only: the update list below
                     // never touches source, so the first importer wins
                     // (ADR 0084).
-                    'source' => Word::SOURCE_KAIKKI,
+                    'source' => Word::SOURCE_WIKTIONARY,
                 ];
             }
 
@@ -573,7 +573,7 @@ class WiktionaryParser
                 // The fill-if-null backdoor: a re-run badges the pre-column
                 // rows this batch touched, without claiming a row another
                 // creator already owns.
-                Word::fillSourceIfNull(Word::SOURCE_KAIKKI, $this->languageId, $wordUpserts);
+                Word::fillSourceIfNull(Word::SOURCE_WIKTIONARY, $this->languageId, $wordUpserts);
             }
 
             $this->stats['words_imported'] += count($wordUpserts);

@@ -16,7 +16,7 @@ use Livewire\Livewire;
 |--------------------------------------------------------------------------
 |
 | Every writer that can CREATE a word row stamps words.source at insert
-| (kaikki / golddict / cmudict / entity / ai), never overwrites it, and
+| (wiktionary / golddict / cmudict / entity / ai), never overwrites it, and
 | runs the fill-if-null claim so a re-run badges the pre-column rows it
 | touches. Provenance sections below mirror the writer list 1:1.
 */
@@ -38,7 +38,7 @@ it('claims only still-null rows of the batch l_word/class pairs in the language 
     // a pre-column row a re-run badges.
     $claimed = createWord('en', 'orphan');
     // A row another creator already claimed: never overwritten.
-    $foreign = createWord('en', 'borrowed', 'noun', ['source' => Word::SOURCE_KAIKKI]);
+    $foreign = createWord('en', 'borrowed', 'noun', ['source' => Word::SOURCE_WIKTIONARY]);
     // Same l_word, class NOT in the batch: pair-scoped, not l_word-wide.
     $otherClass = createWord('en', 'orphan', 'verb');
     // Same l_word and class in ANOTHER language: language-scoped.
@@ -50,19 +50,19 @@ it('claims only still-null rows of the batch l_word/class pairs in the language 
     ]);
 
     expect($claimed->fresh()->source)->toBe(Word::SOURCE_GOLDDICT)
-        ->and($foreign->fresh()->source)->toBe(Word::SOURCE_KAIKKI)
+        ->and($foreign->fresh()->source)->toBe(Word::SOURCE_WIKTIONARY)
         ->and($otherClass->fresh()->source)->toBeNull()
         ->and($otherLang->fresh()->source)->toBeNull();
 });
 
 it('exposes the closed source set for the admin filter', function () {
-    expect(Word::SOURCES)->toBe(['kaikki', 'golddict', 'cmudict', 'entity', 'ai']);
+    expect(Word::SOURCES)->toBe(['wiktionary', 'golddict', 'cmudict', 'entity', 'ai']);
 });
 
-it('stamps kaikki on inserted words and the re-run claim fills pre-column rows it touches', function () {
+it('stamps wiktionary on inserted words and the re-run claim fills pre-column rows it touches', function () {
     createWordClasses();
     // A pre-column row (null source) whose triple the import touches: the
-    // fill-if-null claim badges it when kaikki re-runs.
+    // fill-if-null claim badges it when the Wiktionary import re-runs.
     $preColumn = createWord('en', 'cat', 'noun');
     // A row another creator claimed first: the same import touches it and
     // must not overwrite (first importer wins).
@@ -78,9 +78,9 @@ it('stamps kaikki on inserted words and the re-run claim fills pre-column rows i
     unlink($tmpFile);
 
     // bird is a fresh INSERT: stamped at insert.
-    expect(Word::query()->where('word', 'bird')->sole()->source)->toBe(Word::SOURCE_KAIKKI)
+    expect(Word::query()->where('word', 'bird')->sole()->source)->toBe(Word::SOURCE_WIKTIONARY)
         // cat pre-dates the column: claimed by the fill-if-null pass.
-        ->and($preColumn->fresh()->source)->toBe(Word::SOURCE_KAIKKI)
+        ->and($preColumn->fresh()->source)->toBe(Word::SOURCE_WIKTIONARY)
         // dog was golddict's: untouched.
         ->and($claimed->fresh()->source)->toBe(Word::SOURCE_GOLDDICT);
 });
@@ -94,7 +94,7 @@ it('stamps golddict on inserted words and the re-run claim fills pre-column rows
     $nounId = WordClass::query()->create(['language_id' => $beId, 'slug' => 'noun', 'title' => 'noun'])->id;
     $interjectionId = WordClass::query()->create(['language_id' => $beId, 'slug' => 'interjection', 'title' => 'interjection'])->id;
     $preColumn = Word::query()->create(['word' => 'cat', 'l_word' => 'cat', 'language_id' => $beId, 'word_class_id' => $nounId]);
-    $claimed = Word::query()->create(['word' => 'hello', 'l_word' => 'hello', 'language_id' => $beId, 'word_class_id' => $interjectionId, 'source' => Word::SOURCE_KAIKKI]);
+    $claimed = Word::query()->create(['word' => 'hello', 'l_word' => 'hello', 'language_id' => $beId, 'word_class_id' => $interjectionId, 'source' => Word::SOURCE_WIKTIONARY]);
 
     $this->artisan('goldendict:import', [
         'file' => __DIR__.'/../Fixtures/goldendict-sample.jsonl',
@@ -102,10 +102,10 @@ it('stamps golddict on inserted words and the re-run claim fills pre-column rows
     ])->assertSuccessful();
 
     // Fresh inserts (bird, blank, …) all carry golddict; cat pre-dates the
-    // column and gets claimed; hello stays kaikki's (first importer wins).
+    // column and gets claimed; hello stays wiktionary's (first importer wins).
     expect(Word::query()->where('language_id', $beId)->where('source', Word::SOURCE_GOLDDICT)->count())->toBe(5)
         ->and($preColumn->fresh()->source)->toBe(Word::SOURCE_GOLDDICT)
-        ->and($claimed->fresh()->source)->toBe(Word::SOURCE_KAIKKI);
+        ->and($claimed->fresh()->source)->toBe(Word::SOURCE_WIKTIONARY);
 });
 
 it('stamps cmudict on the word rows it creates', function () {
@@ -150,20 +150,20 @@ it('stamps entity on minted words, claims a raced-in null row, never overwrites'
     provenanceEntityWord($entity, 'ёлка');
 
     // The claimed row: the same race-find onto a row another creator owns.
-    $claimed = createWord('en', 'еморок', 'unknown', ['source' => Word::SOURCE_KAIKKI]);
+    $claimed = createWord('en', 'еморок', 'unknown', ['source' => Word::SOURCE_WIKTIONARY]);
     provenanceEntityWord($entity, 'ёморок');
 
     // The adopt-onto path: a classed row found directly is NOT a creating
     // write — its source is never touched.
-    $dog = createWord('en', 'dog', 'noun', ['source' => Word::SOURCE_KAIKKI]);
+    $dog = createWord('en', 'dog', 'noun', ['source' => Word::SOURCE_WIKTIONARY]);
     provenanceEntityWord($entity, 'dog');
 
     $this->artisan('words:adopt-from-entities')->assertSuccessful();
 
     expect(Word::query()->where('l_word', 'flibbertigibbet')->sole()->source)->toBe(Word::SOURCE_ENTITY)
         ->and($orphan->fresh()->source)->toBe(Word::SOURCE_ENTITY)
-        ->and($claimed->fresh()->source)->toBe(Word::SOURCE_KAIKKI)
-        ->and($dog->fresh()->source)->toBe(Word::SOURCE_KAIKKI);
+        ->and($claimed->fresh()->source)->toBe(Word::SOURCE_WIKTIONARY)
+        ->and($dog->fresh()->source)->toBe(Word::SOURCE_WIKTIONARY);
 });
 
 it('stamps ai on the adopt-on-ask mint; the adopt onto an existing row never touches its source', function () {
@@ -181,11 +181,11 @@ it('stamps ai on the adopt-on-ask mint; the adopt onto an existing row never tou
     // The adopt-onto path is a resolving read for provenance: a row another
     // creator owns keeps its stamp, a pre-column row stays null until ITS
     // creator re-runs.
-    $kaikki = createWord('ru', 'дом', 'noun', ['source' => Word::SOURCE_KAIKKI]);
+    $wiktionary = createWord('ru', 'дом', 'noun', ['source' => Word::SOURCE_WIKTIONARY]);
     $preColumn = createWord('ru', 'еморок', 'noun');
 
-    expect($service->resolveOrAdopt('До́м', $ru)->id)->toBe($kaikki->id)
-        ->and($kaikki->fresh()->source)->toBe(Word::SOURCE_KAIKKI)
+    expect($service->resolveOrAdopt('До́м', $ru)->id)->toBe($wiktionary->id)
+        ->and($wiktionary->fresh()->source)->toBe(Word::SOURCE_WIKTIONARY)
         ->and($service->resolveOrAdopt('Ёморок', $ru)->id)->toBe($preColumn->id)
         ->and($preColumn->fresh()->source)->toBeNull();
 });
@@ -194,7 +194,7 @@ it('shows the source column with a dash for null and narrows by the source filte
     actingAsAdmin();
     createWordClasses();
 
-    $imported = createWord('en', 'imported', 'noun', ['source' => Word::SOURCE_KAIKKI]);
+    $imported = createWord('en', 'imported', 'noun', ['source' => Word::SOURCE_WIKTIONARY]);
     $orphan = createWord('en', 'orphan');
 
     // The null-source row renders the dash placeholder in the Source column.
@@ -202,7 +202,7 @@ it('shows the source column with a dash for null and narrows by the source filte
         ->assertSee('—')
         // The filter narrows to the stamped row only; provenance is never
         // hand-editable, so the resource form carries no source field.
-        ->filterTable('source', Word::SOURCE_KAIKKI)
+        ->filterTable('source', Word::SOURCE_WIKTIONARY)
         ->assertCanSeeTableRecords([$imported])
         ->assertCanNotSeeTableRecords([$orphan]);
 });

@@ -5,7 +5,7 @@ description: Parsing Kaikki/Wiktionary dumps and converted GoldenDict dictionari
 tags: [dictionary, import, wiktionary, kaikki, goldendict, multi-word-verbs, form-of-relays]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-23T21:50:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-24T13:10:00+03:00 }
 sources:
   - id: word-source-adr
     resource: docs/adr/0084-word-source-provenance.md
@@ -518,7 +518,11 @@ strip, kaikki at candidate extraction).
 **Word source** (`words.source`, ADR
 [0084](../../docs/adr/0084-word-source-provenance.md)): the nullable
 string(16) recording WHICH creator minted a word row — the closed set
-`kaikki | golddict | cmudict | entity | ai` (`Word::SOURCES`), stamped in
+`wiktionary | golddict | cmudict | entity | ai` (`Word::SOURCES`; 'kaikki'
+renamed to 'wiktionary' on 2026-10-24, the ADR amendment + data migration
+`2026_10_24_000001` — the popup and admin render the value verbatim, and it
+should name the content source rather than the kaikki.org dump service),
+stamped in
 the INSERT payload by every creating writer (the importers' upsert row
 arrays; the adoption and ask-AI mints' `firstOrCreate` values), and never
 part of an update: the upserts' update lists omit it and the cmudict

@@ -3,20 +3,24 @@ import {describe, expect, it} from 'vitest';
 
 // The reading popup's Anki reachability probe (popup-provenance ticket 05):
 // on every popup open the outer WordPopup asks the user's AnkiConnect
-// endpoint its cheap version action — the SAME probe the profile's Anki
-// tab's manual test button uses (lib/ankiConnect.js's ankiConnectVersion,
-// lib/ankiConnect.test.js pins its wire) — and the Save-to-Anki icon
-// answers with the amber token while Anki is reachable. It stays neutral
-// grey while the probe is pending, when Anki is unreachable, and when no
-// Anki settings exist (no probe at all). Reachability is a browser-side
-// fact only — no backend flag — probed fresh per open, so starting Anki
-// mid-session is picked up on the next popup. The send keeps the icon
-// honest without a re-probe: any completed send proves Anki answered
-// (added, updated, and a foreign-model duplicate alike) and flips amber; a
-// network-kind failure — Anki never answered — flips grey, while an
-// anki-kind failure (Anki answered, with an error string) and a note-type
-// mismatch keep amber. Components sit outside vitest's behavioral reach
-// (ADR 0066), so the wiring is pinned the way the sibling suites pin
+// endpoint its cheap version action through lib/ankiConnect.js's
+// probeReachable — the profile's Anki tab's manual test probe wrapped in a
+// 30s per-endpoint FAILURE memo (lib/ankiConnect.test.js pins its wire and
+// the memo), so browsing with Anki off costs at most one failed request per
+// 30s instead of one per popup open — and the Save-to-Anki icon answers
+// with the amber token AND its enabled state while Anki is reachable. It
+// stays neutral grey and DISABLED while the probe is pending, when Anki is
+// unreachable, and when no Anki settings exist (no probe at all), the
+// tooltip explaining why (2026-10-24: disabled, not merely dimmed — an
+// Anki-off click must not launch the doomed send path). Reachability is a
+// browser-side fact only — no backend flag — probed fresh per open, so
+// starting Anki mid-session is picked up on the next popup. The send keeps
+// the icon honest without a re-probe: any completed send proves Anki
+// answered (added, updated, and a foreign-model duplicate alike) and flips
+// amber; a network-kind failure — Anki never answered — flips grey, while
+// an anki-kind failure (Anki answered, with an error string) and a
+// note-type mismatch keep amber. Components sit outside vitest's behavioral
+// reach (ADR 0066), so the wiring is pinned the way the sibling suites pin
 // theirs: source assertions on WordPopup.jsx.
 
 const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
@@ -36,6 +40,13 @@ const contentSource = popupSource.slice(
 const probeSource = () => bodySource.slice(
     bodySource.indexOf('On-open reachability probe'),
     bodySource.indexOf('const onKeyDown'),
+);
+
+// The duplicate-detection effect: from its comment hook to the probe's
+// comment — the slice between them is detection's alone.
+const detectionSource = () => bodySource.slice(
+    bodySource.indexOf('On-open duplicate detection'),
+    bodySource.indexOf('On-open reachability probe'),
 );
 
 // The send callback: the same slice WordPopup.ankiSend.test.js uses.
@@ -61,12 +72,14 @@ const ankiButton = () => {
 };
 
 describe('The on-open Anki reachability probe', () => {
-    it('reuses the profile tab\'s cheap version probe — no new client code', () => {
-        // ankiConnectVersion is the lib's existing `version` action wrapper
-        // (the Anki tab's manual-test probe), imported beside the
-        // AnkiConnectError the popup already carries.
-        expect(popupSource).toMatch(/import \{[^}]*ankiConnectVersion[^}]*\} from '\.\.\/lib\/ankiConnect'/);
-        expect(probeSource()).toContain('ankiConnectVersion(ankiSettings)');
+    it('probes through probeReachable — the version action behind a 30s failure memo', () => {
+        // probeReachable wraps the lib's existing `version` action wrapper
+        // (the Anki tab's manual-test probe): failures memoize per endpoint
+        // for 30s there (lib/ankiConnect.test.js), so a session browsing
+        // with Anki down re-fetches at most once per window instead of per
+        // popup open.
+        expect(popupSource).toMatch(/import \{[^}]*probeReachable[^}]*\} from '\.\.\/lib\/ankiConnect'/);
+        expect(probeSource()).toContain('probeReachable(ankiSettings)');
     });
 
     it('fires only with settings and a loaded payload — no settings, no probe', () => {
@@ -92,12 +105,29 @@ describe('The on-open Anki reachability probe', () => {
         // sits grey until Anki answers. Resolve → amber, rejection
         // (Anki off, CORS, HTTP/non-JSON) → grey.
         expect(probeSource().indexOf('setAnkiReachable(false)'))
-            .toBeLessThan(probeSource().indexOf('ankiConnectVersion(ankiSettings)'));
+            .toBeLessThan(probeSource().indexOf('probeReachable(ankiSettings)'));
         expect(probeSource()).toContain('setAnkiReachable(true)');
     });
 
     it('the state starts false — nothing is reachable before anything answered', () => {
         expect(bodySource).toMatch(/const \[ankiReachable, setAnkiReachable\] = useState\(false\)/);
+    });
+});
+
+describe('The duplicate check waits for the probe', () => {
+    it('never fires findExistingNote while Anki is unreachable', () => {
+        // 2026-10-24: the detection effect early-returns without
+        // ankiReachable — with Anki off a popup open costs no findNotes
+        // request at all (the probe memo already keeps the version call
+        // rare; this removes the second wasted request entirely).
+        expect(detectionSource()).toMatch(/if \(!ankiReachable \|\| !ankiSettings \|\| !data\) \{/);
+    });
+
+    it('runs once the probe answers — the reachability flag rides the effect key', () => {
+        // The flag flipping false→true re-runs detection, so the check
+        // fires the moment Anki answers; the other two keys are the open
+        // lifecycle it always shared.
+        expect(detectionSource()).toContain('}, [ankiReachable, ankiSettings, data]);');
     });
 });
 
@@ -109,14 +139,35 @@ describe('The Anki icon\'s conditional amber', () => {
         expect(ankiButton()).toContain("toolbarButtonClass(ankiReachable ? 'amber' : 'neutral')");
     });
 
+    it('disabled until the probe answers reachable — an Anki-off click launches nothing', () => {
+        // 2026-10-24: unreachable joins no-handler and send-in-flight in
+        // the disabled expression; the toolbar's disabled:opacity-40 rule
+        // makes the grey unmistakable instead of the old subtle amber-vs-
+        // neutral shift.
+        expect(ankiButton()).toContain("!ankiReachable}");
+    });
+
+    it('the unreachable tooltip explains why — the shared anki_unreachable string', () => {
+        // The label chain: send-in-flight wins, then unreachable (pending
+        // included — the icon is inert either way), then the in-deck state.
+        const labelSource = contentSource.slice(
+            contentSource.indexOf('const ankiActionLabel'),
+            contentSource.indexOf('const askAiLabel'),
+        );
+        expect(labelSource).toContain("t('word.anki_sending')");
+        expect(labelSource).toContain("t('word.anki_unreachable')");
+        expect(labelSource).toContain("t('word.anki_update')");
+        expect(labelSource).toContain("t('word.anki_send')");
+    });
+
     it('the prop defaults grey and the preview never probes — PopupContent stays inert', () => {
         // The probe lives in the outer WordPopup only (it needs the
         // ankiSettings prop and the loaded data): PopupContent just reads
         // the outcome through a false-defaulting prop, so the profile's
-        // Popups-tab preview — which passes neither — renders the grey icon
-        // and cannot reach the network, same as today.
+        // Popups-tab preview — which passes neither — renders the grey,
+        // disabled icon and cannot reach the network, same as today.
         expect(contentSource).toMatch(/ankiReachable = false,/);
-        expect(contentSource).not.toContain('ankiConnectVersion');
+        expect(contentSource).not.toContain('probeReachable');
         expect(contentSource).not.toContain('setAnkiReachable');
         expect(previewSource).not.toContain('ankiReachable');
         expect(previewSource).not.toContain('ankiConnect');

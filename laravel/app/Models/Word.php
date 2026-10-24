@@ -24,7 +24,7 @@ class Word extends Model
      * rows and hand-created admin words until a creating writer touches the
      * row again (the fill-if-null backdoor below).
      */
-    public const SOURCE_KAIKKI = 'kaikki';
+    public const SOURCE_WIKTIONARY = 'wiktionary';
 
     public const SOURCE_GOLDDICT = 'golddict';
 
@@ -35,7 +35,7 @@ class Word extends Model
     public const SOURCE_AI = 'ai';
 
     public const SOURCES = [
-        self::SOURCE_KAIKKI,
+        self::SOURCE_WIKTIONARY,
         self::SOURCE_GOLDDICT,
         self::SOURCE_CMUDICT,
         self::SOURCE_ENTITY,

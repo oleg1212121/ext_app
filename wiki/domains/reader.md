@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-24T12:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -165,8 +165,10 @@ page appears directly, at its top.
 payload (scoped to the current page's rows): `wordMaps` keyed by canonical
 side (`{a, b}`; the b map empty when rows are single-language), plus
 `highlight` (the saved `reader.highlight` setting) and the `highlightable`
-language flags (side language ≠ the user's native language). The same rule
-now gates the word popup's AI Context explanation toggle: `explainable`
+language flags (side language ≠ the user's native language). `explainable`
+(2026-10-24: per-side existence — the not-native rule governs
+`highlightable` only) gates the word popup's AI Context explanation toggle:
+`explainable`
 flags and `explain`
 (`{enabled, modelKey, modelLabel, followsAnswer, answerLabel}` — assembled
 server-side by `AIModelResolver::explainConfig()`, the same builder the

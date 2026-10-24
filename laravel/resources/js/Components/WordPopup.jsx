@@ -9,7 +9,7 @@ import {canAskExplanation} from '../lib/wordExplain';
 import {dimsDefinition, dimsEntry, entryUsageChips, usageLabelChips} from '../lib/usageLabelDisplay';
 import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
 import {Icon} from './icons.jsx';
-import {AnkiConnectError, ankiConnectVersion} from '../lib/ankiConnect';
+import {AnkiConnectError, probeReachable} from '../lib/ankiConnect';
 import {buildNoteFields, uiLabels} from '../lib/ankiTemplate';
 import {AnkiNoteTypeMismatchError, findExistingNote, sendAnkiNote} from '../lib/ankiSync';
 import {ankiWordSyncConfig} from '../lib/ankiWordConfig';
@@ -535,11 +535,13 @@ export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, ai
  * it sits OUTSIDE the `progress_actions` gate, so it shows on every surface
  * no matter which popup blocks are hidden. The icon carries the word's
  * in-deck state (`ankiExisting`: 'checking' | 'found' | 'absent' — the
- * on-open duplicate check's outcome): 'found' flips it to the update glyph
- * with the "Update in Anki" tooltip, every other value keeps the add form —
- * including a silent detection failure. Its color reads Anki's
- * reachability (`ankiReachable`, the outer WordPopup's on-open version
- * probe's outcome — amber while AnkiConnect answers, grey while pending /
+ * on-open duplicate check's outcome, which only runs once the probe has
+ * answered reachable): 'found' flips it to the update glyph with the
+ * "Update in Anki" tooltip, every other value keeps the add form —
+ * including a silent detection failure. Its color AND enabledness read
+ * Anki's reachability (`ankiReachable`, the outer WordPopup's on-open
+ * version probe's outcome — amber and enabled while AnkiConnect answers,
+ * neutral grey and disabled with the unreachable tooltip while pending /
  * unreachable / without settings). `ankiSend` holds the send's outcome
  * ({status: 'sending'|'added'|'updated'|'duplicate'|'error', error?}) for
  * the inline status line beneath the icon row; 'duplicate' is reachable
@@ -562,10 +564,12 @@ export function PopupContent({
     ankiExisting = 'absent',
     // The on-open reachability probe's outcome (popup-provenance ticket 05),
     // owned by the outer WordPopup — it needs the ankiSettings prop and the
-    // loaded data to probe, so PopupContent only reads the answer: amber
-    // while Anki is reachable, neutral grey otherwise (pending, unreachable,
-    // no settings). The default keeps the profile preview's icon grey and
-    // the preview itself probe-free.
+    // loaded data to probe, so PopupContent only reads the answer: amber and
+    // enabled while Anki is reachable; neutral grey and DISABLED otherwise
+    // (pending, unreachable, no settings — the disabled:opacity-40 rule
+    // makes the grey unmistakable, and the unreachable tooltip explains
+    // why). The default keeps the profile preview's icon grey and disabled
+    // and the preview itself probe-free.
     ankiReachable = false,
     onAskAi = null,
     aiBusy = false,
@@ -595,11 +599,15 @@ export function PopupContent({
         : data.entries;
 
     // The Anki icon's label, shared by its title and aria-label (written
-    // once): a send in flight wins, otherwise the icon's in-deck state picks
+    // once): a send in flight wins, then the probe's answer — while Anki is
+    // unreachable (or the probe is still answering) the icon is disabled
+    // and the label explains why; otherwise the icon's in-deck state picks
     // between the update and add forms.
     const ankiActionLabel = ankiSend?.status === 'sending'
         ? t('word.anki_sending')
-        : (ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send'));
+        : (!ankiReachable
+            ? t('word.anki_unreachable')
+            : (ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send')));
 
     // The Ask-AI icon's label, shared by its title and aria-label: a word
     // that has already been enriched once reads "ask again" (the re-ask
@@ -609,10 +617,11 @@ export function PopupContent({
         ? t('word.ask_ai_again')
         : (aiBusy ? t('word.ask_ai_sending') : t('word.ask_ai'));
 
-    // The header's provenance badge (popup-provenance ticket 04): the
-    // importing writer plus the word-level ai marker when a succeeded ask
-    // exists — "kaikki · ai"; "ai" alone for an enriched word no importer
-    // ever stamped; empty — the badge hides — when neither is known. An
+    // The provenance chip (popup-provenance ticket 04; moved from the header
+    // to the end of every section label, 2026-10-24): the importing writer
+    // plus the word-level ai marker when a succeeded ask exists —
+    // "wiktionary · ai"; "ai" alone for an enriched word no importer ever
+    // stamped; empty — the chip hides — when neither is known. An
     // adopt-on-ask mint carries source 'ai' (ADR 0084) AND ai_asked true
     // from the same ask — the same fact twice — so the parts dedupe and
     // plain "ai" renders, never "ai · ai". The importer string renders
@@ -668,18 +677,22 @@ export function PopupContent({
                         the update glyph + "Update in Anki"; checking,
                         absent and a silent failure all keep the add form —
                         the send still runs find-before-add, so a misjudged
-                        icon can never create a second card. Its color is
-                        the reachability probe's answer (popup-provenance
-                        ticket 05): amber while AnkiConnect answers, grey
-                        while the probe is pending / unreachable / without
-                        settings. The margin-auto push on this first
-                        right-hand icon shoves it and the icons after it to
-                        the row's right end. */}
+                        icon can never create a second card. Its color AND
+                        enabledness are the reachability probe's answer
+                        (popup-provenance ticket 05; disabled-not-just-dimmed
+                        since 2026-10-24): amber and clickable while
+                        AnkiConnect answers, neutral grey and disabled —
+                        with the why tooltip — while the probe is pending,
+                        unreachable, or without settings, so an Anki-off
+                        click can never launch the doomed send path. The
+                        margin-auto push on this first right-hand icon
+                        shoves it and the icons after it to the row's right
+                        end. */}
                     <button
                         type="button"
                         title={ankiActionLabel}
                         aria-label={ankiActionLabel}
-                        disabled={onAnkiSend == null || ankiSend?.status === 'sending'}
+                        disabled={onAnkiSend == null || ankiSend?.status === 'sending' || !ankiReachable}
                         onClick={onAnkiSend}
                         className={`word-popup-anki-send ${toolbarButtonClass(ankiReachable ? 'amber' : 'neutral')} ml-auto`}
                     >
@@ -791,18 +804,9 @@ export function PopupContent({
                 with — the old tab strip's rule now belongs to the header
                 (popup-ai-enrich ticket 01). */}
             <div className="word-popup-header shrink-0 border-b border-[var(--color-hairline)] px-3.5 pb-2.5 pt-3 dark:border-[var(--color-hairline-night)]">
-                <div className="flex items-baseline gap-2 flex-wrap">
-                    {/* Reading font: RU headwords carry U+0301, which gaps when
-                        base and mark come from different fonts (see --font-reading). */}
-                    <span className="word-popup-title font-reading text-[1.286em] leading-tight">{data.word}</span>
-                    {/* Where the word came from (popup-provenance ticket 04):
-                        plain muted text in the baseline row, hidden entirely
-                        when neither the importer nor a succeeded ask-AI is
-                        known — pre-provenance rows stay honest. */}
-                    {sourceBadge !== '' && (
-                        <span className="word-popup-source whitespace-nowrap text-[0.786em] leading-tight opacity-60">{sourceBadge}</span>
-                    )}
-                </div>
+                {/* Reading font: RU headwords carry U+0301, which gaps when
+                    base and mark come from different fonts (see --font-reading). */}
+                <span className="word-popup-title font-reading text-[1.286em] leading-tight">{data.word}</span>
 
                 {sections.familiarity !== false && (
                     <p className="word-popup-familiarity mt-0.5 text-[0.786em] tabular-nums opacity-60">
@@ -869,6 +873,18 @@ export function PopupContent({
                                         {chip.text}
                                     </span>
                                 ))}
+                                {/* The provenance chip (popup-provenance
+                                    ticket 04) — the header badge's new home:
+                                    the source name trails every section
+                                    label's very end ("DECIMATED — verb
+                                    wiktionary · ai"), where it reads as the
+                                    form's data origin without crowding the
+                                    headword. Hidden entirely when neither
+                                    the importer nor a succeeded ask-AI is
+                                    known — pre-provenance rows stay honest. */}
+                                {sourceBadge !== '' && (
+                                    <span className="word-popup-section-source ml-1.5 whitespace-nowrap text-[0.786em] opacity-60">{sourceBadge}</span>
+                                )}
                             </h3>
                         )}
 
@@ -1289,11 +1305,14 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // findExistingNote, which never runs the ensure (detection must not
     // create decks or note types), answers from its page-session memo on
     // re-opens and on send-seeded entries, and resolves null on ANY failure
-    // — so an unreachable Anki quietly leaves the add-form icon. Keyed to
-    // the loaded data like the fetch effect above; the cancelled guard
-    // drops a late answer for a popup that has since moved to another word.
+    // — so an unreachable Anki quietly leaves the add-form icon. The check
+    // only runs once the reachability probe has answered reachable
+    // (2026-10-24): with Anki off it never fires, so a popup open costs no
+    // findNotes request at all. Keyed to the loaded data like the fetch
+    // effect above; the cancelled guard drops a late answer for a popup
+    // that has since moved to another word.
     useEffect(() => {
-        if (!ankiSettings || !data) {
+        if (!ankiReachable || !ankiSettings || !data) {
             return;
         }
         let cancelled = false;
@@ -1307,29 +1326,33 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         return () => {
             cancelled = true;
         };
-    }, [ankiSettings, data]);
+    }, [ankiReachable, ankiSettings, data]);
 
     // On-open reachability probe (popup-provenance ticket 05): beside the
     // duplicate check it shares the open lifecycle with — same
     // [ankiSettings, data] key, same cancelled guard — the popup asks the
-    // user's AnkiConnect endpoint its cheap version action (the profile
-    // tab's manual-test probe, lib/ankiConnect.js's ankiConnectVersion).
-    // A resolve marks Anki reachable — the Save-to-Anki icon paints its
-    // amber token; a rejection (Anki off, CORS, HTTP/non-JSON) marks
-    // unreachable — neutral grey. No settings or payload, no probe: the
-    // flag keeps its false default. The probe starts by clearing the flag —
-    // whatever a previous open proved, the current probe answers for
-    // itself, so the icon sits grey while the round-trip is in flight — and
-    // re-runs per open (the key moves with every loaded payload), so
-    // starting Anki mid-session is picked up on the next popup. A late
-    // answer for a popup that has moved to another word is dropped.
+    // user's AnkiConnect endpoint its cheap version action through
+    // lib/ankiConnect.js's probeReachable: a FAILURE is memoized per
+    // endpoint for 30s there, so browsing with Anki down costs at most one
+    // failed request per 30s instead of one per popup open (the browser
+    // always logs a refused fetch; the memo keeps it rare). A resolve marks
+    // Anki reachable — the Save-to-Anki icon paints its amber token and the
+    // duplicate check fires; a rejection (Anki off, CORS, HTTP/non-JSON), a
+    // probe still in flight, and a popup without Anki settings all keep the
+    // neutral grey. No settings or payload, no probe: the flag keeps its
+    // false default. The probe starts by clearing the flag — whatever a
+    // previous open proved, the current probe answers for itself, so the
+    // icon sits grey while the round-trip is in flight — and re-runs per
+    // open (the key moves with every loaded payload), so starting Anki
+    // mid-session is picked up on the next popup. A late answer for a popup
+    // that has moved to another word is dropped.
     useEffect(() => {
         if (!ankiSettings || !data) {
             return;
         }
         let cancelled = false;
         setAnkiReachable(false);
-        ankiConnectVersion(ankiSettings).then(
+        probeReachable(ankiSettings).then(
             () => {
                 if (!cancelled) {
                     setAnkiReachable(true);

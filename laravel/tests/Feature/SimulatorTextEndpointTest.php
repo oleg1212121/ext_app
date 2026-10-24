@@ -174,8 +174,10 @@ it('includes word maps for both sides of the match', function () {
     $user->userWords()->create(['word_id' => $ruCat->id, 'familiarity' => 3]);
 
     // Factory users are native English speakers: the EN side (a) is native,
-    // so only the RU side (b) is highlightable/explainable. Eligibility is
-    // the reader's sibling shape — its own key, not nested in word_maps.
+    // so only the RU side (b) is highlightable — while explainable (since
+    // 2026-10-24) is per-side existence: both sides carry the Explanation
+    // toggle. Eligibility is the reader's sibling shape — its own key, not
+    // nested in word_maps.
     $response = $this->actingAs($user)->postJson('/text', [
         'entity_match_id' => $entityMatch->id,
         'page' => 1,
@@ -188,7 +190,7 @@ it('includes word maps for both sides of the match', function () {
         ->assertJsonPath('data.word_maps.b.кот.s', 3)
         ->assertJsonPath('data.highlightable.a', false)
         ->assertJsonPath('data.highlightable.b', true)
-        ->assertJsonPath('data.explainable.a', false)
+        ->assertJsonPath('data.explainable.a', true)
         ->assertJsonPath('data.explainable.b', true);
 });
 

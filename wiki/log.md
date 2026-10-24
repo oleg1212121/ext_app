@@ -1,5 +1,53 @@
 # Directory Update Log
 
+## 2026-10-24 (popup refinements: section-label source chip, kaikki→wiktionary, Anki grey-when-unreachable + quiet probes, native-side explain)
+
+User-reported popup UX pass — six changes, one branch:
+
+- **The source badge moved off the header.** The provenance badge no
+  longer sits beside the clicked word (the header row is the headword
+  alone); the same derivation (`source` + `ai_asked`, " · "-joined,
+  "ai · ai" deduped) now renders as a muted chip at the very END of every
+  section label — "DECIMATED — verb wiktionary · ai" — the form's data
+  origin where it reads as data, not as a caption on the word. Class
+  hook renamed `word-popup-source` → `word-popup-section-source`.
+- **'kaikki' → 'wiktionary' (data rename).** The stored value the popup
+  and the Filament Words table render verbatim now names the content
+  source, not the dump service: `Word::SOURCE_WIKTIONARY = 'wiktionary'`
+  (constant renamed with the value — every writer reads the constant),
+  data migration `2026_10_24_000001` flips the existing rows, ADR 0084
+  amended. Pipeline vocabulary (dump paths, `fromKaikkiTags`, CLI
+  descriptions) deliberately stays "kaikki".
+- **Anki icon grey-when-unreachable, properly.** The on-open duplicate
+  check only runs once the version probe answered reachable (with Anki
+  off, a popup open fires no `findNotes` at all); the icon is DISABLED
+  (not merely dimmed) while unreachable/pending/no-settings, tooltip
+  reading `word.anki_unreachable`; the probe goes through
+  `probeReachable` — a 30s per-endpoint failure memo in
+  `lib/ankiConnect.js`, so a session with Anki down costs at most one
+  failed request per 30s instead of per popup open; and the client sends
+  no `Content-Type` header — a string body is text/plain, a CORS-simple
+  request, so every call skips the OPTIONS preflight (the user's 4
+  console errors per open = 2 fetches × preflight+POST; now ≤1 per 30s).
+  `ankiConnectVersion` stays unmemoized for the profile tab's Test
+  button.
+- **Explain toggle + robot on native-language popups.** The RU/EN popup
+  difference was the server gate, not two components:
+  `wordMapsFor`'s `explainable` now answers per-side existence (the
+  not-native rule governs `highlightable` only), so both of a bilingual
+  text's popups carry the Explanation toggle + robot. ADR 0060 amended.
+
+Docs: ADR 0084 + ADR 0060 amendments; `interactive-words.md` (chip
+passage, class inventory, probe/disable/30s-memo, explain eligibility),
+`reader.md`, `dictionary.md` + `dictionary-import.md` (renamed closed
+set), `anki-export.md`, both touched playbooks — `generated.at` bumped
+on all seven. Tests: vitest source pins rewritten (sourceBadge →
+section-label chip, ankiReachable → probeReachable + disabled button +
+gated detection, toolbar disabled expression) + behavioral
+`probeReachable` memo suite; Pest `WordSourceProvenanceTest` (renamed
+value + closed set), `ReaderPageTest`/`SimulatorTextEndpointTest`
+(explainable both-sides pins).
+
 ## 2026-10-23 (popup-usage-labels follow-up 2: the marked section dims whole — hover restores it — and the mark now demotes)
 
 User follow-up on the word-level mark pass: the 50% dim landed on the

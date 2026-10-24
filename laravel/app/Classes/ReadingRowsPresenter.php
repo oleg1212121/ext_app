@@ -90,9 +90,14 @@ class ReadingRowsPresenter
     /**
      * The interactive-word payload both reading surfaces ship: word maps
      * filtered to the tokens on the current page's rows (the client renders
-     * page rows only), plus the highlight/explain eligibility flags. Both
-     * eligibility flags follow the same "not the user's native language"
-     * rule; a missing side (single-language text) is never eligible.
+     * page rows only), plus the highlight/explain eligibility flags.
+     * Highlight eligibility follows the "not the user's native language"
+     * rule — native text never tints; a missing side (single-language text)
+     * is never eligible either way. Explain eligibility is per-side
+     * existence only (2026-10-24): every populated side carries the
+     * Explanation toggle + robot, the user's native language included —
+     * the AI Context answer's language already follows the user's settings,
+     * so a native-side popup explains just as usefully.
      *
      * @param  array{a: Entity|null, b: Entity|null}  $sideEntities
      * @param  list<array<string, mixed>>  $rows
@@ -114,8 +119,8 @@ class ReadingRowsPresenter
                 'b' => $this->isNotNative($sideEntities['b'] ?? null, $nativeLanguageId),
             ],
             'explainable' => [
-                'a' => $this->isNotNative($sideEntities['a'] ?? null, $nativeLanguageId),
-                'b' => $this->isNotNative($sideEntities['b'] ?? null, $nativeLanguageId),
+                'a' => isset($sideEntities['a']),
+                'b' => isset($sideEntities['b']),
             ],
         ];
     }

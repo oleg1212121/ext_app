@@ -5,10 +5,14 @@
 // duplicate checks) lives in lib/ankiSync.js.
 //
 // Wire format: POST {action, version: 6, params?} to {url}:{port}; the
-// answer is {result, error}. AnkiConnect reports failures INSIDE HTTP 200
-// (a non-null `error` string), while CORS blocks and Anki being down reject
-// the fetch itself — both are normalized into AnkiConnectError so the tab
-// can render one failure panel with exact fix instructions.
+// answer is {result, error}. No Content-Type header is set: a string body
+// defaults to text/plain, a CORS-simple request, so the browser never fires
+// an OPTIONS preflight — AnkiConnect parses the raw body as JSON either way,
+// and when Anki is down a failed call costs one refused request instead of
+// two (preflight + POST both logged). AnkiConnect reports failures INSIDE
+// HTTP 200 (a non-null `error` string), while CORS blocks and Anki being
+// down reject the fetch itself — both are normalized into AnkiConnectError
+// so the tab can render one failure panel with exact fix instructions.
 //
 // Parameter shapes verified against the AnkiConnect plugin source
 // (git.sr.ht/~foosoft/anki-connect, plugin/__init__.py, 2026-10):
@@ -53,7 +57,8 @@ export async function invoke(action, params, config) {
     try {
         response = await fetch(ankiConnectEndpoint(config), {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            // Deliberately no Content-Type: the string body rides as
+            // text/plain (CORS-safelisted), keeping every call preflight-free.
             body: JSON.stringify({action, version: 6, ...(params ? {params} : {})}),
         })
     } catch {
@@ -79,6 +84,34 @@ export async function invoke(action, params, config) {
 
 export function ankiConnectVersion(config) {
     return invoke('version', null, config)
+}
+
+// The popup's on-open reachability probe (WordPopup.jsx): a FAILURE is
+// memoized per endpoint for 30s — rejections inside the window are answered
+// from the memo without touching the network, so browsing with Anki off
+// costs at most one failed request per 30s instead of per popup open. Any
+// resolve (Anki came up) clears the memo and the next open probes fresh.
+// The profile tab's manual Test button keeps the unmemoized
+// ankiConnectVersion — a settings change must always probe for real.
+const PROBE_FAILURE_RETRY_AFTER_MS = 30_000
+const failedProbes = new Map()
+
+export function probeReachable(config) {
+    const endpoint = ankiConnectEndpoint(config)
+    const memo = failedProbes.get(endpoint)
+    if (memo != null && Date.now() - memo.at < PROBE_FAILURE_RETRY_AFTER_MS) {
+        return Promise.reject(memo.error)
+    }
+    return ankiConnectVersion(config).then(
+        (version) => {
+            failedProbes.delete(endpoint)
+            return version
+        },
+        (error) => {
+            failedProbes.set(endpoint, {at: Date.now(), error})
+            throw error
+        },
+    )
 }
 
 export function requestPermission(config) {

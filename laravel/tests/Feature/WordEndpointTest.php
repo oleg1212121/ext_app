@@ -556,13 +556,13 @@ it('flags ai_asked only when a succeeded AI enrichment ledger row exists', funct
 it('sends the word\'s import source at the payload top level', function () {
     $user = User::factory()->create();
     createWordClasses();
-    $sourced = createWord('en', 'melt', 'verb', ['source' => Word::SOURCE_KAIKKI]);
+    $sourced = createWord('en', 'melt', 'verb', ['source' => Word::SOURCE_WIKTIONARY]);
     $unsourced = createWord('en', 'boil', 'verb');
 
     $this->actingAs($user)
         ->getJson(route('words.show', ['word' => $sourced->id]))
         ->assertOk()
-        ->assertJsonPath('data.source', Word::SOURCE_KAIKKI);
+        ->assertJsonPath('data.source', Word::SOURCE_WIKTIONARY);
 
     // A pre-provenance row (never stamped by any importer) stays honest:
     // source rides null and the header badge's other half — ai_asked —

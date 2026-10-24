@@ -37,12 +37,6 @@
             "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
         },
         {
-            "warning": "domains/reader.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
             "warning": "domains/recommendations.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-23",

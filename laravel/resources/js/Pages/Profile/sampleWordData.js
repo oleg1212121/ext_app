@@ -23,6 +23,11 @@ export const SAMPLE_DATA = {
     is_form: true,
     form_of: ['melt'],
     frequency: 2143,
+    // The provenance chip's source half (the popup's section-label chip):
+    // the sample word renders "wiktionary" at each section label's end —
+    // ai_asked stays unset so the preview's Ask-AI icon keeps its plain
+    // variant.
+    source: 'wiktionary',
     entries: [
         {
             id: 1,

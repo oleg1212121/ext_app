@@ -1,7 +1,7 @@
 # ADR 0084: Word rows carry an insert-stamped source; first importer wins, re-runs fill nulls only
 
 Date: 2026-10-20
-Status: Accepted
+Status: Accepted (amended 2026-10-24 — the Wiktionary value renamed from 'kaikki' to 'wiktionary')
 
 Implements popup-provenance ticket 03. The word popup's provenance badge
 (ticket 04) reads this column through the payload; this ADR records the
@@ -28,8 +28,9 @@ by design (ADR 0082).
 ## Decision
 
 1. **`words.source` is a nullable string(16) over a closed set stamped at
-   INSERT.** The values are exactly `kaikki | golddict | cmudict |
-   entity | ai` (`Word::SOURCES`). Every creating writer stamps its value
+   INSERT.** The values are exactly `wiktionary | golddict | cmudict |
+   entity | ai` (`Word::SOURCES`; amended 2026-10-24, below). Every
+   creating writer stamps its value
    in the INSERT payload: the three importers in their `Word::upsert`
    row arrays, entity adoption and the ask-AI mint in their
    `firstOrCreate` values. The admin's Filament Words form gets no source
@@ -82,3 +83,25 @@ by design (ADR 0082).
   spelling that merged into it. The content tables' per-row `source`
   columns (null/ai) are a different mechanism and are unchanged, per the
   ADR 0082 amendment.
+
+## Amendment 2026-10-24: the Wiktionary value is 'wiktionary', not 'kaikki'
+
+The popup renders the stored value verbatim (the provenance badge, since
+moved to each section label's end), and "kaikki" is the dump service's
+name (kaikki.org), not the source's — the content comes from Wiktionary.
+The stored value was renamed for user-facing honesty:
+
+- `Word::SOURCE_WIKTIONARY = 'wiktionary'` (constant renamed with the
+  value; every writer reads the constant, so the Wiktionary import stamps
+  the new value with no further change).
+- A one-line data migration flips the existing rows
+  (`UPDATE words SET source = 'wiktionary' WHERE source = 'kaikki'`) —
+  dev and prod both carried stamped rows.
+- The closed set, the insert-stamp rule, first-importer-wins and the
+  fill-if-null backdoor are unchanged. 'wiktionary' fits the string(16)
+  column.
+- The *pipeline* vocabulary deliberately keeps "kaikki": the dump file
+  paths (`laravel/kaikki/`, `--file=kaikki/...`), the
+  `UsageLabels::fromKaikkiTags` helper, and the import commands'
+  descriptions name the kaikki.org dump format/service, which is a
+  different thing from the content source the column value names.
