@@ -4,7 +4,7 @@ title: Production Deployment
 description: Prod runs natively (no Docker) since 2026-09-14 — pushes to master autodeploy via deploy-native.sh on a self-hosted runner (git pull, composer/npm, additive migrate, seeds, systemd restarts; python restart + /health gate only when python code/deps changed). The Docker bind-mount model (docker-compose.prod.yml + ./deploy.sh + container stamp guard) is still in tree for the dev machine and the legacy prod layout; its sections below are labeled.
 tags: [docker, production, deployment, devops, howto]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T10:30:26+03:00 }
+generated: { by: agent:zcode, at: 2026-10-26T17:55:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: deploy-native
@@ -83,8 +83,8 @@ What it does (in-place in the prod checkout; `deploy.yml` runs
    `optimize:clear` → `config:cache` / `route:cache` / `view:cache`.
 6. `migrate --force` — **additive only**, never fresh/refresh/reset/wipe.
 7. Idempotent reference-data seeds: `SentenceTypeSeeder`, `AiProviderSeeder`,
-   `LanguageSeeder`, `UiStringSeeder` (deploy.sh additionally seeds
-   `PromptTemplateSeeder`).
+   `LanguageSeeder`, `UiStringSeeder`, `CefrWordTagSeeder` (deploy.sh
+   additionally seeds `PromptTemplateSeeder`).
 8. `systemctl daemon-reload` (a unit file shipped by the pull only reaches
    restart after the manager reloads definitions) then
    `systemctl restart ext-queue@1 ext-queue@2 ext-scheduler` — workers finish
@@ -117,7 +117,8 @@ What it does (all inside the running `ext_app_laravel` container):
 7. `migrate --force` — **additive only**: applies pending migrations. Never
    fresh/refresh/reset/wipe (see the destructive-command warning in AGENTS.md).
 8. Idempotent reference-data seeds: `SentenceTypeSeeder`, `AiProviderSeeder`,
-   `LanguageSeeder`, `UiStringSeeder`, `PromptTemplateSeeder`.
+   `LanguageSeeder`, `UiStringSeeder`, `PromptTemplateSeeder`,
+   `CefrWordTagSeeder`.
 9. `queue:restart` — recycles the overlay's queue workers onto the new code
    (workers finish their current job, the container restarts, the new worker
    loads the new code and schema).

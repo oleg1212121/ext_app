@@ -4,7 +4,7 @@ title: Docker & Services
 description: Containers, ports, mounts, and the rule that all PHP/Composer/NPM commands run inside the app container.
 tags: [docker, infrastructure, devops]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-15T11:25:11+03:00 }
+generated: { by: agent:zcode, at: 2026-10-26T17:55:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: compose

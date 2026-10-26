@@ -6,6 +6,38 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-26 (CEFR word lists become six seeded tags on the words tag pool)
+
+The six CEFR level lists (a1–c2) joined the words tag pool (ADR 0076) as
+seeded, seeder-owned tags, and the knowledge base caught up:
+
+- **`CefrWordTagSeeder`** (new, `laravel/database/seeders/`): owns the six
+  CEFR tags (slugs `a1`…`c2`, names `CEFR A1`…`CEFR C2`). Its embedded
+  `LISTS` arrays (7,226 entries after normalization) are the lists'
+  permanent source of truth — the `public/texts/{a1..c2}.txt` origin files
+  stay on disk but are inert (never read at runtime). Every run
+  full-replaces each tag's attachment set (updateOrCreate the tag → delete
+  all its `tagged_words` rows → re-attach): matching is English-only on
+  `l_word` and attaches every part-of-speech row of a spelling; unmatched
+  entries are skipped and reported (typo surfacing). Manual Filament
+  attachments to the six owned slugs revert on the next run. Wired into
+  `DatabaseSeeder` + `deploy.sh` + `deploy-native.sh`.
+- **`database/dictionary.md`**: the `tags`/`tagged_words` row and the
+  Tag-pools note record the seeding (the pool no longer "ships empty"), the
+  full-replace ownership rule, and the ruling that CEFR levels are tags,
+  deliberately NOT `words.labels` (that column stays the closed
+  `UsageLabels` register set); the seeder joined the concept's sources.
+- **Dev-DB run (2026-10-26)**: the seeder ran twice against the dev DB —
+  14,601 word rows attached across the six levels (a1 1,634, a2 2,964,
+  b1 2,591, b2 2,930, c1 3,371, c2 1,111); 37 list entries were unmatched
+  (skipped + reported — the report is user-facing typo surfacing, verbatim
+  in the feature ticket; list corrections are the user's call); the second
+  run re-attached the identical set (idempotent).
+- Collateral drift stamps: `architecture/docker-services.md` +
+  `playbooks/production-deployment.md` (deploy.sh/deploy-native.sh changed
+  under them; the playbook's two seed-step lists gained
+  `CefrWordTagSeeder`).
+
 ## 2026-10-25 (knowledge-base cleanup: log archive + quarterly policy, ADR renumber + index, concept restructures)
 
 Documentation-only pass — no application behavior changed. Four parts:
