@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-10-26T23:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-27T00:46:30+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: controller

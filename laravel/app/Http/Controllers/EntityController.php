@@ -86,7 +86,7 @@ class EntityController extends Controller
             // The word-test hint keys on the stored placement level (the
             // precise "never took the test" signal — familiarity rows can
             // exist from other features without a placement, ADR 0090).
-            'has_no_familiarity' => (int) auth()->user()->vocabulary_level === 0,
+            'has_no_familiarity' => auth()->user()->vocabulary_level === 0,
             'can_edit' => $canEdit,
             'can_change_approval' => $this->access()->canChangeApproval(auth()->user(), $entity),
             'sentences' => $sentences->through(function (object $sentence): array {

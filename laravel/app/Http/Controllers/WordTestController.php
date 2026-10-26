@@ -27,7 +27,7 @@ class WordTestController extends Controller
 
         // Adaptive retakes: the stored placement level skips the bands
         // below it (all six bands for a first test, level 0).
-        $level = (int) ($request->user()->vocabulary_level ?? 0);
+        $level = $request->user()->vocabulary_level;
 
         $sample = $language === null ? null : $this->wordTest->sample($language, $level);
 
@@ -50,18 +50,13 @@ class WordTestController extends Controller
         $known = array_map('intval', $request->array('known'));
         $score = $this->wordTest->score($request->sample(), $known);
         $marked = $this->wordTest->mark((int) $request->user()->id, $request->sample()['language_id'], $score);
-
-        // Raise-only persistence: a bad retake never lowers the stored level
-        // (the same rule as the familiarity marking, ADR 0090).
-        $user = $request->user();
-        $user->vocabulary_level = max((int) $user->vocabulary_level, $score);
-        $user->save();
+        $level = $this->wordTest->persistLevel($request->user(), $score);
 
         return response()->json(['data' => [
             // This run's computed level; the page's primary number is the
             // stored `level` (post-max), marked is secondary (unchanged).
             'score' => $score,
-            'level' => (int) $user->vocabulary_level,
+            'level' => $level,
             'marked' => $marked,
         ]]);
     }

@@ -5,7 +5,7 @@ description: Role- and approval-based authorization for users, the admin bypass,
 tags: [auth, authorization, roles, admin, approval]
 status: stable
 stale_after: 2026-11-06
-generated: { by: agent:zcode, at: 2026-10-26T19:50:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-27T00:46:30+03:00 }
 verified: { by: human:alex, at: 2026-09-07T00:00:00Z }
 sources:
    - id: app-provider

@@ -11,7 +11,7 @@ return [
         'be' => 'Пазначце ўсе словы, якія вы ведаеце, і націсніце «Адправіць» — 60 слоў па ўзроўнях CEFR вызначаць ваш слоўнікавы запас на шкале ад 0 да 20 000, а ўсе больш частыя словы будуць пазначаны як знаёмыя.',
     ],
     'wordtest.covers' => [
-        'en' => 'Adaptive retake: this test covers bands :bands only.',
+        'en' => 'Adaptive retake: this test covers CEFR bands :bands only.',
         'ru' => 'Адаптивный повторный тест: охвачены только уровни :bands.',
         'be' => 'Адатыўны паўторны тэст: ахоплены толькі ўзроўні :bands.',
     ],
@@ -29,9 +29,9 @@ return [
     'wordtest.new_sample' => ['en' => 'Take a new test', 'ru' => 'Пройти тест заново', 'be' => 'Прайсці тест нанова'],
     'wordtest.error' => ['en' => 'Something went wrong while submitting your answers.', 'ru' => 'Что-то пошло не так при отправке ответов.', 'be' => 'Штосьці пайшло не так пры адпраўцы адказаў.'],
     'wordtest.no_data' => [
-        'en' => 'No frequency data for :language yet — the test needs a ranked word list.',
-        'ru' => 'Для языка «:language» пока нет данных частотности — нужен ранжированный список слов.',
-        'be' => 'Для мовы «:language» пакуль няма даных частотнасці — патрэбны ранжаваны спіс слоў.',
+        'en' => 'The word test is not available for :language yet — it needs the CEFR level word lists.',
+        'ru' => 'Тест слов пока недоступен для языка «:language» — нужны списки слов уровней CEFR.',
+        'be' => 'Тэст слоў пакуль недаступны для мовы «:language» — патрэбны спісы слоў узроўняў CEFR.',
     ],
     'wordtest.no_languages' => ['en' => 'No languages are enabled yet.', 'ru' => 'Ни один язык пока не включён.', 'be' => 'Ніводная мова пакуль не ўключана.'],
     'wordtest.validation.expired' => ['en' => 'This test has expired — take a new one.', 'ru' => 'Этот тест устарел — пройдите новый.', 'be' => 'Гэты тест састарэў — прайдзіце новы.'],

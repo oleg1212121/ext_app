@@ -196,7 +196,6 @@ it('rejects an unknown language code', function () {
 });
 
 it('redistributes the draw over the tested bands for a stored level', function () {
-    $user = User::factory()->create();
     seedCefrInventory();
 
     // Stored 10000: the bands at or above it are b2/c1/c2, 20 words each;
@@ -214,7 +213,6 @@ it('redistributes the draw over the tested bands for a stored level', function (
 });
 
 it('tests only the top band with its whole quota at the scale top', function () {
-    $user = User::factory()->create();
     seedCefrInventory();
 
     // Stored 20000: c2 alone is tested; the fixture's 24-spelling pool is
@@ -231,7 +229,6 @@ it('tests only the top band with its whole quota at the scale top', function () 
 });
 
 it('claims a shared spelling in one band only', function () {
-    $user = User::factory()->create();
     seedCefrInventory();
 
     $sample = app(WordTestService::class)->sample(enLanguage());
@@ -251,7 +248,6 @@ it('claims a shared spelling in one band only', function () {
 });
 
 it('returns null when the language carries no CEFR tags', function () {
-    $user = User::factory()->create();
     seedCefrInventory();
 
     $ru = Language::query()->where('code', 'ru')->firstOrFail();
@@ -260,7 +256,6 @@ it('returns null when the language carries no CEFR tags', function () {
 });
 
 it('returns null when a tested band has no tagged words', function () {
-    $user = User::factory()->create();
     seedCefrInventory(levels: 3); // a1, a2, b1 populated — b2/c1/c2 empty
 
     // Stored 10000 tests b2/c1/c2, none of which has tagged headwords.

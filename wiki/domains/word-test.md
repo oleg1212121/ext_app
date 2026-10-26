@@ -5,7 +5,7 @@ description: CEFR-anchored adaptive placement test — a 60-word sample over the
 tags: [word-test, placement, cefr, familiarity, frequency, inertia, react]
 status: stable
 stale_after: 2027-01-26
-generated: { by: agent:zcode, at: 2026-10-26T23:23:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-27T00:46:30+03:00 }
 verified: { by: agent:zcode, at: 2026-10-26T23:23:00+03:00 }
 sources:
   - id: controller

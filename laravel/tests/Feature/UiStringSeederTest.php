@@ -146,7 +146,7 @@ it('seeds the cefr word-test strings in all three interface languages', function
         'be' => 'Ваш слоўнікавы запас',
     ]);
     expect(seededUiStringTexts('wordtest.covers'))->toBe([
-        'en' => 'Adaptive retake: this test covers bands :bands only.',
+        'en' => 'Adaptive retake: this test covers CEFR bands :bands only.',
         'ru' => 'Адаптивный повторный тест: охвачены только уровни :bands.',
         'be' => 'Адатыўны паўторны тэст: ахоплены толькі ўзроўні :bands.',
     ]);

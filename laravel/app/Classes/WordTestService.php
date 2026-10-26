@@ -3,6 +3,7 @@
 namespace App\Classes;
 
 use App\Models\Language;
+use App\Models\User;
 use App\Models\UserWord;
 use App\Models\Word;
 use Illuminate\Support\Facades\Cache;
@@ -151,7 +152,7 @@ class WordTestService
             $previousAnchor = $anchor;
         }
 
-        $score = (int) ($payload['base'] ?? 0);
+        $score = (int) $payload['base'];
 
         foreach ($payload['bands'] as $slug => $wordIds) {
             $size = count($wordIds);
@@ -165,6 +166,21 @@ class WordTestService
         }
 
         return min($score, self::CEFR_ANCHORS['c2']);
+    }
+
+    /**
+     * Persist the run's score as the user's vocabulary level, raise-only:
+     * max(old, new). A bad retake never lowers the stored level — the same
+     * raise-only rule as the familiarity marking (ADR 0090).
+     *
+     * @return int the stored level after the raise
+     */
+    public function persistLevel(User $user, int $score): int
+    {
+        $user->vocabulary_level = max($user->vocabulary_level, $score);
+        $user->save();
+
+        return $user->vocabulary_level;
     }
 
     /**
