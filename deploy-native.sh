@@ -67,6 +67,7 @@ php artisan db:seed --class=SentenceTypeSeeder --force
 php artisan db:seed --class=AiProviderSeeder --force
 php artisan db:seed --class=LanguageSeeder --force
 php artisan db:seed --class=UiStringSeeder --force
+php artisan db:seed --class=CefrWordTagSeeder --force
 
 # Recycle queue workers + scheduler onto the new code (workers finish current job).
 # daemon-reload first: a unit-file change shipped by git pull only reaches
