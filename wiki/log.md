@@ -6,6 +6,25 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-26 (`users.vocabulary_level` — the persisted placement level, schema only)
+
+First slice of the cefr-word-test feature (CEFR-anchored adaptive placement
+test): a new `users.vocabulary_level` column (`unsignedSmallInteger`,
+default 0, comment naming the 0–20000 frequency-rank scale and its
+raise-only write rule — ADR 0090 arrives with the feature's docs pass) and
+`vocabulary_level` in `User::$fillable`. No consumer yet — tickets 02/03
+wire the scoring and the raise-only submit (`max(old, new)`). Behavior is
+pinned by `tests/Feature/VocabularyLevelColumnTest.php` (default, persist,
+mass assignment). Wiki upkeep: `reference/models.md` regenerated (the
+users row now lists the attribute); `domains/access-control.md`
+`generated.at` bumped after review — the fillable addition doesn't touch
+that concept's authorization content, it only re-minted source-mtime
+drift. Five PRE-EXISTING unacknowledged drift warnings (deploy scripts,
+`CefrWordTagSeeder` post-review, the baseline file itself — all minted by
+cefr-word-tags commits after that feature's docs pass) are now baselined
+with notes pointing at this feature's ticket 05 docs pass, which must
+refresh or prune them; `WikiTest` was red on them before this change.
+
 ## 2026-10-26 (CEFR word lists become six seeded tags on the words tag pool)
 
 The six CEFR level lists (a1–c2) joined the words tag pool (ADR 0076) as

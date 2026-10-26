@@ -7,12 +7,6 @@
             "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
         },
         {
-            "warning": "domains/access-control.md: source 'laravel/app/Http/Middleware/HandleInertiaRequests.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
             "warning": "domains/bilinguals-simulator.md: source 'laravel/app/Support/PromptTemplates.php' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-23",
@@ -53,6 +47,36 @@
             "owner": "human:alex",
             "date": "2026-10-23",
             "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
+        },
+        {
+            "warning": "architecture/docker-services.md: source 'deploy.sh' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-26",
+            "note": "Pre-existing drift from cefr-word-tags (deploy scripts now seed CefrWordTagSeeder; review commit aa87fb3 post-dates that feature's docs pass). Refresh both deploy-path concepts and prune in the cefr-word-test ticket 05 docs pass."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/seeders/CefrWordTagSeeder.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-26",
+            "note": "Pre-existing drift from cefr-word-tags review commit aa87fb3 (sync mechanics changed: transaction per level, detach over pivot delete) post-dating that feature's docs pass — the concept's mechanics section needs a content review, not just a timestamp bump. Refresh and prune in the cefr-word-test ticket 05 docs pass."
+        },
+        {
+            "warning": "playbooks/production-deployment.md: source 'deploy-native.sh' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-26",
+            "note": "Pre-existing drift from cefr-word-tags (deploy scripts now seed CefrWordTagSeeder; review commit aa87fb3 post-dates that feature's docs pass). Refresh both deploy-path concepts and prune in the cefr-word-test ticket 05 docs pass."
+        },
+        {
+            "warning": "playbooks/production-deployment.md: source 'deploy.sh' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-26",
+            "note": "Pre-existing drift from cefr-word-tags (deploy scripts now seed CefrWordTagSeeder; review commit aa87fb3 post-dates that feature's docs pass). Refresh both deploy-path concepts and prune in the cefr-word-test ticket 05 docs pass."
+        },
+        {
+            "warning": "playbooks/running-tests.md: source 'wiki/validate-baseline.json' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-26",
+            "note": "Baseline edits themselves mint this (the baseline is a listed source); currently fired by the cefr-word-tags docs-pass baseline edit (cbbbf78) plus this feature's 2026-10-26 entries. Benign by construction; refresh running-tests.md or keep acknowledging when the baseline next changes."
         }
     ]
 }
