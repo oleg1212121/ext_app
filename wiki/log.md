@@ -6,6 +6,26 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-26 (WordTestService reworked to CEFR band sampling/scoring — concept intentionally lagging until ticket 05)
+
+Second slice of the cefr-word-test feature: the 20-bucket quantile sampler
+in `WordTestService` is gone. Sampling now draws 60 headwords per test from
+the CEFR tag groups (`a1`…`c2`, one distinct-on-`l_word` query per band, no
+frequency filter — tag membership defines the pool), redistributed evenly
+over the tested bands (10/12/15/20/30/60 per band); a stored level skips
+the bands below it (`sample(language, currentLevel)`), their floor anchor
+becomes the score base, and a spelling tagged in two levels is claimed at
+most once, in the lower band. Scoring is a band-credit sum:
+`base + Σ band_width × known/drawn` clamped to 20 000, with the band widths
+derived from the new hard-coded `CEFR_ANCHORS` (1000/3000/6000/10000/15000/
+20000). `mark()`/`resolveSample()` and the cache-token architecture are
+unchanged; controller wiring (the column feeding `currentLevel`, raise-only
+persistence, the `groups` prop's consumer) is ticket 03. **Deliberate doc
+lag:** `domains/word-test.md` still describes the bucket sampler — this
+ticket only baselined its drift warning (pointing at the spec's ticket 05
+docs pass) instead of rewriting the concept mid-feature; ticket 05 owns the
+real refresh (plus ADR 0090 and the CONTEXT.md Word Test context).
+
 ## 2026-10-26 (`users.vocabulary_level` — the persisted placement level, schema only)
 
 First slice of the cefr-word-test feature (CEFR-anchored adaptive placement

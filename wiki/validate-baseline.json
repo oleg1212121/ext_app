@@ -73,6 +73,12 @@
             "note": "Pre-existing drift from cefr-word-tags (deploy scripts now seed CefrWordTagSeeder; review commit aa87fb3 post-dates that feature's docs pass). Refresh both deploy-path concepts and prune in the cefr-word-test ticket 05 docs pass."
         },
         {
+            "warning": "domains/word-test.md: source 'laravel/app/Classes/WordTestService.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-26",
+            "note": "Drift minted by cefr-word-test ticket 02 (WordTestService reworked from the 20-bucket quantile sampler to CEFR band sampling/scoring; the concept still describes buckets and MIN_HEADWORDS). Concept rewrite is this spec's ticket 05 docs pass — refresh word-test.md there and prune this entry."
+        },
+        {
             "warning": "playbooks/running-tests.md: source 'wiki/validate-baseline.json' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-26",
