@@ -85,6 +85,12 @@
             "note": "Drift minted by cefr-word-test ticket 03 (controller wiring: level-aware sampling via users.vocabulary_level, raise-only submit persistence, new `level` page prop and response field; the concept still describes the old controller contract). Concept rewrite is this spec's ticket 05 docs pass — refresh word-test.md there and prune this entry."
         },
         {
+            "warning": "domains/word-test.md: source 'laravel/resources/js/Pages/WordTest/WordTest.jsx' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-26",
+            "note": "Drift minted by cefr-word-test ticket 04 (the page renders the CEFR contract: header current-level chip, adaptive-retake band-span note, level-first result panel with a kept-previous note; score_label removed from page and seeder). Concept rewrite is this spec's ticket 05 docs pass — refresh word-test.md there and prune this entry."
+        },
+        {
             "warning": "domains/entities.md: source 'laravel/app/Http/Controllers/EntityController.php' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-26",

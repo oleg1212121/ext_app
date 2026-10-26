@@ -6,6 +6,27 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-26 (the word-test page renders the CEFR contract — concept intentionally lagging until ticket 05)
+
+Fourth slice of the cefr-word-test feature: `WordTest.jsx` consumes the
+ticket-03 props/response. The header shows a current-level chip (mono
+uppercase, `wordtest.current_level` + the number) once
+`users.vocabulary_level > 0`; an adaptive retake whose `sample.groups`
+cover fewer than all six CEFR bands gets a small `wordtest.covers` note
+under the intro ("covers bands B2–C2 only", span rendered from the slugs);
+the result panel's primary number is now the stored level
+(`result.level / 20 000`, `wordtest.level_label`) with a muted
+`wordtest.kept_previous` line when this run scored below it (raise-only
+made visible) and the `marked` count as the secondary line — the old
+`wordtest.score_label` key is removed from page and seeder together, and
+`intro` now says 60 words across the CEFR bands instead of the frequency
+scale. Checklist/submit flow, language select, empty states and `api.js`
+are untouched; strings pinned for en/ru/be in `UiStringSeederTest`.
+**Deliberate doc lag:** the one drift warning this mints
+(`domains/word-test.md` page source) is baselined pointing at the spec's
+ticket 05 docs pass, which owns the concept refreshes (plus ADR 0090 and
+the CONTEXT.md Word Test context).
+
 ## 2026-10-26 (controller wiring: the placement level flows and persists — concept intentionally lagging until ticket 05)
 
 Third slice of the cefr-word-test feature: `users.vocabulary_level` gained

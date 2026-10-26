@@ -127,6 +127,41 @@ it('seeds the six usage-label chips in all three interface languages', function 
     ]);
 });
 
+it('seeds the cefr word-test strings in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // cefr-word-test ticket 04: the page becomes CEFR-anchored — a header
+    // level chip, an adaptive-retake band note, a level-first result panel
+    // whose weak retake keeps the stored level; the score label is gone
+    // with its usage.
+    expect(seededUiStringTexts('wordtest.current_level'))->toBe([
+        'en' => 'Current level',
+        'ru' => 'Текущий уровень',
+        'be' => 'Бягучы ўзровень',
+    ]);
+    expect(seededUiStringTexts('wordtest.level_label'))->toBe([
+        'en' => 'Your vocabulary level',
+        'ru' => 'Ваш словарный запас',
+        'be' => 'Ваш слоўнікавы запас',
+    ]);
+    expect(seededUiStringTexts('wordtest.covers'))->toBe([
+        'en' => 'Adaptive retake: this test covers bands :bands only.',
+        'ru' => 'Адаптивный повторный тест: охвачены только уровни :bands.',
+        'be' => 'Адатыўны паўторны тэст: ахоплены толькі ўзроўні :bands.',
+    ]);
+    expect(seededUiStringTexts('wordtest.kept_previous'))->toBe([
+        'en' => 'This run scored lower — your stored level was kept.',
+        'ru' => 'Этот результат ниже — сохранён прежний уровень.',
+        'be' => 'Гэты вынік ніжэйшы — захаваны папярэдні ўзровень.',
+    ]);
+    expect(seededUiStringTexts('wordtest.intro'))->toBe([
+        'en' => 'Tick every word you know, then submit — 60 words across the CEFR bands place your vocabulary on a 0–20,000 scale, and all more common words are marked as familiar.',
+        'ru' => 'Отметьте все слова, которые вы знаете, и нажмите «Отправить» — 60 слов по уровням CEFR определят ваш словарный запас на шкале от 0 до 20 000, а все более частые слова будут отмечены как знакомые.',
+        'be' => 'Пазначце ўсе словы, якія вы ведаеце, і націсніце «Адправіць» — 60 слоў па ўзроўнях CEFR вызначаць ваш слоўнікавы запас на шкале ад 0 да 20 000, а ўсе больш частыя словы будуць пазначаны як знаёмыя.',
+    ]);
+});
+
 it('seeds be texts for sampled keys across every group', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();
