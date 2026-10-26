@@ -6,6 +6,24 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-26 (the docs pass lands — the bundle catches up with the CEFR word test)
+
+Fifth and final slice of the cefr-word-test feature: ADR [0090](../docs/adr/0090-cefr-anchored-word-test.md)
+records the shipped decisions (CEFR tag-group sampling with fixed band
+anchors replacing ADR 0071's quantile buckets — its baseline marking and
+server-held samples stay in force, noted atop 0071; adaptive retakes whose
+untested lower bands contribute their floor as the base; raise-only
+`users.vocabulary_level`; English-only with no fallback sampler).
+CONTEXT.md's Word Test context is rewritten — **Bucket** is gone,
+**CEFR band** / **Band anchor** / **Vocabulary level** join, and the
+Word test / Placement sample / Word test score entries describe the
+adaptive raise-only flow. `domains/word-test.md` is rewritten to the
+shipped contract (routes, sampling, scoring, marking, persistence,
+frontend, tests) and the four per-ticket drift baselines minted by
+tickets 01–04 are pruned; `schema-overview.md`'s Users row carries
+`users.vocabulary_level`; the index blurb follows. `wiki:sync` +
+`wiki:validate --prune` clean, full suite green.
+
 ## 2026-10-26 (the word-test page renders the CEFR contract — concept intentionally lagging until ticket 05)
 
 Fourth slice of the cefr-word-test feature: `WordTest.jsx` consumes the

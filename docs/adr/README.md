@@ -98,9 +98,10 @@ alignment pair — see the renumber notes inside those files).
 |---|-------|
 | [0028](0028-numeric-word-familiarity.md) | Numeric word familiarity (0–100) replaces the ternary word status |
 | [0041](0041-frequency-rank-semantics-and-entity-correction.md) | Frequency rank semantics and the entity corpus correction |
-| [0071](0071-word-test-presumed-known-baseline.md) | Word test writes a presumed-known familiarity baseline |
+| [0071](0071-word-test-presumed-known-baseline.md) | Word test writes a presumed-known familiarity baseline — sampling/scoring superseded by [0090](0090-cefr-anchored-word-test.md) |
 | [0074](0074-entity-word-knowledge.md) | Entity pages show a per-user word-knowledge percentage |
 | [0075](0075-recommendations-page.md) | A recommendations page re-ranks the viewer's opened texts by word knowledge |
+| [0090](0090-cefr-anchored-word-test.md) | The word test samples CEFR tag groups and persists a vocabulary level — fixed band anchors, adaptive retakes, raise-only `users.vocabulary_level` |
 
 ## Reader & reading surfaces
 

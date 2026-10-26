@@ -5,7 +5,7 @@ description: The personalized reading queue at /recommendations — the viewer's
 tags: [recommendations, entities, works, word-knowledge, inertia, react, languages]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-26T23:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: controller
@@ -75,7 +75,8 @@ Library list idiom, stacked work cards with expandable text dropdowns
 (each text row carries name/label, language, sentence count and the
 rounded percentage), `LinkPagination`, and the empty states: no snapshots
 yet (pointer to the Library; plus the word-test hint when the viewer has
-no `user_word` rows at all, the `has_no_familiarity` prop) vs. no match
+never been placed (`vocabulary_level` 0, the `has_no_familiarity` prop —
+`user_word` rows alone no longer clear it)) vs. no match
 for the filters. Reuses the `entities.word_knowledge*` strings.
 
 ## Nav & strings

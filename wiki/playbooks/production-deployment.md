@@ -4,7 +4,7 @@ title: Production Deployment
 description: Prod runs natively (no Docker) since 2026-09-14 — pushes to master autodeploy via deploy-native.sh on a self-hosted runner (git pull, composer/npm, additive migrate, seeds, systemd restarts; python restart + /health gate only when python code/deps changed). The Docker bind-mount model (docker-compose.prod.yml + ./deploy.sh + container stamp guard) is still in tree for the dev machine and the legacy prod layout; its sections below are labeled.
 tags: [docker, production, deployment, devops, howto]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-26T17:55:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-26T23:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: deploy-native

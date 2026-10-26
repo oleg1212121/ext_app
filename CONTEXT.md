@@ -1020,45 +1020,67 @@ _Avoid_: British chart, RP tab.
 # Word Test Context
 
 The domain of the self-assessment that places a learner on a language's
-frequency scale. One Word test draws a Placement sample across the ranked
-inventory; the learner's answers produce a Word test score, and the test
-writes the Presumed-known baseline over the range at or below it. The
-vocabulary it moves is **Word familiarity** (see the Crossword context);
-the scale it measures against is **Frequency rank** (same context).
+frequency scale. One Word test draws a Placement sample across the
+language's CEFR tag groups; the learner's answers produce a Word test score
+and a stored Vocabulary level, and the test writes the Presumed-known
+baseline over the range at or below it. The vocabulary it moves is **Word
+familiarity** (see the Crossword context); the scale it measures against is
+**Frequency rank** (same context).
 
 **Word test**:
-The self-assessment that places a learner on a language's 0–20 000
-frequency scale: tick the sampled words you know, submit once, and the
-Presumed-known baseline is written across the range at or below your Word
-test score. A retake draws a fresh Placement sample and can only raise
-familiarity, never lower it.
+The self-assessment that places a learner's Vocabulary level on the
+language's 0–20 000 frequency scale: tick the sampled words you know,
+submit once, and the Presumed-known baseline is written across the range at
+or below your Word test score. The first test covers every CEFR band; a
+retake is adaptive — it tests only the bands at or above the stored
+Vocabulary level, so a strong learner is never re-quizzed on basic words.
+Familiarity and level only ever rise.
 _Avoid_: placement (as a page or feature name), vocabulary test, knowledge check.
 
 **Placement sample**:
-The 50 headwords — one dictionary entry per spelling, not one per word
-class — drawn fresh for every test from the language's ranked inventory
-(rank ≤ 20 000). Served in shuffled order with no rarity hints; the draw
-and its Bucket layout live only on the server between page load and
-submit.
+The 60 headwords — one dictionary entry per spelling, not one per word
+class — drawn fresh for every test from the language's CEFR tag groups
+(evenly over the tested CEFR bands). Served in shuffled order with no
+rarity hints; the draw and its band layout live only on the server between
+page load and submit.
 _Avoid_: quiz (nothing is right or wrong), word list (that means the
 Entity word list).
 
-**Bucket**:
-One of the 20 equal-count slices of a language's ranked inventory. The
-Placement sample draws proportionally from every Bucket, and the Word test
-score credits each Bucket by the share of its sampled words the learner
-marked. Equal word counts, not equal rank widths — with the coarse band
-ties of the current rank data (ADR 0070), rank-width slices would come up
-empty.
-_Avoid_: band (the imported band word lists), Level (the crossword sense).
+**CEFR band**:
+The rank span one CEFR tag group (`a1`…`c2`) owns on the frequency scale —
+a1 owns 0–1 000, a2 owns 1 000–3 000, and so on to c2's 15 000–20 000. The
+Placement sample draws from these tag groups, and the Word test score
+credits each tested band by the share of its sampled words the learner
+marked. Deliberately not the imported frequency **band lists**
+(ADR 0070) — those are corpus files that clamp ranks; CEFR bands are the
+word test's fixed scale segments — which is why bare "band" stays avoided.
+_Avoid_: band (that means the imported band lists), Bucket (the deleted
+quantile slices), Level (the crossword sense).
+
+**Band anchor**:
+The fixed rank boundary ending each CEFR band — a1→1 000, a2→3 000,
+b1→6 000, b2→10 000, c1→15 000, c2→20 000. Hard-coded constants, never
+derived from the corpus: data-derived anchors would drift with every
+seeder or import update and silently re-mean stored levels. The lowest
+untested band's anchor is the base a retake starts from.
+_Avoid_: cutoff, threshold, quantile.
 
 **Word test score**:
-The learner's position on the 0–20 000 frequency scale, summed from the
-Placement sample: each Bucket contributes 1 000 × the known share of its
+This run's computed position on the 0–20 000 frequency scale: the base
+plus, per tested CEFR band, the band's width × the known share of its
 sampled words. A word at rank ≤ score is presumed known; a word above it
-is not, even if the learner ticked it.
-_Avoid_: level (that means crossword Level), knowledge, rank (a word's
-property, not a person's), result.
+is not, even if the learner ticked it. The result panel shows the stored
+Vocabulary level as the primary number; the score is secondary.
+_Avoid_: knowledge, rank (a word's property, not a person's), result.
+
+**Vocabulary level**:
+The learner's stored placement in `users.vocabulary_level` — the highest
+Word test score ever achieved, raise-only, starting at 0. It sizes the
+adaptive retake (tested CEFR bands = anchors at or above it), drives the
+"haven't taken the test" nudges, and is the number the page displays.
+Stored once per user, not per language, because only English carries CEFR
+tags today.
+_Avoid_: score (that is this run's number), rank, XP, progress.
 
 **Presumed-known baseline**:
 The Word familiarity value (50) a passed Word test writes — raise-only —

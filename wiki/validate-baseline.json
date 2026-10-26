@@ -19,18 +19,6 @@
             "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
         },
         {
-            "warning": "domains/entities.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
-            "warning": "domains/recommendations.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
             "warning": "domains/sentence-enrichment.md: source 'docker-compose/python/ai/enrichment/cyrillic_stress.py' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-23",
@@ -47,66 +35,6 @@
             "owner": "human:alex",
             "date": "2026-10-23",
             "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
-            "warning": "architecture/docker-services.md: source 'deploy.sh' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-26",
-            "note": "Pre-existing drift from cefr-word-tags (deploy scripts now seed CefrWordTagSeeder; review commit aa87fb3 post-dates that feature's docs pass). Refresh both deploy-path concepts and prune in the cefr-word-test ticket 05 docs pass."
-        },
-        {
-            "warning": "database/dictionary.md: source 'laravel/database/seeders/CefrWordTagSeeder.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-26",
-            "note": "Pre-existing drift from cefr-word-tags review commit aa87fb3 (sync mechanics changed: transaction per level, detach over pivot delete) post-dating that feature's docs pass — the concept's mechanics section needs a content review, not just a timestamp bump. Refresh and prune in the cefr-word-test ticket 05 docs pass."
-        },
-        {
-            "warning": "playbooks/production-deployment.md: source 'deploy-native.sh' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-26",
-            "note": "Pre-existing drift from cefr-word-tags (deploy scripts now seed CefrWordTagSeeder; review commit aa87fb3 post-dates that feature's docs pass). Refresh both deploy-path concepts and prune in the cefr-word-test ticket 05 docs pass."
-        },
-        {
-            "warning": "playbooks/production-deployment.md: source 'deploy.sh' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-26",
-            "note": "Pre-existing drift from cefr-word-tags (deploy scripts now seed CefrWordTagSeeder; review commit aa87fb3 post-dates that feature's docs pass). Refresh both deploy-path concepts and prune in the cefr-word-test ticket 05 docs pass."
-        },
-        {
-            "warning": "domains/word-test.md: source 'laravel/app/Classes/WordTestService.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-26",
-            "note": "Drift minted by cefr-word-test ticket 02 (WordTestService reworked from the 20-bucket quantile sampler to CEFR band sampling/scoring; the concept still describes buckets and MIN_HEADWORDS). Concept rewrite is this spec's ticket 05 docs pass — refresh word-test.md there and prune this entry."
-        },
-        {
-            "warning": "domains/word-test.md: source 'laravel/app/Http/Controllers/WordTestController.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-26",
-            "note": "Drift minted by cefr-word-test ticket 03 (controller wiring: level-aware sampling via users.vocabulary_level, raise-only submit persistence, new `level` page prop and response field; the concept still describes the old controller contract). Concept rewrite is this spec's ticket 05 docs pass — refresh word-test.md there and prune this entry."
-        },
-        {
-            "warning": "domains/word-test.md: source 'laravel/resources/js/Pages/WordTest/WordTest.jsx' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-26",
-            "note": "Drift minted by cefr-word-test ticket 04 (the page renders the CEFR contract: header current-level chip, adaptive-retake band-span note, level-first result panel with a kept-previous note; score_label removed from page and seeder). Concept rewrite is this spec's ticket 05 docs pass — refresh word-test.md there and prune this entry."
-        },
-        {
-            "warning": "domains/entities.md: source 'laravel/app/Http/Controllers/EntityController.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-26",
-            "note": "Drift minted by cefr-word-test ticket 03 (the `has_no_familiarity` word-test hint now keys on users.vocabulary_level === 0 instead of user_word row existence, ADR 0090). The one-line semantics change is documented in this spec's ticket 05 docs pass — refresh entities.md there and prune this entry."
-        },
-        {
-            "warning": "domains/recommendations.md: source 'laravel/app/Http/Controllers/RecommendationsController.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-26",
-            "note": "Drift minted by cefr-word-test ticket 03 (the `has_no_familiarity` word-test hint now keys on users.vocabulary_level === 0 instead of user_word row existence, ADR 0090). The one-line semantics change is documented in this spec's ticket 05 docs pass — refresh recommendations.md there and prune this entry."
-        },
-        {
-            "warning": "domains/recommendations.md: source 'laravel/tests/Feature/RecommendationsTest.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-26",
-            "note": "Drift minted by cefr-word-test ticket 03 (the hint-flag test now pins the vocabulary_level semantics: rows alone no longer clear it, a stored level does). Documented in this spec's ticket 05 docs pass — refresh recommendations.md there and prune this entry."
         },
         {
             "warning": "playbooks/running-tests.md: source 'wiki/validate-baseline.json' changed after generated.at — possibly stale",

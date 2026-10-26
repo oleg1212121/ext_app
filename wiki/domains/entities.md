@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-26T23:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: controller
@@ -278,8 +278,9 @@ entities.words_indexed_at`, which sentence edits cause via the
 `crossword:refresh` sweep) or older than three days (familiarity drift
 from reads/lookups/crosswords). `ensure` refuses to compute while
 `EntityWordIndexer::isStale` — the page then shows a "calculating" state
-— and a viewer with zero `user_word` rows sees their 0% with a hint
-linking to the word test. The scheduled `entities:refresh-word-knowledge`
+— and a viewer never placed by the word test (`vocabulary_level` 0 —
+`user_word` rows alone don't count, a crossword-only user has plenty) sees
+their 0% with a hint linking to the word test. The scheduled `entities:refresh-word-knowledge`
 command (every 5 min, `withoutOverlapping`, `--limit=100`) recomputes
 stale pairs without a visit, skipping entities whose index is
 mid-rebuild. The table's only consumer beside the Show page is the
