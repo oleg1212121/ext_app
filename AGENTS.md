@@ -153,7 +153,7 @@ docker exec ext_app_laravel npm run test
 
 > **⚠️ DESTRUCTIVE COMMAND WARNING**
 > The main dev database is `ext_app`, on the default `pgsql` connection.
-> **NEVER run `migrate:fresh`, `migrate:refresh`, `migrate:reset`, `migrate:rollback`, or `db:wipe` against the default `pgsql` connection** — it points at `ext_app`, not the test DB. This was the cause of a real dev-database wipe (see `wiki/log.md`).
+> **NEVER run `migrate:fresh`, `migrate:refresh`, `migrate:reset`, `migrate:rollback`, or `db:wipe` against the default `pgsql` connection** — it points at `ext_app`, not the test DB. This was the cause of a real dev-database wipe (see `wiki/archive-2026-q2-q3.md`, 2026-08-03).
 >
 > - Tests use a **dedicated `testing` connection** (defined in `config/database.php`, pinned in `phpunit.xml` via `DB_CONNECTION=testing`) that points at `ext_app_test`. `tests/Pest.php` asserts `DB::connection()->getName() === 'testing'` before every Feature test, so a test run on the wrong connection fails before any destructive migration runs.
 > - For destructive ops on the test DB, go through the test runner: `composer run test` / `composer run test:tia`, or `php artisan migrate:fresh` with `DB_CONNECTION=testing` explicitly set. Verify the resolved database name is `ext_app_test` (not `ext_app`) before pressing enter.

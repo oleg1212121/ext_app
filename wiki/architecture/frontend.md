@@ -4,7 +4,7 @@ title: Frontend Architecture
 description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, Vite build, JS module layering (lib/, hooks/, page-local), vitest for pure logic, and ESLint for static correctness.
 tags: [frontend, react, inertia, livewire, tailwind, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-23T16:25:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-25T12:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: package
@@ -39,7 +39,7 @@ components; Livewire remains only inside Filament.
 Alpine starts only when the page has no Inertia `#app` root (Blade auth
 pages). On React pages its global MutationObserver would re-walk every node
 React touches — pure overhead there and a freeze ingredient on the reader
-(see wiki/log.md, 2026-09-23).
+(see wiki/archive-2026-q2-q3.md, 2026-09-23).
 
 UI kit: `flowbite-react` components (imported from `resources/js/Components/`
 and across `resources/js/Pages/`).

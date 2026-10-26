@@ -19,6 +19,12 @@ class WikiBundle
     public const RESERVED_FILENAMES = ['index.md', 'log.md'];
 
     /**
+     * Archive files (archive-*.md) hold rolled-off log.md history: no
+     * frontmatter, links still validated like any reserved file.
+     */
+    private const RESERVED_FILENAME_PREFIXES = ['archive-'];
+
+    /**
      * Resolve the wiki bundle root directory, or null when not found.
      */
     public static function resolvePath(?string $explicit = null): ?string
@@ -66,7 +72,10 @@ class WikiBundle
 
     public static function isReserved(string $relativePath): bool
     {
-        return in_array(basename($relativePath), self::RESERVED_FILENAMES, true);
+        $basename = basename($relativePath);
+
+        return in_array($basename, self::RESERVED_FILENAMES, true)
+            || (bool) preg_match('/^(?:'.implode('|', self::RESERVED_FILENAME_PREFIXES).')/', $basename);
     }
 
     /**

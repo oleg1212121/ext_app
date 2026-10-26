@@ -1,5 +1,8 @@
 # Languages table is a standalone admin registry
 
+*Renumbered from 0001 (2026-10-25): the number collided with the older
+alignment ADR 0001. Referenced as "ADR 0001" in pre-2026-10-25 history.*
+
 The `languages` table and `Language` model are an admin-managed lookup registry
 created to support a CRUD UI on the Filament `/admin` panel, with an `is_enabled`
 toggle and seed rows for `en` and `ru`. The decision was to ship it as a

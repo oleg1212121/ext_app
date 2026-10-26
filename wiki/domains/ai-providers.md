@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-23T18:55:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-25T12:30:00+03:00 }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base

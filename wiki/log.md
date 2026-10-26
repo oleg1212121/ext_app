@@ -1,5 +1,47 @@
 # Directory Update Log
 
+Newest first; one `## YYYY-MM-DD (title)` entry per change that touches the
+bundle, added at the top. Entries older than the current quarter roll off into
+`archive-<quarters>.md` (see [archive-2026-q2-q3.md](archive-2026-q2-q3.md))
+at each quarter boundary — link there, not to a dated entry here, when
+pointing readers at pre-quarter history.
+
+## 2026-10-25 (knowledge-base cleanup: log archive + quarterly policy, ADR renumber + index, concept restructures)
+
+Documentation-only pass — no application behavior changed. Four parts:
+
+- **Log archive.** `log.md` carried 263 entries back to 2026-07-26 in two
+  competing orders (newest-first top block + a 36-entry oldest-at-bottom tail
+  block). The 114 pre-October entries (3,615 lines, 41% of the file) moved to
+  `archive-2026-q2-q3.md` and the remaining 149 October entries were rewritten
+  strictly newest-first. `WikiBundle::isReserved` now reserves any `archive-*`
+  basename (one-line change: no frontmatter needed, links still validated).
+  The log header records the standing policy: entries older than the current
+  quarter roll off at each quarter boundary. Pointers into archived content
+  updated (`AGENTS.md` DB-wipe incident → archive 2026-08-03;
+  `architecture/frontend.md` 2026-09-23 freeze; `domains/reader.md`
+  pass-by-pass timeline).
+- **ADR renumber + index.** The languages pair `0001-languages-standalone-registry`
+  / `0002-languages-enabled-first-consumer` collided with the older alignment
+  ADR 0001/0002 — every "ADR 0001/0002" reference was ambiguous. Renumbered to
+  **0088/0089** (renumber notes inside both files; the four log.md
+  languages-sense references repointed). New `docs/adr/README.md` indexes all
+  89 ADRs by cluster with the one superseded relation (0005 ← 0016).
+- **Concept restructures.** `interactive-words.md` and `dictionary-import.md`
+  carried ~2,000-3,500-char run-on `description:` frontmatter sentences; both
+  replaced with 3-sentence summaries (the body already carried every claim in
+  dedicated sections — no content lost). `dictionary-import.md`'s
+  "Data repair (words:normalize)" section duplicated the import playbook's
+  runbook including both dated run reports; the domain now keeps the
+  contract summary + links, the playbook stays the single runbook.
+  `sentence-alignment.md`'s 933-line flat `# Stages` list converted to
+  `##`-per-stage and `###`-per-amendment subheadings (16 dated Align
+  amendments were masquerading as list items). `generated.at` bumped on all
+  four concepts.
+- **Minor.** `index.md` + `architecture/index.md` drop the stale "Hybrid … +
+  Livewire" phrasing (Livewire is dependency-only since the Livewire
+  components were removed); `localization.md`'s empty `verified: {}` removed.
+
 ## 2026-10-24 (popup bug pass: per-part source chips, source-data migration run, silent Anki probes)
 
 User follow-up on the morning's popup-refinements branch — three bugs:
@@ -828,6 +870,53 @@ was working as written):
 - **ADR 0082** gained a dated amendment (2026-10-20) recording both
   changes; history not rewritten.
 
+## 2026-10-20 (popup-ai-enrich 07: missing-word re-resolution — the asked-once word stays found)
+
+The adopt-on-ask persistence gap closed (ticket 07, the follow-up spec's
+item 6; diagnosis verified against the dev DB 2026-10-20: the minted words
+persist with `source='ai'` rows and succeeded ledger entries, but nothing
+links them into the page's `entity_words` map — `entities:enrich` is
+scheduled and dev runs no scheduler):
+
+- **`POST /words/lookup`** (`WordController::lookup`, auth+approved,
+  throttle 60/min, beside `GET /words/{word}`; new `WordLookupRequest`
+  mirroring the adoption-mode validation rules — surface max 256 with the
+  empty-key rejection, `exists:languages,code`): takes the RAW clicked
+  surface + the clicked column's language code, answers
+  `{data: {word_id: int|null}}` — the id alone, the payload shape stays
+  owned by `GET /words/{word}`.
+- **`WordAiEnrichmentService::resolveSurface`**: the read-only half of
+  `resolveOrAdopt` extracted (which now calls it and only mints on null —
+  exact behavior kept): `WordLookupKey` normalize, query
+  `(language_id, l_word)`, classed row beats the unknown placeholder with
+  the unknown class id resolved READ-ONLY (a language without the
+  placeholder row falls back to the first candidate — a lookup can never
+  create a word-class or word row).
+- **`WordPopup.jsx`**: a missing-mode popup with a language descriptor
+  POSTs the lookup once on open (`postLookup` module helper, CSRF-signed);
+  a hit stores `lookedUpId`, which feeds the detail-fetch effect
+  (`fetchId = wordId ?? lookedUpId`) — the dictionary view loads like a
+  mapped token's and `ai_asked` greys the icon; a miss (or a failed
+  lookup) leaves ticket 03's card untouched, the ask icon only disabled
+  while the resolve is in flight (`lookupBusy`); the lookup effect guards
+  stale answers with the fetch effect's `cancelled` pattern. A 409 from
+  the ask now syncs the popup: the known path refetches
+  `/words/{id}?surface=` and swaps it in under the `staleAsk` guard, the
+  missing card re-runs its lookup (the adopted id is unknown client-side).
+  Render branch grew the `lookedUpId == null` conjunct.
+- Tests: new `tests/Feature/WordLookupEndpointTest.php` (7 tests —
+  classed-over-unknown, the minted-word resolution (the report's exact
+  shape with the succeeded ledger), ё/stress variants, null miss,
+  no-unknown-class-created read path, validation, guests 401 +
+  unapproved-redirect); vitest source pins updated in
+  `WordText.missing.test.js` + `WordPopup.toolbar.test.js` and added in
+  `WordPopup.lookup.test.js` (242 pass total); enrich suites re-run green
+  (23); full `test:tia` green, pint clean.
+- Wiki: this entry; `interactive-words.md` (missing-card "almost nothing
+  runs on open", new re-resolution section, routes row, description);
+  `generated.at` bumped. `wiki:sync` re-stamped references for the new
+  route.
+
 ## 2026-10-19 (popup-ai-enrich review fix pass — 8 accepted findings, one commit)
 
 Code-review fixes on the merged ask-AI surface (no schema change, no
@@ -913,53 +1002,6 @@ machine references (`web-routes.md` picks up `ai.word-enrich`,
 all already present from the code tickets); `wiki:validate` conformant.
 Verification battery on the integration branch: full `composer run test`,
 `npm run test`, `pint --dirty` — numbers in the ticket file.
-
-## 2026-10-20 (popup-ai-enrich 07: missing-word re-resolution — the asked-once word stays found)
-
-The adopt-on-ask persistence gap closed (ticket 07, the follow-up spec's
-item 6; diagnosis verified against the dev DB 2026-10-20: the minted words
-persist with `source='ai'` rows and succeeded ledger entries, but nothing
-links them into the page's `entity_words` map — `entities:enrich` is
-scheduled and dev runs no scheduler):
-
-- **`POST /words/lookup`** (`WordController::lookup`, auth+approved,
-  throttle 60/min, beside `GET /words/{word}`; new `WordLookupRequest`
-  mirroring the adoption-mode validation rules — surface max 256 with the
-  empty-key rejection, `exists:languages,code`): takes the RAW clicked
-  surface + the clicked column's language code, answers
-  `{data: {word_id: int|null}}` — the id alone, the payload shape stays
-  owned by `GET /words/{word}`.
-- **`WordAiEnrichmentService::resolveSurface`**: the read-only half of
-  `resolveOrAdopt` extracted (which now calls it and only mints on null —
-  exact behavior kept): `WordLookupKey` normalize, query
-  `(language_id, l_word)`, classed row beats the unknown placeholder with
-  the unknown class id resolved READ-ONLY (a language without the
-  placeholder row falls back to the first candidate — a lookup can never
-  create a word-class or word row).
-- **`WordPopup.jsx`**: a missing-mode popup with a language descriptor
-  POSTs the lookup once on open (`postLookup` module helper, CSRF-signed);
-  a hit stores `lookedUpId`, which feeds the detail-fetch effect
-  (`fetchId = wordId ?? lookedUpId`) — the dictionary view loads like a
-  mapped token's and `ai_asked` greys the icon; a miss (or a failed
-  lookup) leaves ticket 03's card untouched, the ask icon only disabled
-  while the resolve is in flight (`lookupBusy`); the lookup effect guards
-  stale answers with the fetch effect's `cancelled` pattern. A 409 from
-  the ask now syncs the popup: the known path refetches
-  `/words/{id}?surface=` and swaps it in under the `staleAsk` guard, the
-  missing card re-runs its lookup (the adopted id is unknown client-side).
-  Render branch grew the `lookedUpId == null` conjunct.
-- Tests: new `tests/Feature/WordLookupEndpointTest.php` (7 tests —
-  classed-over-unknown, the minted-word resolution (the report's exact
-  shape with the succeeded ledger), ё/stress variants, null miss,
-  no-unknown-class-created read path, validation, guests 401 +
-  unapproved-redirect); vitest source pins updated in
-  `WordText.missing.test.js` + `WordPopup.toolbar.test.js` and added in
-  `WordPopup.lookup.test.js` (242 pass total); enrich suites re-run green
-  (23); full `test:tia` green, pint clean.
-- Wiki: this entry; `interactive-words.md` (missing-card "almost nothing
-  runs on open", new re-resolution section, routes row, description);
-  `generated.at` bumped. `wiki:sync` re-stamped references for the new
-  route.
 
 ## 2026-10-19 (popup-ai-enrich 05: adopt-on-ask — the missing popup's path into the dictionary)
 
@@ -1785,6 +1827,313 @@ link-only), no ADR change. Tests: 3 new fixtures/cases in
 marks-only headword/alt); full `--filter=ImportGoldenDict` suite 37 passed
 (255 assertions), `pint --dirty` clean, `wiki:validate` 0 warnings.
 
+## 2026-10-18 (dictionary-word-purity 12: knowledge-base closure — ADR 0079, ADR 0078 addendum, run numbers in the wiki)
+
+Closed the spec out in the knowledge base (docs-only change, no code):
+
+- **New ADR 0079** (`docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md`):
+  the dictionary-word-purity decisions beyond ADR 0078 — form-of relays
+  demote to forms of their base (dump-driven sense-level `form_of` signal
+  via the shared `FormOfClassifier`, in-place cleanup via
+  `wiktionary:demote-form-of` + `RelayDemotionMap`, ru 363,446 / en
+  500,776 relay rows deleted), every word carries itself as its lemma
+  form (`LemmaForms`, 1,018,396 backfilled), one stage → link → prune
+  lifecycle for translations (`StagedTranslations` union-merge in,
+  prune-on-link out; 126,202 candidates converted, staged JSON 91,552 →
+  52,472), one resolver/alias-table/lemma-rule toolkit
+  (`TranslationTargets`/`PosAliases`/`LemmaForms`) and the
+  attach-to-existing creator contract (`words:normalize` as the in-place
+  repair: 2,451 twins + 7,514 alias duplicates merged, 216,440 reclassed,
+  9,976 absorbed). Records the operational consequences: 2G memory
+  ceilings, LEAST rank folds, `word_translations` allowed to shrink
+  (net −1,029 from dedupe while ~4,898 genuinely new links appeared).
+- **ADR 0078 addendum extended**: the Consequences' flagged follow-up
+  (the popup auto-fetch still creating target words) is recorded as
+  resolved — link-only everywhere, candidates resolve through
+  `TranslationTargets`, leftovers stage.
+- **`domains/dictionary-import.md`**: run numbers added to the
+  demote/link/normalize sections, sources gained ADR 0079 +
+  `TranslationTargets` + `StagedTranslations`.
+- **`database/dictionary.md`**: the stale "form-of entries are stored as
+  ordinary words" note rewritten (relays demote to forms; the
+  `WordFamily` pattern list stays as the read-layer filter for mixed
+  entries), frequency note documents the LEAST fold between rows.
+- **`playbooks/import-dictionary-data.md`**: demote/normalize sections
+  moved to past tense with the landed numbers (a re-run matches nothing),
+  the repair pipeline order written out in full (demote → normalize →
+  link-translations → import-frequency-lists → crossword:link).
+
+All touched concepts reviewed against the code and the ticket-11 run;
+`verified: human:alex` stamps added, `generated.at` bumped.
+
+## 2026-10-18 (dictionary-word-purity 11: the repair pipeline ran on the dev DB; both repair commands raise their own memory ceiling)
+
+Executed the ticket-11 pipeline on the dev DB in dependency order and
+verified the data gates (details in
+`.scratch/dictionary-word-purity/issues/11-run-pipeline-and-data-gates.md`).
+Two operational defects surfaced and are fixed here: `wiktionary:demote-form-of`
+and `words:normalize` both died with `Allowed memory size of 134217728 bytes
+exhausted` on real data — the demote scan at ~105k dump lines (the relay map
+holds the whole language's vocabulary until the stream ends) and normalize in
+the phase-3 alias fold (its group map holds every row of the folded classes,
+~210k en adj/adjective rows). Both commands now raise their own
+`memory_limit` to 2G + `set_time_limit(0)` at the top of `handle()` — the
+`ImportRawWiktextractCommand` precedent (1G there; 2G here because these
+commands hold full-language in-memory maps, not streaming batches), each with
+a regression test probing the bump through the fast failure path
+(`DemoteFormOfCommandTest`, `WordsNormalizeCommandTest`).
+
+Pipeline results (dry vs real within normal documented approximations; the
+destructive counts matched exactly everywhere): demote ru deleted 363,446
+relay rows + 69,035 romanization junk forms (ru words 444,149 → 80,703);
+demote en deleted 500,776 (en 1,523,426 → 1,022,650); normalize merged 11
+stressed display words, 2,451 unknown-class twins, 7,514 alias duplicates,
+reclassed 216,440, deleted 12 orphan alias class rows, backfilled 1,018,396
+lemma forms, absorbed 9,976 rows; `dictionary:link-translations` converted
+126,202 staged candidates into links and pruned the staged JSON from 91,552
+to 52,472 words (net `word_translations` 112,585 → 111,556 — the dedupe
+phases collapsed 5,927 redundant pairs while the pass added ~4,898 new);
+`words:import-frequency-lists` clamped ranks onto 77,920 words directly +
+82,833 via the lemma-form join; `crossword:link` found nothing unlinked after
+the re-pointing (a `--retry-unmatched` pass re-attempted 533 stale stamps, 0
+new — those tokens have no dictionary headword).
+
+Gates after the run: zero combining marks in ru `words.word`/`forms.form`
+(baseline 1/78); `четвереньках` only a form of `четвереньки`; zero
+unknown-class twins (baseline 2,954); zero `adj` class rows (adjective: en
+179,332 / ru 11,551); zero words missing their lemma form (baseline en
+1,507,795 / ru 29,171); full `composer run test` green (1294 passed / 6644
+assertions, 544s). Wiki: `playbooks/import-dictionary-data.md` (memory-limit
+notes on both repair commands), `generated.at` bumped.
+
+## 2026-10-18 (dictionary-word-purity 09: `words:normalize`)
+
+The idempotent in-place repair of the already-stored dictionary rows the
+importers cannot fix themselves — one command, four phases, every phase
+counted in a summary table, `--dry` first-class (prints every phase count,
+writes nothing). Phase 1 strips the combining stress marks from ru/be/uk
+display `words.word` and `forms.form` (spec rule 1; en diacritics are
+legitimate spelling and untouched): a stressed word merges into an existing
+plain twin (same language + class + stripped display, lowest id survives and
+absorbs the children), otherwise it strips in place; stressed forms group
+per (word, stripped form) — a group whose plain twin already exists
+collapses, otherwise the lowest form id survives and the other variants
+dedupe (two stressed variants can strip to one plain string — the earlier
+one-off repair's collision gotcha). Phase 2 merges `unknown`-class twins
+into the lowest-id non-unknown same-`l_word` row (the cmudict/adoption
+twins); a survivor already carrying a ˈ-marked IPA transcription is final —
+the twin's transcriptions die with the merge (Kaikki wins where it has
+stress data). Phase 3 folds alias word classes into their canonical class
+per language (PosAliases semantics resolved by class-row slug — `adj` into
+`adjective`): exact-display twins merge, twinless leftovers reclass in
+place, orphan alias class rows delete last. Phase 4 backfills the lemma
+form: every word carries itself (stripped display, LemmaForms conventions)
+where missing — insert-new-only on `(form, word_id)`, chunked word-id ranges
+with a progress bar (~1.5M rows in dev). Word merges share one set-based
+machinery: pairs land in a temp mapping table, each child move is a single
+SQL statement per table — definitions/etymologies/entity_words update in
+place; unique-keyed children (forms, transcriptions, examples,
+pronunciations, tagged_words, user_word, user_word_event,
+word_translation_fetches) move through insert-select ON CONFLICT DO NOTHING
++ delete; word_translations re-point through both arms (canonical pairs,
+self-pairs dropped, insert-or-ignore dedupe); staged `words.translations`
+JSON union-merges (StagedTranslations); the frequency rank folds in as
+LEAST with a zero guard — the cmudict/adoption rows carry the 0 "no rank"
+column default (kaikki rows carry the sentinel), and folding a 0 would wipe
+every survivor's rank, so only real ranks fold and never upward. Absorbed
+rows delete last; case-variant same-class duplicates are deliberately NOT
+merged (March/march). Tests: `WordsNormalizeCommandTest` (new, 7 / 64
+assertions — seeded mini-DB per phase incl. the ˈ-IPA gate and the
+both-arm/user_word/fetch-ledger moves, idempotent second run, `--dry`
+writes nothing, `--chunk=2` reaching the same state through tiny chunks).
+Targeted suite green, pint green, `composer run test:tia` green (1292
+passed / 6639 assertions, 7 new + 1285 replayed). Wiki:
+`playbooks/import-dictionary-data.md` (new "Repairing stored data in place"
+runbook with the `--dry`-first guidance and expected dev-DB phase counts),
+`domains/dictionary-import.md` (new "Data repair" section, sources),
+`reference/commands.md` regenerated (`wiki:sync`), `generated.at` bumped;
+`wiki:validate` passes. The real dev-DB run is ticket 11 (never this
+ticket).
+
+## 2026-10-18 (dictionary-word-purity 10: `wiktionary:demote-form-of`)
+
+The dump-driven cleanup for the relay word rows the pre-ticket-03 import stored. The new command
+streams one kaikki dump per language (`--lang`, default file
+`kaikki/kaikki.org-dictionary-<Language name>.jsonl`, `--file` override), classifies every entry
+through the shared `FormOfClassifier`, and folds the verdicts through the new pure
+`App\Classes\Wiktionary\RelayDemotionMap` before anything writes: a surface with any real dump
+entry stays a word (also-real subtraction, order-independent), relay lines disagreeing on the base
+stay a word, chains close onto the terminal base (X→Y→Z demotes X and Y onto Z, so no relay
+re-points at a row its own run deletes), cycles demote nobody and stay valid link targets. The
+apply is set-based per `--chunk` (default 25000 relay keys, one transaction each; `--dry` prints
+every phase count and writes nothing — run it first): translation links re-point from relay rows
+onto bases through both `word_translations` arms (canonical pairs, insert-or-ignore dedupe,
+self-pairs dropped, later-chunk relays resolved through the full map so their pairs survive both
+deletions), `entity_words.word_id` re-points (the token `l_word` keeps the surface the entity text
+carries), staged `words.translations` JSON union-merges onto the base, the relay surface attaches
+as a base form (upsert on `(form, word_id)` — a base that already claims it keeps one row), the
+relay's frequency rank folds into the base as LEAST (best rank wins; the unranked sentinel
+1,100,000 never demotes a ranked base — user-approved deviation from the ticket's "max/GREATEST"
+wording, which would have flipped the flagship base `четвереньки` from rank 11,314 to unranked;
+matches ADR 0070's never-raise-a-rank fold), then the relay rows delete (relay glosses and
+self-forms die with the row — pure pointers). Romanization-tagged junk forms (Latin on ru/be/uk
+words) are collected from the same stream and deleted by exact (entry `l_word`, form `l_word`)
+pairs; the phase skips non-stress-mark languages. Bases missing from the DB keep their relays as
+words — counted, sampled, never deleted; re-runs match nothing (idempotent). Deletes by explicit
+ids from the dump map — never a wipe. Tests: `RelayDemotionMapTest` (new, 8 — subtraction,
+conflicts, chains, two- and three-entry cycles, self-base gate, missing-base passthrough),
+`DemoteFormOfCommandTest` (new, 5 / 39 assertions — seeded mini-DB plus the
+`tests/fixtures/kaikki-demote-form-of.jsonl` mini-dump: dry writes nothing, the demote end state
+including the flagship `четвереньках` case with `--chunk=2` forcing the cross-chunk link and
+staged-JSON paths, idempotent re-run, rejects unknown language and missing file). Targeted suites
+green (8 + 5), pint green, `composer run test:tia` green (1285 passed / 6575 assertions, 1285
+replayed). Wiki: `playbooks/import-dictionary-data.md` (new "Cleaning imported relay rows"
+runbook with the `--dry`-first guidance), `domains/dictionary-import.md` (the planned-ticket
+mention replaced by the implemented command + map semantics, sources), `reference/commands.md`
+regenerated (`wiki:sync`), `generated.at` bumped; `wiki:validate` passes. The real dev-DB run is
+ticket 11 (never this ticket).
+
+## 2026-10-18 (dictionary-word-purity 08: duplicate prevention at the remaining creators)
+
+The two creators still minting `unknown`-class twins of classed rows (uniqueness is
+`(word, language_id, word_class_id)` — 2,954 twins in the dev data) now resolve against the
+language's existing `l_word`s and only create when nothing matches. `dictionary:import-cmudict`
+already attached transcriptions to existing same-`l_word` rows; its creation path now goes through
+the shared conventions — plain display word (`StressMarks` strip on the shared path, a no-op for
+en), `App\Support\WordLookupKey` key and the `App\Support\LemmaForms` lemma form, so a
+cmudict-created word carries itself as its form like every imported word. `EntityWordAdoption`
+replaced the raw-token `firstOrCreate` (which matched on the surface string and class, so a token
+whose `l_word` the dictionary already carried minted a twin): adoption attaches to the EXISTING
+same-`l_word` row — first non-unknown-class row in id order, else the lowest id — via one batched
+candidates query per 500-token chunk (the pass runs inside `crossword:refresh`); a genuinely new
+token creates one row with a plain display word (combining stress marks stripped off the raw surface
+for ru/be/uk, casing kept) and its lemma form, and a marks-only token stays stamped instead of
+storing a junk row. Filament joins the contract: the Word page's "Create word & link" strips the
+display word for ru/be/uk (a stressed input reuses the existing plain row), normalizes `l_word`
+through `WordLookupKey` instead of a bare `mb_strtolower`, adds the lemma form on create, and its
+word search matches the normalized key; the Forms relation manager strips the display form for the
+stress-mark languages and autofills a blank `l_word` through the same key (create + edit). Tests:
+`CmudictImportTest` (attach-to-existing with no twin, lemma form on create, re-run idempotent),
+`AdoptEntityWordsTest` (lemma form, existing-row adoption preferring the classed row over a
+lower-id unknown, plain ru display + lemma form), `Filament/WordTranslationsRelationManagerTest`
+(normalized key + lemma form; stressed input collapses into the plain row),
+`Filament/WordFormsRelationManagerTest` (new file — normalized key autofill, ru form strip, en
+create/edit). Targeted suites green (20 + 36), `composer run test:tia` green (1272). Wiki:
+`domains/dictionary-import.md` (new "Creator hygiene" section + sources), `domains/crossword.md`
+and `domains/interactive-words.md` (adoption attach-don't-twin semantics), `generated.at` bumped;
+no routes/models/commands signatures touched, no `wiki:sync` needed; `wiki:validate` passes.
+
+## 2026-10-18 (dictionary-word-purity 07: dictionary:link-translations — the single staged-link pass)
+
+`wiktionary:link-translations` (renamed **`dictionary:link-translations`** — no alias, all callers
+and docs updated) was the only re-reader of the staged `words.translations` JSON but matched weaker
+than the goldendict resolver (class-strict single lookup, no same-class preference, no phrase
+preference, no any-class fallback, one query per candidate), never pruned what it linked (91,552
+staged rows and growing), and warned per unmatched candidate — millions of lines at real scale. It
+is now the single staged-link pass: per staged word it builds the writers' wanted-class map
+(multi-word candidate → target's `phrase` class, single-word → the source word's class slug mapped
+into the target language, unmappable → null = l_word alone) and resolves through the shared
+`App\Support\TranslationTargets::forLanguage` (same-class → phrase → any-class → lowest id; one
+query per word instead of per candidate). Pairing keys go through `App\Support\WordLookupKey::normalize`
+(replacing the private `normalizeTargetWord`). **Prune-on-link**: every candidate that resolves is
+removed from the word's JSON via `App\Support\StagedTranslations::prune` (exact stored strings —
+the importer-staged goldendict JSON and the job-staged auto-fetch JSON share the contract), an
+emptied JSON stores null, the row saves only when the JSON actually changed, so re-runs are
+idempotent and the Total-staged column shrinks; unmatched candidates stay staged for a later pass.
+Unmatched output is a per-direction count plus a capped sample (first 10 as "source → candidate",
+one per table line — long cells wrap mid-string at the terminal width) in the summary table
+(Linked / Unmatched / Words pruned / Total staged columns); the per-candidate warn is gone. The
+`statement_timeout` (30s) and stuck-`delete from "words"` transaction-kill guards are kept.
+`ImportRawWiktextractCommand` calls the new signature (`--no-link` help + messages);
+`ImportWiktionaryCommand`'s description and the `WordTranslationProvider` docblock (which named the
+removed private method) updated; ADR 0029 carries a rename note. Tests: `LinkTranslationsCommandTest`
+rewritten for the new signature and contract (16 tests: resolver fallbacks, phrase class, lowest-id
+tie, prune-keeps-unmatched, empty→null, exact-string prune of a stressed legacy candidate, re-run
+idempotency, capped sample without per-candidate warns); `ImportRawWiktextractCommandTest`'s
+end-to-end test now asserts the prune contract (fully-matched words store null). Full
+`composer run test:tia` green (1264 passed). Wiki: `reference/commands.md` regenerated by
+`wiki:sync` (rename), `playbooks/import-dictionary-data.md` (runbook step 4 + source title),
+`domains/dictionary-import.md` (command bullet + linking-differs paragraph + source title),
+`database/dictionary.md` (words.translations flow bullet), `generated.at` bumped; `wiki:validate`
+passes. Manual command — run after populating all languages.
+
+## 2026-10-18 (dictionary-word-purity 06: popup auto-fetch is link-only — no word rows)
+
+`FetchWordTranslations` used to CREATE its target-language word rows — including `phrase`-class rows
+with no token cap (clause-length machine translations qualified) and a `mb_strtolower`-only l_word —
+the exact "phrases from translations" pattern ADR 0078 bans. The job is now link-only: candidates
+normalize at the JOB layer first (trim + `App\Support\StressMarks` strip for ru/be/uk targets — the
+providers strip too, but the job no longer depends on a future provider keeping that promise;
+empty-after-strip, overlong and sentence-punctuation candidates dropped), resolve against the target
+language's EXISTING words through the shared `App\Support\TranslationTargets` resolver with the
+parser's wanted-class rule (`App\Support\WordLookupKey::normalize` keys; multi-word candidate →
+`phrase` class, single-word → candidate pos class else the source word's class, missing class →
+null = match by l_word alone), and matching candidates become `WordTranslation::link` pairs.
+Unmatched candidates stage into the source word's `translations` JSON through the shared
+`App\Support\StagedTranslations` merge for the later link pass (ticket 07). The `phraseClassId`
+auto-creation and every `Word::firstOrCreate` are gone — `word_classes` and target-language `words`
+counts are untouched by the job (the invariant test asserts the ru count is unchanged).
+The `word_translation_fetches` ledger keeps its exclusion semantics (empty = never re-checked;
+succeeded also never re-fetches — staged candidates wait for the link pass, not a re-query; failed
+retries unchanged) and records the outcome in new `linked_count`/`staged_count` smallint columns
+(additive migration `2026_10_18_000002`, applied to the dev DB). Callers
+(`WordTranslationFetchService::dispatchIfEligible`, `EntityWordAdoption::dispatchFetches`,
+`WordController::maybeFetchTranslations`) needed no changes — their gates read links + ledger
+status only. `tests/Feature/WordTranslationFetchTest.php` rewritten for link-only semantics (17
+tests: no-creation invariant, defensive strip via a mocked resolver, staging merge/re-merge,
+phrase-class preference, google fallback under class mismatch, exclusion on unusable-only
+candidates, no-refetch-after-staging, cooldown), full `composer run test:tia` green (1257 passed).
+Wiki: `domains/interactive-words.md` ("What it writes" + ledger bullets, description, sources),
+`domains/dictionary-import.md` (ADR 0059 section no longer claims phrase auto-creation),
+`database/dictionary.md` (ledger row + words.translations staging note + auto-fetch note),
+`generated.at` bumped; `wiki:sync` regenerated `reference/models.md` (new fillable/casts);
+`wiki:validate` passes.
+
+## 2026-10-18 (dictionary-word-purity 03: kaikki form-of relays demote to forms, not words)
+
+Kaikki marks inflected variants as standalone entries whose every sense carries the sense-level
+`form_of` list (+ the `form-of` tag) — `четвереньках: prepositional of четвере́ньки` — and
+`WiktionaryParser` ignored the signal entirely, importing ~379k/444k ru and ~974k/1.5M en relay
+entries as full word rows with relay glosses and self-referential form rows. Now `parseLine`
+classifies every entry through the new parser-agnostic shared helper
+`App\Classes\Wiktionary\FormOfClassifier` (entry-shape in → `{relay, base}` out; also reusable by
+the planned demote command): relay iff every sense carries `form_of[0].word` or the `form-of` tag,
+mixed entries (some relay senses + real glosses) stay words, an entry without senses stays a word
+(no sense-level signal), a base that collapses into the entry's own lookup key would demote the
+entry onto itself (stays a word), and a trivially present entry-level `form_of` is honored. A relay
+record carries empty definitions/forms/sounds/translations/etymology and a `relay_base` (stress-
+stripped for ru/be/uk); `flushBatch` partitions it out of the word upsert and `demoteRelays`
+resolves the base by `l_word` with the shared class preference (`App\Support\TranslationTargets`,
+same-class row → lowest id; unknown pos skips the preference), creates a missing base as a proxy
+dictionary headword (relay's pos class, no staged translations, lemma form through the shared
+`App\Support\LemmaForms`), and attaches the relay headword as the base's form via the same
+`LemmaForms` conventions — never a word row. Same-key line merges follow union-of-senses semantics:
+relay+real → mixed word, relay+relay demote only onto an agreeing (normalized-equal) base. Import
+stats gained `relays_demoted` / `relay_bases_created`, surfaced in the `wiktionary:import` summary
+table. Pre-existing relay word rows are ticket 10's demote command; the `WordFamily` read-layer
+relay-gloss defense stays until then. `wiki/domains/dictionary-import.md` updated (parser bullet +
+frontmatter description/tags/sources), `generated.at` bumped. No routes/models/commands added (the
+command's output table changed, not its signature) — `wiki:sync` run, no-op.
+
+## 2026-10-18 (dictionary-word-purity 04: word_id-leading indexes on every words child table)
+
+The per-word access path into the dictionary's child tables was unindexed: `forms` (3.02M rows) and
+`transcriptions` (922k) only had `word_id` *buried* behind a leading text column (`uk_forms_form_word_id
+(form, word_id)`, `uk_transcriptions_triple (transcription, word_id, transcription_type_id)`), so per-word
+joins, importer recount batches and FK cascade deletes seq-scanned — the root cause of the 17-minute wipe
+crawl. Migration `2026_10_18_000001_add_word_id_indexes_to_forms_transcriptions_and_word_children.php` adds
+`idx_<table>_word_id` btrees (naming mirrors `idx_definitions_word_id` from 2026-09-16) on the six audit
+hits: the ticket's `forms`/`transcriptions`/`user_word` plus the rest of the word-child audit surface —
+`examples`, `pronunciations`, `user_word_event` (all `ON DELETE CASCADE` off `words`); `definitions`,
+`etymologies`, `entity_words`, `tagged_words` `(word_id, tag_id)` and `word_translation_fetches`
+`(word_id, target_language_id)` already led with `word_id` and were left alone (`word_families` is a
+read-layer class, not a table). Dev-DB `EXPLAIN ANALYZE` of `SELECT * FROM forms WHERE word_id = 1993864`
+flipped from seq scan to `Index Scan using idx_forms_word_id`, 0.159 ms / 3+8 buffers. Coverage pinned by
+`tests/Feature/WordIdLeadingIndexesTest.php` (red → green: asserts via `Schema::getIndexes` that each
+index exists AND leads with `word_id`, so a future column reorder in the migration fails the suite).
+`database/dictionary.md` gained the indexes bullet + migration source, `generated.at` bumped;
+no routes/models/commands touched, no `wiki:sync` needed.
+
 ## 2026-10-17 (goldendict import rework: plain stress-free words, phrase only from headwords, link-only translations — ADR 0078)
 
 The first real bilingual imports left three junk classes in `words` —
@@ -2373,6 +2722,149 @@ time). This ticket lands only the knowledge base; zero feature code.
 - Checks: `wiki:validate` green; `tests/Feature/WikiTest.php` green.
   `wiki:sync` not needed — no routes/models/commands touched.
 
+## 2026-10-15 (retro-fixes 10: round-2 closure — remaining staleness cleared, verification battery green)
+
+Round-2 bookkeeping close. The two staleness warnings carried since retro-fixes 05 (both concepts
+list `AGENTS.md` as a source, which the vitest-block edit re-staled) are cleared: **`conventions/coding-conventions.md`**
+got a content update, not just a stamp — its Testing section covered Pest only and would have
+re-created exactly the false belief the round exists to kill, so it now states the JS rule (pure-JS
+logic in `resources/js/lib/` is vitest-tested, new lib modules get vitest tests beside the module,
+same as Pest for PHP); **`architecture/docker-services.md`** content checked unaffected (the golden
+rule + services table are untouched by the Testing-section edit) and re-stamped. Both `generated.at`
+bumped past the AGENTS.md mtime, existing `verified` stamps preserved per round-1 (ticket 04)
+convention; `wiki:validate` → **0 warnings**. Verification battery, all sequential in-container:
+full `composer run test` **1166 passed / 0 failed** (6056 assertions, 8 parallel workers, 508s —
+the exact parallel conditions that used to trip the WordClassSeederTest flake, now fixed by
+retro-fixes 06), vitest **94/94 in 14 files** (up from 52/11 — retro-fixes 08's 42 anki specs),
+`npm run lint` exit 0 with 0 errors / 81 documented warnings (retro-fixes 07's deliberate warn
+decisions), `npm run build` green, `pint --dirty` PASS. Round totals: findings #1 (AGENTS.md
+vitest guardrail + anki vitest port), #2 (ESLint + CI), #4 (popup lockstep test), #5 (flake), #6
+(researcher citation rule) fixed; #3 closed as a false premise (`.zcode/` gitignored by design —
+documented in the spec, nothing to commit). Commits `7c085ce` / `1a09abc` / `1db51e0` / `0f87321`
+/ `cd6e6ff` / this one, all on `anki-connection`; spec addendum + tickets 06–09 live in
+`.scratch/retro-fixes/`. Carry-forward (operational, not a finding): bare `composer run test:tia`
+errors pre-run on the unauthenticated-`gh` remote-baseline fetch — run the documented `--fresh`
+invocation once locally or authenticate `gh`.
+
+## 2026-10-15 (retro-fixes 09: the popup sections mirror gets the Anki lockstep treatment)
+
+Round-2 retro finding #4: the anki review's mirror-lockstep test (`AnkiSettingsMirrorTest`) covered
+only the new feature, while the older PHP↔JS mirror it flagged as "synced only by comments" —
+`PopupVisibility::SECTIONS` ↔ the Popups tab's module-local, unexported `POPUP_SECTIONS`
+(`resources/js/Pages/Profile/PopupsSettings.jsx`), guarded since ADR 0046 by nothing but the owner
+comment — stayed untested, so a renamed or reordered section silently desynced the server-side
+defaults (`PopupVisibility::for()` via `HandleInertiaRequests`' `popupVisibility` prop) from the
+settings UI. New `tests/Unit/PopupSectionsMirrorTest.php` copies the established pattern: read the
+JSX source from disk, regex-extract the `const POPUP_SECTIONS = […]` body, `preg_match_all` the
+quoted keys, one order-sensitive `expect(...)->toBe(PopupVisibility::SECTIONS)` — keys and order in
+a single assertion, no JS runtime, and the pure-regex extraction held so the export-the-constant
+fallback stayed unused. `POPUP_GROUPS` deliberately not mirrored: display grouping only, every key
+it lists is a member of `POPUP_SECTIONS`, and `PopupVisibility` has no grouping concept. Desync
+proof: renaming `'etymologies'` → `'etymology'` in the JSX fails the test with a per-key array diff
+at index 9; restored and green. `profile.md`'s Popups tab section names the pin (`generated.at`
+bumped); `interactive-words.md` left alone — its `PopupVisibility` mention is the runtime
+visibility behavior, not the settings mirror. Test file only; pint PASS; suite green 1166 passed
+(via `--fresh` local TIA baseline record — gh is unauthenticated so the remote-baseline fetch
+errors; the documented `--fresh` run records locally and subsequent `test:tia` replays work). No
+routes/models/commands touched, no `wiki:sync` needed.
+
+## 2026-10-15 (retro-fixes 08: anki JS modules vitest port — the ad-hoc Node smoke runs become real tests)
+
+Follow-up to the anki-connection retro's finding #1: that session believed JS had no test infra
+(false — vitest, 11 existing `lib/*.test.{js,mjs}`, CI `frontend` job) and verified
+`ankiConnect.js` / `ankiTemplate.js` / `ankiSync.js` with ad-hoc Node smoke runs that are gone the
+moment they end — though they earned their keep (ticket 03's caught the missing `deckNames` import
+the Vite build missed). Landed three colocated specs transcribing the recorded smoke scenarios:
+`ankiTemplate.test.js` (12 tests: byte-determinism, Front = Word + Transcription only, hide-class
+back wrappers vs all-twelve `buildNoteFields` values (ADR 0077 semantics), the Front-never-hides-Word
+exception, native-language CODE filter with all-translations fallback — including the numeric
+`native_language_id` silent-degrade trap from ADR 0077's Consequences, HTML escaping,
+`{{Field}}` substitution), `ankiConnect.test.js` (19 tests: endpoint defaults/trimming/coercion,
+invoke's JSON POST shape + the three failure normalizations into `AnkiConnectError` kinds, and one
+representative wire-shape assert per action wrapper — including the nested `model:{name,
+templates:{card:{Front,Back}}}` objects ticket 03 corrected against the plugin source),
+`ankiSync.test.js` (11 tests: cold-ensure create wire shape, memoization + memo-miss by deck,
+`{force: true}` re-push with hide classes baked, both mismatch kinds after exactly the probe calls,
+first-send find-before-add query + 12-field `allowDuplicate: false` addNote, duplicate/foreign-model
+skips, memoized second word, raw-word guard). Modules untouched. Testing-pattern lessons recorded in
+`running-tests.md`: `vi.stubGlobal('fetch', …)` for the request/response client, and for a module
+with module-level memo state (ankiSync's `ensured` Set) use static single-generation imports with a
+unique endpoint|deck key per test — `vi.resetModules()` + dynamic import mints fresh error classes
+that break `instanceof`, and a per-test config counter that resets makes every test re-mint the
+first test's memoized key (ensures silently become memo hits); reuse one config object within a
+test to exercise the shared-session memo. Suite 52→94 tests, all green; `npm run lint` exit 0 (new
+files add no warnings); pint PASS; `anki-export.md` + `running-tests.md` mention the pins,
+`generated.at` bumped on both; no routes/models/commands touched, no `wiki:sync` needed.
+
+## 2026-10-15 (retro-fixes 07: ESLint flat config + CI lint job — the static no-undef/imports/hooks guard)
+
+From the anki-connection session retro (2026-10-14), finding #2: ticket 03's missing `deckNames`
+import in `resources/js/lib/ankiSync.js` — a guaranteed runtime ReferenceError — passed `vite
+build` (Vite bundles but does no static resolution of what an identifier refers to) and was caught
+only by the implementer's ad-hoc Node smoke; vitest pins only what has tests, so the other ~73
+`.jsx` files had nothing statically checking them. Landed: eslint 10 + `@eslint/js` 10 +
+`eslint-plugin-react-hooks` 7 + globals 17 as devDeps (installed inside the container),
+`laravel/eslint.config.js` (flat config over `resources/js/**/*.{js,mjs,jsx}`; browser globals
+everywhere, Node globals for the vitest specs and `lib/wordTokenizer.cli.mjs`; ignores
+node_modules/vendor/public), `"lint": "eslint resources/js"` in package.json, and a `lint` job in
+`tests.yml` mirroring the `frontend` job (`npm ci` + `npm run lint`, Node 22, npm cache off the
+lockfile). Goal is correctness, not style, and the tiers say so: `no-undef` + core recommended +
+rules-of-hooks stay `error` (canary-proofed: a file using `deckNames` un-imported and a hook after
+an early return both fail the run); the v7 compiler-*analysis* rules whose hits are all
+legacy-but-working patterns (`refs` 14, `set-state-in-effect` 13, `immutability` 2,
+`preserve-manual-memoization` 1) sit at `warn`; two deliberate patterns got file-scoped carve-outs
+with in-file comments (`no-control-regex` off in `lib/markdown.js` — the \u0000/\u0001 sentinels
+ARE the code-span protection mechanism; `react-hooks/globals` off in `i18n.jsx` — the module-level
+`strings` cache IS the `t()` mechanism). Genuine violations fixed in place: two `no-useless-escape`
+hits (`\-` → `-` in the mirrored tokenizer/WordText word patterns — semantics-identical,
+TokenizerParityTest green). The 51→81 warnings (17 unused legacy `import React`,
+destructuring leftovers, exhaustive-deps stability nags) are review signal, deliberately not
+mass-fixed. `running-tests.md` gains the lint command + rule-tier contract and an
+`eslint.config.js` source, `generated.at` bumped.
+
+## 2026-10-15 (retro-fixes 06: WordClassSeederTest deterministic ordering — kill the parallel flake)
+
+From the anki-connection session retro (2026-10-14), finding #5: `tests/Feature/WordClassSeederTest.php`
+compared two DB queries with no `orderBy` (line 23 matched `$beClasses->keys()` against
+`$enSlugs->values()`), so the en/be slug-sequence alignment rested on Postgres natural row order —
+stable only while both queries scan the same physical layout, which the parallel workers' freshly
+created `ext_app_test_test_{N}` databases do not guarantee; it failed exactly once in ticket 01's
+full-suite run while passing in isolation, and a flaky red trains agents to discount red. Fix is
+test-only: both compared sides now `orderBy('slug')` (total order via the `(language_id, slug)`
+unique index on `word_classes`), so the sequence-vs-sequence assertion keeps checking that the be
+slug sequence mirrors the en slug sequence — still fails on any missing/extra slug — plus the four
+spot-checked Belarusian titles; the idempotency test is count-only and untouched. Seeders and
+models unchanged; the seeder's curated `CLASSES` order is an iteration order, not a persisted one
+(rows carry no order column), so sorted comparison matches the seeder's actual contract ("Same slug
+set as English"). `running-tests.md` doesn't name the test, so it stays as-is; no routes/models/
+commands touched, no `wiki:sync` needed.
+
+## 2026-10-15 (retro-fixes 05: AGENTS.md vitest guardrail + researcher source-citation rule)
+
+From the anki-connection session retro (2026-10-14), finding #1: AGENTS.md's
+Testing section listed only Pest and pytest while `laravel/package.json`
+ships `"test": "vitest run"`, CI gates it (`.github/workflows/tests.yml`
+"Vitest (pure JS logic)" job), 11 `*.test.{js,mjs}` files live beside the
+modules in `resources/js/lib/`, and `running-tests.md` documented all of it
+— so planning sessions that (correctly) trust AGENTS.md as the command
+surface concluded JS had no test infra, and the anki feature's JS modules
+got ad-hoc Node smoke runs instead of real vitest tests. AGENTS.md now has
+the **JS logic tests (vitest)** block: `npm run test` in the container,
+tests beside modules, Node-only per ADR 0066, "new lib modules get vitest
+tests, same as Pest for PHP", CI job pointer. Finding #6: the retro's
+AnkiConnect research recorded pre-2022 `updateModelTemplates` /
+`updateModelStyling` shapes from search summaries; the implementer caught it
+only by reading the plugin source. `.zcode/agents/researcher.md` (machine-
+local, gitignored) gains a rule: external-API request/response shapes must
+be verified against official docs or upstream source, with the URL cited in
+the notes. Finding #3 ($high agent-model pins "uncommitted") closed as a
+false premise — `.zcode/` is gitignored by design, the pins persist on
+disk, and future sessions read agent definitions at start; nothing to
+commit. AGENTS.md is not a wiki concept, so no concept stamps change;
+tickets 06–09 for the remaining findings (#2 ESLint, #4 popup-sections
+mirror test, #5 WordClassSeederTest ordering flake, #1-follow-up anki
+vitest port) live in `.scratch/retro-fixes/`.
+
 ## 2026-10-14 (anki-connection review: six code-review fixes — eager tags, mirror lockstep test, kind-true error panels, Word always on Front)
 
 Post-feature review pass over tickets 01–05: two deduplications, one
@@ -2942,6 +3434,97 @@ No existing python-service concept covers converter scripts (alignment and
 enrichment concepts are scope-specific), so per the ticket this is a log
 entry only.
 
+## 2026-10-14 (anki connection 05: knowledge-base closure — ADR 0077, GLOSSARY.md, anki-export concept)
+
+The Anki-connection feature (tickets 01–04) closed out documentation-first,
+no feature code touched. **ADR 0077** (`docs/adr/0077-browser-side-ankiconnect.md`)
+records the two decisions a future reader would otherwise re-litigate — the
+browser is the only AnkiConnect caller because the server's topology
+(Docker/WSL2 dev, remote prod) can never reach a user's desktop Anki, and
+the values-always-sent + hide-class template semantics (Anki cannot remove
+note-type fields, so a toggle is a template class, and re-syncing restyles
+existing cards without re-export) — plus the app-owned "ExtApp Vocabulary"
+note type (foreign field sets warn, never rewrite), find-before-add
+duplicates, and ticket 04's native-language pitfall as a Consequences rule:
+`buildNoteFields` compares language *codes* while settings store a numeric
+`native_language_id` — mixing the units fails silently. **`GLOSSARY.md`**
+created at the repo root (domain-modeling format): Anki-export terms only —
+AnkiConnect, connection settings, card field, note type, card template,
+hide class, template sync, send to Anki, sample card. **`wiki/domains/anki-export.md`**
+is the feature's front-door concept (sources = the ADR + the five feature
+files): why-browser-side, the four-step flow (settings → template → sync →
+sends), and the boundaries (the twelve-field set is the schema version;
+sends only add; Anki ops are never server-initiated) — cross-linking
+`profile.md` (tab side) and `interactive-words.md` (popup send) rather than
+duplicating them, and linked from `wiki/index.md`. Both linked concepts
+gained ADR 0077 source entries + inline pointers with stamp bumps.
+`wiki:validate` → 0 warnings; `WikiTest` green.
+
+## 2026-10-14 (retro fixes 02–04: Wiktionary idempotency test, orchestration doc, wiki warning burn-down 88 → 0)
+
+Retro-fixes branch, three more findings closed. **02** — regression test for
+the Wiktionary re-import dedupe at the command level
+(`ImportWiktionaryCommandTest`, import ×3 → stable counts + zero duplicate
+`(word_id, lower(definition))` groups), mutation-checked: reintroducing the
+by-value `$existing` capture makes it the exactly-one failure. **03** —
+`docs/agents/orchestration.md` (local-only dir like its siblings) records
+agent-type session-start registration, why worktree parallelism is banned
+here, and disk-anchored resumable dispatches. **04** — the wiki warning
+burn-down: `wiki:validate` went from 88 standing warnings to **0**, so it is
+a quiet pass/fail signal again. The 88 decomposed into 4 dead source paths
+in `ai-providers.md` (migrations squashed into `2026_09_10_000002`) and 84
+mtime-drift warnings over 23 concepts (48 genuine, 36 checkout artifacts).
+All 23 concepts (plus the two dictionary-import concepts the goldendict
+review commit re-staled) were re-verified against current code by read-only
+agents; verified claims got `verified: { by: agent:zcode }` stamps (existing
+`human:alex` verifications preserved), `generated.at` re-stamped past source
+mtimes. Substantive content fixes: **`production-deployment.md` and
+`log-doctor.md` still documented the Docker prod machine that
+`deploy.yml` abandoned on 2026-09-14** — the playbook now leads with the
+native model (`deploy-native.sh`: pull-first, flock, ai_env pip self-heal,
+python restart + `/health` gate only on python diffs, 4 seeds,
+daemon-reload + unit restarts) and marks the deploy.sh/stamp-guard sections
+as Docker-layout; log-doctor gained a stale-layout warning (its workflow
+still targets Docker prod, needs porting). Also corrected: alignment editor
+is now the Inertia page with `canEditMatch` mutation gating (13 endpoints,
+approved-side freeze) and work-nested routes (`EditEntityAlignment` and flat
+`/alignments/{id}` gone) across `sentence-alignment` / `entities-alignment`
+/ `run-alignment` / `frontend` / `overview`; signature model split
+(BGE-M3 active for signatures via env, LaBSE code default / align-only) in
+`docker-services` / `overview` / `run-alignment` / `sentence-alignment`;
+`coding-conventions` middleware rule (dir exists, no Kernel) and the
+nonexistent CLAUDE.md/copilot references; `profile` tab-redirect behavior;
+`access-control` pivot name + registration redirect; `bilinguals-simulator`
+component layout; `interactive-words` explain-endpoint source path; minor
+precision in `entities` (illustration hash in text digest) and the
+dictionary-import pair (bracket-trim scoped to transcriptions, DSL UTF-16BE).
+`wiki:validate` exit 0 / 0 warnings; `WikiTest` green.
+
+## 2026-10-14 (retro fixes 01: hermetic test baseline — suite green on a clean tree)
+
+Fixed the broken green baseline (retro finding #1): ten tests across five
+Feature suites (WordEndpoint, RefreshEntityWordsJob, AdoptEntityWords,
+EntityEnrichment, WordTranslationFetch) failed on every run with a live
+Google Translate `403 API_KEY_SERVICE_BLOCKED`. Root cause was not missing
+`Http::fake()` per se but an env leak: `phpunit.xml` force-blanked
+`OPENROUTER_API_KEY` only, so dev `.env`'s real Google key leaked into tests
+as a "configured" provider pointed at `translation.googleapis.com`, and
+`QUEUE_CONNECTION=sync` ran `FetchWordTranslations` inline inside the
+request — nine tests died on the propagated 403, and the tenth
+(`WordTranslationFetchTest` "does not queue a fetch when no provider is
+configured", a `Queue::assertNotPushed`) failed on the same leak and was
+unfixable by faking. Fix: force-blank `GOOGLE_TRANSLATE_API_KEY` and
+`YANDEX_TRANSLATE_API_KEY` in `phpunit.xml` (tests opt in per test via
+`enableTranslationProviders()` + `Http::fake()`), and arm
+`Http::preventStrayRequests()` for every Feature test in `tests/Pest.php`
+so any future leaked wire call throws immediately instead of hanging.
+Zero test-body edits needed — the five suites pass standalone (62 passed)
+and the full `composer run test` is green (1,149 passed / 0 failed, 334.6s,
+8 workers) for the first time since the translate-fetch feature landed; no
+additional network leakers surfaced under the guard. Contract recorded in
+`wiki/playbooks/running-tests.md` ("The suite is hermetic — and green"):
+on a clean tree, any failure is yours.
+
 ## 2026-10-12 (code-review fixes — popup-card-redesign)
 
 One review-fix commit on `popup-card-redesign` addressing the feature's
@@ -3160,6 +3743,145 @@ check). Wiki: running-tests playbook gained the Python section;
 sentence-alignment/sentence-enrichment/docker-services/overview refreshed
 (stale dev venv name `ai_env` → actual `ai/venv`; prod native path genuinely
 uses `ai_env/`, unchanged); AGENTS.md Python test command + venv fix.
+
+## 2026-10-11 (tag pools: feature closure — verification pass across all four pools)
+
+Verification pass closing the tag-pools feature (ADR 0076) — no feature code
+changes. All four pools verified as one feature on branch `tag-pools`: words
+(`tags` + `tagged_words`, the renamed dormant scaffold), works (`work_tags` +
+`tagged_works`), entities (`entity_tags` + `tagged_entities`), and alignments
+(`alignment_tags` + `tagged_alignments`) — each with its Filament tag
+resource and its attached model's tags multi-select with inline create,
+badge column, and multi-select filter. Full plain parallel suite green:
+1,120 passed (5,736 assertions, 8 processes). Operational note: the suite
+now exceeds composer's default 300-second process timeout — the first
+`composer run test` attempt was killed at 300s mid-run, and the immediate
+re-run failed 457 tests with missing-relation errors (`relation
+"ui_string_keys" does not exist`) because the killed run left half-migrated
+`ext_app_test_test_*` worker databases behind; that failed pass still
+dropped them at its end, and the next clean run was fully green. Until the
+duration is addressed, run the suite as `composer run test --timeout=0`.
+`wiki:validate` conformant (exit 0; the 85 staleness warnings are
+pre-existing, same count as the pool tickets reported). `wiki:sync`
+produced timestamp-only churn on the three machine-owned reference files
+(no model/route/command changes) — content verified identical, churn
+reverted. Pint clean (`--test`) on all 40 PHP files the feature's four
+commits touched, listed explicitly rather than via `--dirty`. Dev database
+brought current with plain additive `php artisan migrate` (pending
+`2026_10_11_000002/000003/000004` applied without error; the ticket-01
+pivot rename was already in place); the post-migrate tinker check reads
+`pgsql tagged_words=0 word_tags=gone pools=all-present` — the renamed words
+pivot carries zero rows (no orphans; the scaffold was dormant) and all six
+new tables exist. Learner-facing tag UI, tag-name translations, seed
+vocabularies, and work→entity tag inheritance remain out of scope per
+ADR 0076.
+
+## 2026-10-11 (tag pools: alignment-tags pool — Alignment Tags resource + first Sentence Alignments edit page)
+
+The alignments pool went live, fourth and last of the four per-type pools
+(ADR 0076), plus the first-ever edit surface for `EntityMatchResource`.
+Migration `2026_10_11_000004` created both tables in one additive migration:
+`alignment_tags` (definition table mirroring `tags`/`work_tags`/`entity_tags`
+— `slug` 100 unique, `name` 256, timestamps) and the `tagged_alignments`
+pivot (`entity_match_id` → entity_matches and `alignment_tag_id` →
+alignment_tags, both cascade, unique `(entity_match_id, alignment_tag_id)` =
+`uk_tagged_alignments_pair`, timestamps). `AlignmentTag` model (fillable
+slug+name, inverse `alignments()` with `withTimestamps`) +
+`AlignmentTagFactory`; `EntityMatch::tags()` resolves through
+`tagged_alignments`. New `AlignmentTagResource` ("Alignment Tags", Entities
+navigation group): required name (256) + globally unique slug (100),
+`alignments_count` usage column, edit/delete + bulk delete. The Sentence
+Alignments list gained a `tags.name` badge column and a multi-select tags
+relationship filter (OR semantics) — its first filter; tags are flat labels
+orthogonal to the pipeline status lifecycle, which is untouched.
+`EntityMatchResource::form()` restructured per operation: the Entities
+section (entity-pair picks) and the chunk_size/max_n knobs are now
+`visibleOn('create')` (create-only and otherwise unchanged); a tags
+multi-select with inline create (`createOptionForm`, relationship default
+createOptionUsing) joins the form — the edit page's editable field set is
+exactly that multi-select, and hidden fields are excluded from dehydration
+and validation, so a match's pair and knobs can never leak through an edit
+save. The new `EditEntityMatch` page (`/{record}/edit`) opens from a table
+Edit record action given an explicit `->url(...)` so it navigates to the
+page instead of opening Filament's default edit modal; the React alignment
+editor stays the one row-editing surface (ADR 0062). Tests:
+`AlignmentTagsTest` mirrors the pool set — sync no-duplicate, unique pair
+constraint, pivot timestamps, inverse relation, cascade deletes both
+directions, resource list/create, edit-form persistence, pair/knob
+non-leak, inline create + attach, filter narrowing, badge render, edit
+action targets the page. Docs: ADR 0076,
+`wiki/database/entities-alignment.md`.
+
+## 2026-10-11 (tag pools: entity-tags pool — Entity Tags resource + Entities tags UI)
+
+The entities pool went live, third of the four per-type pools (ADR 0076),
+copying the work pool's shapes verbatim. Migration `2026_10_11_000003`
+created both tables in one additive migration: `entity_tags` (definition
+table mirroring `tags`/`work_tags` — `slug` 100 unique, `name` 256,
+timestamps) and the `tagged_entities` pivot (`entity_id` → entities and
+`entity_tag_id` → entity_tags, both cascade, unique
+`(entity_id, entity_tag_id)` = `uk_tagged_entities_pair`, timestamps).
+`EntityTag` model (fillable slug+name, inverse `entities()` with
+`withTimestamps`) + `EntityTagFactory`; `Entity::tags()` resolves through
+`tagged_entities`. New `EntityTagResource` ("Entity Tags", Entities
+navigation group like `EntityResource`): required name (256) + globally
+unique slug (100), `entities_count` usage column, edit/delete + bulk
+delete. The Entities form gained a searchable tags multi-select with inline
+create (`createOptionForm`, relationship default createOptionUsing) placed
+with the metadata fields; the Entities list gained a `tags.name` badge
+column and a multi-select tags relationship filter (OR semantics) joining
+the existing language/work/restriction/approval filters. Tags stay
+orthogonal to the entity lifecycle — the deletion guard and status logic
+are untouched. Tests: `EntityTagsTest` mirrors `WorkTagsTest` — sync
+no-duplicate, unique pair constraint, pivot timestamps, inverse relation,
+cascade deletes both directions, resource list/create, form persistence,
+inline create + attach, filter narrowing. Docs: ADR 0076,
+`wiki/database/entities-alignment.md`.
+
+## 2026-10-11 (tag pools: work-tags pool — Work Tags resource + Works tags UI)
+
+The works pool went live, second of the four per-type pools (ADR 0076),
+copying the words tracer bullet's shapes verbatim. Migration
+`2026_10_11_000002` created both tables in one additive migration:
+`work_tags` (definition table mirroring `tags` — `slug` 100 unique, `name`
+256, timestamps) and the `tagged_works` pivot (`work_id` → works and
+`work_tag_id` → work_tags, both cascade, unique `(work_id, work_tag_id)` =
+`uk_tagged_works_pair`, timestamps). `WorkTag` model (fillable slug+name,
+inverse `works()` with `withTimestamps`) + `WorkTagFactory`;
+`Work::tags()` resolves through `tagged_works`. New `WorkTagResource`
+("Work Tags", Entities navigation group like `WorkResource`): required name
+(256) + globally unique slug (100), `works_count` usage column, edit/delete
++ bulk delete. The Works form gained a searchable tags multi-select with
+inline create (`createOptionForm`, relationship default createOptionUsing);
+the Works list gained a `tags.name` badge column and a multi-select tags
+relationship filter (OR semantics) — the Work table's first filter. Tests:
+`WorkTagsTest` mirrors `WordTagsTest` — sync no-duplicate, unique pair
+constraint, pivot timestamps, inverse relation, cascade deletes both
+directions, resource list/create, form persistence, inline create + attach,
+filter narrowing. Docs: ADR 0076, `wiki/database/entities-alignment.md`.
+
+## 2026-10-11 (tag pools: word-tags tracer bullet — pivot rename + Word Tags admin surface)
+
+The dormant words-tag scaffold became a live admin feature (ADR 0076,
+first of four per-type pools — words/works/entities/alignments, no shared
+table, no polymorphism, no inheritance, language-neutral slug+name, ship
+empty). The pivot renamed `word_tags` → `tagged_words` with its unique pair
+index → `uk_tagged_words_pair` (migration `2026_10_11_000001`; safe — zero
+callers verified before the rename) so it can no longer collide one letter
+away from the future `work_tags` definition table; all pools use
+`tagged_<model>` pivots. `Tag` grew fillable slug+name and the inverse
+`words()` relation; `Word::tags()` resolves through `tagged_words` with
+`withTimestamps()` (the pivot's timestamp columns were never filled
+before). New `TagResource` ("Word Tags", Words group): required name (256) +
+globally unique slug (100), `words_count` usage column, edit/delete + bulk
+delete. The Words form gained a searchable tags multi-select with inline
+create (`createOptionForm`, relationship default createOptionUsing); the
+Words list gained a `tags.name` badge column and a multi-select tags
+relationship filter (OR semantics). Tests: `WordTagsTest` — sync
+no-duplicate, unique pair constraint, pivot timestamps, inverse relation,
+cascade deletes both directions, resource list/create, form persistence,
+inline create + attach, filter narrowing. Docs: ADR 0076, CONTEXT.md Tag
+Pools context, `wiki/database/dictionary.md`.
 
 ## 2026-10-10 (Belarusian 07: release verification and knowledge-base closure)
 
@@ -3638,6 +4360,46 @@ it through the container or construct it with the real registry), and
 helper became `approvedUser()` in `tests/Pest.php`, per the cross-file
 helper convention.
 
+## 2026-10-06 (word test: frequency-rank placement with a presumed-known baseline)
+
+New page (`/word-test`, separate nav link before Resources): draws a fresh
+Placement sample — 50 headwords over 20 equal-count Buckets of the
+language's ranked inventory (`words.frequency` ≤ 20000, distinct per
+`l_word`, `WordTestService`) — as a shuffled checkbox list; submit computes
+the Word test score (each bucket credits 1000 × its known share, 0–20000)
+and writes the Presumed-known baseline (`UserWord::PLACEMENT_BASELINE` = 50,
+raise-only `GREATEST` upsert-select) over every tested-language word at
+rank ≤ score. Bucket boundaries are inventory quantiles, not literal
+0–1000…19000–20000 rank groups — ADR 0070's band ties leave 12 of 20 such
+groups empty, and quantiles self-heal after a corpus import (ADR 0071).
+Samples are server-cached under a uuid token (24 h); submits must present
+the token and a subset of its ids (Form Request closures → 422). No
+persistence beyond the `user_word` rows: retakes only ever raise. Languages
+without ranked words (ru today) get an in-page empty state. UI strings in
+`seeders/ui-strings/wordtest.php` + `nav.word_test`; tests
+`WordTestScoringTest` (pure scorer) + `WordTestPageTest` (page, sampling
+invariants, exact score/marked set, raise-only, 422s). Docs: ADR 0071,
+CONTEXT.md Word Test context, `wiki/domains/word-test.md`.
+
+## 2026-10-06 (simulator alignment picker: work-grouped and searchable)
+
+The Practice → Simulator alignment picker stopped being a flat list of every
+readable match. `SimulatorController::getWorkGroups()` now ships `workGroups`
+(`[{id, label, options: [{id, text}]}]`): matches grouped under their work
+(the A-side entity's work), works labeled `Title — Author` and sorted A→Z,
+each work's newest match first — and only `completed`/`stale` matches list,
+so pending/aligning/failed pairs no longer offer an empty read. A work
+appears only when it holds at least one such match (works carry no access
+semantics; readable-count scoping via `readableMatchQuery`). The select was
+rebuilt as `Components/Forms/SearchableSelect.jsx` — a searchable, keyboard-
+navigable popup (case-insensitive filter over work and option labels, a
+matching header keeps its whole group); pure filter/flatten logic in
+`lib/groupedOptions.mjs` with vitest coverage. The old flat
+`Components/Forms/Select.jsx` (sole consumer was this page) is deleted, the
+prop renamed `textList` → `workGroups`, and the default preselection moved
+from "newest match overall" to the first option of the first work. Feature
+tests updated in `SimulatorPickerTest` / `SimulatorPinnedMatchTest`.
+
 ## 2026-10-05 (Reading-surface chrome kit + one JSON envelope)
 
 The toolbar mechanics ADR 0067 deferred now have one home each (ADR 0068):
@@ -3895,6 +4657,19 @@ DOM assertions (23 checks: no U+0301 in DOM, plain textContent, marks on
 the right vowels, fast path, phrasal-hit + stress composition, divergence
 fallback).
 
+## 2026-10-05 (simulator language toggle retinted to the reader's vermilion)
+
+The learning-language segmented toggle (EN↔RU) in the simulator toolbar
+(`Bilinguals.jsx`) painted its active side with `--wbench-accent`
+(ultramarine `#1F3DDB`) while the reader's identical reading-language toggle
+uses the `--color-vermilion` family (rust `#B0451E` / night `#D4562F`), so the
+same control looked blue on one page and brownish on the other. Retinted the
+simulator toggle's active + focus-ring classes to the reader's exact
+vermilion classes (incl. `text-vellum`/`dark:text-ink-night`); inactive-side
+and hover colors stay `--wbench-*`. Documented as a deliberate exception to
+the "new Inertia pages use `--wbench-*`" guidance in
+`conventions/design-system.md` (parity with the reader wins).
+
 ## 2026-10-04 (fix: PromptTemplateSeeder deploy-safe, added to per-deploy seeds)
 
 `PromptTemplateSeeder` switches `updateOrCreate` → `firstOrCreate` (same
@@ -4034,6 +4809,44 @@ per-endpoint unwrapping, embed null-on-missing-vector, factory URL);
 per-service tests keep their transport assertions through the seam. Full
 suite 910 passed.
 
+## 2026-10-04 (queue workers died silently: sweep GC before every pop)
+
+Manual `php artisan queue:work --queue=default,low` runs (and, latently, the
+prod compose workers) died silently after tens of jobs — shell prompt
+returns, nothing in `failed_jobs`, pending count unmoved: PHP's 128M CLI
+`memory_limit` fatal in the long-lived daemon, whose in-flight job then
+re-leases after `retry_after`. Differential runs (Debugbar on/off, RSS
+sampled) exonerated Debugbar and pinned the mechanism: each enrichment job
+leaves thousands of cyclic Eloquent roots (model↔collection cycles), PHP's
+GC only sweeps on root-buffer overflow, so a daemon processing self-chaining
+`EnrichEntitySentences` work climbed ~1MB/job to the fatal (measured:
+124.5MB at job 74; user-visible death at 20-30 jobs on bigger early-cursor
+chunks). Fix: `AppServiceProvider` sweeps `gc_collect_cycles()` before every
+pop via `Queue::looping` — probe A/B: unswept worker fatal by ~75 jobs,
+swept worker flat at ~50-60MB over the same fuel. Also: `DB_QUEUE_RETRY_AFTER=900`
+set in dev `.env` (was falling back to 660; wiki already mandated 900), and
+the backlog drained to 0 pending / 0 failed. Repro + guidance now in
+`playbooks/run-alignment.md` (Failure handling); note `queue:listen` (composer
+`dev`) is immune — fresh process per job.
+
+## 2026-10-04 (one side flip per text, shared by the reading surfaces)
+
+The two reading surfaces duplicated the flip mechanics: `Bilinguals.jsx`
+defined its own `otherSide` and hand-rolled the learning-side math instead
+of using `readingRows.mjs`, and each surface wired its own flip state +
+persistence in two different localStorage containers (reader:
+`ext_app.reader.side-flip.v1` keyed by `positionKey`; simulator: a
+`flipped` field inside its per-match position entry keyed by bare match id).
+A new `hooks/useSideFlip.js` now owns flip state, persistence, and the
+derived first/second sides for both surfaces (`ReaderApp.jsx` and
+`Bilinguals.jsx` consume it). The simulator's flip moved to the shared
+side-flip store keyed `mm:{matchId}` — one **Side swap** per text, so a
+flip on the reader carries into the simulator for the same match (ADR 0037
+amendment). Simulator position entries are now `{page, row}`; the stale
+`flipped` key is stripped on write and old saved flips reset once (no
+migration). No PHP/routes/API changes; docs: ADR 0037 amendment block,
+CONTEXT.md Side swap term, reader + bilinguals-simulator concepts.
+
 ## 2026-10-03 (fix: reading-rows review follow-ups)
 
 Review of the ADR 0060 branch caught two client bugs and a docs gap.
@@ -4080,6 +4893,33 @@ the new shape (ReaderPageTest, EntityEnrichmentTest,
 SimulatorTextEndpointTest incl. filename-mode rejection,
 EntityIllustrationAlignmentTest, AiWordExplainEndpointTest).
 
+## 2026-10-03 (full suite runs parallel; worker-DB drop actually works)
+
+`composer run test` ran the suite serially (`php artisan test`) while the
+parallel machinery sat unused on the TIA path. The script now runs
+`vendor/bin/pest --parallel --drop-databases` (8 workers in the dev
+container): 899 tests / 4540 assertions measured at 273s serial → ~93-117s
+parallel (host wall clock 4m48s → ~2m; first run after a drop pays worker-DB
+creation). CI (`tests.yml`) picks this up unchanged — it invokes the same
+composer script, its `postgres` service user can CREATE DATABASE, and
+`pcntl` is already in the setup-php extension list.
+
+While verifying, found that `--drop-databases` had never actually dropped
+anything: Pest's Laravel handler copies the flag into `$_ENV`, but Laravel's
+`ParallelTesting` reads its options from `$_SERVER`
+(`ParallelTesting::option()` / `inParallel()`), and PHP never merges `$_ENV`
+into `$_SERVER`. Workers created/used `ext_app_test_test_{N}` every run and
+left all 8 behind — the mechanism behind the 2026-08-03 orphan cleanup, and
+`test:tia` leaked them for months despite passing the flag. Fix: both
+scripts now export `LARAVEL_PARALLEL_TESTING=1` and
+`LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1` as real environment variables
+(`sh -c 'VAR=1 …'` prefix), which EGPCS surfaces in `$_SERVER` for parent and
+workers alike; the parent runner then drops every worker DB in its teardown
+(verified: 0 leftovers after a full run). Trade-off: worker DBs are
+recreated each run (~20s), accepted so orphans can never accumulate again.
+`tests/TestCase.php`'s `ext_app_test` guard is unaffected — Laravel appends
+the worker suffix after app boot.
+
 ## 2026-10-02 (fix: directional-adverb guard for multi-word verbs, ADR 0059 v3)
 
 A user report ("Beige-colored skin." flagged as a multi-word verb) did
@@ -4125,6 +4965,69 @@ rebuild python image + `--stamp` on the Docker prod path). CONTEXT.md
 renamed "Phrasal verb hit" → "Multi-word verb hit" and versioned the
 Enrichment staleness definition; `wiki/domains/sentence-enrichment.md` and
 `wiki/domains/dictionary-import.md` updated.
+
+## 2026-10-02 (phrasal lead verb-lemma candidates)
+
+"came forward" went unflagged: the matcher trusted the single `cls` hint,
+but `CLASS_PRIORITY` ranks noun above verb, so POS-ambiguous leads ("came",
+"went", "turn", "cut"…) resolved to their noun page and never led a match;
+a second miss class had verb leads whose imported headword is the inflected
+form itself ("looked"), making the single lemma hint useless. A classified
+probe of entity 17 (read-only, script since deleted) measured 93 windows
+whose phrase IS a stored multi-word verb headword against 6 stored hits —
+62 class-hijacked, 31 bad-lemma, the rest literal uses / dictionary gaps.
+Fix (ADR 0058): `EnglishPhrasalVerbEnricher` contributes a `verb_lemmas`
+per-token hint (every verb-class headword for the surface: direct rows +
+forms-table bases, deduped, cap 8; only when en_phrasal runs), python
+`phrasal.find_phrasal_verbs` tries linked-lemma + verb_lemmas candidates
+with longest-window-first preference; `EnrichToken.verb_lemmas` added.
+Re-run of en_phrasal only (ADR 0057's per-enricher staleness in action;
+en_stress untouched): entity 17 went 6 → 243 hits, all with `phrase`.
+Coverage is now bounded by lexicon completeness — a data matter (the dev
+dictionary predates part of the dump; "come forward" is importable but
+absent; re-running the dictionary import widens detection, then
+`entities:enrich --enricher=en_phrasal` applies it). Review fixes riding
+along: the enrich sweep pre-filters languages in SQL (`EnricherRegistry::
+languages()`), `keys()` replaces a hardcoded key list in `--enricher=`
+errors, unused `SentenceEnrichmentService::registry()` removed, and the
+`phrasal_verbs` ui-settings toggles gained endpoint tests.
+
+## 2026-10-02 (enricher registry + phrasal verbs on the reading surfaces)
+
+Sentence enrichment restructured from hardcoded language conditionals to
+declaratively scoped **enrichers** (ADR 0057; glossary term added to
+CONTEXT.md): `App\Classes\Enrichment\Enricher` + `EnricherRegistry` with
+`RussianStressEnricher` (ru_stress), `EnglishStressEnricher` (en_stress) and
+`EnglishPhrasalVerbEnricher` (en_phrasal). `SentenceEnrichmentService::enrichChunk`
+now takes the enricher list, resolves shared base hints (cls/lemma/headword/
+word_id per token key) and merges each enricher's token hints + request
+extras into ONE python call; the `/enrich` request carries
+`enrichers: [key]` (pydantic Literal replaces the `^(ru|en)$` language
+pattern) and results return keyed by enricher (`results[].output`), so a
+partial run skips the other modules. Phrasal hits gained a `phrase` field
+(the matched lexicon headword, for tooltips). Staleness moved from the
+single `entities.enriched_at` to per-enricher `entities.enrichment_stamps`
+jsonb (`EnricherRegistry::staleFor`): a newly registered enricher is stale
+on its own — ADR 0053's manual enriched_at reset choreography is gone;
+stamps merge via jsonb `||`; the migration backfills enriched entities,
+leaves never-enriched enrichable ones null (sweep rebuilds) and gives
+languages without enrichers `{}`. `entities:enrich` dispatches only the
+stale set (`beginEnrichers`) and gained `--enricher=` (force one key);
+Filament's Enrich action and FinalizeEntityDerivations keep full runs
+(`begin()`); non-enrichable languages stamp `{}` in the job (the sweep no
+longer needs its bulk not-applicable stamping). Phrasal verbs became
+visible per ADR 0057: reader + simulator ship `phrasalRows`/
+`phrasal_rows` (per side: per-sentence hit lists, side null when no hits;
+flipped with the reading/learning side like stressedRows), `WordText`
+underlines hit-span tokens (dotted `phrasal-hit` class, indexes computed
+from the ORIGINAL sentence so they transfer to the stressed variant) with
+the matched phrase as tooltip, behind a per-user `phrasal_verbs`
+ui_settings preference (reader + simulator, default off, autosaved; new
+`reader.phrasal_verbs` / `bilinguals.phrasal_verbs` UI strings, new
+`phrasal` icon); the Filament Sentences "Phrasal verbs" column is visible
+by default. `wiki/domains/sentence-enrichment.md` rewritten for the
+registry/stamps/rendering; ADR 0052 unaffected (its phrasal "Filament-only"
+scope is superseded by 0057).
 
 ## 2026-10-01 (feat: pronunciation guide moves from navbar modal to a page under a new Resources dropdown, ADR 0056)
 
@@ -4217,4478 +5120,3 @@ list) and `wiki/domains/sentence-enrichment.md` (its deployment note was
 Docker-only). `wiki/playbooks/production-deployment.md` stays
 Docker-era/stale on purpose (not rewritten here).
 
-## 2026-09-30 (fix: phoneme reference review — Gentium @font-face dropped from build; parallel test helpers; a11y)
-
-Two-axis review of `feature/phoneme-reference` found one shipping bug: the
-`//` line comment above the Gentium Plus `@font-face` in
-`resources/css/fonts.css` made the Tailwind/Lightning CSS parser silently
-drop that rule — the built stylesheet had 68 font-faces instead of 69, so
-the IPA font never loaded (built CSS now verified to carry it, and nginx
-serves `/fonts/GentiumPlus-Regular.woff2` as `font/woff2`). The rule is now
-a `/* */` block comment with the pitfall recorded in
-`wiki/domains/phoneme-reference.md`. Content fixes in `phonemes.js`: the /j/
-card highlighted `ic` in *music* (now `u`), /s/ *books* marked `ks` and /z/
-*dogs* marked `gs` (both now `s`), and the /ɔ/ RP note's en/ru wording
-disagreed (don vs saw; now both say saw/dawn, RP-lead framing). Modal
-hardening: focus moves into the dialog on open, the default tab recomputes
-when the shared `native_language` prop changes (login/logout without
-reload), and the example-word mark highlight is one `MarkedWord` component
-instead of two copies. Dead `diagramSvgString` export removed from `art.js`.
-New `tests/Feature/PhonemeReferenceTest.php` pins the shared prop and seeded
-UI strings. Also fixed the two "pre-existing" AdoptEntityWordsTest failures:
-`enableTranslationProviders()`/`nativeRuUser()`/`ruLanguageId()` were defined
-inside `WordTranslationFetchTest.php` but used by other files — under
-`--parallel` workers load file subsets, so cross-file helpers now live in
-`tests/Pest.php`. Suite: 876 passed, 0 failed.
-
-## 2026-09-30 (feat: phoneme reference — navbar pronunciation guide with parametric articulation diagrams; ADR 0054)
-
-New site-wide pronunciation chart: a navbar icon beside `DarkThemeToggle`
-opens a modal (`Components/Phonemes/PronunciationReferenceModal.jsx`) with
-English/Russian tabs over grouped sound cards (82 sounds: GA English ~40
-incl. two-panel diphthongs/affricates; Russian 6 vowels + 15 hard/soft pairs +
-always-hard/always-soft). Default tab is the learning target from the shared
-`auth.user.native_language` prop (new in `HandleInertiaRequests.php`; native
-English speakers land on Russian, others on English). Diagrams are generated
-parametrically by `resources/js/data/phonemes/art.js` (state → currentColor
-SVG paths, theme-correct, no image assets; proportions descend from the CC0
-Wright & McCloy sagittal set, credited in-modal — no Sounds of Speech/Commons
-GIFs: licensing). Sound content is static data in
-`resources/js/data/phonemes/phonemes.js` (bilingual descriptions, cross-
-language hints, examples, RP notes; `anim: null` reserved for animation).
-IPA glyphs render in self-hosted Gentium Plus 400 woff2 (OFL,
-`fonts/GentiumPlus-OFL.txt`) — the app families lack the core IPA glyphs and
-Google's subsets omit ʲ ˈ ː (verified via cmap union over shipped files).
-Modal chrome strings: new `ui-strings/sounds.php` + `nav.pronunciation_reference`
-(seeded via `UiStringSeeder`). New `wiki/domains/phoneme-reference.md`,
-`docs/adr/0054-cc0-sagittal-phoneme-diagrams.md`, CONTEXT.md
-*Phoneme Reference Context*. No routes/models/commands changed (no
-`wiki:sync`).
-
-## 2026-09-30 (fix: reader stress-mark gaps — reading lines moved to `--font-reading`)
-
-On the reader, stress-marked Russian text showed huge gaps after stressed
-vowels. Root cause was a font-stack split, not data: reading lines used
-`var(--font-serif)` (Fraunces-first), Fraunces has no Cyrillic subset but its
-Vietnamese subset's `unicode-range` claims U+0300-0301 — so Cyrillic base
-letters fell back to Georgia while the combining acute rendered from Fraunces,
-whose `acutecmb` glyph has a 550-unit advance when it cannot attach to a base
-in the same font (cross-font clusters get no GPOS mark-to-base). Fix: new
-`--font-reading: 'Source Serif 4', Georgia, 'Times New Roman', serif` token in
-`app.css` (SS4's cyrillic subsets carry U+0301 + `U+0400-045F…` with a
-zero-advance `acutecomb` and mark-to-base GPOS — verified with fontTools;
-same font the Bilinguals simulator already reads in), applied to both
-`ReaderRow` reading lines and the `WordPopup` headword (`font-reading`
-utility; RU dictionary headwords carry U+0301 too). Fraunces stays on
-`--font-serif` for chrome/headings. `fonts.css` untouched (generated file).
-`wiki/conventions/design-system.md` gains the token + the single-font
-combining-mark constraint (and its stale "Google Fonts" line fixed);
-`wiki/domains/reader.md` notes the reading-line font rule.
-
-## 2026-09-30 (feat: intonation marks removed from the app)
-
-Reversal of today's unbundle work and of the ADR 0052 intonation engine: the
-heuristic intonation annotations (terminal ↗/↘ arrow, nuclear-stress ∧ caret)
-were judged useless and are gone completely. Removed: the python heuristic
-(`ai/enrichment/intonation.py`, `EnrichSpan`/`EnrichIntonation` schemas,
-`/enrich` wiring + its tests), the `entity_sentences.intonation` jsonb
-column (dropped from the still-unshipped migration in place — the feature
-never reached master — and from the dev DB), `SentenceEnrichmentService`
-and `MeaningMatchPresenter` intonation handling
-(`toSimulatorIntonationRows()`/`intonationAnnotation()`), the reader/simulator
-`intonationRows`/`intonation` props and `intonation_rows` payload key, the
-`ui_settings` `reader.intonation`/`simulator.intonation` rules + saved
-booleans, the toolbar toggles + `trendingUp` icon, the Filament
-Intonation column, and the `bilinguals.intonation`/`reader.intonation`
-UI strings (keys deleted from the DB). `EntityEnrichmentTest` lost its
-intonation assertions; the sparse-side-list regression test was re-anchored
-onto `stressedRows`. Stress marks and phrasal verbs are untouched. Concepts
-updated: sentence-enrichment, entities, entities-alignment, index; ADR 0052
-carries an amendment note.
-
-## 2026-09-30 (feat: intonation unbundled from stress marks; nuclear stress surfaced; icon toolbars)
-
-The reading surfaces bundled intonation's terminal ↗/↘ marker behind the
-stress-marks toggle, and the only feedback on a long sentence was a single
-arrow. Changes: (1) **Intonation is its own per-user preference** —
-`intonation` boolean in the reader + simulator `ui_settings` sections
-(validated in `UpdateUiSettingsRequest`, autosaved, default off), with its
-own toolbar toggle rendered only when the page carries annotation data;
-`WordText` gates the marker on the new `showIntonation` prop instead of the
-stress state. (2) **The nuclear-stress word is finally shown** — it was
-computed and stored (`intonation.nuclear` span into `content`) but never
-sent to the frontend. `MeaningMatchPresenter::toSimulatorIntonationRows()`
-now emits `{terminal, nuclear}` per sentence (null = not enriched;
-`intonationAnnotation()` shared with the reader's single-language rows), and
-`WordText` maps the span through the plain sentence's segmentation — the
-stressed variant (combining marks inside word tokens only) segments 1:1, so
-the caret sits on the right word regardless of the stress toggle — and
-floats a small accent caret above it (null nuclear degrades to arrow-only;
-the plain-text fallback in `ReaderRow` renders arrows only). (3) **Russian
-quality**: `intonation.py` aux-skip is no longer English-gated — an `AUX_RU`
-set (быть paradigm) stops быть-forms being picked as the nuclear word. (4)
-**Grey line-art icons**: the simulator's stress toggle was the only filled
-text glyph (`á`, accent-blue when active) in a strip of stroke SVGs — the
-new shared `resources/js/Components/icons.jsx` set (Heroicons-style stroke
-paths incl. a drawn A-with-acute for stress and arrow-trending-up for
-intonation) replaces every inline SVG on both pages, and the reader toolbar
-is fully iconified (Back, font −/+, Show all, Highlights, Stress,
-Intonation, Side-by-side, Wide, Pick audio, transport, pager) with the
-existing i18n strings as tooltips; `reader.stress_marks` seed text drops its
-"á" prefix. Glossary: **Terminal contour** / **Nuclear stress** added to
-`CONTEXT.md` (Sentence Enrichment Context). Tests: `EntityEnrichmentTest`
-reader-props case asserts the `{terminal, nuclear}` payload (jsonb reorders
-keys — assert field-wise) and both preferences round-trip; python
-`test_enrichment.py` gains a ru be-form case. `wiki/domains/
-sentence-enrichment.md` rendering/engine sections updated. Pre-existing,
-unrelated: `AdoptEntityWordsTest` fails on dev itself (undefined
-`enableTranslationProviders()` helper).
-
-Follow-up fixes after real-use testing: (1) the nuclear caret rendered
-whenever annotation data existed, ignoring the intonation toggle — `WordText`
-now gates it on `showIntonation` like the terminal arrow. (2) The reader page
-crashed (`Uncaught TypeError: …?.some is not a function`) whenever a meaning
-match row's first junction was an illustration/empty sentence:
-`MeaningMatchPresenter::sideSentences()` filtered without reindexing, so
-sparse collection keys (`[1 => …]`) json_encode'd the intonation side list
-into an object with numeric keys — tolerable to the old `intonations[i]`
-lookup, fatal to the new iteration, and silently misaligning arrows on
-mid-row gaps all along. The presenter now ends the chain with `->values()`
-(matching `SimulatorController::explainWord`'s existing reindexing, which
-defines what a sentence index means), and the frontend's three iteration
-sites (`hasIntonationData` on both pages, `ReaderRow`'s plain-text fallback)
-guard with `Array.isArray` so a stray sparse payload degrades instead of
-crashing. Regression test pins the sequential-list shape through the reader
-page with an empty-sentence junction. (3) The simulator showed no intonation
-marks at all: `TextContent.jsx` — the alignment-table hop between
-`Bilinguals` and `WordText` — never forwarded `showIntonation`, so the
-component kept its off default regardless of the toggle.
-
-User decision, superseding the earlier "accent-when-on" call: the
-stress/intonation toggle icons stay **grey line-art even when active** —
-they persist on (autosaved), so the accent fill read as a plain colored
-icon. The accent underline (simulator) / vermilion border (reader) alone
-carries the on-state; the other, session-scoped view toggles keep the
-accent-when-on treatment.
-
-## 2026-09-29 (feat: English stress marking v2 — syllable-aligned placement + CMUdict; ADR 0053)
-
-Real-text review of ADR 0052's English marks exposed three defect classes:
-proportional vowel-letter mapping saturating onto word-final silent "e"
-(*advancé/becausé* — 411 tokens, ~8% of all marks; digraphs *aroúnd,
-afraí­d* similarly misplaced), Wiktionary inflected-form rows importing
-without IPA (*gamblers* — plurals are "form-of" pages), and hyphenated
-compounds with no dictionary row (*seven-sided*, 55 tokens). Fixes: (1)
-`en_stress.py` placement rewritten — pyphen orthographic syllables aligned
-by count with IPA nuclei as primary path, fallback proportional map that
-excludes word-final silent "e" (while ≥2 other vowels remain, so *café*
-keeps it) and anchors final-nucleus stress on the last vowel-letter run;
-monosyllables with ˈ-carrying variants are now marked (*cát, túrned, twó*)
-per user decision. (2) New `dictionary:import-cmudict` command imports
-CMUdict (BSD, cmusphinx master, 135k lines) as ARPAbet→IPA-converted
-transcriptions: skips word rows already carrying a ˈ-marked transcription
-(kaikki wins), adds to rows with only unstressed IPA (*turned /tɜːnd/ →
-+tˈɜːnd/*) and to all class rows of a word (die noun/verb), creates missing
-words under the `unknown` class, and drops citation-form stressed variants
-of closed-class function words ("of AH1 V") so they never carry a mark. (3)
-Laravel sends a per-part `parts` hint ({surface, ipa}) for hyphenated
-compounds the whole-token lookup can't resolve; python marks each part
-(*SÉVEN-SÍDED*). Dev effect on entity 17: marks-per-token 32.7% → **59.4%**
-(acutes 5,051 → 9,176; marked sentences 1,351 → 1,522 of 1,545); the three
-reported defects all verified fixed. Homograph POS disambiguation (record
-noun/verb) deferred. Tests: python `test_enrichment.py` gains 12 en cases
-(silent-e, digraph/final-run, monosyllables, uppercase, parts); Laravel
-`CmudictImportTest` (conversion, skip/merge rules, function-word drop,
-multi-class rows, idempotency) and an `EntityEnrichmentTest` parts-payload
-case. `pyphen>=0.18` added to python requirements (image rebuilt); ADR 0053,
-`wiki/domains/sentence-enrichment.md` engines/deployment sections updated;
-command reference regenerated via `wiki:sync`.
-
-## 2026-09-29 (fix: English IPA hints — stress-first variant selection under the 3-variant cap)
-
-`SentenceEnrichmentService::ipaByWordId()` kept the first 3 IPA variants per
-word in arbitrary DB order (no ORDER BY), so for words with more variants
-("a" has ~25) the only ˈ-carrying one could be randomly cut off and python's
-en marker (requires ˈ, `en_stress.py`) left the word unmarked. Variants are
-now ordered stress-first (`transcription NOT LIKE '%ˈ%'` — Postgres sorts
-false before true) with a deterministic `transcriptions.id` tiebreak, so the
-cap can never drop the only markable variant. Re-enrichment of the dev
-entities moved English acutes/token 32.1% → 32.7% (ru byte-identical): the
-cap was a minor contributor — the dominant causes of unmarked English words
-are monosyllables/function words with no ˈ in any variant (by design) and
-words with no imported IPA (verified by sampling: unmarked
-polysyllable-ish tokens split into 59 no-IPA vs 131 IPA-without-ˈ, the
-latter nearly all monosyllables). Tests: `EntityEnrichmentTest` gains
-"prefers stress-bearing ipa variants when capping variants per word"
-(4 variants, stress one inserted last, asserts the exact capped array).
-`wiki/domains/sentence-enrichment.md` Orchestration section and ADR 0052
-consequences updated.
-
-## 2026-09-29 (feat: sentence enrichment — local stress marks, phrasal verbs, intonation; ADR 0052)
-
-Every ru/en sentence now carries three enrichment payloads computed entirely
-locally (no LLM/paid calls): a stress-marked display variant
-(`entity_sentences.stressed_content`, U+0301 + е→ё via Silero Stress for
-Russian, Wiktionary-IPA-derived acute for English), English phrasal-verb hits
-(`phrasal_verbs` jsonb with char spans into `content` — the dictionary's
-multi-word verb headwords, previously inert, matched by lemma-aware n-grams),
-and heuristic intonation (`intonation` jsonb: nuclear word + terminal
-rise/fall). `content` is never mutated; staleness is tracked by
-`entities.enriched_at` against `sentences_updated_at`, with quiet base-builder
-writes so enrichment itself never re-stales the entity (regression-tested).
-
-Python service gained `POST /enrich` (`ai/api/enrich.py` +
-`ai/enrichment/{ru_stress,en_stress,phrasal,intonation}.py`, tests in
-`ai/enrichment/test_enrichment.py`); `silero-stress==1.5` joined
-`requirements.txt` (container rebuild + `./deploy.sh --stamp` on deploy).
-Laravel: `SentenceEnrichmentService`, `EnrichEntitySentences` job (low lane,
-self-re-dispatching), `entities:enrich` sweep (5 min), Filament action +
-sentence preview columns, dispatch at the end of
-`FinalizeEntityDerivations`. Reader + simulator render a per-user
-`stress_marks` toggle (`stressedRows`/`intonationRows` ride beside the rows);
-tokenizer keys now strip combining marks on BOTH sides
-(`WordTokenizer::lookupKey`, `wordTokenizer.mjs`) so stressed tokens still
-resolve the word map — `TokenizerParityTest` gained stress-marked samples.
-ADR: `docs/adr/0052-local-sentence-enrichment.md`. New concept
-`wiki/domains/sentence-enrichment.md`; CONTEXT.md gained a Sentence
-Enrichment Context section. Tests: `EntityEnrichmentTest` (10),
-`EntityTextHashRefreshTest` fakes updated for the trailing enrichment
-dispatch.
-
-## 2026-09-29 (feat: auto-fetched word translations — Yandex→Google providers, fetch ledger/exclusions, entity-word adoption)
-
-Missing popup translations now fill themselves in. `GET /words/{word}`
-quietly queues `FetchWordTranslations` when the word family carries no
-translation link at all and the user's native language differs (response
-unchanged — silent background; providers optional). The job walks the new
-`WordTranslationResolver` chain — Yandex Cloud Dictionary Lookup first
-(dictionary-grade candidates with pos), Google Translate v2 fallback (single
-candidate) — both implementing the shared `WordTranslationProvider` interface
-(`app/Classes/WordTranslations/`, `config/services.php`
-`yandex_translate`/`google_translate` keys), then creates the target-language
-`words` rows and `word_translations` links (class from the candidate pos
-slug, else the source word's class slug, else the target's first class; ru
-stress marks stripped; sentence-punctuation candidates dropped). New
-`word_translation_fetches` table (unique `word_id, target_language_id`): one
-row per pair is the dedupe ledger **and the exclusions list** —
-`status='empty'` (every provider answered "no translation") is never
-re-checked; `failed` retries up to 6 attempts behind a 24h cooldown
-(`WordTranslationFetchService::dispatchIfEligible`). Entity words:
-`EntityWordAdoption` creates `words` rows (class `unknown`) for
-linker-stamped unmatchable tokens and queues fetches for translation-less
-entity words — automatically by `RefreshEntityWords` after its link pass
-(5-minute sweep) and manually via `words:adopt-from-entities {--entity=*}
-{--language=} {--to=}`. `RefreshEntityWordsJobTest` updated for the new
-contract (stamped tokens are adopted, `word_id` set, instead of staying
-NULL). New tests: `tests/Feature/WordTranslationFetchTest.php`,
-`tests/Feature/AdoptEntityWordsTest.php`,
-`tests/Unit/WordTranslationProvidersTest.php`. Concepts updated:
-`domains/interactive-words.md`, `database/dictionary.md`,
-`domains/crossword.md`; references regenerated via `wiki:sync`.
-
-## 2026-09-28 (fix: alignable-totals writers missed by the illustrations commit)
-
-Post-review follow-up to the illustrations entry below: three writers of
-`a/b_total_sentences` still counted illustration rows, breaking ADR 0050's
-"totals are the aligner's sentence space" invariant — the editor's
-add-sentence recount (`AlignmentEditorController::storeSentence`, sibling of
-the already-fixed `destroyUnmatched`), the draft-apply recount
-(`AlignmentEditorPersister`), and the alignment copy
-(`AlignmentCopyService`, whose copied cursor derives from the totals). All
-three now filter `withoutImage()`; junction copying is untouched —
-illustration junctions still copy positionally. Also: `EntitySentence`'s
-deleted hook delegates to `IllustrationStorage::releaseIfOrphaned` instead
-of re-implementing it, and `UpdateSentenceRequest` uses the `withImage()`
-scope. Three new tests in `EntityIllustrationAlignmentTest` pin the
-invariant (editor add-sentence, draft apply, copy onto illustrated copies).
-
-## 2026-09-28 (feat: illustrations — image-bearing sentences matched like text and rendered in reader/simulator; ADR 0050)
-
-An **Illustration** is an `entity_sentences` row with non-null `image_path`
-(new columns `image_path/image_hash/image_width/image_height/image_mime`,
-migration `2026_09_28_000002`; seeded `illustration` sentence type), whose
-text is the optional caption. They join meaning matches like any sentence
-(any grouping valid, no new junction rules) but are invisible to the aligner:
-`AlignEntitySentences` filters them from chunk windows, counts, and cursors
-(alignable-sentence space; `a_total_sentences` = alignable count), captions
-never reach python `/align`, and `finalize()`'s completeness repair backfills
-each one single-sided at similarity 0.0 → Needs review → human pairing writes
-1.0 (ADR 0049). Uploads live on the entity edit page's sentence manager
-(multipart add form when the illustration type is selected; inline caption
-edit + image replace, type pinned); files store on the private `local` disk
-(`IllustrationStorage`, content-hash names so identical uploads share a file,
-reference-counted delete) and serve via `GET /illustrations/{sentence}` gated
-by `EntityAccessService::canRead`. `text_hash` folds in `image_hash`
-(pre-illustration hashes unchanged). Reading surfaces: `MeaningMatchPresenter::toSimulatorImages`
-returns row-aligned `[aImages, bImages]`; reader ships the `rowImages` prop
-(flipped by side rule + client toggle, rendered per side above row text,
-image-only sides still reveal) and the simulator adds `row_images` to
-`POST /text`, rendered inside the revealable cells. Alignment editor payloads
-carry an `image` descriptor (`SentenceItem` thumbnails; needs-review parts
-read `[illustration]`). `entity_sentences.content` stays NOT NULL — empty
-captions are `''`. 17 new tests (`EntityIllustrationTest`,
-`EntityIllustrationAlignmentTest`); glossary gains **Illustration**;
-ADR 0050 records the sentence-row decision.
-
-## 2026-09-28 (feat: alignments review UX — human-confirmed 1-sided leave Needs review, jump button, rows lookahead; ADR 0049)
-
-Three editor changes on `/alignments/{id}`. (1) **Needs review membership**
-now excludes one-sided rows trusted at `similarity = 1.0`: every editor
-mutation writes 1.0 while the pipeline emits its one-sided rows at 0.0, so
-human-shaped rows (added sentence with no counterpart, approved or unlinked
-rows) leave the list and its totals as if resolved, with no new stored state
-(`AlignmentEditorApiPresenter::HUMAN_CONFIRMED_SIMILARITY`; `alignment_chunk
-= -1` was rejected as discriminator because link/unlink/add-sentence don't
-set it). (2) Every rows page carries a **three-row lookahead tail**
-(`ROWS_LOOKAHEAD`): `per_page` normal rows plus the first three rows of the
-next page, marked client-side with an accent "next page" badge (`PairRow`
-`preview`) and still fully editable; meta stays per_page-based so page
-numbering and the `→ p. N` jumps are unchanged. (3) A round
-**scroll-to-review button** pinned top-center (sticky in `Show.jsx`,
-always visible) smooth-scrolls to the unmatched pools — or the needs-review
-list when both pools are empty — without expanding them. UI strings
-`alignments.next_page` / `alignments.jump_to_review` added. Glossary
-"Needs review" updated (+ `_Avoid_: resolved`); ADR 0049 records the
-membership rule.
-
-## 2026-09-28 (feat: strict alignment invariants — junction uniqueness, total completeness, weak-pair rescue, ADR 0048)
-
-Three production defects fixed together. (1) The repeating pattern of two
-1-sided rows (EN then RU) followed by a matched row came from the greedy
-aligner's hard 0.55 match bar plus the skip rule's cascade: skipping one
-member of a mutual weak pair collapses the other's lookahead, so both get
-skipped. Now a mutual-best 1:1 (or a two-sided orphan-gap window combo)
-scoring in the new rescue band `[ALIGN_RESCUE_THRESHOLD, 0.55)` (default
-0.45, live knob, 0 disables) is emitted as a real match carrying its true
-sub-threshold score — flagged in Needs review as low-similarity instead of
-masquerading as 1-sided. (2) Duplicate junctions (same sentence in several
-meaning matches) are now impossible: `sentence_meaning_matches` gained a
-denormalized NOT NULL `entity_match_id` + `unique(entity_match_id,
-entity_sentence_id)` (migration resolves legacy duplicates inline,
-landmark/human rows win), `persistSegment` reserves landmark-junctioned
-sentences so re-fed windows never junction them, the resequence dedupe trims
-losers' junctions (partial overlaps included, machine loses to human,
-human-vs-human keeps the earlier row), and the editor dedupes its re-insert
-list. (3) The finalize repair now covers BOTH sides (total completeness —
-translation-side sentences are no longer invisible in the reader), mid-run
-no-progress paths store skip rows for advancing non-original sides, and the
-opposite-side spread-order collision that silently rolled back a side's
-repair is fixed via a shared claimed-orders set. New
-`alignments:repair {id} [--all]` sweeps completed matches in place (dedupe +
-both-side backfill + resequence) — the production cleanup path. Tests that
-seeded duplicate junctions suspend the constraint first; original-side-only
-coverage assertions updated to both sides. `wiki/domains/sentence-alignment.md`
-and `wiki/database/entities-alignment.md` updated; `reference/commands.md`
-regenerated for the new command.
-
-## 2026-09-27 (fix: word-family base groups scoped to the claiming word classes, ADR 0047)
-
-ADR 0045's aggregation loaded each base word's whole headword group, so a
-surface whose base headword has several classes rode in unrelated entries:
-clicking "me" pulled in the character "I", the Roman numeral "I" and every
-other article sharing the spelling "I" — only the pronoun actually lists
-"me" among its forms. `WordFamily::baseGroups` now collects the claiming
-rows as `(base.l_word, base.word_class_id)` pairs (the join already had the
-information; it discarded the class) and keeps, per base group, only the
-entries whose class a claim carries; the whole group is kept when a claim
-has no class (defensive — `words.word_class_id` is NOT NULL). Own groups are
-untouched: clicking a headword directly still shows every class under the
-spelling. Ranking is computed on the scoped groups. Visible shrink:
-"melted" no longer shows "melt — Noun" (the noun does not claim "melted").
-Rejected a character/numeral/symbol class blocklist: POS-taxonomy-dependent
-and blind to cross-class noise generally. CONTEXT.md "Word family" term
-updated; `wiki/domains/interactive-words.md` gained the scoping prose + the
-ADR source. Tests: the melt test now asserts melt-Noun's absence; new test
-proves the me→I scope (pronoun in, character/numeral out); "left" →
-leave verb+noun stays green unchanged.
-
-## 2026-09-27 (feat: per-user popup section visibility — the profile's Popups tab, ADR 0046)
-
-The Word popup's block set was fixed: every user saw every block, and the
-frequency rank was not displayed at all. Now the profile has a fifth tab
-("Popups", between Preferences and AI Models) over eleven per-user
-visibility checkboxes grouped for display (Knowledge / Word family /
-Dictionary details / Tabs & info) plus a live preview that renders the
-popup's real body — the popup body was extracted into the exported
-`PopupContent` (`Components/WordPopup.jsx`; the portal, positioning and
-fetching stay with `WordPopup`) with a fixture-style sample family, so the
-preview cannot drift from the real thing. State persists as a new
-`ui_settings.popup` section (eleven booleans, absent = visible —
-`App\Support\PopupVisibility::for()` resolves it over all-visible defaults
-and shares it to every page as the `popupVisibility` Inertia prop; one map
-drives both surfaces), autosaved per flick via `useUiSettingsAutosave`.
-`PATCH /ui-settings` moved from the approved-only group to the auth-only
-profile group (the tab is reachable pre-approval; the endpoint only touches
-the caller's own settings). The word payload gains `frequency` — the bound
-headword's integer rank, null for unranked (sentinel included) — shown as a
-"Frequency: #N" line under the familiarity line. Explanation off drops the
-whole tab strip incl. the Models-used icon; word_family off filters
-base-word sections; the headword header is never toggleable and no minimum
-is enforced. New term: **Popup preferences**. New tests: popup section
-merge/validation/unapproved-access (`UiSettingsTest`), frequency payload
-(`WordEndpointTest`), popups tab + `popupVisibility` prop
-(`ProfileTest`). Concepts updated: interactive-words.md, profile.md.
-
-## 2026-09-27 (feat: word popup aggregates the word family, ADR 0045)
-
-Clicking "melted" showed one definition — "past participle of the verb
-melt" — because the kaikki import stores Wiktionary's form-of lines as
-standalone words with verbatim relay glosses, the entity-word linker's exact
-pass prefers them over the forms pass, and the popup loaded only entries
-sharing the linked row's headword. Now `WordFamily::resolve` builds the
-popup's word family per request: the own headword group (unchanged order)
-plus every base headword's group the `forms` table maps the surface token
-to (own headword excluded, ranked by `words.frequency`, uncapped); all-relay
-entries hide behind the "«surface» — form of «…»" pointer line (`form_of`
-payload field) and stray relay glosses are filtered out of partially-relay
-entries ("saw/verb" mixes real senses with "simple past of see") whenever a
-base group exists — detection by an anchored runtime gloss-pattern list in
-`App\Classes\WordFamily`, no schema or import changes (escape hatch:
-`is_form_of` column + import tags + backfill). Entries now carry their own
-`word` so base sections label "melt — Verb"; `entity_words` linking,
-familiarity and crossword untouched. New terms: **Form-of entry**, **Base
-word** (Dictionary), **Word family** (Interactive Reading). New tests
-`tests/Unit/WordFamilyTest.php` + six word-family cases in
-`WordEndpointTest`. Concepts updated: interactive-words.md, dictionary.md.
-
-## 2026-09-27 (feat: per-user processing limits — 2 entities, 1 alignment, ADR 0044)
-
-Non-admin users could create entities and alignments without bound, each
-running Python-backed pipelines on the shared default lane. Now a user holds
-at most 2 entities with `entities.status = 'processing'` and 1 alignment with
-`entity_matches.status IN ('pending','aligning')`; approved admins are exempt
-and the numbers live in `config/limits.php` (env-overridable). Entities gain
-an explicit `processing|completed|failed` lifecycle (pipeline `failed()` hooks
-free the slot; no-file and finished exact-copy clones are born `completed`),
-alignments gain a `created_by` owner column (backfilled from the a-side
-uploader; CONTEXT.md gains **Processing status**, **Alignment owner**,
-**In-flight**, **Processing limit** under a new Processing Limits Context).
-Count-then-create runs under the creator's locked user row
-(`App\Classes\ProcessingLimits`); rejections surface as `limit` validation
-errors with banners on the three create forms. New tests
-`EntityProcessingLimitTest` / `EntityStatusLifecycleTest` /
-`AlignmentLimitTest`. Concepts updated: entities.md, sentence-alignment.md.
-
-## 2026-09-26 (feat: bounded job runs — run budgets + durable progress markers, ADR 0043)
-
-An audit found 4 of 8 queued jobs could process unbounded rows in one
-`handle()` and one dispatch site was uncapped. Now every queued run has a
-**run budget** and unbounded pipelines self-re-dispatch over durable
-**progress markers** (ADR 0043; CONTEXT.md gains **Run budget**,
-**Progress marker**, **Dispatch cap**, Crossword gains **Unmatchable
-stamp**). Details: the splitter splits in bounded runs (8 × 256 KB byte
-chunks under a 600 s timeout), committing sentences + resume point
-(`entities.split_offset` + `split_remainder` — new migration) atomically per
-chunk, re-dispatching until EOF; `ProcessEntityFile` zeroes the markers on
-(re)upload; `EntityTextHasher` streams the digest via
-`orderBy('order')->cursor()` + `hash_update` (same normalization ⇒ same
-digests; must never be `chunkById`); the word linker fetches dictionary
-candidates in per-500-row batches (exact uncapped, forms capped at 200
-candidates/token via a window function), examines ≤20 000 rows/run, stamps
-unmatched tokens `entity_words.unmatchable_at` (new migration) — the
-`crossword:refresh` sweep only re-picks entities with *unstamped* unlinked
-tokens, imports clear the imported language's stamps,
-`crossword:link --retry-unmatched` clears them manually; alignment cleanup
-(`resequenceMatchesByDocumentPosition`) moved from per-chunk to
-finalize-only (O(n²) → O(n) — mid-run `order` stays append-after-max and a
-subsumed duplicate lingers until completion; pools sort by document
-position so nothing mid-run consumes it); dispatch caps:
-`entity:generate-signatures --limit=100` (default), scheduled
-`entity-orders:rebalance --limit=500`, Filament `FileUpload ->maxSize(10240)`
-(10 MB total input cap everywhere). Uniqueness rule recorded: a
-`ShouldBeUnique` job must not self-dispatch (its own lock swallows the
-dispatch) — `RefreshEntityWords` continues via the sweep's re-pick. Wiki:
-`overview.md`, `entities.md`, `sentence-alignment.md`, `crossword.md`.
-Tests: splitter resume/boundary/offset tests + `ProcessEntityFile` reset,
-linker stamp/budget/cap tests, alignment contract tests updated.
-
-## 2026-09-26 (feat: two-lane queue priority — default/low with a per-job lane property)
-
-Every queue worker (composer `dev` script, prod overlay `queue` service,
-`ext-queue@.service`) now consumes `--queue=default,low` in strict order, so
-process-later work can wait behind waited-on work without any new service
-(database driver, `jobs.queue` already existed; ADR 0042). The lane is a
-`#[Queue(QueueLane::DEFAULT)]` class attribute on all 8 jobs (new
-`app/Jobs/QueueLane.php` constants) — a `public $queue` property is
-impossible (the Queueable trait owns it; PHP forbids incompatible trait
-property redeclarations), and the dispatcher resolves dispatch-site
-`->onQueue()` override → attribute. Re-classifying a job is a one-line edit;
-`QueueLaneTest` enforces that every job class declares a lane (plus
-push-path assertions via `Queue::fake`). All jobs ship on `default`, so
-runtime behavior is unchanged until a lane is flipped.
-`deploy-native.sh` gained `systemctl daemon-reload` before unit restarts
-(unit-file changes need it). Deploys: the compose change is a
-container-definition change → recreate + `--stamp`. Wiki:
-`docker-services.md` (lanes + the previously undocumented native systemd
-path), `overview.md` (job inventory fixed — stale `AlignEntitySentenceChunk`
-removed), `run-alignment.md`, `production-deployment.md`. CONTEXT.md gains
-the **Background Jobs Context** (**Job lane**, **Low lane**).
-
-## 2026-09-25 (feat: Models used popup replaces the AI panel's model-label link)
-
-The AI Response panel header's three-state model link ("Add an API key…" /
-model label / "Choose a model…") is replaced by a
-robot-with-question-mark icon that opens the new **Models used popup**
-(`Components/ModelsUsedPopup.jsx`) — a centered modal listing the models
-currently in use, each label a link to `/profile?tab=ai`: on the simulator
-"AI questions" (answer model) and "Explanations" (explanation model, with a
-muted "follows answer model" hint while no separate pick exists — new
-`AIModelResolver::explanationModelFollowsAnswer()`), on the reader just the
-explanation model. The same icon sits right of the word popup's Explanation
-tab (both surfaces — one shared component); while the modal is open it owns
-Escape/outside-click closing so the word popup underneath stays put. The
-word popup's tab strip now also renders for keyless users (add-key
-guidance in the Explanation tab, new `word.explain_no_key` string; new
-`ai.*` string group). Prop changes: simulator `explanationModelKey` →
-`explanationModel {id, label, followsAnswer}`; reader `explain` gains
-`modelLabel`/`followsAnswer`. CONTEXT.md gained **Models used popup**;
-`bilinguals-simulator.md` and `interactive-words.md` updated. Tests:
-`SimulatorApiKeyTest`, `ReaderPageTest`, `AiModelPreferenceTest` extended.
-
-## 2026-09-25 (fix: l_word lookup keys lose combining stress marks)
-
-The ru-rnc frequency import matched only 2 of 3 words — investigation
-showed the ru dictionary itself has 3 rows (the kaikki import for Russian
-was never run; en has 190k words / 127k ranked), and exposed the next
-trap: English Wiktionary Russian headwords carry combining stress marks
-(`свобо́дный`), so `WiktionaryParser`'s `mb_strtolower`-only `l_word`
-would never equal the unstressed RNC lemmas (nor entity tokens). The
-parser now strips `\p{M}` when building `l_word` keys (words + forms;
-display `word` unchanged) — same normalization rule as
-`LinkTranslationsCommand::normalizeTargetWord`; `words:import-frequency`
-applies it to RNC lemmas too. `dictionary.md` note added;
-`WiktionaryParserTest` + `ImportWordFrequencyTest` cover the stripping.
-
-## 2026-09-25 (feat: frequency ranks imported from real lists + entity corpus correction)
-
-`words.frequency` is now a fully usable rank: the column widened to
-`numeric(12,2)` (the old `numeric(8,2)` could not even hold the new
-unranked marker), default and zero-backfilled to `1,100,000`
-(`Word::FREQUENCY_UNRANKED`) so unranked words sit in **no** crossword
-band instead of every band, and the migration comment fixed to rank
-semantics (ADR 0041). `words:import-frequency {source}` reworked: named
-sources `en-opensubtitles` (OpenSubtitles 2018 full list, rank = line
-position) and `ru-rnc` (Lyashevskaya–Sharoff RNC lemmas, ipm summed per
-lemma across PoS rows) download to `storage/app/frequency/`
-(`config/services.frequency`, `--force-redownload`), stream through a
-session temp table and apply set-based to every word-class row of a
-matched headword; local `rank,word` CSVs unchanged; a successful import
-resets the imported language's correction markers. New
-`words:accrue-entity-frequency` (every 5 min, `withoutOverlapping`):
-`WordFrequencyAccrual` processes each entity exactly once
-(`entities.frequency_counted_at`, 15-min grace after indexing), pulling
-each linked word's rank 2% of its own value toward its position in the
-entity's word list (clamped, floor 1) — unranked words become
-crossword-eligible after ~5 texts. CONTEXT.md gained **Frequency rank** /
-**Frequency correction**; `crossword.md`, `dictionary.md`, schema-overview
-references regenerated. Tests: `ImportWordFrequencyTest` (8) +
-`AccrueEntityWordFrequencyTest` (12) — import formats, downloads, marker
-scoping, correction math/clamps/limits, level crossing.
-
-## 2026-09-24 (feat: word-explanation instruction joins the prompt templates)
-
-The Context explanation's system message — the last hardcoded AI prompt on
-the reading surfaces — moved from an inline string in
-`SimulatorController::explainWord()` into `prompt_templates` as
-`word.explanation` (ADR 0040 extended): `PromptTemplates::explanation()`
-substitutes `:word` (the clicked surface) and `:native` (the user's Native
-language name) into the admin-edited row, with `EXPLANATION_FALLBACK`
-covering an unseeded/blanked row. Seeder gained the third row; the Filament
-Prompt Templates hint now lists both placeholder sets
-(`:base`/`:learning`, `:word`/`:native`). Tests: `PromptTemplateTest`
-covers fallback + seeded substitution; `AiWordExplainEndpointTest` asserts
-a seeded custom template reaches the resolver as the instruction.
-`bilinguals-simulator.md`, `schema-overview.md`, ADR 0040 updated; dev DB
-re-seeded.
-
-## 2026-09-24 (feat: assessment question split into admin template + user task list)
-
-The single editable question textarea split in two (ADR 0040). The
-**Question template** — the format-rules text — moved into the new seeded
-`prompt_templates` table (`App\Models\PromptTemplate`,
-`App\Support\PromptTemplates` with fallback constants for blank/missing
-rows; Filament **Prompt Templates** resource, List+Edit only — keys are
-code contracts) and renders on the page as read-only muted text above the
-input, substituting **both** `:base` and `:learning` with the current
-columns' language names on every render, so it now visibly follows the
-language toggle (the old uncontrolled textarea froze its text). The
-**Task list** — the "Tasks: 1…4" part — keeps a textarea with the default
-from `simulator.question.tasks` plus a new **Reset** affordance (bumps a
-remount key; `customTasks: null` restores the default). Assembly moved
-server-side: `/ai/question` + `/ai/question/stream` now take
-`{tasks, base, learning}` (codes) instead of `question`, and
-`SimulatorController` joins the DB template + tasks via
-`PromptTemplates::assemble` (empty tasks → default) into the system
-message. Length caps aligned at 4000 (`AiQuestionRequest` tasks,
-`UpdateUiSettingsRequest` simulator.question — fixes the old
-2000-vs-8000 mismatch that could 422 a long saved question). UI settings
-key stays `question` (now holding the tasks customization); the
-`LEGACY_DEFAULT_QUESTION` normalization is gone (single-user deployment —
-the old full text is treated as a verbatim task-list edit). Tests:
-`SimulatorPinnedMatchTest` / `UiSettingsTest` re-pointed to
-`questionTemplates`/`currentTasks`; AI endpoint tests assert the assembled
-instruction incl. a seeded custom template; new `PromptTemplateTest`.
-Glossary: **Question template** / **Task list** added, **UI settings**
-reworded; `bilinguals-simulator.md` and `schema-overview.md` updated;
-models reference regenerated via `wiki:sync`.
-
-## 2026-09-24 (feat: simulator AI model/setup link moved into the AI Response panel)
-
-The simulator's toolbar three-state block — model label / "Choose an AI
-model" / "Add an API key", each a profile link — moved into the **AI
-Response panel header** as the second line under the title. The header was
-reshaped: the "Reader's gloss" eyebrow is gone (ui-string retired), the
-"AI Response" title grew to `text-lg`, and below it sits whichever state
-applies, now as short labels with the full sentences as tooltips
-(new ui-strings `bilinguals.add_api_key_short` / `choose_model_short`;
-all three states deep-link `/profile?tab=ai`, the no-key one previously
-linked bare `/profile`). To make the guidance reachable, the AI panel is no
-longer gated on `canUseAi`: `showAI` seeds purely from the saved
-`show_ai` setting, the toolbar AI toggle renders for everyone, and keyless
-users get the full "Add an API key in your Profile…" sentence as a single
-link in the panel body (the fragment-hint empty state stays for
-token-holders). Toolbar link block removed with no fallback — hiding the
-panel hides the CTA by user choice. `SimulatorApiKeyTest` keyless
-expectation flips to `showAI: true`; `bilinguals-simulator.md` and the
-glossary **Gloss** entry (panel renamed) updated.
-
-## 2026-09-24 (feat: Library dropdown — works URL branches, tabs → pages)
-
-The Library moved from a single `/library` link with per-work tabs to a
-three-entry navbar **Library** dropdown over a `/works` URL space (ADR 0039):
-**Works** (`/works`, the catalog), **Entities** (`/works/entities` branch
-list), **Alignments** (`/works/alignments` branch list). A work's card now
-opens a **landing page** `/works/{work}` (metadata + readable entity and
-alignment counts via the new `Work::alignments` hasMany-through and
-`EntityAccessService::readableMatchConstraint`, extracted from
-`readableMatchQuery` for `withCount` reuse), and the former tab contents are
-standalone pages: `/works/{work}/entities` and `/works/{work}/alignments`
-(create/store forms re-prefixed). Branch lists show the full public catalog
-(ADR 0021) with readable-only counts; each navbar child carries an explicit
-URL match rule (shared `/works` prefix defeats naive prefix matching), and
-the Blade nav mirror got the same dropdown + mobile accordion (it previously
-had no Library entry). Routes renamed `library.*` → `works.*`;
-`/library/*` removed with no redirects; `/entities`, `/entities/{lang}`
-legacy redirects retargeted to `/works/entities`. Pages: `Library/Index`
-gained a `variant` prop (one component, three lists), `Library/ShowWork` is
-the landing page, new `Library/WorkEntities` / `Library/WorkAlignments`; new
-UI strings `nav.works/entities/alignments`, `library.entities_title/
-alignments_title/alignment(s)`, retired `library.tab_*`; reseeded.
-`LibraryTest` rewritten around the new URLs (+ landing/branch-list/404
-coverage), `AlignmentPagesTest` / `AlignmentsCreateMatchTest` retargeted.
-Glossary: **Alignments tab** → **Alignments page**, added **Work landing
-page** / **Entities page**, reworked **Library**; ADR 0039; entities,
-sentence-alignment, run-alignment wiki concepts updated; `web-routes.md`
-regenerated via `wiki:sync`.
-
-## 2026-09-24 (feat: Practice menu revives the reader index and the simulator picker)
-
-The ADR 0036 disposal was partially reversed (ADR 0038): a **Practice**
-dropdown, first in the navbar (Reader / Simulator; the NavBar dropdown state
-generalized from the hardcoded puzzles toggle to per-label `openMenu`/
-`expandedMenu`; Blade nav mirror updated too). Routes: `GET /reader/{lang?}`
-(`reader.index` — the restored text library, bare `/reader` derives the
-native enabled language, fallback en; `ReaderIndex.jsx` +
-`ReaderIndexApp.jsx` resurrected from 4df1c78^, retargeted to visit
-`/reader/{id}`) and `GET /simulator` (`bilinguals.simulator` — the picker
-entry into the same `Bilinguals/Bilinguals` page: Select + Load header
-restored, loads matches in place via `POST /text`, which now also ships
-`languages` + `default_learning_side` from the shared side rule so the
-language toggle tracks the loaded match; `simulatorResponse()` accepts a
-null pin). Model stays text + link to `/profile?tab=ai`. Untouched: the
-reading route `/reader/{entityId}`, the pinned simulator route, the
-language toggle, the freeze fixes; `/reader/{lang}/{entityId}` and
-`/bilinguals/en/ru/simulator` stay 404. UI-string seeds re-added
-(`nav.practice/reader/simulator`, the reader index keys, the picker keys)
-and reseeded. Reader/simulator/entity wiki concepts updated;
-`web-routes.md` regenerated via `wiki:sync`.
-
-## 2026-09-23 (fix: reading-position restore never worked — router.replace misuse; stuck spinner resolved)
-
-The pass-4 placeholder exposed a pre-existing bug: `ReaderApp`'s restore
-called `router.replace(url, {only, …})`, but in Inertia v3 `replace()` is a
-client-side page-object patch (`clientVisit`) — it accepts no options object
-and never fetches. The saved page was never loaded; the call spread the URL
-string's characters into the page object, reset scroll, and rewrote the URL
-to `?page=N` — the "page reloaded back to the start" glitch. With the
-placeholder waiting on the options' `onFinish` (never called by
-`clientVisit`), the reader hung on the spinner. Diagnosis: container-only
-jsdom harness running the real built bundle (no browser) — primed
-localStorage, captured XHRs, proved `replace` sent nothing; canary via
-`savePosition` clamping proved the effect ran. Fix: `router.visit(url,
-{only, preserveState, preserveScroll, replace: true, onFinish})` — a real
-partial reload with history-replace semantics; harness then showed the
-partial request firing and the spinner clearing. 695 tests pass.
-
-## 2026-09-23 (fix: reader-entry scroll yank (restore race) + Welcome italics restored)
-
-Two follow-ups after the freeze fix. (1) Opening a text with a saved reading
-position served page 1, then the restore's partial reload swapped rows under
-the user and the page-turn effect's `scrollTo(top: 0)` yanked scroll to the
-start — a pre-existing race newly visible now that the page works. `ReaderApp`
-now holds rows/pager behind a small spinner while a restore is pending
-(`restoring` state from localStorage at init, cleared by the visit's
-`onFinish`), so the saved page appears directly at its top and the scroll is
-a no-op. (2) Pass 4's simulator.css scoping regressed Welcome: the file
-carried an app-wide `em, i`/`b, strong` accent-color convention that styled
-Welcome's parenthesized italics. Moved the four rules into `resources/css/
-app.css` (global, where they belonged) and dropped them from
-`public/css/simulator.css`. 695 tests pass.
-
-## 2026-09-23 (chore: perf-probe scaffolding removed after confirmed fix)
-
-User confirmed the reader freeze is gone (3.5-min instrumented session:
-flat ~25 MB heap, zero React commits across 726 scroll events, ≤6 ms
-event-loop lag, 2 long tasks). Removed `lib/perfProbe.js`, the
-`POST /perf-probe` debug route, `PerfProbeTest.php` and the probe log.
-Kept every fix: self-hosted fonts (`public/fonts/` + `resources/css/
-fonts.css`), transition/hover-recolor-free rows, the empty-word-map
-plain-text fast path, `overflow-anchor`/`scrollbar-gutter` guards, stable
-row keys, text-mode page picker, page-scoped `simulator.css`, Alpine
-scoping, content-visibility removal. A noted curiosity for future work: the
-healthy page showed ~440 constant per-second DOM add/remove mutations at
-idle — harmless to performance, suspected browser-extension overlay, worth
-identifying if anything ever regresses.
-
-## 2026-09-23 (reader freeze pass 4 — fonts self-hosted, rows de-animated, probe v2; wedge proven load-time not scroll-time)
-
-The user ran pass 3's `?perf=1` probe: nginx served `/reader/15?perf=1` on the
-new build but **zero** `POST /perf-probe` requests arrived (route confirmed
-registered under `APP_ENV=local`). Since pass 3's probe first fired at t=2s,
-the main thread was already wedged before 2 seconds elapsed — the freeze is
-**load-time, inside the webfont-swap window (~1.5s)**, and merely overlaps
-with scrolling. Pass 4 therefore strips every mechanism active in that window
-and during scroll: (1) all five Google font families self-hosted —
-`public/fonts/` (68 woff2 subsets, 1.9 MB) + generated `resources/css/
-fonts.css` imported by `app.css`; the css2 `<link>` and preconnects removed
-from `app.blade.php`; (2) `ReaderRow` carries no transitions (primary line,
-translation reveal, hover rule) and no `.reader-row:hover` recolor
-(re-rasterizing variable-font text per row under the cursor was the one
-scroll-path paint trigger); (3) plain-text fast path — sides with an empty
-word map skip `WordText` entirely (raw string, `\n`→space to match
-`WordText`'s sentence join); `entity_words` is empty DB-wide, so current
-pages mount no token machinery at all; (4) page picker `type="text"`
-`inputMode="numeric"` (no Chrome wheel-spin on focused number inputs) and no
-`aria-live`; (5) `public/css/simulator.css` scoped to the simulator page via
-`<Head>` in `Bilinguals.jsx` instead of loading globally. Probe v2: t=0
-`boot` beacon, per-installer try/catch, 300/700/1200/2000/3000 ms ladder then
-1 s cadence, auto-enabled on localhost/127.0.0.1 (no parameter needed).
-698 tests pass.
-
-## 2026-09-23 (reader freeze pass 3 — perf probe (?perf=1) + engine-side guards; pagination & logs verified clean)
-
-The freeze persisted after pass 2's fixes, so the diagnosis moved to
-zero-browser evidence plus an opt-in probe (user's machine must not be loaded
-by agent-driven browsers). Verified clean: `ReaderController` genuinely
-paginates (entity 15 = 1,558 meaning-match rows → 32 pages of exactly 50, ~7 KB
-props; `entity_words` is empty DB-wide, so the page renders plain text — no
-interactive spans at all); `laravel-2026-09-23.log` has no storms/memory
-errors; nginx shows minutes-apart requests; the served bundle is byte-identical
-to the build containing pass-2's fixes. Full re-read of `ReaderApp`, `Reader`,
-`Main`, `WordText`, hooks and libs found **zero** scroll listeners/observers/
-intervals and no constructible scroll→state→scrollTo cycle — so the loop
-driver is not visible in source and must be captured from the user's one
-repro. Added `lib/perfProbe.js` (?perf=1): counting-only React-commit counter
-(via a `__REACT_DEVTOOLS_GLOBAL_HOOK__` shim that must be app.jsx's first
-import), Inertia visit counters, DOM-mutation counter, longtask/scroll/font
-counters, 1s event-loop heartbeat — sampled every 2s to the new debug-only
-`POST /perf-probe` route (non-production; `PerfProbeTest.php` covers it) and
-mirrored into `document.title`. Shipped defensive fixes alongside:
-`overflow-anchor:none` + `scrollbar-gutter:stable` on `#contentContainer`,
-`transition-[max-width]` instead of `transition-all` on the width wrapper,
-rows keyed by `rowKey` instead of index. 698 tests pass.
-
-## 2026-09-23 (fix: reader freeze — Alpine scoped to Blade pages, dead `--fs` writes removed)
-
-Second reader-performance pass, this time with live forensics. Reproduced the
-freeze deterministically in a clean headless Chromium (no extensions, throwaway
-profile) against `/reader/15`: ~1.5s after load the renderer's main thread
-wedged permanently — rAF starved (5 frames total), `Runtime.evaluate` never
-returning, CPU pegged; exactly the reported "scrollbar moves, page dead" state.
-Debugger-pause stacks sampled during the hang alternate between **Alpine's
-global MutationObserver tree-walk** (`initTree`/`walk`/`initDirectives` —
-Alpine processes every DOM mutation on the page) and **react-dom commit frames**
-(placement/deletion/reconcile), while a MutationObserver counter installed
-pre-boot recorded ~35k mutation records per 4s in batches of ~53 attribute
-writes on the reader root and rows — matching the per-row `--fs`
-`style.setProperty` effects (1 root + 50 rows). Ruled out: extensions (clean
-profile), Inertia visit/reload loop (`inertiaVisits: 0`), scroll listeners
-(none in app code; Inertia's document scroll listener is inert without
-`[scroll-region]`), and the reader component itself — the full real tree
-(real `App` + Reader page + Main/NavBar/flowbite + Alpine) mounted under jsdom
-stays at a single render with the exact production payload, so the loop needs
-real layout (Chromium) plus the Alpine/attribute-write cycle.
-
-Fixes: (1) `app.jsx` now starts Alpine **only on non-Inertia pages** (no
-`#app` root) — its only consumers are the Blade layouts' dropdown nav
-(`layouts/navigation.blade.php`, routed only by `auth/pending-approval`);
-React pages lose the observer entirely. (2) Deleted the dead per-row/root
-`--fs` `style.setProperty` effects in `ReaderApp`/`ReaderRow` — no CSS
-consumes `var(--fs)`, and those writes were the storm's content. The exact
-first domino in Chromium's layout↔React interplay remains unpinned (further
-browser profiling halted by resource concerns); both sampled loop
-participants are now gone from the reader page. Assets rebuilt. Tests:
-`composer run test:tia` 695 passed. Updated `wiki/architecture/frontend.md`
-(Alpine scoping), `wiki/domains/reader.md` (rendering cost). No
-route/model/command changes (`wiki:sync` not required).
-
-## 2026-09-23 (fix: reader scroll jank — content-visibility removed from reader rows)
-
-The `content-visibility: auto` + `contain-intrinsic-size: auto 8rem`
-mitigation added earlier today (see the entry below) caused the very lag it
-was meant to fix, on Chromium: a rendered reader row measures ~66px, about
-half the 8rem placeholder, so scrolling kept flipping rows between
-placeholder and rendered height at the relevance boundary — scroll height
-churned, rows re-laid-out every frame, and CPU stayed pegged even after
-scrolling stopped. Diagnosis ruled out the JS tree first: no scroll
-listeners/observers/timers anywhere in the reader components, `React.memo`
-held (no re-renders on scroll), built assets were current, and a `/reader/15`
-page is tiny (50 rows × ~1 sentence/side ≈ 5 KB of text; `entity_words` empty
-in dev → zero interactive token spans). With pagination fixed at 50 rows/page
-of page-scoped data (ADR 0032) the deferral buys nothing, so the rule was
-deleted from `app.css` (memoization and CSS-only hover retained; a comment
-marks the spot as deliberately content-visibility-free). If pages ever grow
-past pagination, row virtualization is the fix — not `content-visibility`
-with a mismatched intrinsic size. Assets rebuilt; docs: wiki `reader.md`
-"Rendering cost" rewritten. No route/model/command changes (`wiki:sync` not
-required); no test changes (`ReaderPageTest` does not assert CSS).
-
-## 2026-09-23 (feat: side rule + language toggle on reader and simulator; reader route drops {lang})
-
-ADR 0037. Both reading surfaces now default their sides from the user's
-**Native language** via the new shared `EntityMatch::readingSideFor()`
-(native side translates → the work's original side reads → A-side),
-replacing the URL-entity-driven side on the reader and the hardcoded EN/RU
-layout on the simulator; `LibraryController::readerTarget()` is refactored
-onto the same rule so the alignment card's Read button and the reader page
-agree. `GET /reader/{lang}/{entityId}` is deleted — the route is now
-`GET /reader/{entityId}` (the URL entity only anchors the match; legacy
-shapes 404, test-guarded). Both pages grow a header language radio that
-swaps sides client-side and persists the flip as Working state
-(`ext_app.reader.side-flip.v1` keyed by `positionKey`; `flipped` in the
-simulator's per-match position store). The simulator's columns become
-positional **target/base** roles (`hide_target`/`hide_base`,
-`check_target`/`check_base`, `all_target`/`all_base` in
-`public/css/simulator.css` + `TextContent.jsx`), column headers show the
-sides' real language names, and `DEFAULT_QUESTION` becomes a `:base` template
-the client substitutes per toggle — saved custom questions ship verbatim,
-while a saved copy of the old hardcoded default (`LEGACY_DEFAULT_QUESTION`)
-counts as not customized and `question` persists `null` until actually
-edited. Reader perf: `.reader-row { content-visibility: auto }`,
-`React.memo` on `ReaderRow`/`WordText` with stable explain-payload
-identities, and the per-row hover `setState` replaced by existing CSS
-`:hover` rules (scrolling had been re-rendering every token span crossed).
-UI strings: +`reader.reading_language`, +`bilinguals.learning_language`;
-removed dormant `bilinguals.english`/`bilinguals.russian` (orphaned DB keys
-deleted). Tests: `ReaderPageTest` rewritten for the side rule + route shape
-(native-default, original-fallback, translation-pair, legacy-404 guards),
-`UiSettingsTest` re-pointed, `SimulatorPinnedMatchTest` gains
-languages/defaultLearningSide/questionTemplate/custom-question/legacy-null
-tests. Docs: ADR 0037; CONTEXT.md gains **Reading side**, **Translation
-side**, **Side swap**; wiki `reader.md` + `bilinguals-simulator.md`
-refreshed; `web-routes.md` regenerated.
-
-## 2026-09-22 (feat: simulator picker page and reader index deleted — deep links only)
-
-ADR 0036 amendment. The work page is now the sole hub, so the two remaining
-global browse surfaces are gone: the simulator picker
-`GET /bilinguals/en/ru/simulator` (dropdown of all readable matches; the
-pinned route `/bilinguals/simulator/{entityMatch}` is the only simulator
-entry and restores saved page/row per match) and the reader index
-`GET /reader/{lang}` + the `/reader` redirect (reading is reached from
-alignment cards' "Read · {LANG}" and the entity page's Read button;
-`GET /reader/{lang}/{entityId}` is unchanged). Deleted with them: the
-"Bilinguals"/"Reader" navbar items (React `NavBar.jsx` + Blade navs),
-`ReaderIndex.jsx`/`Reader/ReaderIndexApp.jsx`, `SimulatorController::
-simulator()/getEntityMatchTextList()` (pinned-only now, no `textList`
-prop), `ReaderController::index()/entitiesForLanguage()`, `Bilinguals.jsx`
-picker mode (Select/Load/changeText), and the picker/index-only UI strings
-(`nav.bilinguals`, `nav.reader`, 9 reader index keys incl. dormant
-`reader_heading`, 5 bilinguals picker keys; new `bilinguals.no_aligned_rows`
-replaces the "press Load" empty state; `load_error_hint` copy updated).
-Tests: `SimulatorPinnedMatchTest` gains picker-404, `SimulatorApiKeyTest`/
-`UiSettingsTest` re-point to the pinned route via the new shared
-`createSimulatorMatch()` helper in `tests/Pest.php`, `ReaderPageTest` drops
-index tests and extends the 404 guard to `/reader` + `/reader/en`. Docs:
-ADR 0036 amendment; wiki `bilinguals-simulator.md`, `reader.md`,
-`entities-alignment.md`, `design-system.md` refreshed.
-
-## 2026-09-22 (feat: alignments live under their work; reader renamed to /reader)
-
-Implemented ADR 0036. `/library/{work}` is now tabbed: the **Entities tab**
-(its former content) and a new **Alignments tab** (`?tab=alignments`)
-listing the work's readable entity matches (`matchPayload` + a
-server-computed `reader_target` = the non-native side, original-side then
-A-side tiebreaks; card = `Components/AlignmentCard.jsx`, stretched link to
-the editor `/alignments/{id}`, Simulator + Read·{LANG} buttons; search
-matches either side's entity name). "Add alignment" leads to
-`/library/{work}/alignments/create` + `POST /library/{work}/alignments`
-(`LibraryController::createAlignment/storeAlignment`) — the old form minus
-the work picker; store now validates both entities belong to the route
-work. Deleted: `GET/POST /alignments`, `GET /alignments/create`,
-`Alignments/Index.jsx`, `Alignments/Create.jsx`, the navbar "Alignments"
-item (`nav.alignments` string), and `AlignmentController::index/create/
-store` + `alignableWorks()` — the editor `alignments.show` (now
-`whereNumber`) and its JSON endpoints are untouched. Simulator: new pinned
-route `GET /bilinguals/simulator/{entityMatch}`
-(`bilinguals.simulator.forMatch`) renders the page with the text selector
-hidden and the match fixed; the dropdown page stays as the navbar landing.
-Reader: `/reader-react*` renamed to `/reader*` (`reader.show`/`reader.index`
-plus a named `/reader` redirect, which also fixes the previously dangling
-`route('reader')` in the Blade navs); page wrappers are now
-`Pages/Reader.jsx` / `Pages/ReaderIndex.jsx` rendering the unchanged
-`Reader/ReaderApp.jsx` / `Reader/ReaderIndexApp.jsx`. UI strings: new
-`library.tab_*` / `library.add_alignment` / `library.search_alignments` /
-`library.no_alignments_*` / `library.simulator` / `library.read_lang` /
-`library.no_alignable_entities*` / `library.open_alignment_editor` (en+ru).
-Tests: `AlignmentsCreateMatchTest`/`AlignmentCopyTest` move to the
-work-scoped routes, `AlignmentPagesTest` asserts the global pages are gone
-and covers the tab (scoping + restricted matches), `LibraryTest` gains
-tab/search/pagination/reader-target coverage, `ReaderReactPageTest` →
-`ReaderPageTest` on the new URLs (legacy paths assert 404), new
-`SimulatorPinnedMatchTest`. Docs: ADR 0036; CONTEXT.md **Alignments tab**
-term + Library/Entity match updates; wiki `entities.md`,
-`sentence-alignment.md`, `bilinguals-simulator.md`, `reader.md`,
-`interactive-words.md`, `run-alignment.md` playbook refreshed.
-
-## 2026-09-22 (feat: per-user AI model preferences + tabbed profile; model picker removed from simulator)
-
-Implemented ADR 0035. The simulator's model picker is gone: the answer model
-and a new **explanation model** are per-user preferences stored as
-`user_settings.ai_model_id` / `explanation_model_id` (nullable FKs to
-`ai_models`, `nullOnDelete` because `ai:sync-models` hard-deletes vanished
-rows), edited in the profile's new **AI Models tab** (`PATCH
-/profile/ai-models`), and resolved server-side — `/ai/question`,
-`/ai/question/stream` and `/ai/word-explain` no longer accept a `model`
-field. Semantics: unset answer model blocks AI with a "choose a model"
-prompt (simulator toolbar label and word-popup explain tab link to
-`/profile?tab=ai`); a picked-but-unavailable model silently falls back to
-the cheapest available; an unset explanation model follows the answer model.
-The migration backfilled `ai_model_id` from the legacy
-`ui_settings.simulator.model` (now stripped; validation rule removed).
-Word explanations now follow the "column language ≠ native language" rule
-everywhere and the **Reader gained the explain tab** (bilingual rows post
-`meaning_match_id`/`side`/`sentence_index`, single-language rows post
-`entity_sentence_id`). The profile page itself was reworked into four
-deep-linkable tabs (Account / Preferences / AI Models / Danger zone), each
-section moved to its own component under `Pages/Profile/`; the page keeps
-the legacy palette. Updated `ai-providers.md`, `bilinguals-simulator.md`,
-`interactive-words.md`, `reader.md`; added `profile.md`; new ADR
-`0035-per-user-ai-model-preferences.md`.
-
-## 2026-09-22 (fix: junction-uniqueness invariants — last-chunk cursors, premature skips, dedupe; stale-worker ops note)
-
-Follow-up to the order-invariant fix earlier today. Diagnostic on the fresh
-test alignment (entity match 15, 1566 rows) showed **zero duplicate
-junctions** and a walk whose shape matched the *old* comparator's output
-exactly (a b-only row sorted at the a-index equal to its b-index) — the
-fix on disk had simply never executed: the queue worker that ran the
-alignment predated the fix, and code loads once per worker process.
-Documented as an operations note in `wiki/domains/sentence-alignment.md`
-and `wiki/playbooks/run-alignment.md`: **restart the worker (`composer run
-dev` / `php artisan queue:restart`) after pulling alignment fixes.**
-
-Three latent re-feed holes closed while in there (none triggered by
-match 15, all defensive):
-
-* **Last-chunk cursor rule** (`AlignEntitySentences::alignPoolChunk`): when
-  a pool's final window commits, cursors now advance to the **window end**
-  (`aOffset + aSentences->count()`), matching what `isLastChunk` storage
-  covers (trailing skips up to the window end) — previously they stopped at
-  the last committed match, so the next invocation re-fed sentences that
-  already carried junctions.
-* **No premature skips for parked sides**: a no-progress chunk stores skip
-  rows only for sides whose cursor advances past the stored sentence
-  (`storeChunkSkips(..., $sides)`; `alignWholePool`'s no-committed path
-  passes only the a head). A parked side re-feeds its head into later
-  windows; a premature skip row there duplicated the junction when one of
-  those windows matched it. The parked original side is covered by
-  finalize's junction-less repair.
-* **Junction-uniqueness at write time** (`SentenceAlignmentService::
-  persistSegment`): machine rows below the landmark bar junctioning any
-  sentence of the incoming segment are deleted wholesale first — a re-fed
-  window now replaces stale coverage instead of duplicating it. The
-  landmark bar is now a shared const (`SentenceAlignmentService::
-  LANDMARK_THRESHOLD`, aliased by the job).
-* **Resequence dedupe**: `resequenceMatchesByDocumentPosition` drops fully
-  subsumed machine rows before the walk (a row whose every junction is held
-  by a higher-priority row — landmark/human over machine, then two-sided,
-  richer, more similar, earlier); partial n:m overlaps stay. Runs in the
-  same transaction as the renumber; also active in `alignments:resequence`.
-* Tests: last-chunk cursors (trailing skips → cursors at window end, no
-  duplicate junctions), mid-pool stall force-advance (rewritten to a
-  non-last-chunk shape), parked original-side head not junctioned into
-  premature skips, re-stored window replaces stale machine rows, human row
-  absorbs a duplicate and survives, resequence dedupe + partial-overlap
-  tolerance. `composer run test:tia`: 656 passed (3,263 assertions).
-
-## 2026-09-22 (fix: meaning-match order invariant — resequence side-mixing, copy fast path, atomic chunk writes)
-
-* **Reported symptom.** After aligning, meaning matches showed sentences out
-  of sequence: match #68's Russian sentence displayed position 67 while the
-  next match's displayed 65 — the per-sentence number is the sentence's rank
-  among its side's sentences while walking `meaning_matches.order`, so the
-  `order` column itself was scrambled.
-* **Root cause 1 — the Sep 18 resequence mixed side scales.**
-  `resequenceMatchesByDocumentPosition()` sorted every row by
-  `primary = posA ?? posB`, comparing **a-side document indexes against
-  b-side indexes** for single-b rows. A two-sided row anchored at a=41 whose
-  b partner is 67 sorts before a b-only row at b=65 (41 < 65), so the stored
-  sequence read RU 67 → RU 65. The resequence had been *re-scrambling*
-  alignments that `persistSegment()` had written in correct document order.
-  Fix: a-anchored rows (two-sided + a-only) sort by a position; each pending
-  b-only row is emitted immediately before the first anchored row whose b
-  position is larger (a-only rows carry no b information and never hold one
-  back); junction-less rows stay last. The rows query also gained
-  `orderBy('order')->orderBy('id')` (deterministic ties).
-* **Root cause 2 — the copy fast path propagated scrambled orders.**
-  `AlignmentCopyService::copyAlignment()` (added Sep 21, ADR 0033) cloned
-  `meaning_matches.order` verbatim from a completed source and skipped the
-  pipeline's finalize resequence entirely, immortalizing any pre-fix
-  scramble and spreading it through copies-of-copies. Fix: the copy
-  transaction now runs `resequenceMatchesByDocumentPosition($target)` after
-  the junction inserts — a copy either lands ordered or the transaction rolls
-  back and the caller falls back to the full pipeline.
-* **Write-time ordering.** `persistSegment()` had appended every new chunk
-  after `MAX(order)`, so during a landmark-aware re-align the replacement
-  rows for early-document pools sorted after the tail until finalize ran
-  (the same failure mode as the removed Sep 18 refinement round). Fix:
-  `persistSegment()` calls `resequenceMatchesByDocumentPosition()` inside
-  its transaction after every chunk/skip persist — mid-run (status
-  `aligning`) state is now already in document order; on a fresh left-to-right
-  run it is a no-op (orders are already dense strides).
-* **Atomic chunk writes (retry window closed).** Persisting a chunk's rows
-  and advancing `a/b_last_sentence_offset` happened in two separate
-  transactions — a crash between them re-aligned the same window under a
-  fresh `alignment_chunk` while the old rows survived, duplicating junctions
-  no resequence can undo. Fix: `persistOffsets()` takes the chunk writes as a
-  closure and commits rows + cursors in one `DB::transaction`
-  (`alignWholePool` now persists internally instead of returning offsets;
-  finalize/dispatch happen only after the commit).
-* **Invariant documented.** "Alignment never changes sentence order" is now
-  explicit: sentences keep the original order of the uploaded source text
-  file; `entity_sentences.order` is assigned once at split and only the
-  editor's drag renumbers it; `meaning_matches.order` must equal the
-  document-position sequence on both sides, enforced at every write path.
-  See the new "Order-preservation invariant" section in
-  [Sentence Alignment](domains/sentence-alignment.md) and the new invariant
-  bullet in [Entities & Alignment](database/entities-alignment.md);
-  [Running an Alignment](playbooks/run-alignment.md) documents
-  `alignments:resequence <id>` as the manual single-match repair.
-* **Data not repaired.** Existing scrambled rows are left in place by
-  decision; re-aligning a match (or running `alignments:resequence <id>`)
-  repairs it on demand.
-* Updated [Sentence Alignment](domains/sentence-alignment.md) (new
-  order-preservation invariant section; stage 2b copy + finalize notes),
-  [Entities & Alignment](database/entities-alignment.md) (order-preserving
-  pipeline invariant bullet),
-  [Running an Alignment](playbooks/run-alignment.md) (repair step 7).
-* Tests: `ResequenceEntityMatchesTest` — the reported regression
-  (b-only row must slot before the two-sided row whose b partner is later;
-  fails under the old comparator) + a full a-only/b-only/two-sided/
-  junction-less interleave sequence. `AlignmentCopyTest` — a reversed source
-  order column does not survive the copy. `ChunkedEntityAlignmentTest` — a
-  re-aligned pool before a landmark sorts before it while the match is still
-  `aligning`.
-
-## 2026-09-21 (feature: Context explanation tab in the simulator's word popup)
-
-* **`POST /ai/word-explain`** (`SimulatorController::explainWord`, named
-  `ai.word-explain`, throttled 20/min, validated by the new
-  `AiWordExplainRequest`): explains a Ctrl-clicked word in its sentence
-  context through `AIModelResolver::ask`. The client sends
-  `{meaning_match_id, side, sentence_index, word_id, surface, model}`; the
-  endpoint rebuilds the clicked side's sentence list exactly like
-  `MeaningMatchPresenter::sideText` (so the index is exact), takes the
-  clicked `EntitySentence` plus its before/after neighbours in the same
-  entity by document order, marks the surface with `**…**`, and prompts for
-  a 2–4-sense-focused explanation replied in the user's Native language.
-  Sync JSON with the standard `{data: {answer}}` /
-  `{data: {data: {error}, code}}` envelopes; `canReadMatch` gating.
-* **Tabbed word popup.** `WordPopup.jsx` gains an optional `explain`
-  payload — when `WordText` has a `rowKey`, a `side` (`"a"`/`"b"`, threaded
-  from `TextContent`) and the simulator's `currentModel` (passed as
-  `aiModel` from `Bilinguals.jsx`, gated on `canUseAi`), the popup shows a
-  tab strip: dictionary content on tab 1 (default), an "Explanation" tab 2
-  with a manual "Explain this word" button, loading/error states, and
-  rendered markdown. Answers memoize in a page-lifetime client map keyed by
-  `meaningMatch|side|sentenceIndex|surface|model` ("Ask again" drops the
-  memo); no server-side cache. Progress footer stays shared below both
-  tabs. The Reader passes none of the new props → popup unchanged there.
-* **`WordText` renders per-sentence spans.** The row text (a side's
-  non-empty sentences joined with `\n` in document order) now renders each
-  sentence in its own inline span (visually identical) so a Ctrl+click
-  knows its `sentence_index`; the popup explain payload parses the
-  meaning-match id out of the `mm:{id}` row key.
-* **`renderMarkdown` extracted** from `Bilinguals.jsx` into the shared
-  `resources/js/lib/markdown.js` (verbatim helper chain), reused by the
-  popup's explanation pane.
-* **UI strings** (`word.tab_dictionary`, `word.tab_explanation`,
-  `word.explain`, `word.explain_loading`, `word.explain_failed`,
-  `word.explain_again`) added to `ui-strings/words.php` (en/ru).
-* **Docs.** `CONTEXT.md`: Interactive Reading Context gains
-  **Context explanation**; **Word popup** updated for the tabs.
-  `wiki/domains/interactive-words.md`: new "Context explanation tab"
-  section, routes + sources. `wiki/domains/bilinguals-simulator.md`:
-  endpoint row + key-behavior bullet. Tests:
-  `tests/Feature/AiWordExplainEndpointTest.php` (7 cases, resolver mocked
-  at the container).
-
-## 2026-09-21 (welcome page branding: cat-and-book medallion + favicon set)
-
-* **Welcome page image.** `resources/js/Pages/Welcome.jsx` now shows the
-  cat-and-book illustration as a centered circular medallion (hairline
-  border + vellum/ink background matching the description cards) between
-  the "About" eyebrow and the four language cards. Source image:
-  `public/cat-and-book.png` (renamed from the double-extension
-  `cat-and-book.png.png`; losslessly re-optimized).
-* **Favicon set (first real favicon).** `resources/views/app.blade.php`
-  head gains `<link rel="icon">` (96×96 PNG) and
-  `<link rel="apple-touch-icon">` (180×180) tags; generated from the
-  same image into `public/favicon.png` / `public/apple-touch-icon.png`,
-  and the empty 0-byte skeleton `public/favicon.ico` was replaced with a
-  real 16/32/48 multi-size ICO. No matching concept described the
-  welcome page content before, so no concept body needed changes
-  (frontend architecture concept still accurate).
-* **Admin topbar Welcome link.** The Filament panel topbar gains a
-  "Welcome" link immediately right of the brand logo: a
-  `PanelsRenderHook::TOPBAR_LOGO_AFTER` render hook in
-  `AdminPanelProvider` renders the new
-  `resources/views/filament/topbar/welcome-link.blade.php` — a
-  `.fi-logo`-styled anchor to `url('/')` (the welcome route has no
-  name), so it matches the "Laravel" brand text in size/weight/color;
-  spacing is an inline margin so it survives stale asset builds.
-  `wiki/domains/access-control.md` "Filament panel" bullet extended;
-  first render hook used in the app.
-
-## 2026-09-20 (feature: exact-copy hashes, alignment reuse, uploader + approved lock)
-
-* **Exact-copy detection replaces similarity dedup (ADR 0033).** Entities
-  gain `file_hash` (raw upload bytes, computed at upload — no synchronous
-  Python call anymore; uploads survive embedding-service outages) and
-  `text_hash` (sha256 of whitespace-normalized sentence contents in order;
-  maintained by the new `entities:refresh-text-hashes` scheduler every 5 min
-  + `ComputeEntityTextHash` unique jobs, staleness via the new
-  `sentences_updated_at`/`text_hashed_at` pair — an explicit timestamp
-  because deletions are invisible to a `max(updated_at)` check). A
-  byte-identical upload clones the source entity (sentences, signature, word
-  statistics) for the uploader — their own restricted entity, zero Python
-  calls; a text-hash match after the split copies signature + word stats
-  (new `FinalizeEntityDerivations` job; `ProcessEntityFile` now just chains
-  the split). The near-dup merge/grant/delete flow (≥0.95 cosine) is removed
-  everywhere; the embedding signature survives only for cross-language
-  candidates (Filament Find Match) and the ≥0.70 verify gate.
-* **Alignment reuse.** New `AlignmentCopyService`, wired into all three
-  match-creation entry points (web controller, Filament create page, list
-  header action): when a completed match exists between exact-copy entities
-  (equal hashes + languages, either orientation), meaning matches and
-  junctions are cloned with a positional sentence mapping — the new match is
-  `completed` instantly, no half-hour pipeline. Source ranking: most
-  confirmed rows → linked_count → latest completed. Falls back to the
-  pipeline on any mismatch. No provenance column (copies are independent).
-* **Uploader + approved edit lock (ADR 0034).** `entities.created_by`
-  (nullable, nullOnDelete; null = system import; supersedes ADR 0013's
-  no-creator decision) and `entities.is_approved`: when true, metadata edits,
-  sentence CRUD, alignment-editor mutations, re-aligns, `alignments:resume`
-  pickup and deletion are blocked for everyone except admins (the uploader
-  included); only the flag stays flippable, by uploader and admins
-  (`PATCH /entities/{lang}/{entity}/approved` + Filament toggle). New
-  `EntityAccessService::canEditMatch` gates editor mutations (was
-  `canReadMatch`).
-* Updated concepts: [entities](domains/entities.md) (creation pipeline
-  rewritten, hash maintenance + approval sections), [sentence alignment](
-  domains/sentence-alignment.md) (stage 2 reworked, new stage 2b copy fast
-  path), [entities-alignment schema](database/entities-alignment.md) (new
-  columns + invariants). `wiki:sync` regenerated (new route, command, model
-  fillables). Tests: new suites `EntityTextHasherTest`, `AlignmentCopyTest`,
-  `EntityTextHashRefreshTest`, `EntityApprovalTest`; near-dup tests removed
-  from `TextSignatureServiceTest`/`EntityControllerTest`; TIA 639 passed.
-
-## 2026-09-20 (fix: `laravel/.git` phantom repo permanently masked from the host)
-
-* **The recurring stray `laravel/.git` can no longer reach the host.** The
-  TIA artefact repo (`scripts/tia-setup.php` git-inits `/var/www` for Pest
-  TIA) had reappeared on the host through the `./laravel:/var/www` bind mount
-  (deleted 2026-09-18, recreated 2026-09-19 by the next `test:tia`), making
-  git GUIs show two repositories — the real one on `dev` and a phantom on
-  `master` with diffs against its stale baseline. Fix: docker-compose `app`
-  service now mounts the named volume `tia-git` at `/var/www/.git`, so the
-  TIA repo lives only in the container volume. Container behavior unchanged
-  (TIA still sees `/var/www/.git`; the baseline commit now survives
-  `docker compose down`, only `down -v`/volume deletion resets it → one
-  `--fresh` re-record). Two knock-on fixes: `scripts/tia-setup.php` now
-  detects repo presence via `.git/HEAD` instead of `is_dir()` (the volume
-  mountpoint means the directory always exists), and a compose `post_start`
-  hook chowns the mountpoint to `alex` (fresh volumes are root-owned; git
-  runs as `alex`). The host may still show an *empty* root-owned
-  `laravel/.git` — Docker Desktop's mountpoint artifact, inert; a populated
-  one means the mask was reverted and can be deleted safely. Verified:
-  fresh `--fresh` TIA record passed, then `composer run test:tia` replayed
-  620 tests / 3024 assertions; host `laravel/.git` stayed empty; `git -C
-  laravel/` resolves to the outer repo on `dev`.
-* Updated [Running Tests](playbooks/running-tests.md) (host-side isolation
-  replaces the old host-side caveat; frontmatter bump). No route/model/
-  command changes (`wiki:sync` not required). **Deploy note:** the compose
-  change is a container-definition change — the next prod `./deploy.sh`
-  refuses until containers are recreated there and `./deploy.sh --stamp`
-  is run (the refusal prints the exact commands).
-
-## 2026-09-20 (puzzles nav dropdown)
-
-* **Navbar Crossword link became a Puzzles dropdown** (`NavBar.jsx`). The
-  flat `/crossword` nav entry is now a `nav.puzzles` parent ("Puzzles" /
-  "Головоломки" — the UI string already existed in the seeder; DB seeded
-  via `UiStringSeeder`) whose only child is Crossword. This activates the
-  dropdown machinery that was already committed in the React NavBar
-  (desktop dropdown + mobile accordion, `hasActiveChild` underlining) but
-  unused since the Blade-nav port. Routes and URLs unchanged — the parent
-  is not a link. No glossary term added (deliberate). Also corrected the
-  stale AGENTS.md claim that Livewire runs Crossword/WordsSearch in
-  `app/Livewire/` (that directory no longer exists; Livewire remains only
-  as a Filament dependency).
-* Updated [Crossword](domains/crossword.md) (entry-point note +
-  frontmatter bump). No route/model/command changes (`wiki:sync` not
-  required).
-
-## 2026-09-19 (selectable word tokens + popup typography follows the page font)
-
-* **Interactive words are now selectable `role="button"` spans, not real
-  `<button>`s** (`WordText.jsx`). Chromium treats button labels as widget
-  chrome, so double-clicking a dictionary word never produced a native text
-  selection — invisible to translator/dictionary browser extensions. The
-  spans keep the exact previous contract: hover underline via `.word-token`,
-  focusable, Ctrl+click opens the popup (ADR 0030 unchanged), Enter/Space
-  swallowed, Ctrl+Enter/Ctrl+Space open it. No JS was blocking selection —
-  the element type was. Applied to both surfaces via the shared component
-  (Reader's tokens had the same issue).
-* **Word-popup width + typography now follow the host page's font setting
-  (ADR 0031).** `WordPopup` takes a `fontSize` prop (default 17px, up from
-  the old fixed 14px body); width scales with it — 560px at the default,
-  was a fixed 460px — and all inner text sizes are em-relative, so the
-  popup scales as one piece. Pages derive it with the new exported
-  `popupFontSizeFor(pageFont)` (65% of the page font, floor 14px, cap 32px)
-  from their existing `font_size` state: `Bilinguals` → `TextContent` →
-  `WordText` → `WordPopup`, and `ReaderApp` → `ReaderRow` → `WordText`. No
-  new persistence (`simulator.font_size` / `reader.font_size` reused;
-  validator bounds unchanged). No route/model/command changes (`wiki:sync`
-  not required).
-* ADR [0031](../docs/adr/0031-popup-typography-follows-page-font.md) added.
-  Updated [Interactive Words](domains/interactive-words.md) and
-  [Bilinguals Simulator](domains/bilinguals-simulator.md).
-
-## 2026-09-19 (interactive words: Ctrl+click popups, full headword content)
-
-* **Word popup gesture + content reworked (ADR 0030).** `WordText` now opens
-  the popup on **Ctrl+click** only (plain click inert, still
-  `stopPropagation`'d so it can't toggle a reader row) on both surfaces.
-  `WordController::show` returns every `words` row sharing the headword
-  (language + `l_word`) — bound word first, siblings by the new public
-  `EntityWordLinker::classPriority()` — as `entries[]` carrying each part of
-  speech's own transcriptions, definitions, native-first translations
-  (cap 100), examples and etymologies; top-level `word`/`word_class`/`is_form`
-  stay. `WordPopup` is viewport-aware: opens below the word, flips above when
-  there is more room above, height capped to the viewport, body scrolls
-  internally, footer actions pinned; 460px wide; one section per entry with a
-  class heading and an 8-translation "+N more…" expander; new UI strings
-  `word.etymology`, `word.more_translations`. Hover affordance is an
-  **underline** (no color change) so the familiarity tint stays legible.
-  Glossary: Interactive word updated, Word popup + Headword added.
-  Concept: `wiki/domains/interactive-words.md` (human verification dropped —
-  content changed, re-verify after review).
-
-## 2026-09-18 (fix: stray host-side `laravel/.git` removed)
-
-* **Nested TIA artefact repo removed from the host.** The container-local git
-  repo that `scripts/tia-setup.php` initialises at `/var/www` for the Pest TIA
-  engine materialises on the host at `laravel/.git` through the
-  `./laravel:/var/www` bind mount (first noticed after the 2026-09-17
-  `test:tia` run created its baseline commit there). It is not the real repo —
-  from inside `laravel/`, git resolved to a branch `master` with one generated
-  commit (`TIA baseline commit` by `TIA Setup <tia@local>`), showing the same
-  working-tree edits as the root repo plus phantom diffs against the stale
-  baseline. Deleted `laravel/.git` (nothing unique in it: no stashes, one
-  generated commit, fetched refs already present in the root repo; all working
-  files are tracked by the root repo). `test:tia` recreates the artefact on
-  the next run — followed by one `--fresh` graph re-record. Guidance added to
-  `wiki/playbooks/running-tests.md` ("Container-local git repo"): run git from
-  the repo root only; never `push`/`pull`/`clean`/`stash` from inside
-  `laravel/` (its `origin` points at the real GitHub remote).
-
-## 2026-09-18 (removed: refinement round)
-
-* **Second alignment round removed; back to a single LaBSE pass.** After the
-  arbitration redesign the round still scrambled live alignments in practice,
-  so the whole two-round machinery was reverted to the committed round-1
-  behavior: no auto-chained refinement, no `Refine (BGE-M3)` Filament action,
-  no `/align` `model`/`existing_matches`/objective fields, no
-  `refining`/`scored_by` columns (dropped; migrations deleted), no
-  `PYTHON_REFINE_*`/`PYTHON_LANDMARK_THRESHOLD` config, no calibration
-  scripts. Kept from the fix round: `resequenceMatchesByDocumentPosition` +
-  `alignments:resequence` (order = document position enforced on every
-  completion; covered by `ResequenceEntityMatchesTest`). Data cleanup: the
-  one mid-refinement match (#11) was completed directly, its queued job
-  deleted, its 360 scrambled rows resequenced; corpus-wide order-vs-position
-  descent count is 0. Landmark semantics are HEAD's again: human rows +
-  machine rows ≥ 0.90 survive Re-align.
-
-## 2026-09-18 (fix: refinement round could regress alignments)
-
-* **Refinement round redesigned to keep-or-replace arbitration; alignment
-  #10 repaired.** Running the new two-round pipeline on match #10 scrambled
-  the result after round 2. Investigation (read-only SQL + code audit) found
-  the pairings healthy (0 crossings, 0 junction-less) but the `order` column
-  destroyed: refinement assigned new rows `order = max(order) + stride`, so
-  all 1,294 replacement rows sorted after the 169 surviving landmark rows —
-  108k order-vs-position inversions, and every display surface sorts by
-  `order`. Three fixes: (1) replacement orders now spread BETWEEN the
-  bounding landmark rows, and `finalize()` resequences the whole match by
-  document position (new `SentenceAlignmentService::resequenceMatchesByDocumentPosition`
-  + `alignments:resequence` command; run on #10: 1,462 rows renumbered, 0
-  inversions / 0 crossings after); (2) the round no longer bulk-deletes
-  sub-bar rows up front — each region between landmarks is re-aligned with
-  `/align` `existing_matches` (python rescores the old spans with the same
-  model) and replaced only when `candidate_objective > existing_objective`
-  (identical formula: score² / -2.0 force-match / skip_penalty per uncovered
-  sentence; `ai/alignment/test_objective.py`); regions over
-  `PYTHON_REFINE_REGION_CAP` (60) keep their rows for human review;
-  (3) `PYTHON_REFINE_THRESHOLD` raised 0.45 → 0.60 (calibration showed
-  BGE-M3's genuine floor ≈0.57 — below 0.57 the DP's economics prefer
-  garbage matches over skips), and strong-model rows become landmarks at
-  `PYTHON_REFINE_LANDMARK_THRESHOLD` = 0.70 via
-  `meaning_matches.scored_by` (new column), so a Re-align can no longer
-  delete the refine round's verified output. Landmark clause got a
-  three-valued-logic fix (`whereNotNull('scored_by')` — `scored_by =
-  'refine'` is NULL for NULL rows, which made `whereNot(clause)` skip the
-  exact rows it had to delete). Tests: RefineEntityAlignmentTest rewritten
-  for arbitration (accept/reject/oversized/model-aware-landmarks/resequence),
-  new objective + Filament + unit coverage; full suite 623 passed. See
-  [Sentence Alignment](domains/sentence-alignment.md).
-
-## 2026-09-18
-
-* **Two-round alignment: fast LaBSE round 1 → BGE-M3 DP refinement of the
-  problem regions.** A fresh run stays on the fast aligner; when it drains,
-  `finalize()` chains a refinement round (`services.python.refine_alignment`,
-  default on) that keeps the landmark tiers (human rows + machine rows ≥
-  `PYTHON_LANDMARK_THRESHOLD`, 0.90) as pool boundaries, deletes the sub-bar
-  machine rows, and re-aligns the gaps via `/align` with per-request
-  overrides: `algorithm: "dp"` (n×m window DP),
-  `model: "signature"` (the strong `MODEL_PATH` BGE-M3 — new optional
-  `model` field on `/align`, served from the signature-model cache), and
-  `similarity_threshold` = `PYTHON_REFINE_THRESHOLD` (0.45). The round flag
-  lives on `entity_matches.refining` (new column) so self-dispatches,
-  retries, and test drain loops continue the correct round; refine windows
-  are capped at 40 sentences/side (`REFINE_CHUNK_CAP`) so huge landmark-free
-  gaps drain chunk-by-chunk. `beginRefinement()` is a no-op when nothing is
-  sub-bar or a side is empty, and `handle()` finalizes directly when
-  landmark bounds cover the whole span — removing a latent
-  infinite-dispatch loop. Filament gained a **Refine (BGE-M3)** action
-  alongside Re-align / Run from scratch. Round-1 model restored to LaBSE
-  (`ALIGN_MODEL_PATH=/app/models/labse`) and `ALIGN_DEFAULT_THRESHOLD` back
-  to 0.55 / anchor 0.6 (the live `.env` had drifted to bge_m3 + 0.4).
-  Thresholds are now calibratable from data:
-  `ai/alignment/calibration_pairs.txt` (curated equal-meaning pairs) +
-  `ai/alignment/calibrate.py --model aligner|signature` print the real-match
-  score distribution (min/p5/median) with suggested knob values (inspired by
-  lingtrain-aligner's chains→conflicts re-solve design). First measured run
-  (15 pairs): LaBSE min 0.68 / p5 0.76 / median 0.93 — the 0.55 round-1
-  threshold stays safely below the floor; BGE-M3 min 0.57 / p5 0.68 /
-  median 0.93 — cooler floor, so `PYTHON_REFINE_THRESHOLD=0.45` keeps a
-  margin (tighten toward 0.5–0.55 as the pair list grows). Tests:
-  `RefineEntityAlignmentTest` (chaining, overrides, chunked drain, no-op,
-  degenerate pools), Filament refine-action test, service payload unit
-  tests; five round-1 mechanics tests pin `refine_alignment=false`. See
-  [Sentence Alignment](domains/sentence-alignment.md) and
-  [Works, Entities & Alignment](database/entities-alignment.md).
-
-## 2026-09-17
-
-* **Fast-tests convention: bound data, fake HTTP, cap drain loops, TIA
-  first.** After slow full-suite runs, testing rules were codified in
-  [AGENTS.md](../AGENTS.md) (Conventions → Fast tests) and
-  [Running Tests](playbooks/running-tests.md) (new "Keeping tests fast"
-  section): seed only the rows assertions need, always `Http::fake()` paths
-  that can reach the Python service (sync queue + 600s timeouts make one
-  leaked call cost minutes), guard `while` drain loops with a convergence
-  assertion, pass/assert `per_page` on paginated endpoints, and default to
-  `composer run test:tia` instead of the full suite. Applied immediately:
-  `FilamentReAlignActionTest`, `AlignmentsResumeCommandTest` and
-  `AlignmentsCreateMatchTest` got file-level `Http::fake()` guards (they had
-  `Bus::fake()` only; one fixture tweak away from real `/embed/batch` calls).
-
-* **Fix: `composer run test:tia` never worked — coverage driver + OOM +
-  dead imports.** The script passed `-d extension=pcov.so` as *arguments to
-  the pest binary*, which never reach PHP; parallel runs go through the
-  paratest binary, whose workers inherit neither `-d` flags nor coverage, so
-  every run died with "No code coverage driver is available". `test:tia` now
-  loads the tracked `laravel/scripts/php-ini/tia.ini` via `PHP_INI_SCAN_DIR`
-  (pcov + `pcov.enabled=1` + `memory_limit=1G`; the memory line fixes the
-  graph merge OOM at the 128M CLI default), and the re-record command in
-  AGENTS.md/Running Tests uses the same form. Two no-op
-  `use InvalidArgumentException;` imports (PHP 8.4 warning → ErrorException
-  under the TIA file scan) were removed from `AiQuestionEndpointTest` and
-  `AiQuestionStreamEndpointTest`. Verified: fresh recording run 611 passed /
-  ~83s, replay 611 passed / 5.2s.
-
-* **Crossword word selection is now sorted by familiarity (least familiar
-  first).** `CrosswordController::generate` left-joins `user_word` and orders
-  `COALESCE(user_word.familiarity, 0)` ascending (frequency, id tiebreak)
-  before `LIMIT 30`, so words the user knows better stop crowding out
-  never-seen band words. See [Crossword](domains/crossword.md).
-
-* **Tinting bands shifted: 0–19 rose / 20–59 amber / 60–99 verdigris /
-  ≥ 100 green.** `FAMILIARITY_STRONG_AT` moved 20 → 60 and a new
-  `FAMILIARITY_PROGRESS_AT = 20` separates low-scoring words from the amber
-  band in `WordText#tierClass` (`resources/js/lib/wordFamiliarity.js`,
-  `resources/js/Components/WordText.jsx`). Previously 0 = rose, 1–19 =
-  amber, 20–99 = verdigris, ≥ 100 = plain. Class names and CSS tokens are
-  unchanged (still `.word-unknown` / `.word-progress` /
-  `.word-progress-strong` / `.word-known`); ADR 0028 decision #5 updated.
-
-* **Fix: simulator highlights vanished after opening a row.**
-  `applyFamiliarity` rebuilt `wordMaps` as `{a, b}` and dropped
-  `highlightable`, so `TextContent` computed `highlight=false` for every word
-  (all rows lost tier classes) and `creditRead`/`toggleAllEn` silently no-oped.
-  Now spreads the whole object (`{...maps, ...}`, same as
-  `handleWordProgress`). Also switched word familiarity tinting from
-  background to **text color** (`resources/css/app.css` `--word-*` tokens:
-  rose / amber / verdigris, day+night), declared after the hover rule so tint
-  is stable on hover. See [Interactive Words](domains/interactive-words.md).
-
-## 2026-09-16
-
-* **Feature: import en+ru from the monolithic kaikki raw dump**
-  ([Dictionary import](domains/dictionary-import.md),
-  [Playbook](playbooks/import-dictionary-data.md), ADR
-  [0029](../docs/adr/0029-import-raw-dump-via-per-language-extraction.md)).
-  New `wiktionary:import-raw {file} --langs=en,ru` orchestrates:
-  `RawWiktextractExtractor` streams the mixed-language
-  `raw-wiktextract-data.jsonl.gz` (2.7GB, ~2400 Wiktionary languages on one
-  line each) once with flat memory — substring pre-filter skips
-  `json_decode` for non-wanted languages, the decoded **top-level**
-  `lang_code` decides (nested occurrences in translations/templates are
-  false positives; line 1 of the dump alone contains a nested ru needle in
-  its 552 translations) — and writes raw-line **language extracts** next to
-  the dump (`<base>.<code>.jsonl`, `--skip-extract` to reuse,
-  `--extract-only` to stop there, `--max-lines` for smoke runs); then each
-  language imports through the existing `WiktionaryParser` path with
-  **symmetric** translation staging (every imported language stages every
-  other; `--target-langs` overrides); then `wiktionary:link-translations`
-  runs automatically (`--no-link` to skip). `--fresh --force` wipes the
-  selected languages' dictionary data first (FK cascades take satellites,
-  links and `user_word` familiarity; `entity_words.word_id` reset → re-run
-  `crossword:link`); re-imports without it upsert and text-dedupe but never
-  delete. `WiktionaryParser` reads `.jsonl.gz` transparently
-  (`compress.zlib://`) and accepts a target-language **list**; the merge
-  key stays `word|pos` **without language**, so mixed-language input must
-  never be fed to it directly (the extract step exists for that reason).
-  `wiktionary:import --target-lang` now takes comma-separated codes. New
-  migration indexes `definitions.word_id` / `etymologies.word_id`
-  (`insertNewOnly`'s per-batch `whereIn` would full-scan multi-million-row
-  tables). Import-raw sets `memory_limit=1G` + `set_time_limit(0)` (single
-  decoded lines can spike past the 128M CLI default) and heartbeats every
-  100k lines to console + log for detached runs. Smoke-verified against the
-  real gz on the testing DB (20k lines → 4064 en words, 18,404
-  definitions). New CONTEXT.md terms: Raw dump, Language extract.
-
-## 2026-09-14
-
-* **Feature: numeric word familiarity (0–100) replaces the ternary word
-  status** ([Interactive words](domains/interactive-words.md), ADR
-  [0028](../docs/adr/0028-numeric-word-familiarity.md)). `user_word.status`
-  (`learning/solved/known`) became `user_word.familiarity` (integer 0–100,
-  100 = known; migration maps old `known` → 100, everything else → 0). New
-  exposure signals: **read** +1 when a sentence pair is revealed on the
-  bilinguals simulator (row EN checkbox or the now-controlled `all_en`
-  header checkbox, which batches one request per loaded page), **lookup**
-  −2 on the first word-popup open within a sentence pair on both simulator
-  and reader. Events are deduplicated server-side by the new
-  `user_word_event` ledger (unique user × word × `row_key` × kind;
-  `row_key` = `mm:{meaningMatchId}` / `es:{entitySentenceId}`, shipped
-  one-to-one with rows as `row_keys` (simulator `POST /text`) / `rowKeys`
-  (reader)); row keys are validated against existing rows. New endpoint
-  `POST /word-events` (`WordFamiliarityService`), `PATCH
-  /words/{word}/progress` now takes `familiarity: 0-100`
-  (`WordController::setFamiliarity`). Crossword: `complete` awards +5 per
-  puzzle word (existing rows only, clamped), `generate` excludes only
-  familiarity ≥ 100 and seeds 0-marker rows. Tinting moved to four bands
-  (0 rose / 1–19 amber / 20–99 faint amber / ≥ 100 plain — new
-  `.word-progress-strong`); the popup shows "Familiarity: N/100". New
-  CONTEXT.md terms: Word familiarity, Read event, Lookup event (Word
-  progress retired).
-
-## 2026-09-13
-
-* **Feature: interactive dictionary words on the reader and bilinguals
-  simulator** ([Interactive words](domains/interactive-words.md), ADR
-  [0027](../docs/adr/0027-render-time-word-segmentation.md)). Dictionary
-  words in the text are now clickable (popup with definitions,
-  transcriptions, native-first translations, examples) and tinted by word
-  progress (unknown rose / in-progress amber / known plain), with "I know
-  this word" / "Remove mark" actions (`PATCH`/`DELETE /words/{word}/progress`,
-  `GET /words/{word}`). Design: word positions are **derived at render
-  time** — the server ships a per-entity word map (`EntityWordMap`,
-  `l_word => {w, s}`), the browser segments text via
-  `resources/js/lib/wordTokenizer.mjs` (PHP-parity enforced by
-  `tests/Unit/TokenizerParityTest.php`), and `WordText`/`WordPopup`
-  components are shared by reader and simulator. No occurrence/position
-  tables were added. Highlighting is gated per side (entity language ≠
-  native language) with persisted toggles `reader.highlight` and
-  `simulator.highlight_words`. Also: `EntityWordLinker` gained a forms
-  fallback pass (`entity_words.l_word` → `forms.l_word` → `words.id`,
-  exact matches win; new `idx_forms_l_word` index migration) — the first
-  dev run linked 2701 previously-unmatched EN tokens. New CONTEXT.md
-  terms: Interactive word, Word occurrence, Word map (Interactive Reading
-  Context).
-
-* **Fix: tokenizer corrupted words ending in р (SQLSTATE 22021).**
-  `WordTokenizer::trimEdgePunctuation` used PHP's byte-wise `trim()` with
-  the multi-byte `’` in the mask; the mask byte 0x80 sheared the final
-  byte off any token whose last character ends in 0x80 (every Cyrillic
-  word ending in **р** — 0xD1 0x80 — e.g. "умер" → `уме\xD1`), producing
-  invalid UTF-8 that Postgres rejects. `EntityWordIndexer::index()`
-  therefore crashed with a whole-transaction rollback for affected
-  entities — surfaced by the Russian Book Thief upload and by the new
-  background refresh job. Fix: multibyte-safe edge-only
-  `preg_replace("/\A['’-]+|['’-]+\z/u")`. Regression tests in
-  `tests/Unit/WordTokenizerTest.php`; dev entities re-indexed and
-  re-linked after the fix.
-* **Crossword page: work-first picker, pruned right panel.** The header
-  entity select became a work-grouped select (one `<optgroup>` per work,
-  its readable entities as options, label appended when set) plus a global
-  language-filter select ("All languages" default; filtering hides
-  non-matching entity options across all works and re-selects the first
-  visible entity when the pick is filtered out; default pick prefers the
-  first work's original-language entity). `CrosswordController::index`
-  now returns `works` (grouped, with `original_language_code`) +
-  `languages` instead of a flat entity list; the unused
-  `nativeLanguageId` prop was dropped. Right panel reduced to Definitions
-  and Translations tabs plus the unsolved-words modal: the Obsolete tab
-  (never had backend data), Forms tab, Image button (Google search), and
-  "I know this word" button are gone; `forms` removed from the
-  `dictionary` payload. `POST /crossword/word/know` + `KnowWordRequest`
-  deleted (the `known` word-progress status remains valid in `user_word`).
-  `crossword.*` UI strings updated (new `work`/`language`/`all_languages`,
-  removed tab/button strings, copy now says "work"); `UiStringSeeder`
-  re-run and the cached string map flushed.
-  `wiki/domains/crossword.md` updated; `CrosswordPageTest` covers the new
-  payload shape and drops the know-endpoint test.
-* **Background word-list refresh (index + link in the queue).** New
-  `crossword:refresh` sweep (scheduled every five minutes,
-  `withoutOverlapping`) picks entities that have sentences and either a
-  stale index or unlinked `entity_words` rows, and dispatches one
-  `RefreshEntityWords` queue job per entity (`ShouldBeUnique` by entity
-  id); the job re-indexes when stale and always runs the link pass
-  (ADR 0026). Linking logic extracted from `LinkEntityWordsCommand` into
-  `App\Classes\EntityWordLinker` (command + job share it; command output
-  unchanged). `POST /crossword/generate` no longer rebuilds inline — a
-  stale word list now returns 422 with the new seeded
-  `crossword.still_building` UI string, distinct from
-  `crossword.not_enough_words`. Dictionary/frequency imports reach
-  existing entities without manual `crossword:link` runs. New tests:
-  `RefreshEntityWordsCommandTest`, `RefreshEntityWordsJobTest`,
-  `LinkEntityWordsCommandTest`; `CrosswordPageTest` covers the
-  still-building response. `wiki/domains/crossword.md` rewritten;
-  CONTEXT.md Crossword Context gained "Word list refresh".
-
-## 2026-09-12
-
-* **UI localization (DB-backed strings + interface language).** New
-  `ui_string_keys`/`ui_strings` tables are the Filament-editable source of
-  truth for interface text (ADR 0022): `UiStringLoader` overlays them onto
-  translator groups, `UiStrings::mapFor()` shares them to Inertia, and
-  `resources/js/i18n.jsx` provides `t()` for React pages. New
-  `languages.is_interface_enabled` flag and `user_settings.interface_language_id`
-  with resolution interface → native → `en`, guests `en`, admin panel stays
-  English (ADR 0023). New Filament `UiStringKeyResource` (Localization group,
-  side-by-side per-language editing); `LanguageResource` gained the interface
-  toggle; `UserResource`/Profile gained the interface-language select. All
-  user-facing pages swept into `database/seeders/ui-strings/*.php` partials
-  (EN+RU) upserted by `UiStringSeeder`. New concept `wiki/domains/localization.md`;
-  CONTEXT.md gained a Localization Context.
-* **Standalone `UserSettingsResource` removed.** `/admin/user-settings` is
-  gone (resource, its List/Create/Edit pages, and
-  `tests/Feature/Filament/UserSettingsResourceTest.php` deleted); it
-  duplicated the native-language editing already available on the
-  `UserResource` create/edit forms (`settings_native_language_id` synced via
-  `settings()->updateOrCreate`). No schema change — `user_settings`,
-  `UserSettings` model, registration and profile flows unchanged. Admin
-  management of native language now lives solely on the user Edit form.
-  Updated `wiki/database/schema-overview.md`.
-
-## 2026-09-11
-
-* **Library replaces the language-first entities pages (ADR 0021).** The nav
-  entry is now **Library** (`/library`): a works grid with `?q=` search
-  (title/author), a dashed plus-card → create-work page, and per-work
-  **readable** entity counts (`EntityAccessService::readableConstraint`, new,
-  also used by `readableQuery`). Each work card opens
-  `/library/{work}`: work info, entity search (name/label), plus-card →
-  work-scoped entity creation (`/library/{work}/entities/create`, work fixed,
-  language select), and readable entity cards. Works are a **public catalog**
-  — every approved user sees every work, empty ones included; no schema
-  change, no creator tracking. The entity-creation pipeline moved from
-  `EntityController::store` into `App\Classes\EntityCreationService` (shared
-  by both create forms; match-found may resolve to another work's entity);
-  `signatureStatus()` moved onto the `Entity` model. Legacy `/entities` and
-  `/entities/{lang}` redirect to `/library` (the picker/list pages and
-  controller methods were deleted); `/entities/{lang}/...` create/show/edit/
-  sentence routes are untouched. Reader rebrand: "Parallel Library" subtitle
-  and library wordings dropped (just "Reader"). New shared
-  `Components/LinkPagination.jsx`. Tests: new `LibraryTest` (18 cases),
-  picker/list tests removed from `EntityControllerTest`. Updated
-  `wiki/domains/entities.md`, `wiki/index.md`; CONTEXT.md gained a Library
-  Context (Library, Work catalog); ADR 0021 records the public-catalog
-  decision.
-
-* **Pronunciations are audio, not notation.** `pronunciations` no longer
-  carries `transcription_type_id` — a pronunciation is an uploaded audio
-  file with a pronunciation example (`path` on the public disk, unique
-  `(path, word_id)`), managed through a FileUpload in the word admin
-  (files deleted alongside rows). Written phonetic notation stays in
-  `transcriptions` (+ `transcription_types`). Baseline migration edited,
-  dev table reshaped in place (one test row dropped). Updated
-  `wiki/database/dictionary.md`; CONTEXT.md Word term now says
-  "pronunciation audio".
-
-* **Symmetric word translations + full word admin CRUD (ADR 0020).**
-  `word_translations` is now **one row per word pair** (`word_a_id` /
-  `word_b_id`, canonical `a < b` like entity matches), superseding ADR
-  0018's directed pivot; `WordTranslation::link()/isLinked()/canonicalize()`
-  centralize the semantics and a `creating` hook canonicalizes every
-  writer. `wiktionary:link-translations` writes canonical rows idempotently
-  next to manual links. The Filament word edit page regained the Create
-  buttons lost in the schema cutover (definitions, transcriptions, examples,
-  etymologies, pronunciations), gained a **Forms** relation manager, and
-  its rebuilt **Translations** tab is the manual linking surface: attach an
-  existing word (different languages enforced, lazy search over millions of
-  rows), **Create word & link** for missing target words, delete. Word
-  class / transcription type selects now filter to the word's language.
-  One-off `words:canonicalize-translations` transitioned dev data (dedupe
-  mirrors + column rename). Tests: linker suite ported to canonical rows,
-  new `WordTranslationsRelationManagerTest` and `WordTranslationTest`.
-  Updated `wiki/database/dictionary.md`,
-  `wiki/domains/dictionary-import.md`,
-  `wiki/playbooks/import-dictionary-data.md`; CONTEXT.md Dictionary context
-  gained Translation link / Staged translation terms.
-
-* **Dictionary import: any-registry languages + self-bootstrapping lookups.**
-  `wiktionary:import` no longer hardcodes `--lang/--target-lang` to en/ru —
-  it validates against the languages registry (any code, `is_enabled`
-  irrelevant) and lists available codes on failure. The parser
-  auto-creates missing per-language lookups instead of failing/skipping:
-  an unseen dump `pos` becomes a `word_classes` row, an unseen sound type
-  a `transcription_types` row (slug as placeholder `title`), so a new
-  language is INSERT + import with no seeders; the `words_skipped_pos`
-  stat/skip is gone (replaced by `lookups_created`). New Filament
-  resources `WordClassResource` + `TranscriptionTypeResource` (group
-  "Words") give admin CRUD over the lookup tables for curating the
-  placeholder titles. Updated `wiki/domains/dictionary-import.md`,
-  `wiki/database/dictionary.md`, `wiki/playbooks/import-dictionary-data.md`;
-  CONTEXT.md gained a Dictionary context (Word class, Transcription type).
-
-* **Entity/match visibility: counts now respect readability; same-language
-  entity matches allowed (ADR 0019).** The `/entities` picker's per-language
-  `entity_count` (`EntityController::index`) and the edit page's
-  `alignmentCount` were raw totals that leaked the existence of Restricted
-  entities/matches; both now run through `EntityAccessService::readableQuery()`
-  / `readableMatchQuery()`. The "both entities must be in different languages"
-  guard was removed from `AlignmentController::store`, both Filament
-  `EntityMatchResource` pages, and the legacy `EntitySentenceImporter`;
-  `alignableWorks()` now lists works with ≥2 eligible entities (any
-  languages); the Alignments create form's second-entity select no longer
-  excludes the first entity's language; Filament "Find Match" candidates
-  (via `TextSignatureService::findCrossLanguage`, name now historical) include
-  same-language same-work candidates. Ownership stays grant-based per ADR 0013
-  (no `created_by` column). Updated `wiki/domains/sentence-alignment.md`,
-  `wiki/domains/entities.md`, `wiki/database/*`, `wiki/playbooks/run-alignment.md`,
-  `CONTEXT.md` (Entity match, Readable count); added ADR 0019.
-
-* **Fixed `/alignments/create` emptying both entity selects when an entity was
-  chosen.** Inertia `useForm.setData` with an object argument *replaces* the
-  whole form state instead of merging, so the object-form handlers in
-  `Alignments/Create.jsx` (work + first-entity selects) dropped
-  `work_id`/`chunk_size`/`max_n`; `work` then resolved to `undefined` and both
-  entity selects rendered zero options. Handlers now use the functional form
-  `setData((current) => ({...current, ...}))`; the same latent bug in the
-  `Entities/Create.jsx` work-mode radios was fixed too. Frontend assets
-  rebuilt. Reproduced/verified with an esbuild+jsdom harness driving the real
-  component against the real Inertia payload (no JS test infra exists yet —
-  noted as a gap). Updated `wiki/domains/sentence-alignment.md`.
-
-## 2026-09-10 (works & unified schema rework)
-
-* **Works + unified language-keyed tables replaced the mirrored EN/RU schema
-  (ADR 0018).** `works` (title/author/original_language_id) now group
-  per-language `entities` (+ `label` for same-language variants); every
-  mirrored `en_*`/`ru_*` table was unified with a `language_id` column
-  (entities/sentences/grants, words + satellites, word classes,
-  transcription types); the alignment chain became
-  `entity_matches` (canonical `a_entity_id < b_entity_id`) →
-  `meaning_matches` → one `sentence_meaning_matches` junction with a `side`
-  column; `is_original_en` is gone — the original side derives from the
-  work's original language, and translation↔translation pairs cover both
-  sides with skips/repairs. One directed `word_translations` pivot replaced
-  the two en_ru/ru_en pivots. Adding a language is an INSERT.
-* **Migrations squashed to a fresh 6-file baseline** (dev/prod data
-  disposable; prod rebuilds fresh at next deploy) and the legacy vocabulary
-  domain deleted outright: `words`/`books`/`book_word`/`saved_phrases`,
-  crossword (Livewire+React), word upvote/acknowledge/dismiss/ask-ai,
-  WordsSearch, Test.php/BilingualsController legacy endpoints, their
-  requests/models/Filament resources/views.
-* **App cutover**: single Entity/EntityMatch models; aligner job + Python
-  /align contract renamed to a/b (a_sentences/b_sentences, skip_a/skip_b);
-  editor stack/simulator/reader/commands/importers ported; match creation
-  validates same work + different languages. Filament: WorkResource (new),
-  merged EntityResource/EntityMatchResource/WordResource. Frontend: work
-  column+filter on entities, work picker on create, work-first alignment
-  create, a/b editor payloads with language-code labels.
-* **Docs**: ADR 0018 written; CONTEXT.md gained Work / A-side/B-side /
-  cover-both-sides terms and updated Entity/Original text/Access grant;
-  wiki database/domain/playbook concepts rewritten (dictionary concept
-  renamed, legacy-vocabulary/crossword/words-search retired); test fixture
-  helpers (createLanguages/createWork/createEntity/createEntityMatch) added
-  to tests/Pest.php; suite 460 green; phpunit.xml pins OPENROUTER_API_KEY
-  empty (a dev .env key was leaking into a unit test).
-
-## 2026-09-10
-
-* **Entity detail page showed sparse order values as sentence numbers.**
-  `Entities/Show.jsx` printed the raw `order` column (`000, 1024, 1536, …`)
-  for each sentence. It now derives a positional display number from the
-  pagination meta (`(current_page - 1) * per_page + index + 1`), matching the
-  `displayOrder` pattern already used by `Entities/Edit.jsx`. Display-only;
-  stored sparse orders are untouched.
-* **Sparse orders from entity creation + editor "Create below" placement
-  fix.** Three related fixes on `aligner-order-rework`. (1) `SentenceSplitter`
-  (the file-upload split pipeline) wrote dense sequential orders
-  `1,2,3,4,5…`; it now takes `SparseOrderService` via constructor injection
-  and assigns `initial($index)` → `0, 1024, 2048, …` like every other
-  creation path. Consequence: the first insert/reorder on an entity's
-  *Sentences* tab no longer exhausts the midpoint gap and falls through to a
-  full-list rebalance (the "all sequence numbers become 0,1024,2048 after
-  reordering" report) — a reorder now writes only the moved row. Existing
-  dense dev lists were repaired with a one-off `entity-orders:rebalance`
-  (3,177 rows); prod picks it up from the daily schedule or the next manual
-  rebalance. (2) The Inertia alignment editor's "Create below" placed the
-  first new row correctly but every subsequent one at the **top of the page**
-  until refresh: `Show.jsx` computed the insert index inside a `setState`
-  updater and read it synchronously after the dispatch — React 19 runs
-  updaters eagerly only on the first dispatch after mount, so later
-  mutations snapshotted index `0`. `runMutation` now receives the **anchor
-  row id** and `applyMutation` resolves the splice position at response
-  time (also reset on mutation failure). (3) Drive-by: removed `'order' => 0`
-  from the junction insert in `AlignEntitySentences`' skip-run drain — the
-  junction tables' `order` column was dropped in Aug 2026
-  (`2026_08_20_131441_drop_order_from_junction_tables`), so that path would
-  have thrown an SQL error when it executed. New regression test in
-  `SentenceSplitterTest` (sparse orders); updated
-  `wiki/domains/sentence-alignment.md` and
-  `wiki/database/entities-alignment.md` (also corrected its stale
-  `widen_sparse_order_columns` migration claim — no such migration exists;
-  the order columns were `bigint` from day one).
-
-## 2026-09-09
-
-* **Drag-and-drop duplicate sentence orders fixed (alignment editor).** The
-  Inertia editor's `POST /alignments/{match}/sentences/move` picked a moved
-  sentence's new order from only its destination row's neighbouring sentences
-  (`between(prev, next)`), so it could emit an order another sentence on the
-  side already held: the midpoint of a row pair landed exactly on an
-  interleaved unmatched sentence's order, and the empty-row fallback
-  (`high - 1`) collided when the surrounding gap was exhausted (live
-  corruption: EN sentences 18/19 of match 6 both held order 1024). Tied
-  orders rendered in arbitrary DB order, which shuffled rows between loads
-  and made subsequent drags compute against the wrong neighbours. Fix:
-  `AlignmentEditorController` now derives placement from the side's **global
-  document order** (`placeSideSentence` → `orderForInsertAfter`, window
-  rebalance on exhaustion) and persists two-phase (rows parked at unique
-  negatives first); `SparseOrderService::orderForInsertAfter` no longer
-  recomputes its insertion index from the stale pre-rebalance anchor order;
-  new migration `2026_09_09_000000_make_entity_sentence_orders_unique`
-  repairs existing duplicates and adds unique `(en_entity_id, order)` /
-  `(ru_entity_id, order)` indexes; `EntityController` and
-  `AlignmentEditorPersister` sentence-order writes made two-phase to comply
-  with the index. Regression tests in `AlignmentEditorApiTest` +
-  `SparseOrderServiceTest`. Removed the leftover `[dnd-trace]` console
-  logging from `Show.jsx`. Updated
-  `wiki/domains/sentence-alignment.md` and
-  `wiki/database/entities-alignment.md`.
-
-## 2026-09-08
-
-* **User settings table with native language.** New `user_settings` table (one
-  row per user, `user_id` unique FK cascade-delete, `native_language_id` nullable
-  FK → `languages`). Existing users backfilled to English (`en`) in a follow-up
-  migration. New `UserSettings` model + `User::settings()` hasOne and
-  `User::nativeLanguage()` accessor; `UserFactory` now creates the settings row
-  (English default). Registration collects an optional native language
-  (dropdown of enabled languages, English preselected) and creates the settings
-  row (`RegisteredUserController`). Profile page gains a **Settings** section
-  with a native-language dropdown, updated via `PATCH /profile/settings`
-  (`ProfileController::updateSettings`, `UpdateUserSettingsRequest` — validates
-  the language is enabled). Admin Filament panel gains `UserSettingsResource`
-  (list/create/edit) and a native-language select on the `UserResource` create/
-  edit forms. Updated `wiki/database/schema-overview.md`; glossary terms
-  **User settings** and **Native language** added to `CONTEXT.md`.
-
-## 2026-09-07
-
-* **Post-auth redirect now lands on `/` instead of the unused dashboard.** Login
-  (`AuthenticatedSessionController`), registration (`RegisteredUserController`),
-  and the password-confirmation / email-verification controllers all changed
-  their `redirect()->intended(route('dashboard'))` target to
-  `redirect()->intended('/')` (registry keeps `?verified=1`). Unapproved users
-  still go to `pending-approval`. Tests updated in
-  `tests/Feature/Auth/{Authentication,Registration,EmailVerification}Test.php`
-  and `tests/Feature/ApprovalTest.php`. Updated
-  `wiki/domains/access-control.md`.
-
-* **Fix: admin panel user creation was missing a password (null not-null
-  violation).** `UserResource` create form had no `password` field, so creating
-  a user at `/admin/users/create` produced an INSERT without a password,
-  violating `users.password` not-null. Added required `password` +
-  `password_confirmation` (`TextInput::password()`, same-rule) — shown only on
-  create (hidden on edit) so admins can't blank an existing password. Added
-  Livewire-tested coverage in `tests/Feature/Filament/UserResourceTest.php`
-  (create-with-password hashes correctly; create-without-password is rejected).
-  Updated `wiki/domains/access-control.md`.
-
-## 2026-09-06
-
-* **Alignments "+ Create new" entity-match form.** The `/alignments` pair
-  list gains a "+ Create new" button → `/alignments/create`
-  (`AlignmentController@create`/`@store`, routes `alignments.create`/`store`):
-  picks an EN + RU entity (each select filtered server-side to readable,
-  signed, non-empty entities), an `is_original_en` radio, and Filament-parity
-  `chunk_size` (25–100) + `max_n` (1–8) inputs. Store creates the match
-  (`status='pending'`), dispatches `AlignEntitySentences::beginFromScratch`,
-  and redirects to the list with a success flash (now shared via
-  `HandleInertiaRequests`). Duplicate `(en_entity_id, ru_entity_id)` pairs
-  are blocked with an error + "Open existing match" link (flash
-  `existing_match_id`); creating a match with a non-readable entity is 403.
-  "Create a new EN/RU entity" links under each select open the existing
-  entity create page in-tab. New
-  `tests/Feature/AlignmentsCreateMatchTest.php` (6 tests).
-  Routes changed → `wiki:sync` rerun; updated `wiki/domains/sentence-alignment.md`
-  and `wiki/playbooks/run-alignment.md`.
-
-## 2026-09-05
-
-* **Alignments editor DnD: slots always visible (stable structure) + inert
-  slots around the dragged sentence.** Two UX fixes on the frozen-drag slot
-  model. (1) Drop slots now render permanently (thin faint dashed separators,
-  tall standalone slot for an empty column) so starting a drag — previously
-  suddenly mounting ~2N slot bars — no longer shifts the whole editor layout.
-  (2) In the column that still shows the dragged sentence frozen at its home
-  spot, the two slots directly above and below it are rendered as **inert
-  spacers** (no droppable node, no highlight): they only meant "keep it here"
-  / "move it one down", which users read as a confusing no-op / off-by-one.
-  Dropping back onto the dragged sentence itself is now a guarded no-op (no
-  API call). Drop targets are therefore only the real boundaries between other
-  sentences. ADR 0016 updated (fifth/final form). Updated
-  `wiki/domains/sentence-alignment.md`.
-
-## 2026-09-05
-
-* **Alignments editor DnD: containers frozen during drag (kills #185).** The
-  live-preview slot model still looped: onDragOver mutated the columns, the
-  moved sentence reshuffled the drop-slot bars under the pointer, `over`
-  flip-flopped between adjacent slots, and each flip mutated the columns again
-  (React error #185). The editor now does **not** touch `containers` while a
-  drag is in progress — there is no `onDragOver` mutation at all. The
-  highlighted slot is the only drop feedback; on release `onDragEnd` maps the
-  slot boundary to the array_splice index among the target column's other
-  sentences and writes the new ordering once (removing it from its source
-  column in the same update when crossing columns). `collisionDetection` was
-  simplified to pointerWithin → rectIntersection over slots+items with a
-  `lastOverId` no-collision fallback; the `recentlyMovedToNewContainer`
-  pin/rAF effect and `lastPaddingEdge` were removed. ADR 0016 updated
-  (fourth/final form). Updated `wiki/domains/sentence-alignment.md`.
-
-## 2026-09-05
-
-* **Alignments editor DnD: explicit drop slots with visible highlight.**
-  Earlier attempts (closestCorners, official multi-container strategy,
-  pointer-edge padding) left the drop point invisible and repeatedly landed
-  drops one position early / at the row start, because the index came from
-  fuzzy collision (nearest sentence or column rect) instead of a real target
-  under the pointer. The editor now renders an explicit drop slot droppable
-  per column — above the first, between every pair, below the last sentence,
-  and a tall standalone slot for an empty column — each lit up (dashed accent
-  border/fill) at the drop point while a drag is active. `over` is then the
-  slot itself: `slot:<containerKey>:#<n>`, and both `onDragOver` (preview) and
-  `onDragEnd` map the boundary straight to the API's array_splice index (n
-  clamped to the other-sentence count, so the bottom slot is the real last
-  position). `collisionDetection` was simplified to pointerWithin →
-  rectIntersection over slots+items, keeping the `recentlyMovedToNewContainer`
-  pin (pins `over` to a slot of the item's current column for one frame after
-  a cross-column move) and `lastOverId` cache that stop the #185 bounce;
-  container-level droppables were removed. ADR 0016 updated (third/final form
-  of the drop-position spec). Updated `wiki/domains/sentence-alignment.md`.
-
-## 2026-09-05
-
-* **Alignments editor DnD: drop position fixed via the official dnd-kit
-  multiple-containers collision strategy.** Both prior fixes were wrong. The
-  "containers[target].indexOf(active.id)" approach (previous entry) was
-  reverted the same day: `onDragOver` early-returns for same-container hovers,
-  so once the preview inserts the sentence into the target row, state never
-  tracks within-row hovering — the indexOf was the frozen *entry* index (0),
-  i.e. every cross-row down-drop landed first. The underlying cause of wrong
-  drops is bare `closestCorners` colliding against dnd-kit's
-  transform-agnostic, resize-only-refreshed droppable rects: the row column
-  container itself wins corner-distance in padding/gap areas (and stale rects
-  lag the animated layout by one slot), so `over` was the container or the
-  wrong item and every index resolved to 0. `Show.jsx` now uses the official
-  multiple-containers `collisionDetection`: `pointerWithin` → `rectIntersection`
-  fallback → on a column-container hit, re-resolve to the closest item inside
-  it via `closestCenter` → `lastOverId` cache to stop `over` from flapping;
-  the `recentlyMovedToNewContainer` stickiness ref (from the #185 fix below)
-  stays. A pointer in a column's empty padding (no sentence under it) keeps
-  the column as `over` and records the edge it is beyond (`lastPaddingEdge`),
-  so the drop lands at the first or last position regardless of drag
-  direction — replacing the ADR 0016 direction default, which is amended
-  accordingly. `onDragEnd`'s cross-container index is `over.id`-based
-  (arrayMove-consistent, in the API's post-removal space). Fixes drops
-  between sentences and at a row's end. Frontend only — no backend, route,
-  model, or command changes (`wiki:sync` not required).
-
-## 2026-09-05
-
-* **Alignments editor DnD: cross-row drops kept landing at the row's first
-  position — superseded and reverted same day.** Original note claimed
-  `onDragEnd`'s `over` payload was one preview move stale and that deriving
-  the index from `containers[target].indexOf(active.id)` was correct. Reverted:
-  same-container `onDragOver` early-returns freeze the preview at the entry
-  index, so indexOf was deterministically 0. The real fix is the collision
-  strategy above; see that entry.
-
-## 2026-09-05
-
-* **Alignments editor DnD: fix React #185 infinite-update loop during drags.**
-  The 2026-09-05 drop-position change made `onDragOver` insert the preview at
-  the exact hovered index; every insertion re-measures droppable rects
-  (per-droppable ResizeObserver + 200 ms transform transitions), which can
-  flip `closestCorners` back to the previous container, and dnd-kit's
-  `useEffect([overId])` then re-invokes `onDragOver` — an unbounded update
-  loop React aborts with minified error #185. `Show.jsx` now uses a custom
-  `collisionDetection` callback wrapping `closestCorners` that, for one frame
-  after each cross-container move (`recentlyMovedToNewContainer` ref,
-  released via `requestAnimationFrame` on the `[containers]` effect, cleared
-  on drag end/cancel), pins the over to the container currently holding the
-  item — the official dnd-kit multiple-containers stickiness pattern. Drop
-  behavior unchanged (ADR 0016). Frontend only — no backend, route, model, or
-  command changes (`wiki:sync` not required).
-
-## 2026-09-05
-
-* **Alignments editor DnD: cross-row drops land at the drop position, not the
-  entry position.** Follow-up to the 2026-09-04 drop-position change: the
-  backend honored `index`, but `Show.jsx` sent the wrong one — `onDragOver`
-  splices the dragged sentence into the target row where the drag *enters* and
-  then early-returns while hovering inside that row, so `onDragEnd`'s
-  `targetItems.indexOf(active.id)` was the frozen entry index (drops landed at
-  the row top when dragging down, bottom when dragging up). `onDragEnd` now
-  derives the index from the sentence under the pointer at release
-  (`over.id`, arrayMove-consistent with the same-container branch) and applies
-  the matching optimistic local reorder; a drop on a column's empty area uses
-  the direction default via `emptyAreaIndex` (first position when moving down
-  to a later row, last when moving up — spec 3.4/3.5), which `onDragOver` also
-  honors again for row→row entry. ADR 0016 records the empty-area default;
-  `sentence-alignment.md` editor section notes the index derivation. Frontend
-  only — no backend, route, model, or command changes (`wiki:sync` not
-  required).
-
-## 2026-09-04
-
-* **CI Tests job root-caused + fixed: missing Vite manifest.** After the
-  2026-09-03 `.env` fix, the Tests workflow still failed ~40 feature tests,
-  all with `ViteManifestNotFoundException: Vite manifest not found at
-  laravel/public/build/manifest.json` (thrown while rendering
-  `app.blade.php`, `layouts/guest.blade.php`, `layouts/app.blade.php`).
-  Root cause: `public/build/` is gitignored and CI never runs
-  `npm run build` — local runs only passed because the container has a built
-  manifest. Fix (chosen over building assets in CI): `Tests\TestCase::setUp()`
-  now calls `$this->withoutVite()`, swapping the Vite binding for a no-op so
-  `@vite` renders empty tags; blade layouts with an embedded no-build CSS
-  fallback (`components/*/layouts/*`) were never affected. Also silenced the
-  ~70 "wiki warning: source changed after generated.at" lines printed on
-  every CI run: a fresh checkout stamps all files with mtime = checkout
-  time, so the staleness signal fires forever in CI. New
-  `laravel/config/wiki.php` (`skip_mtime_staleness`, env
-  `WIKI_SKIP_MTIME_CHECKS`) makes `WikiValidator` skip only the mtime
-  comparison; source-not-found / stale_after / error checks stay active.
-  `tests.yml` and `tia-baseline.yml` set the env. Verified: full suite with
-  manifest absent + flag set = 439 passed / 0 failures (exact CI parity);
-  `wiki:validate` clean under the flag. `running-tests.md` playbook updated
-  (its `envtesting` source now points at the tracked
-  `.env.testing.example`). No routes/models/commands changed (`wiki:sync`
-  not required).
-
-* **Alignments editor DnD: drop position now renumbers document order.**
-  Fixed the drag-and-drop ordering bugs on `/alignments/{id}` (cross-row drops
-  ignored the drop index and never renumbered, so a moved sentence landed by
-  its stale document order and dragging back left rows permanently showing
-  number 2 above number 1; edge renumbering via `between(null, $o)` = ±1024
-  could leapfrog adjacent rows; the spread fallback could renumber bystanders
-  past far-away anchors). `AlignmentEditorController::moveSentence` now routes
-  every cross-row / unmatched→row drop through `placeSentenceAt`: the
-  destination row's sequence is rebuilt with the moved sentence spliced at the
-  drop index, and `reorderRowJunctions` clamps its `between()` neighbors by
-  `rowGlobalBounds` (moved sentence's stale order excluded from the span). A
-  drop into a row empty on that side lands between the closest populated rows
-  (`emptyRowPlacementOrder`), so moving a sentence back to its own row
-  restores monotonic numbering. `Show.jsx` `onDragOver` no longer forces
-  row→row insertions to index 0/end — the hovered sentence sets the index.
-  Semantics recorded as ADR 0016 (supersedes ADR 0005); CONTEXT.md
-  Sentence/Junction entries de-contradicted and a Move sentence term added;
-  `sentence-alignment.md` editor section rewritten. Tests: 2 cross-row tests
-  updated, 3 added (row-edge bounds, move-back regression, spread bounds) —
-  AlignmentEditorApiTest 32 passed. No routes/models/commands changed
-  (`wiki:sync` not required).
-
-## 2026-09-03
-
-* **CI Tests job root-caused + fixed: provision a `.env` in CI.**
-  The Tests workflow failed with ~45 failed / ~375 warnings / 19 passed while
-  the local suite passed 439. Diagnosed via a faithful CI reproduction
-  (fresh `postgres:18-alpine` with `postgres/postgres`, no env files, `composer
-  run test`). Root cause: CI ships **no `.env` file at all** (both `.env` and
-  `.env.testing` are gitignored). Laravel boots off `.env` via phpdotenv's
-  `@file_get_contents('.env')`; with no env file present, PHPUnit flags a
-  warning on ~every test and, under the stricter CI runtime, ~45 escalate to
-  failures. Local runs only passed because `.env` exists on disk. Fix: added a
-  "Provision environment file" step to `.github/workflows/tests.yml`
-  (`cp .env.example .env` before `composer run test`). `.env.example` is
-  secret-free; `phpunit.xml` (force) + the workflow `env:` supply APP_KEY, DB
-  connection, cache/queue/session drivers. Verified: 439 passed / 0 warnings /
-  0 failures under exact CI parity, and 439 passed in normal local mode.
-  `running-tests.md` playbook updated with the CI `.env` gotcha. No
-  routes/models/commands changed (`wiki:sync` not required).
-
-## 2026-09-03
-
-* **Test suite restored to green + hardened `.env.testing` exposure.**
-  Two root causes behind 44 failing tests fixed. (1) **Stale route cache vs
-  `APP_KEY` mismatch** (~37 tests): `deploy.sh` runs `php artisan route:cache`,
-  baking the prod `APP_KEY` into `bootstrap/cache/routes-v7.php`. Livewire
-  derives its `/livewire-<hash>/update` endpoint from `APP_KEY`, so a cached
-  route table built under a different key makes every Livewire/Filament
-  interaction 404 (`mountedActions on null`, null Livewire props). Fixed by
-  adding `php artisan route:clear` to the `test` and `test:tia` composer
-  scripts (next to the existing `config:clear`). (2) **`AiModelSync` regression
-  from commit `403d3ef`** (7 tests): the `if ($seenExternalIds !== [])` guard
-  on the delete-missing block skips the catalog wipe when a provider's
-  `models_url` is blank, so pre-existing `ai_models` rows were never removed —
-  removed the guard so an empty catalog correctly wipes all rows for the
-  provider. `SyncAiModelsCommandTest` now seeds `AiProvider` rows (the
-  intentional `RuntimeException` when no provider row exists fires otherwise).
-  **Secret exposure hardening:** `laravel/.env.testing` was committed and the
-  real `APP_KEY` risked leaking; it is now untracked (`git rm --cached`) and
-  gitignored, replaced by a tracked `laravel/.env.testing.example` template
-  with a throwaway test key. All 439 tests pass. `pint --dirty` clean.
-
-## 2026-08-31
-
-* **Log Doctor — hourly scheduled error triage.** Added
-  `.github/workflows/log-doctor.yml` (hourly cron + `workflow_dispatch` on
-  the self-hosted prod runner, `issues: write`): `laravel/scripts/log-doctor/collect.sh`
-  scans the prod checkout's laravel daily logs (ERROR+), the `failed_jobs`
-  table (tinker) and the scheduler container's `docker logs` for errors since
-  the last completed run, deduped by a deterministic signature
-  (headline with digits→`#` and ≥16-char tokens→`TOKEN`, sha1-12); if
-  anything is found, `analyze.sh` runs the **read-only** `log-doctor`
-  opencode agent (`.opencode/agents/log-doctor.md` — no edit/bash/web, only
-  read/glob/grep + `external_directory`) against the live checkout, and
-  `issue-report.php` (in-container) searches open issues for
-  `log-doctor-sig: <hash>` before filing: existing → comment
-  "still occurring", new → issue labelled bug/log-doctor/automated with
-  root cause + suggested solution. Clean runs are grep-only ($0); the
-  `~/.log-doctor` state window advances only after successful filing, so
-  failures reprocess. Never add a `pull_request` trigger (prod-runner rule,
-  same as deploy.yml). New playbook: `wiki/playbooks/log-doctor.md`.
-* **deploy.sh container-recreation guard + GitHub Actions autodeploy.**
-  `deploy.sh` now refuses to deploy when the containers were not created
-  from the current container definitions: `./deploy.sh --stamp` records the
-  sha256 of `docker-compose.yml`, `docker-compose.prod.yml`,
-  `LaravelDockerfile`, `docker-compose/python/Dockerfile`, and
-  `docker-compose/python/requirements.txt` into a gitignored
-  `.container-stamp`; every deploy compares the stamp against
-  `origin/master` **before pulling** (a refusal leaves the bind-mounted live
-  code at the last-good release) and against the working tree after the
-  pull, aborting with exit 1 + the manual rebuild commands on mismatch or a
-  missing stamp. Deploys are serialized (flock on a gitignored
-  `.deploy.lock`). New `.github/workflows/deploy.yml`: a self-hosted runner
-  on the prod machine (labels `self-hosted`, `prod`) runs `./deploy.sh` on
-  every push to `master` (+ `workflow_dispatch`) — deliberately no
-  `actions/checkout` (deploys must run against the prod bind-mounted
-  checkout) and never a `pull_request` trigger (fork code must not run on
-  the prod runner). AGENTS.md + Production Deployment playbook +
-  Docker & Services updated (stamp bootstrap, runner one-time setup). No
-  routes/models/commands changed (`wiki:sync` not required).
-
-## 2026-08-31
-
-* **Prod overlay recreated for the standalone production machine (bind-mount adapted).**
-  Production turns out to run on a separate machine (previously on the baked
-  `ext_app_prod` overlay). Recreated `docker-compose.prod.yml` for the
-  bind-mount model: `app` keeps the base `eng_ext_laravel` image + `./laravel`
-  bind mount (no baked image, no env_file — env is `laravel/.env` on disk);
-  `queue` (2× `queue:work --tries=1 --timeout=620`) and `scheduler`
-  (`schedule:work`) run the runtime image with bind-mounted source and the
-  wait-for-migrations loop; `backups` sidecar unchanged; python `--workers 2`
-  + no host ports; cloudflared re-gated behind its profile (explicit `-f`
-  files skip the override). **`db` is byte-identical to the old overlay**
-  (postgres.env creds, PGDATA `./docker-compose/prod/postgres`) so the
-  existing prod cluster is found untouched — `up -d` won't even recreate the
-  container; every deploy applies pending migrations only. `deploy.sh` gained
-  `php artisan storage:link`. Playbook rewritten (two-machine model, one-time
-  switchover from the baked setup — env copy, one-time `build app`,
-  storage/texts rsync, smoke checklist); Docker & Services + launch checklist
-  updated. Validated with `docker compose -f docker-compose.yml -f
-  docker-compose.prod.yml --profile cloudflare config`.
-
-## 2026-08-31
-
-* **Production deploys switched to the bind-mount model — `./deploy.sh`, no image rebuilds.**
-  The baked-image prod overlay (a ~15-minute `docker compose up -d --build`
-  per code change) was replaced: production runs on the same bind-mounted
-  containers as dev, and deploying is `./deploy.sh` (master-only branch guard,
-  fast-forward pull, `composer install --prefer-dist -o`, `npm ci` +
-  `npm run build`, `optimize:clear` → config/route/view caches,
-  `migrate --force`, idempotent `SentenceTypeSeeder`/`AiProviderSeeder`/
-  `LanguageSeeder` seeds, `queue:restart`). Removed `LaravelDockerfile.prod`,
-  `docker-compose.prod.yml`, `docker-compose/entrypoint.prod.sh`, and
-  `docker-compose/php-prod.ini` (recoverable from git history;
-  `docker-compose/prod/backup.*` + `postgres.env.example` kept, dormant).
-  `.dockerignore` now also excludes host data dirs (postgres cluster, model
-  weights, venvs, prod runtime state) from build contexts. CI unchanged:
-  `tests.yml` (Pest + Pint) gates `master`; deploys are human-run. Updated the
-  Production Deployment playbook, Docker & Services, the launch checklist,
-  and AGENTS.md.
-
-## 2026-08-30
-
-* **Simulator AI panel retint: shared red + softer gloss-run shadow.** Inside
-  `#ai_answer_div` (`public/css/simulator.css`), `--wbench-danger` and
-  `--wbench-emphasis` are both overridden to `#fe2500` (scoped to the AI
-  answer, the global tokens in the `@theme` block are unchanged), and the
-  gloss-run `:hover` loses its underline in favor of a gray shadow
-  (`text-shadow: 1px 1px 5px rgb(128 128 128 / 50%)`, day + night).
-  Updated the Bilinguals Simulator concept.
-
-## 2026-08-30
-
-* **Rich AI-answer highlighting in the Bilinguals simulator.** The streamed
-  answer pipeline `renderMarkdown()` in `Bilinguals.jsx` now does more than
-  straight-quote wrapping: `==…==` phrases become `<mark>` (via `\u0001`
-  sentinels around `marked.parse` so inline markdown inside them still parses),
-  correction pairs `X => Y` (each side a quote, a wrapped inline tag, or a
-  word) become `.ai-correction` spans with danger-struck old / accent
-  underlined new / soft-ink mono arrow, quotes are wrapped in all four styles
-  (`"…"`, `«…»`, `“…”`, `‘…’`), and `\d{1,3}%` scores become
-  `<mark class="ai-score">` mono chips. New rules in `public/css/simulator.css`
-  (day + night, existing `--wbench-*` tokens) plus GFM table styling; the
-  gloss-run hover list gained `td, th`. The default assessment prompt in
-  `SimulatorController` now instructs the model to use `##` headings,
-  `~~removed~~`/`**added**`, `==double equals==`, quoted citations, and `>`
-  blockquotes so the model's output maps onto the styled elements
-  deterministically. Updated the Bilinguals Simulator concept.
-
-## 2026-08-27
-
-* **Removed Xdebug from the dev image; switched Pest TIA coverage to PCOV.**
-  The dev `LaravelDockerfile` no longer installs Xdebug or copies
-  `docker-php-ext-xdebug.ini` (which `.dockerignore` excluded, breaking the
-  build context). PCOV is installed but **disabled by default** so normal CLI
-  stays fast; `composer run test:tia` and the CI `tia-baseline` workflow enable
-  it only for the baseline run via `-d extension=pcov.so -d pcov.enabled=1 --coverage`.
-  Deleted the tracked dead `docker-php-ext-xdebug*.ini` files. Dev TIA and CI baseline
-  both keep working. Updated `composer.json`, `AGENTS.md`, and wiki concepts.
-
-* **Persistence hardening: all Docker data moved off named volumes onto host bind mounts.**
-  Root cause of repeated data loss: Docker Desktop "Clean / Purge data" is a factory
-  reset that wipes every Docker-managed **named volume** and reformats the VM disk — so
-  the `ai_models` (model weights) and `pgbackups` (DB dumps) named volumes, plus the
-  prod `app_storage`/`app_public` volumes, were destroyed on each Purge. The prod DB
-  bind mount (`./docker-compose/prod/postgres`) also vanished because a bind mount only
-  protects data if the project dir is in Docker Desktop **file sharing** (otherwise it
-  silently resolves inside the VM). Changed `docker-compose.yml` (`ai_models` →
-  `./docker-compose/python/models`) and `docker-compose.prod.yml` (`pgbackups` →
-  `./docker-compose/prod/backups`; `app_storage`/`app_public` →
-  `./docker-compose/prod/storage` + `./docker-compose/prod/public`). Added the storage
-  skeleton recreation (`mkdir -p storage/framework/* ...`) to `entrypoint.prod.sh`
-  because bind mounts shadow the image's skeleton (named volumes used to copy it on
-  first mount). Updated `.gitignore`, `install-models.sh`, `env/.env`, and the wiki
-  concepts. **Action for operators:** add the project root to Docker Desktop file
-  sharing, and `chown -R 33:33 docker-compose/prod/storage docker-compose/prod/public`
-  so `www-data` can write; then re-run `install-models.sh`.
-
-* **Models now persisted in `ai_models` volume + idempotent `install-models.sh`.**
-  Root-caused the `ext_app-queue-*` `ProcessEntityFile` / `AlignEntitySentences`
-  failures to an empty `ai_models` named volume — the LaBSE model
-  (`/app/models/labse`, used for both signatures and alignment via
-  `MODEL_PATH`/`ALIGN_MODEL_PATH`) had never been downloaded, so the Python
-  service returned `503 Model not loaded`. Added `install-models.sh` (host script:
-  checks each model dir, downloads only missing ones into the volume with
-  `HF_HUB_OFFLINE` temporarily `0`, then verifies both load offline). It now
-  provisions **LaBSE** (`sentence-transformers/LaBSE`) at `/app/models/labse` and
-  **BGE-M3** (`BAAI/bge-m3`) at `/app/models/bge_m3` (staged for future use). The
-  volume persists across `docker compose up/down` recreates, so no re-download on
-  restart — only `down -v` / `volume prune` would wipe it. Reconciled the stale
-  `wiki/architecture/docker-services.md` (it claimed BGE-M3 + MiniLM; actual config
-  is LaBSE active, BGE-M3 staged). Retried the two model-related failed jobs — both
-  DONE. (One unrelated failed job remains: `EnEntity` id 1 `ModelNotFoundException`.)
-
-* **Change: `ai_models.ai_provider_id` is now NOT NULL (was nullable).** The FK
-  was originally added nullable (migration `2026_08_23_000002`) leaving
-  pre-existing catalog rows orphaned (`ai_provider_id = NULL`); a follow-up
-  migration `2026_08_24_000001_make_ai_models_provider_not_null` now enforces
-  NOT NULL on already-migrated databases (raw `ALTER COLUMN ... SET NOT NULL`,
-  idempotent on Postgres) and switches the FK to `cascadeOnDelete`. Orphan rows
-  can no longer exist, so `App\Services\AiModelSync` dropped its null-provider /
-  orphan-adoption branches and now requires a provider row to exist before
-  syncing (the unique `(ai_provider_id, external_id)` index keeps the catalog
-  mirror sound). `AiModelSyncTest` updated accordingly; affected AI suite green
-  (`AiModelSyncTest`, `AIModelResolverTest`, `OpenRouterTest`, `UserCanUseAiTest`,
-  `SimulatorApiKeyTest`, `UserCanUseAiParityTest`). Docs:
-  `wiki/domains/ai-providers.md` (`generated.at` bumped).
-
-## 2026-08-26
-
-* **Production launch — Phases 2–4 (agent).** Production Docker, P1/P2 code
-  hardening, CI, and DB indexes:
-  * **Phase 2 (prod Docker):** added `LaravelDockerfile.prod` (multi-stage:
-    `node:20-alpine` builds Vite → `php:8.4-fpm` no-xdebug/gh, opcache, baked
-    `public/build` + `public/texts`, canonical asset copy + `rsync` entrypoint);
-    `docker-compose/entrypoint.prod.sh` (idempotent `config:cache route:cache
-    view:cache filament:optimize storage:link migrate --force`); new
-    `docker-compose.prod.yml` override (prod image, no source bind mounts,
-    pinned `postgres:18-alpine`, no host ports, healthcheck, resource limits,
-    shared `app_public`/`app_storage` volumes); new `queue` (scale 2,
-    `--tries=1 --timeout=620`) + `scheduler` (`schedule:work`) + `backups`
-    (crond sidecar, daily `pg_dump`, 14-day retention); `.dockerignore`
-    strips dev output/vendor/xdebug/`backup11.sql`; prod DB creds live in
-    gitignored `docker-compose/prod/postgres.env`. Validated merge with
-    `docker compose config`. Added `wiki/playbooks/production-deployment.md`
-    and a Production-overlay section to
-    [docker-services](architecture/docker-services.md).
-  * **Phase 3 (hardening):** `throttle:20,1` on `/ai/question` +
-    `/ai/question/stream` (+ `tests/Feature/AiQuestionThrottleTest.php`
-    asserting 429 on the 21st request); `DB_SSLMODE` env-driven in
-    `config/database.php` (both `pgsql` + `testing`); narrowed trusted proxies
-    in `bootstrap/app.php` (`0.0.0.0/0` → RFC1918 + loopback); nginx
-    `app.conf` hardened (`client_max_body_size 20m`, `X-Frame-Options`,
-    `X-Content-Type-Options`, `Referrer-Policy`, `limit_req` on `/ai/question`).
-    Phase 3.5 audit: all flagged `->all()`/`->get()` calls are per-entity/per-
-    match scoped (no global scans); list endpoints already use
-    `paginate(15)`/`limit(100)`/`forPage` — no change needed. 3.7 Sentry
-    deferred (pending user creates the project; deps not added without
-    approval).
-  * **Phase 4:** `.github/workflows/tests.yml` (Pest suite against a
-    `postgres:18-alpine` service + `pint --test` on PRs/`master`);
-    `2026_08_26_154226_add_indexes_to_alignment_junction_tables` (indexes on
-    `en_sentence_meaning_matches`/`ru_sentence_meaning_matches` FK columns,
-    `en_ru_entity_matches(ru_entity_id, status)`, `book_word(book_id,
-    is_solved)` — the anticipated `(entity_id,order)` and
-    `(entity_match_id,order)` composites were already present).
-  * Ran `wiki:sync` (regenerated `reference/`) + `wiki:validate` (conformant).
-
-* **Production launch — Phase 1 (agent).** Security + launch-prep changes:
-  deleted `App\Livewire\WordsSearch` and its Blade view (`WordsSearch.php:15`
-  interpolated `$this->search` into a raw `DB::select()` — SQLi; confirmed zero
-  references, dead code); raised the database queue `retry_after` default
-  `300 → 660` so it exceeds the 600s `AlignEntitySentences::$timeout` (a second
-  worker could otherwise retry a still-running job and duplicate alignment),
-  guarded by `tests/Unit/QueueConfigTest.php`; added a committed
-  `laravel/.env.production.example` (prod template — daily logs, `DB_HOST=db`
-  /`5432`, `SESSION_*` secure cookies, `MAIL_MAILER=resend`) plus a gitignored
-  `laravel/.env.production`; untracked and gitignored
-  `docker-compose/cloudflare/.env` (leaked tunnel token); ran
-  `composer require resend/resend-laravel` (Resend mail transport — reads
-  `RESEND_API_KEY`, falls back to the existing `RESEND_KEY` wiring).
-  Tombstoned `wiki/domains/words-search.md` and updated
-  `wiki/architecture/frontend.md`. **User steps remaining:** rotate Cloudflare
-  tunnel token, AI provider keys, admin/DB/proxy secrets; create Resend API
-  key + verify sending domain; end-to-end registration/password-reset email flow.
-
-## 2026-08-25
-
-* **Change: entities *Sentences* tab (Edit.jsx) now paginates and shows
-  sequential display order, matching the alignments editor.** `EntityController`
-  `sentences` endpoint is paginated (`page`/`per_page`, default 25) and returns
-  `{sentences, meta, before_first_id}`; `store`/`reorder`/`destroy` JSON
-  endpoints also return the affected page (store/reorder return the page holding
-  the new/moved sentence). The UI renders a 1-based `display_order`
-  `(page-1)*per_page + index + 1` instead of the raw sparse `order` (fixes the
-  negative-number display that drag-to-beginning produced). A per-row "+ add"
-  icon opens an inline form that inserts directly below that row
-  (`after_sentence_id` = that row's id); the top-level "+ Add sentence" button
-  and "Insert position" select were removed (empty list shows a single "Add the
-  first sentence" link). `before_first_id` lets a drop at the top of page N>1
-  anchor to the previous page's last sentence. Non-negative order guard now
-  mirrors `AlignmentEditorController`. Tests: `EntityEditingTest` covers
-  pagination, `before_first_id`, store-page-targeting, and non-negative orders.
-  No routes/models/commands changed (`wiki:sync` not required).
-
-* **Change: granted users may edit entities and sentences in the entities
-  frontend (ADR 0015).** The entities frontend (`/entities`) is now a full
-  editing surface, not read-after-create-only. `EntityAccessService::canEdit`
-  mirrors `canRead` (admin bypass; Restricted → grantees; Public → any
-  approved user) and gates `entities.edit`, `entities.update`, and four JSON
-  sentence endpoints (insert, update content+type, cascade delete, drag
-  reorder). The `Edit` page (`resources/js/Pages/Entities/Edit.jsx`) combines
-  a metadata form (Inertia PATCH) with a `@dnd-kit/sortable` sentence manager
-  that fetches via `entities.sentences` JSON. Drag-to-reorder uses
-  `SparseOrderService::orderForInsertAfter` with `after_sentence_id = 0` as a
-  "beginning" sentinel. Cascade delete reuses the sentence models'
-  `deleting`/`deleted` hooks (junctions removed, empty meaning matches
-  deleted, `linked_count` updated) — a deliberate divergence from the
-  alignment editor's unlink-before-delete rule. Every sentence mutation flips
-  all `EnRuEntityMatch` rows involving the entity to `status = 'pending'`;
-  the `signature` is left stale. Known gaps (v1): public-edit + cascade-delete
-  by any approved user with no audit/soft-delete. Updated: `CONTEXT.md`
-  (Access grant → read+edit; new "Insert sentence" term; new "Edit rule"
-  term), `wiki/domains/entities.md`, `wiki/domains/access-control.md`,
-  `wiki/database/entities-alignment.md`. New: ADR 0015, form requests
-  (`UpdateEntityRequest`, `StoreEntitySentenceRequest`,
-  `UpdateEntitySentenceRequest`, `ReorderEntitySentenceRequest`), test
-  `tests/Feature/EntityEditingTest.php` (28 tests).
-
-* **Change: simulator hides its AI surface for keyless users.** New
-  `User::canUseAi()` (key for an enabled provider with an enabled, unexpired
-  model — the same predicate `AIModelResolver::getGroupedModels()` applies)
-  is the single capability predicate, surfaced as the `canUseAi` and `showAI`
-  Inertia props (`showAI` is now `false` for keyless users instead of the
-  hardcoded `true`). The frontend hides the per-row "Ask" button
-  (`TextContent.jsx`), the "Question" section + its header toggle, and the
-  "AI response" panel + its header toggle (`Bilinguals.jsx`, `Workplace.jsx`)
-  when `canUseAi` is false; the "Open" button, the translation textarea, the
-  Text/Workplace toggles, and the header "Add an API key in your Profile"
-  link stay visible. The `/ai/question` request paths remain server-guarded by
-  the 403 in `AIModelResolver::ask()`/`askStreamed()` (ADR 0012) — no new
-  backend gate. `AIModelResolver` was intentionally left untouched; drift
-  between the new predicate and `getGroupedModels()` is guarded by a parity
-  test. `canUseAi` is a code-only name (no new CONTEXT.md glossary term;
-  "Available (to a user)" already covers the provider-level predicate). Tests:
-  extended `SimulatorApiKeyTest` (props for capable + keyless users), new
-  `Unit/UserCanUseAiTest` (four capability scenarios), new parity test. No ADR.
-
-* **Add: per-entity access control — default-restricted uploads + Signature-match grants.**
-  New `is_restricted` boolean on `en_entities`/`ru_entities` (default false) and
-  two grant pivots `en_entity_user` / `ru_entity_user` (user_id, nullable
-  `similarity` for creator-vs-match distinction). Every upload now runs a
-  synchronous `TextSignatureService::findSimilarExisting` check: a ≥0.95 cosine
-  match links the uploader to the existing Entity (Access grant, file deleted)
-  instead of creating a duplicate; otherwise a new Restricted entity is created
-  with a creator grant. `EntityAccessService` (canRead / canReadMatch / grant /
-  readableQuery / readableMatchQuery) enforces reads in `EntityController`,
-  `ReaderController`, and `SimulatorController`; admin publishes via the Filament
-  `is_restricted` toggle. No `created_by` column — the uploader's access is a
-  grant row like any other. Defense-in-depth: `ProcessEntityFile` still detects
-  duplicates asynchronously and migrates their grants onto the survivor. ADRs
-  0013 (default-restricted + per-entity grants) and 0014 (per-entity grants
-  require both sides to read a simulator match). `CONTEXT.md` gained the Entity
-  Access context; `SimulatorEntitySeeder` marks `the_book_thief_5.txt` restricted.
-  New/updated tests in `EntityControllerTest` and `TextSignatureServiceTest`
-  (grant-on-match, fail-hard on embedding outage, both-sides 403, pivot
-   migration); full suite green (380). `generated.at` bumped on access-control,
-   entities, entities-alignment, reader, bilinguals-simulator; `wiki:sync`
-   regenerated references.
-
-* **Fix: authorization leak in the Alignments editor (`AlignmentEditorController`).**
-   The 11 editor endpoints (`rows`, `unmatched`, `needs-review`, `storeRow`,
-   `destroyRow`, `approveRow`, `storeSentence`, `updateSentence`, `unlinkSentence`,
-   `destroyUnmatched`, `moveSentence`) bound `EnRuEntityMatch` via route-model
-   binding with zero authorization, so any authenticated user could read *and
-   mutate* alignments on restricted entities. Each endpoint now runs
-   `abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403)`
-   as its first statement (mirroring `AlignmentController`), ahead of the existing
-   `meaningMatch → match` 404 checks, so non-granted users get 403 (never 404).
-   Public matches remain readable by every approved user, so the existing
-   `AlignmentEditorApiTest` suite is unaffected. New
-   `tests/Feature/AlignmentEditorAccessTest.php` asserts 403 for a non-granted user
-   across reads + `approveRow`, and 200 once both-side grants are attached.
-   `wiki:validate` passes; `access-control` / `sentence-alignment` concepts updated.
-
-
-## 2026-08-24
-
-* **Add: front-end `/entities` management surface (first consumer of `Language::enabled()`).**
-  New Inertia/React area for approved users to manage per-language text entities,
-  separate from the read-only reader: `/entities` (picker — one card per enabled
-  language with an entity count), `/entities/{lang}` (paginated list + "+ Create
-  entity"), `/entities/{lang}/create` (form: name, description, optional `.txt`
-  upload), `POST /entities/{lang}` (creates the entity, stores the file to
-  `entities/{lang}` on the `local` disk, and dispatches `ProcessEntityFile` only
-  when a file is present), and `/entities/{lang}/{entity}` (detail: header +
-  "Read" link to `/reader-react/{lang}/{id}` + "Open alignment" links to any
-  `EnRuEntityMatch` rows + read-only sentence list). Backed by new
-  `EntityController` (switches on `$lang` via `EnEntity`/`RuEntity`, validates
-  `{lang}` against `Language::enabled()` → 404 otherwise) and
-  `StoreEntityRequest`. Edit/delete stay admin-only; alignment pairing stays in
-  `/alignments`. ADR 0002 records the `Language::enabled()` wiring (first
-  production consumer; ADR 0001's standalone stance evolved, not reversed).
-  `NavBar.jsx` gained an Entities link; `CONTEXT.md` gained the Entity glossary
-  term. New `tests/Feature/EntityControllerTest` (12 tests, green), pint clean.
-  Docs: new `wiki/domains/entities.md` (registered in `index.md`); ADR 0002;
-  `CONTEXT.md` Entity entry; `wiki:sync` regenerated `reference/web-routes.md`.
-  `generated.at` bumped.
-
-* **Add: `languages` table + full admin CRUD + seeder (standalone registry).**
-  New `languages` table (`App\Models\Language`) is an admin-managed lookup
-  registry surfaced as a full Filament CRUD on `/admin` (`LanguageResource` with
-  List/Create/Edit pages): `code` (unique ISO 639-1, lowercase, 2-char),
-  `name`, `native_name` (nullable), `is_enabled` (default true, one-click
-  inline toggle + edit-form Toggle), `sort_order`. It is a **standalone**
-  registry — nothing else references it yet and the ~100+ hardcoded
-  `'en'`/`'ru'` literals stay untouched (ADR 0001). `DatabaseSeeder` now runs
-  `LanguageSeeder` first, upserting enabled `en` (English) and `ru` (Russian)
-  rows; deletes are free (no protection on the seeded pair, per decision). New
-  tests: `Feature/Filament/LanguageResourceTest` (list, create, duplicate-code
-  rejection, non-lowercase rejection, edit, inline toggle, delete) and
-  `Unit/Models/LanguageTest` (casts, `enabled()` scope, seeder idempotency);
-  full suite green, pint clean. Docs: ADR 0001, `CONTEXT.md` gained a Language
-  Catalog Context (Language / Language code / Enabled language); `wiki:sync`
-  regenerated `reference/models.md`. `generated.at` bumped.
-
-## 2026-08-23
-
-* **Change: simulator AI panel — readable headings, shadow hover, larger base font.**
-  Three visual fixes in the AI Response rail. (1) `.ai-prose h1–h4` were pinned
-  at `11px` while body text scaled with the user font control, so headings read
-  smaller than paragraphs; they now use `1.15em` (mono-caps treatment kept), so
-  they stay ~15% above body text at any size. (2) The gloss-run hover
-  affordance in `#ai_answer_div` swaps its accent-tinted background fill for a
-  crisp accent-tinted `text-shadow: 0 1px 1px` just below the hovered glyphs
-  (night variant on `--wbench-accent-night`, transition retargeted to
-  `text-shadow`; reduced-motion opt-out kept). (3) `DEFAULT_FONT_SIZE` in
-  `Bilinguals.jsx` raised 22 → 26 (`+`/`−` still step ±2 within 12–48).
-  Verified in-browser on `/bilinguals/en/ru/simulator`. Docs:
-  `wiki/domains/bilinguals-simulator.md`,
-  `wiki/conventions/design-system.md` (both `generated.at` bumped).
-
-* **Change: double-quoted phrases in the simulator AI response render red.**
-  `Bilinguals.jsx` gained `highlightQuotes()`, slotted into `renderMarkdown()`
-  between `marked.parse()` and DOMPurify sanitize: it protects `<pre>`/`<code>`
-  blocks with placeholders, wraps straight `"…"` spans (which marked emits as
-  `&quot;` entities, so the match is entity-based) in
-  `<mark class="ai-quote">` outside HTML tags, then restores them. Styled by a
-  new `.ai-prose mark.ai-quote` rule (red text via `--wbench-danger`, night
-  variant via `.dark`, transparent background overriding the generic `mark`
-  tint) in `public/css/simulator.css`. Verified in-browser on
-  `/bilinguals/en/ru/simulator` (light + dark). Docs:
-  `wiki/domains/bilinguals-simulator.md` (`generated.at` bumped).
-
-* **Change: profile API-key rows are now two-state (form vs. stored badge).**
-  `Profile/Edit.jsx`'s provider row previously always showed the password input
-  above Save/Remove buttons with the masked preview tucked underneath. It now
-  branches on `apiKeyProviders.*.has_key`: no key → input + icon "Save" button;
-  key stored → green "Current key" badge (`masked()`, still `••••`) plus a
-  trash-icon remove control (`aria-label="Remove key"`); deleting reveals the
-  form again via the existing redirect + Inertia prop refresh. Replacing a key
-  is now remove-then-re-add (the inline replace path is gone). Backend,
-  routes, and tests unchanged; `ProfileApiKeyTest` green. Docs:
-  `wiki/domains/ai-providers.md` (`generated.at` bumped).
-
-* **Change: profile page shows a masked API key preview.**
-  `App\Models\UserApiKey::masked()` returns the first four and last four
-  characters of the decrypted key separated by `••••`; the profile endpoint now
-  exposes this as `apiKeyProviders.*.masked_key`. `Profile/Edit.jsx` renders it
-  as read-only text above the password input so users can identify stored keys,
-  while the input itself stays empty for replacement. The full key is still
-  never echoed. Updated `tests/Feature/ProfileApiKeyTest` to assert the masked
-  prop; `wiki/domains/ai-providers.md` updated.
-
-* **Add: per-user AI provider API keys (supersedes ADR 0010).** Each user now
-  stores their own encrypted API key per provider in a new `user_api_keys`
-  table (`unique(user_id, ai_provider_id)`, `api_key` cast `encrypted`), modeled
-  by `App\Models\UserApiKey` (+ factory) with `User::userApiKeys()`,
-  `apiKeyForProvider($key)`, `hasApiKeyForProvider($key)` relations/helpers and
-  `AiProvider::userApiKeys()`. The `.env` **System key** is retained only for
-  non-user paths (model sync, CLI, admin tooling) — there is no System-key
-  fallback for user requests. `AIModelResolver::getGroupedModels()` is now
-  user-scoped: it lists only providers the authenticated user has a User key for
-  (and that are admin-enabled), sorted within provider by price ascending and
-  across providers by cheapest model (so the default is the globally cheapest);
-  `firstModelKey()` returns that default. `ask()` reads the user's key,
-  stamps it onto a cloned provider via `AiProvider::withApiKey()` (the resolver's
-  cached template is never mutated), and throws a 403 `AiProviderException` when
-  the user has no key. Profile page (`Profile/Edit.jsx`) gained an "AI Provider
-  API Keys" section listing every enabled provider with a masked per-provider
-  input (never echoes the stored key), independent Save/Remove, and a
-  `StoreApiKeyRequest` validating `provider` (enabled, exists) + `api_key`
-  (min 10); endpoints `POST/DELETE /profile/api-keys[/<providerKey>]` live on
-  `ProfileController`. The simulator shows an empty state linking to the Profile
-  when the user has no keys. ADR 0012 records the decision (supersedes ADR 0010,
-  which now notes its supersession). `CONTEXT.md` AI Provider Context gained
-  User key / System key / Available (to a user) terms; `isConfigured()`
-  redefined as a System-key probe. New tests: `Unit/UserApiKeyTest`,
-  `Unit/AIModelResolverTest` (rewritten for the user-scoped gate + price sort),
-  `Feature/ProfileApiKeyTest`, `Feature/SimulatorApiKeyTest`,
-  `Feature/AiQuestionApiKeyTest` (23 tests, full suite green). Docs:
-  `wiki/domains/ai-providers.md` (glossary + registry + resolver behavior),
-  `wiki/domains/bilinguals-simulator.md` (dynamic default + empty state),
-  `wiki/playbooks/add-ai-provider.md` (user-keyed visibility); `generated.at`
-  bumped.
-
-* **Add: access-control authorization skeleton (gates + admin bypass + last-admin
-  invariant).** `AppServiceProvider::boot` registers a `Gate::before` hook that
-  lets an approved admin pass every ability automatically, plus an
-  `accessAdminPanel` ability (`isAdmin() && is_approved`) that is the single
-  source of truth for both `User::canAccessPanel` (Filament panel access) and the
-  frontend admin link. `HandleInertiaRequests` now ships an `auth.can` ability
-  map (starting with `accessAdminPanel`) instead of the raw `role` string, and
-  `NavBar.jsx` reads `can(...)` rather than `user.role === 'admin'`. A new
-  `User` model guard (enforced at the model level so it holds for any entry
-  point) refuses to demote/unapprove/delete the last approved admin and refuses
-  an admin removing their own admin access; `UserResource` additionally hides
-  those actions and disables the `role`/`is_approved` fields for self and for the
-  sole approved admin. New `tests/Feature/AccessControlTest.php` (17 tests:
-  before-hook behavior, `accessAdminPanel` gate for admin/unapproved/guest,
-  `canAccessPanel` delegation, Inertia `auth.can` map, model-level last-admin +
-  self-demotion blocks, and Filament UI action/field gating). Docs: new
-  `wiki/domains/access-control.md` concept + `log.md`; ADR 0008 records the
-  `Gate::before` admin-bypass decision; `CONTEXT.md` gained an Access Control
-  Context (Role, Approved, Admin bypass). `generated.at`/`verified` bumped.
-
-* **Add: `ai_providers` table + edit-only admin + seeder; `ai_models` linked by
-  FK.** New `ai_providers` table (`App\Models\AiProvider`) is an *enable-flag
-  overlay* storing `key`/`name`/`is_enabled`/`description`; the hardcoded
-  provider-class maps in `AIModelResolver` and `AiModelSyncRegistry` stay the
-  source of truth for *which* providers exist (ADR 0009). `ai_models.provider`
-  string column dropped in favour of a nullable `ai_provider_id` FK
-  (`nullOnDelete`); sync writes `ai_provider_id` and **ignores
-  `ai_providers.is_enabled`** because sync is a catalog mirror, not an
-  availability gate (ADR 0011). New `Database\Seeders\AiProviderSeeder` seeds one
-  enabled row per registered provider (API keys stay in `.env`, ADR 0010 — the
-  admin `AiProviderResource` is edit-only, no Create page, non-secret fields
-  only). `AIModelResolver` now skips providers that are not *available*
-  (configured AND enabled); `AiProvider::isEnabled()` backs the check. New tests:
-  `AiProviderSeederTest`, `AIModelResolverTest` (two-gate), `AiModelSyncTest`
-  (FK + sync-invariant), `AiProviderResourceTest` (edit-only + toggle). Docs:
-  `wiki/domains/ai-providers.md` gained a Language glossary and registry section;
-  ADRs 0009–0011.
-
-## 2026-08-22
-
-did* **Change: AI Models admin enable/disable now fires without a confirmation
-  modal.** Removed `requiresConfirmation()` / `modalHeading` / `modalDescription`
-  from the `toggleEnabled` record action in `AiModelResource` so Enable/Disable
-  toggles `is_enabled` immediately on click. The "Sync models" header action
-  still requires confirmation. Added a feature test asserting `callAction`
-  toggles `is_enabled` without a modal interception.
-
-* **Add: shared model-sync across all AI providers.** A `ModelSync` contract +
-  abstract `AiModelSync` base (fetch / upsert / delete-missing, parameterized by
-  `provider()`) plus an `AiModelSyncRegistry` (parallel to `AIModelResolver`,
-  guarded by a key-parity test) replace the OpenRouter-only sync. The
-  `openrouter:sync-models` command and `SyncOpenRouterModelsJob` are removed;
-  `ai:sync-models` (with an optional `--provider=<key>` filter) and
-  `SyncAiModelsJob` loop all six registered syncers with per-provider error
-  isolation (catch, log, continue). Each provider's catalog endpoint is now
-  `services.<provider>.models_url`; a blank value short-circuits the HTTP call
-  but still runs delete-missing, so not-yet-wired providers enforce an
-  API-only catalog without a network call. All six provider class constructors
-  now read their models from `ai_models` (DB) via `forProvider()->enabled()->
-  unexpired()` instead of hardcoded arrays — so Gemini/Groq/Cohere/Perplexity/
-  HuggingFace temporarily expose no models in the picker until their
-  `models_url` is filled and a sync succeeds. The Filament "Sync models" action
-  now dispatches `SyncAiModelsJob` (lock key `ai-model-sync`). New tests:
-  `EmptyUrlModelSyncTest` (dataset over the five blank-URL providers: returns 0,
-  makes no HTTP call, wipes that provider's rows) and `AiModelSyncRegistryTest`
-  (key parity). `AiModelResourceTest` switched to the new job/lock key.
-  Docs: `CONTEXT.md` ("Models endpoint", "Chat endpoint"), ADR 0007 (supersedes
-  the OpenRouter-only flow in ADR 0006). Bumped `wiki` AI-provider concept +
-  `log.md`.
-
-## 2026-08-16
-
-* **Add: gloss-run hover affordance in the bilinguals simulator AI panel.**
-  Text-bearing elements of the AI answer (the **Gloss**) now signal
-  interactivity: a pointer cursor plus an accent-tinted background on `:hover`
-  (uniform layering — a nested run's fill paints over its parent block's fill).
-  Pure CSS in `public/css/simulator.css`, scoped to `#ai_answer_div .ai-prose`
-  (blocks + inline runs; excludes `ul`/`ol` containers and `br`/`hr`), accent
-  `color-mix` fill ~14% light / ~22% dark, 150ms `background-color` transition,
-  `prefers-reduced-motion` disables the transition. Deviation from the prior
-  "no per-line `:hover` background" rule — `conventions/design-system.md`
-  amended accordingly; `generated.at` bumped. Docs: `CONTEXT.md` ("Gloss" and
-  "Gloss run" terms). No JSX/Vite change (file is served directly).
-
-* **Add: "Needs review" section in the Alignments editor.** `/alignments/{id}`
-  now shows a collapsible (collapsed by default) **Needs review** list below the
-  unmatched pool, surfacing meaning matches a human should inspect: rows with
-  `similarity < 0.55` (`AlignmentEditorApiPresenter::LOW_SIMILARITY_THRESHOLD`)
-  or **one-sided** rows (junctions on exactly one side, any similarity — the
-  original-completeness repair rows; empty rows are excluded). Backed by a new
-  `GET /alignments/{entityMatch}/needs-review` endpoint
-  (`AlignmentEditorController::needsReview`, `NeedsReviewRequest`) returning
-  `{items, meta}` paginated 25/page; each item carries a page-independent
-  **`rank`** (window `ROW_NUMBER() OVER (ORDER BY "order")` over the full
-  filtered set, excluding unmatched-pool rows) plus `#order`, `similarity`,
-  EN/RU parts, and `one_sided`. Clicking a row jumps the editor's rows table to
-  the exact page (`ceil(rank / live per_page)`, matching the user's per-page
-  choice) and scrolls + briefly highlights the row (client-side, no URL
-  change). The section refetches its current page after every mutation; initial
-  page-1 is passed as the `needs_review` prop from `AlignmentController@show` so
-  the header count is immediate. Frontend: new
-  `resources/js/Pages/Alignments/components/NeedsReviewSection.jsx`,
-  `api.js:needsReview()`, `Show.jsx` state/`jumpToRow`/scroll-highlight,
-  `PairRow` `data-row-id` + `highlighted` prop. New tests in
-  `AlignmentEditorApiTest` (membership incl. high-similarity one-sided rows,
-  interleaved rank ordering, 25/page pagination) + guest 401 +
-  `AlignmentPagesTest` `needs_review.meta.total` assertion. Docs: `CONTEXT.md`
-  ("Needs review" term), `domains/sentence-alignment.md` (Review stage) +
-  `database/entities-alignment.md` (single-sided bullet); `generated.at` bumped.
-
-* **Fix: the alignment editor no longer corrupts sentence document order.**
-  Dragging a sentence within a row previously rewrote `sentence.order`
-  (`assignNewRowSequence` → `setSentenceOrderRaw`), and `spreadOrders`'s
-  stride-1024 fallback jumped a dropped sentence's order (e.g. 3 → 1024), so a
-  later Re-align (which reads sentences strictly by `order`) placed it at the
-  tail against the wrong sentences. The editor now treats `sentence.order` as
-  immutable **document order** and rewrites only the within-row **junction
-  order** (row-local sparse helpers): `reorderRowJunctions` for within-row
-  drags, `link()` via `orderForInsertAfter` for cross-row/unmatched relinks,
-  `appendJunctionOrder` for new sentences (junction appends at the row's end;
-  the sentence is placed at the row's document boundary via the new
-  doc-order `sideAnchorOrder`/`rowRightBoundary`). Display still shows raw
-  `sentence.order`. `AlignmentEditorApiTest` strengthened (exact order
-  preservation, cross-row/unmatched order immutability) plus a new decoupling
-  test. Docs: `CONTEXT.md` (Sentence/Junction), ADR 0005, `wiki` concepts +
-  `log.md`; `generated.at` bumped. Existing corrupt orders were left in the DB
-  for manual repair.
-
-* **Fix: the 5 pre-existing test failures are gone (full suite green).**
-  `tests/Unit/OpenRouterTest.php` was updated to match the current
-  `OpenRouter::$models` array (bare `:free` display names are now accepted,
-  expected identifiers reflect the active model set from the July AI-model
-  cull — commented-out paid models dropped, `nemotron-3-nano-30b-a3b:free`
-  renamed to `nemotron-3-super-120b-a12b:free`). `SimulatorEntitySeeder`
-  excludes `001_articles.txt` (the local, gitignored corpus file) alongside
-  `book_thief_1.txt`. `WiktionaryParser::flushBatch()` now increments
-  `words_imported` per batch, so the import stat is no longer stuck at 0.
-  Bumped `generated.at` on `domains/dictionary-import.md` and
-  `playbooks/import-dictionary-data.md`; dropped the stale "5 pre-existing
-  test failures" note from `playbooks/running-tests.md`.
-
-## 2026-08-15
-
-* **Rework: original-side sentence completeness in the aligner.** Completion of
-  an entity match now funnels through a single gate
-  (`AlignEntitySentences::finalize()`) that enforces the **original
-  completeness** invariant: every sentence on the original-text side
-  (`is_original_en`) is junctioned into a meaning match, in document order,
-  before `status` flips to `completed`. Junction-less original sentences
-  (dropped by an empty-commit crawl seam, left over when the translation side
-  is exhausted, or skipped by a re-align) are repaired as **single-sided
-  meaning matches** (`similarity 0.0`, next machine `alignment_chunk` id),
-  ordered positionally via `SparseOrderService::spreadOrders` between the
-  neighbouring junctioned anchors. The repair is best-effort (logs a warning,
-  never throws). "RU sentences exhausted before EN" is now a normal completion
-  (the remaining original tail is drained) instead of an error. New
-  `SentenceAlignmentService::storeSkipSentences()` persists single-sided rows;
-  the empty-commit seams in `alignWholePool()`/`alignPoolChunk()` skip rather
-  than silently drop the first uncommitted original sentence. Updated
-  `domains/sentence-alignment.md` + `CONTEXT.md` glossary ("Original
-  completeness", "Single-sided meaning match"). Tests in
-  `ChunkedEntityAlignmentTest` cover the RU-exhausted drain, RU-original long
-  tails, empty-commit seams, position-aware mid-text repair, human-unlinked
-  sentences, and empty-side starts. Bumped `generated.at`.
-
-## 2026-08-15
-
-* **Polish: emphasis colors in AI prose + new `--wbench-emphasis` token.**
-  Bold emphasis (`b`, `strong`) in the AI gloss/answer — previously painted in
-  `--wbench-ink` (near-black, invisible on paper) — is now a theme red. Added
-  `--wbench-emphasis` (#B0451E / night #E0664A) to the `@theme` block in
-  `laravel/resources/css/app.css` so `--wbench-danger` stays reserved for
-  errors. `laravel/public/css/simulator.css`: global `em`/`i` stay
-  `--wbench-accent` italic (unchanged) and `b`/`strong` move to
-  `--wbench-emphasis`; the scoped `.ai-prose` block adds a full emphasis set
-  with dark-mode pairs — `mark` (soft red highlight via `color-mix`),
-  `u`/`ins` (accent underline), `del`/`s` (muted ink-soft + red
-  line-through), `small`, `sub`/`sup`, `code`/`kbd`/`samp` (mono chip on
-  `--wbench-paper-deep`), `blockquote` (accent left border), `q` (accent
-  italic). Extras are scoped to `.ai-prose` so global pages that load
-  `simulator.css` are untouched beyond the `em`/`i`/`b`/`strong` rules. Bumped
-  `conventions/design-system.md` (token table, accent-discipline note, state
-  contract row, `.ai-prose` pattern note) + `log.md`.
-
-## 2026-08-15
-
-* **Add: original-text flag on entity matches.** `en_ru_entity_matches` gains
-  `is_original_en` (boolean, default `true` = English is the original text)
-  so a match records which language the paired text was authored in (the
-  other side being a translation). Set via a radio ("Original Text" →
-  English/Russian) on the admin create form and the List page "New Alignment"
-  action; stored as metadata only (no simulator/pipeline wiring), read-only
-  "Original" badge column on the List table. Added the "Original text" term
-  to `CONTEXT.md`. Bumped `database/entities-alignment.md` + `log.md`.
-
-## 2026-08-15
-
-* **Fix: re-align runs as one job per pool instead of one long job.** A
-  re-align of a match with many landmark-delimited pools previously drained
-  every pool in a single `handle()` invocation — a 141-pool match ran one
-  ~2m16s job (141 sequential `/align` calls, no cursor progress until the
-  end). `AlignEntitySentences::handle()` now persists the cursor via
-  `persistOffsets()` and `return`s after **each** whole-pool fast-path align,
-  so each pool runs as its own queued job (~10–30s) with offsets persisted
-  between pools and crash-resilient resume. Pools larger than `chunk_size`
-  on either side still fall through to `alignPoolChunk()` and are drained
-  chunk-by-chunk across jobs (unchanged). Updated
-  `ReAlignPreservesLandmarksTest` (both re-align tests now drain the
-  re-dispatched queue and assert intermediate `aligning` status + offsets +
-  dispatch counts). Bumped `domains/sentence-alignment.md` (Plan 08) +
-  `playbooks/run-alignment.md` + `log.md`.
-
-## 2026-08-14
-
-* **Polish: page picker in the Alignments editor rows table.** The rows
-  `Pagination` component
-  (`resources/js/Pages/Alignments/components/Pagination.jsx`) now renders
-  numbered page buttons with ellipsis (window of current ±2 plus first/last,
-  e.g. `1 … 4 5 [6] 7 8 … 62`) between Prev/Next, so a user can jump to any
-  page instead of stepping one by one. The native per-page `<select>` (whose
-  number was clipped by Tailwind preflight's `appearance:none` + chevron
-  background in some browsers) was replaced by a small custom dropdown button
-  (`PerPageSelect`) that always shows the current value and lists the options
-  on click — the value is rendered as plain button text, so it can never be
-  cut off. Unmatched pools keep their arrows-only paging. Backend already
-  supported `page`/`per_page` (`RowsRequest`, `rowsPagePayload`) — no PHP
-  changes. Bumped `domains/sentence-alignment.md` + `log.md`.
-
-## 2026-08-14
-
-* **Add: Approve action in the Alignments editor.** Each meaning-match row in
-  `resources/js/Pages/Alignments/` gains an **Approve** button (leftmost in the
-  row rail, next to Create below / Delete). It calls the new
-  `POST /alignments/{entityMatch}/rows/{meaningMatch}/approve` endpoint
-  (`AlignmentEditorController::approveRow`), which sets `similarity = 1.0` and
-  `alignment_chunk = -1` — promoting the row to a hard human landmark, exactly
-  the tier that survives re-align (Plan 08/10). Optimistic UI update + revert
-  on error, matching the create/delete pattern. New tests in
-  `AlignmentEditorApiTest` (sets similarity 1 + landmark marker; 404 for a row
-  of another match; guests 401). Updated `domains/sentence-alignment.md` +
-  `log.md`.
-
-## 2026-08-14
-
-* **Add: landmark tiers concept (Plan 10 close-out).** Consolidated the two
-  classes of meaning-match rows that survive a re-align as explicit
-  **landmark tiers** in `domains/sentence-alignment.md`: **hard** (human-made,
-  `alignment_chunk = -1`, `similarity = 1.0` — never deleted, rolled back, or
-  re-aligned) vs **auto** (machine rows with
-  `similarity >= LANDMARK_THRESHOLD` 0.90, promoted to landmarks on
-  re-align). Both feed
-  `landmarkRows()`/`landmarkBounds()` and act as pool boundaries; only the
-  delete scope of Re-align (machine rows below the bar) vs "Run from scratch"
-  (both tiers) differs. `database/entities-alignment.md` gained the same
-  markers under its invariants. Bumped both concepts' `generated.at` +
-  `log.md`.
-
-## 2026-08-14
-
-* **Add: split Filament re-run actions (Plan 09).** The single destructive
-  "Re-run" action on `EnRuEntityMatchResource` (list table) is replaced by two
-  explicit confirmation actions, both visible only on `status ∈
-  {completed, failed}`: **Re-align** (`realign`, warning, `heroicon-o-arrow-path`)
-  calls `AlignEntitySentences::begin()` and preserves human-made rows
-  (`alignment_chunk = -1`) plus confident landmarks
-  (`similarity >= AlignEntitySentences::LANDMARK_THRESHOLD`), re-aligning only
-  the low-confidence gaps — its modal reports the live preserved counts;
-  **Run from scratch** (`rerunScratch`, danger, `heroicon-o-trash`) calls
-  `beginFromScratch()`, deletes ALL meaning matches including human-made ones,
-  and states so in its modal (adding the human-made count when > 0).
-  `LANDMARK_THRESHOLD` made `public` so the resource can reference it. New
-  `FilamentReAlignActionTest` (3 tests: per-status visibility, realign dispatch
-  + modal copy, scratch dispatch + modal copy). Updated
-  `domains/sentence-alignment.md` + `playbooks/run-alignment.md` + `log.md`.
-
-* **Add: landmark-aware re-align (Plan 08).** `AlignEntitySentences` gains a
-  fresh-alignment entry point `beginFromScratch()` (the old `begin()`:
-  verify, wipe every meaning match, snapshot totals, raise small entities to
-  one chunk, dispatch) while the Filament "Re-run" action switches to the new
-  landmark-aware `begin()`: it deletes only machine rows below
-  `LANDMARK_THRESHOLD` (0.90), preserving human rows (`alignment_chunk = -1`)
-  and high-confidence auto-landmarks, resets the cursor, and re-dispatches
-  (delegating to `beginFromScratch()` when the match was never set up).
-  `handle()` is now pool-aware: `landmarkRows()`/`landmarkBounds()` carve
-  non-overlapping pools around landmarks (1:N landmark spans merge, bounds
-  clamp to snapshot totals), each aligned independently so pins are never
-  crossed; the whole-pool fast path is taken only when a pool fits one window
-  and no rollback candidates remain inside it, otherwise the chunk path with
-  seam rollback (`rollbackCandidates()`: machine rows junctioned on both
-  sides in the pool, last 2) applies. Fresh-alignment callers
-  (`CreateEnRuEntityMatch`, `ListEnRuEntityMatches`, `alignments:resume`,
-  `EnEntityResource`/`RuEntityResource` buttons) moved to `beginFromScratch()`.
-  New `ReAlignPreservesLandmarksTest` (3 tests); rollback seeds in
-  `ChunkedEntityAlignmentTest` lowered 0.9 → 0.8 so they fall under the
-  landmark bar. Updated `domains/sentence-alignment.md` +
-  `playbooks/run-alignment.md` + `log.md`.
-
-* **Add: alignment landmark passthrough (Plan 07).** The PHP alignment client
-  now accepts the Python knobs introduced in plans 02–06:
-  `SentenceAlignmentService::alignChunkRemote()` gained optional
-  `array $landmarks = []` and `?float $highConfidence = null` parameters and
-  passes them to `/align` as `landmarks` (list of `{en_start, en_end,
-  ru_start, ru_end}` ints) and `high_confidence`. When neither is given the
-  payload is byte-identical to the previous shape — no `landmarks`/
-  `high_confidence` keys are sent — so existing callers are untouched.
-  `AlignEntitySentences` reserves `LANDMARK_THRESHOLD = 0.90` (inert until
-  plan 08 wires human-edited rows in as pins on re-align). New feature tests
-  assert the keys appear in the payload when passed and are omitted when not.
-  Updated `domains/sentence-alignment.md` + `log.md`.
-
-* **Add: hard landmark pins on `/align` (Plan 06).** `BilingualAligner`
-  `align_lists`/`_align_pair` now accept and honor `landmarks: list[dict]`
-  (`{en_start, en_end, ru_start, ru_end}` — indices into the submitted lists).
-  New module-level `_validate_pins` rejects (ValueError → 422 via
-  `api/align.py`) zero-length, out-of-range, and crossing/overlapping pins
-  (sorted by `en_start`, any pin whose EN or RU span intersects the previous
-  pin's is rejected — sharing a sentence is contradictory). `_prepass_anchors`
-  skips cells inside a pin's rectangle (`range(en_start,en_end) ×
-  range(ru_start,ru_end)`), and `_align_with_anchors` builds the sub-pool
-  boundaries from the union of pins + prepass anchors: pins delimit the
-  top-level gaps, only anchors lying entirely inside a gap split it further, so
-  machine output can never cross or overlap a pin **by construction** (pools
-  sit strictly between boundaries). Pins are emitted verbatim with score 1.0 in
-  document order; unmatched lists exclude pinned indices automatically. Honored
-  in both greedy and dp. The request schema uses a new `AlignLandmark` model
-  (four int spans, no `score` — pins are always 1.0), so `AlignRequest.landmarks`
-  is no longer `list[AlignMatch]`; `api/align.py` converts pins to dicts and
-  translates ValueError → 422. Verified live: a 1:2 pin honored by `dp`, a 1:1
-  pin emitted verbatim at score 1.0, out-of-range/crossing/zero-length pins all
-  → 422 with clear messages, and landmark-less requests unchanged (200).
-  New stub tests in `test_aligner.py` (pin emitted verbatim score 1.0 both
-  algorithms; prepass skips pinned cells + no machine match overlaps a pin;
-  pinned indices excluded from unmatched; invalid pins rejected). All 29 checks
-  pass; `.env.example` comments un-staled (knobs now applied). Updated
-  `domains/sentence-alignment.md` + `log.md`.
-
-* **Add: per-sentence embedding aggregation for multi-sentence windows
-  (Plan 05).** `BilingualAligner` gained `_sentence_vectors`, `_aggregate_window`,
-  and the `_window_vector` routing point; `_generate_window_embeddings` and
-  `_embed_windows` now hand every window to `_window_vector`, which dispatches
-  on the live `window_embed` knob (`ALIGN_WINDOW_EMBED`, default `aggregate`,
-  coerced from anything not `aggregate|joined`). `aggregate` (default) embeds
-  each single sentence once through the shared cache (key = model id +
-  normalized single text — the same key the prepass step-1 windows use) and
-  builds each window vector as a length-weighted, L2-normalized mean of its
-  sentence vectors (`_aggregate_window`: weights = window sentences' character
-  counts; step-1 reduces to the normalized single) — so no joined window text
-  is ever embedded and encode count ≈ `n + m` regardless of banding or window
-  expansions. `joined` keeps the legacy join-then-embed (cached by joined
-  text; one encode per window text on miss). `EmbeddingCache` docstring updated
-  to the single-vs-joined key semantics. Equal-length window sentences
-  reproduce old pooled-mean scores exactly; differing lengths shift toward the
-  longer sentence. New stub regression tests in `test_aligner.py`: aggregate
-  ranks the correct 1:2 fusion window highest; weights follow sentence lengths
-  (unit `_aggregate_window` check + end-to-end 2:1); per-sentence vectors
-  cached (counting stub, pooled window adds zero encodes); joined-mode smoke
-  (4 texts). Existing tests updated: window encode counts drop under aggregate
-  (1:2/1:3/1:4 ladder 8→5, orphan-merge 4→3, span-cap 1:2 4→3), the
-  banding test now asserts aggregate is band-independent (7/7) and keeps the
-  joined 11-vs-16 variant, and three pooled-window score asserts converted to
-  `assert_same_matches` (aggregate float32 arithmetic differs from the stub's
-  numpy normalization in the last bits). All 25 checks pass; LaBSE smoke on
-  `testen.txt`/`testru.txt` (greedy, 20 lines each): aggregate 9 matches mean
-  0.624, joined 10 matches mean 0.571. Updated
-  `domains/sentence-alignment.md` (Plan 02 `window_embed` now consumed;
-  embedding-cache bullet updated to the new key semantics; new Plan 05
-  section) + `log.md`.
-
-## 2026-08-14
-
-* **Add: diagonal banding of per-sub-pool match edges (Plan 04).**
-  Per-sub-pool match edges are restricted to a diagonal band around the
-  expected length-ratio line: `k = len(sub_en)/len(sub_ru)` per pool, cell
-  `(i, j)` in-band when `abs(j*k - i) <= band` (`_band_allowed`); the
-  half-width comes from the live `band_width` knob (`ALIGN_BAND_WIDTH`,
-  default unset → derived per pool as `max(2, max_window)`, `_resolve_band`).
-  DP (`_align_chunk`) gates match edges on their start cell (skip edges stay
-  unbounded) and embeds only windows whose start positions appear in some
-  in-band cell (`_in_band_starts` → `_generate_window_embeddings(sentences,
-  starts)`), so off-band windows never reach the model. Greedy
-  (`_align_chunk_greedy`) bands its internal `anchor_threshold` anchors
-  (`_find_anchors(sim, n, m, threshold, k=None, band=None)`), the gap window
-  ladder (`_best_window_pair`, gated on window centers, in-band-only step
-  filtering), and the skip decision (`_should_skip_en` clamps lookahead slices
-  to in-band cells; both-axes-out tiebreak `return j * k > i` walks back
-  toward the diagonal). Prepass anchors stay deliberately unbanded (they can
-  exist anywhere on the full singles matrix). The DP path no longer
-  precomputes the full chunk's `(n + m) * max_window` windows: `_align_pair`
-  embeds only the chunk's singles for the prepass matrix, and each pool embeds
-  only its own in-band windows through the cache (clean list → exactly `n + m`
-  encodes, matching greedy). Five new stub regression tests in
-  `test_aligner.py` (out-of-band pair rejected tight / accepted wide; in-band
-  pair at the band edge; recovery to the far diagonal pair across a divergent
-  middle; `band_width` knob controls match density with dp == greedy;
-  banding suppresses 5 out-of-band window embeddings on a 6×1 chunk); the
-  existing DP encode-count test now asserts `dp == greedy == 6` singles; all
-  21 checks pass. Updated `domains/sentence-alignment.md` (Plan 02
-  `band_width` now consumed; Plan 03 DP-window cost text corrected; new Plan 04
-  section) + `log.md`.
-
-## 2026-08-14
-
-* **Add: high-confidence 1:1 prepass anchors (Plan 03).**
-  `BilingualAligner._align_pair` now embeds the chunk's single sentences once,
-  locks prepass anchors — non-crossing, mutually-best 1:1 cells at/above
-  `high_confidence` (`ALIGN_HIGH_CONFIDENCE`, default 0.9) via the shared
-  `_find_anchors(sim, n, m, threshold)` core (greedy's internal
-  `anchor_threshold` anchors still call it with `anchor_threshold`; the new
-  `_prepass_anchors` wraps it with `high_confidence`) — and dispatches
-  `_align_with_anchors`, which splits the chunk into sub-pools at the anchors
-  and aligns each pool in isolation with the chosen algorithm (greedy gap
-  alignment or per-pool DP reusing the precomputed window embeddings through
-  the cache), emitting the anchors as committed 1:1 matches with their cell
-  cosine scores in strict document order. The DP path precomputes the full
-  chunk's window embeddings once (unchanged cost) and derives the prepass's
-  singles matrix from its step-1 submatrix; the greedy path embeds the singles
-  once and reuses them per pool. No match can consume sentences on both sides
-  of a locked pair. Three new stub regression tests in `test_aligner.py`
-  (identical anchor set for greedy and dp on ≥0.9 pairs; pools stay between
-  anchors in document order; lowering `high_confidence` locks more anchors);
-  all 13 prior checks pass unchanged. Updated
-  `domains/sentence-alignment.md` (Plan 02 section now notes `high_confidence`
-  is consumed by plan 03; new Plan 03 section) + `log.md`.
-
-## 2026-08-14
-
-* **Add: reserved alignment knobs plumbed end-to-end (Plan 02, no behavior yet).**
-  Three new live config accessors in `ai/config.py` —
-  `align_high_confidence()` (`ALIGN_HIGH_CONFIDENCE`, default 0.9),
-  `align_band_width()` (`ALIGN_BAND_WIDTH`, default unset → derived later as
-  `max(2, max_window)`), `align_window_embed()` (`ALIGN_WINDOW_EMBED`, default
-  `aggregate`, coerced from anything not `aggregate|joined`) — plus four new
-  optional `/align` request fields on `AlignRequest` (`high_confidence`
-  `[0,1]`, `band_width` `[1,50]`, `window_embed` pattern `^(aggregate|joined)$`,
-  `landmarks: list[AlignMatch]` default `[]`). `api/align.py` passes them to
-  `BilingualAligner(...)`; the constructor resolves `None` from config and
-  stores them as `self.high_confidence` / `self.band_width` /
-  `self.window_embed` (unused until plans 03/04/05/06). `AlignMatch` moved above
-  `AlignRequest` so `landmarks` can reference it. Verified: all 13 stub aligner
-  tests pass unchanged, schema round-trips the new fields, invalid
-  `window_embed` / out-of-range bounds → 422, and a full `/align` request with
-  the new fields returns 200 (real LaBSE). `.env.example` documents the new
-  keys; updated `domains/sentence-alignment.md` + `log.md`.
-
-## 2026-08-14
-
-* **Refactor: python normalizes every sentence once at alignment entry.**
-  `BilingualAligner._align_pair(en_raw, ru_raw, landmarks=None)` is now the
-  single normalization point for alignment: it runs the new module-level
-  `_normalize_sentences` (casefold + alnum/space only + collapsed whitespace,
-  index-preserving) on both lists, then dispatches to greedy/dp on the
-  normalized forms. `align_lists()` and the demo/`process()` path both route
-  through it, and the internal window code (`_window_text`, `_embed_windows`,
-  `_generate_window_embeddings`, `_generate_sentence_embeddings`,
-  `_best_window_pair`, `_merge_orphans`, `_should_skip_en`) no longer calls
-  `_normalize_text` — it operates on the pre-normalized list, so joining
-  pre-normalized sentences *is* the normalized window text and the
-  embedding-cache keys (raw and pre-normalized input hash to the same keys;
-  `_match`'s diagnostic text now shows the same normalized form in both DP and
-  greedy). Normalization is idempotent, so existing inputs align
-  byte-identically (verified: 11 prior stub tests pass unchanged, real-model
-  `process()` smoke on LaBSE both algorithms). `landmarks` is accepted on
-  `_align_pair` as the reserved seam for the landmark-pins API (Plan 06). New
-  stub tests: `_normalize_sentences` contract + the whistler pair scoring
-  ≥ 0.68 in its normalized form, and raw vs pre-normalized input aligning
-  identically (0 extra encodes). Updated `domains/sentence-alignment.md` +
-  `log.md`.
-
-## 2026-08-13
-
-* **Fix: greedy 1:1 anchors pre-commit past a better pooled window, leaving
-  orphans.** Root cause (verified on the real LaBSE aligner): the default
-  greedy is anchor-first, so a 1:1 that clears `ALIGN_ANCHOR_THRESHOLD` and is
-  mutually-best in its window is locked before the window ladder ever runs at
-  that cursor — yet the pooled multi-sentence window can outscore the 1:1. On
-  the repro chunk EN0↔RU0 locked at 0.701, the cursor jumped to (1,1), RU was
-  exhausted, and the trailing "Where are those damn scissors?" stayed
-  unmatched, while the pooled EN0:2↔RU0 scored 0.743 (the DP, which considers
-  all edges, gets it right — the bug is greedy-specific). **Rejected fix:** the
-  earlier idea of making `_find_anchors` reject an anchor when any pooled
-  window beats the 1:1 degraded real loosely-aligned text (outputen/outputru:
-  52/52 matches dropped 50 → 20–42, orphans 2 → 8–30) — anchor locking does
-  real reliability work. **Shipped fix:** a greedy-only orphan-merge post-pass.
-  `BilingualAligner._merge_orphans()` runs at the end of `_align_chunk_greedy`,
-  walks the matches left-to-right, and for each match whose following gap has
-  orphans on exactly one side (the other side consumed) extends the match's
-  window over the orphan run — every extension length up to the bound
-  (`max_window`, `ALIGN_MAX_TOTAL_SPAN`) is lazily embedded and scored, and
-  the best pooled window replaces the match only if it beats its score by
-  `ALIGN_MERGE_MARGIN` (new live knob, default 0.02; config accessor
-  `align_merge_margin()`, `.env.example` updated). Measured: the repro becomes
-  a correct 2:1 (0.7433), 0 unmatched, +2 encodes; real text keeps all 50
-  matches, orphans 2 → 1 (a genuine merge), +4 encodes; all 10 prior stub
-  regression tests pass unchanged (no encode-count regressions — it only fires
-  on orphans). New stub test
-  `greedy_merges_an_orphan_into_a_beating_pooled_window` (2 EN / 1 RU where
-  the pooled 2:1 beats a bar-clearing 1:1 → merged, no unmatched, 4 encodes;
-  plus a below-margin guard case where the anchor survives). Real-model repro
-  re-run on LaBSE: EN ["We are alive, the four of us.", "Where are those damn
-  scissors?"] vs single-RU confirms 1:1 at 0.7002 with merge off (orphan left)
-  → 2:1 at 0.8088 with merge on (no unmatched). No PHP changes — the job
-  consumes the unchanged `matches` payload; `ChunkedEntityAlignmentTest` +
-  `SentenceAlignmentServiceTest` (83 alignment tests) pass. Updated
-  `domains/sentence-alignment.md` + `log.md`.
-
-* **Fix: The whistler ↔ «СВИСТУН» alignment misses.** LaBSE scores the raw
-  pair 0.32 — below `ALIGN_DEFAULT_THRESHOLD` 0.55 — so it was skipped;
-  lowercase + alnum-only ("the whistler" ↔ "свистун") scores 0.685. Root cause
-  was normalization, not the algorithm. `BilingualAligner` now embeds every
-  window through `_normalize_text` (casefold + keep only alphanumerics/
-  whitespace, unicode-aware + collapse whitespace), applied in both the DP
-  (`_generate_window_embeddings`) and greedy (`_embed_windows`) paths — and the
-  embedding cache is keyed on the normalized joined text, so DP/greedy share
-  keys. Stored DB text is untouched (PHP persists raw sentences; only
-  `_match`'s diagnostic text shows the normalized form). **Also fixed the
-  greedy "forced 1:1":** `_align_gap` no longer commits a 1:1 the moment it
-  clears the bar — it always runs `_best_window_pair`, which is now a ladder
-  (`ALIGN_PRIMARY_WINDOW`, default 3): steps 1..primary compared as one set,
-  highest-scoring combo above threshold wins, then widen one step per side up
-  to `max_window` (still bounded by `ALIGN_MAX_TOTAL_SPAN`). Verified live via
-  `/align` (1:1 at 0.685; raw 0.320 vs normalized 0.685 measured directly on
-  LaBSE) and `test_aligner.py` (10 checks, incl. new whistler and 1:4-widen
-  ladder tests). Updated `domains/sentence-alignment.md` + `log.md`.
-
-* **Calibrate: LaBSE aligner thresholds re-lowered 0.75/0.8 → 0.55/0.6.**
-  The Aug-13 LaBSE switch set `ALIGN_DEFAULT_THRESHOLD = 0.75` /
-  `ALIGN_ANCHOR_THRESHOLD = 0.8` (provisional, sanity-checked on the
-  `testen.txt`/`testru.txt` smoke test which scored 0.768–0.965, mean 0.833).
-  A real-world check on adapted learning texts showed genuine meaning matches
-  scoring well below that: The Gamblers titles (THE GAMBLERS ↔ ИГРОКИ) score
-  0.59 and the full parenthetical titles 0.67 under LaBSE (measured via `/align`
-  on the running service, live config). At 0.75 those genuine matches were
-  silently skipped by the aligner. Re-lowered `ALIGN_DEFAULT_THRESHOLD` to
-  **0.55** (the established MiniLM garbage-floor calibration from the Aug-11
-  histogram; LaBSE runs hotter than MiniLM so 0.55 stays conservative) and
-  `ALIGN_ANCHOR_THRESHOLD` to **0.6** in `docker-compose/python/env/.env` (live,
-  no restart; verified `config.align_default_threshold()` reads 0.55) and synced
-  `.env.example`. `/align` on the two title pairs now commits both matches
-  (0.588, 0.668). Final numbers still to be refined from a real
-  `meaning_match.similarity` distribution once a live corpus is aligned.
-  Updated `domains/sentence-alignment.md` (calibration notes + `generated.at`)
-  and `log.md`.
-
-* **Improve: LaBSE as the aligner model (fast-defaults calibration).**
-  Swapped the `/align` model from MiniLM to **LaBSE**
-  (`sentence-transformers/LaBSE`, 768-dim) for higher bilingual alignment
-  quality. Downloaded into the `ai_models` volume via
-  `docker exec -e HF_HUB_OFFLINE=0 ext_python python /app/scripts/download_model.py
-  sentence-transformers/LaBSE /app/models/labse`, activated live by setting
-  `ALIGN_MODEL_PATH=/app/models/labse` in `docker-compose/python/env/.env`
-  (and `.env.example`); the next `/align` request lazy-loaded it (dim=768 in
-  logs) with no rebuild/restart, `MODEL_PATH=/app/models/bge_m3` (signatures)
-  unchanged. Verification: the `test.py` sample against LaBSE gives
-  b↔c = 0.81 > a↔c = 0.39 (MiniLM gives 0.43 for the same translation pair,
-  so LaBSE runs markedly hotter); `/health` still reports dim=1024; a `/align`
-  smoke test on `testen.txt`/`testru.txt` returned 16 matches scoring
-  0.768–0.965 (mean 0.833), validating the new thresholds. **Calibration
-  (provisional):** `ALIGN_DEFAULT_THRESHOLD` 0.55 → **0.75** and
-  `ALIGN_ANCHOR_THRESHOLD` 0.6 → **0.8** (LaBSE bitext cosine runs hot vs
-  MiniLM's 0.55/0.6); sanity-checked on the test pair, to be refined from a
-  real `meaning_match.similarity` distribution once a live corpus is aligned.
-  **Token cap audit:** LaBSE caps at 256 tokens (`max_seq_length=256`);
-  `testen.txt` had one 3-sentence window at 270 tokens and it is silently
-  truncated to the head 256 (tail dropped, warning only, no crash) — noted in
-  `domains/sentence-alignment.md` as a known quality caveat for long-sentence
-  joins. `test_aligner.py` (8 checks, stub model) and `test_splitter.py` pass
-  unchanged. Updated `domains/sentence-alignment.md` (aligner-model section +
-  threshold/calibration notes) and `log.md`.
-
-## 2026-08-12
-
-* **Improve: alignment speed — anchor-first greedy algorithm.** With BGE-M3 as
-  the aligner (`ALIGN_MODEL_PATH=/app/models/bge_m3`), the full-window DP in
-  `bilingual_aligner.py` embedded `(n + m) * max_window` window texts per
-  `/align` call (~1260 encodes ≈ 4 min for a 100-sentence entity at
-  `max_window=6`). The new **greedy** mode (default, `ALIGN_ALGORITHM=greedy`;
-  `dp` restores the old DP) embeds each single sentence once per side, locks
-  confident non-crossing 1:1 anchors (`ALIGN_ANCHOR_THRESHOLD`, default 0.6)
-  from the n×m sentence matrix, and greedily aligns only the gaps between
-  anchors — lazily embedding multi-sentence windows (`1:2`, `2:1`, `2:2`, …
-  bounded by `max_window` and `max_total_span`) only when the cursor's 1:1 is
-  sub-threshold, and skipping the side whose best 1:1 partner is weaker. The
-  DP's skip/unmatched semantics and the `matches` payload shape are unchanged,
-  so no Laravel-side changes were needed (the job's anchor-trim/rollback still
-  works). Embedding count drops to ≈ `n + m` singles plus a few expansions per
-  messy cursor (~6× fewer for a clean text). `/align` accepts optional
-  `algorithm`/`anchor_threshold` overrides; `dp` path and all its behavior are
-  intact behind the knob. Regression tests in
-  `docker-compose/python/ai/alignment/test_aligner.py` (stub model, asserts
-  encode counts and greedy/DP equivalence, 1:2 expansion, skip, anchor+gap).
-  Updated `domains/sentence-alignment.md` stages 3/4.
-
-## 2026-08-11
-
-* **Fix: pysbd merging curly-quote dialogue blocks into one sentence.**
-  Book dialogue lines close with curly `”` (U+201D), which was missing from
-  `selective_flatten`'s keep-set (`".!?…»\"')"`), so the newline after each
-  line — and a blank line's `\n\n` — collapsed to one/two spaces. pysbd masks
-  `.`/`?` inside `“...”` spans and re-splits at `[!?.-]` + closing quote +
-  exactly one space + uppercase; the two collapsed spaces broke that re-split,
-  so the whole dialogue block plus the next unquoted prose sentence merged
-  into one 464-char "sentence" (entity 10: 5952 sentences incl. the monster).
-  `selective_flatten` now keeps newlines after `”` (U+201D) and `’` (U+2019)
-  too. Entity 10 re-split into 6814 clean sentences (max 575, a pre-existing
-  pysbd em-dash/quote limitation unrelated to this bug). Regression test
-  `test_splitter.py` gained a `check_curly_quote_dialogue` guard. Updated
-  `domains/sentence-alignment.md` stage 1.
-
-* **Fix: pysbd splitting hard-wrapped prose into sentence fragments.**
-  The RU "Книжный вор 2" source is hard-wrapped (~70 col lines, single
-  newline per line, no blank lines between paragraphs). pysbd treats every
-  `\n` as a sentence boundary, so "Когда Лизель оглядывалась … оказывались"
-  and "едва ли не самыми яркими воспоминаниями." came out as two sentences
-  (9926 total). `TypedSentenceSplitter` now selectively flattens buffered
-  prose before segmentation: `selective_flatten` collapses a `\n` to a space
-  unless the preceding char is sentence-ending punctuation (`. ! ? … » " ' )`),
-  preserving real paragraph breaks so pysbd's quote-region heuristic still
-  cannot merge long dialogue spans (EN Book Thief stays ~1036 sentences).
-  The entity re-split into 7148 real sentences (max 277 chars, 189 titles
-  preserved). Regression test `test_splitter.py` now covers both the EN
-  quote-region fixture and the RU hard-wrap fixture (fails under either
-  extreme behavior). Updated `domains/sentence-alignment.md` stage 1.
-
-* **Improve: aligner precision & speed — skip branch, span cap, embedding
-  cache.** The python DP force-aligned every sentence, so a sentence with no
-  counterpart was matched to an unrelated window (a <0.6 garbage meaning
-  match). `BilingualAligner` now supports skip edges (consume EN-only or
-  RU-only sentences, reported via `unmatched_en`/`unmatched_ru`, default
-  `ALIGN_SKIP_PENALTY=-0.5`/sentence), a span cap (default
-  `ALIGN_MAX_TOTAL_SPAN=6` rejects 1:5/5:1 edges), and a process-level
-  embedding cache (`EmbeddingCache`, LRU 10k) so chunk-seam and shared-entity
-  windows are not re-encoded. `ALIGN_DEFAULT_THRESHOLD` raised 0.4 → 0.55
-  (MiniLM calibration against a live `meaning_match.similarity` histogram:
-  garbage tail below ~0.55). `AlignEntitySentences::begin()` raises small
-  entities to a single chunk. The php gap-filling already converts skipped
-  spans to `skip_en`/`skip_ru` steps, so no persistence change was needed.
-  Regression tests: `docker-compose/python/ai/alignment/test_aligner.py`
-  (stub model, no weights). Updated `domains/sentence-alignment.md` stages 3
-  + python microservice.
-
-## 2026-08-11
-
-* **Fix: pysbd quote-region swallowing dialogue during split.**
-  The python splitter flattened line breaks to spaces before segmentation
-  (`SentenceSplitter::split_text` normalized input; `TypedSentenceSplitter`
-  joined buffered lines with `" "`), which let pysbd's quote heuristic merge
-  long dialogue spans: a line ending in a stray `"` opened a quote region that
-  swallowed everything up to the next closing quote. The Book Thief entity
-  (en) split into 547 sentences including one 1761-char monster (15 sentences
-  > 500 chars). Now `split_text` segments with line breaks intact and
-  `flush_buffer` joins lines with `\n`; the entity re-split into 1036 clean
-  sentences (max 222). Added regression test
-  `docker-compose/python/ai/splitting/test_splitter.py` running the splitter
-  over the exact production entity fixture (fails under the old behavior,
-  passes now). Updated `domains/sentence-alignment.md` stage 1.
-
-* **Fix: split jobs dying on malformed UTF-8 at chunk seams.**
-  `SplitEntityFileSentences` failed for RU entities with Guzzle's
-  `json_encode error: Malformed UTF-8 characters` when an `fread` chunk ended
-  mid-multibyte-character. The old guard relied on `mb_strcut($chunk, 0,
-  strlen($chunk), 'UTF-8')`, which does **not** strip an incomplete trailing
-  sequence (it returns the chunk unchanged), so `$rawCarry` was always empty
-  and the partial leading byte flowed into the JSON POST body.
-  `SentenceSplitter::insertSentencesFromFile()` now trims incomplete trailing
-  UTF-8 bytes with `carryIncompleteTrailingBytes()` (a backward scan of the
-  last ≤4 bytes) and re-prefixes them to the next chunk. Regression test
-  added with Cyrillic text whose character lands exactly on a chunk seam.
-
-## 2026-08-10
-
-* **Fix: chunk-seam head garbage by commit-rollback of the last two
-  matches.** Trim-to-last-anchor (above) only drops the *tail* of the current
-  chunk; the strict 1:1 RU window gives the DP no backward reach, so the
-  garbage re-appears at the *head* of the next chunk (a 1:5 span that scores
-  as an anchor and survives trim). `AlignEntitySentences::handle()` now
-  rolls back the last `ROLLBACK_MATCHES` (2) committed meaning matches
-  before aligning: `rollbackPriorMatches()` deletes their rows (junction
-  rows cascade via FK), rewinds the cursor to the first sentence those
-  matches covered via `rollbackOffset()` (position in the `order, id`
-  sequence), and grows `en_limit`/`ru_limit` by the rolled-back spans so the
-  forward reach is unchanged — the DP re-aligns that region with fresh
-  forward context. Only matches with junction rows on **both** sides are
-  candidates (skip steps and human-edit `alignment_chunk = -1` rows are
-  never rolled back). A monotone-cursor safety net force-advances EN past
-  the pre-rollback stored offset if a rolled-back commit would otherwise
-  not move forward, so the job cannot pinwheel. Each match is rewritten at
-  most twice before stabilizing (bounded churn, no schema change). Updated
-  ADR 0004 and `domains/sentence-alignment.md` stage 3.
-* **Fix: chunk-seam garbage (5:1 / 1:5 mis-pairs) by trim-to-last-anchor.**
-  The reworked self-restarting job advanced its cursor by the full chunk
-  size and committed every DP match, but the DP force-aligns every sentence
-  in the window — so at each seam the EN tail got jammed onto the RU tail
-  of the current window (5:1) and the next window's head did the reverse
-  (1:5). `AlignEntitySentences::handle()` now commits only matches up to
-  and including the last match with `score >= ANCHOR_SCORE_THRESHOLD`
-  (0.40) and advances the cursor to that anchor's `en_end`/`ru_end`
-  instead of `offset + chunk_size`; the dropped tail is re-aligned with
-  fresh context by the next invocation (a port of
-  `BilingualAligner._trim_to_last_anchor`). No-anchor chunks commit
-  everything (forward-progress guarantee); the final chunk (both windows
-  reach their totals) commits everything and completes. Because the cursor
-  no longer advances by a fixed chunk size, `alignment_chunk` is now a
-  monotonic per-run id (`MAX + 1`, never the human-edit `-1` sentinel) via
-  `nextAlignmentChunk()` instead of `intdiv(enOffset, chunkSize)`, so the
-  per-chunk idempotent delete can never wipe a previous chunk.
-  `alignChunkRemote()` returns the raw python `matches` alongside the
-  adapted links/dpPath; `storeAlignmentSegmentFromMatches()` persists only
-  the committed prefix (skip-fill bounded by the last anchor, or by the
-  full window on the last chunk). `storeAlignmentSegment()` kept for the
-  legacy full-alignment path. Updated ADR 0004 (drift handled by trim, not
-  overlap) and `domains/sentence-alignment.md` stage 3.
-* **Rework: alignment pipeline is now a single self-restarting job driven
-  by a 5-minute command.** `AlignEntitySentences::handle()` reads its chunk
-  slice from a new per-match cursor (`last_en_sentence_offset` /
-  `last_ru_sentence_offset` on `en_ru_entity_matches`) and
-  `self::dispatch()`es the next invocation until the cursor reaches
-  `en_total_sentences`, then flips to `completed`. The standalone
-  `AlignEntitySentenceChunk` job and the `Bus::chain()` fan-out are deleted
-  (ADR 0003). Verify + cursor reset + transition run in a shared
-  `AlignEntitySentences::begin($id)` static called by all Filament dispatch
-  sites and a new `alignments:resume` console command (scheduled
-  `everyFiveMinutes()->withoutOverlapping()` in `routes/console.php`). On a
-  transient chunk failure `tries=5` with backoff heals in-process; on a hard
-  failure `failed()` is terminal and the cursor is **left untouched** so a
-  resume is possible. `db_path` column is dropped (it was dead — read by
-  nothing). `entity_similarity` is now set by `begin()` rather than the
-  chunk chain. `DB_QUEUE_RETRY_AFTER=900` shipped in `.env.example`.
-* **Rework: RU alignment window now tracks EN strictly (no overlap).**
-  `AlignEntitySentences::RU_WINDOW_OVERLAP = 25` and `ruWindowForEnRange()`
-  are deleted. The RU window uses the same offset and limit as the EN
-  window, assuming the importer pins EN/RU sentence orders 1:1 (ADR 0004).
-  Filament status badge colors and the Alignment view Blade template no
-  longer reference the `verifying` state; the status set is
-  `pending | aligning | completed | failed`.
-
-## 2026-08-09
-
-* **Fix: alignments editor sentence keys are now language-scoped.**
-  `AlignmentEditorApiPresenter::sentencePayload` emitted keys of the form
-  `s-{id}` ignoring language; since `en_entity_sentences` and
-  `ru_entity_sentences` are separate tables their ids can overlap, so the
-  Inertia editor's shared sentence lookup (keyed by that key) let a RU
-  sentence clobber an EN sentence with the same id — rendering Russian text
-  in the EN column ("ru/ru"). Keys are now `{lang}:s-{id}` (e.g. `en:s-6776`),
-  making them unique across the whole drag-and-drop surface. No schema change.
-
-* **Alignments editor (Inertia/React) replaces the Filament entry point for
-  pair editing.** New `/alignments` (pair list) → `/alignments/{id}` (editor)
-  pages in `resources/js/Pages/Alignments/`, linked from the NavBar instead of
-  `/admin/sentence-alignments`. The editor shows paginated EN/RU pair rows with
-  @dnd-kit drag-and-drop, inline add/edit/delete, an "Unmatched" pool
-  (collapsible, 15/lang, draggable in/out, trash = permanent delete), and
-  immediate persistence (optimistic updates reconciled from server responses,
-  revert + error banner on failure). Backed by the existing surgical
-  `AlignmentEditorController` endpoints (rows/unmatched pagination, create/
-  delete pair, add/edit/unlink/hard-delete sentence, `sentences/move`).
-  `AlignmentEditorApiPresenter::unmatchedPayload` now nests `{items, meta}`
-  including `last_page`; `AlignmentController::index` passes the paginator
-  `items()` as a plain array so Inertia props stay a list. Deleted the legacy
-  blade `resources/views/alignments/*` + `resources/js/pages/alignments/*`
-  (incl. vite entries). Added `@dnd-kit/core|sortable|utilities` to
-  `package.json`. New `AlignmentEditorApiTest` (20 cases: pair CRUD, add
-  placement, within-row reorder, cross-row relink, unmatched moves, trash,
-  pagination, counts) and `AlignmentPagesTest` switched to `assertInertia`
-  prop assertions. Filament admin pages untouched.
-
-## 2026-08-06
-
-* **Redesign: Crossword workbench migrated to the wbench design system.**
-  Rebuilt `/crossword-react/{lang}` (`CrosswordApp.jsx` and all components:
-  `CrosswordHeader`, `CrosswordGrid`, `RightPanel`, `TabContent`,
-  `UnsolvedModal`) on `--wbench-*` tokens so it reads as a sibling of the
-  Bilinguals simulator instead of the legacy vellum + vermilion + verdigris
-  palette. `resources/css/crossword.css` rewritten end-to-end: cold paper
-  `--wbench-paper` board, `--wbench-rule` hairlines, Source Serif 4 cell
-  letters and definitions, JetBrains Mono coordinate markers and eyebrows,
-  IBM Plex Sans chrome. One accent role on this surface — the active
-  (currently-selected) word reads as `color-mix(--wbench-accent 14%,
-  --wbench-paper)`; solved cells go ink-on-paper (`--wbench-ink` bg + paper
-  text), quiet and inactive, so the accent stays exclusive to the active
-  word. Both arrow cells now share `--wbench-paper-deep` with a 2px
-  accent leading edge — direction reads from layout, not from a second
-  hue (the old across=vermilion / down=verdigris split was the loudest
-  inconsistency with the system's "one accent job per surface" rule).
-  Drag handles flip to `--wbench-accent` on hover, matching the
-  `simulator.css` pattern. Added a local `.xword-edge` rule in
-  `crossword.css` instead of retinting the global `.ribbon-mark` (which stays
-  vermilion — shared with the simulator's `TextContent` and the Reader
-  index, so both are untouched). Implemented the four-state contract on the
-  grid surface: `CrosswordGrid` now returns a centered serif invitation
-  under a mono `NO CROSSWORD LOADED` eyebrow when no crossword is built,
-  and a serif `--wbench-danger` line + `Retry` control (re-calling
-  `getCrossword`) when `isError` is set — instead of returning `null`.
-  Definition rows tightened (`text-lg`, `py-2`, mono zero-padded index
-  `01`, `02`); tab strip rewritten with the simulator's `tabClass` + 2px
-  accent `Underline`; `RightPanel` ghost buttons retinted to
-  `--wbench-accent` on hover. `CrosswordHeader` reworked: compact `py-2`,
-  mono `CROSSWORD · EN` eyebrow + serif `Workbench` name, hairline divider
-  before the `Build` control (which becomes an ultramarine CTA on
-  hairline, not vermilion). No controller, route, request/response, or
-  prop shape changed; `useCrossword.js` and `constants.js` untouched.
-  Follow-ups noted: (1) `useCrossword` does not expose a build-pending
-  flag, so the grid's loading state currently collapses into the empty
-  state — adding a `pending` flag would let a `WORKING · BUILDING` mono
-  label + `.ai-loader-rule` fill sit here per the four-state contract;
-  (2) the global `.ribbon-mark` in `app.css`, and the shared
-  `Select` / `Button` / `SelectGroup` components, are still on
-  `--color-vellum*` / vermilion — migrating the simulator only (the
-  shared form controls are used by no other page) and the global
-  ribbon-mark (which would also retint Reader) is left for a later pass
-  to keep this change self-contained to the crossword. Bumped
-  `conventions/design-system.md` `generated.at`.
-
-* **Redesign: Reader index migrated to the wbench design system.**
-  Rebuilt `resources/js/Pages/Reader/ReaderIndexApp.jsx` (the
-  `/reader-react/{lang}` index) on `--wbench-*` tokens so it reads as a sibling
-  of the Bilinguals simulator instead of the legacy vellum palette. Removed the
-  editorial display treatment (italic "Antiphonal" eyebrow, 7xl serif heading,
-  italic gloss, vermilion flourish, decorative aside, the `→` arrow belt) and
-  replaced it with a single compact hairline toolbar (mono `READER · EN ↔ RU` +
-  `Parallel Library` eyebrow, `ml-auto` underline tabs), a single-column dense
-  list with mono row numbers `01 02 …` and the existing `.ribbon-mark` hover
-  edge. Implemented the four-state contract on the entity list — the page's one
-  signature: while Inertia navigates between EN/RU libraries a `.ai-loader-rule`
-  fills under the toolbar and a mono `LOADING · {Lang}` label sits in the
-  content area (reduced-motion defanged by the existing
-  `simulator.css` media query); empty state is the mono `NO TEXTS IN THIS
-  LIBRARY` eyebrow + serif invite. No controller, request/response, or prop
-  shape changed; `ReaderReactIndex.jsx` (the Inertia wrapper) untouched. The
-  entity reader at `/reader-react/{lang}/{entityId}` (`ReaderApp.jsx` /
-  `ReaderRow.jsx`) is still on `--color-vellum/*` — tracked as a follow-up in
-  `domains/reader.md` so a library switch does not cross palettes when entering
-  a text. Bumped `conventions/design-system.md` and `domains/reader.md`.
-
-* **Redesign: Bilinguals simulator + design system convention.** Redesigned
-  `/bilinguals/en/ru/simulator` with a cold-paper palette (`--wbench-paper`
-  #FBFAF8 / `--wbench-ink` #0D0D0F / `--wbench-accent` ultramarine #1F3DDB) and
-  three typefaces (Source Serif 4 reading / IBM Plex Sans chrome / JetBrains
-  Mono marginalia), all scoped via new `--wbench-*` tokens in
-  `resources/css/app.css` so other app pages keep the `--color-vellum/*`
-  identity. Densified the layout (22px reading, `py-2` rows, 168px workplace),
-  added an empty/loading/answer/error four-state AI Response rail (signature
-  surface), retinted drag handles and `.ribbon-mark`, and removed the legacy
-  red/blue/yellow literals from `public/css/simulator.css`. Controllers and
-  request/response shapes untouched. Added `conventions/design-system.md`
-  documenting tokens, type roles, compact scale, layout principles, and the
-  four-state contract for request-replaceable surfaces; linked from
-  `conventions/index.md` and root `index.md`.
-
-## 2026-08-04
-
-* **Pest TIA Engine**: Bumped Pest 4 → 5 and PHPUnit 12 → 13
-  (`composer.json` `pestphp/pest: ^5.0`, `pestphp/pest-plugin-laravel: ^5.0`,
-  `phpunit/phpunit: ^13.0`) to enable the [Pest Tia Engine](https://pestphp.com/docs/tia)
-  (Test Impact Analysis — re-run only tests affected by your changes). Added
-  `composer run test:tia` (uses `XDEBUG_MODE=coverage` env var so parallel
-  workers inherit Xdebug coverage for the baseline run) and
-  `laravel/scripts/tia-setup.php` (initialises a container-local git repo at
-  `/var/www` with a baseline commit, since the Laravel project is bind-mounted
-  separately from the git repo root at `/var/repo`). Configured
-  `pest()->tia()->filtered()->baselined()` in `tests/Pest.php`. Added
-  `.github/workflows/tia-baseline.yml` for CI baseline sharing and installed
-  `gh` CLI in `LaravelDockerfile`. Updated `playbooks/running-tests.md`.
-
-## 2026-08-03
-
-* **Python service: two-model split + no-rebuild iteration**. Split the single
-  BGE-M3 model into two: BGE-M3 (1024-dim) stays for signatures (`/embed`,
-  `/embed/batch`, `/cosine/batch`); a new smaller
-  `paraphrase-multilingual-MiniLM-L12-v2` (384-dim) powers `/align` for ~2.5–3×
-  faster CPU alignment. Coral score distribution differs from BGE-M3 — the
-  `ALIGN_DEFAULT_THRESHOLD` likely needs ~0.55 (tunable live). Refactored
-  `ext_python` so the image only carries Python+pip packages; source code
-  (`ai/`, bind-mounted) and model weights (named Docker volume `ai_models`
-  at `/app/models`) are external — rebuilding is only needed for new
-  `requirements.txt` packages. Models load lazily (empty FastAPI lifespan +
-  `ai/models_cache.py`) so `uvicorn --reload` restarts in ~1–2s after a `.py`
-  edit; the first request lazy-loads the model it needs. `docker-compose/python/
-  env/.env` is bind-mounted at `/app/env/.env` (directory mount, not single-file)
-  and live per-request accessors in `ai/config.py` re-read it on each call, so
-  threshold/window/model-path edits apply without container recreate or restart.
-  Added `docker-compose/python/scripts/download_model.py` for adding/swapping
-  models into the volume. Removed `docker-compose/python/ai/bge_m3_local/` from
-  the source tree (now in the named volume). Updated `docker-compose.yml`
-  (python service: `command:` `--reload`, `env_file:`, new volumes, top-level
-  `ai_models` volume), `Dockerfile` (no `COPY ai/`, no hardcoded `MODEL_PATH`),
-  `ai/main.py` (empty lifespan), `ai/config.py` (live accessors), new
-  `ai/models_cache.py`, and all `ai/api/*.py` handlers. Updated
-  `domains/sentence-alignment.md`.
-  * Also updated `architecture/docker-services.md` (python service description,
-    new mounts, `ai_models` volume).
-
-* **Database safety hardening.** A real dev-database wipe (`migrate:fresh`
-  against the default `pgsql` connection) triggered a review of the test
-  database setup. Changes:
-  * `config/database.php`: added a dedicated `testing` connection (pgsql clone
-    with `database => env('DB_TEST_DATABASE', 'ext_app_test')`). Tests are now
-    bound by connection *name*, not by mutating `DB_DATABASE` on the shared
-    `pgsql` connection.
-  * `phpunit.xml`: `DB_CONNECTION=testing` + `DB_TEST_DATABASE=ext_app_test`
-    (force), keeping `DB_DATABASE=ext_app_test` as a backstop.
-  * `tests/TestCase.php` guard tightened: refuses to boot unless the resolved
-    default connection is `testing` and its database is `ext_app_test` (was
-    only checking the `pgsql` connection's database name).
-  * `tests/Pest.php`: added `beforeEach` assertion that
-    `DB::connection()->getName() === 'testing'`.
-  * `composer.json`: `test:tia` now passes `--drop-databases` so parallel
-    Pest workers drop their `ext_app_test_test_{N}` DBs after each run (they
-    were accumulating as orphans).
-  * Cleaned up 16 orphaned `ext_app_test_test_{N}` databases on the dev
-    Postgres instance.
-  * `AGENTS.md`: documented the `testing`-connection rule for destructive ops.
-  * The main dev DB `ext_app` is currently empty (from the wipe); restore via
-    the alignment pipeline when needed.
-
-## 2026-07-28
-
-* **Entity sentence editing**: Added *Sentences* Filament relation managers to
-  `EnEntityResource` and `RuEntityResource`, reachable from each entity list
-  via a new Sentences row action. Sentences can be created, edited, deleted,
-  and reordered with sparse order gaps maintained by `SparseOrderService`.
-  `SentenceType` defaults to `sentence`. Deleting a sentence removes its per-side
-  meaning matches and cleans up empty `EnRuMeaningMatch` rows, updating the
-  parent match's `linked_count`. Added `EntitySentencesRelationManagerTest`.
-  Updated `database/entities-alignment.md`, `domains/sentence-alignment.md`,
-  `reference/models.md` (via `wiki:sync`).
-
-## 2026-07-27
-
-* **Python service**: Replaced the `ext_embedding` container with `ext_python`
-  (same host port 8001): a restructured FastAPI package under
-  `docker-compose/python/ai/` (`api/`, `splitting/`, `signatures/`,
-  `similarity/`, `alignment/`) serving BGE-M3 (1024-dim, bind-mounted from
-  `ai/bge_m3_local`, `HF_HUB_OFFLINE=1`). Sentence splitting and DP alignment
-  moved from PHP into python (`/split`, `/align`); Laravel orchestrates chunks
-  and owns all DB writes. Config renamed `services.embedding.*` →
-  `services.python.*` (new `align_timeout`, dropped dead batch keys); old
-  384-dim e5-small signatures must be regenerated. Updated
-  `architecture/docker-services.md`, `architecture/overview.md`,
-  `domains/sentence-alignment.md`, `playbooks/run-alignment.md`,
-  `database/entities-alignment.md`, `AGENTS.md`.
-* **Test safety**: Hardened the test environment against wiping the real
-  `ext_app` database: `TestCase::createApplication()` guard aborts the suite
-  if the resolved DB is not `ext_app_test`, `phpunit.xml` env entries gained
-  `force="true"`, and a committed `.env.testing` pins the test DB. Updated
-  the Running Tests playbook.
-
-## 2026-07-26
-
-* **Initialization**: Created the OKF v0.2 bundle: architecture, feature
-  domains, database, playbooks, conventions sections, plus auto-generated
-  `reference/` concepts via `php artisan wiki:sync`.
-* **Tooling**: Added `php artisan wiki:sync` and `php artisan wiki:validate`
-  (OKF conformance, broken links, staleness) and a Pest test enforcing
-  conformance in the test suite.
-* **Integration**: Root `AGENTS.md` gained a "Knowledge base" section routing
-  agents here; `wiki/` is bind-mounted into the app container at `/var/wiki`.
-
-## 2026-08-22
-
-* **AI model sync button**: Added a "Sync models" header action to the admin
-  AI Models list (`ListAiModels::getHeaderActions`) that dispatches a queued
-  `App\Jobs\SyncOpenRouterModelsJob` (database queue), replacing the
-  "add models only via the artisan command" comment. The job calls the existing
-  `OpenRouterModelSync::sync()` service and is guarded by a
-  `Cache::lock('openrouter-model-sync')` so a second click while a sync is
-  running is refused with a warning instead of queuing a duplicate. `is_enabled`
-  is preserved by the service's `updateOrCreate` (unchanged). Updated
-  `wiki/domains/ai-providers.md`.
-
-## 2026-09-12 (UI settings persistence)
-
-* **Split persistence for simulator UI state (ADR 0024)**: stable settings
-  (font size, panel visibility, AI model, assessment question, AI panel
-  width, workplace height) now persist in `user_settings.ui_settings` (new
-  nullable JSONB column) — seeded into Inertia props by
-  `SimulatorController`/`ReaderController`, saved by a debounced (~800 ms)
-  PATCH to the new `ui-settings.update` route (`UiSettingsController`,
-  `UpdateUiSettingsRequest`, section-merged). Working state (current
-  alignment, page and last opened row per alignment, incl. revealed halves)
-  persists per device in localStorage (`ext_app.simulator.position.v1`);
-  the simulator auto-restores position on mount, Load restores a saved page,
-  and the last opened row re-checks + scrolls into view. Reader page font
-  size persists via the same mechanism. Row reveal checkboxes are now
-  controlled (`CheckboxInput` forwards rest props); header master EN/RU
-  toggles and `per_page` remain unpersisted. Updated
-  `wiki/domains/bilinguals-simulator.md` (routes + Persistence section),
-  `wiki/database/schema-overview.md` (ui_settings column), CONTEXT.md
-  (UI settings / Working state glossary).
-
-## 2026-09-12 (crossword restoration)
-
-* **Restored the crossword on the new schema (ADR 0025)**: `GET /crossword`
-  (Inertia `Crossword/Crossword`, named `crossword`) + `POST
-  /crossword/generate|complete|word/know` (`CrosswordController`, Form
-  Requests). New tables `entity_words` (token-first per-entity word list
-  with counts, nullable dictionary `word_id` link) and `user_word`
-  (global per-user learning/solved/known progress), plus
-  `entities.words_indexed_at`; the puzzle generator
-  (`App\Classes\Crossword`, placement algorithm recovered verbatim from
-  the 2025 feature) selects up to 30 band words deterministically,
-  excluding the user's solved/known words. Supporting commands:
-  `crossword:index` / `crossword:link` (`EntityWordIndexer`,
-  `WordTokenizer` replacing the dead `Parser.php`) and
-  `words:import-frequency` (`rank,word` CSV → `words.frequency` ranks,
-  sample list in `database/frequency/en-sample.csv`). Frontend ported to
-  the recovered React page (`resources/js/Pages/Crossword/`) with i18n
-  `crossword.*` UI strings, nav link restored; ask-AI/word-action legacy
-  endpoints intentionally dropped; stale `public/js/crossword.js` +
-  `public/css/crossword.css` deleted. New wiki concept
-  `wiki/domains/crossword.md`; CONTEXT.md Crossword Context.
-
-* **Fix: crossword page rendered unstyled** — `resources/css/crossword.css`
-  (board grid, 50×40 cells, input/arrow/state colors, panel drag handle) was
-  orphaned after the blade-layout era: nothing imported it, so the restored
-  page drew unsized inline inputs with no grid. It is now imported from
-  `resources/css/app.css` and ships in the built bundle.
-* **Crossword solved-cell color** — `.green` now uses new `--wbench-solved`
-  (#a8cbb2 light / #2e5c3f dark) tokens instead of ink-black, per feedback:
-  empty cells stay grey, unsolved white, solved green.
-* **Crossword board colors** — empty cells softened to a low-contrast grey
-  (`--wbench-empty` #e6e4dd / #202020 night); numbered clue cells now
-  highlight by direction: across = orange (`--wbench-across`), down = sky
-  (`--wbench-down`), with the 2px leading edge carrying the direction color.
-
-## 2026-09-19 (reader pagination + reading position)
-
-* **Reader: server-side pagination + per-device Reading position**
-  (ADR 0032) — `/reader-react/{lang}/{entityId}` now serves rows at a
-  fixed 50/page under `?page=N` (both meaning-match and single-language
-  sources; `ReaderController::paginateRows()` clamps the page into range,
-  `ReaderPageRequest` normalizes `?page` tolerantly — junk values resolve
-  to page 1, never a validation error). New flat `meta` prop
-  (`current_page`/`per_page`/`total`/`last_page`) and a `positionKey` prop
-  (`mm:{entityMatchId}` shared by both reading sides, `ent:{entityId}` for
-  single-language — deliberately not `es:`, that prefix names a sentence in
-  row-key vocabulary). **Word maps are page-scoped**:
-  `ReaderController::wordMapForRows()` keeps only tokens present in the
-  page's rows (same `WordTokenizer` that builds `l_word` keys), so the
-  payload scales with the page, not the text. `ReaderApp` gains a prev/next
-  pager (hidden for single-page texts), turns pages via Inertia partial
-  reloads (`only` paged props, `preserveState` — audio player survives),
-  and persists the Reading position per device in
-  `ext_app.reader.position.v1` (`lib/readingPosition.js`, the simulator's
-  ADR 0024 Working-state tier extended to the reader): written on every
-  turn, restored on open by history-replace to the clamped saved page when
-  the URL has no `?page`. UI strings `reader.pages` / `previous_page` /
-  `next_page` / `page_indicator` seeded. Tests: `ReaderReactPageTest`
-  covers pagination/meta, clamping, junk pages, both position keys, and
-  word-map page scoping; CONTEXT.md gains **Reading position** and
-  generalizes **Working state** beyond the simulator;
-  `wiki/domains/reader.md` updated.
-
-* **Same-day refinement + wiring fix** — the pager is now always visible
-  for any text with rows (not only multi-page ones) and gained a numeric
-  page picker (`reader.go_to_page` / `reader.page_of`; `page_indicator`
-  dropped). Bug: the `ReaderReact` Inertia page wrapper forwards an
-  explicit prop list to `ReaderApp` and had not been given
-  `meta`/`positionKey`, so the pager never rendered even though the
-  controller sent both — Feature tests assert server JSON and cannot see
-  client-side prop forwarding; a server-side render check of the wrapper
-  (React static render, `@inertiajs/react` stubbed) reproduced and then
-  proved the fix. Wrapper now forwards both props.
-
-## 2026-09-28 (scheduler resume preserves landmarks)
-
-* **Prod incident + fix (ADR 0051)** — editing a sentence on the entity
-  Sentences page flips the entity's matches to `pending`
-  (`EntityController::setMatchesPending`, ADR 0015's mutation rule), and the
-  5-minute `alignments:resume` then ran every pending match through
-  `AlignEntitySentences::beginFromScratch()`, whose
-  `meaningMatches()->delete()` wiped **all** rows including human
-  `alignment_chunk = -1` landmarks — within 5 minutes of any sentence edit
-  (even a pure drag-reorder) the user's manual alignment work was destroyed
-  and replaced by machine output. Happened twice in prod on 2026-09-28
-  (~17:35/17:55 UTC); illustrations survived only because they are
-  `entity_sentences` rows (ADR 0050), which the pipeline never deletes.
-  The wiki had always documented the scheduler as running through
-  `begin()` — the code had diverged from the contract. Fixes:
-  `AlignmentsResumeCommand` now dispatches `begin()` and reports the path
-  ("landmarks preserved" / "from scratch") in dry-run and dispatch output;
-  `begin()`'s dead "never set up" guard (`a_total_sentences === null` — the
-  column is `NOT NULL DEFAULT 0`, so it could never fire) is replaced by
-  **row existence** (row-less matches delegate to `beginFromScratch()` with
-  its verify pass; the scheduler never wipes existing rows); and `begin()`
-  now **re-snapshots the run plan** via the `snapshotAlignmentPlan()`
-  helper shared with `beginFromScratch()` (image-less counts, chunk/max_n
-  clamps, small-entity raise) and mirrors its zero-side immediate finalize,
-  so sentences added since the previous snapshot are inside the re-aligned
-  span. Tests: `AlignmentsResumeCommandTest` gains the incident end-to-end
-  (sentence edit → pending → resume → human row survives, machine row
-  re-derived; its `Http::fake()` beforeEach became
-  `Http::preventStrayRequests()` — a bare catch-all fake shadows scenario
-  fakes because Http stub callbacks resolve first-registered-wins);
-  `ReAlignPreservesLandmarksTest` gains snapshot-refresh and row-less
-  delegation cases. New `docs/adr/0051-scheduler-resume-preserves-landmarks.md`;
-  `wiki/domains/sentence-alignment.md` Stage 3/4 updated (command reference
-  regenerated via `wiki:sync` for the new `alignments:resume` description).
-
-## 2026-10-02 (enricher registry + phrasal verbs on the reading surfaces)
-
-Sentence enrichment restructured from hardcoded language conditionals to
-declaratively scoped **enrichers** (ADR 0057; glossary term added to
-CONTEXT.md): `App\Classes\Enrichment\Enricher` + `EnricherRegistry` with
-`RussianStressEnricher` (ru_stress), `EnglishStressEnricher` (en_stress) and
-`EnglishPhrasalVerbEnricher` (en_phrasal). `SentenceEnrichmentService::enrichChunk`
-now takes the enricher list, resolves shared base hints (cls/lemma/headword/
-word_id per token key) and merges each enricher's token hints + request
-extras into ONE python call; the `/enrich` request carries
-`enrichers: [key]` (pydantic Literal replaces the `^(ru|en)$` language
-pattern) and results return keyed by enricher (`results[].output`), so a
-partial run skips the other modules. Phrasal hits gained a `phrase` field
-(the matched lexicon headword, for tooltips). Staleness moved from the
-single `entities.enriched_at` to per-enricher `entities.enrichment_stamps`
-jsonb (`EnricherRegistry::staleFor`): a newly registered enricher is stale
-on its own — ADR 0053's manual enriched_at reset choreography is gone;
-stamps merge via jsonb `||`; the migration backfills enriched entities,
-leaves never-enriched enrichable ones null (sweep rebuilds) and gives
-languages without enrichers `{}`. `entities:enrich` dispatches only the
-stale set (`beginEnrichers`) and gained `--enricher=` (force one key);
-Filament's Enrich action and FinalizeEntityDerivations keep full runs
-(`begin()`); non-enrichable languages stamp `{}` in the job (the sweep no
-longer needs its bulk not-applicable stamping). Phrasal verbs became
-visible per ADR 0057: reader + simulator ship `phrasalRows`/
-`phrasal_rows` (per side: per-sentence hit lists, side null when no hits;
-flipped with the reading/learning side like stressedRows), `WordText`
-underlines hit-span tokens (dotted `phrasal-hit` class, indexes computed
-from the ORIGINAL sentence so they transfer to the stressed variant) with
-the matched phrase as tooltip, behind a per-user `phrasal_verbs`
-ui_settings preference (reader + simulator, default off, autosaved; new
-`reader.phrasal_verbs` / `bilinguals.phrasal_verbs` UI strings, new
-`phrasal` icon); the Filament Sentences "Phrasal verbs" column is visible
-by default. `wiki/domains/sentence-enrichment.md` rewritten for the
-registry/stamps/rendering; ADR 0052 unaffected (its phrasal "Filament-only"
-scope is superseded by 0057).
-
-## 2026-10-02 (phrasal lead verb-lemma candidates)
-
-"came forward" went unflagged: the matcher trusted the single `cls` hint,
-but `CLASS_PRIORITY` ranks noun above verb, so POS-ambiguous leads ("came",
-"went", "turn", "cut"…) resolved to their noun page and never led a match;
-a second miss class had verb leads whose imported headword is the inflected
-form itself ("looked"), making the single lemma hint useless. A classified
-probe of entity 17 (read-only, script since deleted) measured 93 windows
-whose phrase IS a stored multi-word verb headword against 6 stored hits —
-62 class-hijacked, 31 bad-lemma, the rest literal uses / dictionary gaps.
-Fix (ADR 0058): `EnglishPhrasalVerbEnricher` contributes a `verb_lemmas`
-per-token hint (every verb-class headword for the surface: direct rows +
-forms-table bases, deduped, cap 8; only when en_phrasal runs), python
-`phrasal.find_phrasal_verbs` tries linked-lemma + verb_lemmas candidates
-with longest-window-first preference; `EnrichToken.verb_lemmas` added.
-Re-run of en_phrasal only (ADR 0057's per-enricher staleness in action;
-en_stress untouched): entity 17 went 6 → 243 hits, all with `phrase`.
-Coverage is now bounded by lexicon completeness — a data matter (the dev
-dictionary predates part of the dump; "come forward" is importable but
-absent; re-running the dictionary import widens detection, then
-`entities:enrich --enricher=en_phrasal` applies it). Review fixes riding
-along: the enrich sweep pre-filters languages in SQL (`EnricherRegistry::
-languages()`), `keys()` replaces a hardcoded key list in `--enricher=`
-errors, unused `SentenceEnrichmentService::registry()` removed, and the
-`phrasal_verbs` ui-settings toggles gained endpoint tests.
-
-## 2026-10-03 (full suite runs parallel; worker-DB drop actually works)
-
-`composer run test` ran the suite serially (`php artisan test`) while the
-parallel machinery sat unused on the TIA path. The script now runs
-`vendor/bin/pest --parallel --drop-databases` (8 workers in the dev
-container): 899 tests / 4540 assertions measured at 273s serial → ~93-117s
-parallel (host wall clock 4m48s → ~2m; first run after a drop pays worker-DB
-creation). CI (`tests.yml`) picks this up unchanged — it invokes the same
-composer script, its `postgres` service user can CREATE DATABASE, and
-`pcntl` is already in the setup-php extension list.
-
-While verifying, found that `--drop-databases` had never actually dropped
-anything: Pest's Laravel handler copies the flag into `$_ENV`, but Laravel's
-`ParallelTesting` reads its options from `$_SERVER`
-(`ParallelTesting::option()` / `inParallel()`), and PHP never merges `$_ENV`
-into `$_SERVER`. Workers created/used `ext_app_test_test_{N}` every run and
-left all 8 behind — the mechanism behind the 2026-08-03 orphan cleanup, and
-`test:tia` leaked them for months despite passing the flag. Fix: both
-scripts now export `LARAVEL_PARALLEL_TESTING=1` and
-`LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1` as real environment variables
-(`sh -c 'VAR=1 …'` prefix), which EGPCS surfaces in `$_SERVER` for parent and
-workers alike; the parent runner then drops every worker DB in its teardown
-(verified: 0 leftovers after a full run). Trade-off: worker DBs are
-recreated each run (~20s), accepted so orphans can never accumulate again.
-`tests/TestCase.php`'s `ext_app_test` guard is unaffected — Laravel appends
-the worker suffix after app boot.
-
-## 2026-10-04 (one side flip per text, shared by the reading surfaces)
-
-The two reading surfaces duplicated the flip mechanics: `Bilinguals.jsx`
-defined its own `otherSide` and hand-rolled the learning-side math instead
-of using `readingRows.mjs`, and each surface wired its own flip state +
-persistence in two different localStorage containers (reader:
-`ext_app.reader.side-flip.v1` keyed by `positionKey`; simulator: a
-`flipped` field inside its per-match position entry keyed by bare match id).
-A new `hooks/useSideFlip.js` now owns flip state, persistence, and the
-derived first/second sides for both surfaces (`ReaderApp.jsx` and
-`Bilinguals.jsx` consume it). The simulator's flip moved to the shared
-side-flip store keyed `mm:{matchId}` — one **Side swap** per text, so a
-flip on the reader carries into the simulator for the same match (ADR 0037
-amendment). Simulator position entries are now `{page, row}`; the stale
-`flipped` key is stripped on write and old saved flips reset once (no
-migration). No PHP/routes/API changes; docs: ADR 0037 amendment block,
-CONTEXT.md Side swap term, reader + bilinguals-simulator concepts.
-
-## 2026-10-04 (queue workers died silently: sweep GC before every pop)
-
-Manual `php artisan queue:work --queue=default,low` runs (and, latently, the
-prod compose workers) died silently after tens of jobs — shell prompt
-returns, nothing in `failed_jobs`, pending count unmoved: PHP's 128M CLI
-`memory_limit` fatal in the long-lived daemon, whose in-flight job then
-re-leases after `retry_after`. Differential runs (Debugbar on/off, RSS
-sampled) exonerated Debugbar and pinned the mechanism: each enrichment job
-leaves thousands of cyclic Eloquent roots (model↔collection cycles), PHP's
-GC only sweeps on root-buffer overflow, so a daemon processing self-chaining
-`EnrichEntitySentences` work climbed ~1MB/job to the fatal (measured:
-124.5MB at job 74; user-visible death at 20-30 jobs on bigger early-cursor
-chunks). Fix: `AppServiceProvider` sweeps `gc_collect_cycles()` before every
-pop via `Queue::looping` — probe A/B: unswept worker fatal by ~75 jobs,
-swept worker flat at ~50-60MB over the same fuel. Also: `DB_QUEUE_RETRY_AFTER=900`
-set in dev `.env` (was falling back to 660; wiki already mandated 900), and
-the backlog drained to 0 pending / 0 failed. Repro + guidance now in
-`playbooks/run-alignment.md` (Failure handling); note `queue:listen` (composer
-`dev`) is immune — fresh process per job.
-
-## 2026-10-05 (simulator language toggle retinted to the reader's vermilion)
-
-The learning-language segmented toggle (EN↔RU) in the simulator toolbar
-(`Bilinguals.jsx`) painted its active side with `--wbench-accent`
-(ultramarine `#1F3DDB`) while the reader's identical reading-language toggle
-uses the `--color-vermilion` family (rust `#B0451E` / night `#D4562F`), so the
-same control looked blue on one page and brownish on the other. Retinted the
-simulator toggle's active + focus-ring classes to the reader's exact
-vermilion classes (incl. `text-vellum`/`dark:text-ink-night`); inactive-side
-and hover colors stay `--wbench-*`. Documented as a deliberate exception to
-the "new Inertia pages use `--wbench-*`" guidance in
-`conventions/design-system.md` (parity with the reader wins).
-
-## 2026-10-06 (simulator alignment picker: work-grouped and searchable)
-
-The Practice → Simulator alignment picker stopped being a flat list of every
-readable match. `SimulatorController::getWorkGroups()` now ships `workGroups`
-(`[{id, label, options: [{id, text}]}]`): matches grouped under their work
-(the A-side entity's work), works labeled `Title — Author` and sorted A→Z,
-each work's newest match first — and only `completed`/`stale` matches list,
-so pending/aligning/failed pairs no longer offer an empty read. A work
-appears only when it holds at least one such match (works carry no access
-semantics; readable-count scoping via `readableMatchQuery`). The select was
-rebuilt as `Components/Forms/SearchableSelect.jsx` — a searchable, keyboard-
-navigable popup (case-insensitive filter over work and option labels, a
-matching header keeps its whole group); pure filter/flatten logic in
-`lib/groupedOptions.mjs` with vitest coverage. The old flat
-`Components/Forms/Select.jsx` (sole consumer was this page) is deleted, the
-prop renamed `textList` → `workGroups`, and the default preselection moved
-from "newest match overall" to the first option of the first work. Feature
-tests updated in `SimulatorPickerTest` / `SimulatorPinnedMatchTest`.
-
-## 2026-10-06 (word test: frequency-rank placement with a presumed-known baseline)
-
-New page (`/word-test`, separate nav link before Resources): draws a fresh
-Placement sample — 50 headwords over 20 equal-count Buckets of the
-language's ranked inventory (`words.frequency` ≤ 20000, distinct per
-`l_word`, `WordTestService`) — as a shuffled checkbox list; submit computes
-the Word test score (each bucket credits 1000 × its known share, 0–20000)
-and writes the Presumed-known baseline (`UserWord::PLACEMENT_BASELINE` = 50,
-raise-only `GREATEST` upsert-select) over every tested-language word at
-rank ≤ score. Bucket boundaries are inventory quantiles, not literal
-0–1000…19000–20000 rank groups — ADR 0070's band ties leave 12 of 20 such
-groups empty, and quantiles self-heal after a corpus import (ADR 0071).
-Samples are server-cached under a uuid token (24 h); submits must present
-the token and a subset of its ids (Form Request closures → 422). No
-persistence beyond the `user_word` rows: retakes only ever raise. Languages
-without ranked words (ru today) get an in-page empty state. UI strings in
-`seeders/ui-strings/wordtest.php` + `nav.word_test`; tests
-`WordTestScoringTest` (pure scorer) + `WordTestPageTest` (page, sampling
-invariants, exact score/marked set, raise-only, 422s). Docs: ADR 0071,
-CONTEXT.md Word Test context, `wiki/domains/word-test.md`.
-
-## 2026-10-11 (tag pools: word-tags tracer bullet — pivot rename + Word Tags admin surface)
-
-The dormant words-tag scaffold became a live admin feature (ADR 0076,
-first of four per-type pools — words/works/entities/alignments, no shared
-table, no polymorphism, no inheritance, language-neutral slug+name, ship
-empty). The pivot renamed `word_tags` → `tagged_words` with its unique pair
-index → `uk_tagged_words_pair` (migration `2026_10_11_000001`; safe — zero
-callers verified before the rename) so it can no longer collide one letter
-away from the future `work_tags` definition table; all pools use
-`tagged_<model>` pivots. `Tag` grew fillable slug+name and the inverse
-`words()` relation; `Word::tags()` resolves through `tagged_words` with
-`withTimestamps()` (the pivot's timestamp columns were never filled
-before). New `TagResource` ("Word Tags", Words group): required name (256) +
-globally unique slug (100), `words_count` usage column, edit/delete + bulk
-delete. The Words form gained a searchable tags multi-select with inline
-create (`createOptionForm`, relationship default createOptionUsing); the
-Words list gained a `tags.name` badge column and a multi-select tags
-relationship filter (OR semantics). Tests: `WordTagsTest` — sync
-no-duplicate, unique pair constraint, pivot timestamps, inverse relation,
-cascade deletes both directions, resource list/create, form persistence,
-inline create + attach, filter narrowing. Docs: ADR 0076, CONTEXT.md Tag
-Pools context, `wiki/database/dictionary.md`.
-
-## 2026-10-11 (tag pools: work-tags pool — Work Tags resource + Works tags UI)
-
-The works pool went live, second of the four per-type pools (ADR 0076),
-copying the words tracer bullet's shapes verbatim. Migration
-`2026_10_11_000002` created both tables in one additive migration:
-`work_tags` (definition table mirroring `tags` — `slug` 100 unique, `name`
-256, timestamps) and the `tagged_works` pivot (`work_id` → works and
-`work_tag_id` → work_tags, both cascade, unique `(work_id, work_tag_id)` =
-`uk_tagged_works_pair`, timestamps). `WorkTag` model (fillable slug+name,
-inverse `works()` with `withTimestamps`) + `WorkTagFactory`;
-`Work::tags()` resolves through `tagged_works`. New `WorkTagResource`
-("Work Tags", Entities navigation group like `WorkResource`): required name
-(256) + globally unique slug (100), `works_count` usage column, edit/delete
-+ bulk delete. The Works form gained a searchable tags multi-select with
-inline create (`createOptionForm`, relationship default createOptionUsing);
-the Works list gained a `tags.name` badge column and a multi-select tags
-relationship filter (OR semantics) — the Work table's first filter. Tests:
-`WorkTagsTest` mirrors `WordTagsTest` — sync no-duplicate, unique pair
-constraint, pivot timestamps, inverse relation, cascade deletes both
-directions, resource list/create, form persistence, inline create + attach,
-filter narrowing. Docs: ADR 0076, `wiki/database/entities-alignment.md`.
-
-## 2026-10-11 (tag pools: entity-tags pool — Entity Tags resource + Entities tags UI)
-
-The entities pool went live, third of the four per-type pools (ADR 0076),
-copying the work pool's shapes verbatim. Migration `2026_10_11_000003`
-created both tables in one additive migration: `entity_tags` (definition
-table mirroring `tags`/`work_tags` — `slug` 100 unique, `name` 256,
-timestamps) and the `tagged_entities` pivot (`entity_id` → entities and
-`entity_tag_id` → entity_tags, both cascade, unique
-`(entity_id, entity_tag_id)` = `uk_tagged_entities_pair`, timestamps).
-`EntityTag` model (fillable slug+name, inverse `entities()` with
-`withTimestamps`) + `EntityTagFactory`; `Entity::tags()` resolves through
-`tagged_entities`. New `EntityTagResource` ("Entity Tags", Entities
-navigation group like `EntityResource`): required name (256) + globally
-unique slug (100), `entities_count` usage column, edit/delete + bulk
-delete. The Entities form gained a searchable tags multi-select with inline
-create (`createOptionForm`, relationship default createOptionUsing) placed
-with the metadata fields; the Entities list gained a `tags.name` badge
-column and a multi-select tags relationship filter (OR semantics) joining
-the existing language/work/restriction/approval filters. Tags stay
-orthogonal to the entity lifecycle — the deletion guard and status logic
-are untouched. Tests: `EntityTagsTest` mirrors `WorkTagsTest` — sync
-no-duplicate, unique pair constraint, pivot timestamps, inverse relation,
-cascade deletes both directions, resource list/create, form persistence,
-inline create + attach, filter narrowing. Docs: ADR 0076,
-`wiki/database/entities-alignment.md`.
-
-## 2026-10-11 (tag pools: alignment-tags pool — Alignment Tags resource + first Sentence Alignments edit page)
-
-The alignments pool went live, fourth and last of the four per-type pools
-(ADR 0076), plus the first-ever edit surface for `EntityMatchResource`.
-Migration `2026_10_11_000004` created both tables in one additive migration:
-`alignment_tags` (definition table mirroring `tags`/`work_tags`/`entity_tags`
-— `slug` 100 unique, `name` 256, timestamps) and the `tagged_alignments`
-pivot (`entity_match_id` → entity_matches and `alignment_tag_id` →
-alignment_tags, both cascade, unique `(entity_match_id, alignment_tag_id)` =
-`uk_tagged_alignments_pair`, timestamps). `AlignmentTag` model (fillable
-slug+name, inverse `alignments()` with `withTimestamps`) +
-`AlignmentTagFactory`; `EntityMatch::tags()` resolves through
-`tagged_alignments`. New `AlignmentTagResource` ("Alignment Tags", Entities
-navigation group): required name (256) + globally unique slug (100),
-`alignments_count` usage column, edit/delete + bulk delete. The Sentence
-Alignments list gained a `tags.name` badge column and a multi-select tags
-relationship filter (OR semantics) — its first filter; tags are flat labels
-orthogonal to the pipeline status lifecycle, which is untouched.
-`EntityMatchResource::form()` restructured per operation: the Entities
-section (entity-pair picks) and the chunk_size/max_n knobs are now
-`visibleOn('create')` (create-only and otherwise unchanged); a tags
-multi-select with inline create (`createOptionForm`, relationship default
-createOptionUsing) joins the form — the edit page's editable field set is
-exactly that multi-select, and hidden fields are excluded from dehydration
-and validation, so a match's pair and knobs can never leak through an edit
-save. The new `EditEntityMatch` page (`/{record}/edit`) opens from a table
-Edit record action given an explicit `->url(...)` so it navigates to the
-page instead of opening Filament's default edit modal; the React alignment
-editor stays the one row-editing surface (ADR 0062). Tests:
-`AlignmentTagsTest` mirrors the pool set — sync no-duplicate, unique pair
-constraint, pivot timestamps, inverse relation, cascade deletes both
-directions, resource list/create, edit-form persistence, pair/knob
-non-leak, inline create + attach, filter narrowing, badge render, edit
-action targets the page. Docs: ADR 0076,
-`wiki/database/entities-alignment.md`.
-
-## 2026-10-11 (tag pools: feature closure — verification pass across all four pools)
-
-Verification pass closing the tag-pools feature (ADR 0076) — no feature code
-changes. All four pools verified as one feature on branch `tag-pools`: words
-(`tags` + `tagged_words`, the renamed dormant scaffold), works (`work_tags` +
-`tagged_works`), entities (`entity_tags` + `tagged_entities`), and alignments
-(`alignment_tags` + `tagged_alignments`) — each with its Filament tag
-resource and its attached model's tags multi-select with inline create,
-badge column, and multi-select filter. Full plain parallel suite green:
-1,120 passed (5,736 assertions, 8 processes). Operational note: the suite
-now exceeds composer's default 300-second process timeout — the first
-`composer run test` attempt was killed at 300s mid-run, and the immediate
-re-run failed 457 tests with missing-relation errors (`relation
-"ui_string_keys" does not exist`) because the killed run left half-migrated
-`ext_app_test_test_*` worker databases behind; that failed pass still
-dropped them at its end, and the next clean run was fully green. Until the
-duration is addressed, run the suite as `composer run test --timeout=0`.
-`wiki:validate` conformant (exit 0; the 85 staleness warnings are
-pre-existing, same count as the pool tickets reported). `wiki:sync`
-produced timestamp-only churn on the three machine-owned reference files
-(no model/route/command changes) — content verified identical, churn
-reverted. Pint clean (`--test`) on all 40 PHP files the feature's four
-commits touched, listed explicitly rather than via `--dirty`. Dev database
-brought current with plain additive `php artisan migrate` (pending
-`2026_10_11_000002/000003/000004` applied without error; the ticket-01
-pivot rename was already in place); the post-migrate tinker check reads
-`pgsql tagged_words=0 word_tags=gone pools=all-present` — the renamed words
-pivot carries zero rows (no orphans; the scaffold was dormant) and all six
-new tables exist. Learner-facing tag UI, tag-name translations, seed
-vocabularies, and work→entity tag inheritance remain out of scope per
-ADR 0076.
-
-## 2026-10-14 (retro fixes 01: hermetic test baseline — suite green on a clean tree)
-
-Fixed the broken green baseline (retro finding #1): ten tests across five
-Feature suites (WordEndpoint, RefreshEntityWordsJob, AdoptEntityWords,
-EntityEnrichment, WordTranslationFetch) failed on every run with a live
-Google Translate `403 API_KEY_SERVICE_BLOCKED`. Root cause was not missing
-`Http::fake()` per se but an env leak: `phpunit.xml` force-blanked
-`OPENROUTER_API_KEY` only, so dev `.env`'s real Google key leaked into tests
-as a "configured" provider pointed at `translation.googleapis.com`, and
-`QUEUE_CONNECTION=sync` ran `FetchWordTranslations` inline inside the
-request — nine tests died on the propagated 403, and the tenth
-(`WordTranslationFetchTest` "does not queue a fetch when no provider is
-configured", a `Queue::assertNotPushed`) failed on the same leak and was
-unfixable by faking. Fix: force-blank `GOOGLE_TRANSLATE_API_KEY` and
-`YANDEX_TRANSLATE_API_KEY` in `phpunit.xml` (tests opt in per test via
-`enableTranslationProviders()` + `Http::fake()`), and arm
-`Http::preventStrayRequests()` for every Feature test in `tests/Pest.php`
-so any future leaked wire call throws immediately instead of hanging.
-Zero test-body edits needed — the five suites pass standalone (62 passed)
-and the full `composer run test` is green (1,149 passed / 0 failed, 334.6s,
-8 workers) for the first time since the translate-fetch feature landed; no
-additional network leakers surfaced under the guard. Contract recorded in
-`wiki/playbooks/running-tests.md` ("The suite is hermetic — and green"):
-on a clean tree, any failure is yours.
-
-## 2026-10-14 (retro fixes 02–04: Wiktionary idempotency test, orchestration doc, wiki warning burn-down 88 → 0)
-
-Retro-fixes branch, three more findings closed. **02** — regression test for
-the Wiktionary re-import dedupe at the command level
-(`ImportWiktionaryCommandTest`, import ×3 → stable counts + zero duplicate
-`(word_id, lower(definition))` groups), mutation-checked: reintroducing the
-by-value `$existing` capture makes it the exactly-one failure. **03** —
-`docs/agents/orchestration.md` (local-only dir like its siblings) records
-agent-type session-start registration, why worktree parallelism is banned
-here, and disk-anchored resumable dispatches. **04** — the wiki warning
-burn-down: `wiki:validate` went from 88 standing warnings to **0**, so it is
-a quiet pass/fail signal again. The 88 decomposed into 4 dead source paths
-in `ai-providers.md` (migrations squashed into `2026_09_10_000002`) and 84
-mtime-drift warnings over 23 concepts (48 genuine, 36 checkout artifacts).
-All 23 concepts (plus the two dictionary-import concepts the goldendict
-review commit re-staled) were re-verified against current code by read-only
-agents; verified claims got `verified: { by: agent:zcode }` stamps (existing
-`human:alex` verifications preserved), `generated.at` re-stamped past source
-mtimes. Substantive content fixes: **`production-deployment.md` and
-`log-doctor.md` still documented the Docker prod machine that
-`deploy.yml` abandoned on 2026-09-14** — the playbook now leads with the
-native model (`deploy-native.sh`: pull-first, flock, ai_env pip self-heal,
-python restart + `/health` gate only on python diffs, 4 seeds,
-daemon-reload + unit restarts) and marks the deploy.sh/stamp-guard sections
-as Docker-layout; log-doctor gained a stale-layout warning (its workflow
-still targets Docker prod, needs porting). Also corrected: alignment editor
-is now the Inertia page with `canEditMatch` mutation gating (13 endpoints,
-approved-side freeze) and work-nested routes (`EditEntityAlignment` and flat
-`/alignments/{id}` gone) across `sentence-alignment` / `entities-alignment`
-/ `run-alignment` / `frontend` / `overview`; signature model split
-(BGE-M3 active for signatures via env, LaBSE code default / align-only) in
-`docker-services` / `overview` / `run-alignment` / `sentence-alignment`;
-`coding-conventions` middleware rule (dir exists, no Kernel) and the
-nonexistent CLAUDE.md/copilot references; `profile` tab-redirect behavior;
-`access-control` pivot name + registration redirect; `bilinguals-simulator`
-component layout; `interactive-words` explain-endpoint source path; minor
-precision in `entities` (illustration hash in text digest) and the
-dictionary-import pair (bracket-trim scoped to transcriptions, DSL UTF-16BE).
-`wiki:validate` exit 0 / 0 warnings; `WikiTest` green.
-
-## 2026-10-14 (anki connection 05: knowledge-base closure — ADR 0077, GLOSSARY.md, anki-export concept)
-
-The Anki-connection feature (tickets 01–04) closed out documentation-first,
-no feature code touched. **ADR 0077** (`docs/adr/0077-browser-side-ankiconnect.md`)
-records the two decisions a future reader would otherwise re-litigate — the
-browser is the only AnkiConnect caller because the server's topology
-(Docker/WSL2 dev, remote prod) can never reach a user's desktop Anki, and
-the values-always-sent + hide-class template semantics (Anki cannot remove
-note-type fields, so a toggle is a template class, and re-syncing restyles
-existing cards without re-export) — plus the app-owned "ExtApp Vocabulary"
-note type (foreign field sets warn, never rewrite), find-before-add
-duplicates, and ticket 04's native-language pitfall as a Consequences rule:
-`buildNoteFields` compares language *codes* while settings store a numeric
-`native_language_id` — mixing the units fails silently. **`GLOSSARY.md`**
-created at the repo root (domain-modeling format): Anki-export terms only —
-AnkiConnect, connection settings, card field, note type, card template,
-hide class, template sync, send to Anki, sample card. **`wiki/domains/anki-export.md`**
-is the feature's front-door concept (sources = the ADR + the five feature
-files): why-browser-side, the four-step flow (settings → template → sync →
-sends), and the boundaries (the twelve-field set is the schema version;
-sends only add; Anki ops are never server-initiated) — cross-linking
-`profile.md` (tab side) and `interactive-words.md` (popup send) rather than
-duplicating them, and linked from `wiki/index.md`. Both linked concepts
-gained ADR 0077 source entries + inline pointers with stamp bumps.
-`wiki:validate` → 0 warnings; `WikiTest` green.
-
-## 2026-10-15 (retro-fixes 05: AGENTS.md vitest guardrail + researcher source-citation rule)
-
-From the anki-connection session retro (2026-10-14), finding #1: AGENTS.md's
-Testing section listed only Pest and pytest while `laravel/package.json`
-ships `"test": "vitest run"`, CI gates it (`.github/workflows/tests.yml`
-"Vitest (pure JS logic)" job), 11 `*.test.{js,mjs}` files live beside the
-modules in `resources/js/lib/`, and `running-tests.md` documented all of it
-— so planning sessions that (correctly) trust AGENTS.md as the command
-surface concluded JS had no test infra, and the anki feature's JS modules
-got ad-hoc Node smoke runs instead of real vitest tests. AGENTS.md now has
-the **JS logic tests (vitest)** block: `npm run test` in the container,
-tests beside modules, Node-only per ADR 0066, "new lib modules get vitest
-tests, same as Pest for PHP", CI job pointer. Finding #6: the retro's
-AnkiConnect research recorded pre-2022 `updateModelTemplates` /
-`updateModelStyling` shapes from search summaries; the implementer caught it
-only by reading the plugin source. `.zcode/agents/researcher.md` (machine-
-local, gitignored) gains a rule: external-API request/response shapes must
-be verified against official docs or upstream source, with the URL cited in
-the notes. Finding #3 ($high agent-model pins "uncommitted") closed as a
-false premise — `.zcode/` is gitignored by design, the pins persist on
-disk, and future sessions read agent definitions at start; nothing to
-commit. AGENTS.md is not a wiki concept, so no concept stamps change;
-tickets 06–09 for the remaining findings (#2 ESLint, #4 popup-sections
-mirror test, #5 WordClassSeederTest ordering flake, #1-follow-up anki
-vitest port) live in `.scratch/retro-fixes/`.
-
-## 2026-10-15 (retro-fixes 06: WordClassSeederTest deterministic ordering — kill the parallel flake)
-
-From the anki-connection session retro (2026-10-14), finding #5: `tests/Feature/WordClassSeederTest.php`
-compared two DB queries with no `orderBy` (line 23 matched `$beClasses->keys()` against
-`$enSlugs->values()`), so the en/be slug-sequence alignment rested on Postgres natural row order —
-stable only while both queries scan the same physical layout, which the parallel workers' freshly
-created `ext_app_test_test_{N}` databases do not guarantee; it failed exactly once in ticket 01's
-full-suite run while passing in isolation, and a flaky red trains agents to discount red. Fix is
-test-only: both compared sides now `orderBy('slug')` (total order via the `(language_id, slug)`
-unique index on `word_classes`), so the sequence-vs-sequence assertion keeps checking that the be
-slug sequence mirrors the en slug sequence — still fails on any missing/extra slug — plus the four
-spot-checked Belarusian titles; the idempotency test is count-only and untouched. Seeders and
-models unchanged; the seeder's curated `CLASSES` order is an iteration order, not a persisted one
-(rows carry no order column), so sorted comparison matches the seeder's actual contract ("Same slug
-set as English"). `running-tests.md` doesn't name the test, so it stays as-is; no routes/models/
-commands touched, no `wiki:sync` needed.
-
-## 2026-10-15 (retro-fixes 07: ESLint flat config + CI lint job — the static no-undef/imports/hooks guard)
-
-From the anki-connection session retro (2026-10-14), finding #2: ticket 03's missing `deckNames`
-import in `resources/js/lib/ankiSync.js` — a guaranteed runtime ReferenceError — passed `vite
-build` (Vite bundles but does no static resolution of what an identifier refers to) and was caught
-only by the implementer's ad-hoc Node smoke; vitest pins only what has tests, so the other ~73
-`.jsx` files had nothing statically checking them. Landed: eslint 10 + `@eslint/js` 10 +
-`eslint-plugin-react-hooks` 7 + globals 17 as devDeps (installed inside the container),
-`laravel/eslint.config.js` (flat config over `resources/js/**/*.{js,mjs,jsx}`; browser globals
-everywhere, Node globals for the vitest specs and `lib/wordTokenizer.cli.mjs`; ignores
-node_modules/vendor/public), `"lint": "eslint resources/js"` in package.json, and a `lint` job in
-`tests.yml` mirroring the `frontend` job (`npm ci` + `npm run lint`, Node 22, npm cache off the
-lockfile). Goal is correctness, not style, and the tiers say so: `no-undef` + core recommended +
-rules-of-hooks stay `error` (canary-proofed: a file using `deckNames` un-imported and a hook after
-an early return both fail the run); the v7 compiler-*analysis* rules whose hits are all
-legacy-but-working patterns (`refs` 14, `set-state-in-effect` 13, `immutability` 2,
-`preserve-manual-memoization` 1) sit at `warn`; two deliberate patterns got file-scoped carve-outs
-with in-file comments (`no-control-regex` off in `lib/markdown.js` — the \u0000/\u0001 sentinels
-ARE the code-span protection mechanism; `react-hooks/globals` off in `i18n.jsx` — the module-level
-`strings` cache IS the `t()` mechanism). Genuine violations fixed in place: two `no-useless-escape`
-hits (`\-` → `-` in the mirrored tokenizer/WordText word patterns — semantics-identical,
-TokenizerParityTest green). The 51→81 warnings (17 unused legacy `import React`,
-destructuring leftovers, exhaustive-deps stability nags) are review signal, deliberately not
-mass-fixed. `running-tests.md` gains the lint command + rule-tier contract and an
-`eslint.config.js` source, `generated.at` bumped.
-
-## 2026-10-15 (retro-fixes 08: anki JS modules vitest port — the ad-hoc Node smoke runs become real tests)
-
-Follow-up to the anki-connection retro's finding #1: that session believed JS had no test infra
-(false — vitest, 11 existing `lib/*.test.{js,mjs}`, CI `frontend` job) and verified
-`ankiConnect.js` / `ankiTemplate.js` / `ankiSync.js` with ad-hoc Node smoke runs that are gone the
-moment they end — though they earned their keep (ticket 03's caught the missing `deckNames` import
-the Vite build missed). Landed three colocated specs transcribing the recorded smoke scenarios:
-`ankiTemplate.test.js` (12 tests: byte-determinism, Front = Word + Transcription only, hide-class
-back wrappers vs all-twelve `buildNoteFields` values (ADR 0077 semantics), the Front-never-hides-Word
-exception, native-language CODE filter with all-translations fallback — including the numeric
-`native_language_id` silent-degrade trap from ADR 0077's Consequences, HTML escaping,
-`{{Field}}` substitution), `ankiConnect.test.js` (19 tests: endpoint defaults/trimming/coercion,
-invoke's JSON POST shape + the three failure normalizations into `AnkiConnectError` kinds, and one
-representative wire-shape assert per action wrapper — including the nested `model:{name,
-templates:{card:{Front,Back}}}` objects ticket 03 corrected against the plugin source),
-`ankiSync.test.js` (11 tests: cold-ensure create wire shape, memoization + memo-miss by deck,
-`{force: true}` re-push with hide classes baked, both mismatch kinds after exactly the probe calls,
-first-send find-before-add query + 12-field `allowDuplicate: false` addNote, duplicate/foreign-model
-skips, memoized second word, raw-word guard). Modules untouched. Testing-pattern lessons recorded in
-`running-tests.md`: `vi.stubGlobal('fetch', …)` for the request/response client, and for a module
-with module-level memo state (ankiSync's `ensured` Set) use static single-generation imports with a
-unique endpoint|deck key per test — `vi.resetModules()` + dynamic import mints fresh error classes
-that break `instanceof`, and a per-test config counter that resets makes every test re-mint the
-first test's memoized key (ensures silently become memo hits); reuse one config object within a
-test to exercise the shared-session memo. Suite 52→94 tests, all green; `npm run lint` exit 0 (new
-files add no warnings); pint PASS; `anki-export.md` + `running-tests.md` mention the pins,
-`generated.at` bumped on both; no routes/models/commands touched, no `wiki:sync` needed.
-
-## 2026-10-15 (retro-fixes 09: the popup sections mirror gets the Anki lockstep treatment)
-
-Round-2 retro finding #4: the anki review's mirror-lockstep test (`AnkiSettingsMirrorTest`) covered
-only the new feature, while the older PHP↔JS mirror it flagged as "synced only by comments" —
-`PopupVisibility::SECTIONS` ↔ the Popups tab's module-local, unexported `POPUP_SECTIONS`
-(`resources/js/Pages/Profile/PopupsSettings.jsx`), guarded since ADR 0046 by nothing but the owner
-comment — stayed untested, so a renamed or reordered section silently desynced the server-side
-defaults (`PopupVisibility::for()` via `HandleInertiaRequests`' `popupVisibility` prop) from the
-settings UI. New `tests/Unit/PopupSectionsMirrorTest.php` copies the established pattern: read the
-JSX source from disk, regex-extract the `const POPUP_SECTIONS = […]` body, `preg_match_all` the
-quoted keys, one order-sensitive `expect(...)->toBe(PopupVisibility::SECTIONS)` — keys and order in
-a single assertion, no JS runtime, and the pure-regex extraction held so the export-the-constant
-fallback stayed unused. `POPUP_GROUPS` deliberately not mirrored: display grouping only, every key
-it lists is a member of `POPUP_SECTIONS`, and `PopupVisibility` has no grouping concept. Desync
-proof: renaming `'etymologies'` → `'etymology'` in the JSX fails the test with a per-key array diff
-at index 9; restored and green. `profile.md`'s Popups tab section names the pin (`generated.at`
-bumped); `interactive-words.md` left alone — its `PopupVisibility` mention is the runtime
-visibility behavior, not the settings mirror. Test file only; pint PASS; suite green 1166 passed
-(via `--fresh` local TIA baseline record — gh is unauthenticated so the remote-baseline fetch
-errors; the documented `--fresh` run records locally and subsequent `test:tia` replays work). No
-routes/models/commands touched, no `wiki:sync` needed.
-
-## 2026-10-15 (retro-fixes 10: round-2 closure — remaining staleness cleared, verification battery green)
-
-Round-2 bookkeeping close. The two staleness warnings carried since retro-fixes 05 (both concepts
-list `AGENTS.md` as a source, which the vitest-block edit re-staled) are cleared: **`conventions/coding-conventions.md`**
-got a content update, not just a stamp — its Testing section covered Pest only and would have
-re-created exactly the false belief the round exists to kill, so it now states the JS rule (pure-JS
-logic in `resources/js/lib/` is vitest-tested, new lib modules get vitest tests beside the module,
-same as Pest for PHP); **`architecture/docker-services.md`** content checked unaffected (the golden
-rule + services table are untouched by the Testing-section edit) and re-stamped. Both `generated.at`
-bumped past the AGENTS.md mtime, existing `verified` stamps preserved per round-1 (ticket 04)
-convention; `wiki:validate` → **0 warnings**. Verification battery, all sequential in-container:
-full `composer run test` **1166 passed / 0 failed** (6056 assertions, 8 parallel workers, 508s —
-the exact parallel conditions that used to trip the WordClassSeederTest flake, now fixed by
-retro-fixes 06), vitest **94/94 in 14 files** (up from 52/11 — retro-fixes 08's 42 anki specs),
-`npm run lint` exit 0 with 0 errors / 81 documented warnings (retro-fixes 07's deliberate warn
-decisions), `npm run build` green, `pint --dirty` PASS. Round totals: findings #1 (AGENTS.md
-vitest guardrail + anki vitest port), #2 (ESLint + CI), #4 (popup lockstep test), #5 (flake), #6
-(researcher citation rule) fixed; #3 closed as a false premise (`.zcode/` gitignored by design —
-documented in the spec, nothing to commit). Commits `7c085ce` / `1a09abc` / `1db51e0` / `0f87321`
-/ `cd6e6ff` / this one, all on `anki-connection`; spec addendum + tickets 06–09 live in
-`.scratch/retro-fixes/`. Carry-forward (operational, not a finding): bare `composer run test:tia`
-errors pre-run on the unauthenticated-`gh` remote-baseline fetch — run the documented `--fresh`
-invocation once locally or authenticate `gh`.
-
-## 2026-10-18 (dictionary-word-purity 04: word_id-leading indexes on every words child table)
-
-The per-word access path into the dictionary's child tables was unindexed: `forms` (3.02M rows) and
-`transcriptions` (922k) only had `word_id` *buried* behind a leading text column (`uk_forms_form_word_id
-(form, word_id)`, `uk_transcriptions_triple (transcription, word_id, transcription_type_id)`), so per-word
-joins, importer recount batches and FK cascade deletes seq-scanned — the root cause of the 17-minute wipe
-crawl. Migration `2026_10_18_000001_add_word_id_indexes_to_forms_transcriptions_and_word_children.php` adds
-`idx_<table>_word_id` btrees (naming mirrors `idx_definitions_word_id` from 2026-09-16) on the six audit
-hits: the ticket's `forms`/`transcriptions`/`user_word` plus the rest of the word-child audit surface —
-`examples`, `pronunciations`, `user_word_event` (all `ON DELETE CASCADE` off `words`); `definitions`,
-`etymologies`, `entity_words`, `tagged_words` `(word_id, tag_id)` and `word_translation_fetches`
-`(word_id, target_language_id)` already led with `word_id` and were left alone (`word_families` is a
-read-layer class, not a table). Dev-DB `EXPLAIN ANALYZE` of `SELECT * FROM forms WHERE word_id = 1993864`
-flipped from seq scan to `Index Scan using idx_forms_word_id`, 0.159 ms / 3+8 buffers. Coverage pinned by
-`tests/Feature/WordIdLeadingIndexesTest.php` (red → green: asserts via `Schema::getIndexes` that each
-index exists AND leads with `word_id`, so a future column reorder in the migration fails the suite).
-`database/dictionary.md` gained the indexes bullet + migration source, `generated.at` bumped;
-no routes/models/commands touched, no `wiki:sync` needed.
-
-## 2026-10-18 (dictionary-word-purity 03: kaikki form-of relays demote to forms, not words)
-
-Kaikki marks inflected variants as standalone entries whose every sense carries the sense-level
-`form_of` list (+ the `form-of` tag) — `четвереньках: prepositional of четвере́ньки` — and
-`WiktionaryParser` ignored the signal entirely, importing ~379k/444k ru and ~974k/1.5M en relay
-entries as full word rows with relay glosses and self-referential form rows. Now `parseLine`
-classifies every entry through the new parser-agnostic shared helper
-`App\Classes\Wiktionary\FormOfClassifier` (entry-shape in → `{relay, base}` out; also reusable by
-the planned demote command): relay iff every sense carries `form_of[0].word` or the `form-of` tag,
-mixed entries (some relay senses + real glosses) stay words, an entry without senses stays a word
-(no sense-level signal), a base that collapses into the entry's own lookup key would demote the
-entry onto itself (stays a word), and a trivially present entry-level `form_of` is honored. A relay
-record carries empty definitions/forms/sounds/translations/etymology and a `relay_base` (stress-
-stripped for ru/be/uk); `flushBatch` partitions it out of the word upsert and `demoteRelays`
-resolves the base by `l_word` with the shared class preference (`App\Support\TranslationTargets`,
-same-class row → lowest id; unknown pos skips the preference), creates a missing base as a proxy
-dictionary headword (relay's pos class, no staged translations, lemma form through the shared
-`App\Support\LemmaForms`), and attaches the relay headword as the base's form via the same
-`LemmaForms` conventions — never a word row. Same-key line merges follow union-of-senses semantics:
-relay+real → mixed word, relay+relay demote only onto an agreeing (normalized-equal) base. Import
-stats gained `relays_demoted` / `relay_bases_created`, surfaced in the `wiktionary:import` summary
-table. Pre-existing relay word rows are ticket 10's demote command; the `WordFamily` read-layer
-relay-gloss defense stays until then. `wiki/domains/dictionary-import.md` updated (parser bullet +
-frontmatter description/tags/sources), `generated.at` bumped. No routes/models/commands added (the
-command's output table changed, not its signature) — `wiki:sync` run, no-op.
-
-## 2026-10-18 (dictionary-word-purity 06: popup auto-fetch is link-only — no word rows)
-
-`FetchWordTranslations` used to CREATE its target-language word rows — including `phrase`-class rows
-with no token cap (clause-length machine translations qualified) and a `mb_strtolower`-only l_word —
-the exact "phrases from translations" pattern ADR 0078 bans. The job is now link-only: candidates
-normalize at the JOB layer first (trim + `App\Support\StressMarks` strip for ru/be/uk targets — the
-providers strip too, but the job no longer depends on a future provider keeping that promise;
-empty-after-strip, overlong and sentence-punctuation candidates dropped), resolve against the target
-language's EXISTING words through the shared `App\Support\TranslationTargets` resolver with the
-parser's wanted-class rule (`App\Support\WordLookupKey::normalize` keys; multi-word candidate →
-`phrase` class, single-word → candidate pos class else the source word's class, missing class →
-null = match by l_word alone), and matching candidates become `WordTranslation::link` pairs.
-Unmatched candidates stage into the source word's `translations` JSON through the shared
-`App\Support\StagedTranslations` merge for the later link pass (ticket 07). The `phraseClassId`
-auto-creation and every `Word::firstOrCreate` are gone — `word_classes` and target-language `words`
-counts are untouched by the job (the invariant test asserts the ru count is unchanged).
-The `word_translation_fetches` ledger keeps its exclusion semantics (empty = never re-checked;
-succeeded also never re-fetches — staged candidates wait for the link pass, not a re-query; failed
-retries unchanged) and records the outcome in new `linked_count`/`staged_count` smallint columns
-(additive migration `2026_10_18_000002`, applied to the dev DB). Callers
-(`WordTranslationFetchService::dispatchIfEligible`, `EntityWordAdoption::dispatchFetches`,
-`WordController::maybeFetchTranslations`) needed no changes — their gates read links + ledger
-status only. `tests/Feature/WordTranslationFetchTest.php` rewritten for link-only semantics (17
-tests: no-creation invariant, defensive strip via a mocked resolver, staging merge/re-merge,
-phrase-class preference, google fallback under class mismatch, exclusion on unusable-only
-candidates, no-refetch-after-staging, cooldown), full `composer run test:tia` green (1257 passed).
-Wiki: `domains/interactive-words.md` ("What it writes" + ledger bullets, description, sources),
-`domains/dictionary-import.md` (ADR 0059 section no longer claims phrase auto-creation),
-`database/dictionary.md` (ledger row + words.translations staging note + auto-fetch note),
-`generated.at` bumped; `wiki:sync` regenerated `reference/models.md` (new fillable/casts);
-`wiki:validate` passes.
-
-## 2026-10-18 (dictionary-word-purity 07: dictionary:link-translations — the single staged-link pass)
-
-`wiktionary:link-translations` (renamed **`dictionary:link-translations`** — no alias, all callers
-and docs updated) was the only re-reader of the staged `words.translations` JSON but matched weaker
-than the goldendict resolver (class-strict single lookup, no same-class preference, no phrase
-preference, no any-class fallback, one query per candidate), never pruned what it linked (91,552
-staged rows and growing), and warned per unmatched candidate — millions of lines at real scale. It
-is now the single staged-link pass: per staged word it builds the writers' wanted-class map
-(multi-word candidate → target's `phrase` class, single-word → the source word's class slug mapped
-into the target language, unmappable → null = l_word alone) and resolves through the shared
-`App\Support\TranslationTargets::forLanguage` (same-class → phrase → any-class → lowest id; one
-query per word instead of per candidate). Pairing keys go through `App\Support\WordLookupKey::normalize`
-(replacing the private `normalizeTargetWord`). **Prune-on-link**: every candidate that resolves is
-removed from the word's JSON via `App\Support\StagedTranslations::prune` (exact stored strings —
-the importer-staged goldendict JSON and the job-staged auto-fetch JSON share the contract), an
-emptied JSON stores null, the row saves only when the JSON actually changed, so re-runs are
-idempotent and the Total-staged column shrinks; unmatched candidates stay staged for a later pass.
-Unmatched output is a per-direction count plus a capped sample (first 10 as "source → candidate",
-one per table line — long cells wrap mid-string at the terminal width) in the summary table
-(Linked / Unmatched / Words pruned / Total staged columns); the per-candidate warn is gone. The
-`statement_timeout` (30s) and stuck-`delete from "words"` transaction-kill guards are kept.
-`ImportRawWiktextractCommand` calls the new signature (`--no-link` help + messages);
-`ImportWiktionaryCommand`'s description and the `WordTranslationProvider` docblock (which named the
-removed private method) updated; ADR 0029 carries a rename note. Tests: `LinkTranslationsCommandTest`
-rewritten for the new signature and contract (16 tests: resolver fallbacks, phrase class, lowest-id
-tie, prune-keeps-unmatched, empty→null, exact-string prune of a stressed legacy candidate, re-run
-idempotency, capped sample without per-candidate warns); `ImportRawWiktextractCommandTest`'s
-end-to-end test now asserts the prune contract (fully-matched words store null). Full
-`composer run test:tia` green (1264 passed). Wiki: `reference/commands.md` regenerated by
-`wiki:sync` (rename), `playbooks/import-dictionary-data.md` (runbook step 4 + source title),
-`domains/dictionary-import.md` (command bullet + linking-differs paragraph + source title),
-`database/dictionary.md` (words.translations flow bullet), `generated.at` bumped; `wiki:validate`
-passes. Manual command — run after populating all languages.
-
-## 2026-10-18 (dictionary-word-purity 08: duplicate prevention at the remaining creators)
-
-The two creators still minting `unknown`-class twins of classed rows (uniqueness is
-`(word, language_id, word_class_id)` — 2,954 twins in the dev data) now resolve against the
-language's existing `l_word`s and only create when nothing matches. `dictionary:import-cmudict`
-already attached transcriptions to existing same-`l_word` rows; its creation path now goes through
-the shared conventions — plain display word (`StressMarks` strip on the shared path, a no-op for
-en), `App\Support\WordLookupKey` key and the `App\Support\LemmaForms` lemma form, so a
-cmudict-created word carries itself as its form like every imported word. `EntityWordAdoption`
-replaced the raw-token `firstOrCreate` (which matched on the surface string and class, so a token
-whose `l_word` the dictionary already carried minted a twin): adoption attaches to the EXISTING
-same-`l_word` row — first non-unknown-class row in id order, else the lowest id — via one batched
-candidates query per 500-token chunk (the pass runs inside `crossword:refresh`); a genuinely new
-token creates one row with a plain display word (combining stress marks stripped off the raw surface
-for ru/be/uk, casing kept) and its lemma form, and a marks-only token stays stamped instead of
-storing a junk row. Filament joins the contract: the Word page's "Create word & link" strips the
-display word for ru/be/uk (a stressed input reuses the existing plain row), normalizes `l_word`
-through `WordLookupKey` instead of a bare `mb_strtolower`, adds the lemma form on create, and its
-word search matches the normalized key; the Forms relation manager strips the display form for the
-stress-mark languages and autofills a blank `l_word` through the same key (create + edit). Tests:
-`CmudictImportTest` (attach-to-existing with no twin, lemma form on create, re-run idempotent),
-`AdoptEntityWordsTest` (lemma form, existing-row adoption preferring the classed row over a
-lower-id unknown, plain ru display + lemma form), `Filament/WordTranslationsRelationManagerTest`
-(normalized key + lemma form; stressed input collapses into the plain row),
-`Filament/WordFormsRelationManagerTest` (new file — normalized key autofill, ru form strip, en
-create/edit). Targeted suites green (20 + 36), `composer run test:tia` green (1272). Wiki:
-`domains/dictionary-import.md` (new "Creator hygiene" section + sources), `domains/crossword.md`
-and `domains/interactive-words.md` (adoption attach-don't-twin semantics), `generated.at` bumped;
-no routes/models/commands signatures touched, no `wiki:sync` needed; `wiki:validate` passes.
-
-## 2026-10-18 (dictionary-word-purity 10: `wiktionary:demote-form-of`)
-
-The dump-driven cleanup for the relay word rows the pre-ticket-03 import stored. The new command
-streams one kaikki dump per language (`--lang`, default file
-`kaikki/kaikki.org-dictionary-<Language name>.jsonl`, `--file` override), classifies every entry
-through the shared `FormOfClassifier`, and folds the verdicts through the new pure
-`App\Classes\Wiktionary\RelayDemotionMap` before anything writes: a surface with any real dump
-entry stays a word (also-real subtraction, order-independent), relay lines disagreeing on the base
-stay a word, chains close onto the terminal base (X→Y→Z demotes X and Y onto Z, so no relay
-re-points at a row its own run deletes), cycles demote nobody and stay valid link targets. The
-apply is set-based per `--chunk` (default 25000 relay keys, one transaction each; `--dry` prints
-every phase count and writes nothing — run it first): translation links re-point from relay rows
-onto bases through both `word_translations` arms (canonical pairs, insert-or-ignore dedupe,
-self-pairs dropped, later-chunk relays resolved through the full map so their pairs survive both
-deletions), `entity_words.word_id` re-points (the token `l_word` keeps the surface the entity text
-carries), staged `words.translations` JSON union-merges onto the base, the relay surface attaches
-as a base form (upsert on `(form, word_id)` — a base that already claims it keeps one row), the
-relay's frequency rank folds into the base as LEAST (best rank wins; the unranked sentinel
-1,100,000 never demotes a ranked base — user-approved deviation from the ticket's "max/GREATEST"
-wording, which would have flipped the flagship base `четвереньки` from rank 11,314 to unranked;
-matches ADR 0070's never-raise-a-rank fold), then the relay rows delete (relay glosses and
-self-forms die with the row — pure pointers). Romanization-tagged junk forms (Latin on ru/be/uk
-words) are collected from the same stream and deleted by exact (entry `l_word`, form `l_word`)
-pairs; the phase skips non-stress-mark languages. Bases missing from the DB keep their relays as
-words — counted, sampled, never deleted; re-runs match nothing (idempotent). Deletes by explicit
-ids from the dump map — never a wipe. Tests: `RelayDemotionMapTest` (new, 8 — subtraction,
-conflicts, chains, two- and three-entry cycles, self-base gate, missing-base passthrough),
-`DemoteFormOfCommandTest` (new, 5 / 39 assertions — seeded mini-DB plus the
-`tests/fixtures/kaikki-demote-form-of.jsonl` mini-dump: dry writes nothing, the demote end state
-including the flagship `четвереньках` case with `--chunk=2` forcing the cross-chunk link and
-staged-JSON paths, idempotent re-run, rejects unknown language and missing file). Targeted suites
-green (8 + 5), pint green, `composer run test:tia` green (1285 passed / 6575 assertions, 1285
-replayed). Wiki: `playbooks/import-dictionary-data.md` (new "Cleaning imported relay rows"
-runbook with the `--dry`-first guidance), `domains/dictionary-import.md` (the planned-ticket
-mention replaced by the implemented command + map semantics, sources), `reference/commands.md`
-regenerated (`wiki:sync`), `generated.at` bumped; `wiki:validate` passes. The real dev-DB run is
-ticket 11 (never this ticket).
-
-## 2026-10-18 (dictionary-word-purity 09: `words:normalize`)
-
-The idempotent in-place repair of the already-stored dictionary rows the
-importers cannot fix themselves — one command, four phases, every phase
-counted in a summary table, `--dry` first-class (prints every phase count,
-writes nothing). Phase 1 strips the combining stress marks from ru/be/uk
-display `words.word` and `forms.form` (spec rule 1; en diacritics are
-legitimate spelling and untouched): a stressed word merges into an existing
-plain twin (same language + class + stripped display, lowest id survives and
-absorbs the children), otherwise it strips in place; stressed forms group
-per (word, stripped form) — a group whose plain twin already exists
-collapses, otherwise the lowest form id survives and the other variants
-dedupe (two stressed variants can strip to one plain string — the earlier
-one-off repair's collision gotcha). Phase 2 merges `unknown`-class twins
-into the lowest-id non-unknown same-`l_word` row (the cmudict/adoption
-twins); a survivor already carrying a ˈ-marked IPA transcription is final —
-the twin's transcriptions die with the merge (Kaikki wins where it has
-stress data). Phase 3 folds alias word classes into their canonical class
-per language (PosAliases semantics resolved by class-row slug — `adj` into
-`adjective`): exact-display twins merge, twinless leftovers reclass in
-place, orphan alias class rows delete last. Phase 4 backfills the lemma
-form: every word carries itself (stripped display, LemmaForms conventions)
-where missing — insert-new-only on `(form, word_id)`, chunked word-id ranges
-with a progress bar (~1.5M rows in dev). Word merges share one set-based
-machinery: pairs land in a temp mapping table, each child move is a single
-SQL statement per table — definitions/etymologies/entity_words update in
-place; unique-keyed children (forms, transcriptions, examples,
-pronunciations, tagged_words, user_word, user_word_event,
-word_translation_fetches) move through insert-select ON CONFLICT DO NOTHING
-+ delete; word_translations re-point through both arms (canonical pairs,
-self-pairs dropped, insert-or-ignore dedupe); staged `words.translations`
-JSON union-merges (StagedTranslations); the frequency rank folds in as
-LEAST with a zero guard — the cmudict/adoption rows carry the 0 "no rank"
-column default (kaikki rows carry the sentinel), and folding a 0 would wipe
-every survivor's rank, so only real ranks fold and never upward. Absorbed
-rows delete last; case-variant same-class duplicates are deliberately NOT
-merged (March/march). Tests: `WordsNormalizeCommandTest` (new, 7 / 64
-assertions — seeded mini-DB per phase incl. the ˈ-IPA gate and the
-both-arm/user_word/fetch-ledger moves, idempotent second run, `--dry`
-writes nothing, `--chunk=2` reaching the same state through tiny chunks).
-Targeted suite green, pint green, `composer run test:tia` green (1292
-passed / 6639 assertions, 7 new + 1285 replayed). Wiki:
-`playbooks/import-dictionary-data.md` (new "Repairing stored data in place"
-runbook with the `--dry`-first guidance and expected dev-DB phase counts),
-`domains/dictionary-import.md` (new "Data repair" section, sources),
-`reference/commands.md` regenerated (`wiki:sync`), `generated.at` bumped;
-`wiki:validate` passes. The real dev-DB run is ticket 11 (never this
-ticket).
-
-## 2026-10-18 (dictionary-word-purity 11: the repair pipeline ran on the dev DB; both repair commands raise their own memory ceiling)
-
-Executed the ticket-11 pipeline on the dev DB in dependency order and
-verified the data gates (details in
-`.scratch/dictionary-word-purity/issues/11-run-pipeline-and-data-gates.md`).
-Two operational defects surfaced and are fixed here: `wiktionary:demote-form-of`
-and `words:normalize` both died with `Allowed memory size of 134217728 bytes
-exhausted` on real data — the demote scan at ~105k dump lines (the relay map
-holds the whole language's vocabulary until the stream ends) and normalize in
-the phase-3 alias fold (its group map holds every row of the folded classes,
-~210k en adj/adjective rows). Both commands now raise their own
-`memory_limit` to 2G + `set_time_limit(0)` at the top of `handle()` — the
-`ImportRawWiktextractCommand` precedent (1G there; 2G here because these
-commands hold full-language in-memory maps, not streaming batches), each with
-a regression test probing the bump through the fast failure path
-(`DemoteFormOfCommandTest`, `WordsNormalizeCommandTest`).
-
-Pipeline results (dry vs real within normal documented approximations; the
-destructive counts matched exactly everywhere): demote ru deleted 363,446
-relay rows + 69,035 romanization junk forms (ru words 444,149 → 80,703);
-demote en deleted 500,776 (en 1,523,426 → 1,022,650); normalize merged 11
-stressed display words, 2,451 unknown-class twins, 7,514 alias duplicates,
-reclassed 216,440, deleted 12 orphan alias class rows, backfilled 1,018,396
-lemma forms, absorbed 9,976 rows; `dictionary:link-translations` converted
-126,202 staged candidates into links and pruned the staged JSON from 91,552
-to 52,472 words (net `word_translations` 112,585 → 111,556 — the dedupe
-phases collapsed 5,927 redundant pairs while the pass added ~4,898 new);
-`words:import-frequency-lists` clamped ranks onto 77,920 words directly +
-82,833 via the lemma-form join; `crossword:link` found nothing unlinked after
-the re-pointing (a `--retry-unmatched` pass re-attempted 533 stale stamps, 0
-new — those tokens have no dictionary headword).
-
-Gates after the run: zero combining marks in ru `words.word`/`forms.form`
-(baseline 1/78); `четвереньках` only a form of `четвереньки`; zero
-unknown-class twins (baseline 2,954); zero `adj` class rows (adjective: en
-179,332 / ru 11,551); zero words missing their lemma form (baseline en
-1,507,795 / ru 29,171); full `composer run test` green (1294 passed / 6644
-assertions, 544s). Wiki: `playbooks/import-dictionary-data.md` (memory-limit
-notes on both repair commands), `generated.at` bumped.
-
-## 2026-10-18 (dictionary-word-purity 12: knowledge-base closure — ADR 0079, ADR 0078 addendum, run numbers in the wiki)
-
-Closed the spec out in the knowledge base (docs-only change, no code):
-
-- **New ADR 0079** (`docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md`):
-  the dictionary-word-purity decisions beyond ADR 0078 — form-of relays
-  demote to forms of their base (dump-driven sense-level `form_of` signal
-  via the shared `FormOfClassifier`, in-place cleanup via
-  `wiktionary:demote-form-of` + `RelayDemotionMap`, ru 363,446 / en
-  500,776 relay rows deleted), every word carries itself as its lemma
-  form (`LemmaForms`, 1,018,396 backfilled), one stage → link → prune
-  lifecycle for translations (`StagedTranslations` union-merge in,
-  prune-on-link out; 126,202 candidates converted, staged JSON 91,552 →
-  52,472), one resolver/alias-table/lemma-rule toolkit
-  (`TranslationTargets`/`PosAliases`/`LemmaForms`) and the
-  attach-to-existing creator contract (`words:normalize` as the in-place
-  repair: 2,451 twins + 7,514 alias duplicates merged, 216,440 reclassed,
-  9,976 absorbed). Records the operational consequences: 2G memory
-  ceilings, LEAST rank folds, `word_translations` allowed to shrink
-  (net −1,029 from dedupe while ~4,898 genuinely new links appeared).
-- **ADR 0078 addendum extended**: the Consequences' flagged follow-up
-  (the popup auto-fetch still creating target words) is recorded as
-  resolved — link-only everywhere, candidates resolve through
-  `TranslationTargets`, leftovers stage.
-- **`domains/dictionary-import.md`**: run numbers added to the
-  demote/link/normalize sections, sources gained ADR 0079 +
-  `TranslationTargets` + `StagedTranslations`.
-- **`database/dictionary.md`**: the stale "form-of entries are stored as
-  ordinary words" note rewritten (relays demote to forms; the
-  `WordFamily` pattern list stays as the read-layer filter for mixed
-  entries), frequency note documents the LEAST fold between rows.
-- **`playbooks/import-dictionary-data.md`**: demote/normalize sections
-  moved to past tense with the landed numbers (a re-run matches nothing),
-  the repair pipeline order written out in full (demote → normalize →
-  link-translations → import-frequency-lists → crossword:link).
-
-All touched concepts reviewed against the code and the ticket-11 run;
-`verified: human:alex` stamps added, `generated.at` bumped.

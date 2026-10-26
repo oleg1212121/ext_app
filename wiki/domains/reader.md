@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-24T12:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-25T12:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -246,8 +246,8 @@ long before scrolling, while static analysis had (correctly) shown zero
 scroll-reactive code. After pass 4 (fonts self-hosted, rows de-animated,
 plain-text fast path), a 3.5-minute instrumented session on `/reader/15`
 showed a flat heap (~25 MB), zero React commits across 726 scroll events,
-≤6 ms event-loop lag, and 2 long tasks total. `wiki/log.md` keeps the full
-pass-by-pass timeline.
+≤6 ms event-loop lag, and 2 long tasks total. `wiki/archive-2026-q2-q3.md`
+keeps the full pass-by-pass timeline (2026-09-23, pre-archive `log.md`).
 
 ## Visual system per page
 
