@@ -6,7 +6,6 @@ use App\Models\Word;
 use App\Models\WordClass;
 use Database\Seeders\CefrWordTagSeeder;
 use Illuminate\Console\Command;
-use Illuminate\Database\Seeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -79,8 +78,8 @@ function cefrMiniLists(): array
 }
 
 /**
- * A console command capturing line() calls, injected into the seeder's
- * protected $command so the per-level report can be asserted.
+ * A console command capturing line() calls, wired into the seeder's public
+ * setCommand() so the per-level report can be asserted.
  */
 function cefrCaptureCommand(): Command
 {
@@ -107,10 +106,7 @@ function cefrSyncCaptured(array $lists, int $languageId): array
 {
     $command = cefrCaptureCommand();
 
-    $seeder = new CefrWordTagSeeder;
-    (new ReflectionClass(Seeder::class))
-        ->getProperty('command')
-        ->setValue($seeder, $command);
+    $seeder = (new CefrWordTagSeeder)->setCommand($command);
 
     $seeder->sync($lists, $languageId);
 
@@ -123,9 +119,7 @@ it('attaches every POS row of a listed spelling, matching through normalization'
     app(CefrWordTagSeeder::class)->sync(cefrMiniLists(), $fixture['language_id']);
 
     $a1 = Tag::query()->where('slug', 'a1')->firstOrFail();
-    $attachedWordIds = DB::table('tagged_words')
-        ->where('tag_id', $a1->id)
-        ->pluck('word_id');
+    $attachedWordIds = $a1->words()->pluck('words.id');
 
     // Both `hello` POS rows plus `goodbye` — normalized entries (HELLO,
     // ' goodbye ') matched their lowercase rows; the unmatched entry and the
@@ -134,12 +128,12 @@ it('attaches every POS row of a listed spelling, matching through normalization'
         ->and($attachedWordIds)->toContain($fixture['hello_noun']->id)
         ->and($attachedWordIds)->toContain($fixture['hello_interjection']->id)
         ->and($attachedWordIds)->toContain($fixture['goodbye']->id)
-        ->and(DB::table('tagged_words')->where('word_id', $fixture['absent']->id)->exists())->toBeFalse()
+        ->and($fixture['absent']->tags()->exists())->toBeFalse()
         ->and(Word::query()->where('l_word', 'nowordhere')->exists())->toBeFalse();
 
     // The U+2019 entry matches the straight-apostrophe row on a2.
     $a2 = Tag::query()->where('slug', 'a2')->firstOrFail();
-    expect(DB::table('tagged_words')->where('tag_id', $a2->id)->pluck('word_id')->all())
+    expect($a2->words()->pluck('words.id')->all())
         ->toBe([$fixture['murphys']->id]);
 });
 
@@ -168,12 +162,12 @@ it('fully replaces a CEFR tag, detaching pre-existing words absent from the list
 
     app(CefrWordTagSeeder::class)->sync(cefrMiniLists(), $fixture['language_id']);
 
-    $attachedWordIds = DB::table('tagged_words')->where('tag_id', $a1->id)->pluck('word_id');
+    $attachedWordIds = $a1->words()->pluck('words.id');
 
     expect($a1->refresh()->name)->toBe('CEFR A1')
         ->and($attachedWordIds->count())->toBe(3)
         ->and($attachedWordIds)->not->toContain($fixture['unrelated']->id)
-        ->and(DB::table('tagged_words')->where('word_id', $fixture['unrelated']->id)->exists())->toBeFalse();
+        ->and($fixture['unrelated']->tags()->exists())->toBeFalse();
 });
 
 it('re-runs as no-ops without duplicating pivot rows', function () {

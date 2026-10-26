@@ -989,9 +989,10 @@ class CefrWordTagSeeder extends Seeder
 
     /**
      * The testable sync core: full-replace every CEFR tag's attachments from
-     * $lists (raw entries, normalized here). Idempotent — a re-run attaches
-     * nothing new; the unique (word_id, tag_id) pivot pair plus
-     * insertOrIgnore guard that regardless.
+     * $lists (raw entries, normalized here). Each level's delete + re-attach
+     * runs inside one transaction, so a mid-run failure cannot leave a level
+     * half-synced. Idempotent — a re-run attaches nothing new; the unique
+     * (word_id, tag_id) pivot pair plus insertOrIgnore guard that regardless.
      *
      * @param  array<string, list<string>>  $lists  slug => raw word entries
      */
@@ -1004,46 +1005,50 @@ class CefrWordTagSeeder extends Seeder
 
             $tag = Tag::query()->updateOrCreate(['slug' => $slug], ['name' => $name]);
 
-            // Full replace: detach everything, then re-attach from the list —
-            // this is what removes words dropped from the list.
-            DB::table('tagged_words')->where('tag_id', $tag->id)->delete();
+            [$attached, $unmatched] = DB::transaction(function () use ($tag, $entries, $languageId, $now): array {
+                // Full replace: detach everything, then re-attach from the
+                // list — this is what removes words dropped from the list.
+                $tag->words()->detach();
 
-            $attached = 0;
-            $matched = [];
+                $attached = 0;
+                $matched = [];
 
-            foreach (array_chunk($entries, self::CHUNK_SIZE) as $chunk) {
-                // get(), not pluck('id', 'l_word'): one spelling maps to
-                // several rows (one per part of speech) and every one of
-                // them must attach.
-                $words = Word::query()
-                    ->where('language_id', $languageId)
-                    ->whereIn('l_word', $chunk)
-                    ->get(['id', 'l_word']);
+                foreach (array_chunk($entries, self::CHUNK_SIZE) as $chunk) {
+                    // get(), not pluck('id', 'l_word'): one spelling maps to
+                    // several rows (one per part of speech) and every one of
+                    // them must attach.
+                    $words = Word::query()
+                        ->where('language_id', $languageId)
+                        ->whereIn('l_word', $chunk)
+                        ->get(['id', 'l_word']);
 
-                if ($words->isEmpty()) {
-                    continue;
+                    if ($words->isEmpty()) {
+                        continue;
+                    }
+
+                    $rows = [];
+                    foreach ($words as $word) {
+                        $matched[$word->l_word] = true;
+                        $rows[] = [
+                            'word_id' => $word->id,
+                            'tag_id' => $tag->id,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ];
+                    }
+
+                    foreach (array_chunk($rows, self::CHUNK_SIZE) as $rowChunk) {
+                        DB::table('tagged_words')->insertOrIgnore($rowChunk);
+                    }
+
+                    $attached += count($rows);
                 }
 
-                $rows = [];
-                foreach ($words as $word) {
-                    $matched[$word->l_word] = true;
-                    $rows[] = [
-                        'word_id' => $word->id,
-                        'tag_id' => $tag->id,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ];
-                }
+                return [$attached, array_values(array_diff($entries, array_keys($matched)))];
+            });
 
-                foreach (array_chunk($rows, self::CHUNK_SIZE) as $rowChunk) {
-                    DB::table('tagged_words')->insertOrIgnore($rowChunk);
-                }
-
-                $attached += count($rows);
-            }
-
-            $unmatched = array_values(array_diff($entries, array_keys($matched)));
-
+            // Emitted after the transaction commits, so the report only ever
+            // describes applied state.
             $this->command?->line(sprintf(
                 'CEFR %s: attached %d %s.%s',
                 $slug,
