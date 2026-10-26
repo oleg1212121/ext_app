@@ -130,6 +130,20 @@ test('the show page carries the snapshot and the word-test hint', function () {
         ['forest' => 60],
     );
 
+    // Familiarity rows alone no longer clear the hint: the stored placement
+    // level is the precise signal, so a viewer with rows but level 0 (e.g.
+    // crossword marking) is still pointed at the word test.
+    $this->actingAs($user)
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('word_knowledge.score', 100)
+            ->where('has_no_familiarity', true));
+
+    // Taking the placement clears it, rows or not.
+    $user->vocabulary_level = 5000;
+    $user->save();
+
     $this->actingAs($user)
         ->get("/works/{$entity->work_id}/entities/{$entity->id}")
         ->assertOk()

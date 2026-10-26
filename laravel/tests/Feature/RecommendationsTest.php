@@ -243,11 +243,20 @@ test('the page carries the word-test hint flag and the snapshot presence', funct
             ->where('has_no_familiarity', true)
             ->where('has_any_scores', true));
 
+    // Familiarity rows alone don't clear the hint — the stored placement
+    // level does (a crossword-only viewer never took the test).
     UserWord::query()->create([
         'user_id' => $user->id,
         'word_id' => createWord('en', 'river')->id,
         'familiarity' => 40,
     ]);
+
+    $this->actingAs($user)->get('/recommendations')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('has_no_familiarity', true));
+
+    $user->vocabulary_level = 5000;
+    $user->save();
 
     $this->actingAs($user)->get('/recommendations')
         ->assertOk()

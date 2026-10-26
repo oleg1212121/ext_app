@@ -79,6 +79,30 @@
             "note": "Drift minted by cefr-word-test ticket 02 (WordTestService reworked from the 20-bucket quantile sampler to CEFR band sampling/scoring; the concept still describes buckets and MIN_HEADWORDS). Concept rewrite is this spec's ticket 05 docs pass — refresh word-test.md there and prune this entry."
         },
         {
+            "warning": "domains/word-test.md: source 'laravel/app/Http/Controllers/WordTestController.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-26",
+            "note": "Drift minted by cefr-word-test ticket 03 (controller wiring: level-aware sampling via users.vocabulary_level, raise-only submit persistence, new `level` page prop and response field; the concept still describes the old controller contract). Concept rewrite is this spec's ticket 05 docs pass — refresh word-test.md there and prune this entry."
+        },
+        {
+            "warning": "domains/entities.md: source 'laravel/app/Http/Controllers/EntityController.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-26",
+            "note": "Drift minted by cefr-word-test ticket 03 (the `has_no_familiarity` word-test hint now keys on users.vocabulary_level === 0 instead of user_word row existence, ADR 0090). The one-line semantics change is documented in this spec's ticket 05 docs pass — refresh entities.md there and prune this entry."
+        },
+        {
+            "warning": "domains/recommendations.md: source 'laravel/app/Http/Controllers/RecommendationsController.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-26",
+            "note": "Drift minted by cefr-word-test ticket 03 (the `has_no_familiarity` word-test hint now keys on users.vocabulary_level === 0 instead of user_word row existence, ADR 0090). The one-line semantics change is documented in this spec's ticket 05 docs pass — refresh recommendations.md there and prune this entry."
+        },
+        {
+            "warning": "domains/recommendations.md: source 'laravel/tests/Feature/RecommendationsTest.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-26",
+            "note": "Drift minted by cefr-word-test ticket 03 (the hint-flag test now pins the vocabulary_level semantics: rows alone no longer clear it, a stored level does). Documented in this spec's ticket 05 docs pass — refresh recommendations.md there and prune this entry."
+        },
+        {
             "warning": "playbooks/running-tests.md: source 'wiki/validate-baseline.json' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-26",

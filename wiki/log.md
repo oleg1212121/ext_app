@@ -6,6 +6,28 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-26 (controller wiring: the placement level flows and persists — concept intentionally lagging until ticket 05)
+
+Third slice of the cefr-word-test feature: `users.vocabulary_level` gained
+its consumers. `WordTestController::index` samples adaptively
+(`sample(language, (int) user->vocabulary_level)`) and hands the page a new
+`level` prop next to `languages`/`language`/`sample`; `submit` persists
+raise-only (`max(old, score)`, same rule as familiarity marking) and the
+JSON response is now `{data: {score, level, marked}}` — `level` is the
+stored post-max value, the page's primary number. The "hasn't taken the
+test" nudge flipped in `EntityController::show` and
+`RecommendationsController::index`: `has_no_familiarity` (prop key
+unchanged, frontends read it) now means `vocabulary_level === 0`, not
+`! user_word->exists()` — the column is the precise signal, since a
+crossword-only viewer has rows but never took the placement. Tests:
+`WordTestPageTest` gains adaptive-GET + raise-only-both-directions cases;
+`EntityWordKnowledgeTest`/`RecommendationsTest` pin the new hint semantics.
+**Deliberate doc lag:** the four drift warnings this mints
+(`domains/word-test.md` controller source, `domains/entities.md`,
+`domains/recommendations.md` ×2) are baselined pointing at the spec's
+ticket 05 docs pass, which owns the concept refreshes (plus ADR 0090 and
+the CONTEXT.md Word Test context).
+
 ## 2026-10-26 (WordTestService reworked to CEFR band sampling/scoring — concept intentionally lagging until ticket 05)
 
 Second slice of the cefr-word-test feature: the 20-bucket quantile sampler

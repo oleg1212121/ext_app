@@ -158,6 +158,23 @@ it('draws one word per headword and only tagged words of the tested language', f
         ->and($sampledIds)->not->toContain($ruId);
 });
 
+it('samples adaptively for the stored level and passes it as the level prop', function () {
+    $user = User::factory()->create(['vocabulary_level' => 10000]);
+    seedCefrInventory();
+
+    $this->actingAs($user)
+        ->get(route('word-test.show'))
+        ->assertSuccessful()
+        ->assertInertia(function ($page) {
+            $page->component('WordTest/WordTest')
+                ->where('level', 10000)
+                ->has('sample.words', 60);
+
+            // A stored 10000 skips a1-c1's bands: b2/c1/c2 only.
+            expect($page->toArray()['props']['sample']['groups'])->toBe(['b2', 'c1', 'c2']);
+        });
+});
+
 it('serves an empty state for a language without CEFR tags', function () {
     $user = User::factory()->create();
     seedCefrInventory();
@@ -268,7 +285,10 @@ it('scores the sample and marks the presumed-known range', function () {
     $this->actingAs($user)
         ->post(route('word-test.submit'), ['token' => $sample['token'], 'known' => $known])
         ->assertOk()
-        ->assertJson(['data' => ['score' => 3500, 'marked' => $expected->count()]]);
+        ->assertJson(['data' => ['score' => 3500, 'level' => 3500, 'marked' => $expected->count()]]);
+
+    // The score persists as the user's vocabulary level.
+    expect($user->refresh()->vocabulary_level)->toBe(3500);
 
     // The lucky guess sits above the score: checked, but never marked.
     $lucky = Word::query()->find($bands['c2'][0]);
@@ -314,9 +334,43 @@ it('marks nothing when the user knows none of the sample', function () {
     $this->actingAs($user)
         ->post(route('word-test.submit'), ['token' => $sample['token'], 'known' => []])
         ->assertOk()
-        ->assertJson(['data' => ['score' => 0, 'marked' => 0]]);
+        ->assertJson(['data' => ['score' => 0, 'level' => 0, 'marked' => 0]]);
 
-    expect(UserWord::query()->where('user_id', $user->id)->exists())->toBeFalse();
+    expect($user->refresh()->vocabulary_level)->toBe(0)
+        ->and(UserWord::query()->where('user_id', $user->id)->exists())->toBeFalse();
+});
+
+it('never lowers the stored level on a weak retake but raises it on a strong one', function () {
+    $user = User::factory()->create(['vocabulary_level' => 10000]);
+    seedCefrInventory();
+    $enId = enLanguage()->id;
+
+    // Weak retake at stored 10000: two of b2's twenty drawn words — the base
+    // 6000 plus 400 of b2's width lands at 6400, far below the stored level.
+    $sample = sampleForLanguage('en', 10000);
+    $bands = cachedPayload($sample['token'])['bands'];
+    $weak = [$bands['b2'][0], $bands['b2'][1]];
+    $weakMarked = Word::query()->where('language_id', $enId)->where('frequency', '<=', 6400)->count();
+
+    $this->actingAs($user)
+        ->post(route('word-test.submit'), ['token' => $sample['token'], 'known' => $weak])
+        ->assertOk()
+        ->assertJson(['data' => ['score' => 6400, 'level' => 10000, 'marked' => $weakMarked]]);
+
+    // Raise-only: a bad retake never lowers the stored level.
+    expect($user->refresh()->vocabulary_level)->toBe(10000);
+
+    // Strong retake: all of b2 + c2 (widths 4000 + 5000 over the base 6000)
+    // scores 15000 — above the stored level, so the column raises.
+    $sample = sampleForLanguage('en', 10000);
+    $bands = cachedPayload($sample['token'])['bands'];
+
+    $this->actingAs($user)
+        ->post(route('word-test.submit'), ['token' => $sample['token'], 'known' => [...$bands['b2'], ...$bands['c2']]])
+        ->assertOk()
+        ->assertJson(['data' => ['score' => 15000, 'level' => 15000]]);
+
+    expect($user->refresh()->vocabulary_level)->toBe(15000);
 });
 
 it('rejects a stale or unknown token with 422', function () {

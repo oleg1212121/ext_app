@@ -6,7 +6,6 @@ use App\Classes\EntityAccessService;
 use App\Models\Entity;
 use App\Models\Language;
 use App\Models\UserEntityWordKnowledge;
-use App\Models\UserWord;
 use App\Models\Work;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -154,7 +153,10 @@ class RecommendationsController extends Controller
                 'total' => $works->total(),
                 'per_page' => $works->perPage(),
             ],
-            'has_no_familiarity' => ! UserWord::query()->where('user_id', $user->id)->exists(),
+            // The word-test hint keys on the stored placement level (the
+            // precise "never took the test" signal — familiarity rows can
+            // exist from other features without a placement, ADR 0090).
+            'has_no_familiarity' => (int) $user->vocabulary_level === 0,
             'has_any_scores' => UserEntityWordKnowledge::query()->where('user_id', $user->id)->exists(),
         ]);
     }
