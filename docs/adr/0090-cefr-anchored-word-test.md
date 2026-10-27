@@ -106,7 +106,7 @@ tells the learner exactly what is missing.
   (fresh server-held samples) remain in force; its decision 1 (inventory
   quantile buckets) is superseded by this ADR.
 - **Sampling is tag-defined, marking is rank-defined.** `mark()` is
-  untouched (`frequency <= level` → familiarity 50), so a checked unranked
+  untouched (`frequency <= level` → familiarity 60), so a checked unranked
   word lifts its band's credit but is never marked (the 1 100 000 sentinel
   never matches `≤ 20 000`) — the opposite of ADR 0071, where unranked
   words could be neither sampled nor marked.

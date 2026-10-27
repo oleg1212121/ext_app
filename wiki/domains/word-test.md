@@ -5,7 +5,7 @@ description: CEFR-anchored adaptive placement test — a 60-word sample over the
 tags: [word-test, placement, cefr, familiarity, frequency, inertia, react]
 status: stable
 stale_after: 2027-01-26
-generated: { by: agent:zcode, at: 2026-10-27T21:50:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-27T23:15:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-26T23:23:00+03:00 }
 sources:
   - id: controller
@@ -34,7 +34,7 @@ sample** — 60 headwords evenly over the language's CEFR tag groups
 shuffled checklist, and on submit computes the **Word test score** (base +
 per-band credits against fixed anchors, ADR 0090), persists the stored
 **Vocabulary level** raise-only (`users.vocabulary_level`), and writes the
-**Presumed-known baseline** (familiarity 50, raise-only, ADR 0071) over
+**Presumed-known baseline** (familiarity 60, raise-only, ADR 0071) over
 every tested-language word at rank ≤ score. Retakes adapt: only the bands
 at or above the stored level are tested. The vocabulary lives in
 CONTEXT.md's Word Test context; the sampling/scoring/persistence decisions
@@ -103,8 +103,8 @@ ON CONFLICT (user_id, word_id) DO UPDATE
 SET familiarity = GREATEST(user_word.familiarity, excluded.familiarity), updated_at = now()
 ```
 
-with 50 = `UserWord::PLACEMENT_BASELINE`. Raise-only: higher existing
-familiarity (organic reads/lookups/crosswords) survives; rows below 50 lift
+with 60 = `UserWord::PLACEMENT_BASELINE`. Raise-only: higher existing
+familiarity (organic reads/lookups/crosswords) survives; rows below 60 lift
 to it; no rows, no history, no provenance (ADR 0071, decision 2 — the half
 ADR 0090 preserves). Score 0 marks nothing. Sampling is tag-defined but
 marking is rank-defined: a checked unranked word (1 100 000 sentinel)

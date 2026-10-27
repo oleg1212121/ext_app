@@ -6,6 +6,19 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-27 (word test placement baseline raised 50 → 60)
+
+`UserWord::PLACEMENT_BASELINE` — the familiarity a Word test submit writes
+raise-only over the presumed-known range (`frequency <= score`) — is now 60
+instead of 50: 50 under-credited the "seen enough" territory the baseline
+stands for. The single-value, raise-only, no-provenance design (ADR 0071
+decision 2, kept by ADR 0090) is unchanged; only the constant moved, so
+`WordTestService::mark()` needed no code change beyond it. Existing rows
+between 50 and 60 lift to 60 on the next test submit; higher organic values
+are untouched. `domains/word-test.md` updated (its 50 mentions), ADR 0071
+got an amendment note on decision 2, and the stale 50 in ADR 0090's
+consequences now reads 60.
+
 ## 2026-10-27 (reader-rework review fixes — cross-links become Inertia `<Link>`, list empty-state copy split by filter)
 
 Review-pass fixes on the reader-rework branch, no domain-behavior change —

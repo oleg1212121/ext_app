@@ -290,10 +290,10 @@ it('scores the sample and marks the presumed-known range', function () {
     expect((float) $lucky->frequency)->toBeGreaterThan(3500)
         ->and(UserWord::query()->where('user_id', $user->id)->where('word_id', $lucky->id)->exists())->toBeFalse();
 
-    // Exactly the rows at frequency <= score are marked 50 — all word-class
+    // Exactly the rows at frequency <= score are marked 60 — all word-class
     // rows of a qualifying headword, and nothing else.
     foreach ($expected as $wordId) {
-        expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $wordId)->value('familiarity'))->toBe(50);
+        expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $wordId)->value('familiarity'))->toBe(60);
     }
     expect(UserWord::query()->where('user_id', $user->id)->count())->toBe($expected->count());
 });
@@ -317,7 +317,7 @@ it('raises existing progress to the baseline but never lowers it', function () {
         ->assertJson(['data' => ['score' => 1000]]);
 
     expect(UserWord::query()->where('user_id', $user->id)->where('word_id', $w1->id)->value('familiarity'))->toBe(80)
-        ->and(UserWord::query()->where('user_id', $user->id)->where('word_id', $w2->id)->value('familiarity'))->toBe(50);
+        ->and(UserWord::query()->where('user_id', $user->id)->where('word_id', $w2->id)->value('familiarity'))->toBe(60);
 });
 
 it('marks nothing when the user knows none of the sample', function () {

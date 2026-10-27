@@ -55,6 +55,10 @@ known coarse band overshoot its frontier).
 
 ### 2. One baseline value, raise-only, no provenance
 
+> **Amended 2026-10-27:** the baseline value was raised from 50 to 60
+> (`UserWord::PLACEMENT_BASELINE`) — 50 under-credited the seen-enough
+> band; the single-value, raise-only, no-provenance design is unchanged.
+
 A submit writes `familiarity = 50` (`UserWord::PLACEMENT_BASELINE`) for
 every tested-language **word row** with frequency ≤ score — one set-based
 `INSERT … SELECT … ON CONFLICT DO UPDATE` with
