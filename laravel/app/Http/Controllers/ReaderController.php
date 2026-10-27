@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Classes\AIModelResolver;
+use App\Classes\AlignmentEditorApiPresenter;
 use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\EntityAccessService;
 use App\Classes\MeaningMatchPresenter;
@@ -11,8 +12,11 @@ use App\Http\Requests\ReaderPageRequest;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\Language;
+use App\Models\Work;
+use App\Support\ReadableWorkAlignments;
 use App\Support\SavedUiSettings;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -31,26 +35,222 @@ class ReaderController extends Controller
         protected AIModelResolver $modelResolver,
         protected EnricherRegistry $enrichers,
         protected EntityAccessService $access,
+        protected AlignmentEditorApiPresenter $alignmentPresenter,
+        protected ReadableWorkAlignments $readableAlignments,
     ) {}
 
     /**
-     * The text library (Practice → Reader): language tabs over the list of
-     * readable texts. Bare /reader derives the user's native enabled
-     * language, falling back to en.
+     * The reader flow's works-first entry: the public works catalog (every
+     * work shown, empty ones included — ADR 0021), searchable by title or
+     * author, with the reader surface's readable-scoped counts on each
+     * card. Replaces the old language-tab index.
      */
-    public function index(?string $lang = null): Response
+    public function worksIndex(Request $request): Response
     {
-        if ($lang === null) {
-            $native = auth()->user()->nativeLanguage();
-            $lang = ($native?->is_enabled ?? false) ? $native->code : 'en';
+        $q = trim((string) $request->query('q', ''));
+
+        $works = Work::query()
+            ->with('originalLanguage')
+            ->withCount([
+                'entities' => $this->access->readableConstraint($request->user()),
+                'alignments' => $this->readableAlignments->workCountConstraint($request->user()),
+            ])
+            ->when($q !== '', function (Builder $query) use ($q): Builder {
+                $needle = $this->searchNeedle($q);
+
+                return $query->where(function (Builder $query) use ($needle): void {
+                    $query->where('title', 'ilike', $needle)
+                        ->orWhere('author', 'ilike', $needle);
+                });
+            })
+            ->orderBy('title')
+            ->paginate(15);
+
+        return Inertia::render('Reader/Works', [
+            'q' => $q,
+            'works' => $works->through(function (Work $work): array {
+                return [
+                    'id' => $work->id,
+                    'title' => $work->title,
+                    'author' => $work->author,
+                    'description' => $work->description,
+                    'original_language' => $this->languageRef($work),
+                    'entities_count' => $work->entities_count,
+                    'alignments_count' => $work->alignments_count,
+                ];
+            })->items(),
+            'meta' => [
+                'current_page' => $works->currentPage(),
+                'last_page' => $works->lastPage(),
+                'total' => $works->total(),
+                'per_page' => $works->perPage(),
+            ],
+        ]);
+    }
+
+    /**
+     * The work-scoped ENTITY reader — the split's always-monolingual half:
+     * one row per sentence, no translation column and no language radio,
+     * even when the entity sits in a readable match (that match belongs to
+     * the alignment reader, whose list the header cross-links to).
+     */
+    public function entityShow(ReaderPageRequest $request, int $workId, int $entityId): Response
+    {
+        $work = Work::query()->findOrFail($workId);
+
+        // The entity is scoped to the URL's work: a mismatched pair of ids
+        // is a bad URL, not a permission problem (wrong-work 404 is the
+        // established pattern).
+        $entity = Entity::query()
+            ->where('work_id', $work->id)
+            ->with('language')
+            ->find($entityId);
+
+        if ($entity === null) {
+            abort(404);
         }
 
-        $language = $this->resolveLanguage($lang);
+        if (! $this->access->canRead(auth()->user(), $entity)) {
+            abort(403);
+        }
 
-        return Inertia::render('ReaderIndex', [
+        [
+            'rows' => $rows,
+            'sideEntities' => $sideEntities,
+            'meta' => $meta,
+            'positionKey' => $positionKey,
+            'defaultSide' => $defaultSide,
+        ] = $this->singleLanguageRows($entity, $request->page());
+
+        return $this->renderWorkReader(
+            $entity,
+            $work,
+            $this->entityCrossLinks($work),
+            $rows,
+            $sideEntities,
+            $meta,
+            $positionKey,
+            $defaultSide,
+        );
+    }
+
+    /**
+     * The work-scoped ALIGNMENT reader — the bilingual half: rows from the
+     * match's meaning matches. There is no single-language fallback here:
+     * an entity alone belongs to the entity reader, and that is a
+     * different URL.
+     */
+    public function alignmentShow(ReaderPageRequest $request, int $workId, int $matchId): Response
+    {
+        $work = Work::query()->findOrFail($workId);
+
+        $match = EntityMatch::query()
+            ->with(['aEntity.work', 'aEntity.language', 'bEntity.language'])
+            ->findOrFail($matchId);
+
+        // An EntityMatch has no work of its own — the work comes via the
+        // A-side entity (canonical a/b: the A-side of every same-work pair
+        // lives inside that work). A match anchored elsewhere under this
+        // work's URL is a bad URL.
+        if ($match->aEntity === null || (int) $match->aEntity->work_id !== $work->id) {
+            abort(404);
+        }
+
+        if (! $this->access->canReadMatch(auth()->user(), $match)) {
+            abort(403);
+        }
+
+        $defaultSide = $match->readingSideFor(auth()->user()->nativeLanguage()?->id);
+
+        $paginator = $this->paginateRows(
+            $this->presenter->meaningMatchesQuery($match),
+            $request->page(),
+        );
+
+        return $this->renderWorkReader(
+            $defaultSide === 'a' ? $match->aEntity : $match->bEntity,
+            $work,
+            $this->alignmentCrossLinks($work, $match),
+            $this->readingRows->toReadingRows($paginator->getCollection()),
+            ['a' => $match->aEntity, 'b' => $match->bEntity],
+            $this->readingRows->metaFor($paginator),
+            'mm:'.$match->id,
+            $defaultSide,
+        );
+    }
+
+    /**
+     * The work's sections page — the work browse middle of the reader flow:
+     * the work header plus one entry card per section. Both card counts
+     * already ship with their final rules, so the alignments ticket only
+     * adds its card + list, never a payload change here.
+     */
+    public function workShow(Request $request, int $workId): Response
+    {
+        $work = Work::query()
+            ->with('originalLanguage')
+            ->findOrFail($workId);
+
+        return Inertia::render('Reader/WorkHome', [
+            'work' => [
+                'id' => $work->id,
+                'title' => $work->title,
+                'author' => $work->author,
+                'description' => $work->description,
+                'original_language' => $this->languageRef($work),
+            ],
+            'entities_count' => $work
+                ->entities()
+                ->where($this->access->readableConstraint($request->user()))
+                ->count(),
+            'alignments_count' => $this->readableAlignments->forWork($work, $request->user())->count(),
+        ]);
+    }
+
+    /**
+     * The work's texts list — every entity of the work the user can read,
+     * searchable by name/label and filterable to one entity language. The
+     * reader-side twin of the Library's entities branch, minus the
+     * management affordances (no add card, no badges).
+     */
+    public function workEntities(Request $request, int $workId): Response
+    {
+        $work = Work::query()->findOrFail($workId);
+        $q = trim((string) $request->query('q', ''));
+        $lang = trim((string) $request->query('lang', ''));
+
+        // The filter only accepts enabled languages: an unknown or disabled
+        // code is a bad URL, not an empty list.
+        $language = $lang === ''
+            ? null
+            : Language::query()->enabled()->where('code', $lang)->firstOrFail();
+
+        $entities = $this->access
+            ->readableQuery($request->user(), $language?->id)
+            ->where('work_id', $work->id)
+            ->with('language')
+            ->withCount('sentences')
+            ->when($q !== '', function (Builder $query) use ($q): Builder {
+                $needle = $this->searchNeedle($q);
+
+                return $query->where(function (Builder $query) use ($needle): void {
+                    $query->where('name', 'ilike', $needle)
+                        ->orWhere('label', 'ilike', $needle);
+                });
+            })
+            ->orderBy('name')
+            ->paginate(15);
+
+        return Inertia::render('Reader/WorkEntitiesList', [
+            'work' => [
+                'id' => $work->id,
+                'title' => $work->title,
+                'author' => $work->author,
+            ],
+            'q' => $q,
             'lang' => $lang,
-            // Objects with display names (not bare codes): the index page's
-            // pending-alignment label names any language from this list.
+            // Objects with display names (not bare codes): the language
+            // select labels each option "name — native_name".
             'languages' => Language::query()
                 ->enabled()
                 ->orderBy('sort_order')
@@ -61,23 +261,119 @@ class ReaderController extends Controller
                     'native_name' => $language->native_name,
                 ])
                 ->all(),
-            'entities' => $this->entitiesForLanguage($language),
+            'entities' => $entities->through(function (Entity $entity): array {
+                return [
+                    'id' => $entity->id,
+                    'name' => $entity->name,
+                    'label' => $entity->label,
+                    'sentences_count' => $entity->sentences_count,
+                    'language' => [
+                        'code' => $entity->language?->code,
+                        'name' => $entity->language?->name,
+                    ],
+                ];
+            })->items(),
+            'meta' => [
+                'current_page' => $entities->currentPage(),
+                'last_page' => $entities->lastPage(),
+                'total' => $entities->total(),
+                'per_page' => $entities->perPage(),
+            ],
         ]);
     }
 
-    public function show(ReaderPageRequest $request, int $entityId): Response
+    /**
+     * The work's alignments list — the matches of the work the user can
+     * read at status completed or stale, searchable by either side's entity
+     * name and filterable to a language of either side. The reading-surface
+     * twin of the Library's alignments branch: no reader_target here — the
+     * cards link the match-anchored alignment reader, which owns the side
+     * rule. The base query is the same builder the sections page's
+     * Alignments card counts, so card count and list total agree.
+     */
+    public function workAlignments(Request $request, int $workId): Response
     {
-        $entity = Entity::query()->with('language')->findOrFail($entityId);
+        $work = Work::query()->findOrFail($workId);
+        $q = trim((string) $request->query('q', ''));
+        $lang = trim((string) $request->query('lang', ''));
 
-        if (! $this->access->canRead(auth()->user(), $entity)) {
-            abort(403);
-        }
+        // The filter only accepts enabled languages: an unknown or disabled
+        // code is a bad URL, not an empty list.
+        $language = $lang === ''
+            ? null
+            : Language::query()->enabled()->where('code', $lang)->firstOrFail();
 
-        $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
+        $matches = $this->readableAlignments->forWork($work, $request->user())
+            ->with(['aEntity.language', 'bEntity.language', 'aEntity.work'])
+            ->when($q !== '', function (Builder $query) use ($q): Builder {
+                $needle = $this->searchNeedle($q);
 
-        ['rows' => $rows, 'sideEntities' => $sideEntities, 'meta' => $meta, 'positionKey' => $positionKey, 'defaultSide' => $defaultSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
+                return $query->where(function (Builder $query) use ($needle): void {
+                    $query->whereHas('aEntity', fn (Builder $inner) => $inner->where('name', 'ilike', $needle))
+                        ->orWhereHas('bEntity', fn (Builder $inner) => $inner->where('name', 'ilike', $needle));
+                });
+            })
+            ->when($language !== null, function (Builder $query) use ($language): Builder {
+                return $query->where(function (Builder $query) use ($language): void {
+                    $query->whereHas('aEntity', fn (Builder $inner) => $inner->where('language_id', $language->id))
+                        ->orWhereHas('bEntity', fn (Builder $inner) => $inner->where('language_id', $language->id));
+                });
+            })
+            ->latest()
+            ->paginate(15);
 
-        ['wordMaps' => $wordMaps, 'highlightable' => $highlightable, 'explainable' => $explainable] = $this->readingRows->wordMapsFor($sideEntities, (int) auth()->id(), $nativeLanguageId, $rows);
+        return Inertia::render('Reader/WorkAlignmentsList', [
+            'work' => [
+                'id' => $work->id,
+                'title' => $work->title,
+                'author' => $work->author,
+            ],
+            'q' => $q,
+            'lang' => $lang,
+            // Objects with display names (not bare codes): the language
+            // select labels each option "name — native_name".
+            'languages' => Language::query()
+                ->enabled()
+                ->orderBy('sort_order')
+                ->get(['code', 'name', 'native_name'])
+                ->map(fn (Language $language): array => [
+                    'code' => $language->code,
+                    'name' => $language->name,
+                    'native_name' => $language->native_name,
+                ])
+                ->all(),
+            'alignments' => $matches->through(fn (EntityMatch $entityMatch): array => $this->alignmentPresenter->matchPayload($entityMatch))->items(),
+            'meta' => [
+                'current_page' => $matches->currentPage(),
+                'last_page' => $matches->lastPage(),
+                'total' => $matches->total(),
+                'per_page' => $matches->perPage(),
+            ],
+        ]);
+    }
+
+    /**
+     * The props assembly shared by the two work-scoped readers — the full
+     * reader shape (rows/langs/meta/positionKey/fontSize/annotations/
+     * wordMaps/highlightable/explainable/explain) plus the split's header
+     * props: the scoping work and the cross-links ReaderApp renders near
+     * the title.
+     *
+     * @param  array{a: Entity|null, b: Entity|null}  $sideEntities
+     * @param  array{current_page: int, per_page: int, total: int, last_page: int}  $meta
+     * @param  list<array{href: string, label: string}>  $crossLinks
+     */
+    private function renderWorkReader(
+        Entity $entity,
+        Work $work,
+        array $crossLinks,
+        array $rows,
+        array $sideEntities,
+        array $meta,
+        string $positionKey,
+        ?string $defaultSide,
+    ): Response {
+        ['wordMaps' => $wordMaps, 'highlightable' => $highlightable, 'explainable' => $explainable] = $this->readingRows->wordMapsFor($sideEntities, (int) auth()->id(), auth()->user()->nativeLanguage()?->id, $rows);
         $saved = SavedUiSettings::section(auth()->user(), 'reader');
 
         // Rows are canonical a/b (ADR 0060) — which side reads first is the
@@ -89,6 +385,11 @@ class ReaderController extends Controller
                 'id' => $entity->id,
                 'name' => $entity->name,
             ],
+            'work' => [
+                'id' => $work->id,
+                'title' => $work->title,
+            ],
+            'crossLinks' => $crossLinks,
             'rows' => $rows,
             'defaultSide' => $defaultSide,
             'langs' => [
@@ -114,50 +415,74 @@ class ReaderController extends Controller
     }
 
     /**
-     * @return array{rows: list<array<string, mixed>>, sideEntities: array{a: Entity|null, b: Entity|null}, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, defaultSide: string|null}
+     * The entity reader's header cross-link: the work's alignments list —
+     * an entity can sit in many matches, so we link the list, not one
+     * match. Present only while the work has at least one match the user
+     * may read at status completed or stale (pending/aligning/failed have
+     * no meaning-match rows to read).
+     *
+     * @return list<array{href: string, label: string}>
      */
-    private function buildRows(Entity $entity, ?int $nativeLanguageId, int $page): array
+    private function entityCrossLinks(Work $work): array
     {
-        $entityMatch = EntityMatch::query()
-            ->where(function ($query) use ($entity): void {
-                $query->where('a_entity_id', $entity->id)
-                    ->orWhere('b_entity_id', $entity->id);
-            })
-            ->with(['aEntity.language', 'aEntity.work', 'bEntity.language', 'bEntity.work'])
-            ->first();
+        // The same count rule the sections page's Alignments card uses, so
+        // the header link appears exactly when the card's count is non-zero.
+        $hasReadableAlignments = $this->readableAlignments->forWork($work, auth()->user())->exists();
 
-        if ($entityMatch === null) {
-            return $this->singleLanguageRows($entity, $page);
+        if (! $hasReadableAlignments) {
+            return [];
         }
 
-        // The URL entity only anchors the match; the side rule — native side
-        // translates, then the work's original, then the A-side — picks
-        // which language reads first. It ships as defaultSide: the rows
-        // themselves stay canonical a/b and the client flips (ADR 0060).
-        $defaultSide = $entityMatch->readingSideFor($nativeLanguageId);
-        $readingEntity = $defaultSide === 'a' ? $entityMatch->aEntity : $entityMatch->bEntity;
-        $translationEntity = $defaultSide === 'a' ? $entityMatch->bEntity : $entityMatch->aEntity;
-
-        if ($readingEntity === null || $translationEntity === null
-            || ! $this->access->canRead(auth()->user(), $readingEntity)
-            || ! $this->access->canRead(auth()->user(), $translationEntity)) {
-            return $this->singleLanguageRows($entity, $page);
-        }
-
-        $paginator = $this->paginateRows(
-            $this->presenter->meaningMatchesQuery($entityMatch),
-            $page,
-        );
-
-        // The position key is the entity match: both reading sides page
-        // through the same rows.
         return [
-            'rows' => $this->readingRows->toReadingRows($paginator->getCollection()),
-            'sideEntities' => ['a' => $entityMatch->aEntity, 'b' => $entityMatch->bEntity],
-            'meta' => $this->readingRows->metaFor($paginator),
-            'positionKey' => 'mm:'.$entityMatch->id,
-            'defaultSide' => $defaultSide,
+            [
+                // Relative like the other cross-link hrefs: the payload
+                // carries paths, not host-absolute URLs.
+                'href' => route('reader.works.alignments.index', ['work' => $work->id], absolute: false),
+                'label' => __('reader.alignments'),
+            ],
         ];
+    }
+
+    /**
+     * The alignment reader's header cross-links: each side's entity, linked
+     * to its monolingual reader.
+     *
+     * @return list<array{href: string, label: string}>
+     */
+    private function alignmentCrossLinks(Work $work, EntityMatch $match): array
+    {
+        $links = [];
+
+        foreach (['a', 'b'] as $side) {
+            $entity = $side === 'a' ? $match->aEntity : $match->bEntity;
+
+            $links[] = [
+                'href' => '/reader/works/'.$work->id.'/entities/'.$entity->id,
+                'label' => $entity->name,
+            ];
+        }
+
+        return $links;
+    }
+
+    /**
+     * @return array{code: string, name: string}|null
+     */
+    private function languageRef(Work $work): ?array
+    {
+        return $work->originalLanguage !== null ? [
+            'code' => $work->originalLanguage->code,
+            'name' => $work->originalLanguage->name,
+        ] : null;
+    }
+
+    /**
+     * The Library's ilike search needle: %-wrapped with the user's
+     * wildcards escaped, so a % in a name matches literally.
+     */
+    private function searchNeedle(string $q): string
+    {
+        return '%'.str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $q).'%';
     }
 
     /**
@@ -212,27 +537,5 @@ class ReaderController extends Controller
         }
 
         return $paginator;
-    }
-
-    /**
-     * @return list<array{id: int, name: string}>
-     */
-    private function entitiesForLanguage(Language $language): array
-    {
-        return $this->access
-            ->readableQuery(auth()->user(), $language->id)
-            ->select('id', 'name')
-            ->orderBy('name')
-            ->limit(100)
-            ->get()
-            ->all();
-    }
-
-    private function resolveLanguage(string $lang): Language
-    {
-        return Language::query()
-            ->enabled()
-            ->where('code', $lang)
-            ->firstOrFail();
     }
 }

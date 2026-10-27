@@ -365,7 +365,8 @@ it('ships image sentences in the reader for a single-language text', function ()
 
     $user = approvedUser();
 
-    $this->actingAs($user)->get("/reader/{$entity->id}")
+    $this->actingAs($user)
+        ->get(route('reader.works.entities.show', ['work' => $entity->work_id, 'entity' => $entity->id]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('Reader')

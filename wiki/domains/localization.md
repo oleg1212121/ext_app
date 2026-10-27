@@ -5,7 +5,6 @@ description: Interface language resolution and DB-backed UI strings with Filamen
 tags: [i18n, localization, languages, filament]
 status: stable
 generated: { by: agent, at: 2026-10-12T17:55:10+03:00 }
-verified: {}
 ---
 
 # Localization

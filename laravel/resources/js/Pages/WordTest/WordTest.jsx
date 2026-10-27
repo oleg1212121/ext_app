@@ -15,7 +15,13 @@ const selectClass = [
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
 ].join(' ')
 
-export default function WordTest({languages = [], language = null, sample = null}) {
+// "b2–c2" slugs render as the uppercase first–last band span, e.g. "B2–C2".
+function bandSpan(groups) {
+    const bands = groups.map((slug) => slug.toUpperCase())
+    return bands.length > 1 ? `${bands[0]}–${bands[bands.length - 1]}` : bands[0]
+}
+
+export default function WordTest({languages = [], language = null, level = 0, sample = null}) {
     const {t} = useI18n()
     const [knownIds, setKnownIds] = useState(() => new Set())
     const [submitting, setSubmitting] = useState(false)
@@ -72,9 +78,16 @@ export default function WordTest({languages = [], language = null, sample = null
                         {t('wordtest.title')}
                     </p>
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                        <h1 className="font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            {t('wordtest.title')}
-                        </h1>
+                        <div className="flex flex-wrap items-center gap-3">
+                            <h1 className="font-serif text-2xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
+                                {t('wordtest.title')}
+                            </h1>
+                            {level > 0 && (
+                                <span className="inline-flex shrink-0 items-center rounded-full border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                    {t('wordtest.current_level')} {level.toLocaleString()}
+                                </span>
+                            )}
+                        </div>
                         <select
                             className={selectClass}
                             value={language ?? ''}
@@ -89,6 +102,11 @@ export default function WordTest({languages = [], language = null, sample = null
                     <p className="font-serif text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                         {t('wordtest.intro')}
                     </p>
+                    {sample && sample.groups.length < 6 && (
+                        <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                            {t('wordtest.covers', {bands: bandSpan(sample.groups)})}
+                        </p>
+                    )}
                 </header>
 
                 {language === null && (
@@ -106,11 +124,16 @@ export default function WordTest({languages = [], language = null, sample = null
                 {sample && result && (
                     <section className="flex flex-col items-center gap-3 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] bg-[var(--wbench-paper-deep)] dark:bg-[var(--wbench-paper-deep-night)] px-6 py-8">
                         <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            {t('wordtest.score_label')}
+                            {t('wordtest.level_label')}
                         </p>
                         <p className="font-serif text-4xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            {result.score.toLocaleString()} / {(20000).toLocaleString()}
+                            {result.level.toLocaleString()} / {(20000).toLocaleString()}
                         </p>
+                        {result.score < result.level && (
+                            <p className="font-serif text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                {t('wordtest.kept_previous')}
+                            </p>
+                        )}
                         <p className="font-serif text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
                             {t('wordtest.marked', {count: result.marked})}
                         </p>

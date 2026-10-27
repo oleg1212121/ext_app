@@ -4,7 +4,7 @@ title: Coding Conventions
 description: Project-wide rules for code style, structure, testing, and agent behavior in this repository.
 tags: [conventions, style, testing]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-23T16:25:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-25T13:10:00+03:00 }
 verified: { by: human:alex, at: 2026-07-26T18:45:00Z }
 sources:
   - id: agents

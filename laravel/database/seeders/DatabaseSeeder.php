@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             SentenceTypeSeeder::class,
             WordClassSeeder::class,
             TranscriptionTypeSeeder::class,
+            CefrWordTagSeeder::class,
             CrosswordDevSeeder::class,
         ]);
     }

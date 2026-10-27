@@ -52,19 +52,39 @@ Route::middleware(['auth', 'approved'])->group(function () {
         return Inertia::render('Dashboard');
     })->middleware('verified')->name('dashboard');
 
-    // The entity id alone names the text — its entity match carries both
-    // languages, and the side rule picks which one is read (same reasoning
-    // as ADR 0036's simulator route: no language segment).
-    Route::get('/reader/{entityId}', [ReaderController::class, 'show'])
-        ->whereNumber('entityId')
-        ->name('reader.show');
-
-    // Practice → Reader: the text library. Bare /reader derives the user's
-    // native enabled language (fallback en). Registered after reader.show;
-    // whereNumber vs [a-z]{2} keeps /reader/5 and /reader/en disjoint.
-    Route::get('/reader/{lang?}', [ReaderController::class, 'index'])
-        ->where('lang', '[a-z]{2}')
+    // The reader flow's works-first entry: the public works catalog (every
+    // work, empty ones included — ADR 0021) with readable-scoped counts.
+    // Reading starts from a work's sections page: the bare-id reader and
+    // the language-tab index are both gone without redirects (house
+    // removal style), so /reader/{anything} resolves to nothing.
+    Route::get('/reader', [ReaderController::class, 'worksIndex'])
         ->name('reader.index');
+
+    // The work-scoped readers (the URL split): the explicit entity reader
+    // (always monolingual) and alignment reader (always bilingual). Which
+    // language a bilingual reading starts on is the server's side rule,
+    // so the URL names the match — never a reading side.
+    Route::get('/reader/works/{work}/entities/{entity}', [ReaderController::class, 'entityShow'])
+        ->whereNumber(['work', 'entity'])
+        ->name('reader.works.entities.show');
+
+    Route::get('/reader/works/{work}/alignments/{match}', [ReaderController::class, 'alignmentShow'])
+        ->whereNumber(['work', 'match'])
+        ->name('reader.works.alignments.show');
+
+    // The work browse middle of the reader flow: the work's sections page
+    // (header + section entry cards) and the work's readable texts list.
+    Route::get('/reader/works/{work}', [ReaderController::class, 'workShow'])
+        ->whereNumber('work')
+        ->name('reader.works.show');
+
+    Route::get('/reader/works/{work}/entities', [ReaderController::class, 'workEntities'])
+        ->whereNumber('work')
+        ->name('reader.works.entities.index');
+
+    Route::get('/reader/works/{work}/alignments', [ReaderController::class, 'workAlignments'])
+        ->whereNumber('work')
+        ->name('reader.works.alignments.index');
 
     Route::get('/crossword', [CrosswordController::class, 'index'])->name('crossword');
     Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');

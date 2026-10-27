@@ -63,7 +63,9 @@ it('seeds one page prop per annotation from the saved reader preferences', funct
     $user = approvedUser();
     $entity = createEntity('en');
 
-    $props = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk()->inertiaPage()['props'];
+    $props = $this->actingAs($user)
+        ->get(route('reader.works.entities.show', ['work' => $entity->work_id, 'entity' => $entity->id]))
+        ->assertOk()->inertiaPage()['props'];
 
     foreach ((new EnricherRegistry)->annotations() as $annotation) {
         // Default off, camelCased from the setting key (ADR 0067).
@@ -81,7 +83,9 @@ it('seeds one page prop per annotation from the saved reader preferences', funct
     );
     $user->unsetRelation('settings');
 
-    $props = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk()->inertiaPage()['props'];
+    $props = $this->actingAs($user)
+        ->get(route('reader.works.entities.show', ['work' => $entity->work_id, 'entity' => $entity->id]))
+        ->assertOk()->inertiaPage()['props'];
     foreach ((new EnricherRegistry)->annotations() as $annotation) {
         expect($props[Str::camel($annotation->settingKey)])->toBeTrue();
     }

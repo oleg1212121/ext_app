@@ -3,6 +3,7 @@
 namespace App\Classes;
 
 use App\Models\Language;
+use App\Models\User;
 use App\Models\UserWord;
 use App\Models\Word;
 use Illuminate\Support\Facades\Cache;
@@ -11,90 +12,119 @@ use Illuminate\Support\Str;
 
 /**
  * The Word test: draws a fresh sample of headwords across the language's
- * ranked inventory, scores the checked ones on the 0-20000 rank scale, and
- * bulk-marks the presumed-known range as raise-only familiarity (ADR 0071).
+ * CEFR tag groups (a1-c2), scores the checked ones as a band-credit sum on
+ * the 0-20000 scale, and bulk-marks the presumed-known range as raise-only
+ * familiarity (ADR 0071). Retakes adapt: a stored level skips the bands
+ * below it — their floor anchor becomes the base, and the words spread
+ * evenly over the bands at or above the level.
  */
 class WordTestService
 {
     /**
-     * Highest frequency rank the test considers (lower = more common); the
-     * unranked marker (1 100 000) is excluded by the same comparison.
+     * The CEFR band anchors on the 0-20000 scale, ascending. A band's width
+     * is its anchor minus the previous one (a1's band = its own anchor);
+     * the widths sum to exactly 20 000.
      */
-    public const MAX_RANK = 20000;
+    public const CEFR_ANCHORS = ['a1' => 1000, 'a2' => 3000, 'b1' => 6000, 'b2' => 10000, 'c1' => 15000, 'c2' => 20000];
 
-    /** Equal-count buckets the ranked inventory is cut into. */
-    public const BUCKET_COUNT = 20;
-
-    /** Headwords drawn per test, spread proportionally over the buckets. */
-    public const SAMPLE_SIZE = 50;
-
-    /** Score credit a fully-known bucket contributes (BUCKET_COUNT of these = 20 000). */
-    public const BUCKET_CREDIT = 1000;
-
-    /** Below this many ranked headwords a language has nothing to test. */
-    public const MIN_HEADWORDS = 100;
+    /** Headwords drawn per test, redistributed evenly over the tested bands. */
+    public const SAMPLE_SIZE = 60;
 
     private const CACHE_PREFIX = 'word-test:sample:';
 
     private const CACHE_TTL_HOURS = 24;
 
     /**
-     * Draw a fresh sample for the language. The ranked headwords (one row per
-     * l_word, its most common word class) are cut into equal-count buckets and
-     * SAMPLE_SIZE headwords are drawn proportionally; the server keeps the
-     * bucket layout in the cache so the submit can be scored without trusting
-     * the client. Returns null when the language has too few ranked words.
+     * Draw a fresh sample for the language. The tested bands are those whose
+     * anchor is at or above the stored level (all six for a first test),
+     * each contributing SAMPLE_SIZE / tested headwords drawn from the band's
+     * tagged pool minus what lower bands already claimed — one row per
+     * l_word, its most common word class, so a spelling tagged in two levels
+     * is drawn at most once, in the lower band that claimed it first. Tag
+     * membership defines the pool, there is no frequency filter (unranked
+     * words are legitimate). Any tested band without tagged headwords makes
+     * the test unavailable (null). The server
+     * keeps the band layout in the cache so the submit can be scored
+     * without trusting the client; the page also receives the tested groups
+     * for its "this retake covers ..." note.
      *
-     * @return array{token: string, words: array<int, array{id: int, word: string}}|null
+     * @return array{token: string, words: array<int, array{id: int, word: string}>, groups: array<int, string>}|null
      */
-    public function sample(Language $language): ?array
+    public function sample(Language $language, int $currentLevel = 0): ?array
     {
-        $headwords = $this->rankedHeadwords($language->id);
+        $tested = array_keys(array_filter(
+            self::CEFR_ANCHORS,
+            static fn (int $anchor): bool => $anchor >= $currentLevel,
+        ));
 
-        if (count($headwords) < self::MIN_HEADWORDS) {
-            return null;
+        if ($tested === []) {
+            return null; // a stored level above the scale — nothing left to test
         }
 
-        $buckets = [];
+        // Anchor of the group before the lowest tested one; 0 when a1 is tested.
+        $base = 0;
+        $previousAnchor = 0;
+        foreach (self::CEFR_ANCHORS as $slug => $anchor) {
+            if ($anchor >= $currentLevel) {
+                $base = $previousAnchor;
+
+                break;
+            }
+
+            $previousAnchor = $anchor;
+        }
+
+        $quota = intdiv(self::SAMPLE_SIZE, count($tested));
+        $bands = [];
         $drawnRows = [];
-        $count = count($headwords);
+        $claimed = [];
 
-        for ($bucket = 0; $bucket < self::BUCKET_COUNT; $bucket++) {
-            $start = intdiv($count * $bucket, self::BUCKET_COUNT);
-            $end = intdiv($count * ($bucket + 1), self::BUCKET_COUNT);
-            $slice = array_slice($headwords, $start, $end - $start);
+        foreach ($tested as $slug) {
+            $pool = $this->taggedHeadwords($language->id, $slug);
 
-            // Round-based sizes sum to SAMPLE_SIZE exactly (3,2,3,2,... over 20 buckets).
-            $size = (int) round(self::SAMPLE_SIZE * ($bucket + 1) / self::BUCKET_COUNT)
-                - (int) round(self::SAMPLE_SIZE * $bucket / self::BUCKET_COUNT);
+            if ($pool === []) {
+                return null; // unseeded tags or a language without the lists
+            }
 
-            $picked = $this->draw($slice, $size);
-            $buckets[] = array_map(static fn (array $row): int => $row['id'], $picked);
-            $drawnRows = array_merge($drawnRows, $picked);
+            // Lower bands claim their spellings first: the quota draws only
+            // from spellings no tested band has drawn yet.
+            $fresh = array_values(array_filter(
+                $pool,
+                static fn (array $row): bool => ! isset($claimed[$row['l_word']]),
+            ));
+
+            $bands[$slug] = [];
+
+            foreach ($this->draw($fresh, $quota) as $row) {
+                $claimed[$row['l_word']] = true;
+                $bands[$slug][] = $row['id'];
+                $drawnRows[] = $row;
+            }
         }
 
         $token = (string) Str::uuid();
 
         Cache::put(self::CACHE_PREFIX.$token, [
             'language_id' => $language->id,
-            'buckets' => $buckets,
-            'all_word_ids' => array_merge(...$buckets),
+            'base' => $base,
+            'bands' => $bands,
+            'all_word_ids' => array_merge(...array_values($bands)),
         ], now()->addHours(self::CACHE_TTL_HOURS));
 
-        // The page never shows rank order — a flat shuffle hides the rarity.
+        // The page never shows band order — a flat shuffle hides the rarity.
         $words = collect($drawnRows)
             ->map(static fn (array $row): array => ['id' => $row['id'], 'word' => $row['word']])
             ->shuffle()
             ->values()
             ->all();
 
-        return ['token' => $token, 'words' => $words];
+        return ['token' => $token, 'words' => $words, 'groups' => $tested];
     }
 
     /**
      * The cached sample a submit token resolves to (null when unknown or expired).
      *
-     * @return array{language_id: int, buckets: array<int, array<int, int>>, all_word_ids: array<int, int>}|null
+     * @return array{language_id: int, base: int, bands: array<string, array<int, int>>, all_word_ids: array<int, int>}|null
      */
     public function resolveSample(string $token): ?array
     {
@@ -102,19 +132,29 @@ class WordTestService
     }
 
     /**
-     * Score a checked-word list against a sample payload: each bucket
-     * contributes BUCKET_CREDIT × the known share of its drawn words, so the
-     * sum lands back on the 0-20000 rank scale. Pure over the payload.
+     * Score a checked-word list against a sample payload: the untested lower
+     * bands contribute their floor anchor as the base, and each tested band
+     * contributes its width (anchor minus the previous anchor) × the known
+     * share of its drawn words, so the sum lands back on the 0-20000 scale.
+     * Pure over the payload.
      *
-     * @param  array{buckets: array<int, array<int, int>>}  $payload
+     * @param  array{base: int, bands: array<string, array<int, int>>}  $payload
      * @param  array<int, int>  $knownWordIds
      */
     public function score(array $payload, array $knownWordIds): int
     {
         $known = array_flip(array_map('intval', $knownWordIds));
-        $score = 0;
 
-        foreach ($payload['buckets'] as $wordIds) {
+        $previousAnchor = 0;
+        $widths = [];
+        foreach (self::CEFR_ANCHORS as $slug => $anchor) {
+            $widths[$slug] = $anchor - $previousAnchor;
+            $previousAnchor = $anchor;
+        }
+
+        $score = (int) $payload['base'];
+
+        foreach ($payload['bands'] as $slug => $wordIds) {
             $size = count($wordIds);
 
             if ($size === 0) {
@@ -122,10 +162,25 @@ class WordTestService
             }
 
             $knownCount = count(array_intersect_key($known, array_flip($wordIds)));
-            $score += (int) round(self::BUCKET_CREDIT * $knownCount / $size);
+            $score += (int) round($widths[$slug] * $knownCount / $size);
         }
 
-        return min($score, self::BUCKET_COUNT * self::BUCKET_CREDIT);
+        return min($score, self::CEFR_ANCHORS['c2']);
+    }
+
+    /**
+     * Persist the run's score as the user's vocabulary level, raise-only:
+     * max(old, new). A bad retake never lowers the stored level — the same
+     * raise-only rule as the familiarity marking (ADR 0090).
+     *
+     * @return int the stored level after the raise
+     */
+    public function persistLevel(User $user, int $score): int
+    {
+        $user->vocabulary_level = max($user->vocabulary_level, $score);
+        $user->save();
+
+        return $user->vocabulary_level;
     }
 
     /**
@@ -154,35 +209,34 @@ class WordTestService
     }
 
     /**
-     * Ranked headwords of the language in frequency order: distinct on
-     * l_word keeps each headword's most common word-class row. The decimal
-     * rank is cast to float — the decimal wire format sorts as a string.
+     * The CEFR-tagged headwords of one level: distinct on l_word keeps each
+     * spelling's most common word-class row. One query per band.
      *
-     * @return array<int, array{id: int, word: string}>
+     * @return array<int, array{id: int, word: string, l_word: string}>
      */
-    private function rankedHeadwords(int $languageId): array
+    private function taggedHeadwords(int $languageId, string $slug): array
     {
         return Word::query()
-            ->selectRaw('distinct on (words.l_word) words.id, words.word, words.l_word, words.frequency::float8 as frequency')
-            ->where('language_id', $languageId)
-            ->where('frequency', '<=', self::MAX_RANK)
-            ->whereNotNull('l_word')
-            ->orderBy('l_word')
+            ->selectRaw('distinct on (words.l_word) words.id, words.word, words.l_word')
+            ->join('tagged_words', 'tagged_words.word_id', '=', 'words.id')
+            ->join('tags', 'tags.id', '=', 'tagged_words.tag_id')
+            ->where('tags.slug', $slug)
+            ->where('words.language_id', $languageId)
+            ->whereNotNull('words.l_word')
+            ->orderBy('words.l_word')
             ->orderBy('words.frequency')
             ->orderBy('words.id')
             ->toBase()
             ->get()
-            ->sortBy('frequency')
-            ->values()
-            ->map(static fn ($row): array => ['id' => (int) $row->id, 'word' => $row->word])
+            ->map(static fn ($row): array => ['id' => (int) $row->id, 'word' => $row->word, 'l_word' => $row->l_word])
             ->all();
     }
 
     /**
-     * Draw $size random rows from a bucket slice (all of it when smaller).
+     * Draw $size random rows from a band's pool (all of it when smaller).
      *
-     * @param  array<int, array{id: int, word: string}>  $rows
-     * @return array<int, array{id: int, word: string}>
+     * @param  array<int, array{id: int, word: string, l_word: string}>  $rows
+     * @return array<int, array{id: int, word: string, l_word: string}>
      */
     private function draw(array $rows, int $size): array
     {

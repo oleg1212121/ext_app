@@ -150,7 +150,9 @@ it('ships the belarusian stressed variant through the reader vertical', function
         ->forceFill(['stressed_content' => 'Ма́ма прыйшла дадо́му.'])
         ->saveQuietly();
 
-    $props = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk()->inertiaPage()['props'];
+    $props = $this->actingAs($user)
+        ->get(route('reader.works.entities.show', ['work' => $entity->work_id, 'entity' => $entity->id]))
+        ->assertOk()->inertiaPage()['props'];
 
     expect($props['rows'][0]['a']['sentences'][0]['stressed'])->toBe('Ма́ма прыйшла дадо́му.');
 });

@@ -35,15 +35,46 @@ return [
     'reader.stress_marks' => ['en' => 'Stress marks', 'ru' => 'Ударения', 'be' => 'Націскі'],
     'reader.phrasal_verbs' => ['en' => 'Multi-word verbs', 'ru' => 'Фразовые глаголы', 'be' => 'Фразавыя дзеясловы'],
     'reader.reading_language' => ['en' => 'Reading language', 'ru' => 'Язык чтения', 'be' => 'Мова чытання'],
-    // Reader index (ReaderIndexApp.jsx) — the Practice → Reader browse page.
+    // The entity reader's header cross-link to its work's alignments list.
+    'reader.alignments' => ['en' => 'Alignments', 'ru' => 'Выравнивания', 'be' => 'Выраўноўванні'],
+    // Work browse pages (Reader/WorkHome.jsx + Reader/WorkEntitiesList.jsx):
+    // the sections page's Entities card and the per-work texts list.
+    'reader.text' => ['en' => 'Text', 'ru' => 'Текст', 'be' => 'Тэкст'],
+    'reader.sentence' => ['en' => 'sentence', 'ru' => 'предложение', 'be' => 'сказ'],
+    'reader.sentences' => ['en' => 'sentences', 'ru' => 'предложений', 'be' => 'казаў'],
+    'reader.search' => ['en' => 'Search', 'ru' => 'Найти', 'be' => 'Знайсці'],
+    'reader.search_texts' => ['en' => 'Search by name or label…', 'ru' => 'Поиск по названию или подписи…', 'be' => 'Пошук па назве або подпісе…'],
+    'reader.all_languages' => ['en' => 'All languages', 'ru' => 'Все языки', 'be' => 'Усе мовы'],
+    // The filter's sr-only label — names the control, not its default option.
+    'reader.language_filter_label' => ['en' => 'Language', 'ru' => 'Язык', 'be' => 'Мова'],
+    'reader.no_texts_match' => ['en' => 'No texts match “:q”.', 'ru' => 'По запросу «:q» ничего не найдено.', 'be' => 'Па запыце «:q» нічога не знойдзена.'],
+    'reader.no_texts_match_hint' => ['en' => 'Texts you do not have access to are never listed.', 'ru' => 'Тексты, к которым у вас нет доступа, никогда не отображаются.', 'be' => 'Тэксты, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.'],
+    // Work browse pages (Reader/WorkHome.jsx + Reader/WorkAlignmentsList.jsx):
+    // the sections page's Alignments card and the per-work alignments list.
+    'reader.alignment' => ['en' => 'Alignment', 'ru' => 'Выравнивание', 'be' => 'Выраўноўванне'],
+    'reader.search_alignments' => ['en' => 'Search by entity name…', 'ru' => 'Поиск по названию текста…', 'be' => 'Пошук па назве тэксту…'],
+    'reader.no_alignments_match' => ['en' => 'No alignments match “:q”.', 'ru' => 'По запросу «:q» ничего не найдено.', 'be' => 'Па запыце «:q» нічога не знойдзена.'],
+    'reader.no_alignments_match_hint' => ['en' => 'Alignments you cannot read are never listed.', 'ru' => 'Выравнивания, к которым у вас нет доступа, никогда не отображаются.', 'be' => 'Выраўноўванні, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.'],
+    'reader.no_alignments' => ['en' => 'No alignments in this language', 'ru' => 'На этом языке выравниваний нет', 'be' => 'На гэтай мове выраўноўванняў няма'],
+    'reader.no_alignments_hint' => ['en' => 'Switch the language above, or come back once this work has readable alignments.', 'ru' => 'Переключите язык выше или вернитесь, когда у произведения появятся доступные вам выравнивания.', 'be' => 'Пераключыце мову вышэй або вярніцеся, калі ў твора з\'явяцца даступныя вам выраўноўванні.'],
+    // Empty state when no language filter is set: the copy above would name
+    // the "All languages" default as a language to switch away from.
+    'reader.no_alignments_yet' => ['en' => 'No readable alignments in this work yet', 'ru' => 'В этом произведении пока нет доступных вам выравниваний', 'be' => 'У гэтым творы пакуль няма даступных вам выраўноўванняў'],
+    'reader.no_alignments_yet_hint' => ['en' => 'Come back once this work has readable alignments.', 'ru' => 'Вернитесь, когда у произведения появятся доступные вам выравнивания.', 'be' => 'Вярніцеся, калі ў твора з\'явяцца даступныя вам выраўноўванні.'],
+    // The works-first reader entry (Reader/Works.jsx): the reader flow's
+    // works catalog. Its identical copy reuses the library.* keys (works,
+    // search_works, search_placeholder, no_works_match); the empty state's
+    // hint differs — the reading surface has no add-work card to suggest.
+    'reader.no_works_match_hint' => ['en' => 'Try another title or author.', 'ru' => 'Попробуйте другое название или автора.', 'be' => 'Паспрабуйце іншую назву або іншага аўтара.'],
+    // Work browse pages (Reader/WorkHome.jsx + Reader/WorkEntitiesList.jsx +
+    // Reader/Works.jsx): the shared heading word and the works/texts list
+    // titles and lang-filter empty state.
     'reader.reader_heading' => ['en' => 'Reader', 'ru' => 'Читалка', 'be' => 'Чыталка'],
-    'reader.library_language' => ['en' => 'Library language', 'ru' => 'Язык библиотеки', 'be' => 'Мова бібліятэкі'],
-    'reader.loading' => ['en' => 'Loading', 'ru' => 'Загрузка', 'be' => 'Загрузка'],
-    'reader.english' => ['en' => 'English', 'ru' => 'Английский', 'be' => 'Англійская'],
-    'reader.russian' => ['en' => 'Russian', 'ru' => 'Русский', 'be' => 'Русская'],
     'reader.no_texts' => ['en' => 'No texts in this language', 'ru' => 'На этом языке текстов нет', 'be' => 'На гэтай мове тэкстаў няма'],
     'reader.no_texts_hint' => ['en' => 'Switch the language above, or ask an editor to add texts.', 'ru' => 'Переключите язык выше или попросите редактора добавить тексты.', 'be' => 'Пераключыце мову вышэй або папрасіце рэдактара дадаць тэксты.'],
+    // Empty state when no language filter is set: the copy above would name
+    // the "All languages" default as a language to switch away from.
+    'reader.no_texts_yet' => ['en' => 'No readable texts in this work yet', 'ru' => 'В этом произведении пока нет доступных вам текстов', 'be' => 'У гэтым творы пакуль няма даступных вам тэкстаў'],
+    'reader.no_texts_yet_hint' => ['en' => 'Ask an editor to add texts.', 'ru' => 'Попросите редактора добавить тексты.', 'be' => 'Папрасіце рэдактара дадаць тэксты.'],
     'reader.texts' => ['en' => 'Texts', 'ru' => 'Тексты', 'be' => 'Тэксты'],
-    'reader.index_hint_open' => ['en' => 'Open a text to read it', 'ru' => 'Откройте текст, чтобы читать', 'be' => 'Адкрыйце тэкст, каб чытаць'],
-    'reader.index_hint_gutter' => ['en' => 'the translation appears across the gutter', 'ru' => 'перевод появится напротив каждой строки', 'be' => 'пераклад з\'явіцца насупраць кожнага радка'],
 ];

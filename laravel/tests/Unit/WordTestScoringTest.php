@@ -6,70 +6,85 @@ use Tests\TestCase;
 uses(TestCase::class);
 
 /**
- * A sample payload with buckets of the given sizes; ids run 1..N across
- * buckets in order, so bucket k's ids are known without the sampler.
+ * A sample payload with CEFR bands of the given sizes, in anchor order
+ * starting at a1; ids run 1..N across the bands in order, so band k's ids
+ * are known without the sampler. $base is the floor the untested lower
+ * bands contribute.
  */
-function scoringPayload(array $bucketSizes): array
+function scoringPayload(array $bandSizes, int $base = 0): array
 {
+    $slugs = ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'];
     $nextId = 1;
-    $buckets = [];
+    $bands = [];
 
-    foreach ($bucketSizes as $size) {
-        $buckets[] = range($nextId, $nextId + $size - 1);
+    foreach ($bandSizes as $index => $size) {
+        $bands[$slugs[$index]] = $size === 0 ? [] : range($nextId, $nextId + $size - 1);
         $nextId += $size;
     }
 
-    return ['buckets' => $buckets];
+    return ['base' => $base, 'bands' => $bands];
 }
 
-it('awards full credit for every fully-known bucket', function () {
+it('awards every band width for a fully-known fresh test', function () {
     $service = new WordTestService;
-    $payload = scoringPayload([3, 2, 3, 2]);
+    $payload = scoringPayload([10, 10, 10, 10, 10, 10]);
 
-    $allIds = array_merge(...$payload['buckets']);
-
-    // A full sample is 20 buckets: every bucket known tops out at 20 000.
-    $fullSample = scoringPayload(array_fill(0, 20, 3));
+    // Band widths 1000/2000/3000/4000/5000/5000: a fully-known fresh test
+    // tops out exactly on the 20 000 scale.
     $everyId = range(1, 60);
 
-    expect($service->score($payload, $allIds))->toBe(4000)
-        ->and($service->score($payload, [1, 2, 3]))->toBe(1000)
-        ->and($service->score($payload, [4, 5]))->toBe(1000)
-        ->and($service->score($fullSample, $everyId))->toBe(20000);
+    expect($service->score($payload, $everyId))->toBe(20000);
 });
 
-it('scores zero when nothing is known', function () {
+it('sums the band widths of the known shares', function () {
     $service = new WordTestService;
+    $payload = scoringPayload([10, 10, 10, 10, 10, 10]);
 
-    expect($service->score(scoringPayload([3, 2]), []))->toBe(0);
+    // Full a1 + full a2 + two of b1's ten drawn: 1000 + 2000 + 600.
+    $known = [...range(1, 10), ...range(11, 20), ...range(21, 22)];
+
+    expect($service->score($payload, $known))->toBe(3600);
 });
 
-it('rounds the per-bucket share to whole credit points', function () {
+it('scores the base when nothing is known', function () {
     $service = new WordTestService;
-    $payload = scoringPayload([3, 2]);
+    $fresh = scoringPayload([10, 10, 10, 10, 10, 10]);
+    $retake = scoringPayload([20, 20, 20], 6000);
 
-    expect($service->score($payload, [1]))->toBe(333)      // round(1000 / 3)
-        ->and($service->score($payload, [4]))->toBe(500)   // round(1000 / 2)
-        ->and($service->score($payload, [1, 2]))->toBe(667); // round(2000 / 3)
+    expect($service->score($fresh, []))->toBe(0)
+        ->and($service->score($retake, []))->toBe(6000);
 });
 
-it('ignores ids that were not sampled', function () {
+it('rounds the per-band share to whole credit points', function () {
     $service = new WordTestService;
-    $payload = scoringPayload([3, 2]);
+    $payload = scoringPayload([10, 10]);
 
-    expect($service->score($payload, [1, 999, 12345]))->toBe(333);
+    expect($service->score($payload, [1, 2, 3]))->toBe(300)   // round(1000 x 3/10)
+        ->and($service->score($payload, [11, 12, 13]))->toBe(600) // round(2000 x 3/10)
+        ->and($service->score($payload, [1, 2, 11, 12, 13, 14]))->toBe(1000); // round(1000x2/10) + round(2000x4/10)
 });
 
-it('skips empty buckets', function () {
+it('skips empty bands and ignores unknown ids', function () {
     $service = new WordTestService;
-    $payload = scoringPayload([0, 2]);
+    $payload = scoringPayload([0, 10]);
 
-    expect($service->score($payload, [2]))->toBe(500);
+    // a1 drew nothing and contributes nothing; only a2's first word counts —
+    // 999 and 12345 were never sampled.
+    expect($service->score($payload, [1, 999, 12345]))->toBe(200);
+});
+
+it('clamps the score to the 20000 scale top', function () {
+    $service = new WordTestService;
+
+    // An over-full payload cannot leave the scale.
+    $payload = ['base' => 20000, 'bands' => ['c2' => range(1, 4)]];
+
+    expect($service->score($payload, range(1, 4)))->toBe(20000);
 });
 
 it('treats numeric-string ids as integers', function () {
     $service = new WordTestService;
-    $payload = scoringPayload([3, 2]);
+    $payload = scoringPayload([10]);
 
-    expect($service->score($payload, ['1']))->toBe(333);
+    expect($service->score($payload, ['3']))->toBe(100); // round(1000 x 1/10)
 });

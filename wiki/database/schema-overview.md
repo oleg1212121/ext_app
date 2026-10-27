@@ -5,7 +5,7 @@ description: The table domains — works/entities/alignment, unified dictionary,
 tags: [database, schema, postgres, users, settings]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T21:05:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-26T21:30:00+03:00 }
 sources:
   - id: migrations
     resource: laravel/database/migrations
@@ -33,7 +33,7 @@ is an `INSERT` into `languages` — never DDL (ADR
 | [Crossword](../domains/crossword.md) | `entity_words` (token-first per-entity word list, nullable `word_id` link), `user_word` (per-user `familiarity` 0–100 exposure score), `user_word_event` (read/lookup idempotency ledger: user × word × row_key × kind unique; ADR [0028](../../docs/adr/0028-numeric-word-familiarity.md)), `entities.words_indexed_at` staleness marker, `words.frequency` ranks. See ADR [0025](../../docs/adr/0025-crossword-word-index-and-progress.md). The same tables power [Interactive words](../domains/interactive-words.md) — no position/occurrence tables exist (ADR [0027](../../docs/adr/0027-render-time-word-segmentation.md)); `forms` carries the runtime-read `l_word` index |
 | AI catalog | `ai_providers`, `ai_models`, `user_api_keys` (2026_09_10_000002) |
 | Prompt templates | `prompt_templates` (2026_09_24_000001): seeded admin-editable AI prompt texts keyed `simulator.question.format` / `simulator.question.tasks` (`:base`/`:learning` — assessment question), `word.explanation` (`:word`/`:native` — Context explanation) and `word.enrichment` (`:word`/`:language`/`:native` — ask-AI enrichment, ADR [0082](../../docs/adr/0082-ask-ai-enrichment-merge-inline-lock-on-success.md)); placeholders substituted server-side (ADR [0040](../../docs/adr/0040-server-assembled-assessment-question.md)) |
-| Users & settings | `users` (role/approval inline), `user_settings` (native + interface language) |
+| Users & settings | `users` (role/approval inline, `vocabulary_level` — the [word test](../domains/word-test.md)'s stored raise-only placement on the 0–20000 scale, ADR [0090](../../docs/adr/0090-cefr-anchored-word-test.md)), `user_settings` (native + interface language) |
 | [Localization](../domains/localization.md) | `ui_string_keys` (dotted key, group), `ui_strings` (one text per interface-enabled language); `languages.is_interface_enabled` gates pickers |
 
 Plus Laravel framework tables: `cache`, `jobs` (0001_01_01_*).

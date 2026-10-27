@@ -5,7 +5,7 @@ description: How to import Kaikki/Wiktionary dumps and GoldenDict-format diction
 tags: [dictionary, import, wiktionary, kaikki, goldendict, normalize]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-24T12:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-25T12:30:00+03:00 }
 sources:
   - id: adr-0081
     resource: docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md

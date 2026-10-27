@@ -500,7 +500,7 @@ test('reader page seeds font size from saved ui settings', function () {
     $entity = createEntity('en', null, ['name' => 'Reader EN Entity']);
 
     $this->actingAs($user)
-        ->get(route('reader.show', ['entityId' => $entity->id]))
+        ->get(route('reader.works.entities.show', ['work' => $entity->work_id, 'entity' => $entity->id]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('fontSize', 22));
 });
@@ -513,7 +513,7 @@ test('reader page clamps an out of range saved font size', function () {
     $entity = createEntity('en', null, ['name' => 'Reader EN Entity']);
 
     $this->actingAs($user)
-        ->get(route('reader.show', ['entityId' => $entity->id]))
+        ->get(route('reader.works.entities.show', ['work' => $entity->work_id, 'entity' => $entity->id]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('fontSize', 38));
 });

@@ -1,19 +1,7 @@
 {
     "entries": [
         {
-            "warning": "architecture/docker-services.md: source 'AGENTS.md' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
             "warning": "architecture/overview.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
-            "warning": "domains/access-control.md: source 'laravel/app/Http/Middleware/HandleInertiaRequests.php' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-23",
             "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
@@ -26,18 +14,6 @@
         },
         {
             "warning": "domains/bilinguals-simulator.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
-            "warning": "domains/entities.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
-            "warning": "domains/recommendations.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-23",
             "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
@@ -61,16 +37,10 @@
             "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
         },
         {
-            "warning": "playbooks/production-deployment.md: source '.github/workflows/tests.yml' changed after generated.at — possibly stale",
+            "warning": "playbooks/running-tests.md: source 'wiki/validate-baseline.json' changed after generated.at — possibly stale",
             "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
-            "warning": "playbooks/production-deployment.md: source 'AGENTS.md' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
+            "date": "2026-10-26",
+            "note": "Baseline edits themselves mint this (the baseline is a listed source); currently fired by the cefr-word-tags docs-pass baseline edit (cbbbf78) plus this feature's 2026-10-26 entries. Benign by construction; refresh running-tests.md or keep acknowledging when the baseline next changes."
         }
     ]
 }

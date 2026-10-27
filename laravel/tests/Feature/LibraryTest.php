@@ -375,34 +375,46 @@ test('the work alignments page paginates', function () {
             ->where('alignments_meta.current_page', 2));
 });
 
-test('alignment reader target prefers the language the user is learning', function () {
+test('alignment cards target the match-anchored reader URL whatever the reader side', function () {
     createLanguages();
     $work = createWork(['title' => 'Native', 'original_language_id' => Language::query()->where('code', 'en')->value('id')]);
     $en = createEntity('en', $work, ['name' => 'EN side']);
     $ru = createEntity('ru', $work, ['name' => 'RU side']);
-    createEntityMatch($en, $ru);
+    $match = createEntityMatch($en, $ru, ['status' => 'completed']);
 
-    // Native English → read the Russian side.
+    // The Read button's href composes from the payload's work_id + id:
+    // /reader/works/{work_id}/alignments/{id}. Which side reads first (and
+    // in which language) is decided inside that page now, so the target is
+    // the same for every reader.
+    $assertTarget = fn ($page) => $page
+        ->where('alignments.0.id', $match->id)
+        ->where('alignments.0.work_id', $work->id);
+
+    // Native English → reads the Russian side.
     $this->actingAs(approvedUser())
         ->get("/works/{$work->id}/alignments")
         ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->where('alignments.0.reader_target.lang', 'ru')
-            ->where('alignments.0.reader_target.entity_id', $ru->id));
+        ->assertInertia($assertTarget);
 
-    // Native Russian → read the English side.
+    // Native Russian → reads the English side — same URL either way.
     $russian = approvedUser();
     $russian->settings()->update(['native_language_id' => Language::query()->where('code', 'ru')->value('id')]);
 
     $this->actingAs($russian)
         ->get("/works/{$work->id}/alignments")
         ->assertOk()
+        ->assertInertia($assertTarget);
+
+    // And the composed href serves the alignment reader for this match.
+    $this->actingAs(approvedUser())
+        ->get("/reader/works/{$work->id}/alignments/{$match->id}")
+        ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->where('alignments.0.reader_target.lang', 'en')
-            ->where('alignments.0.reader_target.entity_id', $en->id));
+            ->component('Reader')
+            ->where('positionKey', 'mm:'.$match->id));
 });
 
-test('alignment reader target tiebreaks on the original language', function () {
+test('the reader side rule resolves inside the alignment reader the cards link to', function () {
     createLanguages();
     $fr = Language::query()->create([
         'code' => 'fr',
@@ -412,38 +424,37 @@ test('alignment reader target tiebreaks on the original language', function () {
         'sort_order' => 5,
     ]);
 
-    // Both sides are non-native for a French reader; the original side wins.
+    // Both sides are non-native for a French reader; the original side wins
+    // — inside the reader now, as defaultSide, not in the card's URL.
     $work = createWork(['title' => 'Tiebreak', 'original_language_id' => Language::query()->where('code', 'en')->value('id')]);
     $en = createEntity('en', $work, ['name' => 'EN original']);
     $ru = createEntity('ru', $work, ['name' => 'RU translation']);
-    createEntityMatch($en, $ru);
+    $match = createEntityMatch($en, $ru, ['status' => 'completed']);
 
     $french = approvedUser();
     $french->settings()->update(['native_language_id' => $fr->id]);
 
     $this->actingAs($french)
-        ->get("/works/{$work->id}/alignments")
+        ->get("/reader/works/{$work->id}/alignments/{$match->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->where('alignments.0.reader_target.lang', 'en')
-            ->where('alignments.0.reader_target.entity_id', $en->id));
-});
-
-test('alignment reader target falls back to the a side for same-language pairs', function () {
-    createLanguages();
-    $work = createWork(['title' => 'Exercises']);
-    $first = createEntity('en', $work, ['name' => 'Exercises']);
-    $second = createEntity('en', $work, ['name' => 'Answer key']);
-    createEntityMatch($first, $second);
+            ->component('Reader')
+            ->where('defaultSide', 'a')
+            ->where('entity.id', $en->id));
 
     // Both sides are the reader's native language: no learning side exists,
-    // so the original side (a, for this all-English work) is opened.
+    // so the original side (a, for this all-English work) reads first.
+    $sameWork = createWork(['title' => 'Exercises']);
+    $first = createEntity('en', $sameWork, ['name' => 'Exercises']);
+    $second = createEntity('en', $sameWork, ['name' => 'Answer key']);
+    $sameMatch = createEntityMatch($first, $second, ['status' => 'completed']);
+
     $this->actingAs(approvedUser())
-        ->get("/works/{$work->id}/alignments")
+        ->get("/reader/works/{$sameWork->id}/alignments/{$sameMatch->id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->where('alignments.0.reader_target.lang', 'en')
-            ->where('alignments.0.reader_target.entity_id', fn ($id) => in_array($id, [$first->id, $second->id], true)));
+            ->component('Reader')
+            ->where('defaultSide', 'a'));
 });
 
 test('create work form renders with enabled languages', function () {

@@ -33,6 +33,9 @@ class UserFactory extends Factory
             'remember_token' => Str::random(10),
             'role' => User::ROLE_USER,
             'is_approved' => true,
+            // Mirrors the column default so in-memory instances (create()
+            // never backfills DB defaults) read a real 0, not null.
+            'vocabulary_level' => 0,
         ];
     }
 

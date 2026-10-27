@@ -12,7 +12,7 @@ class SubmitWordTestRequest extends FormRequest
      * The cached sample the validated token resolves to; the token rule
      * resolves it once and later rules and the controller reuse it.
      *
-     * @var array{language_id: int, buckets: array<int, array<int, int>>, all_word_ids: array<int, int>}|null
+     * @var array{language_id: int, base: int, bands: array<string, array<int, int>>, all_word_ids: array<int, int>}|null
      */
     private ?array $sample = null;
 
@@ -50,7 +50,7 @@ class SubmitWordTestRequest extends FormRequest
     /**
      * The sample behind the submitted token (null when the token was stale).
      *
-     * @return array{language_id: int, buckets: array<int, array<int, int>>, all_word_ids: array<int, int>}|null
+     * @return array{language_id: int, base: int, bands: array<string, array<int, int>>, all_word_ids: array<int, int>}|null
      */
     public function sample(): ?array
     {

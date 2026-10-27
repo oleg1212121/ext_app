@@ -24,7 +24,7 @@ class UserWord extends Model
      * seen-enough territory, below the known threshold and crossword-eligible
      * (ADR 0071).
      */
-    public const PLACEMENT_BASELINE = 50;
+    public const PLACEMENT_BASELINE = 60;
 
     public const KIND_READ = 'read';
 

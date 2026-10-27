@@ -101,6 +101,168 @@ it('seeds the staged raw translations label in all three interface languages', f
     ]);
 });
 
+it('seeds the reader alignments cross-link string in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework ticket 01: the entity reader's header link to its
+    // work's alignments list — an entity can sit in many matches, so the
+    // header links the list rather than one of them.
+    expect(seededUiStringTexts('reader.alignments'))->toBe([
+        'en' => 'Alignments',
+        'ru' => 'Выравнивания',
+        'be' => 'Выраўноўванні',
+    ]);
+});
+
+it('seeds the reader work-browse strings in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework ticket 02: the work sections page's Entities card and
+    // the per-work texts list — the list's search form and language filter
+    // (their "All languages" default), the entity card's sentence count,
+    // and the filtered-empty state.
+    expect(seededUiStringTexts('reader.search'))->toBe([
+        'en' => 'Search',
+        'ru' => 'Найти',
+        'be' => 'Знайсці',
+    ]);
+    expect(seededUiStringTexts('reader.search_texts'))->toBe([
+        'en' => 'Search by name or label…',
+        'ru' => 'Поиск по названию или подписи…',
+        'be' => 'Пошук па назве або подпісе…',
+    ]);
+    expect(seededUiStringTexts('reader.all_languages'))->toBe([
+        'en' => 'All languages',
+        'ru' => 'Все языки',
+        'be' => 'Усе мовы',
+    ]);
+    expect(seededUiStringTexts('reader.sentence'))->toBe([
+        'en' => 'sentence',
+        'ru' => 'предложение',
+        'be' => 'сказ',
+    ]);
+    expect(seededUiStringTexts('reader.sentences'))->toBe([
+        'en' => 'sentences',
+        'ru' => 'предложений',
+        'be' => 'казаў',
+    ]);
+    expect(seededUiStringTexts('reader.no_texts_match'))->toBe([
+        'en' => 'No texts match “:q”.',
+        'ru' => 'По запросу «:q» ничего не найдено.',
+        'be' => 'Па запыце «:q» нічога не знойдзена.',
+    ]);
+    expect(seededUiStringTexts('reader.no_texts_match_hint'))->toBe([
+        'en' => 'Texts you do not have access to are never listed.',
+        'ru' => 'Тексты, к которым у вас нет доступа, никогда не отображаются.',
+        'be' => 'Тэксты, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.',
+    ]);
+});
+
+it('seeds the reader work-alignments strings in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework ticket 03: the sections page's Alignments card (the
+    // singular count word) and the per-work alignments list — the search
+    // placeholder and the empty states — plus the Library alignment card's
+    // plain Read label (the reader URL no longer needs a language code).
+    expect(seededUiStringTexts('reader.alignment'))->toBe([
+        'en' => 'Alignment',
+        'ru' => 'Выравнивание',
+        'be' => 'Выраўноўванне',
+    ]);
+    expect(seededUiStringTexts('reader.search_alignments'))->toBe([
+        'en' => 'Search by entity name…',
+        'ru' => 'Поиск по названию текста…',
+        'be' => 'Пошук па назве тэксту…',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments_match'))->toBe([
+        'en' => 'No alignments match “:q”.',
+        'ru' => 'По запросу «:q» ничего не найдено.',
+        'be' => 'Па запыце «:q» нічога не знойдзена.',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments_match_hint'))->toBe([
+        'en' => 'Alignments you cannot read are never listed.',
+        'ru' => 'Выравнивания, к которым у вас нет доступа, никогда не отображаются.',
+        'be' => 'Выраўноўванні, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments'))->toBe([
+        'en' => 'No alignments in this language',
+        'ru' => 'На этом языке выравниваний нет',
+        'be' => 'На гэтай мове выраўноўванняў няма',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments_hint'))->toBe([
+        'en' => 'Switch the language above, or come back once this work has readable alignments.',
+        'ru' => 'Переключите язык выше или вернитесь, когда у произведения появятся доступные вам выравнивания.',
+        'be' => 'Пераключыце мову вышэй або вярніцеся, калі ў твора з\'явяцца даступныя вам выраўноўванні.',
+    ]);
+    expect(seededUiStringTexts('library.read'))->toBe([
+        'en' => 'Read',
+        'ru' => 'Читать',
+        'be' => 'Чытаць',
+    ]);
+});
+
+it('seeds the reader list empty-state strings for the no-filter case in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework review fixes: with no language filter set (the All
+    // languages default) the empty box previously showed the lang-filter
+    // copy ("No texts in this language" / "Switch the language above"),
+    // which names a control that is not in effect — the no-filter state
+    // gets its own generalized copy.
+    expect(seededUiStringTexts('reader.no_texts_yet'))->toBe([
+        'en' => 'No readable texts in this work yet',
+        'ru' => 'В этом произведении пока нет доступных вам текстов',
+        'be' => 'У гэтым творы пакуль няма даступных вам тэкстаў',
+    ]);
+    expect(seededUiStringTexts('reader.no_texts_yet_hint'))->toBe([
+        'en' => 'Ask an editor to add texts.',
+        'ru' => 'Попросите редактора добавить тексты.',
+        'be' => 'Папрасіце рэдактара дадаць тэксты.',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments_yet'))->toBe([
+        'en' => 'No readable alignments in this work yet',
+        'ru' => 'В этом произведении пока нет доступных вам выравниваний',
+        'be' => 'У гэтым творы пакуль няма даступных вам выраўноўванняў',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments_yet_hint'))->toBe([
+        'en' => 'Come back once this work has readable alignments.',
+        'ru' => 'Вернитесь, когда у произведения появятся доступные вам выравнивания.',
+        'be' => 'Вярніцеся, калі ў твора з\'явяцца даступныя вам выраўноўванні.',
+    ]);
+});
+
+it('seeds the reader language-filter label in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework review fixes: the two lists' sr-only labels named the
+    // select's "All languages" option; a label must name the control.
+    expect(seededUiStringTexts('reader.language_filter_label'))->toBe([
+        'en' => 'Language',
+        'ru' => 'Язык',
+        'be' => 'Мова',
+    ]);
+});
+
+it('seeds the reader works-list strings in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework ticket 04: the works-first reader entry's empty state
+    // hint — the reading surface has no add-work card to suggest, so its
+    // copy differs from the Library's (whose identical keys it reuses).
+    expect(seededUiStringTexts('reader.no_works_match_hint'))->toBe([
+        'en' => 'Try another title or author.',
+        'ru' => 'Попробуйте другое название или автора.',
+        'be' => 'Паспрабуйце іншую назву або іншага аўтара.',
+    ]);
+});
+
 it('seeds the six usage-label chips in all three interface languages', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();
@@ -124,6 +286,41 @@ it('seeds the six usage-label chips in all three interface languages', function 
     ]);
     expect(seededUiStringTexts('word.label_dialectal'))->toBe([
         'en' => 'dialectal', 'ru' => 'диал.', 'be' => 'дыял.',
+    ]);
+});
+
+it('seeds the cefr word-test strings in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // cefr-word-test ticket 04: the page becomes CEFR-anchored — a header
+    // level chip, an adaptive-retake band note, a level-first result panel
+    // whose weak retake keeps the stored level; the score label is gone
+    // with its usage.
+    expect(seededUiStringTexts('wordtest.current_level'))->toBe([
+        'en' => 'Current level',
+        'ru' => 'Текущий уровень',
+        'be' => 'Бягучы ўзровень',
+    ]);
+    expect(seededUiStringTexts('wordtest.level_label'))->toBe([
+        'en' => 'Your vocabulary level',
+        'ru' => 'Ваш словарный запас',
+        'be' => 'Ваш слоўнікавы запас',
+    ]);
+    expect(seededUiStringTexts('wordtest.covers'))->toBe([
+        'en' => 'Adaptive retake: this test covers CEFR bands :bands only.',
+        'ru' => 'Адаптивный повторный тест: охвачены только уровни :bands.',
+        'be' => 'Адатыўны паўторны тэст: ахоплены толькі ўзроўні :bands.',
+    ]);
+    expect(seededUiStringTexts('wordtest.kept_previous'))->toBe([
+        'en' => 'This run scored lower — your stored level was kept.',
+        'ru' => 'Этот результат ниже — сохранён прежний уровень.',
+        'be' => 'Гэты вынік ніжэйшы — захаваны папярэдні ўзровень.',
+    ]);
+    expect(seededUiStringTexts('wordtest.intro'))->toBe([
+        'en' => 'Tick every word you know, then submit — 60 words across the CEFR bands place your vocabulary on a 0–20,000 scale, and all more common words are marked as familiar.',
+        'ru' => 'Отметьте все слова, которые вы знаете, и нажмите «Отправить» — 60 слов по уровням CEFR определят ваш словарный запас на шкале от 0 до 20 000, а все более частые слова будут отмечены как знакомые.',
+        'be' => 'Пазначце ўсе словы, якія вы ведаеце, і націсніце «Адправіць» — 60 слоў па ўзроўнях CEFR вызначаць ваш слоўнікавы запас на шкале ад 0 да 20 000, а ўсе больш частыя словы будуць пазначаны як знаёмыя.',
     ]);
 });
 

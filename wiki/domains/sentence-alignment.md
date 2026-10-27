@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-25T12:00:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: align-service
@@ -271,624 +271,680 @@ at similarity 0.0, which lands it in Needs review (ADR 0049) for human
 pairing — the human confirmation writes similarity 1.0 like any other
 editor-shaped row.
 
-1. **Split** — `SentenceSplitter` streams entity files in
-   ~`services.python.sentence_split_chunk_bytes` chunks to the python `/split`
-   endpoint (UTF-8-safe cut + raw-remainder stitching, so chunk seams are
-   seamless: incomplete trailing UTF-8 bytes are held back
-   (`carryIncompleteTrailingBytes`) and re-prefixed to the next chunk) and
-   writes `EntitySentence` rows with **sparse orders
-   from birth** (`SparseOrderService::initial($index)` → 0, 1024, 2048, …;
-   the splitter takes `SparseOrderService` via constructor injection). This
-   matters downstream: with dense 1,2,3… orders every editor
-   insert/reorder exhausts the midpoint gap and falls through to a full-list
-   rebalance, whereas sparse-from-creation lets a reorder write only the
-   moved row. Existing dense lists are repaired by `entity-orders:rebalance`
-   (daily schedule, or run manually). (`SplitEntityFileSentences` job —
-   takes `(entityId, filePath)`, reads the language from the entity and sends
-   its code to python as the `language` field; `ProcessEntityFile`
-   orchestrates file ingestion, also `(entityId, filePath)`.) Splitting
-   itself (pysbd + title heuristics ported from the old
-   PHP splitter) lives in python `ai/splitting/`. **Engines resolve per
-   language** (`config.splitter_engine_for`, pure core in
-   `config.resolve_splitter_engine`): an explicit
-   `SPLITTER_ENGINE_OVERRIDES` entry (`be=razdel,pl=pysbd`; malformed entries
-   and unknown engine names are ignored) wins; otherwise the global
-   `SPLITTER_ENGINE`; except when the global engine cannot serve the language
-   — pysbd without a pysbd language entry (no `be` there) — the rule-based
-   engine (razdel) is substituted automatically, so an unregistered/unknown
-   code falls back instead of erroring (Laravel validates codes against the
-   languages registry; a deliberate `be=pysbd` pin is still honored and
-   surfaces its construction error as HTTP 400). The `/split` per-language
-   instance cache invalidates on the **resolved** engine, so a razdel-backed
-   cached Belarusian splitter is reused rather than rebuilt into a ValueError
-   under a pysbd global. Belarusian shares the exact Russian noise-cleanup
-   preprocessing rule list (same script, same stray markers; no
-   postprocessing of its own). The python splitter hands
-   pysbd buffered prose with **newlines selectively flattened**:
-   `TypedSentenceSplitter::flush_buffer` joins buffered lines with `\n`, then
-   `selective_flatten` collapses every newline that does not follow
-   sentence-ending punctuation (`. ! ? … » " ' ) ” ’` — the curly closers
-   U+201D/U+2019 included) to a space, keeping only
-   real paragraph breaks. This is the synthesis of two competing constraints:
-   flattening *all* newlines to spaces lets pysbd's quote-region heuristic
-   merge long dialogue spans into a single "sentence" (a lone `"` left over at
-   a line end swallows everything up to the next closing quote — the EN Book
-   Thief split into 547 sentences incl. a 1761-char monster; preserving the
-   boundaries after punctuation fixes it to ~1036 clean sentences), while
-   keeping *every* newline makes pysbd treat hard-wrapped prose lines
-   (each paragraph wrapped at ~70 cols with a single newline) as separate
-   sentences (the RU "Книжный вор 2" split into 9926 fragments; selective
-   flatten collapses them to ~7148 real sentences, max 277 chars). The curly
-   closers were the missing piece for Book Thief dialogue: lines close with
-   `”`, so without them the newline after each dialogue line (and its blank
-   line's `\n\n`) flattened to one/two spaces — two spaces break pysbd's
-   `(?<=[!?.-]["'“”])\s{1}(?=[A-Z])` quote-end re-split and the whole dialogue
-   block merged into a single 464-char "sentence". Regression
-   test: `docker-compose/python/ai/splitting/test_splitter.py` (committed
-   synthetic fixtures in `ai/splitting/fixtures/` reproduce both bugs — a
-   straight-quote dialogue block and hard-wrapped RU prose — plus the
-   curly-quote dialogue check and unit tests of `selective_flatten`/
-   `normalize`; runs under pytest for both engines and fails under either
-   extreme behavior). Engine
-   resolution unit tests: `ai/splitting/test_engine_resolution.py` +
-   `ai/splitting/test_preprocessing.py` and
-   `ai/api/test_split_endpoint.py` (cache invalidate/reuse on the
-   resolved engine).
-2. **Sign** — `TextSignatureService` builds an embedding-based signature per
-   entity via `/embed` (**BGE-M3, 1024-dim**; the request carries the entity's
-   language code). Since ADR 0033 the signature is a **background derivation**
-   (`FinalizeEntityDerivations` after the split — copied from a text-hash-equal
-   entity when one exists), never a synchronous upload step; its only uses are
-   cross-language candidate finding (`findCrossLanguage`, the Filament "Find
-   Match" action) and `verifyEntityPair()`, which rejects pairs whose cosine
-   similarity < **0.70** before alignment is attempted. Duplicate detection is
-   the job of the local `EntityTextHasher` sha256 hashes, not the embedding.
-2b. **Copy (fast path)** — before any pipeline run, the one creation module
-   (`EntityMatchCreationService::create()`, which all four creation surfaces
-   call — the Library Alignments form via `LibraryController::storeAlignment`,
-   the Filament create page, the ListEntityMatches "New Alignment" header
-   action, and the EntityResource "Find Match" action) tries
-   `AlignmentCopyService::copyFor()`: if a **completed** match exists between
-   entities whose `text_hash` and language equal the new pair's (either
-   orientation), its meaning matches and junctions are cloned with a
-   positional sentence mapping (Nth source sentence ↔ Nth copy sentence,
-   mirrored sides if the orientation flipped; human landmarks
-   `alignment_chunk = -1` preserved), the new match is `completed` at creation
-   and no Python call is made. The copy transaction renormalizes the cloned
-   rows with `resequenceMatchesByDocumentPosition()` so a source predating an
-   ordering fix cannot propagate a scrambled order column (see the
-   order-preservation invariant above). Source selection: most human-confirmed
-   rows
-   (`confirmed_count`), then `linked_count`, then latest `completed_at`. Any
-   structural mismatch (sentence counts, unmappable junction, pre-existing
-   rows) falls back to the pipeline. Stale hashes are recomputed
-   synchronously first — a local sha256. See ADR 0033.
-3. **Align** — `AlignEntitySentences::beginFromScratch($entityMatchId)` (the
-    fresh-entry-point shared static) verifies the
-    pair, snapshots counts, resets the cursor
-   (`a_last_sentence_offset`/`b_last_sentence_offset` on
-   `EntityMatch`), transitions `pending → aligning`, and dispatches the
-   first `AlignEntitySentences` job. Each `handle()` invocation reads the
-   cursor from the model, slices one chunk of a-side and b-side sentences
-   **sequentially** (b offset = a offset, no overlap), POSTs them to
-   `/align` via `SentenceAlignmentService::alignChunkRemote()` (transport
-   through `PythonClient::align()`; `services.python.align_timeout`,
-   default 600), and writes the result via
-   `MeaningMatchStore::storeAlignmentSegmentFromMatches()` (one
-   `MeaningMatch` per DP step +
-   `SentenceMeaningMatch` junction rows carrying `side` `'a'`/`'b'`). The job
-   commits only matches up to and including the **last confident anchor**
-   (score ≥ `ANCHOR_SCORE_THRESHOLD` = 0.40): the DP force-aligns every
-   sentence in the window, so the tail near the chunk seam can be garbage
-   (5:1 then 1:5 at the seam) — dropping it and advancing the cursor to the
-   anchor's `a_end`/`b_end` (not the full chunk size) lets the next
-   invocation re-align that tail with the correct b-side context now in-window
-   (a port of `BilingualAligner._trim_to_last_anchor`). With no anchor the
-    whole chunk is committed to guarantee forward progress; on the final
-    chunk (both windows reach their totals) everything is committed and the
-    match flips to `completed`. Because the strict 1:1 window gives the DP no
-    backward reach, the seam garbage re-appears at the *head* of the next
-    chunk (a 1:5 span that scores as an anchor and survives trim). So before
-    aligning, the job **rolls back** the last `ROLLBACK_MATCHES` (2) committed
-    meaning matches: their rows are deleted (junction rows cascade via FK),
-    the cursor rewinds to the first sentence those matches covered, the limits
-    grow by the rolled-back spans, and the DP re-aligns that region with fresh
-    forward context (see ADR 0004). Only matches with junction rows on both
-    sides are candidates; skip steps and human-edit rows
-    (`alignment_chunk = -1`) are never rolled back. A monotone-cursor safety
-    net force-advances the a side past the stored offset if a rolled-back
-    commit would otherwise not move forward. `alignment_chunk` on meaning
-    matches is a monotonic per-run id (`MAX + 1`, never the human-edit `-1`
-    sentinel), so a re-run cannot wipe a previously committed chunk. If
-    sentences remain the job `self::dispatch()`es the next invocation,
-    otherwise the entity match flips to `completed`. Job timeout 600s,
-    `tries=5` with backoff `[30, 60, 120, 300]` to heal transient python
-    failures; `failed()` is terminal and leaves the cursor untouched so a
-    future resume can continue. The standalone `AlignEntitySentenceChunk` job
-    and the `Bus::chain()` fan-out were replaced by this single
-    self-restarting job — see ADR 0003 / 0004. Small entities
-    (`max(a_total, b_total) ≤ 75`) are raised to a single chunk in
-    `beginFromScratch()`, so the seam rollback/trim machinery is skipped for
-    them entirely.
-    Completion funnels through a single gate
-    (`AlignEntitySentences::finalize()`, Aug 2026): before the match flips to
-    `completed`, every sentence on **either side** that is still junction-less —
-    dropped by an empty-commit seam, left over when the other side was
-    exhausted, or skipped during a re-align — is junctioned into a
-    **single-sided meaning match** (`similarity 0.0`, next machine
-    `alignment_chunk` id), ordered positionally
-    (`SparseOrderService::spreadOrders` between the neighbouring junctioned
-    anchors) so the reader's meaning-match sequence preserves the original
-    document order. The `completed` write itself happens **only when the
-    match is still `aligning`** at completion time (the gate re-reads the
-    status from the DB): if a sentence edit flipped the match to `stale`
-    mid-run, the repairs and `linked_count` update still run but the stale
-    flag survives — an in-flight run cannot silently complete over it
-    (ADR 0055). `failed()` carries the same guard. This is the **total
-    completeness** invariant (ADR 0048,
-    Sept 2026): `skipSides()` returns both sides unconditionally — it
-    superseded the original-side-only scope (which left translation-side
-    sentences invisible in the reader; the editor's live unmatched pools were
-    their only surface). The whole repair is
-    `MeaningMatchStore::repairCoverage()` (ADR 0063, amended 2026-10-05):
-    one transaction that seeds a **claimed-orders** set with every existing
-    row order and backfills both sides against it — opposite-side runs
-    between the same anchors compute identical spread values, and without the
-    claim check the second insert would violate `unique(entity_match_id,
-    order)` (the old silent translation↔translation failure) — then
-    resequences and syncs `linked_count`, whole-or-nothing. The repair is
-    best-effort at the job level: if it fails, one warning is logged and
-    completion proceeds regardless (a failure rolls the whole repair back —
-    no half-repaired state). The resequence inside `repairCoverage()` runs
-    unconditionally (idempotent) so every completion path leaves the stored
-    sequence
-    equal to document position — see the order-preservation invariant above.
-    `storeSkipSentences()` on `MeaningMatchStore` persists
-    single-sided rows (side parameter `'a'|'b'`), and the crawl's empty-commit
-    seams (`alignWholePool`, `alignPoolChunk`) use it to junction the first
-    uncommitted sentence of whichever side's cursor advances (parked sides
-    still re-feed; finalize is their safety net).
-    "One side's sentences exhausted before the other's" is a normal
-    completion, not an error: the remaining tail on either side is drained
-    as single-sided rows.
-3. **Align (precision knobs, Aug 2026)** — the python DP no longer
-    force-aligns every sentence. Two live knobs
-    (`docker-compose/python/env/.env`, apply on the next request):
-    - **Skip branch** — `ALIGN_SKIP_PENALTY` (per-sentence cost of consuming
-      a sentence without emitting a match; default `-0.5`). Edges that consume
-      only a-side or only b-side sentences are now legal DP transitions, so a
-      sentence with no counterpart is **skipped** (reported in `unmatched_a` /
-      `unmatched_b`) instead of being force-matched into a <0.6 garbage
-      meaning match. The php gap-filling in `SentenceAlignmentService`
-      converts those gaps to the existing `skip_a` / `skip_b` steps, so no
-      new persistence path was needed.
-    - **Span cap** — `ALIGN_MAX_TOTAL_SPAN` (default `6`) rejects match edges
-      whose `a_step + b_step` exceeds the cap, dropping 1:5 / 5:1 spans.
-    - `ALIGN_DEFAULT_THRESHOLD` raised `0.4 → 0.55` (MiniLM calibration; a
-      live histogram of `meaning_match.similarity` showed a long garbage tail
-      below ~0.55). Sub-threshold windows are now skipped rather than matched.
-      With the **LaBSE** aligner (below) bitext cosine scores run hotter, so
-      `ALIGN_DEFAULT_THRESHOLD` was provisionally set to `0.75` and
-      `ALIGN_ANCHOR_THRESHOLD` to `0.8` (sanity-checked on the test pair).
-      **Calibration (Aug 2026):** real LaBSE scores on adapted learning texts
-      sit well below those provisional values — the The Gamblers titles
-      (THE GAMBLERS ↔ ИГРОКИ) score 0.59, the full parenthetical titles
-      0.67 (measured via `/align` on the running service). `0.75` silently
-      skipped such genuine matches, so `ALIGN_DEFAULT_THRESHOLD` is back to
-      `0.55` (the established MiniLM garbage-floor; LaBSE runs hotter than
-      MiniLM, so 0.55 stays conservative) and `ALIGN_ANCHOR_THRESHOLD` to
-      `0.6`. Still to be refined from a real `meaning_match.similarity`
-      distribution once a live corpus is aligned.
-    - **Embedding cache** — `EmbeddingCache` (LRU 10k) caches embeddings per
-      process, keyed by model id + **normalized** text. With the default
-      `window_embed=aggregate` (plan 05) the keys are the **single sentences**,
-      so the prepass, window scoring, and re-alignment of chunk seams share one
-      set of single embeddings; in `joined` mode the keys are the normalized
-      joined window texts (the original behavior). Either way, chunk-seam
-      re-alignment and entities that share source text no longer re-encode the
-      same texts. Regression tests:
-      `docker-compose/python/ai/alignment/test_aligner.py` (35 stub-model
-      tests) + `test_aligner_process.py` (the file-based chunked `process()`
-      flow). Whole python suite: `docker exec ext_python python -m pytest
-      /app/ai -q` — stub models only, no weights, no CI job (manual).
-3. **Align (algorithm, Aug 2026)** — the DP is now one of two aligners in
-    `bilingual_aligner.py`, chosen by a live knob `ALIGN_ALGORITHM`
-    (`greedy` default | `dp`):
-    - **`dp`** — the original full-window DP. With a big aligner model (e.g.
-      BGE-M3) it embeds every window, `(n + m) * max_window` encodes per
-      `/align` call: ~4 min for a 100-sentence entity at `max_window=6`.
-    - **`greedy`** — anchor-first. Embeds each single sentence once per side,
-      builds the n×m sentence matrix, locks confident non-crossing 1:1 anchors
-      (mutual-best within `max_window` each way, above `ALIGN_ANCHOR_THRESHOLD`,
-      default 0.6 — 0.8 with the LaBSE aligner, provisional), then greedily
-      walks the gaps between anchors via a **window ladder**: steps `1..primary`
-      (`ALIGN_PRIMARY_WINDOW`, default 3) are compared as one set and the
-      highest-scoring combo above threshold wins — a 1:1 is **no longer
-      auto-committed the moment it clears the bar**, it must beat the other
-      window combos up to `primary` — and if nothing in the primary set clears,
-      the search widens one step per side up to `max_window`
-      (`ALIGN_MAX_TOTAL_SPAN` still bounds `a_step + b_step`). Otherwise skip
-      the side whose best 1:1 partner within lookahead is weaker (the DP's skip
-      semantics, localized). **Orphan-merge post-pass (Aug 2026)** — a locked
-      anchor can be the head of a genuine multi-sentence window: the pooled
-      window scores higher than the 1:1 but is never evaluated because the
-      anchor pre-commits and the cursor jumps past it, leaving the tail as
-      orphans (A0↔B0 1:1 at 0.701 pre-commits while the pooled A0:2↔B0
-      scores 0.743 — exactly the pattern fusions produce, a partial 1:1 anchor
-      + adjacent orphan). After the anchor/gap pass, `_merge_orphans` walks the
-      matches and, for any match whose following gap has orphans on exactly one
-      side (the other already consumed), extends the match's window over the
-      orphan run — every extension length up to the bound (`max_window`,
-      `ALIGN_MAX_TOTAL_SPAN`) is embedded lazily through the shared cache and
-      scored; the best pooled window replaces the match only if it beats its
-      score by `ALIGN_MERGE_MARGIN` (default 0.02). Embed count ≈ `n + m`
-      singles plus a few window expansions per messy cursor — ~6× fewer on a
-      clean text, so a 100-sentence entity drops from ~4 min to ~30–60s. The
-      `matches` payload shape is unchanged, so `SentenceAlignmentService` and
-      the job's anchor-trim/rollback need no changes. `/align` accepts optional
-      per-request `algorithm` and `anchor_threshold` overrides. Regression
-      tests assert greedy/DP equivalence on a clean list, 1:2 lazy expansion,
-      skip behavior, anchor+gap resolution, the widening ladder (a 1:4 match
-    that only clears past `primary`), normalized-window scoring, and the
-    orphan-merge (2:1 beats a bar-clearing 1:1 → merged, no unmatched; the
-    margin guard keeps a below-margin pooled window from over-merging), and
-    count encoded texts (stub model).
-3. **Align (weak-pair rescue, ADR 0048, Sept 2026)** — the greedy gap walk
-   no longer turns every sub-threshold pair into a double skip. When no
-   window combo clears the match bar, `_rescue_mutual_best` first checks the
-   cursor pair: if each sentence's best in-band partner within `max_window`
-   lookahead is the other and the 1:1 score clears `ALIGN_RESCUE_THRESHOLD`
-   (live knob, default 0.45, `0` disables, capped at
-   `ALIGN_DEFAULT_THRESHOLD`), the pair is emitted as a **real match
-   carrying its true sub-threshold score** — it surfaces in the editor's
-   Needs review as a low-similarity row instead of masquerading as two
-   single-sided skip rows (the repeating 1-sided pattern came from the skip
-   rule's cascade: skipping one member of a mutual pair collapses the
-   survivor's lookahead, so the next iteration skips the other side too).
-   Non-mutual weak pairs stay skipped — the structural guard is what makes
-   the lower bar safe. After the walk, `_rescue_orphan_gaps` re-walks gaps
-   holding orphans on **both** sides (previously ignored by `_merge_orphans`
-   entirely) with the window-combo acceptance bar lowered to the rescue
-   threshold, pairing orphan runs the fragmented walk declined. Rescued
-   matches score below 0.55, hence far below the 0.90 landmark bar — they
-   re-align like any machine row. Regression tests: `test_aligner.py`
-   (mutual-best rescue with real score; disabled knob keeps the double
-   skip; non-mutual stays skipped; two-sided orphan gap rescued).
-3. **Align (reserved knobs, Plan 02, Aug 2026)** — four new `/align` request
-    fields (all optional) and three new live config accessors were plumbed
-    through end-to-end. `high_confidence` is **consumed by plan 03's prepass**
-    (below); `band_width` and `window_embed` by plans 04 and 05 (below); and
-    `landmarks` by plan 06 (below). The API passes them to
-    `BilingualAligner(...)`, which resolves `None` from config and stores them
-    as `self.high_confidence` / `self.band_width` / `self.window_embed`.
-    - `high_confidence` (`ALIGN_HIGH_CONFIDENCE`, default `0.9`) — 1:1 prepass
-      anchor bar (plan 03): mutually-best cells at/above this cosine get locked
-      as committed matches that split the chunk into sub-pools.
-    - `band_width` (`ALIGN_BAND_WIDTH`, default unset → derived per sub-pool
-      as `max(2, max_window)`) — diagonal-band half-width (plan 04): match
-      edges restricted to a band around the expected length-ratio diagonal.
-      **Consumed by plan 04 (below).**
-    - `window_embed` (`ALIGN_WINDOW_EMBED`, default `aggregate`, coerced from
-      anything not `aggregate|joined`) — multi-sentence window embedding mode
-      (plan 05): `aggregate` (per-sentence vectors combined length-weighted +
-      L2-normalized) vs `joined` (the legacy join-then-embed).
-      **Consumed by plan 05 (below).**
-    - `landmarks` (`list[AlignLandmark]`, default `[]`) — hard landmark pins
-      (plan 06): human-made committed matches with `score 1.0` that split
-      sub-pools and can never be crossed by machine output. Pins carry only
-      the four index spans (`a_start`/`a_end`/`b_start`/`b_end`); invalid
-      pins (crossing/out-of-range/zero-length) → 422.
-    `window_embed` rejects invalid values with 422; `high_confidence` is bounded
-    `[0,1]`, `band_width` `[1,50]`.
-3. **Align (high-confidence prepass, Plan 03, Aug 2026)** — before either
-    algorithm runs, `BilingualAligner._align_pair` embeds the chunk's single
-    sentences once and locks **prepass anchors**: non-crossing, mutually-best
-    1:1 cells at/above `high_confidence` (`ALIGN_HIGH_CONFIDENCE`, default
-    `0.9`) — the same scan/monotonicity rules as the greedy `anchor_threshold`
-    anchors, but a higher bar (shared core
-    `_find_anchors(sim, n, m, threshold, k, band)`; `_prepass_anchors` wraps it
-    with `high_confidence` plus the anchor distance cap, below). `_align_with_anchors`
-    then splits the chunk into **sub-pools** at the anchors (anchors are part of
-    no pool) and aligns each pool **in isolation** with the chosen algorithm —
-    greedy runs its gap/anchor/orphan logic on the slice (its internal
-    `anchor_threshold` anchors still apply inside the pool), dp runs its DP on
-    the pool's in-band windows (reused through the cache; plan 04) — emitting
-    the anchors themselves as committed 1:1 matches with
-    their cell cosine scores, concatenated in strict document order (pool
-    matches, then anchor, then next pool). No match can consume sentences on
-    both sides of a locked pair. The DP path embeds the chunk's
-    singles once for the prepass matrix (it no longer precomputes the full
-    chunk's windows — plan 04); the greedy path embeds the chunk's
-    singles once and reuses them per pool. Regression tests
-    (`test_aligner.py`) assert the identical anchor set for greedy and dp on
-    known ≥0.9 pairs, that pools stay between anchors in document order, and
-    that lowering `high_confidence` locks more anchors (raising locks fewer).
-    `high_confidence` remains a live knob: `/align` per-request override or
-    `ALIGN_HIGH_CONFIDENCE` in `docker-compose/python/env/.env`, applied on the
-    next request.
-    - **Prepass anchor distance cap (Oct 2026)** — a high-confidence cell is
-      only locked when it sits within `ALIGN_MAX_ANCHOR_DISTANCE` (live knob,
-      default `30`; `<= 0` disables) cells of the expected length-ratio
-      diagonal: `abs(j*k - i) <= cap` with `k = n/m` of the whole chunk
-      (`_prepass_anchors` passes the cap to the shared `_find_anchors` as its
-      band). Unbanded prepass anchors previously let a short-heading cognate
-      far downstream lock an anchor and teleport the cursor past a whole
-      translated block: on "How to take smart notes" (work 5, entity_match 20)
-      LaBSE scored `Introduction` ↔ the RU part heading `Введение` 74 sentences
-      downstream at 0.93 — above the anchor bar — while the translator's actual
-      `Предисловие` scored only 0.78, so chunk 0 locked (0, 74), degraded the
-      entire Предисловие to 74 one-sided rows and desynchronized the cursors
-      for ~140 sentences until the editions' density difference re-converged
-      them on its own (editor rows 1–211 were garbage; row 212 snapped back to
-      the true diagonal). A matrix-edge column is exactly where the
-      mutual-best check is weakest — its row slice holds a single cell — so an
-      out-of-place heading wins by default. The cap bounds that damage while
-      anchors stay able to jump moderate edition differences. Regression
-      tests: `prepass_anchor_distance_cap_rejects_a_far_heading_anchor`,
-      `prepass_anchor_cap_disabled_locks_the_far_heading_anchor` (cap disabled
-      reproduces the teleport).
-    - **Text normalization (Aug 2026)** — every sentence is normalized once at
-      alignment entry: `BilingualAligner._align_pair` runs
-      `_normalize_sentences` (casefold + keep only alphanumerics/whitespace,
-      unicode-aware + collapse whitespace) on both lists, then hands the
-      normalized lists to the algorithm dispatch. `align_lists()` and the
-      demo/`process()` path both route through this single normalization point,
-      so windows, the anchor matrix, gap ladder, orphan-merge and the embedding
-      cache all operate on the identical normalized text — the internal window
-      code never re-normalizes (joining pre-normalized sentences *is* the
-      normalized window text, and normalization is idempotent, so raw and
-      pre-normalized inputs align identically). LaBSE/MiniLM score raw
-      punctuation/case-heavy pairs far below their normalized form — the
-      "The whistler" ↔ "«СВИСТУН»" pair scores ~0.32 raw but ~0.685 normalized
-      (above `ALIGN_DEFAULT_THRESHOLD`), so normalization fixes those false
-      negatives. The embedding cache is keyed on the **normalized** joined text
-      (DP and greedy share the same keys). Stored DB text is untouched — the
-      PHP side persists the raw sentences; only the embedded/scored form is
-      normalized (and the `_match` diagnostic text).
-3. **Align (diagonal banding, Plan 04, Aug 2026)** — per-sub-pool **match
-    edges** are restricted to a diagonal band around the expected length-ratio
-    line. Inside each sub-pool the expected ratio is
-    `k = len(a-side pool) / len(b-side pool)` and a cell `(i, j)` is in-band
-    when `abs(j * k - i) <= band` (`_band_allowed`); the half-width comes from
-    the live `band_width` knob (`ALIGN_BAND_WIDTH`, default unset → derived per
-    sub-pool as `max(2, max_window)`). Effects:
-    - **DP** (`_align_chunk`): match edges are gated by their **start cell** —
-      an edge is only considered when `(i, j)` is in-band. Skip edges stay
-      unbounded by design (skipping is always legal; only pairing is confined
-      to the diagonal). Windows whose start position appears in no in-band cell
-      are never embedded at all (`_in_band_starts` filters the starts passed to
-      `_generate_window_embeddings`), so the plan cuts embedding cost too, not
-      just candidate edges.
-    - **Greedy** (`_align_chunk_greedy`): the internal `anchor_threshold`
-      anchors (`_find_anchors`), the gap window ladder (`_best_window_pair`,
-      gated on the window **centers**
-      `abs((j + b_step/2)*k - (i + a_step/2)) <= band`, and steps that can
-      pair into no in-band combo are never embedded), and the skip decision
-      (`_should_skip_en` — historical name; it governs the first/a side,
-      whose lookahead slices are clamped to in-band cells)
-      are all banded. When the cursor is out of the band on both axes, the
-      walk skips toward the expected diagonal (`return j * k > i`) so it
-      re-enters the band instead of drifting.
-    - **Prepass anchors use their own distance cap, not the band** — the
-      high-confidence prepass may lock a pair up to `ALIGN_MAX_ANCHOR_DISTANCE`
-      cells off the expected diagonal anywhere on the full singles matrix
-      (default 30 — far wider than the per-pool band); only per-pool match
-      edges are confined to the band (see the plan 03 cap, above).
-    - **DP cost drop** — the DP path no longer precomputes the full chunk's
-      `(n + m) * max_window` windows: it embeds only the chunk's singles for
-      the prepass matrix, and each pool embeds only its own in-band windows
-      through the cache. On a clean list (all pools 1×1) the DP now encodes
-      exactly the `n + m` singles, matching greedy.
-    Regression tests (`test_aligner.py`, stub model) assert: an out-of-band
-    pair rejected by a tight band but accepted by a wide one; an in-band pair
-    accepted at the band edge; recovery to the far diagonal pair across a
-    divergent middle (default derived band); the `band_width` knob controlling
-    match density (1 vs 2 matches, dp == greedy); and the encode-count
-    reduction (11 vs 16 in `joined` mode with the band on a 6×1 chunk — in
-    `aggregate` mode the band has nothing left to suppress: 7 encodes either
-    way).
-3. **Align (aggregate window embedding, Plan 05, Aug 2026)** — multi-sentence
-    window vectors are built in one of two modes, per the live `window_embed`
-    knob (`ALIGN_WINDOW_EMBED`, default `aggregate`, coerced from anything not
-    `aggregate|joined`):
-    - **`aggregate`** (default) — each single sentence is embedded **once**
-      through the shared cache (`_sentence_vectors`); every window vector is a
-      **length-weighted, L2-normalized mean** of its sentence vectors
-      (`_aggregate_window`: weights are the window sentences' character counts,
-      so a long sentence dominates the average; a step-1 window reduces to the
-      already-normalized single). The cache key is `(model id, normalized
-      single text)` — the same key the prepass's step-1 windows use — so the
-      prepass singles, the anchor matrix, the gap ladder, and the orphan-merge
-      all share one embedding set and **no joined window text is ever
-      embedded**: the encode count per `/align` is ≈ `n + m`, independent of
-      banding or window expansions.
-    - **`joined`** (legacy) — today's join-then-embed of the normalized window
-      text (cached by joined text), one encode per window text on cache miss.
-      Banding still suppresses out-of-band window *texts* in this mode (11 vs
-      16 encodes on the 6×1 stub); the lazy per-cursor ladder steps hold in
-      both modes.
-    `_window_vector` is the single routing point: `_generate_window_embeddings`
-    and `_embed_windows` both hand every window to it, so all paths (DP in-band
-    windows, greedy ladder/orphan expansions) honor the knob. Equal-length
-    window sentences reproduce the old pooled-mean scores exactly (the stub
-    tests assert the same rankings as before); differing lengths shift scores
-    toward the longer sentence — the point of the mode. LaBSE smoke
-    (`testen.txt`/`testru.txt`, greedy, first 20 lines each): aggregate 9
-    matches mean 0.624, joined 10 matches mean 0.571. Regression tests
-    (`test_aligner.py`, stub model) assert: aggregate ranks the correct 1:2
-    fusion window highest; weights follow sentence lengths (a long sentence
-    dominates the pooled average — unit test on `_aggregate_window` plus an
-    end-to-end 2:1); per-sentence vectors are cached (counting stub: each
-    unique single encoded once, the pooled window adds zero encodes); and a
-    joined-mode smoke keeps the join-then-embed path (4 texts, no single
-    sharing).
-3. **Align (landmark pins, Plan 06, Aug 2026)** — `/align` accepts hard
-    **landmark pins** (`landmarks: list[AlignLandmark]`): human-made committed
-    matches given as index spans into the submitted lists
-    (`{a_start, a_end, b_start, b_end}`, no `score` — pins are always
-    emitted with score 1.0). On re-align the PHP side (plan 07+) passes the
-    human-edited rows as pins so the machine can never produce output that
-    crosses or overlaps them. Semantics in `BilingualAligner`:
-    - **Validation** (`_validate_pins`, called from `_align_pair` against the
-      submitted list lengths) rejects — with `ValueError`, translated to 422
-      by `api/align.py` — pins that are zero-length (`a_end <= a_start` or
-      `b_end <= b_start`), out of range, or that **cross/overlap** another
-      pin (sorted by `a_start`, any pin whose a-side or b-side span intersects
-      the previous pin's is rejected; a pin that merely shares a sentence is
-      contradictory and cannot both be honored). Pins are pairwise disjoint by
-      construction, so the boundary union stays sorted and non-crossing.
-    - **Prepass skip** — `_prepass_anchors` drops any high-confidence anchor
-      cell inside a pin's rectangle (`range(a_start,a_end) ×
-      range(b_start,b_end)`): a pin owns its cells, the prepass never
-      proposes an anchor inside one.
-    - **Sub-pool boundaries** — `_align_with_anchors` builds the union of pins
-      + prepass anchors as the sub-pool boundaries: pins delimit the top-level
-      gaps and only the prepass anchors that lie entirely inside one gap split
-      it further (an anchor touching or crossing a pin is dropped), so machine
-      output can never overlap a pin **by construction** — pools sit strictly
-      between boundaries. Pins are emitted verbatim with `score 1.0`, in strict
-      document order alongside the pool matches and anchor matches. Unmatched
-      lists exclude pinned indices automatically (pins are matches).
-    - Honored in **both** `greedy` and `dp` modes (the boundary logic runs
-      before either algorithm dispatches on the pools).
-    Regression tests (`test_aligner.py`, stub model) assert: the pinned pair is
-    emitted verbatim with score 1.0 (both algorithms); the prepass skips pinned
-    cells and **no machine match overlaps a pin** (a strong 1:2 pin that would
-    otherwise lure the machine into its rectangle); pinned indices are excluded
-    from `unmatched_a`/`unmatched_b`; and crossing / out-of-range /
-    zero-length pins are rejected (`ValueError` → 422 via the API).
-3. **Align (landmark passthrough, Plan 07, Aug 2026)** — the PHP alignment
-    client now accepts the Python knobs:
-    `SentenceAlignmentService::alignChunkRemote($aSentences, $bSentences,
-    $maxN = 3, array $landmarks = [], ?float $highConfidence = null)` passes
-    them to `/align` as `landmarks` (list of `{a_start, a_end, b_start,
-    b_end}` ints) and `high_confidence`. When neither is given the payload is
-    **byte-identical to the previous shape** (no `landmarks`/`high_confidence`
-    keys are sent), so existing callers and the request format are untouched.
-    `AlignEntitySentences` reserves the landmark bar
-    (`MeaningMatch::LANDMARK_THRESHOLD`, 0.90 — homed on the model since ADR
-    0063; inert until
-    plan 08 turns human-edited rows into pins on re-align). Feature tests
-    assert the keys appear in the payload when passed and are omitted when not.
-3. **Align (landmark-aware re-align, Plan 08, Aug 2026)** — the entry-point
-    split. Fresh alignments use `beginFromScratch()` (the original `begin()`:
-    verify, wipe **all** meaning matches, snapshot totals, raise small
-    entities to a single chunk, dispatch). Re-aligning a finished match uses
-    the new `begin()`: it no longer wipes every row — it deletes only machine
-    rows below `LANDMARK_THRESHOLD` (0.90), leaving human-made rows
-    (`alignment_chunk = -1`) and high-confidence auto-landmarks
-    (`similarity >= 0.90`) pinned in place, resets the cursor, and
-    re-dispatches. Matches that never went through the fresh setup delegate to
-    `beginFromScratch()` (see the ADR 0051 entry below). `handle()`
-    is now **pool-aware**: `landmarkRows()` collects every landmark (human +
-    auto), `landmarkBounds()` turns them into non-overlapping pools (a 1:N
-    landmark span merges into one boundary; bounds clamp to the snapshot
-    totals; landmarks with no junction rows are ignored), and each pool is
-    aligned independently so a landmark is never crossed or re-aligned.
-    Inside a pool the seam machinery still applies: the whole-pool fast path
-    (single `/align` call) is taken only when the pool fits one window **and**
-    no rollback candidates remain inside it; otherwise `alignPoolChunk()`
-    rolls back the last machine matches (`rollbackCandidates()`:
-    `alignment_chunk != -1`, similarity < 0.90, junctioned on both sides
-    within the pool, last `ROLLBACK_MATCHES` = 2), re-aligns, and
-    self-dispatches. The whole-pool fast path also self-dispatches: `handle()`
-    persists the cursor via `persistOffsets()` and returns after **each pool**,
-    so a re-align of many small landmark-delimited pools runs as one queued
-    job per pool instead of one long job draining every pool in a single
-    `handle()` (a match with 141 pools previously ran one ~2m16s job). Pools
-    larger than `chunk_size` on either side skip the fast path and are still
-    drained chunk-by-chunk across jobs by `alignPoolChunk()`. Feature tests
-    (`ReAlignPreservesLandmarksTest`) assert
-    human rows and auto-landmarks survive a re-run, `beginFromScratch()`
-    wipes everything, and 1:N human landmark spans never overlap a machine
-    window.
-3. **Align (landmark tiers)** — re-align treats two classes of meaning-match
-    rows as **landmarks** (pins that survive a re-run and partition the match
-    into non-overlapping pools, see Plan 08):
-    - **Hard (human-made)** — rows created or edited by a human via the
-      alignment editor (`AlignmentEditorController`) carry
-      `alignment_chunk = MeaningMatch::HUMAN_CHUNK` (-1) and
-      `similarity = 1.0`. They are never deleted, never rolled back, and never
-      re-aligned — the machine cannot cross them.
-    - **Auto** — machine rows whose `similarity >= LANDMARK_THRESHOLD`
-      (`MeaningMatch::LANDMARK_THRESHOLD` = 0.90) are promoted to
-      landmarks on re-align: they survive the delete-only-sub-threshold wipe
-      and become pool boundaries exactly like human rows.
-    Both tiers feed `landmarkRows()` → `landmarkBounds()`, so both are pool
-    boundaries; the only difference is what Re-align deletes (machine rows
-    below the bar) and what it keeps (both tiers). "Run from scratch"
-    deletes both tiers.
-3. **Align (split Filament actions, Plan 09, Aug 2026)** — the single
-    destructive **Re-run** table action on the `EntityMatch` resource is
-    replaced by two explicit confirmation actions, both visible only for
-    `status ∈ {stale, completed, failed}`:
-    - **Re-align** (`realign`, warning) — calls `begin()`: preserves
-      human-made rows (`alignment_chunk = -1`) and confident landmarks
-      (`similarity >= LANDMARK_THRESHOLD`, 0.90) and re-aligns only the
-      low-confidence gaps. Its confirmation modal reports the live counts,
-      e.g. `"{N} human-made + {M} confident row(s) preserved; only
-      low-confidence rows will be re-aligned."`.
-    - **Run from scratch** (`rerunScratch`, danger, `heroicon-o-trash`) —
-      calls `beginFromScratch()`: deletes **all** meaning matches including
-      human-made ones and re-runs the whole pipeline. Its modal always states
-      that everything is deleted, and adds the human-made count when > 0.
-    Filament tests (`FilamentReAlignActionTest`) assert both actions'
-    visibility per status, their confirmation copy, and the entry-point
-    dispatch each triggers.
-3. **Align (scheduler resume preservation, ADR 0051, Sep 2026)** — two
-    corrections to `begin()` so it can carry the scheduler (a 2026-09-28 prod
-    incident: a sentence edit re-pended a completed match and the 5-minute
-    `alignments:resume` wiped its human rows via `beginFromScratch()`):
-    - The "never set up" delegation is now **row existence** — `begin()`
-      delegates to `beginFromScratch()` when the match has no
-      `meaning_matches` rows. The original guard (`a_total_sentences ===
-      null`) was dead code: the column is `NOT NULL DEFAULT 0`, so it could
-      never fire and a row-less match would have been re-aligned against
-      stale zero totals with no verify pass.
-    - `begin()` **re-snapshots the run plan** (image-less counts per ADR
-      0050, `chunk_size`/`max_n` clamps, small-entity single-chunk raise —
-      the same `snapshotAlignmentPlan()` helper `beginFromScratch()` uses)
-      and mirrors its zero-side immediate finalize, so sentences added or
-      removed since the previous run's snapshot are inside the re-aligned
-      span instead of silently excluded by stale totals.
-    The scheduler, the Filament "Re-align" action, and everything downstream
-    now share one `begin()` contract: existing rows are only ever removed by
-    an explicit "Run from scratch" (or by a genuinely fresh, row-less match).
-    Tests: `ReAlignPreservesLandmarksTest` (snapshot refresh, row-less
-    delegation) and `AlignmentsResumeCommandTest` (the incident end-to-end:
-    sentence edit → pending → `alignments:resume` → human row survives).
-    Tests: `ReAlignPreservesLandmarksTest` (snapshot refresh, row-less
-    delegation) and `AlignmentsResumeCommandTest` (the incident end-to-end:
-    sentence edit → stale → `alignments:resume` → no-op, rows byte-identical).
-3. **Align (stale status, ADR 0055, Oct 2026)** — a 2026-09-30 prod incident
-    (a sentence edit on a hand-tuned match let the scheduler re-derive every
-    weak machine row in a new order five minutes later) ended the
-    sentence-mutation → `pending` rule of ADR 0015:
-    - Sentence mutations on the entity-level paths (entities frontend and
-      relation manager, through `EntitySentenceStore` — ADR 0065) flip
-      affected matches to a **display-only `stale`** status
-      (`aligning`/`completed`/`failed` → `stale`; a `pending` fresh match
-      stays
-      pending). `pending` now means only "fresh match awaiting its one
-      automatic run".
-    - The scheduler is unchanged — it picks only `pending`, so stale matches
-      are invisible to it forever. **Only an explicit human action re-aligns
-      or clears the flag**: Re-align / Run from scratch (→ `aligning`), a
-      sentence re-import (→ `completed`). Alignment-editor edits leave
-      `stale` untouched (ADR 0062 — the editor is surgical and never
-      completes a match). To protect
-      a weak row from a future Re-align, approve it in the alignment editor —
-      the approve action pins it as a human landmark (`similarity = 1.0`,
-      `alignment_chunk = -1`).
-    - `finalize()`/`failed()` complete or fail the match only from `aligning`
-      (see the completion gate above); stale holds no processing slot.
-3. **Align (refine round, Oct 2026)** — a second pass over a **completed**
-   match that re-aligns only the regions around one-sided machine rows, with
-   per-request overrides to the python service instead of round 1's defaults:
-   `algorithm=dp` + `window_embed=joined` (`SentenceAlignmentService::
-   alignChunkRemote()` grew optional `algorithm`/`windowEmbed` params, passed
-   through to `/align` only when set).
-   - **Why**: the greedy window ladder compares raw cosines with no cost for
+## 1. Split
+
+`SentenceSplitter` streams entity files in
+~`services.python.sentence_split_chunk_bytes` chunks to the python `/split`
+endpoint (UTF-8-safe cut + raw-remainder stitching, so chunk seams are
+seamless: incomplete trailing UTF-8 bytes are held back
+(`carryIncompleteTrailingBytes`) and re-prefixed to the next chunk) and
+writes `EntitySentence` rows with **sparse orders
+from birth** (`SparseOrderService::initial($index)` → 0, 1024, 2048, …;
+the splitter takes `SparseOrderService` via constructor injection). This
+matters downstream: with dense 1,2,3… orders every editor
+insert/reorder exhausts the midpoint gap and falls through to a full-list
+rebalance, whereas sparse-from-creation lets a reorder write only the
+moved row. Existing dense lists are repaired by `entity-orders:rebalance`
+(daily schedule, or run manually). (`SplitEntityFileSentences` job —
+takes `(entityId, filePath)`, reads the language from the entity and sends
+its code to python as the `language` field; `ProcessEntityFile`
+orchestrates file ingestion, also `(entityId, filePath)`.) Splitting
+itself (pysbd + title heuristics ported from the old
+PHP splitter) lives in python `ai/splitting/`. **Engines resolve per
+language** (`config.splitter_engine_for`, pure core in
+`config.resolve_splitter_engine`): an explicit
+`SPLITTER_ENGINE_OVERRIDES` entry (`be=razdel,pl=pysbd`; malformed entries
+and unknown engine names are ignored) wins; otherwise the global
+`SPLITTER_ENGINE`; except when the global engine cannot serve the language
+— pysbd without a pysbd language entry (no `be` there) — the rule-based
+engine (razdel) is substituted automatically, so an unregistered/unknown
+code falls back instead of erroring (Laravel validates codes against the
+languages registry; a deliberate `be=pysbd` pin is still honored and
+surfaces its construction error as HTTP 400). The `/split` per-language
+instance cache invalidates on the **resolved** engine, so a razdel-backed
+cached Belarusian splitter is reused rather than rebuilt into a ValueError
+under a pysbd global. Belarusian shares the exact Russian noise-cleanup
+preprocessing rule list (same script, same stray markers; no
+postprocessing of its own). The python splitter hands
+pysbd buffered prose with **newlines selectively flattened**:
+`TypedSentenceSplitter::flush_buffer` joins buffered lines with `\n`, then
+`selective_flatten` collapses every newline that does not follow
+sentence-ending punctuation (`. ! ? … » " ' ) ” ’` — the curly closers
+U+201D/U+2019 included) to a space, keeping only
+real paragraph breaks. This is the synthesis of two competing constraints:
+flattening *all* newlines to spaces lets pysbd's quote-region heuristic
+merge long dialogue spans into a single "sentence" (a lone `"` left over at
+a line end swallows everything up to the next closing quote — the EN Book
+Thief split into 547 sentences incl. a 1761-char monster; preserving the
+boundaries after punctuation fixes it to ~1036 clean sentences), while
+keeping *every* newline makes pysbd treat hard-wrapped prose lines
+(each paragraph wrapped at ~70 cols with a single newline) as separate
+sentences (the RU "Книжный вор 2" split into 9926 fragments; selective
+flatten collapses them to ~7148 real sentences, max 277 chars). The curly
+closers were the missing piece for Book Thief dialogue: lines close with
+`”`, so without them the newline after each dialogue line (and its blank
+line's `\n\n`) flattened to one/two spaces — two spaces break pysbd's
+`(?<=[!?.-]["'“”])\s{1}(?=[A-Z])` quote-end re-split and the whole dialogue
+block merged into a single 464-char "sentence". Regression
+test: `docker-compose/python/ai/splitting/test_splitter.py` (committed
+synthetic fixtures in `ai/splitting/fixtures/` reproduce both bugs — a
+straight-quote dialogue block and hard-wrapped RU prose — plus the
+curly-quote dialogue check and unit tests of `selective_flatten`/
+`normalize`; runs under pytest for both engines and fails under either
+extreme behavior). Engine
+resolution unit tests: `ai/splitting/test_engine_resolution.py` +
+`ai/splitting/test_preprocessing.py` and
+`ai/api/test_split_endpoint.py` (cache invalidate/reuse on the
+resolved engine).
+
+## 2. Sign
+
+`TextSignatureService` builds an embedding-based signature per
+entity via `/embed` (**BGE-M3, 1024-dim**; the request carries the entity's
+language code). Since ADR 0033 the signature is a **background derivation**
+(`FinalizeEntityDerivations` after the split — copied from a text-hash-equal
+entity when one exists), never a synchronous upload step; its only uses are
+cross-language candidate finding (`findCrossLanguage`, the Filament "Find
+Match" action) and `verifyEntityPair()`, which rejects pairs whose cosine
+similarity < **0.70** before alignment is attempted. Duplicate detection is
+the job of the local `EntityTextHasher` sha256 hashes, not the embedding.
+
+## 2b. Copy (fast path)
+
+before any pipeline run, the one creation module
+(`EntityMatchCreationService::create()`, which all four creation surfaces
+call — the Library Alignments form via `LibraryController::storeAlignment`,
+the Filament create page, the ListEntityMatches "New Alignment" header
+action, and the EntityResource "Find Match" action) tries
+`AlignmentCopyService::copyFor()`: if a **completed** match exists between
+entities whose `text_hash` and language equal the new pair's (either
+orientation), its meaning matches and junctions are cloned with a
+positional sentence mapping (Nth source sentence ↔ Nth copy sentence,
+mirrored sides if the orientation flipped; human landmarks
+`alignment_chunk = -1` preserved), the new match is `completed` at creation
+and no Python call is made. The copy transaction renormalizes the cloned
+rows with `resequenceMatchesByDocumentPosition()` so a source predating an
+ordering fix cannot propagate a scrambled order column (see the
+order-preservation invariant above). Source selection: most human-confirmed
+rows
+(`confirmed_count`), then `linked_count`, then latest `completed_at`. Any
+structural mismatch (sentence counts, unmappable junction, pre-existing
+rows) falls back to the pipeline. Stale hashes are recomputed
+synchronously first — a local sha256. See ADR 0033.
+
+## 3. Align
+
+`AlignEntitySentences::beginFromScratch($entityMatchId)` (the
+fresh-entry-point shared static) verifies the
+pair, snapshots counts, resets the cursor
+(`a_last_sentence_offset`/`b_last_sentence_offset` on
+`EntityMatch`), transitions `pending → aligning`, and dispatches the
+first `AlignEntitySentences` job. Each `handle()` invocation reads the
+cursor from the model, slices one chunk of a-side and b-side sentences
+**sequentially** (b offset = a offset, no overlap), POSTs them to
+`/align` via `SentenceAlignmentService::alignChunkRemote()` (transport
+through `PythonClient::align()`; `services.python.align_timeout`,
+default 600), and writes the result via
+`MeaningMatchStore::storeAlignmentSegmentFromMatches()` (one
+`MeaningMatch` per DP step +
+`SentenceMeaningMatch` junction rows carrying `side` `'a'`/`'b'`). The job
+commits only matches up to and including the **last confident anchor**
+(score ≥ `ANCHOR_SCORE_THRESHOLD` = 0.40): the DP force-aligns every
+sentence in the window, so the tail near the chunk seam can be garbage
+(5:1 then 1:5 at the seam) — dropping it and advancing the cursor to the
+anchor's `a_end`/`b_end` (not the full chunk size) lets the next
+invocation re-align that tail with the correct b-side context now in-window
+(a port of `BilingualAligner._trim_to_last_anchor`). With no anchor the
+whole chunk is committed to guarantee forward progress; on the final
+chunk (both windows reach their totals) everything is committed and the
+match flips to `completed`. Because the strict 1:1 window gives the DP no
+backward reach, the seam garbage re-appears at the *head* of the next
+chunk (a 1:5 span that scores as an anchor and survives trim). So before
+aligning, the job **rolls back** the last `ROLLBACK_MATCHES` (2) committed
+meaning matches: their rows are deleted (junction rows cascade via FK),
+the cursor rewinds to the first sentence those matches covered, the limits
+grow by the rolled-back spans, and the DP re-aligns that region with fresh
+forward context (see ADR 0004). Only matches with junction rows on both
+sides are candidates; skip steps and human-edit rows
+(`alignment_chunk = -1`) are never rolled back. A monotone-cursor safety
+net force-advances the a side past the stored offset if a rolled-back
+commit would otherwise not move forward. `alignment_chunk` on meaning
+matches is a monotonic per-run id (`MAX + 1`, never the human-edit `-1`
+sentinel), so a re-run cannot wipe a previously committed chunk. If
+sentences remain the job `self::dispatch()`es the next invocation,
+otherwise the entity match flips to `completed`. Job timeout 600s,
+`tries=5` with backoff `[30, 60, 120, 300]` to heal transient python
+failures; `failed()` is terminal and leaves the cursor untouched so a
+future resume can continue. The standalone `AlignEntitySentenceChunk` job
+and the `Bus::chain()` fan-out were replaced by this single
+self-restarting job — see ADR 0003 / 0004. Small entities
+(`max(a_total, b_total) ≤ 75`) are raised to a single chunk in
+`beginFromScratch()`, so the seam rollback/trim machinery is skipped for
+them entirely.
+Completion funnels through a single gate
+(`AlignEntitySentences::finalize()`, Aug 2026): before the match flips to
+`completed`, every sentence on **either side** that is still junction-less —
+dropped by an empty-commit seam, left over when the other side was
+exhausted, or skipped during a re-align — is junctioned into a
+**single-sided meaning match** (`similarity 0.0`, next machine
+`alignment_chunk` id), ordered positionally
+(`SparseOrderService::spreadOrders` between the neighbouring junctioned
+anchors) so the reader's meaning-match sequence preserves the original
+document order. The `completed` write itself happens **only when the
+match is still `aligning`** at completion time (the gate re-reads the
+status from the DB): if a sentence edit flipped the match to `stale`
+mid-run, the repairs and `linked_count` update still run but the stale
+flag survives — an in-flight run cannot silently complete over it
+(ADR 0055). `failed()` carries the same guard. This is the **total
+completeness** invariant (ADR 0048,
+Sept 2026): `skipSides()` returns both sides unconditionally — it
+superseded the original-side-only scope (which left translation-side
+sentences invisible in the reader; the editor's live unmatched pools were
+their only surface). The whole repair is
+`MeaningMatchStore::repairCoverage()` (ADR 0063, amended 2026-10-05):
+one transaction that seeds a **claimed-orders** set with every existing
+row order and backfills both sides against it — opposite-side runs
+between the same anchors compute identical spread values, and without the
+claim check the second insert would violate `unique(entity_match_id,
+order)` (the old silent translation↔translation failure) — then
+resequences and syncs `linked_count`, whole-or-nothing. The repair is
+best-effort at the job level: if it fails, one warning is logged and
+completion proceeds regardless (a failure rolls the whole repair back —
+no half-repaired state). The resequence inside `repairCoverage()` runs
+unconditionally (idempotent) so every completion path leaves the stored
+sequence
+equal to document position — see the order-preservation invariant above.
+`storeSkipSentences()` on `MeaningMatchStore` persists
+single-sided rows (side parameter `'a'|'b'`), and the crawl's empty-commit
+seams (`alignWholePool`, `alignPoolChunk`) use it to junction the first
+uncommitted sentence of whichever side's cursor advances (parked sides
+still re-feed; finalize is their safety net).
+"One side's sentences exhausted before the other's" is a normal
+completion, not an error: the remaining tail on either side is drained
+as single-sided rows.
+
+### Precision knobs (Aug 2026)
+
+the python DP no longer
+force-aligns every sentence. Two live knobs
+(`docker-compose/python/env/.env`, apply on the next request):
+- **Skip branch** — `ALIGN_SKIP_PENALTY` (per-sentence cost of consuming
+  a sentence without emitting a match; default `-0.5`). Edges that consume
+  only a-side or only b-side sentences are now legal DP transitions, so a
+  sentence with no counterpart is **skipped** (reported in `unmatched_a` /
+  `unmatched_b`) instead of being force-matched into a <0.6 garbage
+  meaning match. The php gap-filling in `SentenceAlignmentService`
+  converts those gaps to the existing `skip_a` / `skip_b` steps, so no
+  new persistence path was needed.
+- **Span cap** — `ALIGN_MAX_TOTAL_SPAN` (default `6`) rejects match edges
+  whose `a_step + b_step` exceeds the cap, dropping 1:5 / 5:1 spans.
+- `ALIGN_DEFAULT_THRESHOLD` raised `0.4 → 0.55` (MiniLM calibration; a
+  live histogram of `meaning_match.similarity` showed a long garbage tail
+  below ~0.55). Sub-threshold windows are now skipped rather than matched.
+  With the **LaBSE** aligner (below) bitext cosine scores run hotter, so
+  `ALIGN_DEFAULT_THRESHOLD` was provisionally set to `0.75` and
+  `ALIGN_ANCHOR_THRESHOLD` to `0.8` (sanity-checked on the test pair).
+  **Calibration (Aug 2026):** real LaBSE scores on adapted learning texts
+  sit well below those provisional values — the The Gamblers titles
+  (THE GAMBLERS ↔ ИГРОКИ) score 0.59, the full parenthetical titles
+  0.67 (measured via `/align` on the running service). `0.75` silently
+  skipped such genuine matches, so `ALIGN_DEFAULT_THRESHOLD` is back to
+  `0.55` (the established MiniLM garbage-floor; LaBSE runs hotter than
+  MiniLM, so 0.55 stays conservative) and `ALIGN_ANCHOR_THRESHOLD` to
+  `0.6`. Still to be refined from a real `meaning_match.similarity`
+  distribution once a live corpus is aligned.
+- **Embedding cache** — `EmbeddingCache` (LRU 10k) caches embeddings per
+  process, keyed by model id + **normalized** text. With the default
+  `window_embed=aggregate` (plan 05) the keys are the **single sentences**,
+  so the prepass, window scoring, and re-alignment of chunk seams share one
+  set of single embeddings; in `joined` mode the keys are the normalized
+  joined window texts (the original behavior). Either way, chunk-seam
+  re-alignment and entities that share source text no longer re-encode the
+  same texts. Regression tests:
+  `docker-compose/python/ai/alignment/test_aligner.py` (35 stub-model
+  tests) + `test_aligner_process.py` (the file-based chunked `process()`
+  flow). Whole python suite: `docker exec ext_python python -m pytest
+  /app/ai -q` — stub models only, no weights, no CI job (manual).
+
+### Algorithm (Aug 2026)
+
+the DP is now one of two aligners in
+`bilingual_aligner.py`, chosen by a live knob `ALIGN_ALGORITHM`
+(`greedy` default | `dp`):
+- **`dp`** — the original full-window DP. With a big aligner model (e.g.
+  BGE-M3) it embeds every window, `(n + m) * max_window` encodes per
+  `/align` call: ~4 min for a 100-sentence entity at `max_window=6`.
+- **`greedy`** — anchor-first. Embeds each single sentence once per side,
+  builds the n×m sentence matrix, locks confident non-crossing 1:1 anchors
+  (mutual-best within `max_window` each way, above `ALIGN_ANCHOR_THRESHOLD`,
+  default 0.6 — 0.8 with the LaBSE aligner, provisional), then greedily
+  walks the gaps between anchors via a **window ladder**: steps `1..primary`
+  (`ALIGN_PRIMARY_WINDOW`, default 3) are compared as one set and the
+  highest-scoring combo above threshold wins — a 1:1 is **no longer
+  auto-committed the moment it clears the bar**, it must beat the other
+  window combos up to `primary` — and if nothing in the primary set clears,
+  the search widens one step per side up to `max_window`
+  (`ALIGN_MAX_TOTAL_SPAN` still bounds `a_step + b_step`). Otherwise skip
+  the side whose best 1:1 partner within lookahead is weaker (the DP's skip
+  semantics, localized). **Orphan-merge post-pass (Aug 2026)** — a locked
+  anchor can be the head of a genuine multi-sentence window: the pooled
+  window scores higher than the 1:1 but is never evaluated because the
+  anchor pre-commits and the cursor jumps past it, leaving the tail as
+  orphans (A0↔B0 1:1 at 0.701 pre-commits while the pooled A0:2↔B0
+  scores 0.743 — exactly the pattern fusions produce, a partial 1:1 anchor
+  + adjacent orphan). After the anchor/gap pass, `_merge_orphans` walks the
+  matches and, for any match whose following gap has orphans on exactly one
+  side (the other already consumed), extends the match's window over the
+  orphan run — every extension length up to the bound (`max_window`,
+  `ALIGN_MAX_TOTAL_SPAN`) is embedded lazily through the shared cache and
+  scored; the best pooled window replaces the match only if it beats its
+  score by `ALIGN_MERGE_MARGIN` (default 0.02). Embed count ≈ `n + m`
+  singles plus a few window expansions per messy cursor — ~6× fewer on a
+  clean text, so a 100-sentence entity drops from ~4 min to ~30–60s. The
+  `matches` payload shape is unchanged, so `SentenceAlignmentService` and
+  the job's anchor-trim/rollback need no changes. `/align` accepts optional
+  per-request `algorithm` and `anchor_threshold` overrides. Regression
+  tests assert greedy/DP equivalence on a clean list, 1:2 lazy expansion,
+  skip behavior, anchor+gap resolution, the widening ladder (a 1:4 match
+that only clears past `primary`), normalized-window scoring, and the
+orphan-merge (2:1 beats a bar-clearing 1:1 → merged, no unmatched; the
+margin guard keeps a below-margin pooled window from over-merging), and
+count encoded texts (stub model).
+
+### Weak-pair rescue (ADR 0048, Sept 2026)
+
+the greedy gap walk
+no longer turns every sub-threshold pair into a double skip. When no
+window combo clears the match bar, `_rescue_mutual_best` first checks the
+cursor pair: if each sentence's best in-band partner within `max_window`
+lookahead is the other and the 1:1 score clears `ALIGN_RESCUE_THRESHOLD`
+(live knob, default 0.45, `0` disables, capped at
+`ALIGN_DEFAULT_THRESHOLD`), the pair is emitted as a **real match
+carrying its true sub-threshold score** — it surfaces in the editor's
+Needs review as a low-similarity row instead of masquerading as two
+single-sided skip rows (the repeating 1-sided pattern came from the skip
+rule's cascade: skipping one member of a mutual pair collapses the
+survivor's lookahead, so the next iteration skips the other side too).
+Non-mutual weak pairs stay skipped — the structural guard is what makes
+the lower bar safe. After the walk, `_rescue_orphan_gaps` re-walks gaps
+holding orphans on **both** sides (previously ignored by `_merge_orphans`
+entirely) with the window-combo acceptance bar lowered to the rescue
+threshold, pairing orphan runs the fragmented walk declined. Rescued
+matches score below 0.55, hence far below the 0.90 landmark bar — they
+re-align like any machine row. Regression tests: `test_aligner.py`
+(mutual-best rescue with real score; disabled knob keeps the double
+skip; non-mutual stays skipped; two-sided orphan gap rescued).
+
+### Reserved knobs (Plan 02, Aug 2026)
+
+four new `/align` request
+fields (all optional) and three new live config accessors were plumbed
+through end-to-end. `high_confidence` is **consumed by plan 03's prepass**
+(below); `band_width` and `window_embed` by plans 04 and 05 (below); and
+`landmarks` by plan 06 (below). The API passes them to
+`BilingualAligner(...)`, which resolves `None` from config and stores them
+as `self.high_confidence` / `self.band_width` / `self.window_embed`.
+- `high_confidence` (`ALIGN_HIGH_CONFIDENCE`, default `0.9`) — 1:1 prepass
+  anchor bar (plan 03): mutually-best cells at/above this cosine get locked
+  as committed matches that split the chunk into sub-pools.
+- `band_width` (`ALIGN_BAND_WIDTH`, default unset → derived per sub-pool
+  as `max(2, max_window)`) — diagonal-band half-width (plan 04): match
+  edges restricted to a band around the expected length-ratio diagonal.
+  **Consumed by plan 04 (below).**
+- `window_embed` (`ALIGN_WINDOW_EMBED`, default `aggregate`, coerced from
+  anything not `aggregate|joined`) — multi-sentence window embedding mode
+  (plan 05): `aggregate` (per-sentence vectors combined length-weighted +
+  L2-normalized) vs `joined` (the legacy join-then-embed).
+  **Consumed by plan 05 (below).**
+- `landmarks` (`list[AlignLandmark]`, default `[]`) — hard landmark pins
+  (plan 06): human-made committed matches with `score 1.0` that split
+  sub-pools and can never be crossed by machine output. Pins carry only
+  the four index spans (`a_start`/`a_end`/`b_start`/`b_end`); invalid
+  pins (crossing/out-of-range/zero-length) → 422.
+`window_embed` rejects invalid values with 422; `high_confidence` is bounded
+`[0,1]`, `band_width` `[1,50]`.
+
+### High-confidence prepass (Plan 03, Aug 2026)
+
+before either
+algorithm runs, `BilingualAligner._align_pair` embeds the chunk's single
+sentences once and locks **prepass anchors**: non-crossing, mutually-best
+1:1 cells at/above `high_confidence` (`ALIGN_HIGH_CONFIDENCE`, default
+`0.9`) — the same scan/monotonicity rules as the greedy `anchor_threshold`
+anchors, but a higher bar (shared core
+`_find_anchors(sim, n, m, threshold, k, band)`; `_prepass_anchors` wraps it
+with `high_confidence` plus the anchor distance cap, below). `_align_with_anchors`
+then splits the chunk into **sub-pools** at the anchors (anchors are part of
+no pool) and aligns each pool **in isolation** with the chosen algorithm —
+greedy runs its gap/anchor/orphan logic on the slice (its internal
+`anchor_threshold` anchors still apply inside the pool), dp runs its DP on
+the pool's in-band windows (reused through the cache; plan 04) — emitting
+the anchors themselves as committed 1:1 matches with
+their cell cosine scores, concatenated in strict document order (pool
+matches, then anchor, then next pool). No match can consume sentences on
+both sides of a locked pair. The DP path embeds the chunk's
+singles once for the prepass matrix (it no longer precomputes the full
+chunk's windows — plan 04); the greedy path embeds the chunk's
+singles once and reuses them per pool. Regression tests
+(`test_aligner.py`) assert the identical anchor set for greedy and dp on
+known ≥0.9 pairs, that pools stay between anchors in document order, and
+that lowering `high_confidence` locks more anchors (raising locks fewer).
+`high_confidence` remains a live knob: `/align` per-request override or
+`ALIGN_HIGH_CONFIDENCE` in `docker-compose/python/env/.env`, applied on the
+next request.
+- **Prepass anchor distance cap (Oct 2026)** — a high-confidence cell is
+  only locked when it sits within `ALIGN_MAX_ANCHOR_DISTANCE` (live knob,
+  default `30`; `<= 0` disables) cells of the expected length-ratio
+  diagonal: `abs(j*k - i) <= cap` with `k = n/m` of the whole chunk
+  (`_prepass_anchors` passes the cap to the shared `_find_anchors` as its
+  band). Unbanded prepass anchors previously let a short-heading cognate
+  far downstream lock an anchor and teleport the cursor past a whole
+  translated block: on "How to take smart notes" (work 5, entity_match 20)
+  LaBSE scored `Introduction` ↔ the RU part heading `Введение` 74 sentences
+  downstream at 0.93 — above the anchor bar — while the translator's actual
+  `Предисловие` scored only 0.78, so chunk 0 locked (0, 74), degraded the
+  entire Предисловие to 74 one-sided rows and desynchronized the cursors
+  for ~140 sentences until the editions' density difference re-converged
+  them on its own (editor rows 1–211 were garbage; row 212 snapped back to
+  the true diagonal). A matrix-edge column is exactly where the
+  mutual-best check is weakest — its row slice holds a single cell — so an
+  out-of-place heading wins by default. The cap bounds that damage while
+  anchors stay able to jump moderate edition differences. Regression
+  tests: `prepass_anchor_distance_cap_rejects_a_far_heading_anchor`,
+  `prepass_anchor_cap_disabled_locks_the_far_heading_anchor` (cap disabled
+  reproduces the teleport).
+- **Text normalization (Aug 2026)** — every sentence is normalized once at
+  alignment entry: `BilingualAligner._align_pair` runs
+  `_normalize_sentences` (casefold + keep only alphanumerics/whitespace,
+  unicode-aware + collapse whitespace) on both lists, then hands the
+  normalized lists to the algorithm dispatch. `align_lists()` and the
+  demo/`process()` path both route through this single normalization point,
+  so windows, the anchor matrix, gap ladder, orphan-merge and the embedding
+  cache all operate on the identical normalized text — the internal window
+  code never re-normalizes (joining pre-normalized sentences *is* the
+  normalized window text, and normalization is idempotent, so raw and
+  pre-normalized inputs align identically). LaBSE/MiniLM score raw
+  punctuation/case-heavy pairs far below their normalized form — the
+  "The whistler" ↔ "«СВИСТУН»" pair scores ~0.32 raw but ~0.685 normalized
+  (above `ALIGN_DEFAULT_THRESHOLD`), so normalization fixes those false
+  negatives. The embedding cache is keyed on the **normalized** joined text
+  (DP and greedy share the same keys). Stored DB text is untouched — the
+  PHP side persists the raw sentences; only the embedded/scored form is
+  normalized (and the `_match` diagnostic text).
+
+### Diagonal banding (Plan 04, Aug 2026)
+
+per-sub-pool **match
+edges** are restricted to a diagonal band around the expected length-ratio
+line. Inside each sub-pool the expected ratio is
+`k = len(a-side pool) / len(b-side pool)` and a cell `(i, j)` is in-band
+when `abs(j * k - i) <= band` (`_band_allowed`); the half-width comes from
+the live `band_width` knob (`ALIGN_BAND_WIDTH`, default unset → derived per
+sub-pool as `max(2, max_window)`). Effects:
+- **DP** (`_align_chunk`): match edges are gated by their **start cell** —
+  an edge is only considered when `(i, j)` is in-band. Skip edges stay
+  unbounded by design (skipping is always legal; only pairing is confined
+  to the diagonal). Windows whose start position appears in no in-band cell
+  are never embedded at all (`_in_band_starts` filters the starts passed to
+  `_generate_window_embeddings`), so the plan cuts embedding cost too, not
+  just candidate edges.
+- **Greedy** (`_align_chunk_greedy`): the internal `anchor_threshold`
+  anchors (`_find_anchors`), the gap window ladder (`_best_window_pair`,
+  gated on the window **centers**
+  `abs((j + b_step/2)*k - (i + a_step/2)) <= band`, and steps that can
+  pair into no in-band combo are never embedded), and the skip decision
+  (`_should_skip_en` — historical name; it governs the first/a side,
+  whose lookahead slices are clamped to in-band cells)
+  are all banded. When the cursor is out of the band on both axes, the
+  walk skips toward the expected diagonal (`return j * k > i`) so it
+  re-enters the band instead of drifting.
+- **Prepass anchors use their own distance cap, not the band** — the
+  high-confidence prepass may lock a pair up to `ALIGN_MAX_ANCHOR_DISTANCE`
+  cells off the expected diagonal anywhere on the full singles matrix
+  (default 30 — far wider than the per-pool band); only per-pool match
+  edges are confined to the band (see the plan 03 cap, above).
+- **DP cost drop** — the DP path no longer precomputes the full chunk's
+  `(n + m) * max_window` windows: it embeds only the chunk's singles for
+  the prepass matrix, and each pool embeds only its own in-band windows
+  through the cache. On a clean list (all pools 1×1) the DP now encodes
+  exactly the `n + m` singles, matching greedy.
+Regression tests (`test_aligner.py`, stub model) assert: an out-of-band
+pair rejected by a tight band but accepted by a wide one; an in-band pair
+accepted at the band edge; recovery to the far diagonal pair across a
+divergent middle (default derived band); the `band_width` knob controlling
+match density (1 vs 2 matches, dp == greedy); and the encode-count
+reduction (11 vs 16 in `joined` mode with the band on a 6×1 chunk — in
+`aggregate` mode the band has nothing left to suppress: 7 encodes either
+way).
+
+### Aggregate window embedding (Plan 05, Aug 2026)
+
+multi-sentence
+window vectors are built in one of two modes, per the live `window_embed`
+knob (`ALIGN_WINDOW_EMBED`, default `aggregate`, coerced from anything not
+`aggregate|joined`):
+- **`aggregate`** (default) — each single sentence is embedded **once**
+  through the shared cache (`_sentence_vectors`); every window vector is a
+  **length-weighted, L2-normalized mean** of its sentence vectors
+  (`_aggregate_window`: weights are the window sentences' character counts,
+  so a long sentence dominates the average; a step-1 window reduces to the
+  already-normalized single). The cache key is `(model id, normalized
+  single text)` — the same key the prepass's step-1 windows use — so the
+  prepass singles, the anchor matrix, the gap ladder, and the orphan-merge
+  all share one embedding set and **no joined window text is ever
+  embedded**: the encode count per `/align` is ≈ `n + m`, independent of
+  banding or window expansions.
+- **`joined`** (legacy) — today's join-then-embed of the normalized window
+  text (cached by joined text), one encode per window text on cache miss.
+  Banding still suppresses out-of-band window *texts* in this mode (11 vs
+  16 encodes on the 6×1 stub); the lazy per-cursor ladder steps hold in
+  both modes.
+`_window_vector` is the single routing point: `_generate_window_embeddings`
+and `_embed_windows` both hand every window to it, so all paths (DP in-band
+windows, greedy ladder/orphan expansions) honor the knob. Equal-length
+window sentences reproduce the old pooled-mean scores exactly (the stub
+tests assert the same rankings as before); differing lengths shift scores
+toward the longer sentence — the point of the mode. LaBSE smoke
+(`testen.txt`/`testru.txt`, greedy, first 20 lines each): aggregate 9
+matches mean 0.624, joined 10 matches mean 0.571. Regression tests
+(`test_aligner.py`, stub model) assert: aggregate ranks the correct 1:2
+fusion window highest; weights follow sentence lengths (a long sentence
+dominates the pooled average — unit test on `_aggregate_window` plus an
+end-to-end 2:1); per-sentence vectors are cached (counting stub: each
+unique single encoded once, the pooled window adds zero encodes); and a
+joined-mode smoke keeps the join-then-embed path (4 texts, no single
+sharing).
+
+### Landmark pins (Plan 06, Aug 2026)
+
+`/align` accepts hard
+**landmark pins** (`landmarks: list[AlignLandmark]`): human-made committed
+matches given as index spans into the submitted lists
+(`{a_start, a_end, b_start, b_end}`, no `score` — pins are always
+emitted with score 1.0). On re-align the PHP side (plan 07+) passes the
+human-edited rows as pins so the machine can never produce output that
+crosses or overlaps them. Semantics in `BilingualAligner`:
+- **Validation** (`_validate_pins`, called from `_align_pair` against the
+  submitted list lengths) rejects — with `ValueError`, translated to 422
+  by `api/align.py` — pins that are zero-length (`a_end <= a_start` or
+  `b_end <= b_start`), out of range, or that **cross/overlap** another
+  pin (sorted by `a_start`, any pin whose a-side or b-side span intersects
+  the previous pin's is rejected; a pin that merely shares a sentence is
+  contradictory and cannot both be honored). Pins are pairwise disjoint by
+  construction, so the boundary union stays sorted and non-crossing.
+- **Prepass skip** — `_prepass_anchors` drops any high-confidence anchor
+  cell inside a pin's rectangle (`range(a_start,a_end) ×
+  range(b_start,b_end)`): a pin owns its cells, the prepass never
+  proposes an anchor inside one.
+- **Sub-pool boundaries** — `_align_with_anchors` builds the union of pins
+  + prepass anchors as the sub-pool boundaries: pins delimit the top-level
+  gaps and only the prepass anchors that lie entirely inside one gap split
+  it further (an anchor touching or crossing a pin is dropped), so machine
+  output can never overlap a pin **by construction** — pools sit strictly
+  between boundaries. Pins are emitted verbatim with `score 1.0`, in strict
+  document order alongside the pool matches and anchor matches. Unmatched
+  lists exclude pinned indices automatically (pins are matches).
+- Honored in **both** `greedy` and `dp` modes (the boundary logic runs
+  before either algorithm dispatches on the pools).
+Regression tests (`test_aligner.py`, stub model) assert: the pinned pair is
+emitted verbatim with score 1.0 (both algorithms); the prepass skips pinned
+cells and **no machine match overlaps a pin** (a strong 1:2 pin that would
+otherwise lure the machine into its rectangle); pinned indices are excluded
+from `unmatched_a`/`unmatched_b`; and crossing / out-of-range /
+zero-length pins are rejected (`ValueError` → 422 via the API).
+
+### Landmark passthrough (Plan 07, Aug 2026)
+
+the PHP alignment
+client now accepts the Python knobs:
+`SentenceAlignmentService::alignChunkRemote($aSentences, $bSentences,
+$maxN = 3, array $landmarks = [], ?float $highConfidence = null)` passes
+them to `/align` as `landmarks` (list of `{a_start, a_end, b_start,
+b_end}` ints) and `high_confidence`. When neither is given the payload is
+**byte-identical to the previous shape** (no `landmarks`/`high_confidence`
+keys are sent), so existing callers and the request format are untouched.
+`AlignEntitySentences` reserves the landmark bar
+(`MeaningMatch::LANDMARK_THRESHOLD`, 0.90 — homed on the model since ADR
+0063; inert until
+plan 08 turns human-edited rows into pins on re-align). Feature tests
+assert the keys appear in the payload when passed and are omitted when not.
+
+### Landmark-aware re-align (Plan 08, Aug 2026)
+
+the entry-point
+split. Fresh alignments use `beginFromScratch()` (the original `begin()`:
+verify, wipe **all** meaning matches, snapshot totals, raise small
+entities to a single chunk, dispatch). Re-aligning a finished match uses
+the new `begin()`: it no longer wipes every row — it deletes only machine
+rows below `LANDMARK_THRESHOLD` (0.90), leaving human-made rows
+(`alignment_chunk = -1`) and high-confidence auto-landmarks
+(`similarity >= 0.90`) pinned in place, resets the cursor, and
+re-dispatches. Matches that never went through the fresh setup delegate to
+`beginFromScratch()` (see the ADR 0051 entry below). `handle()`
+is now **pool-aware**: `landmarkRows()` collects every landmark (human +
+auto), `landmarkBounds()` turns them into non-overlapping pools (a 1:N
+landmark span merges into one boundary; bounds clamp to the snapshot
+totals; landmarks with no junction rows are ignored), and each pool is
+aligned independently so a landmark is never crossed or re-aligned.
+Inside a pool the seam machinery still applies: the whole-pool fast path
+(single `/align` call) is taken only when the pool fits one window **and**
+no rollback candidates remain inside it; otherwise `alignPoolChunk()`
+rolls back the last machine matches (`rollbackCandidates()`:
+`alignment_chunk != -1`, similarity < 0.90, junctioned on both sides
+within the pool, last `ROLLBACK_MATCHES` = 2), re-aligns, and
+self-dispatches. The whole-pool fast path also self-dispatches: `handle()`
+persists the cursor via `persistOffsets()` and returns after **each pool**,
+so a re-align of many small landmark-delimited pools runs as one queued
+job per pool instead of one long job draining every pool in a single
+`handle()` (a match with 141 pools previously ran one ~2m16s job). Pools
+larger than `chunk_size` on either side skip the fast path and are still
+drained chunk-by-chunk across jobs by `alignPoolChunk()`. Feature tests
+(`ReAlignPreservesLandmarksTest`) assert
+human rows and auto-landmarks survive a re-run, `beginFromScratch()`
+wipes everything, and 1:N human landmark spans never overlap a machine
+window.
+
+### Landmark tiers
+
+re-align treats two classes of meaning-match
+rows as **landmarks** (pins that survive a re-run and partition the match
+into non-overlapping pools, see Plan 08):
+- **Hard (human-made)** — rows created or edited by a human via the
+  alignment editor (`AlignmentEditorController`) carry
+  `alignment_chunk = MeaningMatch::HUMAN_CHUNK` (-1) and
+  `similarity = 1.0`. They are never deleted, never rolled back, and never
+  re-aligned — the machine cannot cross them.
+- **Auto** — machine rows whose `similarity >= LANDMARK_THRESHOLD`
+  (`MeaningMatch::LANDMARK_THRESHOLD` = 0.90) are promoted to
+  landmarks on re-align: they survive the delete-only-sub-threshold wipe
+  and become pool boundaries exactly like human rows.
+Both tiers feed `landmarkRows()` → `landmarkBounds()`, so both are pool
+boundaries; the only difference is what Re-align deletes (machine rows
+below the bar) and what it keeps (both tiers). "Run from scratch"
+deletes both tiers.
+
+### Split Filament actions (Plan 09, Aug 2026)
+
+the single
+destructive **Re-run** table action on the `EntityMatch` resource is
+replaced by two explicit confirmation actions, both visible only for
+`status ∈ {stale, completed, failed}`:
+- **Re-align** (`realign`, warning) — calls `begin()`: preserves
+  human-made rows (`alignment_chunk = -1`) and confident landmarks
+  (`similarity >= LANDMARK_THRESHOLD`, 0.90) and re-aligns only the
+  low-confidence gaps. Its confirmation modal reports the live counts,
+  e.g. `"{N} human-made + {M} confident row(s) preserved; only
+  low-confidence rows will be re-aligned."`.
+- **Run from scratch** (`rerunScratch`, danger, `heroicon-o-trash`) —
+  calls `beginFromScratch()`: deletes **all** meaning matches including
+  human-made ones and re-runs the whole pipeline. Its modal always states
+  that everything is deleted, and adds the human-made count when > 0.
+Filament tests (`FilamentReAlignActionTest`) assert both actions'
+visibility per status, their confirmation copy, and the entry-point
+dispatch each triggers.
+
+### Scheduler resume preservation (ADR 0051, Sep 2026)
+
+two
+corrections to `begin()` so it can carry the scheduler (a 2026-09-28 prod
+incident: a sentence edit re-pended a completed match and the 5-minute
+`alignments:resume` wiped its human rows via `beginFromScratch()`):
+- The "never set up" delegation is now **row existence** — `begin()`
+  delegates to `beginFromScratch()` when the match has no
+  `meaning_matches` rows. The original guard (`a_total_sentences ===
+  null`) was dead code: the column is `NOT NULL DEFAULT 0`, so it could
+  never fire and a row-less match would have been re-aligned against
+  stale zero totals with no verify pass.
+- `begin()` **re-snapshots the run plan** (image-less counts per ADR
+  0050, `chunk_size`/`max_n` clamps, small-entity single-chunk raise —
+  the same `snapshotAlignmentPlan()` helper `beginFromScratch()` uses)
+  and mirrors its zero-side immediate finalize, so sentences added or
+  removed since the previous run's snapshot are inside the re-aligned
+  span instead of silently excluded by stale totals.
+The scheduler, the Filament "Re-align" action, and everything downstream
+now share one `begin()` contract: existing rows are only ever removed by
+an explicit "Run from scratch" (or by a genuinely fresh, row-less match).
+Tests: `ReAlignPreservesLandmarksTest` (snapshot refresh, row-less
+delegation) and `AlignmentsResumeCommandTest` (the incident end-to-end:
+sentence edit → pending → `alignments:resume` → human row survives).
+Tests: `ReAlignPreservesLandmarksTest` (snapshot refresh, row-less
+delegation) and `AlignmentsResumeCommandTest` (the incident end-to-end:
+sentence edit → stale → `alignments:resume` → no-op, rows byte-identical).
+
+### Stale status (ADR 0055, Oct 2026)
+
+a 2026-09-30 prod incident
+(a sentence edit on a hand-tuned match let the scheduler re-derive every
+weak machine row in a new order five minutes later) ended the
+sentence-mutation → `pending` rule of ADR 0015:
+- Sentence mutations on the entity-level paths (entities frontend and
+  relation manager, through `EntitySentenceStore` — ADR 0065) flip
+  affected matches to a **display-only `stale`** status
+  (`aligning`/`completed`/`failed` → `stale`; a `pending` fresh match
+  stays
+  pending). `pending` now means only "fresh match awaiting its one
+  automatic run".
+- The scheduler is unchanged — it picks only `pending`, so stale matches
+  are invisible to it forever. **Only an explicit human action re-aligns
+  or clears the flag**: Re-align / Run from scratch (→ `aligning`), a
+  sentence re-import (→ `completed`). Alignment-editor edits leave
+  `stale` untouched (ADR 0062 — the editor is surgical and never
+  completes a match). To protect
+  a weak row from a future Re-align, approve it in the alignment editor —
+  the approve action pins it as a human landmark (`similarity = 1.0`,
+  `alignment_chunk = -1`).
+- `finalize()`/`failed()` complete or fail the match only from `aligning`
+  (see the completion gate above); stale holds no processing slot.
+
+### Refine round (Oct 2026)
+
+a second pass over a **completed**
+match that re-aligns only the regions around one-sided machine rows, with
+per-request overrides to the python service instead of round 1's defaults:
+`algorithm=dp` + `window_embed=joined` (`SentenceAlignmentService::
+alignChunkRemote()` grew optional `algorithm`/`windowEmbed` params, passed
+through to `/align` only when set).
+- **Why**: the greedy window ladder compares raw cosines with no cost for
      skipping a sentence, so a *fusion* (one long sentence translated as
      several short ones) commits its strongest member as a 1:1 and leaves the
      tail one-sided even when the pooled window would score higher — averaged
@@ -897,7 +953,7 @@ editor-shaped row.
      sentence, so the grouping that covers more of the region wins without
      beating every 1:1's cosine (measured on the smart-notes triplet, LaBSE:
      1:1 0.8383 vs joined 1:2 0.8684).
-   - **Scope** (`AlignmentRefineService::refine()`): candidates are one-sided
+- **Scope** (`AlignmentRefineService::refine()`): candidates are one-sided
      machine rows (the Needs-review shape + `alignment_chunk != -1` +
      `similarity < 0.90`). Each candidate takes ±2 rows of context; merged
      disjoint intervals become regions (≤ 8 rows after context-edge trimming,
@@ -905,24 +961,24 @@ editor-shaped row.
      one-sided pin has no span python can honor, so a region spanning one
      would submit its sentence only to have `persistSegment` drop it as
      reserved). Two-sided pins inside a region go to python as `landmarks`.
-    - **Runs (chunked)**: one `refine()` call is a *bounded run* — regions in
-      document order up to `MAX_REGIONS_PER_RUN = 50` and a wall-clock
-      deadline of `TIME_LIMIT_SECONDS = 240` (the deadline binds only after
-      the first region, so a run can never report `has_more` without moving
-      the cursor) — a whole book can carry hundreds of one-sided regions,
-      more than one job execution fits inside its 600 s timeout. The summary
-      carries `has_more` + `cursor`: the a-side sentence position past the
-      last examined region, stable across applies (unlike the `order`
-      column, which per-region stores keep appending past the max). Regions
-      at/before the cursor are skipped, so the queued
-      `RefineEntitySentences` job self-chains across a book
-      (`EnrichEntitySentences`-style constructor cursor plus `chainDepth`,
-      capped at 200 links) and `alignments:refine` loops runs to completion
-      per match. Regions with no a-side window can only ever be skipped, so
-      they never keep a chain alive. Every run ends with `repairCoverage()`,
-      so each link leaves total coverage: every sentence sits in a meaning
-      match or a single-sided (unmatched) row.
-    - **Gate**: a region replaces its machine rows only on strict improvement
+- **Runs (chunked)**: one `refine()` call is a *bounded run* — regions in
+  document order up to `MAX_REGIONS_PER_RUN = 50` and a wall-clock
+  deadline of `TIME_LIMIT_SECONDS = 240` (the deadline binds only after
+  the first region, so a run can never report `has_more` without moving
+  the cursor) — a whole book can carry hundreds of one-sided regions,
+  more than one job execution fits inside its 600 s timeout. The summary
+  carries `has_more` + `cursor`: the a-side sentence position past the
+  last examined region, stable across applies (unlike the `order`
+  column, which per-region stores keep appending past the max). Regions
+  at/before the cursor are skipped, so the queued
+  `RefineEntitySentences` job self-chains across a book
+  (`EnrichEntitySentences`-style constructor cursor plus `chainDepth`,
+  capped at 200 links) and `alignments:refine` loops runs to completion
+  per match. Regions with no a-side window can only ever be skipped, so
+  they never keep a chain alive. Every run ends with `repairCoverage()`,
+  so each link leaves total coverage: every sentence sits in a meaning
+  match or a single-sided (unmatched) row.
+- **Gate**: a region replaces its machine rows only on strict improvement
      of the **per-sentence coverage score** — old rows contribute their
      similarity once per junction (a one-sided row covers its sentence at
      0.0), new matches once per sentence they span — so the accepted
@@ -939,7 +995,7 @@ editor-shaped row.
      against −1.0 for double-skipping); it guards against future algorithm
      changes. Rejected → nothing written. Per-region decisions are logged
      with old/new sums and scores.
-   - **Apply**: one `storeAlignmentSegmentFromMatches(..., isLastChunk: true)`
+- **Apply**: one `storeAlignmentSegmentFromMatches(..., isLastChunk: true)`
      per accepted region under a fresh `nextAlignmentChunk()` (match + skip
      steps cover the whole window; `persistSegment` deletes the machine rows
      covering incoming sentences and reserves pinned junctions), then
@@ -947,7 +1003,7 @@ editor-shaped row.
      The match flips `completed → aligning → completed` around the run (a
      mid-run stale flip survives, same rule as `finalize()`), and a thrown
      failure restores `completed` before rethrowing.
-   - **Surfaces**: `alignments:refine {entityMatch?} {--all}` (synchronous,
+- **Surfaces**: `alignments:refine {entityMatch?} {--all}` (synchronous,
      repair-command pattern; loops bounded runs per match) and `POST
      /works/{work}/alignments/{entityMatch}/refine`
      (`AlignmentEditorController::refine()`, `canEditMatch` gate) which
@@ -963,233 +1019,245 @@ editor-shaped row.
      command, endpoint access, budget/deadline chunking with the cursor,
      job chain + link cap, first-completion auto-trigger, `refined_at`
      stamping).
-4. **Schedule** — `Schedule::command('alignments:resume')->everyFiveMinutes()
-   ->withoutOverlapping()` picks up to 10 `status='pending'` matches per tick
-   and runs them through `AlignEntitySentences::begin()` (ADR 0051): a match
-   that already has meaning-match rows keeps its human edits and landmarks
-   (the scheduler never wipes existing rows), a row-less match takes the
-   from-scratch path with its verify pass; dry-run and dispatch output report
-   which. Only **fresh** matches are ever picked: sentence edits mark existing
-   matches `stale` (ADR 0055), which the scheduler never touches. Without-overlap prevents concurrent ticks colliding with each
-   other. Set `DB_QUEUE_RETRY_AFTER=900` so the database queue does not
-   re-lease a long-running chunk to a second worker mid-flight.
-5. **Order** — sentences and matches carry sparse order values managed by
-   `SparseOrderService`; `entity-orders:rebalance` (language-agnostic since
-   the unified schema — it scopes `entity_sentences` and `meaning_matches`
-   directly, no `--lang`) runs **daily** (see `routes/console.php`).
-6. **Review** — humans fix machine output in the Inertia/React **Alignments
-    editor**, the one editing surface since ADR
-    [0062](../../docs/adr/0062-one-alignment-editing-domain.md) (the Filament
-    draft editor — `EditEntityAlignment`, `AlignmentEditorPersister`,
-    `AlignmentEditorDraftStore` — is retired; the Filament `EntityMatch`
-    resource keeps the list, Re-align / Run-from-scratch actions, and an
-    "Edit alignment" link that opens the React editor): since ADR
-    [0036](../../docs/adr/0036-alignments-live-under-work.md) alignment
-    browsing and creation live under each work — the work's
-    **Alignments page** (`/works/{work}/alignments`, see
-    [Library & entities](/domains/entities.md)) lists the work's readable
-    matches and its "Add alignment" card leads to
-    `/works/{work}/alignments/create`
-    (`LibraryController@createAlignment`/`@storeAlignment`, routes
-    `works.alignments.create`/`works.alignments.store`; the former
-    flat `/alignments` routes are gone without redirects, while alignment
-    browsing gained a cross-work list at `GET /works/alignments`
-    (`works.alignments.index`) with its own navbar item). The form is the
-    old create minus the work picker: two
-    entity selects (`first_entity_id` / `second_entity_id`) of the route
-    work's eligible entities (grouped by language, the second select
-    excludes the first pick). Entities are eligible when **readable by the
-    user**, signed (`signature` not null), and non-empty. There is no
-    "original text" radio — the original language lives on the work. The
-    form carries the Filament-parity `chunk_size` (25–100, default 75) +
-    `max_n` (1–8, default 6). **Inertia pitfall:** `useForm.setData` with an
-    object argument **replaces** the whole form state (it does not merge),
-    so multi-field change handlers (entity selects, Entities\Create
-    work-mode radios) must use the functional form
-    `setData((current) => ({...current, ...}))` — the object form silently
-    dropped `chunk_size`/`max_n`, which emptied both entity selects the
-    moment an entity was picked. Store resolves the two entities, checks
-    readability (creating a match involving an entity the user cannot read
-    is `403`), and hands them to the one creation module
-    (`EntityMatchCreationService` — same-Work validation (same-language
-    pairs such as exercises and answers are valid — ADR 0019), canonical
-    sides, duplicate rejection, the Processing limit, and the
-    copy-vs-pipeline decision all live there, see the creation module
-    section above); it translates the outcome — redirect to the work's
-    Alignments page with a flash, a duplicate pair blocked with an error
-    plus an "Open existing match" link (flash `existing_match_id`), a
-    cross-Work pair the form's same-work error, a limit hit a `limit`
-    error. Each match card links (stretched link) to the
-    work-nested editor `/works/{work}/alignments/{match}/edit` (ADR 0072)
-    and carries Simulator / Read·{LANG} buttons —
-    `GET /bilinguals/simulator/{entityMatch}` (pinned simulator) and the
-    reader, with the reading side resolved server-side as the
-    non-native-language side. The editor itself
-    (route `works.alignments.edit`, `AlignmentController@show`) is a
-    parallel entry point backed by the surgical `AlignmentEditorController`
-    endpoints under the same work-nested prefix (ADR 0072: the page at
-    `GET /works/{work}/alignments/{entityMatch}/edit`, all thirteen JSON
-    endpoints beside it; every action binds `Work` and 404s when the match
-    path names another work, reads gate on
-    `EntityAccessService::canReadMatch` while every mutation gates on
-    **`canEditMatch`** — admin, or neither side approved yet, so a match
-    with an approved side is edit-frozen for non-admins — and the old flat
-    `/alignments/{id}` routes are
-    deleted without redirects) — create/delete pair, approve pair (set
-    `similarity = 1.0` + `alignment_chunk = -1`, promoting a row to a hard
-    landmark), **disapprove pair** (`POST .../rows/{row}/disapprove` →
-    `AlignmentEditorService::rejectRow`: `similarity = 0.0` only, the chunk
-    sentinel untouched — a rejection is a number, not a verdict, so the
-    row stays in Needs review and a later Re-align's below-0.90 delete pass
-    removes it and re-pairs its sentences), add/edit/
+
+## 4. Schedule
+
+`Schedule::command('alignments:resume')->everyFiveMinutes()
+->withoutOverlapping()` picks up to 10 `status='pending'` matches per tick
+and runs them through `AlignEntitySentences::begin()` (ADR 0051): a match
+that already has meaning-match rows keeps its human edits and landmarks
+(the scheduler never wipes existing rows), a row-less match takes the
+from-scratch path with its verify pass; dry-run and dispatch output report
+which. Only **fresh** matches are ever picked: sentence edits mark existing
+matches `stale` (ADR 0055), which the scheduler never touches. Without-overlap prevents concurrent ticks colliding with each
+other. Set `DB_QUEUE_RETRY_AFTER=900` so the database queue does not
+re-lease a long-running chunk to a second worker mid-flight.
+
+## 5. Order
+
+sentences and matches carry sparse order values managed by
+`SparseOrderService`; `entity-orders:rebalance` (language-agnostic since
+the unified schema — it scopes `entity_sentences` and `meaning_matches`
+directly, no `--lang`) runs **daily** (see `routes/console.php`).
+
+## 6. Review
+
+humans fix machine output in the Inertia/React **Alignments
+editor**, the one editing surface since ADR
+[0062](../../docs/adr/0062-one-alignment-editing-domain.md) (the Filament
+draft editor — `EditEntityAlignment`, `AlignmentEditorPersister`,
+`AlignmentEditorDraftStore` — is retired; the Filament `EntityMatch`
+resource keeps the list, Re-align / Run-from-scratch actions, and an
+"Edit alignment" link that opens the React editor): since ADR
+[0036](../../docs/adr/0036-alignments-live-under-work.md) alignment
+browsing and creation live under each work — the work's
+**Alignments page** (`/works/{work}/alignments`, see
+[Library & entities](/domains/entities.md)) lists the work's readable
+matches and its "Add alignment" card leads to
+`/works/{work}/alignments/create`
+(`LibraryController@createAlignment`/`@storeAlignment`, routes
+`works.alignments.create`/`works.alignments.store`; the former
+flat `/alignments` routes are gone without redirects, while alignment
+browsing gained a cross-work list at `GET /works/alignments`
+(`works.alignments.index`) with its own navbar item). The form is the
+old create minus the work picker: two
+entity selects (`first_entity_id` / `second_entity_id`) of the route
+work's eligible entities (grouped by language, the second select
+excludes the first pick). Entities are eligible when **readable by the
+user**, signed (`signature` not null), and non-empty. There is no
+"original text" radio — the original language lives on the work. The
+form carries the Filament-parity `chunk_size` (25–100, default 75) +
+`max_n` (1–8, default 6). **Inertia pitfall:** `useForm.setData` with an
+object argument **replaces** the whole form state (it does not merge),
+so multi-field change handlers (entity selects, Entities\Create
+work-mode radios) must use the functional form
+`setData((current) => ({...current, ...}))` — the object form silently
+dropped `chunk_size`/`max_n`, which emptied both entity selects the
+moment an entity was picked. Store resolves the two entities, checks
+readability (creating a match involving an entity the user cannot read
+is `403`), and hands them to the one creation module
+(`EntityMatchCreationService` — same-Work validation (same-language
+pairs such as exercises and answers are valid — ADR 0019), canonical
+sides, duplicate rejection, the Processing limit, and the
+copy-vs-pipeline decision all live there, see the creation module
+section above); it translates the outcome — redirect to the work's
+Alignments page with a flash, a duplicate pair blocked with an error
+plus an "Open existing match" link (flash `existing_match_id`), a
+cross-Work pair the form's same-work error, a limit hit a `limit`
+error. Each match card links (stretched link) to the
+work-nested editor `/works/{work}/alignments/{match}/edit` (ADR 0072)
+and carries Simulator / Read·{LANG} buttons —
+`GET /bilinguals/simulator/{entityMatch}` (pinned simulator) and the
+reader, with the reading side resolved server-side as the
+non-native-language side. The editor itself
+(route `works.alignments.edit`, `AlignmentController@show`) is a
+parallel entry point backed by the surgical `AlignmentEditorController`
+endpoints under the same work-nested prefix (ADR 0072: the page at
+`GET /works/{work}/alignments/{entityMatch}/edit`, all thirteen JSON
+endpoints beside it; every action binds `Work` and 404s when the match
+path names another work, reads gate on
+`EntityAccessService::canReadMatch` while every mutation gates on
+**`canEditMatch`** — admin, or neither side approved yet, so a match
+with an approved side is edit-frozen for non-admins — and the old flat
+`/alignments/{id}` routes are
+deleted without redirects) — create/delete pair, approve pair (set
+`similarity = 1.0` + `alignment_chunk = -1`, promoting a row to a hard
+landmark), **disapprove pair** (`POST .../rows/{row}/disapprove` →
+`AlignmentEditorService::rejectRow`: `similarity = 0.0` only, the chunk
+sentinel untouched — a rejection is a number, not a verdict, so the
+row stays in Needs review and a later Re-align's below-0.90 delete pass
+removes it and re-pairs its sentences), add/edit/
      unlink/hard-delete sentence, and
      `sentences/move` (within-row reorder / cross-row move / to-or-from the
      unmatched pool; every drop into a row renumbers document order) — with
      immediate persistence, sparse orders via
-    `SparseOrderService`, and JSON payloads shaped by `AlignmentEditorApiPresenter`
-    (rows carry `a_sentences`/`b_sentences` per row; `rows` + per-side
-    `unmatched_a`/`unmatched_b` pools with pagination, `last_page` included).
-    Each row's header rail is icon-only — approve ✓, disapprove ⊘
-    (ban-circle), create-below ＋, delete 🗑 — with `title`/`aria-label`
-    tooltips instead of the former text buttons. The shared `Pagination`
-    component (rows table, both unmatched pools, and the needs-review
-    section) shows Prev/Next + numbered page buttons with ellipsis, a
-    "go to page" jump input (clamped to `1..last_page`, hidden when there
-    is only one page), and — rows only — a custom per-page dropdown.
-    **The editor's pagination state lives in the URL query** (ADR 0072):
-    `rows_page`, `rows_per_page`, `unmatched_a_page`, `unmatched_b_page`,
-    `review_page` are seeded server-side on page load
-    (`AlignmentEditorPageRequest`, out-of-range values clamped to the last
-    page) and mirrored client-side via `history.replaceState` on every
-    page/per-page change, so copying the URL shares the exact view
-    (defaults are omitted from the URL; section open/closed state stays
-    client-local). Every rows page
-    carries a **three-row lookahead tail** (`ROWS_LOOKAHEAD`): each page
-    serves `per_page` rows plus the first three rows of the next page, so
-    the editor always has rows below the page boundary to place sentences
-    into (a single-sided row in the last row of a page otherwise has no
-    visible working room). Meta stays `per_page`-based — page N always
-    starts at `(N-1)·per_page + 1` and the `→ p. N` jump math is unchanged —
-    and the client marks the overlapping rows with a small accent
-    "next page" badge (`PairRow` `preview` prop, derived from
-    `meta.total`; the extras stay fully draggable/droppable). Client-side, a
-    mutation response carrying
-    new rows inserts them **by anchor row id**, not a precomputed array index:
-    `Show.jsx`'s `runMutation(request, insertAfterRowId)` remembers the anchor
-    row and `applyMutation` splices the new row after it at response time.
-    (The previous scheme read an index assigned inside a `setState` updater
-    synchronously after the dispatch — React 19 evaluates updaters eagerly
-    only on the first dispatch after mount, so every later "Create below"
-    landed at the top of the page until refresh.) The merge itself lives
-    in `lib/alignmentRowMerge.js` (`mergeMutationRows`, pinned by vitest
-    per the lib-only JS test convention): on-page rows are replaced in
-    place, a new row splices in after its anchor, optimistic temp rows
-    (non-numeric ids) are dropped — and payload rows for rows **not on
-    the displayed page are skipped**, because appending them would fake
-    an extra "next page" preview row at the end of the list (approving
-    straight from the needs-review list returns such off-page rows; the
-    server holds their truth, and `loadRows` refetches the page on
-    demand). **Every endpoint is gated
-    first by `EntityAccessService::canReadMatch($user, $entityMatch)`** — a
-    non-granted user (who cannot read BOTH entities of the match) receives
-    `403` on every read and mutation, so a restricted match is neither
-    visible nor mutable in the editor.
-    Below the unmatched pools, the editor shows a
-    collapsible **Needs review** section (collapsed by default) listing meaning
-    matches a human should inspect: rows whose `similarity < 0.55`
-    (`AlignmentEditorApiPresenter::LOW_SIMILARITY_THRESHOLD`) or that are
-    **one-sided with similarity below 1.0** (junctions on exactly one side —
-    see the original-completeness repair above). A one-sided row trusted at
-    `similarity = 1.0` is human-made — every editor mutation writes 1.0 while
-    the pipeline emits its one-sided rows at 0.0 — and leaves the list as if
-    resolved (ADR 0049). Each row shows its `#order`,
-    `similarity`, both sides' text, a `1-sided` badge, and a `→ p. N` marker;
-    clicking it jumps the editor's rows table to the exact page
-    (`ceil(rank / per_page)`, the server returns page-independent per-row
-    `rank`) and briefly highlights the row (client-side scroll, no URL
-    change). Each row also carries a hover-revealed **approve icon
-    button** that approves in place — similarity goes to 1.0, the row
-    leaves the list immediately. The optimistic removal is written through
-    `applyData` into the server snapshot (`lastServer`), not a bare
-    `setData`: the mutation merge rebuilds state from that snapshot, so a
-    snapshot still holding the row would resurrect it for the frames
-    before the needs-review refetch lands (which also clamps the page when
-    the last item of a page was approved).
-    Paginated 25/page via
-    `GET /works/{work}/alignments/{entityMatch}/needs-review`
-    (`AlignmentEditorController::needsReview`, `NeedsReviewRequest`); the
-    section refetches its current page after every editor mutation. The
-    header eyebrow ("Alignments") links back to the work's Alignments
-    page; the match payload's `work_id` (new) feeds that link, the
-    client's API base path, and the card/entity/duplicate-match links. A
-    round floating button pinned at the top-center of the scroll area
-    (sticky in `Show.jsx`, always rendered) scrolls the page down to the
-    review sections — the unmatched pools when either has content, else the
-    needs-review list — without expanding them (scroll only). The
-    editor honors the drop position: dragging a sentence — within a row,
-    across rows, or from an unmatched pool into a row — renumbers its
-    document order (`entity_sentences.order`) via
-    `AlignmentEditorService::placeSideSentence`, which picks the new order
-    from the side's **global document order** (midpoint between the sorted
-    neighbours, not just the destination row's pair) and hands the anchored
-    placement to `SentenceOrderService::placeAfterOrder`, which rebalances
-    the sparse window through `SparseOrderService::orderForInsertAfter` when
-    the
-    surrounding gap is exhausted — the old in-row-neighbour placement could
-    emit an order that another (e.g. unmatched) sentence already held,
-    producing duplicate orders and visually shuffling rows; sentence orders
-    are now unique per entity (DB-enforced, see
-    [Entities & Alignment](/database/entities-alignment.md)) and every write
-    parks changed rows at unique negatives first (junctions stay orderless;
-    in-row sequence is the sentence orders themselves). The placement
-    service also bumps `sentences_updated_at` when an order changes — a
-    drag edits the document the text hash covers (ADR 0033/0064). The editor renders an
-      explicit **drop slot** above the first, between every pair, and below the
-      last sentence of each column (a tall standalone slot for an empty
-      column); slots are permanently visible as thin faint dashed lines, so the
-      page never reshuffles when a drag starts. The slot under the pointer
-      lights up while a drag is active, and the drop lands exactly on it —
-      `slot:<containerKey>:#<n>` maps straight to insertion index `n` among the
-      column's other sentences (the API's array_splice space, so a bottom-slot
-      drop is the real last position). While dragging, the two slots directly
-      above and below the dragged sentence in its own column are rendered as
-      inert spacers (its frozen home spot still shows it there, so those two
-      would only mean "keep it" / "move one down"); dropping back onto the
-      sentence itself is a no-op. Container lists are **frozen while
-      dragging**: there is no `onDragOver` preview mutation, so nothing in the
-      layout moves under the pointer and `over` (the slot) can never flip-flop
-      into React error #185; the drop writes the new ordering exactly once.
-      `Show.jsx`'s `collisionDetection` (do not replace it) uses `pointerWithin`
-      then `rectIntersection` and reports the winning slot or item, with a
-      `lastOverId` cache keeping `over` from flapping on no-collision frames.
-      The drop index is direction-agnostic, not the drag-direction default
-      documented in ADR 0016's original spec 3.4/3.5 (amended 2026-09-05,
-      fifth/final form; supersedes the pointer-edge and live-preview
-      amendments). A drop into a column holding no sentences lands at
-      position 0. A drop into a row
+`SparseOrderService`, and JSON payloads shaped by `AlignmentEditorApiPresenter`
+(rows carry `a_sentences`/`b_sentences` per row; `rows` + per-side
+`unmatched_a`/`unmatched_b` pools with pagination, `last_page` included).
+Each row's header rail is icon-only — approve ✓, disapprove ⊘
+(ban-circle), create-below ＋, delete 🗑 — with `title`/`aria-label`
+tooltips instead of the former text buttons. The shared `Pagination`
+component (rows table, both unmatched pools, and the needs-review
+section) shows Prev/Next + numbered page buttons with ellipsis, a
+"go to page" jump input (clamped to `1..last_page`, hidden when there
+is only one page), and — rows only — a custom per-page dropdown.
+**The editor's pagination state lives in the URL query** (ADR 0072):
+`rows_page`, `rows_per_page`, `unmatched_a_page`, `unmatched_b_page`,
+`review_page` are seeded server-side on page load
+(`AlignmentEditorPageRequest`, out-of-range values clamped to the last
+page) and mirrored client-side via `history.replaceState` on every
+page/per-page change, so copying the URL shares the exact view
+(defaults are omitted from the URL; section open/closed state stays
+client-local). Every rows page
+carries a **three-row lookahead tail** (`ROWS_LOOKAHEAD`): each page
+serves `per_page` rows plus the first three rows of the next page, so
+the editor always has rows below the page boundary to place sentences
+into (a single-sided row in the last row of a page otherwise has no
+visible working room). Meta stays `per_page`-based — page N always
+starts at `(N-1)·per_page + 1` and the `→ p. N` jump math is unchanged —
+and the client marks the overlapping rows with a small accent
+"next page" badge (`PairRow` `preview` prop, derived from
+`meta.total`; the extras stay fully draggable/droppable). Client-side, a
+mutation response carrying
+new rows inserts them **by anchor row id**, not a precomputed array index:
+`Show.jsx`'s `runMutation(request, insertAfterRowId)` remembers the anchor
+row and `applyMutation` splices the new row after it at response time.
+(The previous scheme read an index assigned inside a `setState` updater
+synchronously after the dispatch — React 19 evaluates updaters eagerly
+only on the first dispatch after mount, so every later "Create below"
+landed at the top of the page until refresh.) The merge itself lives
+in `lib/alignmentRowMerge.js` (`mergeMutationRows`, pinned by vitest
+per the lib-only JS test convention): on-page rows are replaced in
+place, a new row splices in after its anchor, optimistic temp rows
+(non-numeric ids) are dropped — and payload rows for rows **not on
+the displayed page are skipped**, because appending them would fake
+an extra "next page" preview row at the end of the list (approving
+straight from the needs-review list returns such off-page rows; the
+server holds their truth, and `loadRows` refetches the page on
+demand). **Every endpoint is gated
+first by `EntityAccessService::canReadMatch($user, $entityMatch)`** — a
+non-granted user (who cannot read BOTH entities of the match) receives
+`403` on every read and mutation, so a restricted match is neither
+visible nor mutable in the editor.
+Below the unmatched pools, the editor shows a
+collapsible **Needs review** section (collapsed by default) listing meaning
+matches a human should inspect: rows whose `similarity < 0.55`
+(`AlignmentEditorApiPresenter::LOW_SIMILARITY_THRESHOLD`) or that are
+**one-sided with similarity below 1.0** (junctions on exactly one side —
+see the original-completeness repair above). A one-sided row trusted at
+`similarity = 1.0` is human-made — every editor mutation writes 1.0 while
+the pipeline emits its one-sided rows at 0.0 — and leaves the list as if
+resolved (ADR 0049). Each row shows its `#order`,
+`similarity`, both sides' text, a `1-sided` badge, and a `→ p. N` marker;
+clicking it jumps the editor's rows table to the exact page
+(`ceil(rank / per_page)`, the server returns page-independent per-row
+`rank`) and briefly highlights the row (client-side scroll, no URL
+change). Each row also carries a hover-revealed **approve icon
+button** that approves in place — similarity goes to 1.0, the row
+leaves the list immediately. The optimistic removal is written through
+`applyData` into the server snapshot (`lastServer`), not a bare
+`setData`: the mutation merge rebuilds state from that snapshot, so a
+snapshot still holding the row would resurrect it for the frames
+before the needs-review refetch lands (which also clamps the page when
+the last item of a page was approved).
+Paginated 25/page via
+`GET /works/{work}/alignments/{entityMatch}/needs-review`
+(`AlignmentEditorController::needsReview`, `NeedsReviewRequest`); the
+section refetches its current page after every editor mutation. The
+header eyebrow ("Alignments") links back to the work's Alignments
+page; the match payload's `work_id` (new) feeds that link, the
+client's API base path, and the card/entity/duplicate-match links. A
+round floating button pinned at the top-center of the scroll area
+(sticky in `Show.jsx`, always rendered) scrolls the page down to the
+review sections — the unmatched pools when either has content, else the
+needs-review list — without expanding them (scroll only). The
+editor honors the drop position: dragging a sentence — within a row,
+across rows, or from an unmatched pool into a row — renumbers its
+document order (`entity_sentences.order`) via
+`AlignmentEditorService::placeSideSentence`, which picks the new order
+from the side's **global document order** (midpoint between the sorted
+neighbours, not just the destination row's pair) and hands the anchored
+placement to `SentenceOrderService::placeAfterOrder`, which rebalances
+the sparse window through `SparseOrderService::orderForInsertAfter` when
+the
+surrounding gap is exhausted — the old in-row-neighbour placement could
+emit an order that another (e.g. unmatched) sentence already held,
+producing duplicate orders and visually shuffling rows; sentence orders
+are now unique per entity (DB-enforced, see
+[Entities & Alignment](/database/entities-alignment.md)) and every write
+parks changed rows at unique negatives first (junctions stay orderless;
+in-row sequence is the sentence orders themselves). The placement
+service also bumps `sentences_updated_at` when an order changes — a
+drag edits the document the text hash covers (ADR 0033/0064). The editor renders an
+  explicit **drop slot** above the first, between every pair, and below the
+  last sentence of each column (a tall standalone slot for an empty
+  column); slots are permanently visible as thin faint dashed lines, so the
+  page never reshuffles when a drag starts. The slot under the pointer
+  lights up while a drag is active, and the drop lands exactly on it —
+  `slot:<containerKey>:#<n>` maps straight to insertion index `n` among the
+  column's other sentences (the API's array_splice space, so a bottom-slot
+  drop is the real last position). While dragging, the two slots directly
+  above and below the dragged sentence in its own column are rendered as
+  inert spacers (its frozen home spot still shows it there, so those two
+  would only mean "keep it" / "move one down"); dropping back onto the
+  sentence itself is a no-op. Container lists are **frozen while
+  dragging**: there is no `onDragOver` preview mutation, so nothing in the
+  layout moves under the pointer and `over` (the slot) can never flip-flop
+  into React error #185; the drop writes the new ordering exactly once.
+  `Show.jsx`'s `collisionDetection` (do not replace it) uses `pointerWithin`
+  then `rectIntersection` and reports the winning slot or item, with a
+  `lastOverId` cache keeping `over` from flapping on no-collision frames.
+  The drop index is direction-agnostic, not the drag-direction default
+  documented in ADR 0016's original spec 3.4/3.5 (amended 2026-09-05,
+  fifth/final form; supersedes the pointer-edge and live-preview
+  amendments). A drop into a column holding no sentences lands at
+  position 0. A drop into a row
      that is empty on that side places the sentence between the
      closest populated rows. Consequence: a drag edits the document a later
-    Re-align consumes; the per-sentence badge keeps showing the global
-    document rank. Each row still shows the raw `order` of its sentences.
-    Once a run lands, the Filament list's **Re-align** / **Run from
-    scratch** actions (Plan 09) restart it — preserving or wiping the human
-    work respectively. Re-align deletes non-landmark machine rows and
-    re-creates them in document order — the drag-edited order is that input,
-    so a manual re-sequencing survives a re-align as the input order while
-    the grouping of non-approved rows may be re-derived.
-7. **Sentence editing** — individual entity sentences can be created, edited,
-   deleted, and reordered from the *Sentences* tab on each entity's edit page
-   in the Filament `EntityResource` (one merged resource with language and
-   work selects), and from the entities frontend endpoints. Both doors go
-   through **`EntitySentenceStore`** (ADR 0065), which owns the whole
-   mutation flow — placement via `SentenceOrderService`, the write, the
-   stale flip, and the image-less totals resync
-   (`EntityMatch::syncTotalsForEntity`) — inside one transaction, so the
-   invariants cannot drift or be half-applied per surface; the alignment
-   editor's own sentence edits are deliberately exempt (ADR 0062's no-stale
-   rule, via `AlignmentEditorService::updateSentenceContent`), as is the
-   importer (it wipes and rebuilds and marks the match `completed`
-   itself).
+Re-align consumes; the per-sentence badge keeps showing the global
+document rank. Each row still shows the raw `order` of its sentences.
+Once a run lands, the Filament list's **Re-align** / **Run from
+scratch** actions (Plan 09) restart it — preserving or wiping the human
+work respectively. Re-align deletes non-landmark machine rows and
+re-creates them in document order — the drag-edited order is that input,
+so a manual re-sequencing survives a re-align as the input order while
+the grouping of non-approved rows may be re-derived.
+
+## 7. Sentence editing
+
+individual entity sentences can be created, edited,
+deleted, and reordered from the *Sentences* tab on each entity's edit page
+in the Filament `EntityResource` (one merged resource with language and
+work selects), and from the entities frontend endpoints. Both doors go
+through **`EntitySentenceStore`** (ADR 0065), which owns the whole
+mutation flow — placement via `SentenceOrderService`, the write, the
+stale flip, and the image-less totals resync
+(`EntityMatch::syncTotalsForEntity`) — inside one transaction, so the
+invariants cannot drift or be half-applied per surface; the alignment
+editor's own sentence edits are deliberately exempt (ADR 0062's no-stale
+rule, via `AlignmentEditorService::updateSentenceContent`), as is the
+importer (it wipes and rebuilds and marks the match `completed`
+itself).
 
 # Python microservice
 

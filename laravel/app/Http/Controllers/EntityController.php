@@ -16,7 +16,6 @@ use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\Language;
 use App\Models\SentenceType;
-use App\Models\UserWord;
 use App\Models\Work;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -84,7 +83,10 @@ class EntityController extends Controller
                 'score' => $knowledge->score,
                 'computed_at' => $knowledge->computed_at?->toISOString(),
             ],
-            'has_no_familiarity' => ! UserWord::query()->where('user_id', auth()->id())->exists(),
+            // The word-test hint keys on the stored placement level (the
+            // precise "never took the test" signal — familiarity rows can
+            // exist from other features without a placement, ADR 0090).
+            'has_no_familiarity' => auth()->user()->vocabulary_level === 0,
             'can_edit' => $canEdit,
             'can_change_approval' => $this->access()->canChangeApproval(auth()->user(), $entity),
             'sentences' => $sentences->through(function (object $sentence): array {

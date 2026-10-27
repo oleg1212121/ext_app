@@ -3,6 +3,12 @@
 Date: 2026-10-06
 Status: Accepted
 
+> **Partially superseded by [ADR 0090](0090-cefr-anchored-word-test.md)
+> (2026-10-26):** decision 1's ranked-inventory quantile buckets are replaced
+> by CEFR tag-group sampling with fixed band anchors and adaptive retakes;
+> decisions 2 (presumed-known baseline) and 3 (server-held samples) remain in
+> force.
+
 ## Context
 
 Word familiarity (ADR [0028](0028-numeric-word-familiarity.md)) accrues only
@@ -48,6 +54,10 @@ band-anchored weights (crediting distance-to-next-anchor makes a partially
 known coarse band overshoot its frontier).
 
 ### 2. One baseline value, raise-only, no provenance
+
+> **Amended 2026-10-27:** the baseline value was raised from 50 to 60
+> (`UserWord::PLACEMENT_BASELINE`) — 50 under-credited the seen-enough
+> band; the single-value, raise-only, no-provenance design is unchanged.
 
 A submit writes `familiarity = 50` (`UserWord::PLACEMENT_BASELINE`) for
 every tested-language **word row** with frequency ≤ score — one set-based

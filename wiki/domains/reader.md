@@ -1,16 +1,19 @@
 ---
 type: Feature
 title: Reader
-description: React reading interface for imported text entities in any enabled language, with bilingual Reading rows (canonical a/b row objects, ADR 0060), inline illustration sentences (ADR 0050), a server-default reading side with a client-side swap, server-side pagination, and a per-device reading position.
+description: The reading surface — an explicit work-scoped URL tree (ADR 0091) with a works-first entry, per-work browse lists, and two readers whose mode lives in the URL (entity reader always monolingual, alignment reader always bilingual), shipping bilingual Reading rows (canonical a/b row objects, ADR 0060), inline illustration sentences (ADR 0050), a server-default reading side with a client-side swap, server-side pagination, and a per-device reading position.
 tags: [reader, inertia, react, illustrations]
 status: stable
-stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-24T12:30:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
+stale_after: 2027-01-25
+generated: { by: agent:zcode, at: 2026-10-27T23:15:00+03:00 }
+verified: { by: human:alex-agent, at: 2026-10-27T21:50:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ReaderController.php
     title: ReaderController
+  - id: readable-alignments
+    resource: laravel/app/Support/ReadableWorkAlignments.php
+    title: ReadableWorkAlignments (the reader surface's alignment count rule)
   - id: presenter
     resource: laravel/app/Classes/ReadingRowsPresenter.php
     title: ReadingRowsPresenter (Reading row shaping)
@@ -26,6 +29,24 @@ sources:
   - id: side-flip-hook
     resource: laravel/resources/js/hooks/useSideFlip.js
     title: useSideFlip (shared Side swap hook)
+  - id: page-reader
+    resource: laravel/resources/js/Pages/Reader.jsx
+    title: Reader.jsx (the reader page component)
+  - id: page-reader-app
+    resource: laravel/resources/js/Pages/Reader/ReaderApp.jsx
+    title: ReaderApp (the reading view shell)
+  - id: page-works
+    resource: laravel/resources/js/Pages/Reader/Works.jsx
+    title: Reader/Works (the works-first entry page)
+  - id: page-work-home
+    resource: laravel/resources/js/Pages/Reader/WorkHome.jsx
+    title: Reader/WorkHome (the work sections page)
+  - id: page-entities-list
+    resource: laravel/resources/js/Pages/Reader/WorkEntitiesList.jsx
+    title: Reader/WorkEntitiesList (the per-work texts list)
+  - id: page-alignments-list
+    resource: laravel/resources/js/Pages/Reader/WorkAlignmentsList.jsx
+    title: Reader/WorkAlignmentsList (the per-work alignments list)
   - id: routes
     resource: laravel/routes/web.php
     title: Routes
@@ -33,33 +54,75 @@ sources:
 
 # What it does
 
-A reading UI over imported text entities: read a text with its aligned
-counterpart when one exists. Backed by the same
+A reading UI over imported text entities: read a text on its own (always
+monolingual) or a text with its aligned counterpart (always bilingual) —
+the two explicit work-scoped readers below. Backed by the same
 [entities](/database/entities-alignment.md) the alignment pipeline fills.
-The reading route is language-segment-free — `GET /reader/{entityId}`; the
-entity id alone names the text and its match carries both languages
-(ADR 0037, same reasoning as ADR 0036's simulator route). Entries: the
-**Practice** menu's Reader item opens the revived text library
-(`GET /reader/{lang?}`, ADR 0038) whose list deep-links into the reading
-page, and the alignment card's "Read · {LANG}" button and the entity page's
-Read button link straight to it. The old `/reader/{lang}/{entityId}` shape
-is deleted (404, test-guarded); `/reader` and `/reader/{lang}` are live
-again as the index.
+Reading starts from the **works-first entry**: the Practice menu's Reader
+item opens `GET /reader` — the public works catalog (every work, empty ones
+included — ADR 0021) with readable-scoped counts on each card — whose cards
+lead into the work's sections page and from there into the branch lists and
+the two readers. The alignment card's Read button links the match-anchored
+alignment reader (`/reader/works/{work}/alignments/{match}` — the reading
+side, and the language it reads first, is decided inside the page, so the
+label is a plain "Read"), and the Library entity page's Read button targets
+the work-scoped entity reader. The old single auto-detecting reader route
+(`GET /reader/{entityId}`, named `reader.show`) is deleted (ADR
+[0091](../../docs/adr/0091-reader-url-split.md)) — no redirect (house
+removal style): a bare id under `/reader` 404s, test-guarded, alongside
+the already-deleted language-tab index (`GET /reader/{lang?}`, ADR 0038)
+and the `/reader/{lang}/{entityId}` shape; `/reader` itself is the works
+list.
 
 # Routes
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `/reader/{entityId}` | `ReaderController::show` | React reader for one entity, named `reader.show`. The URL entity only anchors its match — the **Reading side** rule (ADR 0037) picks which language is read. Legacy `/reader-react*`, `/reader/{lang}/{entityId}` all 404 |
-| `/reader/{lang?}` | `ReaderController::index` | The text library (Practice → Reader), named `reader.index`. Language tabs over the readable entities of that language (top 100, `EntityAccessService::readableQuery`); bare `/reader` derives the user's native enabled language, fallback en. Clicking a text visits `/reader/{id}` |
+| `/reader` | `ReaderController::worksIndex` | The reader flow's **works-first entry** (Practice → Reader), named `reader.index`: the public works catalog — every work shown, empty ones included (ADR 0021) — `?q=` search over title/author (the escaped-needle ilike), `orderBy('title')`, 15/page, cards carrying both readable-scoped counts (entities via `readableConstraint`; alignments via `ReadableWorkAlignments`' completed/stale + both-sides-readable rule) and linking the work's sections page. No add-work card — this is a reading surface, not the Library |
+| `/reader/works/{work}/entities/{entity}` | `ReaderController::entityShow` | The work-scoped **entity reader** (name `reader.works.entities.show`, both params `whereNumber`): always monolingual — one row per sentence, no translation column, no language radio — even when the entity sits in a readable match. `?page` pagination/clamping and the `ent:{id}` position key; wrong-work 404, unreadable 403 |
+| `/reader/works/{work}/alignments/{match}` | `ReaderController::alignmentShow` | The work-scoped **alignment reader** (name `reader.works.alignments.show`): bilingual rows from the match's meaning matches — side rule as `defaultSide`, shared `mm:{id}` position key. No monolingual fallback: the match's work must equal the URL work (404) and both sides must be readable (403) — the entity reader is the split's monolingual half, a different URL |
+| `/reader/works/{work}` | `ReaderController::workShow` | The work's **sections page** (name `reader.works.show`, `whereNumber`): work header (title/author/original language/description) plus the two section entry cards linking the branch lists — Entities (the `readableConstraint` count) and Alignments (the completed/stale + both-sides-readable count, the same shared query the entity reader's cross-link presence uses) |
+| `/reader/works/{work}/entities` | `ReaderController::workEntities` | The work's readable **texts list** (name `reader.works.entities.index`): the reader-side twin of the Library's entities branch minus its management affordances — `?q=` search over name/label (the escaped-needle ilike), a `?lang=` filter over enabled languages (unknown/disabled code 404s; "All languages" default), 15/page `orderBy('name')`, whole-card links into the entity reader |
+| `/reader/works/{work}/alignments` | `ReaderController::workAlignments` | The work's readable **alignments list** (name `reader.works.alignments.index`): matches at status `completed`/`stale` the user can read both sides of — the same shared query the sections page's Alignments card counts — `?q=` search over either side's entity name, a `?lang=` filter matching either side's language (picking ru lists ru↔en and ru↔be), 15/page `latest()`, whole-card links into the alignment reader. No `reader_target` is precomputed: the URL is match-anchored and the side rule is the reader page's job |
+
+The two work-scoped readers are the URL split's whole point: monolingual
+and bilingual reading are explicit, separate URLs — the auto-detecting
+entity-anchored route that chose a mode from the entity's match is deleted
+without a redirect (ADR 0091, house removal style), so bookmarked bare-id
+reader URLs 404 (test-guarded; saved positions survive — the position keys
+never changed). Both pages ship the same props shape (rows/langs/meta/
+positionKey/fontSize/annotations/wordMaps/highlightable/explainable/
+explain) plus two header props: `work {id, title}` and `crossLinks` —
+`{href, label}` links `ReaderApp` renders near the title (the back button
+stays history-back). The entity reader's cross-link points to
+`/reader/works/{work}/alignments` — an entity can sit in many matches, so
+the header links the work's alignments list, not one match — and is
+present only while the work has at least one match the user may read at
+status `completed` or `stale`; the alignment reader cross-links each
+side's entity to its monolingual reader.
+
+The two browse routes are the split's **work browse middle**: the sections
+page (`Reader/WorkHome.jsx`) and the branch lists
+(`Reader/WorkEntitiesList.jsx`, `Reader/WorkAlignmentsList.jsx`), all
+modeled on the Library pages with the reading surface's minimalism (whole-
+card links, no status/signature badges, no add-entity card; the alignments
+cards show only the language pair, the entity names and the status — no
+editor/simulator buttons, no progress bars). The counts agree by
+construction — the works list's per-card alignment counts, the sections
+page's Alignments count, the entity reader's cross-link presence and the
+alignments list all share one rule, `Support\ReadableWorkAlignments`
+(a-side work scope, `completed`/`stale`, `readableMatchConstraint`), so the
+Alignments card's number is the list's filter-free total and a work card's
+count is the same work's list total.
 
 # Side rule and language toggle
 
 `EntityMatch::readingSideFor(nativeLanguageId)` decides the default reading
 side: the side in the user's **Native language** becomes the translation,
-else the work's original side, else the A-side — the exact rule
-`LibraryController::readerTarget()` uses for the card's Read button, so link
-and page agree. The rows themselves stay canonical a/b (ADR 0060): the
+else the work's original side, else the A-side. The rule is applied only
+inside the reading page now: the Library alignment card's Read button
+links the match-anchored URL for every reader, so link and page agree by
+construction. The rows themselves stay canonical a/b (ADR 0060): the
 server ships them as `defaultSide` plus side-keyed `langs` / `wordMaps` /
 `highlightable` / `explainable`, and never reorders.
 
@@ -76,30 +139,35 @@ the reader flipped for the same match (ADR 0037 amendment).
 # Frontend
 
 Inertia pages under `resources/js/Pages/Reader/` — `ReaderApp` +
-`ReaderRow` (reading view), plus the restored index `Pages/ReaderIndex.jsx`
-→ `Reader/ReaderIndexApp.jsx` (language tabs + text list, ADR 0038). The
-back arrow is browser-history back; the index is a separate page, not an
-in-app listing inside the reader. The index's `languages` prop ships objects
-(`{code, name, native_name}`, enabled languages by `sort_order`) so the
-pending-alignment label can name any language: `lib/languageLabel.js` keeps
-en/ru on their translated ui-string names (`reader.english`/`reader.russian`)
-and resolves every other language from the list (native name → name → raw
-code), so a third language is never mislabeled as English or Russian.
+`ReaderRow` (reading view), the works-first entry `Reader/Works.jsx`
+(modeled on `Library/Index.jsx`: search form, work-card grid,
+`LinkPagination` preserving `q` + `page` — but no add-work card, cards
+showing both counts and linking the sections page), and the work browse
+pages `Reader/WorkHome.jsx` (sections page: work header +
+the Entities and Alignments cards), `Reader/WorkEntitiesList.jsx` (texts
+list) and `Reader/WorkAlignmentsList.jsx` (alignments list) — the lists
+sharing the Library pages' searchInputClass/searchButtonClass/emptyBoxClass
+pattern plus a language `<select>` whose "All languages" default submits no
+`lang`, and `name — native_name` option labels over enabled languages. The
+back arrow on the readers is browser-history back; the browse pages link
+each other explicitly (list → `← {work title}` sections page, and the
+works list is where every chain starts). The old language-tab index
+(`Pages/ReaderIndex.jsx` → `Reader/ReaderIndexApp.jsx`, ADR 0038) is
+deleted along with `lib/languageLabel.js` — its only consumer.
 
 # Reading rows
 
-`ReaderController::buildRows()` finds the entity's `EntityMatch` (either
-side). With no match — or when the caller may not read **both** sides'
-entities — it falls back to single-language rows rather than leaking the
-restricted counterpart (mirrors the simulator both-sides rule from ADR 0014).
-With a readable match the meaning matches are shaped into **Reading rows**
-by `ReadingRowsPresenter::toReadingRows()` (ADR 0060): one row object per
+The two readers shape their rows directly — there is no auto-detect
+anymore. The **entity reader** paginates the entity's sentences through
+`forEntitySentences()`: one sentence per row with `b: null`. The
+**alignment reader** runs `MeaningMatchPresenter::meaningMatchesQuery()` on
+the URL's match and shapes the meaning matches into **Reading rows** by
+`ReadingRowsPresenter::toReadingRows()` (ADR 0060): one row object per
 meaning match — `{key: "mm:{id}", a: {sentences}, b: {sentences}}` in
 canonical side order — each sentence self-describing: `{id, text,
 stressed?, phrasal?}` for text, `{id, image: {url, width, height},
 text: caption}` for illustrations, annotation keys present only when the
-data exists. Single-language rows (via `forEntitySentences()`) are one
-sentence per row with `b: null`. Row `key`s (`mm:`/`es:` prefixes) scope
+data exists. Row `key`s (`mm:`/`es:` prefixes) scope
 familiarity lookup events to a sentence pair (ADR 0028); the sentence `id`
 is what the word-explanation request addresses.
 
@@ -109,8 +177,10 @@ with the text (shared `Components/IllustrationFigure.jsx`). Caption tokens
 are not part of the page word maps.
 
 Reads are gated by `EntityAccessService` (see the [Entity Access](
-../../CONTEXT.md#entity-access-context) context): `show` 403s on a
-Restricted entity without an Access grant.
+../../CONTEXT.md#entity-access-context) context): the entity reader 403s
+on a Restricted entity without an Access grant; the alignment reader 403s
+unless the caller may read **both** sides (the simulator both-sides rule
+from ADR 0014).
 
 # Pagination
 
@@ -161,7 +231,7 @@ page appears directly, at its top.
 
 # Interactive words
 
-`show()` also ships the [interactive word](/domains/interactive-words.md)
+Both readers ship the [interactive word](/domains/interactive-words.md)
 payload (scoped to the current page's rows): `wordMaps` keyed by canonical
 side (`{a, b}`; the b map empty when rows are single-language), plus
 `highlight` (the saved `reader.highlight` setting) and the `highlightable`
@@ -246,11 +316,11 @@ long before scrolling, while static analysis had (correctly) shown zero
 scroll-reactive code. After pass 4 (fonts self-hosted, rows de-animated,
 plain-text fast path), a 3.5-minute instrumented session on `/reader/15`
 showed a flat heap (~25 MB), zero React commits across 726 scroll events,
-≤6 ms event-loop lag, and 2 long tasks total. `wiki/log.md` keeps the full
-pass-by-pass timeline.
+≤6 ms event-loop lag, and 2 long tasks total. `wiki/archive-2026-q2-q3.md`
+keeps the full pass-by-pass timeline (2026-09-23, pre-archive `log.md`).
 
 ## Visual system per page
 
 | Surface | Tokens | Notes |
 |---------|--------|-------|
-| `/reader/{entityId}` (reader) | `--color-vellum/*` (legacy) | Still on the warm vellum palette. Migrating it to `--wbench-*` is tracked as a follow-up so a library switch does not visibly cross palettes when entering a text. (The reader index — the `--wbench-*` reference implementation, deleted with the Practice disposal and restored by ADR 0038 — still uses the `--wbench-*` tokens; the design-system page's canonical example is the simulator.) |
+| The readers (`/reader/works/{work}/entities/{entity}`, `/reader/works/{work}/alignments/{match}`) | `--color-vellum/*` (legacy) | Still on the warm vellum palette. Migrating them to `--wbench-*` is tracked as a follow-up so a library switch does not visibly cross palettes when entering a text. (The reader flow's browse surfaces — the works list `Reader/Works.jsx`, the sections page and the branch lists — use the `--wbench-*` tokens; the design-system page's canonical example is the simulator.) |
