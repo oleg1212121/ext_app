@@ -115,6 +115,51 @@ it('seeds the reader alignments cross-link string in all three interface languag
     ]);
 });
 
+it('seeds the reader work-browse strings in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework ticket 02: the work sections page's Entities card and
+    // the per-work texts list — the list's search form and language filter
+    // (their "All languages" default), the entity card's sentence count,
+    // and the filtered-empty state.
+    expect(seededUiStringTexts('reader.search'))->toBe([
+        'en' => 'Search',
+        'ru' => 'Найти',
+        'be' => 'Знайсці',
+    ]);
+    expect(seededUiStringTexts('reader.search_texts'))->toBe([
+        'en' => 'Search by name or label…',
+        'ru' => 'Поиск по названию или подписи…',
+        'be' => 'Пошук па назве або подпісе…',
+    ]);
+    expect(seededUiStringTexts('reader.all_languages'))->toBe([
+        'en' => 'All languages',
+        'ru' => 'Все языки',
+        'be' => 'Усе мовы',
+    ]);
+    expect(seededUiStringTexts('reader.sentence'))->toBe([
+        'en' => 'sentence',
+        'ru' => 'предложение',
+        'be' => 'сказ',
+    ]);
+    expect(seededUiStringTexts('reader.sentences'))->toBe([
+        'en' => 'sentences',
+        'ru' => 'предложений',
+        'be' => 'казаў',
+    ]);
+    expect(seededUiStringTexts('reader.no_texts_match'))->toBe([
+        'en' => 'No texts match “:q”.',
+        'ru' => 'По запросу «:q» ничего не найдено.',
+        'be' => 'Па запыце «:q» нічога не знойдзена.',
+    ]);
+    expect(seededUiStringTexts('reader.no_texts_match_hint'))->toBe([
+        'en' => 'Texts you do not have access to are never listed.',
+        'ru' => 'Тексты, к которым у вас нет доступа, никогда не отображаются.',
+        'be' => 'Тэксты, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.',
+    ]);
+});
+
 it('seeds the six usage-label chips in all three interface languages', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();

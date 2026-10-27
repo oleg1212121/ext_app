@@ -79,6 +79,16 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber(['work', 'match'])
         ->name('reader.works.alignments.show');
 
+    // The work browse middle of the reader flow: the work's sections page
+    // (header + section entry cards) and the work's readable texts list.
+    Route::get('/reader/works/{work}', [ReaderController::class, 'workShow'])
+        ->whereNumber('work')
+        ->name('reader.works.show');
+
+    Route::get('/reader/works/{work}/entities', [ReaderController::class, 'workEntities'])
+        ->whereNumber('work')
+        ->name('reader.works.entities.index');
+
     Route::get('/crossword', [CrosswordController::class, 'index'])->name('crossword');
     Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');
     Route::post('/crossword/complete', [CrosswordController::class, 'complete'])->name('crossword.complete');

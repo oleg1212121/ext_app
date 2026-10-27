@@ -37,6 +37,16 @@ return [
     'reader.reading_language' => ['en' => 'Reading language', 'ru' => 'Язык чтения', 'be' => 'Мова чытання'],
     // The entity reader's header cross-link to its work's alignments list.
     'reader.alignments' => ['en' => 'Alignments', 'ru' => 'Выравнивания', 'be' => 'Выраўноўванні'],
+    // Work browse pages (Reader/WorkHome.jsx + Reader/WorkEntitiesList.jsx):
+    // the sections page's Entities card and the per-work texts list.
+    'reader.text' => ['en' => 'Text', 'ru' => 'Текст', 'be' => 'Тэкст'],
+    'reader.sentence' => ['en' => 'sentence', 'ru' => 'предложение', 'be' => 'сказ'],
+    'reader.sentences' => ['en' => 'sentences', 'ru' => 'предложений', 'be' => 'казаў'],
+    'reader.search' => ['en' => 'Search', 'ru' => 'Найти', 'be' => 'Знайсці'],
+    'reader.search_texts' => ['en' => 'Search by name or label…', 'ru' => 'Поиск по названию или подписи…', 'be' => 'Пошук па назве або подпісе…'],
+    'reader.all_languages' => ['en' => 'All languages', 'ru' => 'Все языки', 'be' => 'Усе мовы'],
+    'reader.no_texts_match' => ['en' => 'No texts match “:q”.', 'ru' => 'По запросу «:q» ничего не найдено.', 'be' => 'Па запыце «:q» нічога не знойдзена.'],
+    'reader.no_texts_match_hint' => ['en' => 'Texts you do not have access to are never listed.', 'ru' => 'Тексты, к которым у вас нет доступа, никогда не отображаются.', 'be' => 'Тэксты, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.'],
     // Reader index (ReaderIndexApp.jsx) — the Practice → Reader browse page.
     'reader.reader_heading' => ['en' => 'Reader', 'ru' => 'Читалка', 'be' => 'Чыталка'],
     'reader.library_language' => ['en' => 'Library language', 'ru' => 'Язык библиотеки', 'be' => 'Мова бібліятэкі'],

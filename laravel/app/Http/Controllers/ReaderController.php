@@ -11,9 +11,11 @@ use App\Http\Requests\ReaderPageRequest;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\Language;
+use App\Models\User;
 use App\Models\Work;
 use App\Support\SavedUiSettings;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -207,6 +209,109 @@ class ReaderController extends Controller
     }
 
     /**
+     * The work's sections page — the work browse middle of the reader flow:
+     * the work header plus one entry card per section. Both card counts
+     * already ship with their final rules, so the alignments ticket only
+     * adds its card + list, never a payload change here.
+     */
+    public function workShow(Request $request, int $workId): Response
+    {
+        $work = Work::query()
+            ->with('originalLanguage')
+            ->findOrFail($workId);
+
+        return Inertia::render('Reader/WorkHome', [
+            'work' => [
+                'id' => $work->id,
+                'title' => $work->title,
+                'author' => $work->author,
+                'description' => $work->description,
+                'original_language' => $this->languageRef($work),
+            ],
+            'entities_count' => $work
+                ->entities()
+                ->where($this->access->readableConstraint($request->user()))
+                ->count(),
+            'alignments_count' => $this->readableWorkAlignments($work, $request->user())->count(),
+        ]);
+    }
+
+    /**
+     * The work's texts list — every entity of the work the user can read,
+     * searchable by name/label and filterable to one entity language. The
+     * reader-side twin of the Library's entities branch, minus the
+     * management affordances (no add card, no badges).
+     */
+    public function workEntities(Request $request, int $workId): Response
+    {
+        $work = Work::query()->findOrFail($workId);
+        $q = trim((string) $request->query('q', ''));
+        $lang = trim((string) $request->query('lang', ''));
+
+        // The filter only accepts enabled languages: an unknown or disabled
+        // code is a bad URL, not an empty list.
+        $language = $lang === ''
+            ? null
+            : Language::query()->enabled()->where('code', $lang)->firstOrFail();
+
+        $entities = $this->access
+            ->readableQuery($request->user(), $language?->id)
+            ->where('work_id', $work->id)
+            ->with('language')
+            ->withCount('sentences')
+            ->when($q !== '', function (Builder $query) use ($q): Builder {
+                $needle = $this->searchNeedle($q);
+
+                return $query->where(function (Builder $query) use ($needle): void {
+                    $query->where('name', 'ilike', $needle)
+                        ->orWhere('label', 'ilike', $needle);
+                });
+            })
+            ->orderBy('name')
+            ->paginate(15);
+
+        return Inertia::render('Reader/WorkEntitiesList', [
+            'work' => [
+                'id' => $work->id,
+                'title' => $work->title,
+                'author' => $work->author,
+            ],
+            'q' => $q,
+            'lang' => $lang,
+            // Objects with display names (not bare codes): the language
+            // select labels each option "name — native_name".
+            'languages' => Language::query()
+                ->enabled()
+                ->orderBy('sort_order')
+                ->get(['code', 'name', 'native_name'])
+                ->map(fn (Language $language): array => [
+                    'code' => $language->code,
+                    'name' => $language->name,
+                    'native_name' => $language->native_name,
+                ])
+                ->all(),
+            'entities' => $entities->through(function (Entity $entity): array {
+                return [
+                    'id' => $entity->id,
+                    'name' => $entity->name,
+                    'label' => $entity->label,
+                    'sentences_count' => $entity->sentences_count,
+                    'language' => [
+                        'code' => $entity->language?->code,
+                        'name' => $entity->language?->name,
+                    ],
+                ];
+            })->items(),
+            'meta' => [
+                'current_page' => $entities->currentPage(),
+                'last_page' => $entities->lastPage(),
+                'total' => $entities->total(),
+                'per_page' => $entities->perPage(),
+            ],
+        ]);
+    }
+
+    /**
      * The props assembly shared by the two work-scoped readers — the same
      * shape the auto-detecting show() ships (rows/langs/meta/positionKey/
      * fontSize/annotations/wordMaps/highlightable/explainable/explain),
@@ -279,14 +384,9 @@ class ReaderController extends Controller
      */
     private function entityCrossLinks(Work $work): array
     {
-        $hasReadableAlignments = EntityMatch::query()
-            // The work comes via the A-side entity: an EntityMatch has no
-            // work_id (and going through Work::alignments()' join turns
-            // unqualified column names ambiguous).
-            ->whereHas('aEntity', fn (Builder $query): Builder => $query->where('work_id', $work->id))
-            ->whereIn('status', ['completed', 'stale'])
-            ->where($this->access->readableMatchConstraint(auth()->user()))
-            ->exists();
+        // The same count rule the sections page's Alignments card uses, so
+        // the header link appears exactly when the card's count is non-zero.
+        $hasReadableAlignments = $this->readableWorkAlignments($work, auth()->user())->exists();
 
         if (! $hasReadableAlignments) {
             return [];
@@ -322,6 +422,46 @@ class ReaderController extends Controller
         }
 
         return $links;
+    }
+
+    /**
+     * The work's readable completed/stale alignments — the count rule
+     * shared by the sections page's Alignments count and the entity
+     * reader's cross-link presence check (both sides readable; pending,
+     * aligning and failed matches have no meaning-match rows to read).
+     *
+     * The work comes via the A-side entity: an EntityMatch has no work_id
+     * of its own, and going through Work::alignments()' hasManyThrough join
+     * turns unqualified column names ambiguous in Postgres.
+     *
+     * @return Builder<EntityMatch>
+     */
+    private function readableWorkAlignments(Work $work, User $user): Builder
+    {
+        return EntityMatch::query()
+            ->whereHas('aEntity', fn (Builder $query): Builder => $query->where('work_id', $work->id))
+            ->whereIn('status', ['completed', 'stale'])
+            ->where($this->access->readableMatchConstraint($user));
+    }
+
+    /**
+     * @return array{code: string, name: string}|null
+     */
+    private function languageRef(Work $work): ?array
+    {
+        return $work->originalLanguage !== null ? [
+            'code' => $work->originalLanguage->code,
+            'name' => $work->originalLanguage->name,
+        ] : null;
+    }
+
+    /**
+     * The Library's ilike search needle: %-wrapped with the user's
+     * wildcards escaped, so a % in a name matches literally.
+     */
+    private function searchNeedle(string $q): string
+    {
+        return '%'.str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $q).'%';
     }
 
     /**

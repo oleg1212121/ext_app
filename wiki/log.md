@@ -6,6 +6,37 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-27 (reader-rework ticket 02 — work browse middle: sections page + per-work texts list)
+
+The split's browse middle lands under `['auth', 'approved']`:
+`GET /reader/works/{work}` (`reader.works.show`,
+`ReaderController::workShow`) is the work's **sections page** — work header
+(title/author/original language/description) plus section entry cards, the
+Entities card only for now (the Alignments card joins it with ticket 03's
+list; both counts already ride the payload with their final rules:
+entities = `readableConstraint` count, alignments = `completed`/`stale` +
+`readableMatchConstraint` count), and
+`GET /reader/works/{work}/entities` (`reader.works.entities.index`,
+`ReaderController::workEntities`) is the work's **texts list** — every
+readable entity of the work, the Library entities branch's search pattern
+(name/label escaped-needle ilike, plain GET form) plus a `?lang=` filter
+over enabled languages ("All languages" default, unknown/disabled code
+404s), 15/page `orderBy('name')`, whole-card links into ticket 01's
+entity reader. The count rule the sections page and the entity reader's
+cross-link check share now lives in one place
+(`ReaderController::readableWorkAlignments` — a-side work scope, direct
+`EntityMatch` query, not `Work::alignments()`' ambiguous join). The
+Library entity page's Read button retargets from the old auto-detecting
+`/reader/{id}` to the work-scoped entity reader. New pages
+`Reader/WorkHome.jsx` + `Reader/WorkEntitiesList.jsx` (Library page
+patterns, reading-surface minimalism — no badges, no add card); new
+trilingual reader ui strings (text/sentences count words, search form,
+"All languages", filtered-empty state; reseeded);
+`tests/Feature/ReaderWorkBrowseTest.php` (10 tests). `domains/reader.md`
+Routes table + expand-phase + frontend sections updated, `generated.at`
+bumped; routes/web.php drift stays baselined pointing at the feature's
+docs pass (reader-rework ticket 06).
+
 ## 2026-10-27 (reader-rework ticket 01 — work-scoped entity and alignment readers, expand phase)
 
 The reader URL split begins: two new work-scoped reading routes under
