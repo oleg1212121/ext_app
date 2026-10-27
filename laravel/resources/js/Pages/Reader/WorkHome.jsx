@@ -3,9 +3,9 @@ import Main from '../../Layouts/Main.jsx';
 import {useI18n} from '../../i18n';
 
 // The reader flow's work sections page: the work header plus one entry
-// card per section. The Alignments card joins the Texts card with the
-// alignments-list ticket — the payload already carries alignments_count.
-export default function WorkHome({work, entitiesCount}) {
+// card per section — texts and alignments, both counts the readable-scoped
+// rules the branch lists page by.
+export default function WorkHome({work, entitiesCount, alignmentsCount}) {
     const {t} = useI18n();
 
     return (
@@ -35,6 +35,12 @@ export default function WorkHome({work, entitiesCount}) {
                         count={entitiesCount}
                         countWord={entitiesCount === 1 ? t('reader.text') : t('reader.texts')}
                         title={t('reader.texts')}
+                    />
+                    <SectionCard
+                        href={`/reader/works/${work.id}/alignments`}
+                        count={alignmentsCount}
+                        countWord={alignmentsCount === 1 ? t('reader.alignment') : t('reader.alignments')}
+                        title={t('reader.alignments')}
                     />
                 </div>
             </div>

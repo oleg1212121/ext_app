@@ -47,6 +47,14 @@ return [
     'reader.all_languages' => ['en' => 'All languages', 'ru' => 'Все языки', 'be' => 'Усе мовы'],
     'reader.no_texts_match' => ['en' => 'No texts match “:q”.', 'ru' => 'По запросу «:q» ничего не найдено.', 'be' => 'Па запыце «:q» нічога не знойдзена.'],
     'reader.no_texts_match_hint' => ['en' => 'Texts you do not have access to are never listed.', 'ru' => 'Тексты, к которым у вас нет доступа, никогда не отображаются.', 'be' => 'Тэксты, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.'],
+    // Work browse pages (Reader/WorkHome.jsx + Reader/WorkAlignmentsList.jsx):
+    // the sections page's Alignments card and the per-work alignments list.
+    'reader.alignment' => ['en' => 'Alignment', 'ru' => 'Выравнивание', 'be' => 'Выраўноўванне'],
+    'reader.search_alignments' => ['en' => 'Search by entity name…', 'ru' => 'Поиск по названию текста…', 'be' => 'Пошук па назве тэксту…'],
+    'reader.no_alignments_match' => ['en' => 'No alignments match “:q”.', 'ru' => 'По запросу «:q» ничего не найдено.', 'be' => 'Па запыце «:q» нічога не знойдзена.'],
+    'reader.no_alignments_match_hint' => ['en' => 'Alignments you cannot read are never listed.', 'ru' => 'Выравнивания, к которым у вас нет доступа, никогда не отображаются.', 'be' => 'Выраўноўванні, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.'],
+    'reader.no_alignments' => ['en' => 'No alignments in this language', 'ru' => 'На этом языке выравниваний нет', 'be' => 'На гэтай мове выраўноўванняў няма'],
+    'reader.no_alignments_hint' => ['en' => 'Switch the language above, or come back once this work has readable alignments.', 'ru' => 'Переключите язык выше или вернитесь, когда у произведения появятся доступные вам выравнивания.', 'be' => 'Пераключыце мову вышэй або вярніцеся, калі ў твора з\'явяцца даступныя вам выраўноўванні.'],
     // Reader index (ReaderIndexApp.jsx) — the Practice → Reader browse page.
     'reader.reader_heading' => ['en' => 'Reader', 'ru' => 'Читалка', 'be' => 'Чыталка'],
     'reader.library_language' => ['en' => 'Library language', 'ru' => 'Язык библиотеки', 'be' => 'Мова бібліятэкі'],

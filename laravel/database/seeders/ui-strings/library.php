@@ -31,6 +31,10 @@ return [
     'library.no_alignments_yet' => ['en' => 'No alignments yet.', 'ru' => 'Выравниваний пока нет.', 'be' => 'Выраўноўванняў пакуль няма.'],
     'library.no_alignments_yet_hint' => ['en' => 'Add an alignment between two texts of this work.', 'ru' => 'Добавьте выравнивание между двумя текстами этого произведения.', 'be' => 'Дадайце выраўноўванне паміж двума тэкстамі гэтага твора.'],
     'library.simulator' => ['en' => 'Simulator', 'ru' => 'Симулятор', 'be' => 'Сімулятар'],
+    // The alignment card's reader button: plain Read — the reader URL is
+    // match-anchored and the reading side (with its language) is decided
+    // inside the reader, so the label no longer embeds a language code.
+    'library.read' => ['en' => 'Read', 'ru' => 'Читать', 'be' => 'Чытаць'],
     'library.read_lang' => ['en' => 'Read · :lang', 'ru' => 'Читать · :lang', 'be' => 'Чытаць · :lang'],
     'library.no_alignable_entities' => ['en' => 'Not enough alignable texts in this work.', 'ru' => 'В этом произведении недостаточно текстов для выравнивания.', 'be' => 'У гэтым творы недастаткова тэкстаў для выраўноўвання.'],
     'library.no_alignable_entities_hint' => ['en' => 'An alignment needs two texts with a generated signature and split sentences.', 'ru' => 'Для выравнивания нужны два текста с созданной сигнатурой и разбитым на предложения текстом.', 'be' => 'Для выраўноўвання патрэбны два тэксты з генераванай сігнатурай і тэкстам, падзеленым на сказы.'],

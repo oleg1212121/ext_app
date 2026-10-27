@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Classes\AIModelResolver;
+use App\Classes\AlignmentEditorApiPresenter;
 use App\Classes\Enrichment\EnricherRegistry;
 use App\Classes\EntityAccessService;
 use App\Classes\MeaningMatchPresenter;
@@ -34,6 +35,7 @@ class ReaderController extends Controller
         protected AIModelResolver $modelResolver,
         protected EnricherRegistry $enrichers,
         protected EntityAccessService $access,
+        protected AlignmentEditorApiPresenter $alignmentPresenter,
     ) {}
 
     /**
@@ -312,6 +314,76 @@ class ReaderController extends Controller
     }
 
     /**
+     * The work's alignments list — the matches of the work the user can
+     * read at status completed or stale, searchable by either side's entity
+     * name and filterable to a language of either side. The reading-surface
+     * twin of the Library's alignments branch: no reader_target here — the
+     * cards link the match-anchored alignment reader, which owns the side
+     * rule. The base query is the same builder the sections page's
+     * Alignments card counts, so card count and list total agree.
+     */
+    public function workAlignments(Request $request, int $workId): Response
+    {
+        $work = Work::query()->findOrFail($workId);
+        $q = trim((string) $request->query('q', ''));
+        $lang = trim((string) $request->query('lang', ''));
+
+        // The filter only accepts enabled languages: an unknown or disabled
+        // code is a bad URL, not an empty list.
+        $language = $lang === ''
+            ? null
+            : Language::query()->enabled()->where('code', $lang)->firstOrFail();
+
+        $matches = $this->readableWorkAlignments($work, $request->user())
+            ->with(['aEntity.language', 'bEntity.language', 'aEntity.work'])
+            ->when($q !== '', function (Builder $query) use ($q): Builder {
+                $needle = $this->searchNeedle($q);
+
+                return $query->where(function (Builder $query) use ($needle): void {
+                    $query->whereHas('aEntity', fn (Builder $inner) => $inner->where('name', 'ilike', $needle))
+                        ->orWhereHas('bEntity', fn (Builder $inner) => $inner->where('name', 'ilike', $needle));
+                });
+            })
+            ->when($language !== null, function (Builder $query) use ($language): Builder {
+                return $query->where(function (Builder $query) use ($language): void {
+                    $query->whereHas('aEntity', fn (Builder $inner) => $inner->where('language_id', $language->id))
+                        ->orWhereHas('bEntity', fn (Builder $inner) => $inner->where('language_id', $language->id));
+                });
+            })
+            ->latest()
+            ->paginate(15);
+
+        return Inertia::render('Reader/WorkAlignmentsList', [
+            'work' => [
+                'id' => $work->id,
+                'title' => $work->title,
+                'author' => $work->author,
+            ],
+            'q' => $q,
+            'lang' => $lang,
+            // Objects with display names (not bare codes): the language
+            // select labels each option "name — native_name".
+            'languages' => Language::query()
+                ->enabled()
+                ->orderBy('sort_order')
+                ->get(['code', 'name', 'native_name'])
+                ->map(fn (Language $language): array => [
+                    'code' => $language->code,
+                    'name' => $language->name,
+                    'native_name' => $language->native_name,
+                ])
+                ->all(),
+            'alignments' => $matches->through(fn (EntityMatch $entityMatch): array => $this->alignmentPresenter->matchPayload($entityMatch))->items(),
+            'meta' => [
+                'current_page' => $matches->currentPage(),
+                'last_page' => $matches->lastPage(),
+                'total' => $matches->total(),
+                'per_page' => $matches->perPage(),
+            ],
+        ]);
+    }
+
+    /**
      * The props assembly shared by the two work-scoped readers — the same
      * shape the auto-detecting show() ships (rows/langs/meta/positionKey/
      * fontSize/annotations/wordMaps/highlightable/explainable/explain),
@@ -394,9 +466,9 @@ class ReaderController extends Controller
 
         return [
             [
-                // route('reader.works.alignments.index', …) once that list
-                // route exists (alignments-branch ticket).
-                'href' => '/reader/works/'.$work->id.'/alignments',
+                // Relative like the other cross-link hrefs: the payload
+                // carries paths, not host-absolute URLs.
+                'href' => route('reader.works.alignments.index', ['work' => $work->id], absolute: false),
                 'label' => __('reader.alignments'),
             ],
         ];

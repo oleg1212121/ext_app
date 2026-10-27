@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-10-27T00:46:30+03:00 }
+generated: { by: agent:zcode, at: 2026-10-27T18:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: controller
@@ -83,7 +83,7 @@ selects and the language shown on entity pages are driven by
 | `/works/create` (GET/POST `/works`) | `LibraryController::createWork` / `storeWork` | Create-work form (title, author, description, original language — must be enabled) → redirect to the work landing page. Named `works.create` / `works.store` |
 | `/works/{work}` | `LibraryController::showWork` | Work landing page (ADR 0039): catalog metadata + readable `entities_count` / `alignments_count`, each linking to the work's branch page. Named `works.show` |
 | `/works/{work}/entities` | `LibraryController::workEntities` | The work's readable entities (former entities tab): `?q=` search (name/label), 15/page, plus-card → add entity. Named `works.entities.show` |
-| `/works/{work}/alignments` | `LibraryController::workAlignments` | The work's readable entity matches (former alignments tab; ADR 0036): either side's name search, each payload via `AlignmentEditorApiPresenter::matchPayload` + a server-computed `reader_target` (the non-native side; original-side then A-side tiebreaks), plus-card → add alignment. Named `works.alignments.show` |
+| `/works/{work}/alignments` | `LibraryController::workAlignments` | The work's readable entity matches (former alignments tab; ADR 0036): either side's name search, each payload via `AlignmentEditorApiPresenter::matchPayload` — no reader side precomputation: the card's Read button links the match-anchored reader URL `/reader/works/{work}/alignments/{match}`, where the side rule is applied — plus-card → add alignment. Named `works.alignments.show` |
 | `/works/{work}/entities/create` (GET) + POST `/works/{work}/entities` | `LibraryController::createEntity` / `storeEntity` | Work-scoped entity creation (the only create surface since ADR 0073): work fixed, language picked from enabled languages. Runs the shared `EntityCreationService` pipeline; redirects to the new entity's work-nested page. Named `works.entities.create` / `works.entities.store` |
 | `/works/{work}/entities/{entity}` (GET/PATCH) | `EntityController::show` / `update` | Detail page / metadata update, named `entities.show` / `entities.update` (ADR 0073). Binds `Work $work, Entity $entity` and 404s unless `$entity->work_id === $work->id` |
 | `/works/{work}/entities/{entity}/approved` (PATCH) | `EntityController::updateApproved` | Flip the approval edit-lock (uploader or admin), named `entities.approved.update` |
@@ -107,7 +107,8 @@ original-language chip, readable count), `Library/CreateWork`,
 `Library/WorkEntities` (per-tab search + plus-card; entity cards linking to
 `/works/{work}/entities/{entity}`), `Library/WorkAlignments` (alignment cards via
 `Components/AlignmentCard.jsx` — stretched link to the editor
-`/works/{work}/alignments/{id}/edit` with Simulator / Read·{LANG} buttons on top),
+`/works/{work}/alignments/{id}/edit` with Simulator / Read buttons on top —
+Read targets the match-anchored reader `/reader/works/{work}/alignments/{id}`),
 `Library/CreateEntity` (work fixed, language select), `Library/CreateAlignment`
 (work fixed, two entity selects + chunk params), plus
 `Entities/Show` (back link "← {work title} entities" to the work's Entities

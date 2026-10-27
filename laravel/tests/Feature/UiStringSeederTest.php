@@ -160,6 +160,51 @@ it('seeds the reader work-browse strings in all three interface languages', func
     ]);
 });
 
+it('seeds the reader work-alignments strings in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework ticket 03: the sections page's Alignments card (the
+    // singular count word) and the per-work alignments list — the search
+    // placeholder and the empty states — plus the Library alignment card's
+    // plain Read label (the reader URL no longer needs a language code).
+    expect(seededUiStringTexts('reader.alignment'))->toBe([
+        'en' => 'Alignment',
+        'ru' => 'Выравнивание',
+        'be' => 'Выраўноўванне',
+    ]);
+    expect(seededUiStringTexts('reader.search_alignments'))->toBe([
+        'en' => 'Search by entity name…',
+        'ru' => 'Поиск по названию текста…',
+        'be' => 'Пошук па назве тэксту…',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments_match'))->toBe([
+        'en' => 'No alignments match “:q”.',
+        'ru' => 'По запросу «:q» ничего не найдено.',
+        'be' => 'Па запыце «:q» нічога не знойдзена.',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments_match_hint'))->toBe([
+        'en' => 'Alignments you cannot read are never listed.',
+        'ru' => 'Выравнивания, к которым у вас нет доступа, никогда не отображаются.',
+        'be' => 'Выраўноўванні, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments'))->toBe([
+        'en' => 'No alignments in this language',
+        'ru' => 'На этом языке выравниваний нет',
+        'be' => 'На гэтай мове выраўноўванняў няма',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments_hint'))->toBe([
+        'en' => 'Switch the language above, or come back once this work has readable alignments.',
+        'ru' => 'Переключите язык выше или вернитесь, когда у произведения появятся доступные вам выравнивания.',
+        'be' => 'Пераключыце мову вышэй або вярніцеся, калі ў твора з\'явяцца даступныя вам выраўноўванні.',
+    ]);
+    expect(seededUiStringTexts('library.read'))->toBe([
+        'en' => 'Read',
+        'ru' => 'Читать',
+        'be' => 'Чытаць',
+    ]);
+});
+
 it('seeds the six usage-label chips in all three interface languages', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();

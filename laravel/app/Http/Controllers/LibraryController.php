@@ -254,8 +254,6 @@ class LibraryController extends Controller
      */
     private function workAlignmentsPayload(Request $request, Work $work, string $q): array
     {
-        $nativeLanguageId = $request->user()->nativeLanguage()?->id;
-
         $matches = $this->access->readableMatchQuery($request->user())
             ->whereHas('aEntity', fn (Builder $query) => $query->where('work_id', $work->id))
             ->with(['aEntity.language', 'bEntity.language', 'aEntity.work'])
@@ -271,42 +269,16 @@ class LibraryController extends Controller
             ->paginate(15);
 
         return [
-            'alignments' => $matches->through(function (EntityMatch $entityMatch) use ($nativeLanguageId): array {
-                return [
-                    ...$this->presenter->matchPayload($entityMatch),
-                    'reader_target' => $this->readerTarget($entityMatch, $nativeLanguageId),
-                ];
-            })->items(),
+            // No reader_target: the card's Read button links the
+            // match-anchored reader URL, and the side rule lives in that
+            // page (the URL is the same for every reader).
+            'alignments' => $matches->through(fn (EntityMatch $entityMatch): array => $this->presenter->matchPayload($entityMatch))->items(),
             'alignments_meta' => [
                 'current_page' => $matches->currentPage(),
                 'last_page' => $matches->lastPage(),
                 'total' => $matches->total(),
                 'per_page' => $matches->perPage(),
             ],
-        ];
-    }
-
-    /**
-     * The side an alignment card's reader button opens: the same side rule
-     * the reader page applies (EntityMatch::readingSideFor) — the user's
-     * native side becomes the translation, ties prefer the work's original
-     * language, then the A-side — so the button and the page agree.
-     *
-     * @return array{lang: string, entity_id: int}|null
-     */
-    private function readerTarget(EntityMatch $entityMatch, ?int $nativeLanguageId): ?array
-    {
-        $entity = $entityMatch->readingSideFor($nativeLanguageId) === 'a'
-            ? $entityMatch->aEntity
-            : $entityMatch->bEntity;
-
-        if ($entity === null || $entity->language?->code === null) {
-            return null;
-        }
-
-        return [
-            'lang' => $entity->language->code,
-            'entity_id' => $entity->id,
         ];
     }
 

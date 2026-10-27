@@ -6,6 +6,42 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-27 (reader-rework ticket 03 — alignments branch: per-work alignments list + Library Read switchover)
+
+The browse middle's second half lands: `GET /reader/works/{work}/alignments`
+(`reader.works.alignments.index`, `ReaderController::workAlignments`) is the
+work's **alignments list** — matches at status `completed`/`stale` the user
+can read both sides of (the base query IS the sections page's Alignments
+count builder `readableWorkAlignments`, so card count and list total agree
+by construction), `?q=` search over either side's entity name, a `?lang=`
+filter matching either side's language (ru lists ru↔en and ru↔be;
+unknown/disabled code 404s), 15/page `latest()`, cards from
+`AlignmentEditorApiPresenter::matchPayload` — deliberately without the
+Library's `reader_target`: the cards link the match-anchored alignment
+reader `/reader/works/{work}/alignments/{match}`, so the side rule
+(`EntityMatch::readingSideFor`) now lives only in that page. New page
+`Reader/WorkAlignmentsList.jsx` (the entities list's toolbar pattern;
+cards show language pair, entity names and status — no editor/simulator
+buttons, no progress bars); `Reader/WorkHome.jsx` gains the Alignments
+section card. **Library switchover:** `LibraryController::readerTarget()`
+and the `reader_target` payload key are deleted;
+`Components/AlignmentCard.jsx`'s Read button is unconditional, targets the
+match-anchored URL and is labelled plain `library.read` (new trilingual
+string; `library.read_lang` remains but has no consumer left until the
+docs/cleanup pass). The entity reader's cross-link href is now
+`route('reader.works.alignments.index', …, absolute: false)` (ticket 01
+left the literal). New trilingual reader ui strings (alignment count word,
+search placeholder, empty states; reseeded);
+`tests/Feature/ReaderWorkAlignmentsTest.php` (9 tests);
+`LibraryTest`'s three reader_target side-rule tests reworked into
+match-anchored href assertions (the tiebreak/same-language scenarios now
+assert `defaultSide` at the reader URL, where the rule lives).
+`domains/reader.md` (new route row, browse-middle/side-rule/frontend
+passages, `generated.at` bumped) and `domains/entities.md`
+(reader_target clause + Read·{LANG} button updated, `generated.at`
+bumped); the run's source-drift warnings stay baselined pointing at the
+feature's docs pass (reader-rework ticket 06).
+
 ## 2026-10-27 (reader-rework ticket 02 — work browse middle: sections page + per-work texts list)
 
 The split's browse middle lands under `['auth', 'approved']`:
