@@ -148,46 +148,16 @@ test('the legacy reader paths are gone', function () {
     $this->actingAs($user)->get('/reader-react')->assertNotFound();
     $this->actingAs($user)->get('/reader-react/en')->assertNotFound();
     $this->actingAs($user)->get('/reader-react/en/1')->assertNotFound();
-    // The language segment is gone from the reading route: the old
-    // two-segment shape no longer resolves, whatever the language code.
-    // (/reader and /reader/{lang} are live again as the Practice index.)
+    // The language segment is gone from the reader surface: the old
+    // two-segment shape and the language-tab index no longer resolve,
+    // whatever the language code (/reader itself is the works list).
+    $this->actingAs($user)->get('/reader/en')->assertNotFound();
+    $this->actingAs($user)->get('/reader/de')->assertNotFound();
     $this->actingAs($user)->get('/reader/en/1')->assertNotFound();
     $this->actingAs($user)->get('/reader/de/1')->assertNotFound();
 });
 
-test('the practice reader index lists readable texts for the language', function () {
-    $user = User::factory()->create();
-    createAlignedReaderEntities();
-
-    $this->actingAs($user)
-        ->get('/reader/en')
-        ->assertSuccessful()
-        ->assertInertia(fn ($page) => $page
-            ->component('ReaderIndex')
-            ->where('lang', 'en')
-            // Objects with display names — the pending-alignment label
-            // resolves any language's name from this list.
-            ->where('languages.0.code', 'en')
-            ->where('languages.0.native_name', 'English')
-            ->has('entities', 1)
-            ->where('entities.0.name', 'Test EN Entity'));
-});
-
-test('bare reader index derives the native language', function () {
-    $user = User::factory()->create();
-    createAlignedReaderEntities();
-
-    // Factory users are native English speakers.
-    $this->actingAs($user)
-        ->get('/reader')
-        ->assertSuccessful()
-        ->assertInertia(fn ($page) => $page
-            ->component('ReaderIndex')
-            ->where('lang', 'en')
-            ->has('entities', 1));
-});
-
-test('guests are redirected from the reader index', function () {
+test('guests are redirected from the works list', function () {
     $this->get('/reader')->assertRedirect(route('login'));
 });
 

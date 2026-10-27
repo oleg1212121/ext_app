@@ -55,15 +55,16 @@ return [
     'reader.no_alignments_match_hint' => ['en' => 'Alignments you cannot read are never listed.', 'ru' => 'Выравнивания, к которым у вас нет доступа, никогда не отображаются.', 'be' => 'Выраўноўванні, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.'],
     'reader.no_alignments' => ['en' => 'No alignments in this language', 'ru' => 'На этом языке выравниваний нет', 'be' => 'На гэтай мове выраўноўванняў няма'],
     'reader.no_alignments_hint' => ['en' => 'Switch the language above, or come back once this work has readable alignments.', 'ru' => 'Переключите язык выше или вернитесь, когда у произведения появятся доступные вам выравнивания.', 'be' => 'Пераключыце мову вышэй або вярніцеся, калі ў твора з\'явяцца даступныя вам выраўноўванні.'],
-    // Reader index (ReaderIndexApp.jsx) — the Practice → Reader browse page.
+    // The works-first reader entry (Reader/Works.jsx): the reader flow's
+    // works catalog. Its identical copy reuses the library.* keys (works,
+    // search_works, search_placeholder, no_works_match); the empty state's
+    // hint differs — the reading surface has no add-work card to suggest.
+    'reader.no_works_match_hint' => ['en' => 'Try another title or author.', 'ru' => 'Попробуйте другое название или автора.', 'be' => 'Паспрабуйце іншую назву або іншага аўтара.'],
+    // Work browse pages (Reader/WorkHome.jsx + Reader/WorkEntitiesList.jsx +
+    // Reader/Works.jsx): the shared heading word and the works/texts list
+    // titles and lang-filter empty state.
     'reader.reader_heading' => ['en' => 'Reader', 'ru' => 'Читалка', 'be' => 'Чыталка'],
-    'reader.library_language' => ['en' => 'Library language', 'ru' => 'Язык библиотеки', 'be' => 'Мова бібліятэкі'],
-    'reader.loading' => ['en' => 'Loading', 'ru' => 'Загрузка', 'be' => 'Загрузка'],
-    'reader.english' => ['en' => 'English', 'ru' => 'Английский', 'be' => 'Англійская'],
-    'reader.russian' => ['en' => 'Russian', 'ru' => 'Русский', 'be' => 'Русская'],
     'reader.no_texts' => ['en' => 'No texts in this language', 'ru' => 'На этом языке текстов нет', 'be' => 'На гэтай мове тэкстаў няма'],
     'reader.no_texts_hint' => ['en' => 'Switch the language above, or ask an editor to add texts.', 'ru' => 'Переключите язык выше или попросите редактора добавить тексты.', 'be' => 'Пераключыце мову вышэй або папрасіце рэдактара дадаць тэксты.'],
     'reader.texts' => ['en' => 'Texts', 'ru' => 'Тексты', 'be' => 'Тэксты'],
-    'reader.index_hint_open' => ['en' => 'Open a text to read it', 'ru' => 'Откройте текст, чтобы читать', 'be' => 'Адкрыйце тэкст, каб чытаць'],
-    'reader.index_hint_gutter' => ['en' => 'the translation appears across the gutter', 'ru' => 'перевод появится напротив каждой строки', 'be' => 'пераклад з\'явіцца насупраць кожнага радка'],
 ];

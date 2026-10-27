@@ -6,6 +6,35 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-27 (reader-rework ticket 04 — `/reader` switchover: the works-first entry replaces the language-tab index)
+
+The reader flow's entry lands: `GET /reader` (`reader.index` reused,
+`ReaderController::worksIndex`) is the **works-first works list** — the
+Library works page's catalog query (every work shown, empty ones included —
+ADR 0021; `?q=` title/author escaped-needle ilike; `with('originalLanguage')`,
+`orderBy('title')`, 15/page) with the reader surface's count rules on each
+card: entities via `readableConstraint`, alignments via completed/stale +
+both-sides-readable. The count rule that had lived as the controller private
+`readableWorkAlignments` is extracted to
+`app/Support/ReadableWorkAlignments.php` (`forWork` + a
+`withCount`-safe `workCountConstraint` with the `entity_matches.status`
+qualification) — works-list card counts, sections-page Alignments count,
+entity-reader cross-link presence and the alignments list now share one
+home. New page `Reader/Works.jsx` (modeled on `Library/Index.jsx`; the two
+deliberate differences: no add-work card, cards show **both** counts
+"N texts · M alignments" and link `/reader/works/{id}`); identical copy
+reuses `library.*` keys, the differing empty-state hint is the new
+trilingual `reader.no_works_match_hint`. **Old index deleted:** the
+`/reader/{lang?}` route, `Pages/ReaderIndex.jsx`,
+`Reader/ReaderIndexApp.jsx`, `index()`/`entitiesForLanguage()`/
+`resolveLanguage()` and `lib/languageLabel.js` (its only consumer) — no
+redirects, `/reader/{lang}` and `/reader/{lang}/{entityId}` now both 404
+for approved users (ReaderPageTest pins the shapes). `domains/reader.md`
+(entries passage, `/reader` route row, browse-middle count agreement,
+frontend section, visual-system row, `generated.at` bumped, new
+ReadableWorkAlignments source); the run's source-drift warnings stay
+baselined pointing at the feature's docs pass (reader-rework ticket 06).
+
 ## 2026-10-27 (reader-rework ticket 03 — alignments branch: per-work alignments list + Library Read switchover)
 
 The browse middle's second half lands: `GET /reader/works/{work}/alignments`

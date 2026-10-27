@@ -59,11 +59,13 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('entityId')
         ->name('reader.show');
 
-    // Practice → Reader: the text library. Bare /reader derives the user's
-    // native enabled language (fallback en). Registered after reader.show;
-    // whereNumber vs [a-z]{2} keeps /reader/5 and /reader/en disjoint.
-    Route::get('/reader/{lang?}', [ReaderController::class, 'index'])
-        ->where('lang', '[a-z]{2}')
+    // The reader flow's works-first entry: the public works catalog (every
+    // work, empty ones included — ADR 0021) with readable-scoped counts.
+    // Replaces the old language-tab index: /reader/{lang} is gone, so a
+    // 2-letter segment no longer resolves — reading starts from a work's
+    // sections page. Registered after reader.show; whereNumber keeps
+    // /reader/5 (the reader) and /reader (this list) disjoint.
+    Route::get('/reader', [ReaderController::class, 'worksIndex'])
         ->name('reader.index');
 
     // Work-scoped readers (the URL split, expand phase): the explicit entity

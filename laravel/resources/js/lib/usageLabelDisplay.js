@@ -34,7 +34,7 @@ export const isKnownLabel = (slug) => isDimmingLabel(slug) || REGISTER_LABELS.in
 export const dimsDefinition = (labels) => (labels ?? []).some(isDimmingLabel);
 
 // One chip per known label, in stored order, resolved through the app's
-// word.label_* ui-strings (t injected like lib/languageLabel). Unknown
+// word.label_* ui-strings (t injected). Unknown
 // slugs drop — the set is closed; this is belt-and-braces against a stray
 // slug rendering as a raw ui-string key.
 export const usageLabelChips = (labels, t) => (labels ?? [])

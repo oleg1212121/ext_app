@@ -12,8 +12,8 @@ use App\Http\Requests\ReaderPageRequest;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\Language;
-use App\Models\User;
 use App\Models\Work;
+use App\Support\ReadableWorkAlignments;
 use App\Support\SavedUiSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -36,37 +36,55 @@ class ReaderController extends Controller
         protected EnricherRegistry $enrichers,
         protected EntityAccessService $access,
         protected AlignmentEditorApiPresenter $alignmentPresenter,
+        protected ReadableWorkAlignments $readableAlignments,
     ) {}
 
     /**
-     * The text library (Practice → Reader): language tabs over the list of
-     * readable texts. Bare /reader derives the user's native enabled
-     * language, falling back to en.
+     * The reader flow's works-first entry: the public works catalog (every
+     * work shown, empty ones included — ADR 0021), searchable by title or
+     * author, with the reader surface's readable-scoped counts on each
+     * card. Replaces the old language-tab index.
      */
-    public function index(?string $lang = null): Response
+    public function worksIndex(Request $request): Response
     {
-        if ($lang === null) {
-            $native = auth()->user()->nativeLanguage();
-            $lang = ($native?->is_enabled ?? false) ? $native->code : 'en';
-        }
+        $q = trim((string) $request->query('q', ''));
 
-        $language = $this->resolveLanguage($lang);
+        $works = Work::query()
+            ->with('originalLanguage')
+            ->withCount([
+                'entities' => $this->access->readableConstraint($request->user()),
+                'alignments' => $this->readableAlignments->workCountConstraint($request->user()),
+            ])
+            ->when($q !== '', function (Builder $query) use ($q): Builder {
+                $needle = $this->searchNeedle($q);
 
-        return Inertia::render('ReaderIndex', [
-            'lang' => $lang,
-            // Objects with display names (not bare codes): the index page's
-            // pending-alignment label names any language from this list.
-            'languages' => Language::query()
-                ->enabled()
-                ->orderBy('sort_order')
-                ->get(['code', 'name', 'native_name'])
-                ->map(fn (Language $language): array => [
-                    'code' => $language->code,
-                    'name' => $language->name,
-                    'native_name' => $language->native_name,
-                ])
-                ->all(),
-            'entities' => $this->entitiesForLanguage($language),
+                return $query->where(function (Builder $query) use ($needle): void {
+                    $query->where('title', 'ilike', $needle)
+                        ->orWhere('author', 'ilike', $needle);
+                });
+            })
+            ->orderBy('title')
+            ->paginate(15);
+
+        return Inertia::render('Reader/Works', [
+            'q' => $q,
+            'works' => $works->through(function (Work $work): array {
+                return [
+                    'id' => $work->id,
+                    'title' => $work->title,
+                    'author' => $work->author,
+                    'description' => $work->description,
+                    'original_language' => $this->languageRef($work),
+                    'entities_count' => $work->entities_count,
+                    'alignments_count' => $work->alignments_count,
+                ];
+            })->items(),
+            'meta' => [
+                'current_page' => $works->currentPage(),
+                'last_page' => $works->lastPage(),
+                'total' => $works->total(),
+                'per_page' => $works->perPage(),
+            ],
         ]);
     }
 
@@ -234,7 +252,7 @@ class ReaderController extends Controller
                 ->entities()
                 ->where($this->access->readableConstraint($request->user()))
                 ->count(),
-            'alignments_count' => $this->readableWorkAlignments($work, $request->user())->count(),
+            'alignments_count' => $this->readableAlignments->forWork($work, $request->user())->count(),
         ]);
     }
 
@@ -334,7 +352,7 @@ class ReaderController extends Controller
             ? null
             : Language::query()->enabled()->where('code', $lang)->firstOrFail();
 
-        $matches = $this->readableWorkAlignments($work, $request->user())
+        $matches = $this->readableAlignments->forWork($work, $request->user())
             ->with(['aEntity.language', 'bEntity.language', 'aEntity.work'])
             ->when($q !== '', function (Builder $query) use ($q): Builder {
                 $needle = $this->searchNeedle($q);
@@ -458,7 +476,7 @@ class ReaderController extends Controller
     {
         // The same count rule the sections page's Alignments card uses, so
         // the header link appears exactly when the card's count is non-zero.
-        $hasReadableAlignments = $this->readableWorkAlignments($work, auth()->user())->exists();
+        $hasReadableAlignments = $this->readableAlignments->forWork($work, auth()->user())->exists();
 
         if (! $hasReadableAlignments) {
             return [];
@@ -494,26 +512,6 @@ class ReaderController extends Controller
         }
 
         return $links;
-    }
-
-    /**
-     * The work's readable completed/stale alignments — the count rule
-     * shared by the sections page's Alignments count and the entity
-     * reader's cross-link presence check (both sides readable; pending,
-     * aligning and failed matches have no meaning-match rows to read).
-     *
-     * The work comes via the A-side entity: an EntityMatch has no work_id
-     * of its own, and going through Work::alignments()' hasManyThrough join
-     * turns unqualified column names ambiguous in Postgres.
-     *
-     * @return Builder<EntityMatch>
-     */
-    private function readableWorkAlignments(Work $work, User $user): Builder
-    {
-        return EntityMatch::query()
-            ->whereHas('aEntity', fn (Builder $query): Builder => $query->where('work_id', $work->id))
-            ->whereIn('status', ['completed', 'stale'])
-            ->where($this->access->readableMatchConstraint($user));
     }
 
     /**
@@ -635,27 +633,5 @@ class ReaderController extends Controller
         }
 
         return $paginator;
-    }
-
-    /**
-     * @return list<array{id: int, name: string}>
-     */
-    private function entitiesForLanguage(Language $language): array
-    {
-        return $this->access
-            ->readableQuery(auth()->user(), $language->id)
-            ->select('id', 'name')
-            ->orderBy('name')
-            ->limit(100)
-            ->get()
-            ->all();
-    }
-
-    private function resolveLanguage(string $lang): Language
-    {
-        return Language::query()
-            ->enabled()
-            ->where('code', $lang)
-            ->firstOrFail();
     }
 }

@@ -205,6 +205,20 @@ it('seeds the reader work-alignments strings in all three interface languages', 
     ]);
 });
 
+it('seeds the reader works-list strings in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework ticket 04: the works-first reader entry's empty state
+    // hint — the reading surface has no add-work card to suggest, so its
+    // copy differs from the Library's (whose identical keys it reuses).
+    expect(seededUiStringTexts('reader.no_works_match_hint'))->toBe([
+        'en' => 'Try another title or author.',
+        'ru' => 'Попробуйте другое название или автора.',
+        'be' => 'Паспрабуйце іншую назву або іншага аўтара.',
+    ]);
+});
+
 it('seeds the six usage-label chips in all three interface languages', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();
