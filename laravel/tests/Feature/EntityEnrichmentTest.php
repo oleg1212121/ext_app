@@ -392,7 +392,9 @@ it('ships stressed variants and phrasal hits to the reader page', function () {
         'phrasal_verbs' => json_encode([['verb' => 'произносит', 'particles' => [], 'start' => 4, 'end' => 14, 'phrase' => 'произносить']], JSON_UNESCAPED_UNICODE),
     ]);
 
-    $response = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk();
+    $response = $this->actingAs($user)
+        ->get(route('reader.works.entities.show', ['work' => $entity->work_id, 'entity' => $entity->id]))
+        ->assertOk();
 
     $props = $response->inertiaPage()['props'];
     expect($props['rows'][0]['a']['sentences'][0]['stressed'])->toBe('Она́ произно́сит э́то краси́во.')
@@ -409,7 +411,9 @@ it('ships stressed variants and phrasal hits to the reader page', function () {
     // The factory pre-loads the settings relation; drop the stale copy so the
     // request resolves the just-updated row.
     $user->unsetRelation('settings');
-    $props = $this->actingAs($user)->get("/reader/{$entity->id}")->assertOk()->inertiaPage()['props'];
+    $props = $this->actingAs($user)
+        ->get(route('reader.works.entities.show', ['work' => $entity->work_id, 'entity' => $entity->id]))
+        ->assertOk()->inertiaPage()['props'];
     expect($props['stressMarks'])->toBeTrue()
         ->and($props['phrasalVerbs'])->toBeTrue();
 });
@@ -437,7 +441,9 @@ it('ships sentence lists that skip empty junctions and stay sequential', functio
         SentenceMeaningMatch::create(['entity_sentence_id' => $sentence->id, 'meaning_match_id' => $row->id, 'side' => $side]);
     }
 
-    $props = $this->actingAs($user)->get("/reader/{$enEntity->id}")->assertOk()->inertiaPage()['props'];
+    $props = $this->actingAs($user)
+        ->get(route('reader.works.alignments.show', ['work' => $work->id, 'match' => $entityMatch->id]))
+        ->assertOk()->inertiaPage()['props'];
 
     // The empty sentence is filtered; the a side carries exactly the hello
     // sentence with its annotations on the sentence object itself.

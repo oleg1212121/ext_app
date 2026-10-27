@@ -88,54 +88,6 @@ class ReaderController extends Controller
         ]);
     }
 
-    public function show(ReaderPageRequest $request, int $entityId): Response
-    {
-        $entity = Entity::query()->with('language')->findOrFail($entityId);
-
-        if (! $this->access->canRead(auth()->user(), $entity)) {
-            abort(403);
-        }
-
-        $nativeLanguageId = auth()->user()->nativeLanguage()?->id;
-
-        ['rows' => $rows, 'sideEntities' => $sideEntities, 'meta' => $meta, 'positionKey' => $positionKey, 'defaultSide' => $defaultSide] = $this->buildRows($entity, $nativeLanguageId, $request->page());
-
-        ['wordMaps' => $wordMaps, 'highlightable' => $highlightable, 'explainable' => $explainable] = $this->readingRows->wordMapsFor($sideEntities, (int) auth()->id(), $nativeLanguageId, $rows);
-        $saved = SavedUiSettings::section(auth()->user(), 'reader');
-
-        // Rows are canonical a/b (ADR 0060) — which side reads first is the
-        // client's flip around defaultSide. Languages, word maps and the
-        // eligibility flags ride the same side letters, so the client needs
-        // no pair-flip knowledge at all; a single-language text has no b side.
-        return Inertia::render('Reader', [
-            'entity' => [
-                'id' => $entity->id,
-                'name' => $entity->name,
-            ],
-            'rows' => $rows,
-            'defaultSide' => $defaultSide,
-            'langs' => [
-                'a' => $sideEntities['a']?->language?->code,
-                'b' => $sideEntities['b']?->language?->code,
-            ],
-            'meta' => $meta,
-            'positionKey' => $positionKey,
-            'fontSize' => SavedUiSettings::int($saved, 'font_size', ...SavedUiSettings::READER_FONT_SIZE),
-            'highlight' => SavedUiSettings::bool($saved, 'highlight', true),
-            // The annotation display preferences (ADR 0067): one prop per
-            // registry annotation, camelCased from its setting key —
-            // stressMarks, phrasalVerbs, ...
-            ...SavedUiSettings::annotations($saved, $this->enrichers->annotations()),
-            'wordMaps' => $wordMaps,
-            'highlightable' => $highlightable,
-            // The AI explanation tab follows the same "not your native
-            // language" rule as highlighting; the model itself is the user's
-            // stored explanation preference, resolved server-side.
-            'explainable' => $explainable,
-            'explain' => $this->modelResolver->explainConfig(),
-        ]);
-    }
-
     /**
      * The work-scoped ENTITY reader — the split's always-monolingual half:
      * one row per sentence, no translation column and no language radio,
@@ -184,10 +136,9 @@ class ReaderController extends Controller
 
     /**
      * The work-scoped ALIGNMENT reader — the bilingual half: rows from the
-     * match's meaning matches, the behaviour the old auto-detecting reader
-     * had when both sides were readable. Unlike that path there is no
-     * single-language fallback: the entity reader is the fallback, and it
-     * is a different URL.
+     * match's meaning matches. There is no single-language fallback here:
+     * an entity alone belongs to the entity reader, and that is a
+     * different URL.
      */
     public function alignmentShow(ReaderPageRequest $request, int $workId, int $matchId): Response
     {
@@ -402,11 +353,11 @@ class ReaderController extends Controller
     }
 
     /**
-     * The props assembly shared by the two work-scoped readers — the same
-     * shape the auto-detecting show() ships (rows/langs/meta/positionKey/
-     * fontSize/annotations/wordMaps/highlightable/explainable/explain),
-     * plus the split's header props: the scoping work and the cross-links
-     * ReaderApp renders near the title.
+     * The props assembly shared by the two work-scoped readers — the full
+     * reader shape (rows/langs/meta/positionKey/fontSize/annotations/
+     * wordMaps/highlightable/explainable/explain) plus the split's header
+     * props: the scoping work and the cross-links ReaderApp renders near
+     * the title.
      *
      * @param  array{a: Entity|null, b: Entity|null}  $sideEntities
      * @param  array{current_page: int, per_page: int, total: int, last_page: int}  $meta
@@ -532,53 +483,6 @@ class ReaderController extends Controller
     private function searchNeedle(string $q): string
     {
         return '%'.str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $q).'%';
-    }
-
-    /**
-     * @return array{rows: list<array<string, mixed>>, sideEntities: array{a: Entity|null, b: Entity|null}, meta: array{current_page: int, per_page: int, total: int, last_page: int}, positionKey: string, defaultSide: string|null}
-     */
-    private function buildRows(Entity $entity, ?int $nativeLanguageId, int $page): array
-    {
-        $entityMatch = EntityMatch::query()
-            ->where(function ($query) use ($entity): void {
-                $query->where('a_entity_id', $entity->id)
-                    ->orWhere('b_entity_id', $entity->id);
-            })
-            ->with(['aEntity.language', 'aEntity.work', 'bEntity.language', 'bEntity.work'])
-            ->first();
-
-        if ($entityMatch === null) {
-            return $this->singleLanguageRows($entity, $page);
-        }
-
-        // The URL entity only anchors the match; the side rule — native side
-        // translates, then the work's original, then the A-side — picks
-        // which language reads first. It ships as defaultSide: the rows
-        // themselves stay canonical a/b and the client flips (ADR 0060).
-        $defaultSide = $entityMatch->readingSideFor($nativeLanguageId);
-        $readingEntity = $defaultSide === 'a' ? $entityMatch->aEntity : $entityMatch->bEntity;
-        $translationEntity = $defaultSide === 'a' ? $entityMatch->bEntity : $entityMatch->aEntity;
-
-        if ($readingEntity === null || $translationEntity === null
-            || ! $this->access->canRead(auth()->user(), $readingEntity)
-            || ! $this->access->canRead(auth()->user(), $translationEntity)) {
-            return $this->singleLanguageRows($entity, $page);
-        }
-
-        $paginator = $this->paginateRows(
-            $this->presenter->meaningMatchesQuery($entityMatch),
-            $page,
-        );
-
-        // The position key is the entity match: both reading sides page
-        // through the same rows.
-        return [
-            'rows' => $this->readingRows->toReadingRows($paginator->getCollection()),
-            'sideEntities' => ['a' => $entityMatch->aEntity, 'b' => $entityMatch->bEntity],
-            'meta' => $this->readingRows->metaFor($paginator),
-            'positionKey' => 'mm:'.$entityMatch->id,
-            'defaultSide' => $defaultSide,
-        ];
     }
 
     /**

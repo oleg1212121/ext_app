@@ -6,6 +6,27 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-27 (reader-rework ticket 05 — old reader route removed: the URL split's contract phase)
+
+The entity-anchored auto-detect reader is gone: the `GET /reader/{entityId}`
+route (`reader.show`), `ReaderController::show()` and its `buildRows()`
+match-detector are deleted — no redirect (house removal style) — so a bare
+id under `/reader` 404s for everyone, test-guarded with a live entity
+(`Route::has('reader.show')` pinned false). The two work-scoped readers are
+now the only readers: the side ladder's runs (native → work-original →
+a-side) live at the alignment reader URL, single-language behaviour at the
+entity reader. All old-shape test consumers migrated to the new routes
+(ReaderPageTest — bilingual assertions →
+`/reader/works/{w}/alignments/{m}`, single-language →
+`/reader/works/{w}/entities/{e}`; UiSettingsTest font-size tests; the
+enrichment/illustration verticals), and the dead `library.read_lang`
+string (no consumer since ticket 03) is deleted from the seeder.
+`domains/reader.md` rewritten for the removal (What-it-does passage, route
+row dropped, expand-phase paragraph → shipped-state props/cross-links
+description, Reading-rows section without `buildRows`, interactive-words
+and visual-system rows, `generated.at` bumped); the full docs rewrite
+stays with ticket 06.
+
 ## 2026-10-27 (reader-rework ticket 04 — `/reader` switchover: the works-first entry replaces the language-tab index)
 
 The reader flow's entry lands: `GET /reader` (`reader.index` reused,

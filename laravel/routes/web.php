@@ -52,27 +52,18 @@ Route::middleware(['auth', 'approved'])->group(function () {
         return Inertia::render('Dashboard');
     })->middleware('verified')->name('dashboard');
 
-    // The entity id alone names the text — its entity match carries both
-    // languages, and the side rule picks which one is read (same reasoning
-    // as ADR 0036's simulator route: no language segment).
-    Route::get('/reader/{entityId}', [ReaderController::class, 'show'])
-        ->whereNumber('entityId')
-        ->name('reader.show');
-
     // The reader flow's works-first entry: the public works catalog (every
     // work, empty ones included — ADR 0021) with readable-scoped counts.
-    // Replaces the old language-tab index: /reader/{lang} is gone, so a
-    // 2-letter segment no longer resolves — reading starts from a work's
-    // sections page. Registered after reader.show; whereNumber keeps
-    // /reader/5 (the reader) and /reader (this list) disjoint.
+    // Reading starts from a work's sections page: the bare-id reader and
+    // the language-tab index are both gone without redirects (house
+    // removal style), so /reader/{anything} resolves to nothing.
     Route::get('/reader', [ReaderController::class, 'worksIndex'])
         ->name('reader.index');
 
-    // Work-scoped readers (the URL split, expand phase): the explicit entity
-    // reader (always monolingual) and alignment reader (always bilingual)
-    // that will replace the auto-detecting reader.show (removed in a later
-    // ticket). Registering them cannot conflict with the two routes above:
-    // "works" matches neither whereNumber nor [a-z]{2}.
+    // The work-scoped readers (the URL split): the explicit entity reader
+    // (always monolingual) and alignment reader (always bilingual). Which
+    // language a bilingual reading starts on is the server's side rule,
+    // so the URL names the match — never a reading side.
     Route::get('/reader/works/{work}/entities/{entity}', [ReaderController::class, 'entityShow'])
         ->whereNumber(['work', 'entity'])
         ->name('reader.works.entities.show');
