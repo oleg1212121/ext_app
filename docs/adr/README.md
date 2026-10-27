@@ -116,6 +116,7 @@ alignment pair — see the renumber notes inside those files).
 | [0060](0060-reading-rows-one-row-object-payload.md) | Reading rows — one row-object payload for the reading surfaces |
 | [0068](0068-reading-surface-chrome-kit.md) | Reading-surface chrome kit |
 | [0069](0069-one-json-envelope-reading-surfaces.md) | One JSON envelope for the reading-surface endpoints |
+| [0091](0091-reader-url-split.md) | The reader URL splits into work-scoped entity and alignment readers — the mode lives in the URL, the side rule stays server-side |
 
 ## Sentence enrichment
 

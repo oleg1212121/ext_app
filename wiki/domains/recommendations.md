@@ -5,7 +5,7 @@ description: The personalized reading queue at /recommendations — the viewer's
 tags: [recommendations, entities, works, word-knowledge, inertia, react, languages]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-27T00:46:30+03:00 }
+generated: { by: agent:zcode, at: 2026-10-27T21:50:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: controller

@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-10-27T18:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-27T21:50:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: controller
@@ -119,7 +119,9 @@ dnd-kit sortable sentence manager; back link and cancel to the entity's
 view page). The navbar's **Library** dropdown groups
 **Works / Entities / Alignments** (ADR 0039; each child carries an explicit
 URL match rule because the branches share the `/works` prefix), alongside
-**Practice** (the restored Reader index + Simulator picker, ADR 0038); the
+**Practice** (the Reader works list + Simulator picker; the dropdown itself
+dates to ADR 0038 — its Reader item has opened the works-first reader entry
+since ADR 0091); the
 Blade nav mirror has the same dropdown. All use the `--wbench-*` tokens to
 match the sibling Alignments management surface and the
 [design system](/conventions/design-system.md); pagination is the shared

@@ -5,7 +5,7 @@ description: One words table (+ satellites) keyed by language and unique per (l_
 tags: [database, schema, dictionary, words]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-26T23:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-27T21:50:00+03:00 }
 sources:
   - id: word-source-migration
     resource: laravel/database/migrations/2026_10_20_000003_add_source_to_words_table.php

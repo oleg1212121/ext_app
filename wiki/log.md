@@ -6,6 +6,43 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-27 (reader-rework — the reader URL split into work-scoped entity and alignment readers; ADR 0091 + the docs pass)
+
+The whole feature, tickets 01–05 (commits fff65b0, 1c8b1d0, d3a7ea2,
+39fe1ee, 45d3e72), documented as one shipped state. **ADR
+[0091](../docs/adr/0091-reader-url-split.md)** records the decision: the
+single auto-detecting reader route (`GET /reader/{entityId}`) that chose
+monolingual vs bilingual from the entity's match is replaced by an explicit
+work-scoped route tree — `/reader` works list (works-first entry),
+`/reader/works/{work}` sections page, its `entities`/`alignments` branch
+lists, and the two readers (`/reader/works/{work}/entities/{entity}` always
+monolingual, `/reader/works/{work}/alignments/{match}` always bilingual) —
+the mode lives in the URL; the side rule (`readingSideFor` → `defaultSide`)
+lives only server-side, so alignment cards link by match id and
+`reader_target` is gone; old reader URLs die without redirects (house
+removal style, consistent with ADRs 0072/0073). Consequences pinned there:
+bookmarked old URLs break (accepted), saved reading positions survive
+(`mm:`/`ent:` keys unchanged), and an entity's bilingual entry point is its
+work's alignments list (header cross-links bridge the split, gated by the
+one shared `Support\ReadableWorkAlignments` count rule so card counts,
+cross-link presence and list totals agree by construction). Docs pass:
+`domains/reader.md` rewritten against the final route tree (description,
+sources refreshed to the controller/pages file set, ADR 0091 references,
+expand-phase remnant in the sections-page route row removed);
+`domains/entities.md`'s Practice-dropdown note updated (the Reader item
+opens the works list since ADR 0091) and its parked route-source drift
+cleared; `docs/adr/README.md` indexes 0091. Baseline clearing: the 14
+entries tickets 01–04 parked with ticket-06 pointers were resolved by
+content review — every reviewed concept's content matched its changed
+sources (the web.php diff is reader-section-only; `usageLabelDisplay.js`
+was comment-only; the word-test/access-control/recommendations sources were
+checkout mtime re-stamps; the uncommitted `CefrWordTagSeeder` change drops
+three short abbreviations, `dictionary.md`'s pool description unaffected) —
+then `generated.at` bumped on word-test, access-control, recommendations,
+crossword, profile, interactive-words and dictionary, and
+`wiki:validate --prune` dropped the 14 entries (7 pre-existing
+acknowledgments remain; validate green, zero unacknowledged).
+
 ## 2026-10-27 (reader-rework ticket 05 — old reader route removed: the URL split's contract phase)
 
 The entity-anchored auto-detect reader is gone: the `GET /reader/{entityId}`
