@@ -270,8 +270,8 @@ test('the work-scoped alignment reader renders bilingual rows with the side rule
             ->component('Reader')
             ->where('work.id', $pair['work']->id)
             ->where('work.title', 'Test Work')
-            // Factory users are native EN: the RU side is the translation,
-            // so the EN original reads first — the old path's side rule.
+            // Factory users are native EN: the EN side becomes their
+            // translation, so the RU learning side reads first.
             ->where('defaultSide', 'b')
             ->where('langs.a', 'en')
             ->where('langs.b', 'ru')

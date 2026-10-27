@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {router} from '@inertiajs/react';
+import {Link, router} from '@inertiajs/react';
 import ReaderRow from './ReaderRow.jsx';
 import {popupFontSizeFor} from '../../Components/WordPopup.jsx';
 import {Icon} from '../../Components/icons.jsx';
@@ -413,14 +413,14 @@ export default function ReaderApp({
                     {crossLinks.length > 0 && (
                         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                             {crossLinks.map((link) => (
-                                <a
+                                <Link
                                     key={link.href}
                                     href={link.href}
                                     title={work?.title ?? undefined}
                                     className="font-sans text-xs text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] hover:underline underline-offset-2 transition-colors duration-150"
                                 >
                                     {link.label}
-                                </a>
+                                </Link>
                             ))}
                         </div>
                     )}

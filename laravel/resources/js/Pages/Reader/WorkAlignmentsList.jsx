@@ -56,7 +56,7 @@ export default function WorkAlignmentsList({work, alignments = [], meta, q = '',
                         placeholder={t('reader.search_alignments')}
                         className={searchInputClass}
                     />
-                    <label htmlFor="language-filter" className="sr-only">{t('reader.all_languages')}</label>
+                    <label htmlFor="language-filter" className="sr-only">{t('reader.language_filter_label')}</label>
                     <select
                         id="language-filter"
                         name="lang"
@@ -93,10 +93,10 @@ export default function WorkAlignmentsList({work, alignments = [], meta, q = '',
                 {alignments.length === 0 && !q && (
                     <div className={emptyBoxClass}>
                         <p className="font-serif text-lg text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">
-                            {t('reader.no_alignments')}
+                            {lang ? t('reader.no_alignments') : t('reader.no_alignments_yet')}
                         </p>
                         <p className="mt-1 text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            {t('reader.no_alignments_hint')}
+                            {lang ? t('reader.no_alignments_hint') : t('reader.no_alignments_yet_hint')}
                         </p>
                     </div>
                 )}

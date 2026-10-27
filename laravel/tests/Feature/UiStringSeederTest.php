@@ -205,6 +205,50 @@ it('seeds the reader work-alignments strings in all three interface languages', 
     ]);
 });
 
+it('seeds the reader list empty-state strings for the no-filter case in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework review fixes: with no language filter set (the All
+    // languages default) the empty box previously showed the lang-filter
+    // copy ("No texts in this language" / "Switch the language above"),
+    // which names a control that is not in effect — the no-filter state
+    // gets its own generalized copy.
+    expect(seededUiStringTexts('reader.no_texts_yet'))->toBe([
+        'en' => 'No readable texts in this work yet',
+        'ru' => 'В этом произведении пока нет доступных вам текстов',
+        'be' => 'У гэтым творы пакуль няма даступных вам тэкстаў',
+    ]);
+    expect(seededUiStringTexts('reader.no_texts_yet_hint'))->toBe([
+        'en' => 'Ask an editor to add texts.',
+        'ru' => 'Попросите редактора добавить тексты.',
+        'be' => 'Папрасіце рэдактара дадаць тэксты.',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments_yet'))->toBe([
+        'en' => 'No readable alignments in this work yet',
+        'ru' => 'В этом произведении пока нет доступных вам выравниваний',
+        'be' => 'У гэтым творы пакуль няма даступных вам выраўноўванняў',
+    ]);
+    expect(seededUiStringTexts('reader.no_alignments_yet_hint'))->toBe([
+        'en' => 'Come back once this work has readable alignments.',
+        'ru' => 'Вернитесь, когда у произведения появятся доступные вам выравнивания.',
+        'be' => 'Вярніцеся, калі ў твора з\'явяцца даступныя вам выраўноўванні.',
+    ]);
+});
+
+it('seeds the reader language-filter label in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework review fixes: the two lists' sr-only labels named the
+    // select's "All languages" option; a label must name the control.
+    expect(seededUiStringTexts('reader.language_filter_label'))->toBe([
+        'en' => 'Language',
+        'ru' => 'Язык',
+        'be' => 'Мова',
+    ]);
+});
+
 it('seeds the reader works-list strings in all three interface languages', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();

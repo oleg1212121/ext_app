@@ -6,6 +6,21 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-27 (reader-rework review fixes — cross-links become Inertia `<Link>`, list empty-state copy split by filter)
+
+Review-pass fixes on the reader-rework branch, no domain-behavior change —
+`domains/reader.md`'s claims stay accurate (the cross-links' hrefs and
+placement are unchanged; no concept text claimed the plain-anchor
+mechanics, so no `generated.at` bumps): `ReaderApp` header cross-links
+render as Inertia `<Link>` (client-side navigation) instead of plain `<a>`
+full reloads; the work texts/alignments lists' no-search empty state shows
+the generalized "No readable texts/alignments in this work yet" copy when
+no `?lang=` filter is set, keeping the "in this language" copy for the
+filtered case (five new trilingual `reader.*` keys in
+`database/seeders/ui-strings/reader.php`, dev DB reseeded); the lists'
+language select got a proper sr-only label (`reader.language_filter_label`)
+instead of naming its "All languages" option.
+
 ## 2026-10-27 (reader-rework — the reader URL split into work-scoped entity and alignment readers; ADR 0091 + the docs pass)
 
 The whole feature, tickets 01–05 (commits fff65b0, 1c8b1d0, d3a7ea2,

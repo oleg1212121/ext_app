@@ -45,6 +45,8 @@ return [
     'reader.search' => ['en' => 'Search', 'ru' => 'Найти', 'be' => 'Знайсці'],
     'reader.search_texts' => ['en' => 'Search by name or label…', 'ru' => 'Поиск по названию или подписи…', 'be' => 'Пошук па назве або подпісе…'],
     'reader.all_languages' => ['en' => 'All languages', 'ru' => 'Все языки', 'be' => 'Усе мовы'],
+    // The filter's sr-only label — names the control, not its default option.
+    'reader.language_filter_label' => ['en' => 'Language', 'ru' => 'Язык', 'be' => 'Мова'],
     'reader.no_texts_match' => ['en' => 'No texts match “:q”.', 'ru' => 'По запросу «:q» ничего не найдено.', 'be' => 'Па запыце «:q» нічога не знойдзена.'],
     'reader.no_texts_match_hint' => ['en' => 'Texts you do not have access to are never listed.', 'ru' => 'Тексты, к которым у вас нет доступа, никогда не отображаются.', 'be' => 'Тэксты, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.'],
     // Work browse pages (Reader/WorkHome.jsx + Reader/WorkAlignmentsList.jsx):
@@ -55,6 +57,10 @@ return [
     'reader.no_alignments_match_hint' => ['en' => 'Alignments you cannot read are never listed.', 'ru' => 'Выравнивания, к которым у вас нет доступа, никогда не отображаются.', 'be' => 'Выраўноўванні, да якіх у вас няма доступу, ніколі не адлюстроўваюцца.'],
     'reader.no_alignments' => ['en' => 'No alignments in this language', 'ru' => 'На этом языке выравниваний нет', 'be' => 'На гэтай мове выраўноўванняў няма'],
     'reader.no_alignments_hint' => ['en' => 'Switch the language above, or come back once this work has readable alignments.', 'ru' => 'Переключите язык выше или вернитесь, когда у произведения появятся доступные вам выравнивания.', 'be' => 'Пераключыце мову вышэй або вярніцеся, калі ў твора з\'явяцца даступныя вам выраўноўванні.'],
+    // Empty state when no language filter is set: the copy above would name
+    // the "All languages" default as a language to switch away from.
+    'reader.no_alignments_yet' => ['en' => 'No readable alignments in this work yet', 'ru' => 'В этом произведении пока нет доступных вам выравниваний', 'be' => 'У гэтым творы пакуль няма даступных вам выраўноўванняў'],
+    'reader.no_alignments_yet_hint' => ['en' => 'Come back once this work has readable alignments.', 'ru' => 'Вернитесь, когда у произведения появятся доступные вам выравнивания.', 'be' => 'Вярніцеся, калі ў твора з\'явяцца даступныя вам выраўноўванні.'],
     // The works-first reader entry (Reader/Works.jsx): the reader flow's
     // works catalog. Its identical copy reuses the library.* keys (works,
     // search_works, search_placeholder, no_works_match); the empty state's
@@ -66,5 +72,9 @@ return [
     'reader.reader_heading' => ['en' => 'Reader', 'ru' => 'Читалка', 'be' => 'Чыталка'],
     'reader.no_texts' => ['en' => 'No texts in this language', 'ru' => 'На этом языке текстов нет', 'be' => 'На гэтай мове тэкстаў няма'],
     'reader.no_texts_hint' => ['en' => 'Switch the language above, or ask an editor to add texts.', 'ru' => 'Переключите язык выше или попросите редактора добавить тексты.', 'be' => 'Пераключыце мову вышэй або папрасіце рэдактара дадаць тэксты.'],
+    // Empty state when no language filter is set: the copy above would name
+    // the "All languages" default as a language to switch away from.
+    'reader.no_texts_yet' => ['en' => 'No readable texts in this work yet', 'ru' => 'В этом произведении пока нет доступных вам текстов', 'be' => 'У гэтым творы пакуль няма даступных вам тэкстаў'],
+    'reader.no_texts_yet_hint' => ['en' => 'Ask an editor to add texts.', 'ru' => 'Попросите редактора добавить тексты.', 'be' => 'Папрасіце рэдактара дадаць тэксты.'],
     'reader.texts' => ['en' => 'Texts', 'ru' => 'Тексты', 'be' => 'Тэксты'],
 ];
