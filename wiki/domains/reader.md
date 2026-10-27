@@ -5,7 +5,7 @@ description: React reading interface for imported text entities in any enabled l
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-25T12:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-27T16:09:20+03:00 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -52,6 +52,20 @@ again as the index.
 |-------|---------|---------|
 | `/reader/{entityId}` | `ReaderController::show` | React reader for one entity, named `reader.show`. The URL entity only anchors its match — the **Reading side** rule (ADR 0037) picks which language is read. Legacy `/reader-react*`, `/reader/{lang}/{entityId}` all 404 |
 | `/reader/{lang?}` | `ReaderController::index` | The text library (Practice → Reader), named `reader.index`. Language tabs over the readable entities of that language (top 100, `EntityAccessService::readableQuery`); bare `/reader` derives the user's native enabled language, fallback en. Clicking a text visits `/reader/{id}` |
+| `/reader/works/{work}/entities/{entity}` | `ReaderController::entityShow` | The work-scoped **entity reader** (name `reader.works.entities.show`, both params `whereNumber`): always monolingual — one row per sentence, no translation column, no language radio — even when the entity sits in a readable match. Same `?page` pagination/clamping and `ent:{id}` position key as the old path's single-language mode; wrong-work 404, unreadable 403 |
+| `/reader/works/{work}/alignments/{match}` | `ReaderController::alignmentShow` | The work-scoped **alignment reader** (name `reader.works.alignments.show`): bilingual rows from the match's meaning matches, the old auto-detect behaviour for a fully readable match — side rule as `defaultSide`, shared `mm:{id}` position key. No monolingual fallback: the match's work must equal the URL work (404) and both sides must be readable (403) — the entity reader is the split's monolingual half, a different URL |
+
+The two work-scoped routes are the **expand phase** of the reader URL split:
+the old auto-detecting `/reader/{entityId}` still serves exactly as before and
+is removed by a later ticket of the same feature. Both new pages ship the
+same props shape as `show()` plus two header props: `work {id, title}` and
+`crossLinks` — `{href, label}` links `ReaderApp` renders near the title (the
+back button stays history-back). The entity reader's cross-link points to
+`/reader/works/{work}/alignments` — an entity can sit in many matches, so
+the header links the work's alignments list, not one match — and is present
+only while the work has at least one match the user may read at status
+`completed` or `stale`; the alignment reader cross-links each side's entity
+to its monolingual reader.
 
 # Side rule and language toggle
 

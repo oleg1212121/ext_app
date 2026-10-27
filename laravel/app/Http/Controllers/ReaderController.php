@@ -11,6 +11,7 @@ use App\Http\Requests\ReaderPageRequest;
 use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\Language;
+use App\Models\Work;
 use App\Support\SavedUiSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -111,6 +112,216 @@ class ReaderController extends Controller
             'explainable' => $explainable,
             'explain' => $this->modelResolver->explainConfig(),
         ]);
+    }
+
+    /**
+     * The work-scoped ENTITY reader — the split's always-monolingual half:
+     * one row per sentence, no translation column and no language radio,
+     * even when the entity sits in a readable match (that match belongs to
+     * the alignment reader, whose list the header cross-links to).
+     */
+    public function entityShow(ReaderPageRequest $request, int $workId, int $entityId): Response
+    {
+        $work = Work::query()->findOrFail($workId);
+
+        // The entity is scoped to the URL's work: a mismatched pair of ids
+        // is a bad URL, not a permission problem (wrong-work 404 is the
+        // established pattern).
+        $entity = Entity::query()
+            ->where('work_id', $work->id)
+            ->with('language')
+            ->find($entityId);
+
+        if ($entity === null) {
+            abort(404);
+        }
+
+        if (! $this->access->canRead(auth()->user(), $entity)) {
+            abort(403);
+        }
+
+        [
+            'rows' => $rows,
+            'sideEntities' => $sideEntities,
+            'meta' => $meta,
+            'positionKey' => $positionKey,
+            'defaultSide' => $defaultSide,
+        ] = $this->singleLanguageRows($entity, $request->page());
+
+        return $this->renderWorkReader(
+            $entity,
+            $work,
+            $this->entityCrossLinks($work),
+            $rows,
+            $sideEntities,
+            $meta,
+            $positionKey,
+            $defaultSide,
+        );
+    }
+
+    /**
+     * The work-scoped ALIGNMENT reader — the bilingual half: rows from the
+     * match's meaning matches, the behaviour the old auto-detecting reader
+     * had when both sides were readable. Unlike that path there is no
+     * single-language fallback: the entity reader is the fallback, and it
+     * is a different URL.
+     */
+    public function alignmentShow(ReaderPageRequest $request, int $workId, int $matchId): Response
+    {
+        $work = Work::query()->findOrFail($workId);
+
+        $match = EntityMatch::query()
+            ->with(['aEntity.work', 'aEntity.language', 'bEntity.language'])
+            ->findOrFail($matchId);
+
+        // An EntityMatch has no work of its own — the work comes via the
+        // A-side entity (canonical a/b: the A-side of every same-work pair
+        // lives inside that work). A match anchored elsewhere under this
+        // work's URL is a bad URL.
+        if ($match->aEntity === null || (int) $match->aEntity->work_id !== $work->id) {
+            abort(404);
+        }
+
+        if (! $this->access->canReadMatch(auth()->user(), $match)) {
+            abort(403);
+        }
+
+        $defaultSide = $match->readingSideFor(auth()->user()->nativeLanguage()?->id);
+
+        $paginator = $this->paginateRows(
+            $this->presenter->meaningMatchesQuery($match),
+            $request->page(),
+        );
+
+        return $this->renderWorkReader(
+            $defaultSide === 'a' ? $match->aEntity : $match->bEntity,
+            $work,
+            $this->alignmentCrossLinks($work, $match),
+            $this->readingRows->toReadingRows($paginator->getCollection()),
+            ['a' => $match->aEntity, 'b' => $match->bEntity],
+            $this->readingRows->metaFor($paginator),
+            'mm:'.$match->id,
+            $defaultSide,
+        );
+    }
+
+    /**
+     * The props assembly shared by the two work-scoped readers — the same
+     * shape the auto-detecting show() ships (rows/langs/meta/positionKey/
+     * fontSize/annotations/wordMaps/highlightable/explainable/explain),
+     * plus the split's header props: the scoping work and the cross-links
+     * ReaderApp renders near the title.
+     *
+     * @param  array{a: Entity|null, b: Entity|null}  $sideEntities
+     * @param  array{current_page: int, per_page: int, total: int, last_page: int}  $meta
+     * @param  list<array{href: string, label: string}>  $crossLinks
+     */
+    private function renderWorkReader(
+        Entity $entity,
+        Work $work,
+        array $crossLinks,
+        array $rows,
+        array $sideEntities,
+        array $meta,
+        string $positionKey,
+        ?string $defaultSide,
+    ): Response {
+        ['wordMaps' => $wordMaps, 'highlightable' => $highlightable, 'explainable' => $explainable] = $this->readingRows->wordMapsFor($sideEntities, (int) auth()->id(), auth()->user()->nativeLanguage()?->id, $rows);
+        $saved = SavedUiSettings::section(auth()->user(), 'reader');
+
+        // Rows are canonical a/b (ADR 0060) — which side reads first is the
+        // client's flip around defaultSide. Languages, word maps and the
+        // eligibility flags ride the same side letters, so the client needs
+        // no pair-flip knowledge at all; a single-language text has no b side.
+        return Inertia::render('Reader', [
+            'entity' => [
+                'id' => $entity->id,
+                'name' => $entity->name,
+            ],
+            'work' => [
+                'id' => $work->id,
+                'title' => $work->title,
+            ],
+            'crossLinks' => $crossLinks,
+            'rows' => $rows,
+            'defaultSide' => $defaultSide,
+            'langs' => [
+                'a' => $sideEntities['a']?->language?->code,
+                'b' => $sideEntities['b']?->language?->code,
+            ],
+            'meta' => $meta,
+            'positionKey' => $positionKey,
+            'fontSize' => SavedUiSettings::int($saved, 'font_size', ...SavedUiSettings::READER_FONT_SIZE),
+            'highlight' => SavedUiSettings::bool($saved, 'highlight', true),
+            // The annotation display preferences (ADR 0067): one prop per
+            // registry annotation, camelCased from its setting key —
+            // stressMarks, phrasalVerbs, ...
+            ...SavedUiSettings::annotations($saved, $this->enrichers->annotations()),
+            'wordMaps' => $wordMaps,
+            'highlightable' => $highlightable,
+            // The AI explanation tab follows the same "not your native
+            // language" rule as highlighting; the model itself is the user's
+            // stored explanation preference, resolved server-side.
+            'explainable' => $explainable,
+            'explain' => $this->modelResolver->explainConfig(),
+        ]);
+    }
+
+    /**
+     * The entity reader's header cross-link: the work's alignments list —
+     * an entity can sit in many matches, so we link the list, not one
+     * match. Present only while the work has at least one match the user
+     * may read at status completed or stale (pending/aligning/failed have
+     * no meaning-match rows to read).
+     *
+     * @return list<array{href: string, label: string}>
+     */
+    private function entityCrossLinks(Work $work): array
+    {
+        $hasReadableAlignments = EntityMatch::query()
+            // The work comes via the A-side entity: an EntityMatch has no
+            // work_id (and going through Work::alignments()' join turns
+            // unqualified column names ambiguous).
+            ->whereHas('aEntity', fn (Builder $query): Builder => $query->where('work_id', $work->id))
+            ->whereIn('status', ['completed', 'stale'])
+            ->where($this->access->readableMatchConstraint(auth()->user()))
+            ->exists();
+
+        if (! $hasReadableAlignments) {
+            return [];
+        }
+
+        return [
+            [
+                // route('reader.works.alignments.index', …) once that list
+                // route exists (alignments-branch ticket).
+                'href' => '/reader/works/'.$work->id.'/alignments',
+                'label' => __('reader.alignments'),
+            ],
+        ];
+    }
+
+    /**
+     * The alignment reader's header cross-links: each side's entity, linked
+     * to its monolingual reader.
+     *
+     * @return list<array{href: string, label: string}>
+     */
+    private function alignmentCrossLinks(Work $work, EntityMatch $match): array
+    {
+        $links = [];
+
+        foreach (['a', 'b'] as $side) {
+            $entity = $side === 'a' ? $match->aEntity : $match->bEntity;
+
+            $links[] = [
+                'href' => '/reader/works/'.$work->id.'/entities/'.$entity->id,
+                'label' => $entity->name,
+            ];
+        }
+
+        return $links;
     }
 
     /**

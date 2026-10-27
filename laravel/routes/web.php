@@ -66,6 +66,19 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->where('lang', '[a-z]{2}')
         ->name('reader.index');
 
+    // Work-scoped readers (the URL split, expand phase): the explicit entity
+    // reader (always monolingual) and alignment reader (always bilingual)
+    // that will replace the auto-detecting reader.show (removed in a later
+    // ticket). Registering them cannot conflict with the two routes above:
+    // "works" matches neither whereNumber nor [a-z]{2}.
+    Route::get('/reader/works/{work}/entities/{entity}', [ReaderController::class, 'entityShow'])
+        ->whereNumber(['work', 'entity'])
+        ->name('reader.works.entities.show');
+
+    Route::get('/reader/works/{work}/alignments/{match}', [ReaderController::class, 'alignmentShow'])
+        ->whereNumber(['work', 'match'])
+        ->name('reader.works.alignments.show');
+
     Route::get('/crossword', [CrosswordController::class, 'index'])->name('crossword');
     Route::post('/crossword/generate', [CrosswordController::class, 'generate'])->name('crossword.generate');
     Route::post('/crossword/complete', [CrosswordController::class, 'complete'])->name('crossword.complete');

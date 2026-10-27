@@ -6,6 +6,33 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-27 (reader-rework ticket 01 — work-scoped entity and alignment readers, expand phase)
+
+The reader URL split begins: two new work-scoped reading routes under
+`['auth', 'approved']` — `GET /reader/works/{work}/entities/{entity}`
+(`reader.works.entities.show`, `ReaderController::entityShow`) is the
+always-monolingual entity reader (one row per sentence, no translation
+column, no radio, even when the entity sits in a readable match) and
+`GET /reader/works/{work}/alignments/{match}`
+(`reader.works.alignments.show`, `ReaderController::alignmentShow`) is the
+always-bilingual alignment reader (match's meaning matches, side rule as
+`defaultSide`, shared `mm:` position key; wrong-work 404 via
+`aEntity.work_id`, restricted-counterpart 403 via `canReadMatch` — no
+monolingual fallback, that is the entity reader's job). Both ship the
+`show()` props shape plus `work {id, title}` and `crossLinks` header links
+rendered by `ReaderApp` near the title: the entity reader links
+`/reader/works/{work}/alignments` (the work's alignments list — ticket 03
+registers it) only while a readable `completed`/`stale` match exists; the
+alignment reader cross-links each side's entity reader. Position-key shapes
+are unchanged, so saved reading positions survive. The old
+`/reader/{entityId}` auto-detecting route is untouched (removal is a later
+ticket). `domains/reader.md` Routes table + expand-phase paragraph updated,
+`generated.at` bumped; new `reader.alignments` ui string (trilingual,
+reseeded). The routes/web.php drift this minted for the other concepts
+sourcing it (crossword, entities, profile, recommendations — their content
+is unaffected) is baselined with a pointer to the feature's docs pass
+(reader-rework ticket 06).
+
 ## 2026-10-26 (the docs pass lands — the bundle catches up with the CEFR word test)
 
 Fifth and final slice of the cefr-word-test feature: ADR [0090](../docs/adr/0090-cefr-anchored-word-test.md)

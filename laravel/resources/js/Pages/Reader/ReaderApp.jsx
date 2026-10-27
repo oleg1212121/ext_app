@@ -21,9 +21,9 @@ const FONT_STEP = 2;
 const MIN_FONT_SIZE = 16;
 const MAX_FONT_SIZE = 38;
 
-// Props a page turn replaces; everything else (entity, fontSize, audio
-// state) survives the visit untouched. With one row payload there is
-// nothing that can go stale relative to another prop.
+// Props a page turn replaces; everything else (entity, work, crossLinks,
+// fontSize, audio state) survives the visit untouched. With one row payload
+// there is nothing that can go stale relative to another prop.
 const PAGED_PROPS = ['rows', 'wordMaps', 'meta'];
 
 const IconButton = ({onClick, disabled, label, children}) => (
@@ -72,6 +72,8 @@ const Divider = () => (
 
 export default function ReaderApp({
     entity,
+    work = null,
+    crossLinks = [],
     rows = [],
     defaultSide = null,
     langs = {a: null, b: null},
@@ -407,6 +409,21 @@ export default function ReaderApp({
                             {readingLang?.toUpperCase() ?? readingLang}
                         </span>
                     </div>
+
+                    {crossLinks.length > 0 && (
+                        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                            {crossLinks.map((link) => (
+                                <a
+                                    key={link.href}
+                                    href={link.href}
+                                    title={work?.title ?? undefined}
+                                    className="font-sans text-xs text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)] hover:text-[var(--color-vermilion)] dark:hover:text-[var(--color-vermilion-night)] hover:underline underline-offset-2 transition-colors duration-150"
+                                >
+                                    {link.label}
+                                </a>
+                            ))}
+                        </div>
+                    )}
 
                     <div className="ml-auto flex flex-wrap items-center gap-2 sm:gap-3">
                         {hasTranslation && (

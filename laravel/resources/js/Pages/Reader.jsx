@@ -3,6 +3,8 @@ import ReaderApp from './Reader/ReaderApp.jsx';
 
 const Reader = ({
     entity,
+    work = null,
+    crossLinks = [],
     rows = [],
     defaultSide = null,
     langs = {a: null, b: null},
@@ -19,6 +21,8 @@ const Reader = ({
 }) => (
     <ReaderApp
         entity={entity}
+        work={work}
+        crossLinks={crossLinks}
         rows={rows}
         defaultSide={defaultSide}
         langs={langs}

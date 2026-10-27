@@ -101,6 +101,20 @@ it('seeds the staged raw translations label in all three interface languages', f
     ]);
 });
 
+it('seeds the reader alignments cross-link string in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // reader-rework ticket 01: the entity reader's header link to its
+    // work's alignments list — an entity can sit in many matches, so the
+    // header links the list rather than one of them.
+    expect(seededUiStringTexts('reader.alignments'))->toBe([
+        'en' => 'Alignments',
+        'ru' => 'Выравнивания',
+        'be' => 'Выраўноўванні',
+    ]);
+});
+
 it('seeds the six usage-label chips in all three interface languages', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();

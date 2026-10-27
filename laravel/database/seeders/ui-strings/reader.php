@@ -35,6 +35,8 @@ return [
     'reader.stress_marks' => ['en' => 'Stress marks', 'ru' => 'Ударения', 'be' => 'Націскі'],
     'reader.phrasal_verbs' => ['en' => 'Multi-word verbs', 'ru' => 'Фразовые глаголы', 'be' => 'Фразавыя дзеясловы'],
     'reader.reading_language' => ['en' => 'Reading language', 'ru' => 'Язык чтения', 'be' => 'Мова чытання'],
+    // The entity reader's header cross-link to its work's alignments list.
+    'reader.alignments' => ['en' => 'Alignments', 'ru' => 'Выравнивания', 'be' => 'Выраўноўванні'],
     // Reader index (ReaderIndexApp.jsx) — the Practice → Reader browse page.
     'reader.reader_heading' => ['en' => 'Reader', 'ru' => 'Читалка', 'be' => 'Чыталка'],
     'reader.library_language' => ['en' => 'Library language', 'ru' => 'Язык библиотеки', 'be' => 'Мова бібліятэкі'],
