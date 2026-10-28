@@ -18,7 +18,7 @@ return new class extends Migration
                 ->nullOnDelete();
             $table->foreignId('entity_match_id')
                 ->nullable()
-                ->comment("The rendered entity match's id. Foreign key. Unused until alignment PDFs ship (book-pdf ticket 02).")
+                ->comment("The rendered entity match's id. Foreign key. Null for non-match subjects.")
                 ->constrained('entity_matches')
                 ->nullOnDelete();
             $table->char('content_hash', 64)

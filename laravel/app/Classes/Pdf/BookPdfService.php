@@ -11,6 +11,7 @@ use App\Models\MeaningMatch;
 use App\Models\PdfRender;
 use App\Models\Work;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Closure;
 use Dompdf\Canvas;
 use Dompdf\Dompdf;
 use Dompdf\FontMetrics;
@@ -75,33 +76,13 @@ class BookPdfService
      */
     public function entityPdf(Entity $entity): string
     {
-        $digest = $this->entityDigest($entity);
-        $path = "pdfs/entities/{$entity->id}.pdf";
-
-        ['render' => $render, 'hit' => $hit] = $this->cacheState('entity_id', $entity->id, $digest);
-
-        if ($hit !== null) {
-            return $hit;
-        }
-
-        $dompdf = $this->entityDompdf($entity);
-
-        try {
-            $dompdf->render();
-
-            // The footer goes on after render(): the canvas page_script()
-            // callback applies to the pages that exist when it runs, i.e.
-            // all of them.
-            $this->drawPageNumbers($dompdf);
-
-            Storage::disk('local')->put($path, $dompdf->output());
-        } finally {
-            $this->discardTempIllustrations();
-        }
-
-        $this->storeRender($render, 'entity_id', $entity->id, $digest, $path);
-
-        return $path;
+        return $this->renderOrCached(
+            'entity_id',
+            $entity->id,
+            $this->entityDigest($entity),
+            "pdfs/entities/{$entity->id}.pdf",
+            fn (): Dompdf => $this->bookDompdf('pdf.entity-book', $this->entityViewData($entity)),
+        );
     }
 
     /**
@@ -114,6 +95,8 @@ class BookPdfService
      */
     public function matchDigest(EntityMatch $match): string
     {
+        $match->loadMissing(['aEntity', 'bEntity']);
+
         $aEntity = $match->aEntity;
         $bEntity = $match->bEntity;
         $work = $aEntity?->work ?: $bEntity?->work;
@@ -145,33 +128,13 @@ class BookPdfService
      */
     public function entityMatchPdf(EntityMatch $match): string
     {
-        $digest = $this->matchDigest($match);
-        $path = "pdfs/matches/{$match->id}.pdf";
-
-        ['render' => $render, 'hit' => $hit] = $this->cacheState('entity_match_id', $match->id, $digest);
-
-        if ($hit !== null) {
-            return $hit;
-        }
-
-        $dompdf = $this->alignmentDompdf($match);
-
-        try {
-            $dompdf->render();
-
-            // The footer goes on after render(): the canvas page_script()
-            // callback applies to the pages that exist when it runs, i.e.
-            // all of them.
-            $this->drawPageNumbers($dompdf);
-
-            Storage::disk('local')->put($path, $dompdf->output());
-        } finally {
-            $this->discardTempIllustrations();
-        }
-
-        $this->storeRender($render, 'entity_match_id', $match->id, $digest, $path);
-
-        return $path;
+        return $this->renderOrCached(
+            'entity_match_id',
+            $match->id,
+            $this->matchDigest($match),
+            "pdfs/matches/{$match->id}.pdf",
+            fn (): Dompdf => $this->bookDompdf('pdf.alignment-book', $this->alignmentViewData($match)),
+        );
     }
 
     /**
@@ -239,19 +202,49 @@ class BookPdfService
             ->orderBy('order')
             ->orderBy('id')
             ->get()
-            ->map(fn (EntitySentence $sentence): array => [
-                'type' => $sentence->sentenceType?->name ?? 'sentence',
-                'content' => $sentence->content,
-                'image' => $this->embeddableImage($sentence),
-            ])
             ->all();
 
         return [
             'work' => $entity->work,
             'entity' => $entity,
             'language' => $entity->language,
-            'sentences' => $sentences,
+            'sentences' => $this->cellSentences($sentences),
         ];
+    }
+
+    /**
+     * The cache-or-render pipeline both books share: the cached path on a
+     * digest hit, otherwise the fresh render written to the subject's fixed
+     * path with the cache row updated in place.
+     *
+     * @param  Closure(): Dompdf  $dompdf
+     */
+    private function renderOrCached(string $foreignKey, int $subjectId, string $digest, string $path, Closure $dompdf): string
+    {
+        ['render' => $render, 'hit' => $hit] = $this->cacheState($foreignKey, $subjectId, $digest);
+
+        if ($hit !== null) {
+            return $hit;
+        }
+
+        $document = $dompdf();
+
+        try {
+            $document->render();
+
+            // The footer goes on after render(): the canvas page_script()
+            // callback applies to the pages that exist when it runs, i.e.
+            // all of them.
+            $this->drawPageNumbers($document);
+
+            Storage::disk('local')->put($path, $document->output());
+        } finally {
+            $this->discardTempIllustrations();
+        }
+
+        $this->storeRender($render, $foreignKey, $subjectId, $digest, $path);
+
+        return $path;
     }
 
     /**
@@ -434,22 +427,11 @@ class BookPdfService
         $this->tempIllustrations = [];
     }
 
-    private function entityDompdf(Entity $entity): Dompdf
+    private function bookDompdf(string $view, array $data): Dompdf
     {
-        $pdf = Pdf::loadView('pdf.entity-book', $this->entityViewData($entity));
-        // DejaVu Serif covers the app's languages (en/ru/be incl. Cyrillic);
-        // remote loading stays off — illustrations embed by local path only.
-        $pdf->setOption('defaultFont', 'dejavu serif');
-        $pdf->setOption('isRemoteEnabled', false);
-
-        return $pdf->getDomPDF();
-    }
-
-    private function alignmentDompdf(EntityMatch $match): Dompdf
-    {
-        $pdf = Pdf::loadView('pdf.alignment-book', $this->alignmentViewData($match));
-        // DejaVu covers the app's languages (en/ru/be incl. Cyrillic);
-        // remote loading stays off — illustrations embed by local path only.
+        $pdf = Pdf::loadView($view, $data);
+        // DejaVu covers the app's languages (en/ru/be incl. Cyrillic); remote
+        // loading stays off — illustrations embed by local path only.
         $pdf->setOption('defaultFont', 'dejavu serif');
         $pdf->setOption('isRemoteEnabled', false);
 

@@ -6,8 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * One cached server-rendered book PDF per subject (an entity now, an entity
- * match once alignment PDFs ship), keyed by a partial unique index per FK and
+ * One cached server-rendered book PDF per subject (an entity or an entity
+ * match), keyed by a partial unique index per FK and
  * updated in place: the row's content_hash digests every render input, the
  * file lives at a fixed `local`-disk path shared by nothing else.
  */
