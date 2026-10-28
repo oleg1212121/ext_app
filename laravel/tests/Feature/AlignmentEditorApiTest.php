@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Entity;
 use App\Models\EntityMatch;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
@@ -24,25 +25,29 @@ function editorWorld(array $enOrders = [], array $ruOrders = []): array
 
     $match = createEntityMatch($en, $ru, ['status' => 'pending']);
 
-    $enSentences = [];
-    foreach ($enOrders as $order) {
-        $enSentences[] = EntitySentence::create([
-            'entity_id' => $en->id,
-            'sentence_type_id' => $type->id,
-            'content' => "EN {$order}",
-            'order' => $order,
-        ]);
-    }
+    // Bulk insert + one re-query: every caller passes ascending orders, so
+    // ordering by `order` reproduces the per-row create sequence.
+    $insertSentences = function (Entity $entity, array $orders, string $prefix) use ($type): array {
+        if ($orders === []) {
+            return [];
+        }
 
-    $ruSentences = [];
-    foreach ($ruOrders as $order) {
-        $ruSentences[] = EntitySentence::create([
-            'entity_id' => $ru->id,
+        EntitySentence::query()->insert(array_map(fn (int $order): array => [
+            'entity_id' => $entity->id,
             'sentence_type_id' => $type->id,
-            'content' => "RU {$order}",
+            'content' => "{$prefix} {$order}",
             'order' => $order,
-        ]);
-    }
+        ], $orders));
+
+        return EntitySentence::query()
+            ->where('entity_id', $entity->id)
+            ->orderBy('order')
+            ->get()
+            ->all();
+    };
+
+    $enSentences = $insertSentences($en, $enOrders, 'EN');
+    $ruSentences = $insertSentences($ru, $ruOrders, 'RU');
 
     return compact('match', 'type', 'work', 'en', 'ru', 'enSentences', 'ruSentences');
 }

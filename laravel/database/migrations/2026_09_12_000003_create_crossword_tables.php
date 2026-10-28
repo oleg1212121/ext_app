@@ -16,14 +16,14 @@ return new class extends Migration
                 ->cascadeOnDelete();
             $table->foreignId('word_id')
                 ->nullable()
-                ->comment("The linked dictionary word. Null until the link pass matches the token. Foreign key.")
+                ->comment('The linked dictionary word. Null until the link pass matches the token. Foreign key.')
                 ->constrained('words')
                 ->nullOnDelete();
             $table->string('l_word', 256)->comment("The token's lowercase form");
-            $table->string('token', 256)->comment("The first-seen surface form of the token in the text");
+            $table->string('token', 256)->comment('The first-seen surface form of the token in the text');
             $table->unsignedInteger('count')->default(1)->comment('How many times the token occurs in the entity');
             $table->timestamps();
-            $table->comment("The entity word list: unique tokens of one entity with occurrence counts, dictionary link filled later.");
+            $table->comment('The entity word list: unique tokens of one entity with occurrence counts, dictionary link filled later.');
 
             $table->unique(['entity_id', 'l_word'], 'uk_entity_words_entity_l_word');
             $table->index('word_id', 'idx_entity_words_word_id');

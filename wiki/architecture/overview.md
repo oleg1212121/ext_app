@@ -4,7 +4,7 @@ title: Application Overview
 description: What ext_app is, its main components, and how a request flows through the system.
 tags: [architecture, overview]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-28T19:50:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T22:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: composer

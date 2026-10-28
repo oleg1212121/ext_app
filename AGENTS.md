@@ -95,14 +95,17 @@ docker exec ext_app_laravel npm run dev
 
 ### Code Formatting (Required before committing)
 ```bash
-docker exec ext_app_laravel vendor/bin/pint --dirty
+docker exec ext_app_laravel vendor/bin/pint <files you touched>
 ```
+Name the files explicitly — `pint --dirty` inside the container diffs against the container-local TIA baseline commit (`laravel/scripts/tia-setup.php`), not your working tree. The committed `.githooks/pre-commit` hook (activate once per clone: `git config core.hooksPath .githooks`) runs the CI-identical `pint --test` on staged `.php` files.
 
 ### Testing
 ```bash
-# Run all tests in parallel (clears config + route caches first;
-# ~5.5min for the full suite on the dev machine; composer.json sets
-# process-timeout: 900 so Composer doesn't kill the run at its 300s default)
+# Run all tests in parallel (clears config + route caches first; 6 pinned workers).
+# Duration is load-dependent by ~20x: minutes idle, 15min+ under peak load
+# (1,587 tests: 903s at 8 workers / 862s at 6 on a loaded box, 2026-10-28). The
+# test scripts disable composer's process-timeout (Composer\Config::disableProcessTimeout)
+# — run suite-scale commands backgrounded, never rely on a wrapper timer.
 docker exec ext_app_laravel composer run test
 
 # Run specific test file

@@ -197,6 +197,10 @@ it('raises the memory ceiling above the CLI default before any scan work', funct
     // command must lift the 128M CLI default itself — the raw-wiktextract
     // importer precedent. Probed through the fast unknown-language failure
     // path: the bump precedes every other statement in handle().
+    if (memory_get_usage() > 128 * 1024 * 1024) {
+        $this->markTestSkipped('Worker already above the 128M CLI default — lift cannot be probed here');
+    }
+
     $original = ini_get('memory_limit');
     ini_set('memory_limit', '128M');
 

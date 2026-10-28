@@ -6,7 +6,6 @@ use App\Filament\Resources\UiStringKeyResource\Pages\ListUiStringKeys;
 use App\Models\Language;
 use App\Models\UiStringKey;
 use App\Models\User;
-use Filament\Actions\DeleteAction;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 

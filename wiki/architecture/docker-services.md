@@ -4,7 +4,7 @@ title: Docker & Services
 description: Containers, ports, mounts, and the rule that all PHP/Composer/NPM commands run inside the app container.
 tags: [docker, infrastructure, devops]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-26T23:35:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T22:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: compose
@@ -74,7 +74,7 @@ Note: inside the container the app is `/var/www` and the repo root is
 ```bash
 docker exec ext_app_laravel composer run dev     # server + queue + logs + vite (concurrently)
 docker exec ext_app_laravel composer run test    # config:clear + full test suite
-docker exec ext_app_laravel vendor/bin/pint --dirty  # format changed files (required before committing)
+docker exec ext_app_laravel vendor/bin/pint <files>  # format the files you touched (explicit paths — the .githooks/pre-commit hook gates staged files)
 ```
 
 # Python

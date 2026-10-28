@@ -6,6 +6,44 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-28 (retro — test reliability: no wrapper timeout, 6 pinned workers, guarded memory probes, pint hook)
+
+Fixes the recurring false-red pattern from the book-pdf session: full-suite
+runs killed at composer's 900s `process-timeout` mid-migration (stranded
+half-migrated worker DBs then failed the NEXT run), and the two
+`ini_set('memory_limit', '128M')` probe tests red-ing whenever their worker
+already held >128M under PCOV. `composer.json`: both `test` and `test:tia`
+now open with `Composer\Config::disableProcessTimeout` (the `dev`-script
+pattern — long runs are managed backgrounded per the playbook, not by a
+wrapper timer; the global timeout stays 900 for everything else) and pin
+`--processes=6` (measured under load 2026-10-28: 862s at 6 vs 903s at 8
+workers — faster AND two fewer 2G-capped workers; 8 × (DB drop/create +
+46 migrations) was self-inflicted load). The probe tests
+(`WordsNormalizeCommandTest`, `DemoteFormOfCommandTest`) now skip via a
+`memory_get_usage()` guard when their worker is already above 128M — both
+post-fix full-suite runs show exactly the expected `1 skipped, 0 failed`.
+Fixture cuts: `EntityWordLinkerTest`'s 250-word loop hoists the per-word
+class/language guard queries out (~2,700 queries saved), and
+`ChunkedEntityAlignmentTest` / `AlignmentEditorApiTest` bulk-insert their
+sentence fixtures (biggest: 160 rows in one INSERT). Pint: `pint --dirty`
+inside the container diffs against the TIA baseline commit, not your
+changes — the new `.githooks/pre-commit` (activate per clone with
+`git config core.hooksPath .githooks`) runs the CI-identical `pint --test`
+on staged .php files via the host git index, and AGENTS.md / implementer.md
+/ coding-conventions / docker-services switch to explicit-path pint.
+`tia-baseline.yml`'s push trigger pointed at a nonexistent `main` branch —
+now `master`, so CI baselines refresh per merge and local TIA re-run sets
+stay small. `implementer.md` makes background+poll unconditional for
+suite-scale commands (TIA's re-run set tracks the branch diff — 1,404 of
+1,557 tests mid-spec — so the "can exceed ~8 minutes" guess is gone;
+targeted file runs stay foreground unless the box is loaded).
+`playbooks/running-tests.md`: the unconditional background rule, the
+timeout/pin facts with measurements, the tia.ini memory-line drift
+corrected (the 2G pin lives in `phpunit.xml`), and `--profile` noted
+(top-ten slowest tests). Concepts re-stamped over the composer.json /
+AGENTS.md source edits: running-tests, coding-conventions,
+docker-services, overview, production-deployment.
+
 ## 2026-10-28 (book PDFs — dompdf downloads with a digest cache, ADR 0093)
 
 The book-PDF feature lands on both Library detail surfaces, recorded in ADR

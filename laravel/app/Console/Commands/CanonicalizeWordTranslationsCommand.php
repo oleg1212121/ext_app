@@ -31,7 +31,7 @@ class CanonicalizeWordTranslationsCommand extends Command
         $from = $renamed ? 'word_a_id' : 'from_word_id';
         $to = $renamed ? 'word_b_id' : 'to_word_id';
 
-        $this->info("Canonicalizing word_translations on [".DB::connection()->getDatabaseName()."] (columns already renamed: ".var_export($renamed, true).')');
+        $this->info('Canonicalizing word_translations on ['.DB::connection()->getDatabaseName().'] (columns already renamed: '.var_export($renamed, true).')');
 
         DB::transaction(function () use ($renamed, $from, $to): void {
             // 1. Delete mirror rows where both orientations exist, keeping the
