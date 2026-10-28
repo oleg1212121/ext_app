@@ -157,7 +157,7 @@ docker exec ext_app_laravel npm run test
 >
 > - Tests use a **dedicated `testing` connection** (defined in `config/database.php`, pinned in `phpunit.xml` via `DB_CONNECTION=testing`) that points at `ext_app_test`. `tests/Pest.php` asserts `DB::connection()->getName() === 'testing'` before every Feature test, so a test run on the wrong connection fails before any destructive migration runs.
 > - For destructive ops on the test DB, go through the test runner: `composer run test` / `composer run test:tia`, or `php artisan migrate:fresh` with `DB_CONNECTION=testing` explicitly set. Verify the resolved database name is `ext_app_test` (not `ext_app`) before pressing enter.
-> - **Never start two test runs concurrently** — they share `ext_app_test` and corrupt each other's `RefreshDatabase` state. Run suites sequentially.
+> - **Never start two test runs concurrently** — they share `ext_app_test` and corrupt each other's `RefreshDatabase` state. Run suites sequentially; check no run is already in flight first (`wiki/playbooks/running-tests.md`, "In-flight runs" — the container has no `ps`).
 > - **No git worktrees** — the container bind-mounts `./laravel` of the main checkout only and test runs share `ext_app_test`, so a worktree's `laravel/` cannot run container tests. Ticket work happens sequentially in the main checkout; implement-spec's per-ticket worktree default does not apply in this repo.
 > - `composer run test` and `composer run test:tia` run Pest in parallel (workers use temporary `ext_app_test_test_{N}` databases). Both scripts export `LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1` — without it Pest's `--drop-databases` flag is silently ignored (Pest sets `$_ENV`, Laravel reads `$_SERVER`), so worker DBs accumulate as orphans.
 

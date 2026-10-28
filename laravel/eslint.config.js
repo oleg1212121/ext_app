@@ -36,6 +36,17 @@ export default [
             // an error would demand mass edits; warn keeps them visible in
             // CI logs without blocking.
             'no-unused-vars': 'warn',
+
+            // Internal navigation must use Inertia <Link>: a plain
+            // <a href="/..."> is a silent full-page reload — no error, just
+            // degraded UX (the reader-rework cross-link bug, which survived
+            // five tickets and only review caught). Root-relative string
+            // literals only; dynamic hrefs can't be checked statically.
+            // NavBar is carve-out'd below (Blade-rendered auth targets).
+            'no-restricted-syntax': ['error', {
+                selector: "JSXOpeningElement[name.name='a'] > JSXAttribute[name.name='href'] > Literal[value=/^\\//]",
+                message: 'Internal links must use Inertia <Link> — a plain <a href="/..."> causes a silent full page reload instead of client-side navigation.',
+            }],
         },
     },
 
@@ -67,7 +78,10 @@ export default [
     // sentinel placeholders protecting code spans during ==highlight==
     // conversion. i18n.jsx reassigns the module-level `strings` cache inside
     // useI18n — that IS the t() mechanism; a context refactor is out of
-    // scope (react-hooks/globals).
+    // scope (react-hooks/globals). NavBar.jsx links /login and /register
+    // with plain <a> on purpose — they are Blade-rendered auth targets
+    // (resources/views/auth), outside the Inertia app, where the full page
+    // load IS the navigation (no-restricted-syntax).
     {
         files: ['resources/js/lib/markdown.js'],
         rules: {'no-control-regex': 'off'},
@@ -75,6 +89,10 @@ export default [
     {
         files: ['resources/js/i18n.jsx'],
         rules: {'react-hooks/globals': 'off'},
+    },
+    {
+        files: ['resources/js/Components/NavBar.jsx'],
+        rules: {'no-restricted-syntax': 'off'},
     },
 
     // Node-only files: vitest specs (ADR 0066 — pure lib/ modules tested in

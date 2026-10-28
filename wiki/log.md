@@ -6,6 +6,31 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-28 (retro — reader-rework session: Inertia-Link lint rule, in-flight test-run playbook, ADR index pointer)
+
+Retro fixes for the reader-rework implement-spec run, no app-behavior change.
+`laravel/eslint.config.js` gains an error-tier `no-restricted-syntax` rule: a
+plain JSX `<a>` with a root-relative string-literal href must be an Inertia
+`<Link>` — the review-caught cross-link full-reload bug class, silent by
+nature, so it belongs in the linter rather than a standards doc; NavBar gets
+a file-scoped carve-out because its `/login`/`/register` anchors target
+Blade-rendered auth pages (`resources/views/auth`) outside Inertia, where the
+full page load IS the navigation. `playbooks/running-tests.md` gains an
+"In-flight runs" section — the container has no `ps`/`pgrep`, so it documents
+the `/proc` probe and kill loop with the `php`-anchored glob (an unanchored
+`*pest*` matches the probe's own command line; the anchor matters because the
+composer scripts exec pest with a bare `php` argv — `/usr/local/bin/php*`
+would miss it), plus worker-DB reclamation by the next `--drop-databases` run
+and the background-don't-foreground rule for >8min commands; probe, kill, and
+post-kill recovery were verified live against a real run (killed pest exits
+143, wrapper exits on its own, next run green). Its ESLint section now
+describes the new rule and the third carve-out, and `generated.at` is bumped
+(the `eslintconfig` source changed). `.zcode/agents/implementer.md` (untracked
+agent config) tells implementers to background long test runs and poll.
+`wiki/index.md`'s Architecture section links the ADR index at repo-root
+`docs/adr/` (with the explicit "NOT laravel/docs/adr/" note) so spec-writers
+stop guessing the directory.
+
 ## 2026-10-28 (alignment cards stop at a read-only show page — ADR 0092)
 
 `/works/{work}/alignments` cards no longer carry Simulator / Read buttons and

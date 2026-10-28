@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-26T17:58:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T17:17:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
 sources:
   - id: phpunit
@@ -213,16 +213,23 @@ sources:
   statically checks every `resources/js/**/*.{js,mjs,jsx}` for **correctness,
   not style**: `no-undef` (the guard this pass exists for — a missing import
   once sailed through `vite build`; only a manual Node smoke caught it),
-  the core recommended set, and `eslint-plugin-react-hooks` (rules-of-hooks
+  the core recommended set, the `no-restricted-syntax` Inertia-Link rule (a
+  plain `<a href="/...">` with a root-relative literal href is an error —
+  it full-page-reloads instead of client-side navigating, the silent
+  reader-rework cross-link bug class; must be `<Link>` from
+  `@inertiajs/react`), and `eslint-plugin-react-hooks` (rules-of-hooks
   + the v7 compiler-backed set). Errors fail the run; warnings don't.
 * `laravel/eslint.config.js` is flat config (eslint 10). Rule tiers are
   deliberate and commented in-file: genuine-violation rules stay `error`;
   legacy-but-working patterns the v7 hook analyzer flags
   (`refs`, `set-state-in-effect`, `immutability`,
-  `preserve-manual-memoization`) sit at `warn`; two deliberate patterns have
+  `preserve-manual-memoization`) sit at `warn`; three deliberate patterns have
   file-scoped carve-offs (`no-control-regex` in `lib/markdown.js` — the
   \u0000/\u0001 sentinels ARE the mechanism; `react-hooks/globals` in
-  `i18n.jsx` — the module-level strings cache IS the t() mechanism). A new
+  `i18n.jsx` — the module-level strings cache IS the t() mechanism;
+  `no-restricted-syntax` in `Components/NavBar.jsx` — its /login and
+  /register anchors target Blade-rendered auth pages outside Inertia, where
+  the full page load IS the navigation). A new
   warning is review signal, not a reformat mandate: fix real bugs in place,
   never mass-edit to silence a rule.
 * CI runs it as the **`lint`** job in `tests.yml` (`npm ci` + `npm run
@@ -267,6 +274,38 @@ docker exec ext_app_laravel npm run lint
 # Python service (pytest, inside the ext_python container; ~5s, no weights)
 docker exec ext_python python -m pytest /app/ai -q
 ```
+
+# In-flight runs
+
+The container image has no `ps`/`pgrep`/`pkill` (no procps), so "is a test
+run already going?" is answered from `/proc` directly:
+
+```bash
+# Probe: list in-flight Pest processes (pid: command). No output = clear.
+docker exec ext_app_laravel sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < "$d/cmdline" 2>/dev/null); case "$c" in php*pest*) echo "${d#/proc/}: $c";; esac; done'
+
+# Kill: same loop with kill instead of echo — for an orphaned run whose
+# agent died mid-run and left a pest process holding the test DB.
+docker exec ext_app_laravel sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < "$d/cmdline" 2>/dev/null); case "$c" in php*pest*) kill "${d#/proc/}";; esac; done'
+```
+
+The glob is anchored on `php` on purpose: the probe's own `/bin/sh -c`
+command line contains the word "pest" (it is part of the pattern text), so
+an unanchored `*pest*` matches — and kills — the probe itself. Wrapper
+processes (`composer run test`, `php artisan test`) don't carry "pest" in
+their command line at all: kill the pest processes and the wrappers exit on
+their own.
+
+A killed run leaves its `ext_app_test_test_{N}` worker databases behind —
+the next `composer run test` / `test:tia` reclaims them (both scripts
+export `LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1` with `--drop-databases`;
+see Facts). Run duration is load-dependent by ~20x (the full suite is
+~1.5-2min idle but 13min+ under peak load), so never judge by elapsed time
+— run the probe, not a clock. Any command that can exceed ~8 minutes (the
+full suite on a loaded machine, TIA `--fresh`/`--coverage` re-records)
+should run **backgrounded with polling**: a foreground call that outlives
+the tool's inactivity ceiling is killed mid-run and orphans exactly the
+pest process this section cleans up.
 
 # Python service (pytest)
 
