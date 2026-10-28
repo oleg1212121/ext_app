@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T19:50:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -51,7 +51,7 @@ variants.
 | Route | Method | Handler | Purpose |
 |-------|--------|---------|---------|
 | `/simulator` | GET | `SimulatorController::simulator` | The standalone page with the **alignment picker** (Practice → Simulator, ADR 0038): same Inertia page `Bilinguals/Bilinguals`, no pinned match — a searchable Select + Load header control lists the readable completed/stale matches grouped by work and loads one in place via `POST /text`. The old picker URL `/bilinguals/en/ru/simulator` stays deleted (404, test-guarded) |
-| `/bilinguals/simulator/{entityMatch}` | GET | `SimulatorController::simulatorForMatch` | Inertia page `Bilinguals/Bilinguals` with the match **pinned by the URL** (opened from an alignment card's Simulator button, ADR 0036): no text selector, the match label is shown instead, 403 without `canReadMatch` |
+| `/bilinguals/simulator/{entityMatch}` | GET | `SimulatorController::simulatorForMatch` | Inertia page `Bilinguals/Bilinguals` with the match **pinned by the URL** (opened from the alignment detail page's Simulator button; pinned route since ADR 0036, entry moved off the cards by ADR 0092): no text selector, the match label is shown instead, 403 without `canReadMatch` |
 | `/text` | POST | `SimulatorController::text` | Paginated aligned text content (JSON) |
 | `/ai/question` | POST | `ReadingAiController::askAi` | Ask an AI model about the text (JSON), named `ai.question` — the reading surfaces' shared AI-answer controller (ADR 0069) |
 | `/ai/question/stream` | POST | `ReadingAiController::askAiStreamed` | SSE-streamed variant, named `ai.question.stream` |

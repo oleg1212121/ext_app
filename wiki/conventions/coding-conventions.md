@@ -4,7 +4,7 @@ title: Coding Conventions
 description: Project-wide rules for code style, structure, testing, and agent behavior in this repository.
 tags: [conventions, style, testing]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-25T13:10:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T22:30:00+03:00 }
 verified: { by: human:alex, at: 2026-07-26T18:45:00Z }
 sources:
   - id: agents
@@ -17,7 +17,12 @@ sources:
 
 * All PHP/Composer/NPM commands run via `docker exec ext_app_laravel ...` —
   never on the host. See [Docker & Services](/architecture/docker-services.md).
-* Run `docker exec ext_app_laravel vendor/bin/pint --dirty` before committing.
+* Run `docker exec ext_app_laravel vendor/bin/pint <files you touched>` before
+  committing — explicit paths, not `--dirty`: inside the container, git HEAD is
+  the TIA baseline commit, so "dirty" means changed-since-that-baseline, not
+  changed-by-you. The `.githooks/pre-commit` hook (once per clone:
+  `git config core.hooksPath .githooks`) runs the CI-identical `pint --test`
+  on staged `.php` files at commit time.
 
 # Laravel 12+ structure
 

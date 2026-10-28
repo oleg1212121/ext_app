@@ -5,9 +5,9 @@ import {STATUS_BADGE, similarityClass} from '../lib/alignmentDisplay.js';
 const langTagClass = 'font-mono text-[10px] uppercase tracking-[0.24em] text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]';
 
 /**
- * One entity match on a work's Alignments tab. The card body links to the
- * alignment editor (a stretched link behind the content); the footer buttons
- * — simulator and reader — sit above it and navigate directly.
+ * One entity match on a work's Alignments tab. The whole card links to the
+ * alignment's read-only detail page (a stretched link behind the content);
+ * Read / Simulator / Edit live on that page.
  */
 export default function AlignmentCard({run}) {
     const {t} = useI18n();
@@ -16,10 +16,10 @@ export default function AlignmentCard({run}) {
     return (
         <div className="relative flex min-h-32 flex-col gap-3 rounded-sm border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-5 py-5 transition-colors hover:border-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)]">
             <Link
-                href={`/works/${run.work_id}/alignments/${run.id}/edit`}
+                href={`/works/${run.work_id}/alignments/${run.id}`}
                 className="after:absolute after:inset-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)]"
             >
-                <span className="sr-only">{t('library.open_alignment_editor')}</span>
+                <span className="sr-only">{t('entities.open_alignment')}</span>
             </Link>
 
             <div className="flex flex-col gap-1">
@@ -63,23 +63,6 @@ export default function AlignmentCard({run}) {
                 {(run.b_language_code || 'b').toUpperCase()} {run.b_total_sentences ?? '—'}
                 {run.created_at ? ` · ${new Date(run.created_at).toLocaleDateString()}` : ''}
             </p>
-
-            <div className="relative z-10 mt-auto flex items-center gap-2 pt-1">
-                <Link
-                    href={`/bilinguals/simulator/${run.id}`}
-                    className="inline-flex h-8 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-3 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
-                >
-                    {t('library.simulator')}
-                </Link>
-                {/* The reader URL is match-anchored: the side rule (and the
-                    language it reads first) lives in the reader page now. */}
-                <Link
-                    href={`/reader/works/${run.work_id}/alignments/${run.id}`}
-                    className="inline-flex h-8 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-3 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
-                >
-                    {t('library.read')}
-                </Link>
-            </div>
         </div>
     );
 }

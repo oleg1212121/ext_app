@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-26T17:58:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T22:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
 sources:
   - id: phpunit
@@ -98,8 +98,13 @@ sources:
   muted check covers every currently baselined warning — and the gate still
   fails on any non-mtime warning.
 * `composer run test` clears the **config and route caches** first, then runs
-  the suite **in parallel** (Pest `--parallel`, one process per CPU core —
-  8 in the dev container). Each parallel worker runs against its own
+  the suite **in parallel** (Pest `--parallel --processes=6` — pinned below
+  the container's 8 CPUs so suite runs leave headroom for the box's other
+  work: the Python models, vite, and concurrent agent runs; 8 × (DB
+  drop/create + 46 migrations) against the shared Postgres is self-inflicted
+  load. Measured under load 2026-10-28: 6 workers 862s vs 8 workers 903s —
+  the pin was *faster*, not slower, while holding two fewer 2G-capped
+  worker processes). Each parallel worker runs against its own
   temporary database `ext_app_test_test_{N}`; the base `ext_app_test` is only
   used by serial runs (`artisan test --filter=…`, single-file runs).
   Routing the test run through `route:clear` is required because
@@ -107,6 +112,15 @@ sources:
   `APP_KEY` into the cached routes; Livewire derives its update endpoint from
   `APP_KEY`, so a stale route cache built under a different key makes every
   interactive Livewire/Filament test 404 (`mountedActions on null`).
+* **The test scripts have no composer process-timeout.** Both `test` and
+  `test:tia` open with `Composer\Config::disableProcessTimeout` (the same
+  pattern the `dev` script uses): a loaded full-suite run can take well past
+  15 minutes, and composer's old 900s ceiling killed healthy runs
+  mid-migration — the stranded half-migrated `ext_app_test_test_{N}`
+  databases then failed the NEXT run en masse (457 tests, 2026-10-11).
+  Long runs are managed by running them backgrounded (see "In-flight runs"),
+  not by a wrapper timer. The global `process-timeout: 900` still applies to
+  every other composer script.
 * **Safety layers against wiping the real `ext_app` database:**
   * A dedicated **`testing` connection** (a `pgsql` clone with
     `database => env('DB_TEST_DATABASE', 'ext_app_test')`) is defined in
@@ -213,16 +227,23 @@ sources:
   statically checks every `resources/js/**/*.{js,mjs,jsx}` for **correctness,
   not style**: `no-undef` (the guard this pass exists for — a missing import
   once sailed through `vite build`; only a manual Node smoke caught it),
-  the core recommended set, and `eslint-plugin-react-hooks` (rules-of-hooks
+  the core recommended set, the `no-restricted-syntax` Inertia-Link rule (a
+  plain `<a href="/...">` with a root-relative literal href is an error —
+  it full-page-reloads instead of client-side navigating, the silent
+  reader-rework cross-link bug class; must be `<Link>` from
+  `@inertiajs/react`), and `eslint-plugin-react-hooks` (rules-of-hooks
   + the v7 compiler-backed set). Errors fail the run; warnings don't.
 * `laravel/eslint.config.js` is flat config (eslint 10). Rule tiers are
   deliberate and commented in-file: genuine-violation rules stay `error`;
   legacy-but-working patterns the v7 hook analyzer flags
   (`refs`, `set-state-in-effect`, `immutability`,
-  `preserve-manual-memoization`) sit at `warn`; two deliberate patterns have
+  `preserve-manual-memoization`) sit at `warn`; three deliberate patterns have
   file-scoped carve-offs (`no-control-regex` in `lib/markdown.js` — the
   \u0000/\u0001 sentinels ARE the mechanism; `react-hooks/globals` in
-  `i18n.jsx` — the module-level strings cache IS the t() mechanism). A new
+  `i18n.jsx` — the module-level strings cache IS the t() mechanism;
+  `no-restricted-syntax` in `Components/NavBar.jsx` — its /login and
+  /register anchors target Blade-rendered auth pages outside Inertia, where
+  the full page load IS the navigation). A new
   warning is review signal, not a reformat mandate: fix real bugs in place,
   never mass-edit to silence a rule.
 * CI runs it as the **`lint`** job in `tests.yml` (`npm ci` + `npm run
@@ -232,8 +253,12 @@ sources:
 # Commands
 
 ```bash
-# Full suite, parallel (config+route clear first; ~1.5-2min for 899 tests
-# vs ~5min serial before 2026-10-03)
+# Full suite, parallel (config+route clear first; 6 pinned workers; no
+# composer timeout — duration is load-dependent by ~20x: minutes idle,
+# 15min under peak load. 1,587 tests measured 2026-10-28 under load:
+# 903s at 8 workers — the exact run composer's old 900s ceiling would
+# have killed mid-suite — and 862s at the pinned 6 workers. Add
+# --profile to a run to print the ten slowest tests)
 docker exec ext_app_laravel composer run test
 
 # One file
@@ -267,6 +292,43 @@ docker exec ext_app_laravel npm run lint
 # Python service (pytest, inside the ext_python container; ~5s, no weights)
 docker exec ext_python python -m pytest /app/ai -q
 ```
+
+# In-flight runs
+
+The container image has no `ps`/`pgrep`/`pkill` (no procps), so "is a test
+run already going?" is answered from `/proc` directly:
+
+```bash
+# Probe: list in-flight Pest processes (pid: command). No output = clear.
+docker exec ext_app_laravel sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < "$d/cmdline" 2>/dev/null); case "$c" in php*pest*) echo "${d#/proc/}: $c";; esac; done'
+
+# Kill: same loop with kill instead of echo — for an orphaned run whose
+# agent died mid-run and left a pest process holding the test DB.
+docker exec ext_app_laravel sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < "$d/cmdline" 2>/dev/null); case "$c" in php*pest*) kill "${d#/proc/}";; esac; done'
+```
+
+The glob is anchored on `php` on purpose: the probe's own `/bin/sh -c`
+command line contains the word "pest" (it is part of the pattern text), so
+an unanchored `*pest*` matches — and kills — the probe itself. Wrapper
+processes (`composer run test`, `php artisan test`) don't carry "pest" in
+their command line at all: kill the pest processes and the wrappers exit on
+their own.
+
+A killed run leaves its `ext_app_test_test_{N}` worker databases behind —
+the next `composer run test` / `test:tia` reclaims them (both scripts
+export `LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1` with `--drop-databases`;
+see Facts). Run duration is load-dependent by ~20x (the full suite is a few
+minutes idle but 13min+ under peak load), so never judge by elapsed time
+— run the probe, not a clock. **Suite-scale commands always run backgrounded
+with polling** — `composer run test`, `composer run test:tia` (any form,
+including `--fresh` re-records), and their direct-pest variants. The rule is
+unconditional because size is unknowable in advance: TIA's re-run set tracks
+the whole branch diff, not the invoking ticket, so `test:tia` is routinely
+suite-sized mid-spec (a 24-file branch diff once re-executed 1,404 of 1,557
+tests). A foreground call that outlives the tool's inactivity ceiling is
+killed mid-run and orphans exactly the pest process this section cleans up.
+Targeted `php artisan test <specific files>` stays foreground — unless the
+box is already loaded, then background it too.
 
 # Python service (pytest)
 
@@ -394,16 +456,22 @@ the tests affected by your latest changes, replaying the rest from cache.
   composer script loads it via
   `PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/var/www/scripts/php-ini`
   pointing at the tracked `scripts/php-ini/tia.ini` (pcov extension +
-  `pcov.enabled=1` + `memory_limit=1G`). The scan-dir route is required
+  `pcov.enabled=1` only — the process memory limit is NOT set here; it is
+  pinned in `phpunit.xml` (`memory_limit=2G`), which every process applies
+  through its own ini settings). The scan-dir route is required
   because Pest runs parallel through the **paratest** binary: its worker
   processes do not inherit `php -d` ini flags from the parent invocation —
   only environment-propagated ini scanning reaches every worker. Plain `-d
   extension=pcov.so` fails with "No code coverage driver is available", and
-  the graph merge OOMs at the CLI-default 128M limit without the memory
-  line.
+  the graph merge OOMs below 2G on the current suite size (the `phpunit.xml`
+  pin is the fix — tia.ini once carried a 1G memory line, since removed).
 * **Baseline source**: `baselined()` first tries to fetch the shared CI
   baseline through `gh`; with an unauthenticated `gh` in the container it
   errors — record locally with `--fresh` instead (once per container; ~80s).
+  CI re-records the baseline on every push to `master` plus nightly
+  (`tia-baseline.yml`; the push trigger pointed at a nonexistent `main`
+  branch until 2026-10-28, so baselines went stale and local TIA re-run sets
+  grew), keeping the shared baseline fresh and local diffs small.
 * **Container-local git repo**: because `/var/www` (Laravel project) is bind-
   mounted separately from `/var/repo` (the git repo root), Pest sees no git
   context at `/var/www`. `scripts/tia-setup.php` initialises a container-local

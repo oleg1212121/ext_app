@@ -269,7 +269,7 @@ class LibraryController extends Controller
             ->paginate(15);
 
         return [
-            // No reader_target: the card's Read button links the
+            // No reader_target: the alignment detail page composes the
             // match-anchored reader URL, and the side rule lives in that
             // page (the URL is the same for every reader).
             'alignments' => $matches->through(fn (EntityMatch $entityMatch): array => $this->presenter->matchPayload($entityMatch))->items(),
@@ -426,7 +426,7 @@ class LibraryController extends Controller
                 ->with('existing_match_id', $result['existing']->id);
         }
 
-        $redirect = redirect()->route('works.alignments.show', ['work' => $work->id]);
+        $redirect = redirect()->route('works.alignments.index', ['work' => $work->id]);
 
         if ($result['status'] === 'created_from_copy') {
             return $redirect->with('success', 'Entity match created — alignment copied from an identical text pair.');

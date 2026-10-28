@@ -6,6 +6,7 @@ use App\Jobs\RefreshEntityWords;
 use App\Models\EntitySentence;
 use App\Models\EntityWord;
 use App\Models\Form;
+use App\Models\Language;
 use App\Models\Word;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
@@ -99,8 +100,17 @@ it('caps inflected-form candidates per token', function () {
 
     // 250 lemmas share the surface form "running" via forms.l_word — well
     // past the per-token candidate cap. All 'unknown' class: the best-candidate
-    // pick must still resolve to one of them within the capped window.
-    $words = collect(range(1, 250))->map(fn (int $i) => createWord('en', "Lemma {$i}", 'unknown'));
+    // pick must still resolve to one of them within the capped window. The
+    // class and language lookups are hoisted out of the loop so the fixture
+    // pays 250 word inserts, not 250 × createWord()'s guard queries.
+    $classes = createWordClasses();
+    $languageId = Language::query()->where('code', 'en')->value('id');
+    $words = collect(range(1, 250))->map(fn (int $i): Word => Word::query()->create([
+        'word' => "Lemma {$i}",
+        'l_word' => mb_strtolower("Lemma {$i}"),
+        'language_id' => $languageId,
+        'word_class_id' => $classes['en']['unknown'],
+    ]));
     Form::query()->insert($words->map(fn (Word $word): array => [
         'form' => 'Running',
         'l_word' => 'running',

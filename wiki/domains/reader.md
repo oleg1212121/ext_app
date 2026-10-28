@@ -5,7 +5,7 @@ description: The reading surface — an explicit work-scoped URL tree (ADR 0091)
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2027-01-25
-generated: { by: agent:zcode, at: 2026-10-27T23:15:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T19:50:00+03:00 }
 verified: { by: human:alex-agent, at: 2026-10-27T21:50:00+03:00 }
 sources:
   - id: controller
@@ -62,11 +62,12 @@ Reading starts from the **works-first entry**: the Practice menu's Reader
 item opens `GET /reader` — the public works catalog (every work, empty ones
 included — ADR 0021) with readable-scoped counts on each card — whose cards
 lead into the work's sections page and from there into the branch lists and
-the two readers. The alignment card's Read button links the match-anchored
-alignment reader (`/reader/works/{work}/alignments/{match}` — the reading
-side, and the language it reads first, is decided inside the page, so the
-label is a plain "Read"), and the Library entity page's Read button targets
-the work-scoped entity reader. The old single auto-detecting reader route
+the two readers. The alignment detail page's Read button links the
+match-anchored alignment reader (`/reader/works/{work}/alignments/{match}` —
+the reading side, and the language it reads first, is decided inside the
+page, so the label is a plain "Read"), and the Library entity page's Read
+button targets the work-scoped entity reader. The old single auto-detecting
+reader route
 (`GET /reader/{entityId}`, named `reader.show`) is deleted (ADR
 [0091](../../docs/adr/0091-reader-url-split.md)) — no redirect (house
 removal style): a bare id under `/reader` 404s, test-guarded, alongside
@@ -120,9 +121,10 @@ count is the same work's list total.
 `EntityMatch::readingSideFor(nativeLanguageId)` decides the default reading
 side: the side in the user's **Native language** becomes the translation,
 else the work's original side, else the A-side. The rule is applied only
-inside the reading page now: the Library alignment card's Read button
-links the match-anchored URL for every reader, so link and page agree by
-construction. The rows themselves stay canonical a/b (ADR 0060): the
+inside the reading page now: the Library alignment detail page's Read
+button links the match-anchored URL for every reader, so link and page
+agree by construction. The rows themselves stay canonical a/b (ADR 0060):
+the
 server ships them as `defaultSide` plus side-keyed `langs` / `wordMaps` /
 `highlightable` / `explainable`, and never reorders.
 

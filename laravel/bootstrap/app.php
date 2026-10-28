@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureUserIsApproved;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\SetInterfaceLocale;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -22,7 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
             '192.168.0.0/16',
         ]);
         $middleware->web(append: [
-            App\Http\Middleware\SetInterfaceLocale::class,
+            SetInterfaceLocale::class,
             HandleInertiaRequests::class,
         ]);
         $middleware->alias([

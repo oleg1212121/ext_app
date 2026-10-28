@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\AlignmentController;
 use App\Http\Controllers\AlignmentEditorController;
+use App\Http\Controllers\AlignmentPdfController;
 use App\Http\Controllers\Bilinguals\SimulatorController;
 use App\Http\Controllers\CrosswordController;
 use App\Http\Controllers\EntityController;
 use App\Http\Controllers\EntityIllustrationController;
+use App\Http\Controllers\EntityPdfController;
 use App\Http\Controllers\LibraryController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
@@ -135,7 +137,10 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::get('/works/create', [LibraryController::class, 'createWork'])->name('works.create');
     Route::post('/works', [LibraryController::class, 'storeWork'])->name('works.store');
     Route::get('/works/entities', [LibraryController::class, 'entitiesIndex'])->name('works.entities.index');
-    Route::get('/works/alignments', [LibraryController::class, 'alignmentsIndex'])->name('works.alignments.index');
+    // The Alignments branch's works list. Unlike entities, the per-work
+    // list is not .show — that name belongs to the match detail page now
+    // (mirroring reader.works.alignments.index/.show).
+    Route::get('/works/alignments', [LibraryController::class, 'alignmentsIndex'])->name('works.alignments.overview');
     Route::get('/works/{work}', [LibraryController::class, 'showWork'])
         ->whereNumber('work')
         ->name('works.show');
@@ -158,6 +163,12 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('work')
         ->whereNumber('entity')
         ->name('entities.show');
+    // The book-PDF download: the show page's guards, then the cached render,
+    // served as an attachment so the browser downloads instead of navigating.
+    Route::get('/works/{work}/entities/{entity}/pdf', [EntityPdfController::class, 'show'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.pdf');
     Route::get('/works/{work}/entities/{entity}/edit', [EntityController::class, 'edit'])
         ->whereNumber('work')
         ->whereNumber('entity')
@@ -194,7 +205,7 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->name('entities.sentences.destroy');
     Route::get('/works/{work}/alignments', [LibraryController::class, 'workAlignments'])
         ->whereNumber('work')
-        ->name('works.alignments.show');
+        ->name('works.alignments.index');
     Route::get('/works/{work}/alignments/create', [LibraryController::class, 'createAlignment'])
         ->whereNumber('work')
         ->name('works.alignments.create');
@@ -214,7 +225,15 @@ Route::middleware(['auth', 'approved'])->group(function () {
     // The alignment editor is work-nested too (ADR 0072): both of the pair's
     // entities belong to one work, and the JSON editor API shares the prefix.
     // The old flat /alignments/{id} routes are gone without redirects.
-    Route::get('/works/{work}/alignments/{entityMatch}/edit', [AlignmentController::class, 'show'])
+    Route::get('/works/{work}/alignments/{entityMatch}', [AlignmentController::class, 'show'])
+        ->whereNumber('work')
+        ->whereNumber('entityMatch')
+        ->name('works.alignments.show');
+    Route::get('/works/{work}/alignments/{entityMatch}/pdf', [AlignmentPdfController::class, 'show'])
+        ->whereNumber('work')
+        ->whereNumber('entityMatch')
+        ->name('works.alignments.pdf');
+    Route::get('/works/{work}/alignments/{entityMatch}/edit', [AlignmentController::class, 'edit'])
         ->whereNumber('work')
         ->whereNumber('entityMatch')
         ->name('works.alignments.edit');
@@ -246,7 +265,8 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::delete('/works/{work}/alignments/{entityMatch}/unmatched/{sentence}', [AlignmentEditorController::class, 'destroyUnmatched'])
         ->whereNumber('work')->whereNumber('entityMatch')->whereNumber('sentence');
     // Practice → Simulator: the standalone page with the alignment picker;
-    // the pinned route below stays the deep-link entry from alignment cards.
+    // the pinned route below stays the deep-link entry from the alignment
+    // show page.
     Route::get('/simulator', [SimulatorController::class, 'simulator'])
         ->name('bilinguals.simulator');
 

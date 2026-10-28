@@ -16,6 +16,8 @@ const MATCH_BADGE = {
     failed: 'text-[var(--wbench-danger)] dark:text-[var(--wbench-danger-night)] border-[var(--wbench-danger)]/40 dark:border-[var(--wbench-danger-night)]/40',
 };
 
+const actionButtonClass = 'inline-flex h-9 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm';
+
 const PageLink = ({disabled, href, children}) => {
     if (disabled) {
         return (
@@ -114,21 +116,30 @@ export default function Show({language, entity, entityMatches = [], sentences = 
                                 <button
                                     type="button"
                                     onClick={toggleApproved}
-                                    className="inline-flex h-9 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
+                                    className={actionButtonClass}
                                 >
                                     {entity.is_approved ? t('entities.unapprove') : t('entities.approve')}
                                 </button>
                             )}
                             <Link
                                 href={`/reader/works/${entity.work_id}/entities/${entity.id}`}
-                                className="inline-flex h-9 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
+                                className={actionButtonClass}
                             >
                                 {t('entities.read')}
                             </Link>
+                            {/* A file download, not client-side navigation:
+                                the endpoint answers with an attachment, so a
+                                plain anchor (Inertia must not intercept). */}
+                            <a
+                                href={`/works/${entity.work_id}/entities/${entity.id}/pdf`}
+                                className={actionButtonClass}
+                            >
+                                {t('library.get_pdf')}
+                            </a>
                             {canEdit && (
                                 <Link
                                     href={`/works/${entity.work_id}/entities/${entity.id}/edit`}
-                                    className="inline-flex h-9 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
+                                    className={actionButtonClass}
                                 >
                                     {t('entities.edit')}
                                 </Link>

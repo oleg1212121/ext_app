@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Library & entities (management surface)
-description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, per-work landing/branch pages (ADR 0039), and the work-nested entity detail/edit pages with their sentence JSON API (ADR 0073), plus inline illustration upload (ADR 0050) and the per-user word-knowledge stat (ADR 0074), driven by enabled languages.
-tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge]
+description: Work-first Library browse surface (/works) — the works catalog, its Entities and Alignments branch lists, per-work landing/branch pages (ADR 0039), the work-nested entity detail/edit pages with their sentence JSON API (ADR 0073), plus inline illustration upload (ADR 0050), the per-user word-knowledge stat (ADR 0074), and the digest-cached book-PDF downloads (ADR 0093), driven by enabled languages.
+tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge, pdf]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-10-27T21:50:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T20:45:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: controller
@@ -35,6 +35,9 @@ sources:
    - id: access
      resource: laravel/app/Classes/EntityAccessService.php
      title: EntityAccessService
+   - id: pdf-service
+     resource: laravel/app/Classes/Pdf/BookPdfService.php
+     title: BookPdfService — digests, rendering, and the pdf_renders cache for both books (ADR 0093)
 ---
 
 # What it does
@@ -79,17 +82,20 @@ selects and the language shown on entity pages are driven by
 
 | Route | Handler | Purpose |
 |-------|---------|---------|
-| `/works` | `LibraryController::index` | Works catalog: `?q=` search (title/author ilike), plus-card → create work, per-work **readable** entity + alignment counts, 15/page. Named `works.index`. `entitiesIndex` / `alignmentsIndex` serve the same list for `/works/entities` / `/works/alignments` (`works.entities.index` / `works.alignments.index`) — the branch works-lists; only the card count and card target differ |
+| `/works` | `LibraryController::index` | Works catalog: `?q=` search (title/author ilike), plus-card → create work, per-work **readable** entity + alignment counts, 15/page. Named `works.index`. `entitiesIndex` / `alignmentsIndex` serve the same list for `/works/entities` / `/works/alignments` (`works.entities.index` / `works.alignments.overview`) — the branch works-lists; only the card count and card target differ |
 | `/works/create` (GET/POST `/works`) | `LibraryController::createWork` / `storeWork` | Create-work form (title, author, description, original language — must be enabled) → redirect to the work landing page. Named `works.create` / `works.store` |
 | `/works/{work}` | `LibraryController::showWork` | Work landing page (ADR 0039): catalog metadata + readable `entities_count` / `alignments_count`, each linking to the work's branch page. Named `works.show` |
 | `/works/{work}/entities` | `LibraryController::workEntities` | The work's readable entities (former entities tab): `?q=` search (name/label), 15/page, plus-card → add entity. Named `works.entities.show` |
-| `/works/{work}/alignments` | `LibraryController::workAlignments` | The work's readable entity matches (former alignments tab; ADR 0036): either side's name search, each payload via `AlignmentEditorApiPresenter::matchPayload` — no reader side precomputation: the card's Read button links the match-anchored reader URL `/reader/works/{work}/alignments/{match}`, where the side rule is applied — plus-card → add alignment. Named `works.alignments.show` |
+| `/works/{work}/alignments` | `LibraryController::workAlignments` | The work's readable entity matches (former alignments tab; ADR 0036): either side's name search, each payload via `AlignmentEditorApiPresenter::matchPayload` — no reader side precomputation: each card links the work-nested alignment detail page `/works/{work}/alignments/{match}`, whose Read button links the match-anchored reader URL, where the side rule is applied — plus-card → add alignment. Named `works.alignments.index` |
 | `/works/{work}/entities/create` (GET) + POST `/works/{work}/entities` | `LibraryController::createEntity` / `storeEntity` | Work-scoped entity creation (the only create surface since ADR 0073): work fixed, language picked from enabled languages. Runs the shared `EntityCreationService` pipeline; redirects to the new entity's work-nested page. Named `works.entities.create` / `works.entities.store` |
 | `/works/{work}/entities/{entity}` (GET/PATCH) | `EntityController::show` / `update` | Detail page / metadata update, named `entities.show` / `entities.update` (ADR 0073). Binds `Work $work, Entity $entity` and 404s unless `$entity->work_id === $work->id` |
+| `/works/{work}/entities/{entity}/pdf` (GET) | `EntityPdfController::show` | **Book PDF download** (ADR 0093): the entity's monolingual A4 book, attachment disposition, served from the digest cache. Same guards as the detail page. Named `entities.pdf` |
 | `/works/{work}/entities/{entity}/approved` (PATCH) | `EntityController::updateApproved` | Flip the approval edit-lock (uploader or admin), named `entities.approved.update` |
 | `/works/{work}/entities/{entity}/edit` | `EntityController::edit` | Combined edit page: metadata form + drag-and-drop sentence manager (ADR 0015), named `entities.edit` |
 | `/works/{work}/entities/{entity}/sentences` (GET/POST) + `/reorder` + `/{sentence}` (PATCH/DELETE) | `EntityController::sentences*` | JSON sentence list + insert / reorder / update / delete, named `entities.sentences.*` — same work-nested prefix and wrong-work 404 as the pages |
 | `/works/{work}/alignments/create` (GET) + POST `/works/{work}/alignments` | `LibraryController::createAlignment` / `storeAlignment` | Work-scoped entity-match creation (ADR 0036): two entity selects of the work's alignable entities (readable + signature + sentences), `chunk_size`/`max_n`; `storeAlignment` checks readability and calls the shared `EntityMatchCreationService` — every creation rule (distinct-pair + same-Work guard, canonical sides, duplicate rejection with the `existing_match_id` flash, Processing limit, copy-vs-pipeline) lives in that module, see [sentence alignment](/domains/sentence-alignment.md); redirects back to the work's Alignments page. Named `works.alignments.create` / `works.alignments.store` |
+| `/works/{work}/alignments/{match}` (GET) | `AlignmentController::show` | Read-only **alignment detail page** (ADR 0092) behind the cards: pair metadata (status, similarity, confirmed/linked progress, sentence totals) + Read (match-anchored reader) / Simulator (pinned) / Edit buttons. 404 unless the match's a-side belongs to the work, 403 without `canReadMatch`. Named `works.alignments.show` |
+| `/works/{work}/alignments/{match}/pdf` (GET) | `AlignmentPdfController::show` | **Bilingual book PDF download** (ADR 0093): A4 two-column book of the match (original side left), attachment disposition, digest-cached. Show-page guards **plus a 404 unless `status = completed`** — the button on the detail page renders only then. Named `works.alignments.pdf` |
 | `/entities`, `/entities/{lang}` | redirect → `/works/entities` | Legacy language-first browse pages (picker + per-language table). The deeper `/entities/{lang}/...` routes are gone without redirects (ADR 0073) |
 
 All routes sit in the `['auth','approved']` group. Route names keep the
@@ -106,14 +112,17 @@ original-language chip, readable count), `Library/CreateWork`,
 `Library/ShowWork` (the work landing page: metadata + two branch cards),
 `Library/WorkEntities` (per-tab search + plus-card; entity cards linking to
 `/works/{work}/entities/{entity}`), `Library/WorkAlignments` (alignment cards via
-`Components/AlignmentCard.jsx` — stretched link to the editor
-`/works/{work}/alignments/{id}/edit` with Simulator / Read buttons on top —
-Read targets the match-anchored reader `/reader/works/{work}/alignments/{id}`),
+`Components/AlignmentCard.jsx` — the whole card is a stretched link to the
+alignment detail page `Library/ShowAlignment`,
+`/works/{work}/alignments/{id}`; Read / Simulator / Edit live there),
+`Library/ShowAlignment` (the read-only detail page, ADR 0092: pair metadata
+rows + the three actions),
 `Library/CreateEntity` (work fixed, language select), `Library/CreateAlignment`
 (work fixed, two entity selects + chunk params), plus
 `Entities/Show` (back link "← {work title} entities" to the work's Entities
 page; language shown in the subtitle; the viewer's
-[word knowledge](#word-knowledge-adr-0074) percentage in the header) and
+[word knowledge](#word-knowledge-adr-0074) percentage in the header; a
+**Get PDF** button between Read and Edit — the book download, ADR 0093) and
 `Entities/Edit` (metadata form +
 dnd-kit sortable sentence manager; back link and cancel to the entity's
 view page). The navbar's **Library** dropdown groups
@@ -259,6 +268,27 @@ alignment-copy lookup (`AlignmentCopyService`) recomputes synchronously when
 stale — a local sha256, not a service call. Equal text hashes ⇒ exact copies ⇒
 a completed alignment between one copy pair is reused for another (see
 [sentence alignment](/domains/sentence-alignment.md)).
+
+# Book PDFs (ADR 0093)
+
+The entity page's **Get PDF** button (between Read and Edit, trilingual
+`library.get_pdf`) downloads the entity's **monolingual book** — A4, title
+page (work title, author, entity name/label, language), every sentence in
+`order` styled by type (title→h2, subtitle→h3, sentence→justified
+paragraph, quote→italic block, footnote/caption→small type, illustration→
+embedded image + caption), DejaVu fonts (Cyrillic-capable), canvas-drawn
+page numbers, plain `content` only. `BookPdfService` renders via dompdf
+(`barryvdh/laravel-dompdf`, remote loading off — illustrations embed by
+local path, WebP GD-converted to a temp PNG with caption-only degradation)
+and caches: one `pdf_renders` row per subject (partial unique on the FK) +
+one fixed path `pdfs/entities/{id}.pdf` on the `local` disk, keyed by a
+sha256 **digest** over the fresh `text_hash` (refreshed via
+`EntityTextHasher`) + the title-page inputs — a matching digest with the
+file present streams the cache; anything else re-renders and overwrites in
+place (see [Book PDF in the Library
+context](../../CONTEXT.md#library-context)). The bilingual twin on the
+alignment detail page is [sentence alignment](/domains/sentence-alignment.md);
+the table lives in [Entities & Alignment](/database/entities-alignment.md).
 
 # Word knowledge (ADR 0074)
 

@@ -1,6 +1,9 @@
 <?php
 
 use App\Models\User;
+use App\Support\UiStrings;
+use Database\Seeders\LanguageSeeder;
+use Database\Seeders\UiStringSeeder;
 use Filament\Facades\Filament;
 
 test('new user has is_approved true by default', function () {
@@ -86,9 +89,9 @@ test('pending approval page is accessible to unapproved users', function () {
 
 test('pending approval page shows correct content', function () {
     // The page renders seeded UI strings via __(); seed languages + strings.
-    $this->seed(\Database\Seeders\LanguageSeeder::class);
-    $this->seed(\Database\Seeders\UiStringSeeder::class);
-    \App\Support\UiStrings::flush();
+    $this->seed(LanguageSeeder::class);
+    $this->seed(UiStringSeeder::class);
+    UiStrings::flush();
 
     $user = User::factory()->unapproved()->create();
 

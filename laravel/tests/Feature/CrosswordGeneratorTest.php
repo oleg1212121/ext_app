@@ -1,7 +1,11 @@
 <?php
 
 use App\Classes\Crossword;
+use App\Models\Definition;
+use App\Models\Language;
 use App\Models\Word;
+use App\Models\WordClass;
+use App\Models\WordTranslation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -12,8 +16,8 @@ function crosswordWords(): array
 
     $stems = ['BLEAT', 'TABLE', 'ABLE', 'LATE', 'TEAL', 'BEAT', 'TALE', 'BALL', 'LAB'];
 
-    $languageId = \App\Models\Language::query()->where('code', 'en')->value('id');
-    $classId = \App\Models\WordClass::query()->where('slug', 'noun')->where('language_id', $languageId)->value('id');
+    $languageId = Language::query()->where('code', 'en')->value('id');
+    $classId = WordClass::query()->where('slug', 'noun')->where('language_id', $languageId)->value('id');
 
     return collect($stems)
         ->map(fn ($stem) => Word::query()->firstOrCreate(
@@ -78,7 +82,7 @@ it('is deterministic for identical input', function () {
 
 it('masks the word inside its own definitions', function () {
     $word = createWord('en', 'story', 'noun');
-    \App\Models\Definition::query()->create([
+    Definition::query()->create([
         'word_id' => $word->id,
         'definition' => 'A story about a hero.',
     ]);
@@ -92,14 +96,14 @@ it('masks the word inside its own definitions', function () {
 it('lists translations as plain strings', function () {
     $en = createWord('en', 'book', 'noun');
     createLanguages();
-    $ruLanguageId = \App\Models\Language::query()->where('code', 'ru')->value('id');
+    $ruLanguageId = Language::query()->where('code', 'ru')->value('id');
     $ru = Word::query()->create([
         'word' => 'книга',
         'l_word' => 'книга',
         'language_id' => $ruLanguageId,
         'word_class_id' => $en->word_class_id,
     ]);
-    \App\Models\WordTranslation::link($en->id, $ru->id);
+    WordTranslation::link($en->id, $ru->id);
 
     $crossword = new Crossword([$en->refresh()], $ruLanguageId);
     $crossword->crossword();

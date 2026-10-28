@@ -1,11 +1,11 @@
 ---
 type: Database Schema
 title: Works, Entities & Alignment Tables
-description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20; strict junction uniqueness 2026_09_28; illustration columns 2026_09_28; work + entity + alignment tag pools 2026_10_11; first Sentence Alignments edit page 2026_10_11).
-tags: [database, schema, alignment, entities, works, hash, illustrations, tags]
+description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20; strict junction uniqueness 2026_09_28; illustration columns 2026_09_28; work + entity + alignment tag pools 2026_10_11; first Sentence Alignments edit page 2026_10_11; pdf_renders cache 2026_10_28).
+tags: [database, schema, alignment, entities, works, hash, illustrations, tags, pdf]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T20:45:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: migrations
@@ -35,6 +35,9 @@ sources:
    - id: alignment-tags-migration
      resource: laravel/database/migrations/2026_10_11_000004_create_alignment_tags_tables.php
      title: alignment_tags definition table + tagged_alignments pivot (ADR 0076)
+   - id: pdf-renders-migration
+     resource: laravel/database/migrations/2026_10_28_000001_create_pdf_renders_table.php
+     title: pdf_renders — the book-PDF digest cache (ADR 0093)
    - id: align-service
      resource: laravel/app/Classes/MeaningMatchStore.php
      title: Writer of meaning matches (the pipeline's write path, ADR 0063)
@@ -58,6 +61,7 @@ sources:
 | `meaning_matches` | `MeaningMatch` | Sentence-group level alignment result within a match |
 | `sentence_meaning_matches` | `SentenceMeaningMatch` | Per-sentence membership in a meaning match, with a `side` char(1) (`'a'`/`'b'`) naming which entity of the match the sentence belongs to, plus a denormalized NOT NULL `entity_match_id` backing the strict `unique(entity_match_id, entity_sentence_id)` junction-uniqueness index (ADR 0048; auto-filled from the parent meaning match by a model `creating` hook) |
 | `entity_user` | (pivot) | Access grants: which users may read a Restricted entity, with a nullable `similarity` (null = creator grant; non-null = legacy Signature match grant — no longer produced, ADR 0033) |
+| `pdf_renders` | `PdfRender` | The **book-PDF digest cache** (ADR [0093](../../docs/adr/0093-book-pdfs.md)): exactly one row per subject — `entity_id` or `entity_match_id` (both nullable FKs, `nullOnDelete`, each under a **partial unique index** `WHERE ... IS NOT NULL`, the repo's first) — carrying the `content_hash` sha256 of what the book renders, the fixed `path` on the `local` disk, `size_bytes`, `generated_at`. A matching hash with the file present streams the cache; anything else re-renders and updates the row in place (stale file overwritten, never accumulated) |
 
 # Invariants & notes
 

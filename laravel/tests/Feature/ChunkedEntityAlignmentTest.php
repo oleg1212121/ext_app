@@ -3,11 +3,37 @@
 use App\Classes\MeaningMatchStore;
 use App\Classes\SentenceAlignmentService;
 use App\Jobs\AlignEntitySentences;
+use App\Models\Entity;
 use App\Models\EntitySentence;
 use App\Models\MeaningMatch;
 use App\Models\SentenceMeaningMatch;
 use App\Models\SentenceType;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
+
+/**
+ * Bulk-insert $count numbered sentences ("{$prefix} {$order}." contents) for
+ * an entity and return the models ordered by `order` — same shape a per-row
+ * create loop produces, one INSERT instead of $count.
+ *
+ * @return Collection<int, EntitySentence>
+ */
+function chunkSentences(Entity $entity, SentenceType $sentenceType, string $prefix, int $count): Collection
+{
+    EntitySentence::query()->insert(
+        collect(range(1, $count))->map(fn (int $order): array => [
+            'entity_id' => $entity->id,
+            'sentence_type_id' => $sentenceType->id,
+            'content' => "{$prefix} {$order}.",
+            'order' => $order,
+        ])->all()
+    );
+
+    return EntitySentence::query()
+        ->where('entity_id', $entity->id)
+        ->orderBy('order')
+        ->get();
+}
 
 it('configures the alignment job to retry with backoff', function () {
     $job = new AlignEntitySentences(1);
@@ -31,23 +57,8 @@ it('begins a fresh alignment run from a pending entity match', function () {
         'signature' => json_encode([1.0, 0.0]),
     ]);
 
-    foreach (range(1, 80) as $order) {
-        EntitySentence::create([
-            'entity_id' => $enEntity->id,
-            'sentence_type_id' => $sentenceType->id,
-            'content' => "English sentence {$order}.",
-            'order' => $order,
-        ]);
-    }
-
-    foreach (range(1, 80) as $order) {
-        EntitySentence::create([
-            'entity_id' => $ruEntity->id,
-            'sentence_type_id' => $sentenceType->id,
-            'content' => "Russian sentence {$order}.",
-            'order' => $order,
-        ]);
-    }
+    chunkSentences($enEntity, $sentenceType, 'English sentence', 80);
+    chunkSentences($ruEntity, $sentenceType, 'Russian sentence', 80);
 
     $entityMatch = createEntityMatch($enEntity, $ruEntity, [
         'status' => 'pending',

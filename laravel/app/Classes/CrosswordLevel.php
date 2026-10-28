@@ -30,9 +30,9 @@ class CrosswordLevel
         return self::BANDS[$level];
     }
 
- /**
-  * @return array<int, int>
-  */
+    /**
+     * @return array<int, int>
+     */
     public static function levels(): array
     {
         return array_keys(self::BANDS);

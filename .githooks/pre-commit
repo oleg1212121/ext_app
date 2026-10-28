@@ -1,0 +1,38 @@
+#!/bin/sh
+# Pre-commit pint gate: runs `pint --test` on staged .php files inside the
+# container — the exact check the CI "Pint (formatting)" job runs, so a
+# commit that passes this hook cannot fail that job.
+#
+# Why a host-side hook instead of `pint --dirty` in the container: the
+# container's /var/www git HEAD is the TIA baseline commit
+# (laravel/scripts/tia-setup.php), so "dirty" there means
+# changed-since-that-baseline, not changed-in-this-commit. This hook reads
+# the real host git index instead.
+#
+# One-time setup (per clone; core.hooksPath is not committed by git):
+#   git config core.hooksPath .githooks
+# Bypass (emergencies only): git commit --no-verify
+
+set -eu
+
+staged=$(git diff --cached --name-only --diff-filter=ACM | grep '^laravel/.*\.php$' || true)
+[ -z "$staged" ] && exit 0
+
+if ! docker inspect -f '{{.State.Running}}' ext_app_laravel 2>/dev/null | grep -q true; then
+    echo "pre-commit: container ext_app_laravel is not running." >&2
+    echo "Start the stack and re-stage, or bypass with: git commit --no-verify" >&2
+    exit 1
+fi
+
+# laravel/ is bind-mounted at /var/www, the container's working directory —
+# strip the prefix and let pint resolve the paths relative to it.
+paths=$(printf '%s\n' "$staged" | sed 's|^laravel/||' | tr '\n' ' ')
+
+echo "pint --test: $paths"
+if ! docker exec ext_app_laravel vendor/bin/pint --test $paths; then
+    echo "" >&2
+    echo "Staged files are not pint-clean. Fix with:" >&2
+    echo "  docker exec ext_app_laravel vendor/bin/pint $paths" >&2
+    echo "then re-stage. (Bypass: git commit --no-verify)" >&2
+    exit 1
+fi

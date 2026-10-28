@@ -263,6 +263,20 @@ it('seeds the reader works-list strings in all three interface languages', funct
     ]);
 });
 
+it('seeds the entity page Get PDF button string in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // book-pdf ticket 01: the entity page's book-PDF download button sits
+    // between Read and Edit; it is a plain download anchor, not a
+    // client-side navigation.
+    expect(seededUiStringTexts('library.get_pdf'))->toBe([
+        'en' => 'Get PDF',
+        'ru' => 'Скачать PDF',
+        'be' => 'Спампаваць PDF',
+    ]);
+});
+
 it('seeds the six usage-label chips in all three interface languages', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();

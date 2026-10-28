@@ -369,6 +369,10 @@ it('raises the memory ceiling above the CLI default before any phase runs', func
     // The alias-fold group map and the twin merge maps hold real-data sized
     // row sets in memory, so the command must lift the 128M CLI default
     // itself — the demote / raw-wiktextract importer precedent.
+    if (memory_get_usage() > 128 * 1024 * 1024) {
+        $this->markTestSkipped('Worker already above the 128M CLI default — lift cannot be probed here');
+    }
+
     $original = ini_get('memory_limit');
     ini_set('memory_limit', '128M');
 
