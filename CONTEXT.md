@@ -634,6 +634,16 @@ not a comparison between users. See ADR 0074. _Avoid_: percentile (a rank
 against other users), coverage (the alignment term), knowledge score ("score"
 is the word-test result).
 
+**Book PDF**:
+The cached, server-rendered PDF artifact a user downloads from an entity's
+page (a monolingual book of that entity) or a completed alignment's page (a
+bilingual two-column book, original side left) — A4, DejaVu fonts, plain
+`content` (never stress marks). One `pdf_renders` row per subject, keyed by
+a content digest over exactly what the book renders, with a fixed file path
+so re-renders overwrite in place and nothing accumulates. Invalidated only
+by its digest changing. See ADR 0093. _Avoid_: PDF export (nothing is
+"exported" elsewhere), printable view (a screen page, not a stored file).
+
 **Work catalog**:
 The complete set of **Works**, visible to every approved user regardless of
 entity access — including works with no entities yet. A Work carries no access

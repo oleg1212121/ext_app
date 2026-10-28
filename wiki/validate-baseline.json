@@ -1,12 +1,6 @@
 {
     "entries": [
         {
-            "warning": "architecture/overview.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
             "warning": "domains/sentence-enrichment.md: source 'docker-compose/python/ai/enrichment/cyrillic_stress.py' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-23",
@@ -833,42 +827,6 @@
             "owner": "human:alex",
             "date": "2026-10-28",
             "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
-        },
-        {
-            "warning": "architecture/overview.md: source 'laravel/composer.json' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-28",
-            "note": "book-pdf ticket 01: composer.json gained barryvdh/laravel-dompdf (book-PDF rendering). Real drift by design — ticket 03 owns the wiki upkeep pass and will refresh the concept and prune this entry."
-        },
-        {
-            "warning": "domains/bilinguals-simulator.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-28",
-            "note": "book-pdf ticket 01: routes/web.php gained entities.pdf next to entities.show. Real drift by design — ticket 03 owns the wiki upkeep pass and will refresh the concept and prune this entry."
-        },
-        {
-            "warning": "domains/entities.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-28",
-            "note": "book-pdf ticket 01: routes/web.php gained entities.pdf next to entities.show. Real drift by design — ticket 03 owns the wiki upkeep pass (routes table row + generated.at) and will prune this entry."
-        },
-        {
-            "warning": "domains/reader.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-28",
-            "note": "book-pdf ticket 01: routes/web.php gained entities.pdf next to entities.show. Real drift by design — ticket 03 owns the wiki upkeep pass and will refresh the concept and prune this entry."
-        },
-        {
-            "warning": "playbooks/running-tests.md: source 'laravel/composer.json' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-28",
-            "note": "book-pdf ticket 01: composer.json gained barryvdh/laravel-dompdf (book-PDF rendering). Real drift by design — ticket 03 owns the wiki upkeep pass and will refresh the concept and prune this entry."
-        },
-        {
-            "warning": "playbooks/running-tests.md: source 'wiki/validate-baseline.json' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-28",
-            "note": "book-pdf ticket 01: the baseline itself grew by six parked entries (routes/composer drift above). Benign and self-referential — every baseline edit mints it. Ticket 03's wiki upkeep pass will prune this entry when it refreshes the playbook."
         }
     ]
 }

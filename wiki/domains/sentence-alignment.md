@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-28T17:05:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T19:50:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: align-service
@@ -44,6 +44,9 @@ sources:
   - id: hasher
     resource: laravel/app/Classes/EntityTextHasher.php
     title: Exact-copy text hashing
+  - id: pdf-service
+    resource: laravel/app/Classes/Pdf/BookPdfService.php
+    title: matchDigest + the bilingual book PDF render/cache (ADR 0093)
   - id: splitter
     resource: laravel/app/Classes/SentenceSplitter.php
     title: Sentence splitting (/split streaming client)
@@ -1084,13 +1087,26 @@ section above); it translates the outcome — redirect to the work's
 Alignments page with a flash, a duplicate pair blocked with an error
 plus an "Open existing match" link (flash `existing_match_id`), a
 cross-Work pair the form's same-work error, a limit hit a `limit`
-error. Each match card links (stretched link) to the alignment detail
-page `/works/{work}/alignments/{match}` (ADR 0092), whose Edit button
-opens the work-nested editor `/works/{work}/alignments/{match}/edit`
-(ADR 0072) alongside Simulator / Read buttons —
-`GET /bilinguals/simulator/{entityMatch}` (pinned simulator) and the
-reader, with the reading side resolved server-side as the
-non-native-language side. The editor itself
+     error. Each match card links (stretched link) to the alignment detail
+     page `/works/{work}/alignments/{match}` (ADR 0092), whose Edit button
+     opens the work-nested editor `/works/{work}/alignments/{match}/edit`
+     (ADR 0072) alongside Simulator / Read buttons —
+     `GET /bilinguals/simulator/{entityMatch}` (pinned simulator) and the
+     reader, with the reading side resolved server-side as the
+     non-native-language side. The detail page also carries a **Get PDF**
+     button (only while `status = completed`): `GET
+     /works/{work}/alignments/{entityMatch}/pdf`
+     (`AlignmentPdfController`, `works.alignments.pdf`, ADR 0093) streams
+     the **bilingual book PDF** as an attachment — A4, a borderless 50/50
+     table with a repeating two-language header, one row per meaning match
+     in `order`, the original side left (`originalSide()` with side-a
+     fallback), each cell stacking its side's junctioned sentences in
+     document order. `BookPdfService::matchDigest` caches it under the
+     same `pdf_renders` regime as the entity book (both sides' text
+     digests + title-page inputs + the ordered pairing — `updated_at`
+     churn is deliberately not an input); see
+     [Library & entities](/domains/entities.md#book-pdfs-adr-0093) and the
+     [Book PDF term](../../CONTEXT.md#library-context). The editor itself
 (route `works.alignments.edit`, `AlignmentController@edit`) is a
 parallel entry point backed by the surgical `AlignmentEditorController`
 endpoints under the same work-nested prefix (ADR 0072: the page at

@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-28T17:17:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T19:56:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
 sources:
   - id: phpunit
