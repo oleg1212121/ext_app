@@ -34,6 +34,10 @@ return [
     // is match-anchored and the reading side (with its language) is decided
     // inside the reader, so the label no longer embeds a language code.
     'library.read' => ['en' => 'Read', 'ru' => 'Читать', 'be' => 'Чытаць'],
+    // The entity page's book-PDF download button (between Read and Edit): a
+    // plain download anchor, so the browser fetches the file instead of
+    // navigating (book-pdf ticket 01).
+    'library.get_pdf' => ['en' => 'Get PDF', 'ru' => 'Скачать PDF', 'be' => 'Спампаваць PDF'],
     'library.edit' => ['en' => 'Edit', 'ru' => 'Изменить', 'be' => 'Рэдагаваць'],
     'library.similarity' => ['en' => 'Similarity', 'ru' => 'Схожесть', 'be' => 'Схожасць'],
     'library.linked_rows' => ['en' => 'Linked rows', 'ru' => 'Связанных рядов', 'be' => 'Звязаных радкоў'],

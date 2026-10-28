@@ -6,6 +6,7 @@ use App\Http\Controllers\Bilinguals\SimulatorController;
 use App\Http\Controllers\CrosswordController;
 use App\Http\Controllers\EntityController;
 use App\Http\Controllers\EntityIllustrationController;
+use App\Http\Controllers\EntityPdfController;
 use App\Http\Controllers\LibraryController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
@@ -161,6 +162,12 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('work')
         ->whereNumber('entity')
         ->name('entities.show');
+    // The book-PDF download: the show page's guards, then the cached render,
+    // served as an attachment so the browser downloads instead of navigating.
+    Route::get('/works/{work}/entities/{entity}/pdf', [EntityPdfController::class, 'show'])
+        ->whereNumber('work')
+        ->whereNumber('entity')
+        ->name('entities.pdf');
     Route::get('/works/{work}/entities/{entity}/edit', [EntityController::class, 'edit'])
         ->whereNumber('work')
         ->whereNumber('entity')

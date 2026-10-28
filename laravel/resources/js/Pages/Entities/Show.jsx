@@ -125,6 +125,15 @@ export default function Show({language, entity, entityMatches = [], sentences = 
                             >
                                 {t('entities.read')}
                             </Link>
+                            {/* A file download, not client-side navigation:
+                                the endpoint answers with an attachment, so a
+                                plain anchor (Inertia must not intercept). */}
+                            <a
+                                href={`/works/${entity.work_id}/entities/${entity.id}/pdf`}
+                                className="inline-flex h-9 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
+                            >
+                                {t('library.get_pdf')}
+                            </a>
                             {canEdit && (
                                 <Link
                                     href={`/works/${entity.work_id}/entities/${entity.id}/edit`}
