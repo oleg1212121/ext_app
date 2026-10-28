@@ -98,6 +98,16 @@ export default function ShowAlignment({work, match}) {
                     <Link href={`/works/${work.id}/alignments/${match.id}/edit`} className={actionButtonClass}>
                         {t('library.edit')}
                     </Link>
+                    {match.status === 'completed' && (
+                        /* A file download, not client-side navigation: the
+                            endpoint answers with an attachment, so a plain
+                            anchor (Inertia must not intercept). A book of an
+                            unfinished alignment 404s server-side, so the
+                            button only exists for completed matches. */
+                        <a href={`/works/${work.id}/alignments/${match.id}/pdf`} className={actionButtonClass}>
+                            {t('library.get_pdf')}
+                        </a>
+                    )}
                 </div>
             </div>
         </div>

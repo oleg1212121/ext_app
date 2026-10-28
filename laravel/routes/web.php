@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AlignmentController;
 use App\Http\Controllers\AlignmentEditorController;
+use App\Http\Controllers\AlignmentPdfController;
 use App\Http\Controllers\Bilinguals\SimulatorController;
 use App\Http\Controllers\CrosswordController;
 use App\Http\Controllers\EntityController;
@@ -228,6 +229,10 @@ Route::middleware(['auth', 'approved'])->group(function () {
         ->whereNumber('work')
         ->whereNumber('entityMatch')
         ->name('works.alignments.show');
+    Route::get('/works/{work}/alignments/{entityMatch}/pdf', [AlignmentPdfController::class, 'show'])
+        ->whereNumber('work')
+        ->whereNumber('entityMatch')
+        ->name('works.alignments.pdf');
     Route::get('/works/{work}/alignments/{entityMatch}/edit', [AlignmentController::class, 'edit'])
         ->whereNumber('work')
         ->whereNumber('entityMatch')
