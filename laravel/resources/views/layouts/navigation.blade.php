@@ -81,7 +81,7 @@
                                 <x-nav-link :href="route('works.entities.index')" :active="request()->routeIs('works.entities.*')" class="block px-4 py-2.5 text-sm rounded-none">
                                     {{ __('nav.entities') }}
                                 </x-nav-link>
-                                <x-nav-link :href="route('works.alignments.index')" :active="request()->routeIs('works.alignments.*')" class="block px-4 py-2.5 text-sm rounded-none">
+                                <x-nav-link :href="route('works.alignments.overview')" :active="request()->routeIs('works.alignments.*')" class="block px-4 py-2.5 text-sm rounded-none">
                                     {{ __('nav.alignments') }}
                                 </x-nav-link>
                             </div>
@@ -300,7 +300,7 @@
                                 </x-responsive-nav-link>
                             </li>
                             <li>
-                                <x-responsive-nav-link :href="route('works.alignments.index')" :active="request()->routeIs('works.alignments.*')" class="ps-2">
+                                <x-responsive-nav-link :href="route('works.alignments.overview')" :active="request()->routeIs('works.alignments.*')" class="ps-2">
                                     {{ __('nav.alignments') }}
                                 </x-responsive-nav-link>
                             </li>

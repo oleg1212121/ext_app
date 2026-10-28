@@ -48,6 +48,70 @@ test('the editor 404s when the match path names another work', function () {
         ->assertNotFound();
 });
 
+test('guests are redirected from the alignment page', function () {
+    $work = createWork();
+    $entityMatch = createEntityMatch(
+        createEntity('en', $work, ['name' => 'English text']),
+        createEntity('ru', $work, ['name' => 'Russian text']),
+        ['status' => 'pending'],
+    );
+
+    $this->get(route('works.alignments.show', ['work' => $work->id, 'entityMatch' => $entityMatch]))
+        ->assertRedirect(route('login'));
+});
+
+test('the alignment page 404s when the match path names another work', function () {
+    $user = User::factory()->create();
+
+    $work = createWork();
+    $otherWork = createWork(['title' => 'Other work']);
+    $entityMatch = createEntityMatch(
+        createEntity('en', $work, ['name' => 'English text']),
+        createEntity('ru', $work, ['name' => 'Russian text']),
+        ['status' => 'pending'],
+    );
+
+    $this->actingAs($user)
+        ->get("/works/{$otherWork->id}/alignments/{$entityMatch->id}")
+        ->assertNotFound();
+});
+
+test('the alignment page shows the pair\'s metadata and action targets', function () {
+    $user = User::factory()->create();
+
+    $work = createWork(['title' => 'Native']);
+    $entityMatch = createEntityMatch(
+        createEntity('en', $work, ['name' => 'English chapter']),
+        createEntity('ru', $work, ['name' => 'Russian chapter']),
+        [
+            'status' => 'completed',
+            'entity_similarity' => 0.9123,
+            'a_total_sentences' => 8,
+            'b_total_sentences' => 7,
+            'linked_count' => 6,
+        ],
+    );
+
+    $this->actingAs($user)
+        ->get(route('works.alignments.show', ['work' => $work->id, 'entityMatch' => $entityMatch]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Library/ShowAlignment')
+            ->where('work.id', $work->id)
+            ->where('work.title', 'Native')
+            // The Read / Simulator / Edit hrefs compose from work.id + match.id.
+            ->where('match.id', $entityMatch->id)
+            ->where('match.a_entity_name', 'English chapter')
+            ->where('match.b_entity_name', 'Russian chapter')
+            ->where('match.work_id', $work->id)
+            ->where('match.status', 'completed')
+            ->where('match.entity_similarity', 0.9123)
+            ->where('match.linked_count', 6)
+            ->where('match.a_total_sentences', 8)
+            ->where('match.b_total_sentences', 7)
+            ->has('match.created_at'));
+});
+
 test('the per-work alignments page lists the work\'s readable entity matches', function () {
     $user = User::factory()->create();
 
@@ -108,6 +172,11 @@ test('users cannot see restricted entity matches they are not granted', function
     // Not granted → opening the detail page is forbidden.
     $this->actingAs($user)
         ->get(route('works.alignments.edit', ['work' => $work->id, 'entityMatch' => $entityMatch]))
+        ->assertForbidden();
+
+    // Not granted → the alignment page is forbidden too.
+    $this->actingAs($user)
+        ->get(route('works.alignments.show', ['work' => $work->id, 'entityMatch' => $entityMatch]))
         ->assertForbidden();
 
     // Granted on both sides → the match becomes visible.
@@ -184,7 +253,7 @@ test('authenticated users can view alignment details', function () {
 
     $response->assertOk();
     $response->assertInertia(fn (Assert $page) => $page
-        ->component('Alignments/Show')
+        ->component('Alignments/Edit')
         ->where('match.a_entity_name', 'English chapter')
         ->where('match.b_entity_name', 'Russian chapter')
         ->where('match.work_id', $work->id)
@@ -236,7 +305,7 @@ test('the editor seeds each section\'s page from the URL query', function () {
 
     $response->assertOk();
     $response->assertInertia(fn (Assert $page) => $page
-        ->component('Alignments/Show')
+        ->component('Alignments/Edit')
         ->where('rows_meta.current_page', 2)
         ->where('rows_meta.per_page', 10)
         ->where('needs_review.meta.current_page', 1)
@@ -268,7 +337,7 @@ test('the editor clamps a hand-edited out-of-range rows page to the last page', 
 
     $response->assertOk();
     $response->assertInertia(fn (Assert $page) => $page
-        ->component('Alignments/Show')
+        ->component('Alignments/Edit')
         ->where('rows_meta.current_page', 1)
         ->where('rows_meta.last_page', 1));
 });

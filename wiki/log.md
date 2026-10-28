@@ -6,6 +6,30 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-28 (alignment cards stop at a read-only show page — ADR 0092)
+
+`/works/{work}/alignments` cards no longer carry Simulator / Read buttons and
+no longer link the editor: the whole card now links a new read-only detail
+page, `GET /works/{work}/alignments/{match}` (`Library/ShowAlignment`,
+`works.alignments.show` — pair metadata plus Read (match-anchored reader) /
+Simulator (pinned) / Edit buttons; the editor is reached only via Edit).
+Route-name fallout, no URL changes: the per-work list renames
+`works.alignments.show` → `works.alignments.index` (mirroring
+`reader.works.alignments.*`); the global branch works-list renames
+`works.alignments.index` → `works.alignments.overview` (only consumers are
+the two blade-nav links); the editor page/controller stops lying —
+`Alignments/Show.jsx` → `Edit.jsx`, `AlignmentController@show` → `edit()`.
+Post-create redirect stays the list; the create form's duplicate-match link
+now targets the detail page. Reader-side list and Filament editor links
+untouched. `docs/adr/0092-alignment-show-page.md` written; `domains/entities.md`
+(route table + frontend section, new show-route row), `domains/reader.md` and
+`domains/bilinguals-simulator.md` (entry-from-card mentions) and
+`domains/sentence-alignment.md` (card entry, editor handler name) refreshed;
+`wiki/reference/web-routes.md` regenerated via `wiki:sync`. Local
+`wiki:validate` baseline absorbed the 2026-10-27 checkout's repo-wide mtime
+reset (141 benign drift warnings acknowledged with a dated note; 2 stale
+entries pruned — CI's mtime skip is unaffected).
+
 ## 2026-10-27 (word test placement baseline raised 50 → 60)
 
 `UserWord::PLACEMENT_BASELINE` — the familiarity a Word test submit writes

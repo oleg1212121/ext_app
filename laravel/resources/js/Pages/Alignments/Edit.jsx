@@ -122,7 +122,7 @@ function buildLookup({rows, unmatchedA, unmatchedB, sentencesBefore}) {
     return lookup;
 }
 
-export default function Show({match: initialMatch, rows: initialRows, rows_meta: initialRowsMeta, sentences_before: initialSentencesBefore, unmatched_a: initialUnmatchedA, unmatched_b: initialUnmatchedB, needs_review: initialNeedsReview}) {
+export default function Edit({match: initialMatch, rows: initialRows, rows_meta: initialRowsMeta, sentences_before: initialSentencesBefore, unmatched_a: initialUnmatchedA, unmatched_b: initialUnmatchedB, needs_review: initialNeedsReview}) {
     const {t} = useI18n();
     const [data, setData] = useState(() => ({
         match: initialMatch,
@@ -945,4 +945,4 @@ export default function Show({match: initialMatch, rows: initialRows, rows_meta:
     );
 }
 
-Show.layout = (page) => <Main children={page}/>;
+Edit.layout = (page) => <Main children={page}/>;

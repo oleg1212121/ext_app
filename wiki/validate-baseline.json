@@ -7,18 +7,6 @@
             "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
         },
         {
-            "warning": "domains/bilinguals-simulator.md: source 'laravel/app/Support/PromptTemplates.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
-            "warning": "domains/bilinguals-simulator.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
             "warning": "domains/sentence-enrichment.md: source 'docker-compose/python/ai/enrichment/cyrillic_stress.py' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-23",
@@ -41,6 +29,852 @@
             "owner": "human:alex",
             "date": "2026-10-26",
             "note": "Baseline edits themselves mint this (the baseline is a listed source); currently fired by the cefr-word-tags docs-pass baseline edit (cbbbf78) plus this feature's 2026-10-26 entries. Benign by construction; refresh running-tests.md or keep acknowledging when the baseline next changes."
+        },
+        {
+            "warning": "architecture/docker-services.md: source 'deploy.sh' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "architecture/docker-services.md: source 'AGENTS.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "architecture/frontend.md: source 'laravel/package.json' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "architecture/frontend.md: source 'laravel/eslint.config.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "architecture/frontend.md: source 'laravel/resources/css/app.css' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "architecture/frontend.md: source 'docs/adr/0066-vitest-for-pure-logic-js-tests.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "conventions/coding-conventions.md: source 'AGENTS.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/migrations/2026_10_20_000003_add_source_to_words_table.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'docs/adr/0084-word-source-provenance.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'docs/adr/0085-staged-translations-popup-raw-line.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/migrations/2026_10_19_000001_move_word_uniqueness_to_l_word.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/app/Support/WordLookupKey.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/seeders/CefrWordTagSeeder.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/app/Classes/WiktionaryParser.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/app/Support/LemmaForms.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/app/Support/PosAliases.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/migrations/2026_10_18_000001_add_word_id_indexes_to_forms_transcriptions_and_word_children.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/migrations/2026_10_18_000002_add_fetch_outcome_counts_to_word_translation_fetches.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/app/Support/TranslationTargets.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/migrations/2026_10_19_000002_add_word_completeness_to_words_table.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/app/Classes/WordCompleteness.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/app/Console/Commands/WordsRecalcCompletenessCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/migrations/2026_10_20_000002_update_word_completeness_comment.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'docs/adr/0083-usage-labels-and-completeness-v2.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/migrations/2026_10_19_000003_create_word_ai_fetches_table.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/migrations/2026_10_19_000004_add_source_to_word_content_tables.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/migrations/2026_10_20_000001_add_labels_to_definitions_table.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/database/migrations/2026_10_23_000001_add_labels_to_words_table.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/app/Support/UsageLabels.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'laravel/app/Classes/WordAiEnrichmentService.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "database/dictionary.md: source 'docs/adr/0082-ask-ai-enrichment-merge-inline-lock-on-success.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/access-control.md: source 'laravel/app/Models/User.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/access-control.md: source 'laravel/app/Http/Middleware/HandleInertiaRequests.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/ai-providers.md: source 'laravel/app/Classes/WordAiEnrichmentService.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/ai-providers.md: source 'laravel/app/Http/Controllers/ProfileController.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/anki-export.md: source 'docs/adr/0077-browser-side-ankiconnect.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/anki-export.md: source 'laravel/app/Support/AnkiSettings.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/anki-export.md: source 'laravel/resources/js/Pages/Profile/AnkiSettings.jsx' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/anki-export.md: source 'laravel/resources/js/lib/ankiTabState.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/anki-export.md: source 'laravel/resources/js/lib/ankiWordConfig.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/anki-export.md: source 'laravel/resources/js/lib/ankiConnect.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/anki-export.md: source 'laravel/resources/js/lib/ankiSync.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/anki-export.md: source 'laravel/resources/js/lib/ankiTemplate.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/anki-export.md: source 'laravel/resources/js/Components/WordPopup.jsx' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/crossword.md: source 'laravel/app/Classes/EntityWordAdoption.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/crossword.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'docs/adr/0084-word-source-provenance.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/database/migrations/2026_10_20_000003_add_source_to_words_table.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Support/UsageLabels.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'docs/adr/0078-goldendict-plain-words-link-only-translations.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'docs/adr/0079-form-of-relays-demote-to-forms-stage-link-prune.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'docs/adr/0080-per-edition-wiktionary-sourcing-merge-on-overlap.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Classes/WiktionaryParser.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Console/Commands/ImportWiktionaryCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Console/Commands/ImportRawWiktextractCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Console/Commands/LinkTranslationsCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Console/Commands/ImportGoldenDictCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Classes/GoldenDictParser.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/config/goldendict.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Support/WordLookupKey.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Support/PosAliases.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Support/LemmaForms.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Support/DefinitionLanguage.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Support/TranslationTargets.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Support/StagedTranslations.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Classes/Wiktionary/FormOfClassifier.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Classes/Wiktionary/RelayDemotionMap.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Console/Commands/DemoteFormOfCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Console/Commands/WordsNormalizeCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Console/Commands/ImportCmudictCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Classes/EntityWordAdoption.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/dictionary-import.md: source 'laravel/app/Console/Commands/ReclassMultiwordWordsCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Http/Controllers/WordController.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Classes/WordPopupPayload.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Http/Controllers/ReadingAiController.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Http/Requests/AiWordEnrichRequest.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Classes/WordAiEnrichmentService.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Support/EnrichmentReply.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Support/UsageLabels.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Models/WordAiFetch.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Classes/WordCompleteness.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Console/Commands/WordsRecalcCompletenessCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'docs/adr/0083-usage-labels-and-completeness-v2.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Jobs/FetchWordTranslations.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Support/TranslationTargets.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Support/StagedTranslations.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Classes/EntityWordAdoption.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/app/Http/Controllers/ReadingAiController.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/resources/js/Components/WordText.jsx' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/resources/js/Components/WordPopup.jsx' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/resources/js/lib/usageLabelDisplay.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/resources/js/lib/wordTokenizer.mjs' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'docs/adr/0077-browser-side-ankiconnect.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'docs/adr/0085-staged-translations-popup-raw-line.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'docs/adr/0082-ask-ai-enrichment-merge-inline-lock-on-success.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/interactive-words.md: source 'laravel/resources/js/lib/ankiWordConfig.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/profile.md: source 'laravel/app/Http/Controllers/ProfileController.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/profile.md: source 'laravel/resources/js/Pages/Profile/Edit.jsx' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/profile.md: source 'laravel/resources/js/Pages/Profile/PopupsSettings.jsx' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/profile.md: source 'laravel/resources/js/Pages/Profile/AnkiSettings.jsx' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/profile.md: source 'laravel/resources/js/lib/ankiTabState.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/profile.md: source 'laravel/app/Support/AnkiSettings.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/profile.md: source 'laravel/resources/js/lib/ankiTemplate.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/profile.md: source 'laravel/resources/js/lib/ankiSync.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/profile.md: source 'laravel/resources/js/Pages/Profile/sampleWordData.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/profile.md: source 'docs/adr/0077-browser-side-ankiconnect.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/profile.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/recommendations.md: source 'laravel/app/Http/Controllers/RecommendationsController.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/recommendations.md: source 'laravel/tests/Feature/RecommendationsTest.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/recommendations.md: source 'laravel/routes/web.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/word-test.md: source 'laravel/app/Http/Controllers/WordTestController.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/word-test.md: source 'laravel/app/Classes/WordTestService.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/word-test.md: source 'laravel/resources/js/Pages/WordTest/WordTest.jsx' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/word-test.md: source 'docs/adr/0090-cefr-anchored-word-test.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "domains/word-test.md: source 'docs/adr/0071-word-test-presumed-known-baseline.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'docs/adr/0081-word-l-word-contract-uniqueness-on-l-word.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'laravel/database/migrations/2026_10_19_000001_move_word_uniqueness_to_l_word.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'laravel/app/Console/Commands/WordsNormalizeCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'laravel/app/Console/Commands/DemoteFormOfCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'laravel/app/Console/Commands/ImportWiktionaryCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'laravel/app/Console/Commands/ImportRawWiktextractCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'laravel/app/Console/Commands/LinkTranslationsCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'laravel/app/Classes/WiktionaryParser.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'laravel/app/Console/Commands/ImportGoldenDictCommand.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'laravel/app/Classes/GoldenDictParser.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'laravel/config/goldendict.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'docker-compose/python/ai/goldendict_convert.py' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/import-dictionary-data.md: source 'laravel/app/Support/DefinitionLanguage.php' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/production-deployment.md: source 'deploy-native.sh' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/production-deployment.md: source 'deploy.sh' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/production-deployment.md: source '.github/workflows/tests.yml' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/production-deployment.md: source 'AGENTS.md' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/running-tests.md: source 'laravel/phpunit.xml' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/running-tests.md: source '.github/workflows/tests.yml' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/running-tests.md: source 'laravel/resources/js/Components/WordPopup.sourceBadge.test.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/running-tests.md: source 'laravel/resources/js/Components/WordPopup.ankiSend.test.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/running-tests.md: source 'laravel/package.json' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
+        },
+        {
+            "warning": "playbooks/running-tests.md: source 'laravel/eslint.config.js' changed after generated.at — possibly stale",
+            "owner": "human:alex",
+            "date": "2026-10-28",
+            "note": "Benign source-mtime drift: the 2026-10-27 evening checkout reset the whole working tree's mtimes after these concepts' generated.at, and the 2026-10-28 alignments-show-page change touched routes/web.php / LibraryController.php that several concepts list as sources without their domain content changing. Refresh a concept or prune its entry when resolved."
         }
     ]
 }

@@ -375,17 +375,17 @@ test('the work alignments page paginates', function () {
             ->where('alignments_meta.current_page', 2));
 });
 
-test('alignment cards target the match-anchored reader URL whatever the reader side', function () {
+test('alignment cards target the alignment page whatever the reader side', function () {
     createLanguages();
     $work = createWork(['title' => 'Native', 'original_language_id' => Language::query()->where('code', 'en')->value('id')]);
     $en = createEntity('en', $work, ['name' => 'EN side']);
     $ru = createEntity('ru', $work, ['name' => 'RU side']);
     $match = createEntityMatch($en, $ru, ['status' => 'completed']);
 
-    // The Read button's href composes from the payload's work_id + id:
-    // /reader/works/{work_id}/alignments/{id}. Which side reads first (and
-    // in which language) is decided inside that page now, so the target is
-    // the same for every reader.
+    // The card's stretched link composes from the payload's work_id + id:
+    // /works/{work_id}/alignments/{id}. The Read / Simulator / Edit buttons
+    // live on that page, and the reader side rule is decided inside the
+    // reader — so the card's target is the same for every reader.
     $assertTarget = fn ($page) => $page
         ->where('alignments.0.id', $match->id)
         ->where('alignments.0.work_id', $work->id);
@@ -405,7 +405,16 @@ test('alignment cards target the match-anchored reader URL whatever the reader s
         ->assertOk()
         ->assertInertia($assertTarget);
 
-    // And the composed href serves the alignment reader for this match.
+    // The composed href serves the alignment's detail page.
+    $this->actingAs(approvedUser())
+        ->get("/works/{$work->id}/alignments/{$match->id}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Library/ShowAlignment')
+            ->where('match.id', $match->id)
+            ->where('work.id', $work->id));
+
+    // Whose Read button links the match-anchored reader for this match.
     $this->actingAs(approvedUser())
         ->get("/reader/works/{$work->id}/alignments/{$match->id}")
         ->assertOk()
@@ -414,7 +423,7 @@ test('alignment cards target the match-anchored reader URL whatever the reader s
             ->where('positionKey', 'mm:'.$match->id));
 });
 
-test('the reader side rule resolves inside the alignment reader the cards link to', function () {
+test('the reader side rule resolves inside the alignment reader the detail page links to', function () {
     createLanguages();
     $fr = Language::query()->create([
         'code' => 'fr',

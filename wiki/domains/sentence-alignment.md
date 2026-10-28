@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-25T12:00:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-28T17:05:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: align-service
@@ -1084,13 +1084,14 @@ section above); it translates the outcome — redirect to the work's
 Alignments page with a flash, a duplicate pair blocked with an error
 plus an "Open existing match" link (flash `existing_match_id`), a
 cross-Work pair the form's same-work error, a limit hit a `limit`
-error. Each match card links (stretched link) to the
-work-nested editor `/works/{work}/alignments/{match}/edit` (ADR 0072)
-and carries Simulator / Read·{LANG} buttons —
+error. Each match card links (stretched link) to the alignment detail
+page `/works/{work}/alignments/{match}` (ADR 0092), whose Edit button
+opens the work-nested editor `/works/{work}/alignments/{match}/edit`
+(ADR 0072) alongside Simulator / Read buttons —
 `GET /bilinguals/simulator/{entityMatch}` (pinned simulator) and the
 reader, with the reading side resolved server-side as the
 non-native-language side. The editor itself
-(route `works.alignments.edit`, `AlignmentController@show`) is a
+(route `works.alignments.edit`, `AlignmentController@edit`) is a
 parallel entry point backed by the surgical `AlignmentEditorController`
 endpoints under the same work-nested prefix (ADR 0072: the page at
 `GET /works/{work}/alignments/{entityMatch}/edit`, all thirteen JSON

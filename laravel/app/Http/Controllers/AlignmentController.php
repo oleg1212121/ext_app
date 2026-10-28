@@ -11,10 +11,11 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Renders the alignment editor page. It lives on the work branch
- * (/works/{work}/alignments/{match}/edit, ADR 0072) — both of the pair's
- * entities belong to one work — and seeds each section's initial page from
- * the URL so a shared link opens exactly the pages the sender saw.
+ * Renders the alignment's read-only detail page and its editor. Both live on
+ * the work branch (/works/{work}/alignments/{match}[/edit], ADR 0072) — both
+ * of the pair's entities belong to one work — and the editor seeds each
+ * section's initial page from the URL so a shared link opens exactly the
+ * pages the sender saw.
  */
 class AlignmentController extends Controller
 {
@@ -27,7 +28,30 @@ class AlignmentController extends Controller
         return new EntityAccessService;
     }
 
-    public function show(Work $work, EntityMatch $entityMatch, AlignmentEditorPageRequest $request): Response
+    /**
+     * The read-only detail page behind the alignment cards: the pair's
+     * metadata plus the Read / Simulator / Edit actions — the editor is
+     * reached only through its Edit button.
+     */
+    public function show(Work $work, EntityMatch $entityMatch): Response
+    {
+        abort_unless($entityMatch->aEntity?->work_id === $work->id, 404);
+
+        abort_unless($this->access()->canReadMatch(auth()->user(), $entityMatch), 403);
+
+        $entityMatch->load(['aEntity.language', 'bEntity.language', 'aEntity.work.originalLanguage']);
+
+        return Inertia::render('Library/ShowAlignment', [
+            'work' => [
+                'id' => $entityMatch->aEntity->work->id,
+                'title' => $entityMatch->aEntity->work->title,
+                'author' => $entityMatch->aEntity->work->author,
+            ],
+            'match' => $this->presenter->matchPayload($entityMatch),
+        ]);
+    }
+
+    public function edit(Work $work, EntityMatch $entityMatch, AlignmentEditorPageRequest $request): Response
     {
         abort_unless($entityMatch->aEntity?->work_id === $work->id, 404);
 
@@ -40,7 +64,7 @@ class AlignmentController extends Controller
             $request->rowsPage(),
         );
 
-        return Inertia::render('Alignments/Show', [
+        return Inertia::render('Alignments/Edit', [
             'match' => $this->presenter->matchPayload($entityMatch),
             'rows' => $rows['rows'],
             'rows_meta' => $rows['meta'],
