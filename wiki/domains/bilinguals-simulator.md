@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-28T19:50:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-29T10:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller

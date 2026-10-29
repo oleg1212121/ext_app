@@ -6,6 +6,41 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-29 (test speed audit: internet recommendations already in place, profile is serial-only, WikiTest drift fixed)
+
+Audited the standard test-speed recommendations against the suite
+(prompted by a "parallel + SQLite + RefreshDatabase + bcrypt + array
+drivers + --profile" list): parallel (pinned 6), RefreshDatabase,
+`BCRYPT_ROUNDS=4`, array cache/session/mail + sync queue were all already
+in place; in-memory SQLite is not viable (app code uses
+`jsonb_exists_any`, `'{}'::jsonb ||`, `ilike`, `ON CONFLICT … RETURNING`,
+and tests assert Postgres jsonb semantics). `--profile` turned out to be
+**serial-only** — a parallel run accepts it and prints nothing; the full
+baseline run (994s under load, 1,587 tests) therefore shipped without a
+slow-test table. Targeted serial profiling settled the suspects: the two
+book-PDF test files (35 tests incl. every real dompdf render) total ~22s
+and `WikiTest` ~5s — not hotspots; the suite's cost is the per-Feature
+floor under box load. Changes: `phpunit.xml` pins
+`DEBUGBAR_ENABLED=false` (Debugbar already self-disables under
+`APP_ENV=testing` — the `storage/debugbar/` JSONs are dev-browser
+artifacts; the pin is insurance, zero expected speedup),
+`EntityWordIndexerTest` swaps its `sleep(1)` for Carbon travel
+(second-precision timestamps), and a `schema:dump` for the testing
+connection was **considered and rejected** (startup tax ~one migration
+pass vs the wrong-schema failure mode when an already-pruned migration
+gets edited — this repo edits young migrations). Also fixed WikiTest
+red-on-clean-tree: the book-pdf review commit (2fc29a7) refactored
+`BookPdfService` and touched the `pdf_renders` migration after five
+concepts' `generated.at`; content verified accurate (pure refactor,
+comment-only migration tweak) and `generated.at` bumped on
+`domains/entities.md`, `domains/sentence-alignment.md`,
+`database/entities-alignment.md` (verified refreshed) plus
+`domains/reader.md`, `domains/bilinguals-simulator.md` (mtime-only
+drift; routes/web.php content predated their generation). Playbook
+"Keeping tests fast" gained the serial-profiling, Carbon-travel, and
+schema-dump-rejected rules.
+
+
 ## 2026-10-28 (retro — test reliability: no wrapper timeout, 6 pinned workers, guarded memory probes, pint hook)
 
 Fixes the recurring false-red pattern from the book-pdf session: full-suite

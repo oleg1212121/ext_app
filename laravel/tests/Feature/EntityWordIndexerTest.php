@@ -4,6 +4,11 @@ use App\Classes\EntityWordIndexer;
 use App\Models\EntitySentence;
 use App\Models\EntityWord;
 use App\Models\Word;
+use Carbon\Carbon;
+
+afterEach(function () {
+    Carbon::setTestNow();
+});
 
 function addSentence($entity, string $content): EntitySentence
 {
@@ -55,7 +60,9 @@ it('detects staleness after a sentence change', function () {
     $indexer->index($entity);
     expect($indexer->isStale($entity->refresh()))->toBeFalse();
 
-    sleep(1);
+    // Timestamps are second-precision, so the change must land in a later
+    // second than words_indexed_at to read as stale.
+    $this->travel(1)->seconds();
     $sentence->update(['content' => 'Changed text.']);
 
     expect($indexer->isStale($entity->refresh()))->toBeTrue();
