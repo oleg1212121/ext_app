@@ -30,8 +30,9 @@ class AlignmentController extends Controller
 
     /**
      * The read-only detail page behind the alignment cards: the pair's
-     * metadata plus the Read / Simulator / Edit actions — the editor is
-     * reached only through its Edit button.
+     * metadata, the Read / Simulator / Get PDF / Edit actions, and the
+     * bilingual text as read-only side-by-side rows paginated on ?page= —
+     * viewing only, the editor is reached through its Edit button.
      */
     public function show(Work $work, EntityMatch $entityMatch): Response
     {
@@ -41,6 +42,8 @@ class AlignmentController extends Controller
 
         $entityMatch->load(['aEntity.language', 'bEntity.language', 'aEntity.work.originalLanguage']);
 
+        $rows = $this->presenter->readOnlyRowsPagePayload($entityMatch);
+
         return Inertia::render('Library/ShowAlignment', [
             'work' => [
                 'id' => $entityMatch->aEntity->work->id,
@@ -48,6 +51,9 @@ class AlignmentController extends Controller
                 'author' => $entityMatch->aEntity->work->author,
             ],
             'match' => $this->presenter->matchPayload($entityMatch),
+            'rows' => $rows['rows'],
+            'rows_meta' => $rows['meta'],
+            'columns' => $rows['columns'],
         ]);
     }
 

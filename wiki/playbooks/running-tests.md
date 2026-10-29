@@ -4,8 +4,8 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-28T22:30:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T15:45:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-29T10:30:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-29T10:30:00+03:00 }
 sources:
   - id: phpunit
     resource: laravel/phpunit.xml
@@ -257,8 +257,11 @@ sources:
 # composer timeout — duration is load-dependent by ~20x: minutes idle,
 # 15min under peak load. 1,587 tests measured 2026-10-28 under load:
 # 903s at 8 workers — the exact run composer's old 900s ceiling would
-# have killed mid-suite — and 862s at the pinned 6 workers. Add
-# --profile to a run to print the ten slowest tests)
+# have killed mid-suite — and 862s at the pinned 6 workers. `--profile`
+# prints the ten slowest tests but only in SERIAL runs — a parallel run
+# accepts the flag and silently prints nothing; per-test timing comes
+# from a targeted serial run, e.g.
+# `php artisan test tests/Feature/EntityPdfTest.php --profile`)
 docker exec ext_app_laravel composer run test
 
 # One file
@@ -438,6 +441,27 @@ Rules for any new or modified test:
 * **Bound pagination in tests.** Pass `per_page`/`page` on paginated
   endpoints and assert the returned `meta`; never write a test that assumes
   an endpoint returns everything.
+* **Profile serially when hunting hotspots.** `--profile` is serial-only —
+  a parallel run accepts the flag and prints nothing. Measured serial
+  2026-10-29: the two PDF test files (35 tests including every real dompdf
+  render) total ~22s and `WikiTest` ~5s — neither is a hotspot; the suite's
+  cost is the per-Feature-test floor under box load, not any single slow
+  test. Debugbar is not a factor either: it self-disables under
+  `APP_ENV=testing` (`LaravelDebugbar::isEnabled`), and `phpunit.xml` pins
+  `DEBUGBAR_ENABLED=false` as insurance — the JSONs in `storage/debugbar/`
+  are dev-browser artifacts, not test writes.
+* **Cross timestamp boundaries with Carbon travel, not `sleep()`.** Columns
+  are second-precision, so a stale/fresh comparison needs a later *second*:
+  `$this->travel(1)->seconds()` (reset via
+  `afterEach(fn () => Carbon::setTestNow())`, as in EntityPdfTest) is free;
+  a real `sleep(1)` taxes every run of the suite.
+* **Schema dump for the testing connection: rejected (2026-10-29).** A
+  `schema:dump` would cut the per-worker startup migrate (~20s each, 6
+  workers — wall ≈ one migration pass) but requires `--prune` plus a
+  re-dump whenever an already-pruned migration is edited, and this repo
+  demonstrably edits young migrations (the book-pdf review commit touched a
+  same-day one). A stale dump fails tests with wrong-schema errors; the
+  startup tax doesn't justify that failure mode.
 * **Run TIA first.** After changes prefer `composer run test:tia` — it
   re-runs only tests touched by changed files; the full `composer run test`
   belongs to pre-merge/CI verification. Never run two test commands at once

@@ -69,4 +69,13 @@ return [
     'library.text_file' => ['en' => 'Text file', 'ru' => 'Текстовый файл', 'be' => 'Тэкставы файл'],
     'library.text_file_hint' => ['en' => 'Optional. A plain text (.txt) file. If provided, it is split into sentences and a signature is generated.', 'ru' => 'Необязательно. Обычный текстовый файл (.txt). Если загружен, он разбивается на предложения и для него генерируется сигнатура.', 'be' => 'Неабавязкова. Звычайны тэкставы файл (.txt). Калі загружаны, ён падзяляецца на сказы, і для яго генеруецца сігнатура.'],
     'library.create_entity' => ['en' => 'Create entity', 'ru' => 'Создать текст', 'be' => 'Стварыць тэкст'],
+    // The alignment detail page's read-only bilingual section: one row per
+    // meaning match, the work's original language on the left (the book-PDF
+    // rule), paginated exactly like the entity page's sentence list.
+    'library.meaning_matches' => ['en' => 'Meaning matches', 'ru' => 'Смысловые соответствия', 'be' => 'Сэнсавыя адпаведнасці'],
+    'library.total' => ['en' => 'total', 'ru' => 'всего', 'be' => 'усяго'],
+    'library.pagination' => ['en' => 'Pagination', 'ru' => 'Разбивка на страницы', 'be' => 'Пагінацыя'],
+    'library.prev' => ['en' => '← Prev', 'ru' => '← Назад', 'be' => '← Назад'],
+    'library.next' => ['en' => 'Next →', 'ru' => 'Далее →', 'be' => 'Далей →'],
+    'library.no_rows_hint' => ['en' => 'No meaning matches yet — create them in the editor.', 'ru' => 'Смысловых соответствий пока нет — создайте их в редакторе.', 'be' => 'Сэнсавых адпаведнасцей пакуль няма — стварайце іх у рэдактары.'],
 ];

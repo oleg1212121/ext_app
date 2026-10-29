@@ -5,8 +5,8 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge, pdf]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-10-28T20:45:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
 sources:
    - id: controller
      resource: laravel/app/Http/Controllers/EntityController.php
@@ -94,7 +94,7 @@ selects and the language shown on entity pages are driven by
 | `/works/{work}/entities/{entity}/edit` | `EntityController::edit` | Combined edit page: metadata form + drag-and-drop sentence manager (ADR 0015), named `entities.edit` |
 | `/works/{work}/entities/{entity}/sentences` (GET/POST) + `/reorder` + `/{sentence}` (PATCH/DELETE) | `EntityController::sentences*` | JSON sentence list + insert / reorder / update / delete, named `entities.sentences.*` — same work-nested prefix and wrong-work 404 as the pages |
 | `/works/{work}/alignments/create` (GET) + POST `/works/{work}/alignments` | `LibraryController::createAlignment` / `storeAlignment` | Work-scoped entity-match creation (ADR 0036): two entity selects of the work's alignable entities (readable + signature + sentences), `chunk_size`/`max_n`; `storeAlignment` checks readability and calls the shared `EntityMatchCreationService` — every creation rule (distinct-pair + same-Work guard, canonical sides, duplicate rejection with the `existing_match_id` flash, Processing limit, copy-vs-pipeline) lives in that module, see [sentence alignment](/domains/sentence-alignment.md); redirects back to the work's Alignments page. Named `works.alignments.create` / `works.alignments.store` |
-| `/works/{work}/alignments/{match}` (GET) | `AlignmentController::show` | Read-only **alignment detail page** (ADR 0092) behind the cards: pair metadata (status, similarity, confirmed/linked progress, sentence totals) + Read (match-anchored reader) / Simulator (pinned) / Edit buttons. 404 unless the match's a-side belongs to the work, 403 without `canReadMatch`. Named `works.alignments.show` |
+| `/works/{work}/alignments/{match}` (GET) | `AlignmentController::show` | Read-only **alignment detail page** (ADR 0092, amended 2026-10-29) behind the cards: pair metadata as a two-column card grid (status, similarity, confirmed/linked progress, sentence totals), action buttons top-right in the header — Read (match-anchored reader) / Simulator (pinned) / Get PDF (completed only) / Edit — and the bilingual text itself as read-only side-by-side rows (one per meaning match, original language left, 20/page, shared prev/next pagination on `?page=`). 404 unless the match's a-side belongs to the work, 403 without `canReadMatch`. Named `works.alignments.show` |
 | `/works/{work}/alignments/{match}/pdf` (GET) | `AlignmentPdfController::show` | **Bilingual book PDF download** (ADR 0093): A4 two-column book of the match (original side left), attachment disposition, digest-cached. Show-page guards **plus a 404 unless `status = completed`** — the button on the detail page renders only then. Named `works.alignments.pdf` |
 | `/entities`, `/entities/{lang}` | redirect → `/works/entities` | Legacy language-first browse pages (picker + per-language table). The deeper `/entities/{lang}/...` routes are gone without redirects (ADR 0073) |
 
@@ -115,8 +115,10 @@ original-language chip, readable count), `Library/CreateWork`,
 `Components/AlignmentCard.jsx` — the whole card is a stretched link to the
 alignment detail page `Library/ShowAlignment`,
 `/works/{work}/alignments/{id}`; Read / Simulator / Edit live there),
-`Library/ShowAlignment` (the read-only detail page, ADR 0092: pair metadata
-rows + the three actions),
+`Library/ShowAlignment` (the read-only detail page, ADR 0092 amended
+2026-10-29: header actions + pair metadata card grid + the bilingual rows —
+mirroring `Entities/Show`'s skeleton, pagination via the shared
+`Components/SimplePagination.jsx`),
 `Library/CreateEntity` (work fixed, language select), `Library/CreateAlignment`
 (work fixed, two entity selects + chunk params), plus
 `Entities/Show` (back link "← {work title} entities" to the work's Entities

@@ -35,6 +35,10 @@
         <env name="DB_CONNECTION" value="testing" force="true"/>
         <env name="DB_TEST_DATABASE" value="ext_app_test" force="true"/>
         <env name="DB_DATABASE" value="ext_app_test" force="true"/>
+        <!-- Debugbar follows APP_DEBUG from .env (true), but self-disables
+             under APP_ENV=testing (LaravelDebugbar::isEnabled). Pinned so
+             that stays true even if the package's env check changes. -->
+        <env name="DEBUGBAR_ENABLED" value="false"/>
         <!-- Translation provider keys must not leak into tests: a leaked real
              key makes "no provider configured" paths dispatch fetches into the
              sync queue against the live API. Tests opt in per test via

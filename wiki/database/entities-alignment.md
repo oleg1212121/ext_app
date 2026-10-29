@@ -5,8 +5,8 @@ description: Works grouping per-language entities, their sentences, and the mach
 tags: [database, schema, alignment, entities, works, hash, illustrations, tags, pdf]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-28T20:45:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-29T10:20:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-29T10:20:00+03:00 }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php

@@ -5,8 +5,8 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-28T20:45:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -1088,12 +1088,21 @@ Alignments page with a flash, a duplicate pair blocked with an error
 plus an "Open existing match" link (flash `existing_match_id`), a
 cross-Work pair the form's same-work error, a limit hit a `limit`
      error. Each match card links (stretched link) to the alignment detail
-     page `/works/{work}/alignments/{match}` (ADR 0092), whose Edit button
-     opens the work-nested editor `/works/{work}/alignments/{match}/edit`
-     (ADR 0072) alongside Simulator / Read buttons —
-     `GET /bilinguals/simulator/{entityMatch}` (pinned simulator) and the
-     reader, with the reading side resolved server-side as the
-     non-native-language side. The detail page also carries a **Get PDF**
+     page `/works/{work}/alignments/{match}` (ADR 0092, amended
+     2026-10-29), whose header actions — Read / Simulator / Get PDF
+     (completed only) / Edit — open the work-nested editor
+     `/works/{work}/alignments/{match}/edit`
+     (ADR 0072), the pinned simulator `GET
+     /bilinguals/simulator/{entityMatch}` and the reader, with the reading
+     side resolved server-side as the
+     non-native-language side. The detail page also renders the bilingual
+     text itself: read-only side-by-side rows (one per meaning match, the
+     work's original language left via
+     `AlignmentEditorApiPresenter::readOnlyRowsPagePayload`, which resolves
+     the display columns server-side with the `originalSide()` side-a
+     fallback — the book-PDF rule), 20 rows per page behind the shared
+     prev/next pagination on `?page=`. It additionally carries the **Get
+     PDF**
      button (only while `status = completed`): `GET
      /works/{work}/alignments/{entityMatch}/pdf`
      (`AlignmentPdfController`, `works.alignments.pdf`, ADR 0093) streams
