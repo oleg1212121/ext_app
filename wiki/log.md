@@ -6,6 +6,28 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-29 (alignment show page mirrors the entity page: header actions + inline bilingual rows)
+
+`Library/ShowAlignment` stops being a metadata-only card (ADR 0092 amended
+in place, not superseded): actions move top-right in the header — Read ·
+Simulator · Get PDF (completed only) · Edit, the entity page's
+"Get PDF between Read and Edit" rule with Simulator beside Read — and the
+page renders the bilingual text itself: read-only side-by-side rows, one
+per meaning match, the work's original language left
+(`AlignmentEditorApiPresenter::readOnlyRowsPagePayload` resolves display
+columns server-side with the `originalSide()` side-a fallback — the
+`BookPdfService` rule; plain `paginate` at 20 rows/page, none of the
+editor's lookahead machinery), behind the shared prev/next `?page=`
+pagination. That pagination is new `Components/SimplePagination.jsx`,
+extracted from `Entities/Show` (which now uses it too —
+`entities.prev`/`entities.next`/`entities.pagination` strings are
+code-unused, seed rows left in place). New `library.*` strings: meaning
+matches / total / pagination / prev / next / no-rows hint. Tests:
+`AlignmentPagesTest` gains pagination and original-left cases and extends
+the metadata test with `rows`/`rows_meta`/`columns` props.
+`domains/entities.md` + `domains/sentence-alignment.md` updated
+(`generated.at` bumped).
+
 ## 2026-10-29 (test speed audit: internet recommendations already in place, profile is serial-only, WikiTest drift fixed)
 
 Audited the standard test-speed recommendations against the suite

@@ -1,6 +1,7 @@
 import {Link, router} from '@inertiajs/react';
 import Main from '../../Layouts/Main.jsx';
 import {useI18n} from '../../i18n';
+import SimplePagination from '../../Components/SimplePagination.jsx';
 
 const SIGNATURE_BADGE = {
     generated: 'text-[var(--wbench-accent)] dark:text-[var(--wbench-accent-night)] border-[var(--wbench-accent)]/40 dark:border-[var(--wbench-accent-night)]/40',
@@ -17,27 +18,6 @@ const MATCH_BADGE = {
 };
 
 const actionButtonClass = 'inline-flex h-9 items-center border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)] px-4 font-sans text-sm text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)] transition-colors hover:border-[var(--wbench-accent)] hover:text-[var(--wbench-accent)] dark:hover:border-[var(--wbench-accent-night)] dark:hover:text-[var(--wbench-accent-night)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm';
-
-const PageLink = ({disabled, href, children}) => {
-    if (disabled) {
-        return (
-            <span className="inline-flex h-8 items-center px-3 font-sans text-sm text-[var(--wbench-ink-soft)]/40 dark:text-[var(--wbench-ink-soft-night)]/40 cursor-not-allowed">
-                {children}
-            </span>
-        );
-    }
-
-    return (
-        <Link
-            href={href}
-            preserveState
-            preserveScroll
-            className="inline-flex h-8 items-center px-3 font-sans text-sm text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)] hover:text-[var(--wbench-ink)] dark:hover:text-[var(--wbench-ink-night)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wbench-accent)] rounded-sm"
-        >
-            {children}
-        </Link>
-    );
-};
 
 export default function Show({language, entity, entityMatches = [], sentences = [], sentences_meta, word_knowledge = null, has_no_familiarity = false, can_edit: canEdit = false, can_change_approval: canChangeApproval = false}) {
     const {t} = useI18n();
@@ -238,19 +218,7 @@ export default function Show({language, entity, entityMatches = [], sentences = 
                     )}
                 </section>
 
-                {sentences_meta && sentences_meta.last_page > 1 && (
-                    <nav aria-label={t('entities.pagination')} className="flex items-center justify-between border border-[var(--wbench-rule)] dark:border-[var(--wbench-rule-night)]">
-                        <PageLink disabled={sentences_meta.current_page <= 1} href={`/works/${entity.work_id}/entities/${entity.id}?page=${sentences_meta.current_page - 1}`}>
-                            {t('entities.prev')}
-                        </PageLink>
-                        <span className="font-mono text-xs text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
-                            {sentences_meta.current_page} / {sentences_meta.last_page}
-                        </span>
-                        <PageLink disabled={sentences_meta.current_page >= sentences_meta.last_page} href={`/works/${entity.work_id}/entities/${entity.id}?page=${sentences_meta.current_page + 1}`}>
-                            {t('entities.next')}
-                        </PageLink>
-                    </nav>
-                )}
+                <SimplePagination meta={sentences_meta} baseUrl={`/works/${entity.work_id}/entities/${entity.id}`}/>
             </div>
         </div>
     );

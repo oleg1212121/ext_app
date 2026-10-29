@@ -22,6 +22,8 @@ class AlignmentEditorApiPresenter
 
     public const ROWS_LOOKAHEAD = 3;
 
+    public const VIEWER_ROWS_PER_PAGE = 20;
+
     /**
      * @return array<string, mixed>
      */
@@ -142,6 +144,80 @@ class AlignmentEditorApiPresenter
         return [
             'a' => (int) ($junctions['a'] ?? 0),
             'b' => (int) ($junctions['b'] ?? 0),
+        ];
+    }
+
+    /**
+     * The alignment show page's read-only rows: one meaning match per row,
+     * plain pagination with none of the editor machinery (no lookahead tail,
+     * no sentences_before). Sides are resolved to display columns here so the
+     * page cannot get the rule wrong: the work's original language is the
+     * left column, with the A-side fallback — the BookPdfService rule.
+     *
+     * @return array{rows: list<array<string, mixed>>, meta: array{current_page: int, last_page: int, total: int, per_page: int}, columns: array{left: array<string, mixed>, right: array<string, mixed>}}
+     */
+    public function readOnlyRowsPagePayload(EntityMatch $entityMatch): array
+    {
+        $leftSide = $entityMatch->originalSide() ?? 'a';
+        $rightSide = $leftSide === 'a' ? 'b' : 'a';
+
+        $rows = MeaningMatch::query()
+            ->where('entity_match_id', $entityMatch->id)
+            ->with(['sentenceMeaningMatches.entitySentence'])
+            ->orderBy('order')
+            ->paginate(self::VIEWER_ROWS_PER_PAGE);
+
+        return [
+            'rows' => $rows->getCollection()
+                ->map(fn (MeaningMatch $meaningMatch): array => [
+                    'id' => $meaningMatch->id,
+                    'order' => (int) $meaningMatch->order,
+                    'left_sentences' => $this->readOnlySentences($meaningMatch, $leftSide),
+                    'right_sentences' => $this->readOnlySentences($meaningMatch, $rightSide),
+                ])
+                ->values()
+                ->all(),
+            'meta' => [
+                'current_page' => $rows->currentPage(),
+                'last_page' => $rows->lastPage(),
+                'total' => $rows->total(),
+                'per_page' => $rows->perPage(),
+            ],
+            'columns' => [
+                'left' => $this->readOnlyColumnPayload($entityMatch, $leftSide),
+                'right' => $this->readOnlyColumnPayload($entityMatch, $rightSide),
+            ],
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function readOnlySentences(MeaningMatch $meaningMatch, string $side): array
+    {
+        return collect($this->linkedSentences($meaningMatch, $side))
+            ->map(fn (array $sentence): array => [
+                'id' => $sentence['id'],
+                'content' => $sentence['content'],
+                // Image-only sentences (ADR 0050) render as a placeholder on
+                // the read-only page, matching the book PDF.
+                'has_image' => $sentence['image'] !== null,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function readOnlyColumnPayload(EntityMatch $entityMatch, string $side): array
+    {
+        $entity = $side === 'a' ? $entityMatch->aEntity : $entityMatch->bEntity;
+
+        return [
+            'code' => $entity?->language?->code ?? '',
+            'entity_name' => $entity?->name ?? '',
+            'is_original' => $entityMatch->originalSide() === $side,
         ];
     }
 

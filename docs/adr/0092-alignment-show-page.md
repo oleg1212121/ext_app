@@ -85,3 +85,30 @@ works list, not an alignment list).
   label reuses `entities.open_alignment`, and the detail page adds
   `library.edit` / `library.similarity` / `library.linked_rows` /
   `library.created`.
+
+## Amendment 2026-10-29: the page gains an inline read-only bilingual view
+
+The page kept its metadata-only shape for two days; matching it to the
+entity detail page (`Entities/Show`) changed that shape without touching
+any decision above:
+
+- **Actions move into the header**, top-right like the entity page, in the
+  order **Read · Simulator · Get PDF (completed only) · Edit** — the
+  entity page's "Get PDF between Read and Edit" rule (ADR 0093) with
+  Simulator slotted next to Read. The page also adopts the entity page's
+  two-column metadata card grid.
+- **The bilingual text renders on the page itself**: one row per meaning
+  match, two side-by-side columns per row, **the work's original language
+  left** (`EntityMatch::originalSide()` with the A-side fallback — the
+  `BookPdfService` rule, ADR 0093), sides resolved server-side so the page
+  cannot get it wrong. Read-only: no dnd, no edit affordances; unconfirmed
+  and single-sided rows appear exactly as the editor and the PDF cover
+  them. Pagination is the entity page's server-side prev/next on
+  `?page=N` (20 rows/page, hidden on a single page), extracted into the
+  shared `Components/SimplePagination.jsx` that the entity page's sentence
+  list now uses too.
+
+The editor remains the only mutation surface — the view adds *where* the
+text can be seen, not another way to change it. Amending this ADR rather
+than adding a new one: the page's purpose (a neutral read-only landing)
+is unchanged, and the additions are individually reversible.

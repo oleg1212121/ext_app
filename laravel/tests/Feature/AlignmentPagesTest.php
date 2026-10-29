@@ -109,7 +109,130 @@ test('the alignment page shows the pair\'s metadata and action targets', functio
             ->where('match.linked_count', 6)
             ->where('match.a_total_sentences', 8)
             ->where('match.b_total_sentences', 7)
-            ->has('match.created_at'));
+            ->has('match.created_at')
+            // Read-only rows + display columns: this match has no rows yet,
+            // and the work's original language (en = A-side here) is left.
+            ->has('rows', 0)
+            ->where('rows_meta.total', 0)
+            ->where('columns.left.code', 'en')
+            ->where('columns.left.is_original', true)
+            ->where('columns.right.code', 'ru')
+            ->where('columns.right.is_original', false));
+});
+
+test('the alignment page paginates its read-only bilingual rows', function () {
+    $user = User::factory()->create();
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    $entityMatch = createEntityMatch(
+        createEntity('en', $work, ['name' => 'EN']),
+        createEntity('ru', $work, ['name' => 'RU']),
+        ['status' => 'completed'],
+    );
+
+    // 25 one-to-one rows: the viewer serves 20 per page, so page 2 holds 5.
+    for ($i = 1; $i <= 25; $i++) {
+        $meaningMatch = MeaningMatch::create([
+            'entity_match_id' => $entityMatch->id,
+            'order' => $i,
+            'similarity' => 1.0,
+            'alignment_chunk' => 0,
+        ]);
+
+        foreach (['a' => 'EN', 'b' => 'RU'] as $side => $prefix) {
+            SentenceMeaningMatch::create([
+                'entity_sentence_id' => EntitySentence::create([
+                    'entity_id' => $side === 'a' ? $entityMatch->a_entity_id : $entityMatch->b_entity_id,
+                    'sentence_type_id' => $sentenceType->id,
+                    'content' => "{$prefix} sentence {$i}.",
+                    'order' => $i,
+                ])->id,
+                'meaning_match_id' => $meaningMatch->id,
+                'side' => $side,
+            ]);
+        }
+    }
+
+    $this->actingAs($user)
+        ->get(route('works.alignments.show', ['work' => $work->id, 'entityMatch' => $entityMatch]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Library/ShowAlignment')
+            ->has('rows', 20)
+            ->where('rows.0.order', 1)
+            ->where('rows_meta.total', 25)
+            ->where('rows_meta.per_page', 20)
+            ->where('rows_meta.current_page', 1)
+            ->where('rows_meta.last_page', 2));
+
+    $this->actingAs($user)
+        ->get(route('works.alignments.show', ['work' => $work->id, 'entityMatch' => $entityMatch, 'page' => 2]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('rows', 5)
+            ->where('rows.0.order', 21)
+            ->where('rows_meta.current_page', 2));
+});
+
+test('the read-only rows put the work\'s original language on the left', function () {
+    $user = User::factory()->create();
+    $sentenceType = SentenceType::create(['name' => 'Narration']);
+    $work = createWork();
+    // The Russian entity is created first, so the canonical A-side holds the
+    // translation — the viewer must still show English (the original) left,
+    // same rule as the book PDF.
+    $ruEntity = createEntity('ru', $work, ['name' => 'Russian chapter']);
+    $enEntity = createEntity('en', $work, ['name' => 'English chapter']);
+    $entityMatch = createEntityMatch($enEntity, $ruEntity, [
+        'status' => 'completed',
+        'a_total_sentences' => 1,
+        'b_total_sentences' => 1,
+        'linked_count' => 1,
+    ]);
+
+    $ruSentence = EntitySentence::create([
+        'entity_id' => $ruEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'Первое русское предложение.',
+        'order' => 1,
+    ]);
+
+    $enSentence = EntitySentence::create([
+        'entity_id' => $enEntity->id,
+        'sentence_type_id' => $sentenceType->id,
+        'content' => 'The first English sentence.',
+        'order' => 1,
+    ]);
+
+    $meaningMatch = MeaningMatch::create([
+        'entity_match_id' => $entityMatch->id,
+        'order' => 1,
+        'similarity' => 0.9345,
+        'alignment_chunk' => 0,
+    ]);
+
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $ruSentence->id,
+        'meaning_match_id' => $meaningMatch->id,
+        'side' => 'a',
+    ]);
+
+    SentenceMeaningMatch::create([
+        'entity_sentence_id' => $enSentence->id,
+        'meaning_match_id' => $meaningMatch->id,
+        'side' => 'b',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('works.alignments.show', ['work' => $work->id, 'entityMatch' => $entityMatch]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('columns.left.code', 'en')
+            ->where('columns.left.is_original', true)
+            ->where('columns.right.code', 'ru')
+            ->where('columns.right.is_original', false)
+            ->where('rows.0.left_sentences.0.content', 'The first English sentence.')
+            ->where('rows.0.right_sentences.0.content', 'Первое русское предложение.'));
 });
 
 test('the per-work alignments page lists the work\'s readable entity matches', function () {
