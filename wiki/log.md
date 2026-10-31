@@ -6,6 +6,33 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-31 (incremental sentence indexing — only stale sentences re-tokenize)
+
+sentence-word-index ticket 02: word-index staleness goes
+sentence-granular. A sentence is stale when its
+`entity_sentences.words_indexed_at` stamp is null or older than its own
+`updated_at`; `EntityWordIndexer::indexBatch()` re-tokenizes at most
+`SENTENCES_PER_RUN` (500) stale sentences past a cursor — replacing just
+those sentences' occurrence rows and re-stamping just those sentences via
+the base builder (same `updated_at`-copy reasoning as ticket 01) — while
+`index()` stays the synchronous full stale-only pass (`crossword:index`,
+tests). `RefreshEntityWords` becomes a self-restarting cursor chain
+(`EnrichEntitySentences` shape): it re-dispatches itself until no stale
+sentence remains ahead of the cursor, and only the completing run derives
+`entity_words` wholesale and writes the entity marker as the **max
+per-sentence stamp** — so mid-build entities keep their stale/null marker
+and every cheap single-column check (crossword "still building",
+recommendations, word knowledge, frequency accrual) is unchanged. The job
+drops `ShouldBeUnique` (the unique lock releases only after `handle()`
+returns — a same-uniqueId self re-dispatch would be dropped and the chain
+would die after one run; overlapping chains are benign because runs process
+only still-stale sentences). The `crossword:refresh` sweep's pick condition
+switches to "any stale sentence OR unlinked unstamped tokens" (skips fully
+fresh entities; `--limit`/`--dry-run`/`--entity=` unchanged). Link pass,
+adoption, and the wholesale derivation are untouched (ticket 03 makes the
+derivation a merge). `domains/crossword.md` updated (`generated.at`
+bumped).
+
 ## 2026-10-31 (entity_sentence_words occurrence rows — the word index gains a per-sentence substrate)
 
 sentence-word-index ticket 01 (expand phase, outward behavior unchanged):

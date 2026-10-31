@@ -12,6 +12,13 @@ class EntityWordIndexer
 {
     private const CHUNK_SIZE = 500;
 
+    /**
+     * Stale sentences re-tokenized per bounded queue run — the budget of the
+     * self-restarting chain (see RefreshEntityWords), so a fresh book upload
+     * flows through many small yieldable runs instead of one giant job.
+     */
+    public const SENTENCES_PER_RUN = 500;
+
     public function __construct(private readonly WordTokenizer $tokenizer) {}
 
     /**
@@ -32,82 +39,194 @@ class EntityWordIndexer
     }
 
     /**
-     * Rebuild the entity word list from the entity's sentences.
+     * Index the entity's STALE sentences only: a sentence is stale when its
+     * per-sentence stamp is missing or older than its own content update.
+     * Fresh sentences keep their occurrence rows and stamps untouched; the
+     * entity word list is still derived wholesale from the rows and the
+     * entity-level marker is written as the max per-sentence stamp — so a
+     * fully-fresh entity is a phase-1 no-op that only re-derives.
      *
-     * Every sentence gets its token occurrences stored as individual
-     * entity_sentence_words rows (lookup key, surface form, ordinal, char
-     * span into the sentence content), each stamped with its own updated_at;
-     * the entity-level word list is derived from those rows by aggregation.
-     * Staleness and the wholesale wipe + refill of the entity list behave
-     * exactly as before this substrate existed.
+     * The synchronous full-pass entry point (crossword:index, tests, setup
+     * flows): no per-run budget — every stale sentence in one transaction.
      *
      * @return int Number of unique words written.
      */
     public function index(Entity $entity): int
     {
-        $lastSentenceChange = EntitySentence::query()
-            ->where('entity_id', $entity->id)
-            ->max('updated_at');
+        DB::transaction(function () use ($entity): void {
+            $this->reindexStale($entity, afterId: 0, budget: null);
 
-        $indexedAt = $lastSentenceChange ?? now();
-
-        DB::transaction(function () use ($entity, $indexedAt): void {
             EntityWord::query()
                 ->where('entity_id', $entity->id)
                 ->delete();
 
-            EntitySentenceWord::query()
-                ->where('entity_id', $entity->id)
-                ->delete();
-
-            EntitySentence::query()
-                ->where('entity_id', $entity->id)
-                ->orderBy('order')
-                ->select('id', 'content')
-                ->chunkById(self::CHUNK_SIZE, function ($sentences) use ($entity): void {
-                    $rows = [];
-
-                    foreach ($sentences as $sentence) {
-                        foreach ($this->tokenizer->tokenizeCountedOccurrences($sentence->content) as $position => $occurrence) {
-                            $rows[] = [
-                                'entity_id' => $entity->id,
-                                'entity_sentence_id' => $sentence->id,
-                                'position' => $position,
-                                'start' => $occurrence['start'],
-                                'end' => $occurrence['end'],
-                                'l_word' => $occurrence['l_word'],
-                                'token' => $occurrence['token'],
-                            ];
-
-                            if (count($rows) >= self::CHUNK_SIZE) {
-                                EntitySentenceWord::query()->insert($rows);
-                                $rows = [];
-                            }
-                        }
-                    }
-
-                    if ($rows !== []) {
-                        EntitySentenceWord::query()->insert($rows);
-                    }
-                });
-
-            // One statement stamps every sentence with its own updated_at
-            // (never now() — a replayed full pass stays stamp-stable). The
-            // base builder is required on both counts: it bypasses model
-            // events (no parent touch) and the Eloquent updated_at injection
-            // — bumping updated_at here would permanently re-stale the
-            // entity against its own marker.
-            EntitySentence::query()
-                ->where('entity_id', $entity->id)
-                ->toBase()
-                ->update(['words_indexed_at' => DB::raw('updated_at')]);
-
             $this->deriveEntityWords($entity);
 
-            $entity->forceFill(['words_indexed_at' => $indexedAt])->save();
+            $this->writeDerivedMarker($entity);
         });
 
         return EntityWord::query()->where('entity_id', $entity->id)->count();
+    }
+
+    /**
+     * One bounded run of the incremental index: re-tokenize up to $budget
+     * stale sentences with id > $afterId (the cursor), replacing each
+     * sentence's occurrence rows and re-stamping just those sentences.
+     *
+     * When no stale sentence remains ahead of the cursor the chain is done:
+     * the entity word list is derived wholesale from the per-sentence rows
+     * and the entity marker is written as the max per-sentence stamp — only
+     * then, so a mid-build entity keeps its stale/null marker and every
+     * consumer of that column (crossword generate, recommendations, word
+     * knowledge, frequency accrual) reads the list as unfinished exactly as
+     * under the old single-job full build. A run that processed nothing on a
+     * still-unmarked entity (crashed chain, sentence-less entity) heals the
+     * marker; a run that processed nothing on an already-marked entity is a
+     * full no-op, like the old job's staleness re-check skip.
+     *
+     * @return array{processed: int, cursor: int, remaining: bool, derived: bool, unique_words: int|null}
+     */
+    public function indexBatch(Entity $entity, int $afterId = 0, int $budget = self::SENTENCES_PER_RUN): array
+    {
+        $stats = [];
+
+        DB::transaction(function () use ($entity, $afterId, $budget, &$stats): void {
+            $processedIds = $this->reindexStale($entity, $afterId, $budget);
+
+            $cursor = $processedIds === [] ? $afterId : end($processedIds);
+
+            $remaining = EntitySentence::query()
+                ->where('entity_id', $entity->id)
+                ->where('id', '>', $cursor)
+                ->where(function ($query): void {
+                    $query->whereNull('words_indexed_at')
+                        ->orWhereColumn('words_indexed_at', '<', 'updated_at');
+                })
+                ->exists();
+
+            $derived = false;
+            $uniqueWords = null;
+
+            if (! $remaining && ($processedIds !== [] || $entity->words_indexed_at === null)) {
+                EntityWord::query()
+                    ->where('entity_id', $entity->id)
+                    ->delete();
+
+                $this->deriveEntityWords($entity);
+
+                $this->writeDerivedMarker($entity);
+
+                $derived = true;
+                $uniqueWords = EntityWord::query()->where('entity_id', $entity->id)->count();
+            }
+
+            $stats = [
+                'processed' => count($processedIds),
+                'cursor' => $cursor,
+                'remaining' => $remaining,
+                'derived' => $derived,
+                'unique_words' => $uniqueWords,
+            ];
+        });
+
+        return $stats;
+    }
+
+    /**
+     * Re-tokenize stale sentences (missing stamp, or stamp older than the
+     * sentence's own updated_at) with id > $afterId, at most $budget of them
+     * (null = all), replacing each one's occurrence rows. The walk paginates
+     * by sentence id — immune to the stale filter mutating under it as
+     * sentences get stamped, unlike chunkById over the moving filter.
+     *
+     * @return list<int> Ids of the re-tokenized sentences, ascending.
+     */
+    private function reindexStale(Entity $entity, int $afterId, ?int $budget): array
+    {
+        $processedIds = [];
+        $rows = [];
+        $cursor = $afterId;
+
+        while ($budget === null || count($processedIds) < $budget) {
+            $sentences = EntitySentence::query()
+                ->where('entity_id', $entity->id)
+                ->where('id', '>', $cursor)
+                ->where(function ($query): void {
+                    $query->whereNull('words_indexed_at')
+                        ->orWhereColumn('words_indexed_at', '<', 'updated_at');
+                })
+                ->orderBy('id')
+                ->limit($budget === null ? self::CHUNK_SIZE : min(self::CHUNK_SIZE, $budget - count($processedIds)))
+                ->get(['id', 'content']);
+
+            if ($sentences->isEmpty()) {
+                break;
+            }
+
+            // Replace exactly the fetched sentences' rows — a stale
+            // sentence's old rows are wrong by definition; fresh sentences
+            // outside this window are never touched.
+            EntitySentenceWord::query()
+                ->whereIn('entity_sentence_id', $sentences->modelKeys())
+                ->delete();
+
+            foreach ($sentences as $sentence) {
+                foreach ($this->tokenizer->tokenizeCountedOccurrences($sentence->content) as $position => $occurrence) {
+                    $rows[] = [
+                        'entity_id' => $entity->id,
+                        'entity_sentence_id' => $sentence->id,
+                        'position' => $position,
+                        'start' => $occurrence['start'],
+                        'end' => $occurrence['end'],
+                        'l_word' => $occurrence['l_word'],
+                        'token' => $occurrence['token'],
+                    ];
+
+                    if (count($rows) >= self::CHUNK_SIZE) {
+                        EntitySentenceWord::query()->insert($rows);
+                        $rows = [];
+                    }
+                }
+
+                $processedIds[] = $sentence->id;
+                $cursor = $sentence->id;
+            }
+        }
+
+        if ($rows !== []) {
+            EntitySentenceWord::query()->insert($rows);
+        }
+
+        foreach (array_chunk($processedIds, self::CHUNK_SIZE) as $ids) {
+            // Re-stamp ONLY the re-tokenized sentences, each with its own
+            // updated_at (never now() — the stamp must survive replays). The
+            // base builder is required: it bypasses model events (no parent
+            // touch) and the Eloquent updated_at injection — bumping
+            // updated_at here would permanently re-stale the sentence
+            // against its own stamp.
+            EntitySentence::query()
+                ->whereIn('id', $ids)
+                ->toBase()
+                ->update(['words_indexed_at' => DB::raw('updated_at')]);
+        }
+
+        return $processedIds;
+    }
+
+    /**
+     * The entity-level marker becomes a DERIVED MAX over the per-sentence
+     * stamps (now() fallback for a sentence-less entity, as before): one
+     * column the cheap staleness checks keep comparing. Written only when a
+     * chain completes, so the marker's meaning is unchanged — non-null still
+     * means "the whole list was built".
+     */
+    private function writeDerivedMarker(Entity $entity): void
+    {
+        $maxStamp = EntitySentence::query()
+            ->where('entity_id', $entity->id)
+            ->max('words_indexed_at');
+
+        $entity->forceFill(['words_indexed_at' => $maxStamp ?? now()])->save();
     }
 
     /**

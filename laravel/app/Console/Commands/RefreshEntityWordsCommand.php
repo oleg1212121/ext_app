@@ -65,15 +65,17 @@ class RefreshEntityWordsCommand extends Command
                     ->whereColumn('entity_sentences.entity_id', 'entities.id');
             })
             ->where(function ($q): void {
-                $q->where(function ($stale): void {
-                    // Stale index: never built, or any sentence changed after
-                    // the last build (mirrors EntityWordIndexer::isStale).
-                    $stale->whereNull('entities.words_indexed_at')
-                        ->orWhereExists(function ($q): void {
-                            $q->selectRaw(1)
-                                ->from('entity_sentences')
-                                ->whereColumn('entity_sentences.entity_id', 'entities.id')
-                                ->whereColumn('entity_sentences.updated_at', '>', 'entities.words_indexed_at');
+                // Any stale SENTENCE: never stamped, or stamped before its
+                // last content change — the indexer's own per-sentence
+                // check, so the sweep and the refresh agree on the work.
+                // (Never-built entities have null stamps and qualify here.)
+                $q->whereExists(function ($q): void {
+                    $q->selectRaw(1)
+                        ->from('entity_sentences')
+                        ->whereColumn('entity_sentences.entity_id', 'entities.id')
+                        ->where(function ($sentence): void {
+                            $sentence->whereNull('entity_sentences.words_indexed_at')
+                                ->orWhereColumn('entity_sentences.words_indexed_at', '<', 'entity_sentences.updated_at');
                         });
                 })
                     // Or the index is fresh but tokens still wait for a

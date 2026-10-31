@@ -5,7 +5,7 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-10-31T13:55:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-31T16:40:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: controller
@@ -82,12 +82,32 @@ puzzle awards +5 familiarity per puzzle word (ADR 0028).
 
 Scheduled every five minutes (`routes/console.php`, `withoutOverlapping`),
 `crossword:refresh` picks entities that have sentences and either a stale
-index (never built, or a sentence `updated_at` after
-`entities.words_indexed_at`) or an unlinked `entity_words` row that is not
+**sentence** (its `entity_sentences.words_indexed_at` stamp is null or
+older than that sentence's own `updated_at` — the same check the indexer
+uses, so sweep and refresh agree on the work; never-built entities have
+null stamps and qualify) or an unlinked `entity_words` row that is not
 stamped unmatchable, and dispatches one `RefreshEntityWords` queue job per
-entity (`ShouldBeUnique` keyed by entity id; see ADR
-[0026](../../docs/adr/0026-background-word-list-refresh.md)). The job
-re-indexes when stale and always runs the link pass, then runs
+entity (see ADR
+[0026](../../docs/adr/0026-background-word-list-refresh.md); bounded scan,
+`--limit`/`--dry-run`/`--entity=` as before). The job is a **self-restarting
+chain** (the `EnrichEntitySentences` cursor pattern): each run re-tokenizes
+at most 500 stale sentences past its cursor — replacing just those
+sentences' occurrence rows and re-stamping just those sentences with their
+own `updated_at` (via the base builder: an Eloquent `update()` would inject
+`updated_at = now()` and permanently re-stale the sentence) — then
+re-dispatches itself with the last processed sentence id until no stale
+sentence remains ahead of the cursor. Only the completing run derives
+`entity_words` wholesale from the rows and writes the entity-level marker
+as the **max per-sentence stamp**, so mid-build entities keep their
+stale/null marker and every cheap single-column check (crossword generate,
+recommendations, word knowledge, frequency accrual) reads the list as
+unfinished exactly as under the old single-job build. The job is
+deliberately NOT `ShouldBeUnique` — the unique lock releases only after
+`handle()` returns, so a same-uniqueId re-dispatch from inside `handle()`
+would be dropped and the chain would die after its first run; the cost (the
+sweep can stack a second chain mid-flight) is benign because every run
+processes only still-actually-stale sentences. After the indexing step the
+run always executes the link pass, then runs
 `EntityWordAdoption`: stamped unmatchable tokens adopt the existing
 same-`l_word` word row when the dictionary already carries one (first
 non-unknown-class row, else lowest id — never an `unknown` twin), and only
@@ -98,7 +118,9 @@ with `entity_words.word_id` pointed at it; every
 entity word still lacking translations gets a background translation fetch
 queued (Yandex → Google; ledger-deduped — see
 [Interactive words](/domains/interactive-words.md) and
-[Dictionary](/database/dictionary.md)), then logs per-entity stats. The same
+[Dictionary](/database/dictionary.md)), then logs per-entity stats
+(`indexed` = sentences re-tokenized, `chained`, `cursor`, plus the
+link/adopt numbers). The same
 adoption pass runs by hand via `words:adopt-from-entities {--entity=*}
 {--language=} {--to=}`. The link pass (ADR 0043) examines a per-run budget of the entity's
 first 20 000 unlinked, unstamped rows, fetches dictionary candidates in
@@ -130,11 +152,18 @@ in id order, bounded by `--limit` (200). Dev:
    = first occurrence in document order) — the key is the dictionary's own
    normalization (lowercase, combining marks and zero-width format
    characters stripped, ё→е folded), so a ёлка token stamps `елка` and
-   resolves against е-keyed word rows directly — with entity-level
-   `entities.words_indexed_at` staleness tracking (the list is still wiped
-   + refilled wholesale per refresh).
-   Rebuilt by the background refresh (or manually via `crossword:index`);
-   generate no longer rebuilds inline.
+   resolves against е-keyed word rows directly. Indexing is
+   **sentence-granular**: a sentence is stale only when its stamp is null
+   or older than its own `updated_at`, and only stale sentences are
+   re-tokenized (bounded batches, self-restarting cursor chain); a fresh
+   sentence keeps its rows and stamp untouched. `isStale()` keeps its
+   single-column entity-marker compare, and the marker is a derived max
+   over the per-sentence stamps written when a chain completes — cheap
+   checks and the crossword "still building" answer behave exactly as
+   before.
+   Rebuilt by the background refresh (or manually via `crossword:index`,
+   which runs the full stale-only pass synchronously); generate no longer
+   rebuilds inline.
 2. **Link** — `EntityWordLinker` (shared by the background refresh and
    the `crossword:link` command) back-fills `entity_words.word_id` by
    matching `(language_id, l_word)` on dictionary words (noun-first class
