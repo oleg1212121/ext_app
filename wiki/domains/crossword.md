@@ -5,7 +5,7 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-10-31T16:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-31T15:35:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: controller
@@ -96,8 +96,11 @@ sentences' occurrence rows and re-stamping just those sentences with their
 own `updated_at` (via the base builder: an Eloquent `update()` would inject
 `updated_at = now()` and permanently re-stale the sentence) — then
 re-dispatches itself with the last processed sentence id until no stale
-sentence remains ahead of the cursor. Only the completing run derives
-`entity_words` wholesale from the rows and writes the entity-level marker
+sentence remains ahead of the cursor. Only the completing run merges
+`entity_words` from the rows (a link-preserving merge — surviving keys keep
+their `word_id`/`unmatchable_at` row, vanished keys are deleted, new keys
+insert unlinked — so an edit no longer empties the popup map until the next
+link pass) and writes the entity-level marker
 as the **max per-sentence stamp**, so mid-build entities keep their
 stale/null marker and every cheap single-column check (crossword generate,
 recommendations, word knowledge, frequency accrual) reads the list as
@@ -147,9 +150,16 @@ in id order, bounded by `--limit` (200). Dev:
    (`entity_sentence_words`: lookup key, surface form, 0-based token
    ordinal, char span into the sentence content, cascade-deleted with the
    sentence), each sentence stamped `entity_sentences.words_indexed_at`
-   with its own `updated_at` — and derives `entity_words` from those rows
+   with its own `updated_at` — and merges `entity_words` from those rows
    by aggregation (token, `WordLookupKey` key, count; representative token
-   = first occurrence in document order) — the key is the dictionary's own
+   = first occurrence in document order): surviving keys keep their
+   existing row — `word_id`, `unmatchable_at` and the audit columns stay
+   exactly as the link/adoption passes left them, only count/representative
+   token are rewritten — keys that vanished from the text are deleted, and
+   genuinely new keys insert unlinked for the ordinary link pass, so an
+   edit no longer throws the entity's popups into "not in the dictionary"
+   mode while relinking runs (incremental runs and full rebuilds share the
+   merge) — the key is the dictionary's own
    normalization (lowercase, combining marks and zero-width format
    characters stripped, ё→е folded), so a ёлка token stamps `елка` and
    resolves against е-keyed word rows directly. Indexing is

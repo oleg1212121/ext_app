@@ -6,6 +6,27 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-31 (link-preserving entity word list merge — the popup outage window closes)
+
+sentence-word-index ticket 03: the `entity_words` derivation from the
+per-sentence occurrence rows stops wiping and refilling — it is now a
+merge keyed on `l_word` (`EntityWordIndexer::mergeEntityWords()`, shared by
+`index()` full passes and `indexBatch()` completing runs). Surviving keys
+keep their existing row with `word_id`, `unmatchable_at` and the audit
+columns untouched (only count/representative token rewrite, and only when
+they actually changed — the update runs through the base builder so the
+Eloquent `updated_at` injection cannot stamp rows the link/adoption passes
+left in a specific state); keys that vanished from the text are deleted;
+genuinely new keys insert unlinked for the ordinary link pass. Editing a
+sentence therefore no longer empties the popup word map until the next
+relink — `EntityWordMap` stays populated for every surviving word across
+incremental runs AND full rebuilds (post-deploy backfills, dictionary
+re-imports). Idempotent: merging an aggregate that matches the current
+rows writes nothing. Linker, adoption, and their tests untouched and
+green. `domains/crossword.md` (refresh + Pipeline Index step) and
+`database/entities-alignment.md` updated (`generated.at` bumped). The ADR
+covering the link-preservation guarantee lands with ticket 05.
+
 ## 2026-10-31 (incremental sentence indexing — only stale sentences re-tokenize)
 
 sentence-word-index ticket 02: word-index staleness goes

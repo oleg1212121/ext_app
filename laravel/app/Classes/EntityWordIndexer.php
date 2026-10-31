@@ -42,9 +42,9 @@ class EntityWordIndexer
      * Index the entity's STALE sentences only: a sentence is stale when its
      * per-sentence stamp is missing or older than its own content update.
      * Fresh sentences keep their occurrence rows and stamps untouched; the
-     * entity word list is still derived wholesale from the rows and the
+     * entity word list is merged from the rows (links preserved) and the
      * entity-level marker is written as the max per-sentence stamp — so a
-     * fully-fresh entity is a phase-1 no-op that only re-derives.
+     * fully-fresh entity is a phase-1 no-op that only re-merges.
      *
      * The synchronous full-pass entry point (crossword:index, tests, setup
      * flows): no per-run budget — every stale sentence in one transaction.
@@ -56,11 +56,7 @@ class EntityWordIndexer
         DB::transaction(function () use ($entity): void {
             $this->reindexStale($entity, afterId: 0, budget: null);
 
-            EntityWord::query()
-                ->where('entity_id', $entity->id)
-                ->delete();
-
-            $this->deriveEntityWords($entity);
+            $this->mergeEntityWords($entity);
 
             $this->writeDerivedMarker($entity);
         });
@@ -74,8 +70,9 @@ class EntityWordIndexer
      * sentence's occurrence rows and re-stamping just those sentences.
      *
      * When no stale sentence remains ahead of the cursor the chain is done:
-     * the entity word list is derived wholesale from the per-sentence rows
-     * and the entity marker is written as the max per-sentence stamp — only
+     * the entity word list is merged from the per-sentence rows (surviving
+     * keys keep their dictionary link) and the entity marker is written as
+     * the max per-sentence stamp — only
      * then, so a mid-build entity keeps its stale/null marker and every
      * consumer of that column (crossword generate, recommendations, word
      * knowledge, frequency accrual) reads the list as unfinished exactly as
@@ -108,11 +105,7 @@ class EntityWordIndexer
             $uniqueWords = null;
 
             if (! $remaining && ($processedIds !== [] || $entity->words_indexed_at === null)) {
-                EntityWord::query()
-                    ->where('entity_id', $entity->id)
-                    ->delete();
-
-                $this->deriveEntityWords($entity);
+                $this->mergeEntityWords($entity);
 
                 $this->writeDerivedMarker($entity);
 
@@ -230,13 +223,83 @@ class EntityWordIndexer
     }
 
     /**
-     * Aggregate the per-sentence occurrence rows into the entity word list:
-     * one entity_words row per lookup key, count = number of occurrence rows,
-     * representative token = the first occurrence's surface in document
-     * order — content-identical to the in-memory tokenizer accumulation this
-     * replaces.
+     * Derive the entity word list from the per-sentence occurrence rows by
+     * MERGING it into entity_words instead of wiping and refilling: one row
+     * per lookup key, count = number of occurrence rows, representative
+     * token = the first occurrence's surface in document order.
+     *
+     * Keys that already have a row keep that row — its dictionary link
+     * (word_id), unmatchable stamp and audit timestamps stay untouched, only
+     * count/token are rewritten (and only when they actually changed) — so a
+     * re-index no longer throws every surviving word back into the unlinked
+     * "not in the dictionary" state until the next link pass. Keys that
+     * vanished from the text have their row deleted; genuinely new keys
+     * insert unlinked (word_id/unmatchable_at null) for the ordinary link
+     * pass to pick up, as they always have. Idempotent: merging an aggregate
+     * that matches the current rows writes nothing.
      */
-    private function deriveEntityWords(Entity $entity): void
+    private function mergeEntityWords(Entity $entity): void
+    {
+        $words = $this->aggregateOccurrences($entity);
+
+        $existing = EntityWord::query()
+            ->where('entity_id', $entity->id)
+            ->get(['id', 'l_word', 'token', 'count'])
+            ->keyBy('l_word');
+
+        $removeIds = [];
+        $inserts = [];
+        $updates = [];
+
+        foreach ($existing as $lWord => $row) {
+            if (! isset($words[$lWord])) {
+                $removeIds[] = $row->id;
+            }
+        }
+
+        foreach ($words as $lWord => $entry) {
+            $row = $existing->get($lWord);
+
+            if ($row === null) {
+                $inserts[] = [
+                    'entity_id' => $entity->id,
+                    'l_word' => $lWord,
+                    'token' => $entry['token'],
+                    'count' => $entry['count'],
+                ];
+            } elseif ((int) $row->count !== $entry['count'] || $row->token !== $entry['token']) {
+                $updates[] = ['id' => $row->id, 'token' => $entry['token'], 'count' => $entry['count']];
+            }
+        }
+
+        foreach (array_chunk($removeIds, self::CHUNK_SIZE) as $ids) {
+            EntityWord::query()->whereIn('id', $ids)->delete();
+        }
+
+        foreach (array_chunk($inserts, self::CHUNK_SIZE) as $rows) {
+            EntityWord::query()->insert($rows);
+        }
+
+        foreach ($updates as $update) {
+            // The base builder is required: an Eloquent update would inject
+            // updated_at = now() on rows whose audit columns must stay
+            // exactly as the link/adoption passes left them — the same trap
+            // the per-sentence stamps already avoid.
+            EntityWord::query()
+                ->where('id', $update['id'])
+                ->toBase()
+                ->update(['token' => $update['token'], 'count' => $update['count']]);
+        }
+    }
+
+    /**
+     * Aggregate the per-sentence occurrence rows into per-key word entries:
+     * count = number of occurrence rows, representative token = the first
+     * occurrence's surface in document order.
+     *
+     * @return array<string, array{token: string, count: int}>
+     */
+    private function aggregateOccurrences(Entity $entity): array
     {
         $words = [];
 
@@ -264,23 +327,6 @@ class EntityWordIndexer
                 }
             });
 
-        $rows = [];
-        foreach ($words as $lWord => $entry) {
-            $rows[] = [
-                'entity_id' => $entity->id,
-                'l_word' => $lWord,
-                'token' => $entry['token'],
-                'count' => $entry['count'],
-            ];
-
-            if (count($rows) >= self::CHUNK_SIZE) {
-                EntityWord::query()->insert($rows);
-                $rows = [];
-            }
-        }
-
-        if ($rows !== []) {
-            EntityWord::query()->insert($rows);
-        }
+        return $words;
     }
 }
