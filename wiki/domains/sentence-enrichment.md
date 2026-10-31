@@ -5,7 +5,7 @@ description: Local-only per-sentence enrichment — Russian/Belarusian/English s
 tags: [enrichment, stress-marks, multi-word-verbs, enrichers, annotations, python-service, spacy, reader, simulator, silero, belarusian]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-31T18:40:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-31T19:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: service
@@ -254,7 +254,11 @@ batched phrasal pairing, 503 details).
   — no model events, no `updated_at`. Model events would `touchSentencesFor`
   and make enrichment mark the entity stale forever (infinite re-enrich
   loop). A regression test pins `updated_at`/`sentences_updated_at`/
-  `text_hash` unchanged.
+  `text_hash` unchanged. This is the canonical example of the repo-wide
+  stamp-like-write rule in [Coding
+  Conventions](/conventions/coding-conventions.md) ("Models & database"):
+  Laravel 13 maintains `updated_at` even through `saveQuietly()`, so the
+  `toBase()` drop is what actually keeps the write quiet.
 - **Per-sentence staleness** (ADR 0057, versioned in ADR 0059, python
   parity in ADR 0067; the sentence-level move — ADR 0094 — supersedes
   entity-granular staleness): `entity_sentences.enrichment_stamps` jsonb

@@ -37,7 +37,7 @@ class WikiSync extends Command
         ];
 
         foreach ($written as $file) {
-            $this->line("  wrote {$file}");
+            $this->line("  {$file}");
         }
 
         return self::SUCCESS;
@@ -203,8 +203,21 @@ class WikiSync extends Command
 
         $path = $root.'/reference/'.$filename;
         File::ensureDirectoryExists(dirname($path));
+
+        // Idempotent write: the stamp is the only line that varies between
+        // runs, so an unchanged regeneration keeps the existing file —
+        // stamp-only churn must not surface as a diff to notice and revert.
+        if (File::exists($path) && $this->withoutStamp((string) File::get($path)) === $this->withoutStamp($content)) {
+            return 'kept reference/'.$filename.' (unchanged)';
+        }
+
         File::put($path, $content);
 
-        return 'reference/'.$filename;
+        return 'wrote reference/'.$filename;
+    }
+
+    private function withoutStamp(string $content): string
+    {
+        return preg_replace('/^generated: \{.*\}$/m', '', $content) ?? $content;
     }
 }

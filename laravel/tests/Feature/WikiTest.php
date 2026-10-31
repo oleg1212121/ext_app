@@ -303,3 +303,68 @@ MD);
             ->and($validator->baselineEntries())->toBe([]);
     });
 });
+
+/*
+|--------------------------------------------------------------------------
+| wiki:sync idempotent reference writes
+|--------------------------------------------------------------------------
+|
+| An unchanged regeneration must not rewrite the reference files: the only
+| varying line is the generated.at stamp, and stamp-only churn shows up as a
+| diff agents then have to notice and revert. Fixtures run against a
+| throwaway temp-dir bundle via --path, same shape as the gate fixtures.
+*/
+
+function wikiSyncFixtureBundle(): string
+{
+    $tmp = sys_get_temp_dir().'/wiki-sync-'.uniqid();
+    mkdir($tmp.'/wiki', 0777, true);
+    file_put_contents($tmp.'/wiki/index.md', "---\nokf_version: '0.2'\n---\n\n# Fixture wiki\n");
+
+    return $tmp.'/wiki';
+}
+
+describe('wiki:sync idempotent reference writes', function () {
+    beforeEach(function () {
+        $this->root = wikiSyncFixtureBundle();
+    });
+
+    afterEach(function () {
+        wikiGateRemoveDir(dirname($this->root));
+    });
+
+    it('keeps an unchanged reference file byte- and mtime-identical', function () {
+        $this->artisan('wiki:sync', ['--path' => $this->root])->assertSuccessful();
+
+        $path = $this->root.'/reference/models.md';
+        $content = file_get_contents($path);
+        touch($path, time() - 3600);
+        $mtime = filemtime($path);
+
+        // A later run has a later now(), so this pins the stamp-retention,
+        // not just mtime luck: a stamp-rewriting implementation fails on
+        // both assertions.
+        $this->artisan('wiki:sync', ['--path' => $this->root])
+            ->expectsOutputToContain('kept reference/models.md (unchanged)')
+            ->assertSuccessful();
+
+        clearstatcache();
+
+        expect(file_get_contents($path))->toBe($content)
+            ->and(filemtime($path))->toBe($mtime);
+    });
+
+    it('rewrites a reference file whose body drifted', function () {
+        $this->artisan('wiki:sync', ['--path' => $this->root])->assertSuccessful();
+
+        $path = $this->root.'/reference/commands.md';
+        file_put_contents($path, str_replace('# Artisan Commands', '# Hand-edited drift', (string) file_get_contents($path)));
+
+        $this->artisan('wiki:sync', ['--path' => $this->root])
+            ->expectsOutputToContain('wrote reference/commands.md')
+            ->assertSuccessful();
+
+        expect(file_get_contents($path))->toContain('# Artisan Commands')
+            ->and(file_get_contents($path))->not->toContain('# Hand-edited drift');
+    });
+});

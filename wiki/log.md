@@ -6,6 +6,30 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-31 (retro — in-flight test guard, wiki:sync idempotent writes, stamp-like-write convention)
+
+Test-reliability retro after the sentence-word-index spec, which hit the
+same two infrastructure failures twice each. (1) **In-flight guard**: the
+composer `test` / `test:tia` scripts now refuse to start while another Pest
+process is live (`laravel/scripts/assert-no-inflight-test.php` over the new
+`App\Support\InflightTestRunDetector` — a /proc scan, since the container
+has no procps); a colliding run was the cause of both mass-failure waves
+(worker DBs `ext_app_test_test_{N}` shared between runs), now documented as
+a triage recipe in [Running Tests](playbooks/running-tests.md)
+("Mass-failure waves"). (2) **wiki:sync idempotent writes**: an unchanged
+regeneration keeps the existing reference file instead of rewriting it with
+a fresh `generated.at` — stamp-only churn no longer surfaces as diffs to
+notice and revert (pinned by the new `wiki:sync idempotent reference
+writes` tests). (3) **Stamp-like-write convention**: Laravel 13 maintains
+`updated_at` on the Eloquent builder's `update()` *and* on `saveQuietly()`
+— suppressed events are not suppressed timestamps. The rule (go through
+`toBase()` when a write's `updated_at` feeds a staleness compare) moved to
+[Coding Conventions](conventions/coding-conventions.md) ("Models &
+database"), with the enrichment quiet write as the canonical example; the
+trap had been rediscovered independently in three domains during the spec.
+Also guarded the last unguarded memory-limit probe
+(`WordsNormalizeCommandTest` — the `DemoteFormOfCommandTest` twin).
+
 ## 2026-10-31 (spec closure — entity enrichment stamps dropped, ADR 0094, knowledge base current)
 
 sentence-word-index ticket 05 (closing): `entities.enrichment_stamps` is
