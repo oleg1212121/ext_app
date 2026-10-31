@@ -105,6 +105,11 @@ nothing and the sweep re-picks).
   accelerate with `--limit`, `entities:enrich --enricher=<key>`, or
   `crossword:index` per entity. Enrichment re-runs are idempotent
   recomputations; only genuinely edited sentences change results.
+- The **Filament "Enrich" action rides the same boundary**
+  (`EntityResource::enrichSentences` dispatches the same job): it processes
+  only each sentence's stale keys, so a forced whole-book re-enrichment no
+  longer exists as an admin action — a full re-run happens only through an
+  enricher version bump (or sentences never stamped at all).
 - The **stamps are the only completion record**: there is no entity-level
   enrichment state to consult, reset, or backfill anymore; the per-sentence
   word-index stamps and the derived entity marker keep their ticket-02

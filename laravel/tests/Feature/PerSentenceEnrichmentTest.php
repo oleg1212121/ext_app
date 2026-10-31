@@ -47,7 +47,14 @@ function currentStamps(array $keys): array
 /** Write a sentence's per-sentence stamps quietly (no updated_at bump). */
 function stampSentence(EntitySentence $sentence, ?array $stamps): EntitySentence
 {
-    $sentence->forceFill(['enrichment_stamps' => $stamps])->saveQuietly();
+    // The base builder is required: an Eloquent save maintains updated_at
+    // even via saveQuietly (events are suppressed, timestamps are not), and
+    // several tests here pin staleness against the sentence's own
+    // updated_at — a bumped value would flip them on second boundaries.
+    EntitySentence::query()
+        ->whereKey($sentence->getKey())
+        ->toBase()
+        ->update(['enrichment_stamps' => $stamps === null ? null : json_encode($stamps)]);
 
     return $sentence->refresh();
 }
@@ -220,12 +227,15 @@ it('persists only a sentence target enrichers columns inside a mixed chunk', fun
 it('stamps sentences per their processed enrichers and keeps writes quiet', function () {
     $entity = sentenceEntity('en', ['One.', 'Two.']);
     [$first, $second] = EntitySentence::query()->where('entity_id', $entity->id)->orderBy('id')->get()->all();
-    $updatedAt = $first->updated_at;
 
     // The first sentence already carries a stress stamp from an earlier run:
     // the merge must keep it while adding the phrasal stamp.
     stampSentence($first, currentStamps(['en_stress']));
     $stressStampBefore = $first->refresh()->enrichment_stamps['en_stress'];
+    // Captured after the setup writes: the assertions below pin the
+    // service's merge — it must leave the sentence's updated_at exactly
+    // as it finds it.
+    $updatedAt = $first->updated_at;
 
     $registry = new EnricherRegistry;
     $service = app(SentenceEnrichmentService::class);

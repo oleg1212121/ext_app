@@ -101,11 +101,6 @@ class Entity extends Model
         return $this->hasMany(EntityWord::class);
     }
 
-    public function sentenceWords(): HasMany
-    {
-        return $this->hasMany(EntitySentenceWord::class);
-    }
-
     public function matchesAsA(): HasMany
     {
         return $this->hasMany(EntityMatch::class, 'a_entity_id');

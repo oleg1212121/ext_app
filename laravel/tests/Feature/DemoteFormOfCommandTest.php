@@ -202,7 +202,15 @@ it('raises the memory ceiling above the CLI default before any scan work', funct
     }
 
     $original = ini_get('memory_limit');
-    ini_set('memory_limit', '128M');
+
+    // The guard above can pass while the worker's live usage is already
+    // past the ceiling (allocation between the check and the call), so a
+    // failed lower is the same unprobeable case — skip, not error.
+    try {
+        ini_set('memory_limit', '128M');
+    } catch (ErrorException) {
+        $this->markTestSkipped('Worker already above the 128M CLI default — lift cannot be probed here');
+    }
 
     try {
         $this->artisan('wiktionary:demote-form-of', [
@@ -212,7 +220,11 @@ it('raises the memory ceiling above the CLI default before any scan work', funct
 
         expect(ini_get('memory_limit'))->toBe('2G');
     } finally {
-        ini_set('memory_limit', $original);
+        // Restoring below the worker's now-current usage would throw the
+        // same way inside the finally — leave the lifted limit in place.
+        if (memory_get_usage() < 128 * 1024 * 1024) {
+            ini_set('memory_limit', $original);
+        }
     }
 });
 

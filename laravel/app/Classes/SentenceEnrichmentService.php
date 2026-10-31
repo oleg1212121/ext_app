@@ -223,9 +223,9 @@ class SentenceEnrichmentService
      * The version contract (ADR 0067): the python service is expected to
      * report each dispatched enricher's algorithm version, and every
      * reported value must match the enricher's declared python version. A
-     * mismatch only warns — the stamp records what actually ran, so
-     * staleFor re-stales the entity against the declared version and the
-     * sweep re-runs the analysis once the two sides agree.
+     * mismatch only warns — the stamp records what actually ran, so the
+     * sentence's per-sentence stamps keep it stale against the declared
+     * version and the sweep re-runs the analysis once the two sides agree.
      *
      * @param  list<Enricher>  $enrichers
      * @param  array<string, int>  $reported

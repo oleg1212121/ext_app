@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EntitySentenceWord extends Model
 {
@@ -18,15 +17,5 @@ class EntitySentenceWord extends Model
             'start' => 'integer',
             'end' => 'integer',
         ];
-    }
-
-    public function entity(): BelongsTo
-    {
-        return $this->belongsTo(Entity::class);
-    }
-
-    public function sentence(): BelongsTo
-    {
-        return $this->belongsTo(EntitySentence::class, 'entity_sentence_id');
     }
 }

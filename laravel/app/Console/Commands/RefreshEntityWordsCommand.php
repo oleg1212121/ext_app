@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\RefreshEntityWords;
 use App\Models\Entity;
+use App\Models\EntitySentence;
 use Illuminate\Console\Command;
 
 class RefreshEntityWordsCommand extends Command
@@ -66,18 +67,17 @@ class RefreshEntityWordsCommand extends Command
             })
             ->where(function ($q): void {
                 // Any stale SENTENCE: never stamped, or stamped before its
-                // last content change — the indexer's own per-sentence
-                // check, so the sweep and the refresh agree on the work.
-                // (Never-built entities have null stamps and qualify here.)
-                $q->whereExists(function ($q): void {
-                    $q->selectRaw(1)
-                        ->from('entity_sentences')
+                // last content change — the indexer's own per-sentence check
+                // via the shared EntitySentence::whereStaleForWordIndex
+                // scope, so the sweep and the refresh agree on the work by
+                // construction. (Never-built entities have null stamps and
+                // qualify here.)
+                $q->whereExists(
+                    EntitySentence::query()
+                        ->selectRaw(1)
                         ->whereColumn('entity_sentences.entity_id', 'entities.id')
-                        ->where(function ($sentence): void {
-                            $sentence->whereNull('entity_sentences.words_indexed_at')
-                                ->orWhereColumn('entity_sentences.words_indexed_at', '<', 'entity_sentences.updated_at');
-                        });
-                })
+                        ->whereStaleForWordIndex()
+                )
                     // Or the index is fresh but tokens still wait for a
                     // dictionary match — re-attempted every run so a new
                     // dictionary import takes effect without a manual

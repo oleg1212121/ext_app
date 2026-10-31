@@ -28,9 +28,9 @@ class WordTokenizer
         }
 
         foreach ($matches[0] as $surface) {
-            $surface = $this->trimEdgePunctuation($surface);
+            $surface = $this->keepCandidate($surface);
 
-            if ($surface === '' || mb_strlen($surface) < self::MIN_LENGTH) {
+            if ($surface === null) {
                 continue;
             }
 
@@ -108,9 +108,9 @@ class WordTokenizer
         }
 
         foreach ($matches[0] as [$surface, $byteOffset]) {
-            $surface = $this->trimEdgePunctuation($surface);
+            $surface = $this->keepCandidate($surface);
 
-            if ($surface === '' || mb_strlen($surface) < self::MIN_LENGTH) {
+            if ($surface === null) {
                 continue;
             }
 
@@ -135,5 +135,18 @@ class WordTokenizer
         // final byte off words ending e.g. in р (0xD1 0x80) — invalid UTF-8
         // that Postgres rejects. Edge trimming must be multibyte-safe.
         return preg_replace("/\A['’-]+|['’-]+\z/u", '', $surface) ?? $surface;
+    }
+
+    /**
+     * The candidate a counting walk keeps: edge punctuation trimmed, then
+     * dropped when empty or below the minimum length — null otherwise. The
+     * one filter tokenize() and tokenizeCountedOccurrences() count by, so
+     * their token sets stay identical.
+     */
+    private function keepCandidate(string $surface): ?string
+    {
+        $surface = $this->trimEdgePunctuation($surface);
+
+        return $surface === '' || mb_strlen($surface) < self::MIN_LENGTH ? null : $surface;
     }
 }

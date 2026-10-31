@@ -95,10 +95,7 @@ class EntityWordIndexer
             $remaining = EntitySentence::query()
                 ->where('entity_id', $entity->id)
                 ->where('id', '>', $cursor)
-                ->where(function ($query): void {
-                    $query->whereNull('words_indexed_at')
-                        ->orWhereColumn('words_indexed_at', '<', 'updated_at');
-                })
+                ->whereStaleForWordIndex()
                 ->exists();
 
             $derived = false;
@@ -144,10 +141,7 @@ class EntityWordIndexer
             $sentences = EntitySentence::query()
                 ->where('entity_id', $entity->id)
                 ->where('id', '>', $cursor)
-                ->where(function ($query): void {
-                    $query->whereNull('words_indexed_at')
-                        ->orWhereColumn('words_indexed_at', '<', 'updated_at');
-                })
+                ->whereStaleForWordIndex()
                 ->orderBy('id')
                 ->limit($budget === null ? self::CHUNK_SIZE : min(self::CHUNK_SIZE, $budget - count($processedIds)))
                 ->get(['id', 'content']);

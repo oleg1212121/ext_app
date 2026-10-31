@@ -45,6 +45,23 @@ class EntitySentence extends Model
         return $query->whereNull('image_path');
     }
 
+    /**
+     * A sentence is stale for the word index (ADR 0094) when its stamp is
+     * missing or older than its own content update — the one predicate the
+     * indexer's windows and the sweep's whereExists share, so they agree on
+     * the work by construction. The disjunction is wrapped in a nested
+     * where so its or-semantics cannot leak into an enclosing query.
+     */
+    public function scopeWhereStaleForWordIndex(Builder $query): Builder
+    {
+        $table = $query->getModel()->getTable();
+
+        return $query->where(function (Builder $query) use ($table): void {
+            $query->whereNull("{$table}.words_indexed_at")
+                ->orWhereColumn("{$table}.words_indexed_at", '<', "{$table}.updated_at");
+        });
+    }
+
     public function entity(): BelongsTo
     {
         return $this->belongsTo(Entity::class);
@@ -58,15 +75,6 @@ class EntitySentence extends Model
     public function meaningJunctions(): HasMany
     {
         return $this->hasMany(SentenceMeaningMatch::class, 'entity_sentence_id');
-    }
-
-    /**
-     * This sentence's token occurrences, in reading order. The entity word
-     * list derives from these rows by aggregation.
-     */
-    public function sentenceWords(): HasMany
-    {
-        return $this->hasMany(EntitySentenceWord::class)->orderBy('position');
     }
 
     protected static function booted(): void
