@@ -102,3 +102,55 @@ it('folds ё into the key in parity with WordLookupKey while keeping the display
         ->and($tokenizer->lookupKey("до́м \u{200B}"))->toBe('дом')
         ->and($tokenizer->lookupKey(' поёт '))->toBe('поет');
 });
+
+it('produces per-occurrence rows with lookup keys and char spans', function () {
+    $tokenizer = new WordTokenizer;
+
+    //             0123456789012345678901234
+    $occurrences = $tokenizer->tokenizeCountedOccurrences("It's a 42 «word» — I go.");
+
+    // Exactly the tokens tokenize() counts: 'a' and 'I' are under the
+    // minimum length and are dropped with their spans.
+    expect($occurrences)->toBe([
+        ['l_word' => "it's", 'token' => "It's", 'start' => 0, 'end' => 4],
+        ['l_word' => 'word', 'token' => 'word', 'start' => 11, 'end' => 15],
+        ['l_word' => 'go', 'token' => 'go', 'start' => 21, 'end' => 23],
+    ]);
+});
+
+it('keeps occurrence spans multibyte-safe', function () {
+    $tokenizer = new WordTokenizer;
+
+    // «(0) М(1)а(2)м(3)а(4) (5) м(6)ы(7)л(8)а(9) (10) р(11)а(12)м(13)у(14) .(15) »(16)
+    $occurrences = $tokenizer->tokenizeCountedOccurrences('«Мама мыла раму.»');
+
+    expect($occurrences)->toBe([
+        ['l_word' => 'мама', 'token' => 'Мама', 'start' => 1, 'end' => 5],
+        ['l_word' => 'мыла', 'token' => 'мыла', 'start' => 6, 'end' => 10],
+        ['l_word' => 'раму', 'token' => 'раму', 'start' => 11, 'end' => 15],
+    ]);
+});
+
+it('aggregates occurrences back onto the tokenize result exactly', function () {
+    $tokenizer = new WordTokenizer;
+
+    $text = 'Ёлка ёлка ЁЛКА ещё. The dog barks, and the fox runs.';
+    $occurrences = $tokenizer->tokenizeCountedOccurrences($text);
+
+    // The occurrence rows must reproduce tokenize()'s list: same keys, same
+    // totals, and the same representative surface (first occurrence wins).
+    $tokenized = $tokenizer->tokenize($text);
+
+    $counts = [];
+    $first = [];
+    foreach ($occurrences as $occ) {
+        $counts[$occ['l_word']] = ($counts[$occ['l_word']] ?? 0) + 1;
+        $first[$occ['l_word']] ??= $occ['token'];
+    }
+
+    expect(array_keys($counts))->toBe(array_keys($tokenized));
+    foreach ($tokenized as $lWord => $entry) {
+        expect($counts[$lWord])->toBe($entry['count'])
+            ->and($first[$lWord])->toBe($entry['token']);
+    }
+});

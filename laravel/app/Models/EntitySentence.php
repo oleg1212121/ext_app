@@ -17,6 +17,7 @@ class EntitySentence extends Model
         return [
             'order' => 'integer',
             'phrasal_verbs' => 'array',
+            'words_indexed_at' => 'datetime',
         ];
     }
 
@@ -56,6 +57,15 @@ class EntitySentence extends Model
     public function meaningJunctions(): HasMany
     {
         return $this->hasMany(SentenceMeaningMatch::class, 'entity_sentence_id');
+    }
+
+    /**
+     * This sentence's token occurrences, in reading order. The entity word
+     * list derives from these rows by aggregation.
+     */
+    public function sentenceWords(): HasMany
+    {
+        return $this->hasMany(EntitySentenceWord::class)->orderBy('position');
     }
 
     protected static function booted(): void

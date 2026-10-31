@@ -6,6 +6,29 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-31 (entity_sentence_words occurrence rows — the word index gains a per-sentence substrate)
+
+sentence-word-index ticket 01 (expand phase, outward behavior unchanged):
+`EntityWordIndexer` now tokenizes each sentence into individual
+`entity_sentence_words` rows — `entity_id` denormalized for the
+single-table aggregate scan, `entity_sentence_id` cascade delete,
+0-based `position`, char `start`/`end` into the sentence content (the
+`phrasal_verbs` span convention), `l_word` lookup key, surface `token`;
+unique `(entity_sentence_id, position)` — and stamps each sentence's new
+`entity_sentences.words_indexed_at` with the sentence's own `updated_at`
+(one base-builder UPDATE copying the column, deliberately bypassing the
+Eloquent `updated_at` injection: bumping `updated_at` here would
+permanently re-stale the entity). The entity word list derives from the
+rows by aggregation (count = occurrences summed, representative token =
+first in document order) instead of the in-memory tokenizer accumulation;
+staleness stays entity-granular and the list is still wiped + refilled
+wholesale, so links/adoption/popup map/crosswords are untouched. New
+`WordTokenizer::tokenizeCountedOccurrences()` emits exactly what
+`tokenize()` counts with spans (`tokenize`/`tokenizeWithSpans` untouched,
+TokenizerParityTest green). `domains/crossword.md`,
+`database/entities-alignment.md`, `database/schema-overview.md` updated
+(`generated.at` bumped); `reference/models.md` re-synced.
+
 ## 2026-10-29 (alignment show page mirrors the entity page: header actions + inline bilingual rows)
 
 `Library/ShowAlignment` stops being a metadata-only card (ADR 0092 amended

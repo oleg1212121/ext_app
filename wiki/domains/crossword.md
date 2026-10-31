@@ -5,7 +5,7 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-10-28T22:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-31T13:55:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: controller
@@ -17,6 +17,12 @@ sources:
   - id: indexer
     resource: laravel/app/Classes/EntityWordIndexer.php
     title: EntityWordIndexer
+  - id: sentence-words-migration
+    resource: laravel/database/migrations/2026_10_31_000001_create_entity_sentence_words_table.php
+    title: entity_sentence_words occurrence rows + entity_sentences.words_indexed_at
+  - id: tokenizer
+    resource: laravel/app/Classes/WordTokenizer.php
+    title: WordTokenizer (tokenizeCountedOccurrences for the occurrence rows)
   - id: linker
     resource: laravel/app/Classes/EntityWordLinker.php
     title: EntityWordLinker
@@ -115,12 +121,18 @@ in id order, bounded by `--limit` (200). Dev:
 # Pipeline
 
 1. **Index** — `EntityWordIndexer` tokenizes `entity_sentences` (PHP
-   `WordTokenizer`, Unicode regex) into `entity_words` (token,
-   `WordLookupKey` key, count) — the key is the dictionary's own
+   `WordTokenizer`, Unicode regex) into per-sentence occurrence rows
+   (`entity_sentence_words`: lookup key, surface form, 0-based token
+   ordinal, char span into the sentence content, cascade-deleted with the
+   sentence), each sentence stamped `entity_sentences.words_indexed_at`
+   with its own `updated_at` — and derives `entity_words` from those rows
+   by aggregation (token, `WordLookupKey` key, count; representative token
+   = first occurrence in document order) — the key is the dictionary's own
    normalization (lowercase, combining marks and zero-width format
    characters stripped, ё→е folded), so a ёлка token stamps `елка` and
-   resolves against е-keyed word rows directly — with
-   `entities.words_indexed_at` staleness tracking.
+   resolves against е-keyed word rows directly — with entity-level
+   `entities.words_indexed_at` staleness tracking (the list is still wiped
+   + refilled wholesale per refresh).
    Rebuilt by the background refresh (or manually via `crossword:index`);
    generate no longer rebuilds inline.
 2. **Link** — `EntityWordLinker` (shared by the background refresh and

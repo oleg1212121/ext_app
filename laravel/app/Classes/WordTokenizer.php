@@ -88,6 +88,47 @@ class WordTokenizer
         return $tokens;
     }
 
+    /**
+     * Per-occurrence tokens carrying exactly what tokenize() counts — edge
+     * punctuation trimmed, minimum length applied — plus the dictionary
+     * lookup key and a 0-based character span (start inclusive, end
+     * exclusive) pointing at the kept surface in the text. The per-sentence
+     * word rows are built from these, so their aggregation reproduces
+     * tokenize()'s entity word list identically (unlike tokenizeWithSpans,
+     * which keeps single-character tokens and skips the trim).
+     *
+     * @return list<array{l_word: string, token: string, start: int, end: int}>
+     */
+    public function tokenizeCountedOccurrences(string $text): array
+    {
+        $occurrences = [];
+
+        if (preg_match_all(self::TOKEN_PATTERN, $text, $matches, PREG_OFFSET_CAPTURE) === false) {
+            return $occurrences;
+        }
+
+        foreach ($matches[0] as [$surface, $byteOffset]) {
+            $surface = $this->trimEdgePunctuation($surface);
+
+            if ($surface === '' || mb_strlen($surface) < self::MIN_LENGTH) {
+                continue;
+            }
+
+            // PREG_OFFSET_CAPTURE reports byte offsets; spans are character
+            // positions. The edge trim cannot shift the start: a match of
+            // TOKEN_PATTERN always begins and ends with a letter or mark.
+            $start = mb_strlen(substr($text, 0, $byteOffset));
+            $occurrences[] = [
+                'l_word' => $this->lookupKey($surface),
+                'token' => $surface,
+                'start' => $start,
+                'end' => $start + mb_strlen($surface),
+            ];
+        }
+
+        return $occurrences;
+    }
+
     private function trimEdgePunctuation(string $surface): string
     {
         // PHP trim() strips BYTES, so the multi-byte ’ in the mask shears the
