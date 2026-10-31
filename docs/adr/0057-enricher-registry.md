@@ -97,3 +97,13 @@ visible by default.
   phrasal payload, phrasal-only run skipping stress hints, reader/simulator
   shipping `phrasalRows`, and the python keyed dispatch (module tests
   updated for the `phrase` field).
+
+## Addendum (2026-10-31): the completion stamps moved onto the sentence
+
+ADR [0094](0094-per-sentence-staleness.md) moved per-enricher staleness
+from the entity to the sentence: the stamp map this ADR defined now lives
+on `entity_sentences.enrichment_stamps` (`{enricher key: {v, pv, at}}` —
+the versioned shape from the ADR 0059 addenda and ADR 0067's parity,
+unchanged), and `entities.enrichment_stamps` is dropped. The registry, the
+per-enricher retro/backfill semantics, and the version-bump re-stale rule
+stand untouched — only the granule changed.

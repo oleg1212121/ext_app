@@ -5,14 +5,13 @@ namespace App\Classes\Enrichment;
 use Illuminate\Support\Carbon;
 
 /**
- * The completion-stamp contract shared by the entity-level stamps
- * (entities.enrichment_stamps) and the per-sentence stamps
+ * The per-sentence completion-stamp contract
  * (entity_sentences.enrichment_stamps): one map entry per enricher key,
  * `{key: {v, pv, at}}` — `v` the Laravel-side algorithm version that ran,
  * `pv` the python-reported ALGORITHM_VERSION (ADR 0067), `at` the completion
- * time. The staleness predicate is the same on both levels; only the change
- * reference differs (the entity's grouped max(updated_at) vs the sentence's
- * own updated_at).
+ * time. A sentence is stale for an enricher when its stamp for it is
+ * missing, stamped below the enricher's declared version on either side, or
+ * overtaken by the sentence's own updated_at (ADR 0094).
  */
 final class Stamp
 {
@@ -57,9 +56,8 @@ final class Stamp
      * @param  mixed  $stamp  the decoded stamp map entry (array, bare ISO
      *                        string, or null)
      * @param  string|null  $lastChange  the raw last-change datetime of the
-     *                                   thing the stamp covers — a sentence's
-     *                                   updated_at or the entity's grouped
-     *                                   max(updated_at) aggregate
+     *                                   thing the stamp covers — the
+     *                                   sentence's own updated_at
      */
     public static function stale(Enricher $enricher, mixed $stamp, ?string $lastChange): bool
     {

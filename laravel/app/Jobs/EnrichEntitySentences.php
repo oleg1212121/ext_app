@@ -18,8 +18,9 @@ use Illuminate\Support\Facades\Log;
 /**
  * Self-restarting sentence enrichment pipeline (AlignEntitySentences shape):
  * each run processes a bounded batch of STALE sentences, then re-dispatches
- * itself with the cursor until none remain, when the run's enrichers are
- * stamped on entities.enrichment_stamps (ADR 0057).
+ * itself with the cursor until none remain — every processed sentence
+ * carries its own per-enricher stamps (entity_sentences.enrichment_stamps,
+ * ADR 0057 as moved per sentence; ADR 0094).
  *
  * Staleness is per-sentence (entity_sentences.enrichment_stamps): a run —
  * full ("begin") or targeted ("beginEnrichers") — walks only the sentences
@@ -107,21 +108,15 @@ class EnrichEntitySentences implements ShouldQueue
             ? $registry->forLanguage($code)
             : $registry->forKeys($this->enricherKeys);
 
-        // Languages the registry cannot enrich count as done (an empty stamp
-        // map) so the sweep never re-picks them.
+        // Languages the registry cannot enrich are never stale — the sweep
+        // SQL-filters them out and the registry maps them to no stale keys,
+        // so a dispatched run for one simply has nothing to do.
         if ($enrichers === []) {
-            $enrichment->markEnriched($entity, []);
-
             return;
         }
 
         $cursor = $this->cursor;
         $byKey = collect($enrichers)->keyBy(fn (Enricher $e) => $e->key());
-        // The python-reported algorithm versions of the run's chunks — the
-        // stamp's input (ADR 0067); last chunk wins (same service, same
-        // versions, and an entity with no stale sentences stamps the declared
-        // fallback).
-        $reportedVersions = [];
         $processed = 0;
 
         for ($i = 0; $i < self::BATCHES_PER_RUN; $i++) {
@@ -131,10 +126,8 @@ class EnrichEntitySentences implements ShouldQueue
                 ->get();
 
             if ($sentences->isEmpty()) {
-                // Chain complete: the entity-level stamp is still written
-                // per run as before (vestigial — no staleness reader; the
-                // cleanup ticket removes it).
-                $enrichment->markEnriched($entity, $enrichers, $reportedVersions);
+                // Chain complete: the per-sentence stamps carry everything —
+                // there is no entity-level record to write.
                 Log::info('EnrichEntitySentences completed', [
                     'entity_id' => $entity->id,
                     'language' => $code,
@@ -167,14 +160,11 @@ class EnrichEntitySentences implements ShouldQueue
 
             // Annotations and their stamps commit together: a failed chunk
             // stamps nothing, and the sweep re-picks the entity.
-            $result = DB::transaction(function () use ($enrichment, $entity, $sentences, $chunkEnrichers, $perSentence): array {
+            DB::transaction(function () use ($enrichment, $entity, $sentences, $chunkEnrichers, $perSentence): void {
                 $chunkResult = $enrichment->enrichChunk($entity, $sentences, $chunkEnrichers, $perSentence);
                 $enrichment->markSentencesEnriched($sentences, $perSentence, $chunkResult['versions']);
-
-                return $chunkResult;
             });
 
-            $reportedVersions = $result['versions'];
             $processed += $sentences->count();
             $cursor = $sentences->last()->id;
         }

@@ -55,46 +55,6 @@ class SentenceEnrichmentService
     }
 
     /**
-     * Stamp the given enrichers done on entities.enrichment_stamps (quiet
-     * base-builder write, jsonb merge so concurrent stampers can't clobber
-     * each other's keys). Each stamp carries the Laravel algorithm version
-     * and the python-reported algorithm version (ADR 0059, ADR 0067); a
-     * version the chunk run did not report falls back to the enricher's
-     * declared python version. Null stamps every enricher of the entity's
-     * language — the whole-run-done stamp; a language with no enrichers ends
-     * as an empty map.
-     *
-     * This entity-level stamp is kept written through the per-sentence
-     * staleness change but is no longer read for staleness — the sentence's
-     * own stamps decide; its removal is the cleanup ticket's.
-     *
-     * @param  list<Enricher>|null  $enrichers
-     * @param  array<string, int>  $reportedVersions  enricher key -> python-reported version
-     */
-    public function markEnriched(Entity $entity, ?array $enrichers = null, array $reportedVersions = []): void
-    {
-        $enrichers ??= $this->registry->forLanguage($entity->language?->code ?? '');
-
-        $stamps = [];
-
-        foreach ($enrichers as $enricher) {
-            $stamps[$enricher->key()] = Stamp::build($enricher, $reportedVersions[$enricher->key()] ?? null);
-        }
-
-        $json = Stamp::encode($stamps);
-
-        Entity::query()
-            ->whereKey($entity->id)
-            ->toBase()
-            ->update([
-                // Base-builder update: no model events, no updated_at.
-                'enrichment_stamps' => DB::raw(
-                    "coalesce(enrichment_stamps, '{}'::jsonb) || '{$json}'::jsonb",
-                ),
-            ]);
-    }
-
-    /**
      * Stamp the given sentences done for exactly the enrichers processed
      * for each of them, on entity_sentences.enrichment_stamps — the same
      * {key: {v, pv, at}} contract as the entity-level stamps (Stamp). Quiet

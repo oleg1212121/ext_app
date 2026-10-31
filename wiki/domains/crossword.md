@@ -5,7 +5,7 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-10-31T15:35:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-31T18:40:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: controller
@@ -100,7 +100,9 @@ sentence remains ahead of the cursor. Only the completing run merges
 `entity_words` from the rows (a link-preserving merge — surviving keys keep
 their `word_id`/`unmatchable_at` row, vanished keys are deleted, new keys
 insert unlinked — so an edit no longer empties the popup map until the next
-link pass) and writes the entity-level marker
+link pass; ADR
+[0094](../../docs/adr/0094-per-sentence-staleness.md)) and writes the
+entity-level marker
 as the **max per-sentence stamp**, so mid-build entities keep their
 stale/null marker and every cheap single-column check (crossword generate,
 recommendations, word knowledge, frequency accrual) reads the list as

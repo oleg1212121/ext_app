@@ -168,19 +168,14 @@ it('staleKeysForMany agrees with the per-sentence predicate for every entity in 
     $legacy = sentenceEntity('ru', ['Легаси.']);
     $legacySentence = EntitySentence::query()->where('entity_id', $legacy->id)->first();
     stampSentence($legacySentence, null)->forceFill(['enrichment_stamps' => now()->toISOString()])->saveQuietly();
-    $legacy->update(['enrichment_stamps' => ['ru_stress' => [
-        'v' => (new RussianStressEnricher)->version(),
-        'pv' => (new RussianStressEnricher)->pythonVersion(),
-        'at' => now()->toISOString(),
-    ]]]);
 
     $batch = [$fresh->refresh(), $never->refresh(), $legacy->refresh()];
     $map = $registry->staleKeysForMany($batch);
 
     expect($map[$fresh->id])->toBe([])
         ->and($map[$never->id])->toBe(['ru_stress'])
-        // The entity-level stamp is no longer the staleness source: the
-        // sentence's own legacy stamp decides.
+        // The sentence's own legacy stamp decides — there is no entity-level
+        // stamp to consult.
         ->and($map[$legacy->id])->toBe(['ru_stress']);
 
     // Agreement with the single-entity form and the per-sentence union.
@@ -329,25 +324,22 @@ it('runs a never-enriched entity chunk by chunk, stamping per chunk', function (
     (new EnrichEntitySentences($entity->id))->handle();
 
     // Run 1: two batches of 75, each stamped as it completes; the chain
-    // re-dispatches with the cursor; the entity-level stamp waits for the
-    // completing run.
+    // re-dispatches with the cursor.
     expect($fake->enrichPayloads)->toHaveCount(2)
         ->and($fake->enrichPayloads[0]['sentences'])->toHaveCount(75)
         ->and($fake->enrichPayloads[1]['sentences'])->toHaveCount(75)
-        ->and(EntitySentence::query()->where('entity_id', $entity->id)->whereNotNull('enrichment_stamps')->count())->toBe(150)
-        ->and($entity->refresh()->enrichment_stamps)->toBeNull();
+        ->and(EntitySentence::query()->where('entity_id', $entity->id)->whereNotNull('enrichment_stamps')->count())->toBe(150);
 
     $cursor = EntitySentence::query()->where('entity_id', $entity->id)->orderBy('id')->skip(149)->first()->id;
     Bus::assertDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->cursor === $cursor);
 
     // Run 2 (the chain's continuation): the remaining 10, then completion —
-    // per-sentence stamps everywhere and the entity stamp written.
+    // per-sentence stamps everywhere.
     (new EnrichEntitySentences($entity->id, $cursor))->handle();
 
     expect($fake->enrichPayloads)->toHaveCount(3)
         ->and($fake->enrichPayloads[2]['sentences'])->toHaveCount(10)
-        ->and(EntitySentence::query()->where('entity_id', $entity->id)->whereNotNull('enrichment_stamps')->count())->toBe(160)
-        ->and($entity->refresh()->enrichment_stamps)->not->toBeNull();
+        ->and(EntitySentence::query()->where('entity_id', $entity->id)->whereNotNull('enrichment_stamps')->count())->toBe(160);
 });
 
 it('does not stamp sentences when the chunk fails', function () {
@@ -364,7 +356,6 @@ it('does not stamp sentences when the chunk fails', function () {
     // sweep pass re-picks the entity (still stale).
     expect($sentence->refresh()->stressed_content)->toBeNull()
         ->and($sentence->refresh()->enrichment_stamps)->toBeNull()
-        ->and($entity->refresh()->enrichment_stamps)->toBeNull()
         ->and((new EnricherRegistry)->staleKeysFor($entity->refresh()))->toBe(['ru_stress']);
 
     // The retry succeeds and stamps.
@@ -444,23 +435,9 @@ it('dispatches only entities with a stale sentence, skipping fully enriched ones
     Bus::assertNotDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $fresh->id);
 });
 
-it('does not let a stale entity-level stamp pick a fully enriched entity', function () {
-    // The entity-level stamp stops being the staleness source: even a
-    // missing entity stamp cannot pick an entity whose sentences are all
-    // fresh (the sweep reads sentences, not the entity map).
-    $entity = sentenceEntity('ru', ['Свежий.']);
-    (new EnrichEntitySentences($entity->id))->handle();
-    Entity::query()->whereKey($entity->id)->toBase()->update(['enrichment_stamps' => null]);
-
-    Bus::fake();
-    $this->artisan('entities:enrich')->assertSuccessful();
-
-    Bus::assertNotDispatched(EnrichEntitySentences::class);
-});
-
 it('never picks an entity without sentences from the sweep', function () {
-    // A sentence-less enrichable entity has no stale sentence; its job run
-    // (the upload pipeline's begin()) is what stamps it done.
+    // A sentence-less enrichable entity has no stale sentence; nothing needs
+    // to mark it done — it never qualifies for a pick.
     $entity = sentenceEntity('ru', []);
 
     Bus::fake();
@@ -469,6 +446,13 @@ it('never picks an entity without sentences from the sweep', function () {
     Bus::assertNotDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $entity->id);
     // The registry agrees: no stale keys without a sentence.
     expect((new EnricherRegistry)->staleKeysFor($entity))->toBe([]);
+
+    // Its direct job run (the upload pipeline's begin() path) is a clean
+    // no-op — the completing branch has nothing to stamp, and the entity
+    // stays unpicked.
+    (new EnrichEntitySentences($entity->id))->handle();
+    $this->artisan('entities:enrich')->assertSuccessful();
+    Bus::assertNotDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $entity->id);
 });
 
 it('re-enriches every sentence of the language when the php algorithm version bumps', function () {
