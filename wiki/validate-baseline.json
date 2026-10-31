@@ -1,18 +1,6 @@
 {
     "entries": [
         {
-            "warning": "domains/sentence-enrichment.md: source 'docker-compose/python/ai/enrichment/cyrillic_stress.py' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
-            "warning": "domains/sentence-enrichment.md: source 'laravel/app/Console/Commands/ReclassMultiwordWordsCommand.php' changed after generated.at — possibly stale",
-            "owner": "human:alex",
-            "date": "2026-10-23",
-            "note": "Benign source-mtime drift at the 2026-10-23 baseline (retro-fixes-2 ticket 01); refresh the concept or prune the entry when resolved."
-        },
-        {
             "warning": "playbooks/log-doctor.md: source 'wiki/playbooks/production-deployment.md' changed after generated.at — possibly stale",
             "owner": "human:alex",
             "date": "2026-10-23",

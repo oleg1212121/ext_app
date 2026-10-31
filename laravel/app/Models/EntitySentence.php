@@ -17,6 +17,7 @@ class EntitySentence extends Model
         return [
             'order' => 'integer',
             'phrasal_verbs' => 'array',
+            'enrichment_stamps' => 'array',
             'words_indexed_at' => 'datetime',
         ];
     }

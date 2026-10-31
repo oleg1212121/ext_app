@@ -1,11 +1,11 @@
 ---
 type: Pipeline
 title: Sentence enrichment (stress marks, multi-word verbs)
-description: Local-only per-sentence enrichment — Russian/Belarusian/English stress marks and English multi-word-verb hits — computed by the Python service (Silero Stress per-language accentors, spaCy dependency parsing, caller-supplied dictionary data incl. CMUdict), orchestrated as declaratively language-scoped, version-stamped enrichers with per-enricher staleness and python version parity, stored beside sentence content, and rendered behind per-user annotation preferences on the reading surfaces (ADR 0052, ADR 0053, ADR 0057, ADR 0059, ADR 0067).
+description: Local-only per-sentence enrichment — Russian/Belarusian/English stress marks and English multi-word-verb hits — computed by the Python service (Silero Stress per-language accentors, spaCy dependency parsing, caller-supplied dictionary data incl. CMUdict), orchestrated as declaratively language-scoped, version-stamped enrichers with per-SENTENCE staleness (each sentence carries the {v, pv, at} stamps of the run that wrote its annotations) and python version parity, stored beside sentence content, and rendered behind per-user annotation preferences on the reading surfaces (ADR 0052, ADR 0053, ADR 0057, ADR 0059, ADR 0067).
 tags: [enrichment, stress-marks, multi-word-verbs, enrichers, annotations, python-service, spacy, reader, simulator, silero, belarusian]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-19T22:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-31T16:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
    - id: service
@@ -14,6 +14,9 @@ sources:
    - id: enricher
      resource: laravel/app/Classes/Enrichment/Enricher.php
      title: Enricher interface
+   - id: stamp
+     resource: laravel/app/Classes/Enrichment/Stamp.php
+     title: Stamp (the shared {v, pv, at} completion-stamp contract)
    - id: annotation
      resource: laravel/app/Classes/Enrichment/Annotation.php
      title: Annotation (the display vertical)
@@ -239,42 +242,68 @@ batched phrasal pairing, 503 details).
   resolves the shared base hints, merges the active enrichers' hints/extras,
   calls `/enrich` through `PythonClient::enrich()` (ADR 0061 — the shared
   transport seam owns retries and the error envelope), and persists each
-  enricher's output into its column.
+  enricher's output into its column. `enrichChunk` takes an optional
+  per-sentence target map (sentence id → enrichers): the payload dispatches
+  the union, but a sentence stale for only some enrichers gets only its own
+  columns written — persist-what-you-stamp, so an analysis never gains
+  freshness credit for results it did not store.
 - **Quiet writes**: `EntitySentence::query()->whereKey()->toBase()->update()`
   — no model events, no `updated_at`. Model events would `touchSentencesFor`
   and make enrichment mark the entity stale forever (infinite re-enrich
   loop). A regression test pins `updated_at`/`sentences_updated_at`/
   `text_hash` unchanged.
-- **Per-enricher staleness** (ADR 0057, versioned in ADR 0059, python
-  parity in ADR 0067): `entities.enrichment_stamps` jsonb
-  `{enricher key: {v, pv, at}}` — `v` the Laravel-side algorithm version,
-  `pv` the python-reported `ALGORITHM_VERSION` the run actually ran with
-  (missing/legacy stamps read both as stale: v1-era bare ISO strings as
-  version 1, missing `pv` as 0 — the one-time corpus re-run). A reported
-  `pv` older than the enricher's declared `pythonVersion()` re-stales the
-  entity (the sweep keeps re-running until the sides agree); a newer one
-  is fine. `EnricherRegistry::staleFor(entity)` returns the language's
-  enrichers whose stamp is missing (a newly registered enricher backfills
-  itself), whose recorded versions are older than declared — a bump on
-  either side re-stales the whole corpus so the sweep re-runs the analysis
-  everywhere with no manual reset — or older than the last sentence
-  change; `staleForMany(entities)` is the batch form (one grouped
-  `max(updated_at)` query, shared `filterStale` predicate) the sweep uses.
-  A language with no enrichers is never stale; its job run stamps
-  `{}` once. Stamps merge via jsonb `||` so concurrent stampers cannot
+- **Per-sentence staleness** (ADR 0057, versioned in ADR 0059, python
+  parity in ADR 0067; the sentence-level move supersedes entity-granular
+  staleness): `entity_sentences.enrichment_stamps` jsonb
+  `{enricher key: {v, pv, at}}` — the same stamp contract as the legacy
+  entity-level map (`entities.enrichment_stamps`, kept written but no
+  longer read; removal pending), factored into `Stamp` (`build`/`encode`/
+  `stale`). `v` the Laravel-side algorithm version, `pv` the
+  python-reported `ALGORITHM_VERSION` the run actually ran with, `at` the
+  completion time (written after the content change it covers, so the
+  staleness compare against the sentence's own `updated_at` is clock-skew
+  safe). Missing/legacy stamps read as stale (v1-era bare ISO strings as
+  version 1, missing `pv` as 0 — the one-time re-run); a reported `pv`
+  older than the enricher's declared `pythonVersion()` re-stales the
+  sentence (the sweep keeps re-running until the sides agree); a newer one
+  is fine. A sentence is stale when it was never enriched, when its
+  content changed after enrichment (`at < updated_at`), or when an
+  enricher's declared version on either side bumped past its stamp — a
+  bump re-stales every sentence stamped below it corpus-wide, with no
+  manual reset. `EnricherRegistry` answers it three ways:
+  `staleKeysForSentence(sentence, enrichers)` (the PHP predicate — the
+  per-sentence stale set behind the job's persist/stamp decisions),
+  `staleSentenceQuery(entity, enrichers)` (the SQL window — a per-key
+  clause set mirroring `Stamp::stale` exactly, including the legacy
+  tolerances, with `at` pinned `AT TIME ZONE 'UTC'` so the compare does
+  not depend on the session timezone), and `staleKeysFor`/
+  `staleKeysForMany(entities)` (the sweep's pick: one grouped query with a
+  `bool_or` per enricher key; an entity is picked when at least one of its
+  sentences is stale, mapping to the union of its sentences' stale keys).
+  A language with no enrichers is never stale, nor is a sentence-less
+  entity. Stamps merge via jsonb `||` so concurrent stampers cannot
   clobber each other.
-- `EnrichEntitySentences` job (low lane, self-re-dispatching, 2×75 sentences
-  per run) dispatched from three places: the end of
+- `EnrichEntitySentences` job (low lane, self-re-dispatching, 2×75 STALE
+  sentences per run — the cursor walks only the sentences stale for the
+  run's enrichers) dispatched from three places: the end of
   `FinalizeEntityDerivations` and the Filament "Enrich" action (`begin()` —
-  a FULL run of the language's enrichers), and the 5-minute `entities:enrich`
-  sweep (`beginEnrichers()` — only the stale set; `--enricher=` forces one
-  key across its languages, `--dry-run` reports). The sweep's scan is
-  bounded like its dispatch (ADR 0043): it walks entities `chunkById`,
-  decides staleness per chunk through `staleForMany`, and stops at the
-  `--limit` cap in id order. Empty-content sentences
-  never reach Python (schema rejects empty text) and keep null columns.
-- Re-enrichment is idempotent and free — sentence edits re-stale the
-  entity's enrichers and the sweep rebuilds it.
+  a FULL run, now meaning "process every stale sentence chunk by chunk";
+  a never-enriched entity gets its full pass with per-sentence stamps
+  written as each chunk commits), and the 5-minute `entities:enrich`
+  sweep (`beginEnrichers()` — the union of the entity's sentences' stale
+  keys; `--enricher=` forces one key across its languages, `--dry-run`
+  reports). Each chunk and its per-sentence stamps commit in ONE
+  transaction (`enrichChunk` + `markSentencesEnriched`): a failed chunk
+  stamps nothing and the sweep re-picks the entity. A chunk payload is the
+  union of its sentences' stale sets — a single edited sentence goes out
+  as one small payload, never padded with fresh sentences. The
+  entity-level stamp is still written per run at chain completion
+  (vestigial — nothing reads it for staleness). Empty-content sentences
+  never reach Python (schema rejects empty text), keep null columns, and
+  still get stamped as processed.
+- Re-enrichment is idempotent and cheap — editing one sentence re-stales
+  exactly that sentence and the sweep re-runs exactly it (one python
+  round trip) instead of the whole book.
 
 ## Rendering
 
@@ -332,6 +361,14 @@ without a `requirements.txt` change ships on the normal deploy path below —
 bump `ALGORITHM_VERSION` in the module and mirror it in the enricher's
 `pythonVersion()` in the same PR, or the mismatch warning fires and the
 sweep re-runs the analysis until they agree.
+
+The per-sentence staleness deploy (word-index feature ticket 04) accepts
+the same one-time cost: `entity_sentences.enrichment_stamps` starts null
+everywhere (null = stale — the column is intentionally not backfilled from
+the entity-level map, so every stamp is written by one code path), and the
+sweep re-enriches the corpus sentence by sentence through the bounded
+runs. Sentence annotations are idempotent recomputations; only genuinely
+edited sentences change results.
 
 `silero-stress==1.5` (ADR 0052), `pyphen>=0.18` (ADR 0053) and
 `spacy==3.8.16` + the `en_core_web_md` model wheel (ADR 0059) live in

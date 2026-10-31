@@ -6,6 +6,36 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-10-31 (per-sentence enrichment staleness — editing one sentence enriches one sentence)
+
+sentence-word-index ticket 04: enrichment staleness moves from the entity
+to the sentence. `entity_sentences.enrichment_stamps` jsonb now carries
+the same `{enricher key: {v, pv, at}}` stamps as the legacy
+`entities.enrichment_stamps` map (contract factored into
+`App\Classes\Enrichment\Stamp`; legacy tolerances preserved — bare-ISO
+stamps read as v1, missing `pv` as 0), written per chunk by the job
+through `SentenceEnrichmentService::markSentencesEnriched` (quiet,
+jsonb-`||` merged, committed in the same transaction as the chunk's
+annotation writes). A sentence is stale when never enriched, when its own
+`updated_at` moved past its stamp, or when an enricher's declared version
+on either side bumped past it. `EnrichEntitySentences` walks only stale
+sentences in id-cursor windows (`EnricherRegistry::staleSentenceQuery` —
+the SQL mirror of the predicate, `at` pinned to UTC), dispatches each
+chunk as the union of its sentences' stale sets, and persists/stamps
+per-sentence (a sentence stale for a subset keeps its fresh annotations);
+`enrichChunk` gained the per-sentence target map. The sweep
+(`entities:enrich`) picks entities with ≥1 stale sentence via
+`staleKeysForMany` (grouped `bool_or` per key) and dispatches the union of
+stale keys; sentence-less entities are no longer picked. Editing one
+sentence now costs exactly one small `/enrich` payload instead of a
+whole-book re-run; version bumps still re-stale corpus-wide, per sentence.
+The entity-level stamp is still written per run but nothing reads it for
+staleness (ticket 05 removes it); the column starts null everywhere — one
+bounded-sweep corpus pass, no migration backfill, deliberately.
+`domains/sentence-enrichment.md` rewritten (orchestration + deployment
+note, `generated.at` bumped). ADR covering both per-sentence staleness
+changes lands with ticket 05.
+
 ## 2026-10-31 (link-preserving entity word list merge — the popup outage window closes)
 
 sentence-word-index ticket 03: the `entity_words` derivation from the
